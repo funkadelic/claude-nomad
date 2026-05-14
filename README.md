@@ -5,10 +5,37 @@ A thin wrapper around the "private Git repo" approach to syncing Claude Code con
 1. **Path remapping** so session history follows you across machines even when the same repo lives at `/Users/norm/code/foo` on one host and `/home/norm/foo` on another.
 2. **Per-host overrides** for `settings.json` via deep merge, so machine-specific keys (MCP server URLs, hooks, model preferences) don't fight you.
 
-## Repo layout
+## How it works (two-repo model)
+
+claude-nomad is a **tool**, not a config store. You maintain a separate **private** repo that holds your actual config (`CLAUDE.md`, agents, skills, settings overrides, session transcripts). The tool's source and your config end up coexisting in one working tree on each host.
+
+```
+public funkadelic/claude-nomad          your private you/claude-nomad
+  ├── src/         (the CLI)              ├── src/         (copy of the CLI)
+  ├── install.sh                          ├── install.sh
+  ├── package.json                        ├── package.json
+  └── ...                                 ├── ...
+                                          ├── shared/      (your config, synced)
+                                          │   ├── CLAUDE.md
+                                          │   ├── agents/
+                                          │   ├── skills/
+                                          │   ├── commands/
+                                          │   ├── rules/
+                                          │   ├── settings.base.json
+                                          │   └── projects/
+                                          ├── hosts/<hostname>.json
+                                          └── path-map.json
+```
+
+You bootstrap once by mirror-pushing this public tool repo into a fresh private repo of your own (see [Setup](#setup)), then layer your config on top. Every host afterward clones your private repo to `~/claude-nomad/` and runs `nomad pull` to sync.
+
+The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/config.ts`). Other clones of the tool (e.g., for hacking on the source itself) are fine; `nomad pull` always reads and writes the canonical path.
+
+## Repo layout (what `~/claude-nomad/` looks like on a configured host)
 
 ```
 ~/claude-nomad/
+├── src/                      # the CLI (came from the public tool repo)
 ├── shared/                   # synced to every machine
 │   ├── CLAUDE.md
 │   ├── settings.base.json    # baseline settings
@@ -22,7 +49,7 @@ A thin wrapper around the "private Git repo" approach to syncing Claude Code con
 │   ├── cyberpower.json
 │   └── homelab-nuc.json
 ├── path-map.json             # logical project -> per-host absolute path
-└── src/                      # the wrapper itself
+└── package.json, install.sh, ... (tool metadata)
 ```
 
 ## What gets synced vs. not
@@ -90,22 +117,36 @@ Result on `cyberpower`: opus model, the local Ollama env var, plus the shared pe
 ## Requirements
 
 - Node.js 22 or newer (24 LTS recommended)
-- `tsx` (installed automatically via `npx tsx` on first run, or `npm install -g tsx` for a global install)
+- `tsx` (installed automatically by `install.sh`, or `npm install -g tsx` manually)
 - Git
-- A private GitHub repo (or any Git remote you control)
+- A **private** GitHub repo (or any Git remote you control)
 
 ## Setup
 
+**Why not just fork?** GitHub doesn't let you flip a public fork to private, and your config (especially session transcripts) must stay private. So the bootstrap is a one-time mirror-push into a fresh private repo, not a fork.
+
+One-time, on your first host:
+
 ```bash
-# Once, on each machine:
+# 1. Create the private repo (or use the GitHub UI).
+gh repo create you/claude-nomad --private
+
+# 2. Mirror the public tool into it. This severs the fork relationship,
+#    so your repo is independent of upstream.
+git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git
+cd /tmp/cn.git
+git push --mirror git@github.com:you/claude-nomad.git
+cd .. && rm -rf /tmp/cn.git
+
+# 3. Clone your private copy to the canonical location.
 git clone git@github.com:you/claude-nomad.git ~/claude-nomad
 cd ~/claude-nomad
-./install.sh                   # verifies Node >= 22.6, installs tsx, sets up
-npx tsx src/nomad.ts doctor    # see current state
-npx tsx src/nomad.ts pull      # apply links + settings + sessions
+./install.sh
 ```
 
-`install.sh` will check your Node version, install `tsx` globally if it's missing, run `npm install` for project deps, and print the alias line to add to your shell rc. It's idempotent, so re-running is safe.
+`install.sh` verifies Node >= 22.6, installs `tsx` globally if missing, runs `npm install`, and prints the shell alias to add. It's idempotent, so re-running on the same or a new host is safe.
+
+On every additional host, only step 3 is needed (your private repo already exists).
 
 Add to `~/.zshrc` or `~/.bashrc` (the installer prints this exact line):
 
@@ -113,6 +154,33 @@ Add to `~/.zshrc` or `~/.bashrc` (the installer prints this exact line):
 alias nomad='tsx ~/claude-nomad/src/nomad.ts'
 # optional: pull on shell start
 nomad pull -q 2>/dev/null &
+```
+
+Populate your config by adding files under `shared/`, a per-host file at `hosts/<hostname>.json`, and `path-map.json`. Then:
+
+```bash
+nomad doctor     # read-only state check
+nomad push       # send current state to the private remote
+nomad pull       # apply on another host
+```
+
+## Upgrading the tool
+
+Your private repo is not a fork, so GitHub's "Sync fork" UI doesn't apply. To pull in upstream tool updates:
+
+```bash
+cd ~/claude-nomad
+git remote add upstream git@github.com:funkadelic/claude-nomad.git    # one-time
+git fetch upstream
+git merge upstream/main                                                # or rebase
+nomad push
+```
+
+Upstream tags releases as `vX.Y.Z` (release-please). To track a specific release instead of `main`:
+
+```bash
+git fetch upstream --tags
+git merge v0.2.0
 ```
 
 ## Commands
