@@ -1,15 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { encodePath, log, readJson } from './utils.ts';
 
 function copyDir(src: string, dst: string): void {
-  rmSync(dst, { recursive: true, force: true });
-  mkdirSync(dst, { recursive: true });
-  for (const f of readdirSync(src)) {
-    writeFileSync(join(dst, f), readFileSync(join(src, f)));
-  }
+  cpSync(src, dst, { recursive: true, force: true });
 }
 
 /** Pull: copy from repo's logical project names into local path-encoded dirs. */
@@ -27,6 +23,10 @@ export function remapPull(): void {
 
   for (const [logical, hosts] of Object.entries(map.projects)) {
     const localPath = hosts[HOST];
+    if (localPath === 'TBD') {
+      log(`skip ${logical}: placeholder path for ${HOST}`);
+      continue;
+    }
     if (!localPath) {
       log(`skip ${logical}: no path for ${HOST}`);
       continue;
