@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1](https://github.com/funkadelic/claude-nomad/compare/v0.2.0...v0.2.1) (2026-05-15)
+
+
+### Fixed
+
+* **install:** mark install.sh executable ([#4](https://github.com/funkadelic/claude-nomad/issues/4)) ([4f38a0e](https://github.com/funkadelic/claude-nomad/commit/4f38a0e810e7d27fb6bc1b9df5899fe771a85754))
+
+
+### Documentation
+
+* clarify two-repo model and bootstrap flow in README ([#2](https://github.com/funkadelic/claude-nomad/issues/2)) ([944619f](https://github.com/funkadelic/claude-nomad/commit/944619f72c052fb53293ba2af59768667e9f332d))
+
 ## [0.2.0](https://github.com/funkadelic/claude-nomad/compare/v0.1.0...v0.2.0) (2026-05-14)
 
 
