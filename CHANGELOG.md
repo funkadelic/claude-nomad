@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/funkadelic/claude-nomad/compare/v0.2.1...v0.3.0) (2026-05-15)
+
+
+### Added
+
+* NOMAD_HOST env override and recursive cpSync session sync ([#7](https://github.com/funkadelic/claude-nomad/issues/7)) ([1ab7a33](https://github.com/funkadelic/claude-nomad/commit/1ab7a332a5ff51b7ce73bca0785bb9d854dffb28))
+
+
+### Changed
+
+* **test:** wire up v8 coverage via npm run coverage ([#5](https://github.com/funkadelic/claude-nomad/issues/5)) ([a2be611](https://github.com/funkadelic/claude-nomad/commit/a2be611fbc7990e56ff14bd57ed5237db7c01c29))
+
 ## [0.2.1](https://github.com/funkadelic/claude-nomad/compare/v0.2.0...v0.2.1) (2026-05-15)
 
 
