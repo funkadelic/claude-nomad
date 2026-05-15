@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { hostname } from 'node:os';
+
+import { describe, expect, it, vi } from 'vitest';
 
 import { deepMerge, encodePath } from './utils.ts';
 
@@ -43,5 +45,50 @@ describe('encodePath', () => {
 
   it('produces different keys for same logical project on different hosts', () => {
     expect(encodePath('/Users/norm/code/foo')).not.toBe(encodePath('/home/norm/code/foo'));
+  });
+});
+
+describe('HOST resolution', () => {
+  const originalNomadHost = process.env.NOMAD_HOST;
+
+  function restoreNomadHost(): void {
+    if (originalNomadHost === undefined) {
+      delete process.env.NOMAD_HOST;
+    } else {
+      process.env.NOMAD_HOST = originalNomadHost;
+    }
+  }
+
+  it('uses NOMAD_HOST when set to a non-empty string', async () => {
+    process.env.NOMAD_HOST = 'test-host';
+    try {
+      vi.resetModules();
+      const config = await import('./config.ts');
+      expect(config.HOST).toBe('test-host');
+    } finally {
+      restoreNomadHost();
+    }
+  });
+
+  it('falls back to hostname() when NOMAD_HOST is unset', async () => {
+    delete process.env.NOMAD_HOST;
+    try {
+      vi.resetModules();
+      const config = await import('./config.ts');
+      expect(config.HOST).toBe(hostname().toLowerCase());
+    } finally {
+      restoreNomadHost();
+    }
+  });
+
+  it('falls back to hostname() when NOMAD_HOST is empty string', async () => {
+    process.env.NOMAD_HOST = '';
+    try {
+      vi.resetModules();
+      const config = await import('./config.ts');
+      expect(config.HOST).toBe(hostname().toLowerCase());
+    } finally {
+      restoreNomadHost();
+    }
   });
 });
