@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/funkadelic/claude-nomad/compare/v0.3.1...v0.3.2) (2026-05-16)
+
+
+### Documentation
+
+* **readme:** document NOMAD_HOST, TBD placeholder, migration flow, and cross-OS gotchas ([#10](https://github.com/funkadelic/claude-nomad/issues/10)) ([d95c4b1](https://github.com/funkadelic/claude-nomad/commit/d95c4b1c2665081d14c083723520f9bde8056b4c))
+
 ## [0.3.1](https://github.com/funkadelic/claude-nomad/compare/v0.3.0...v0.3.1) (2026-05-16)
 
 
