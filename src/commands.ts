@@ -26,7 +26,7 @@ export function cmdPush(): void {
     return;
   }
   sh('git add -A', REPO_HOME);
-  sh(`git commit -m "sync from ${HOST}"`, REPO_HOME);
+  sh(`git commit -m "chore: sync from ${HOST}"`, REPO_HOME);
   sh('git push', REPO_HOME);
   log('push complete');
 }
