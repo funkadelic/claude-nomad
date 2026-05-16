@@ -36,6 +36,7 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 ```
 ~/claude-nomad/
 ├── src/                      # the CLI (came from the public tool repo)
+├── scripts/                  # optional helpers (e.g., migrate.sh, see Migrating below)
 ├── shared/                   # synced to every machine
 │   ├── CLAUDE.md
 │   ├── settings.base.json    # baseline settings
@@ -43,20 +44,22 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 │   ├── skills/
 │   ├── commands/
 │   ├── rules/
+│   ├── my-statusline.js      # any script you want symlinked into ~/.claude/
+│   ├── .gitignore            # defense-in-depth: blocks .claude.json, *.token, *.key, .env
 │   └── projects/             # session transcripts under logical names
 ├── hosts/
-│   ├── norm-mbp.json         # patches merged over settings.base.json
-│   ├── cyberpower.json
-│   └── homelab-nuc.json
+│   ├── <your-mac>.json       # patches merged over settings.base.json
+│   ├── <your-wsl-host>.json
+│   └── <your-nuc>.json
 ├── path-map.json             # logical project -> per-host absolute path
 └── package.json, install.sh, ... (tool metadata)
 ```
 
 ## What gets synced vs. not
 
-**Synced** (symlinked into `~/.claude/` from `shared/`):
+**Synced** (symlinked into `~/.claude/` from `shared/`, see `SHARED_LINKS` in `src/config.ts`):
 
-- `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`
+- `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.js`
 
 **Generated** (written fresh on every pull):
 
@@ -80,19 +83,21 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 {
   "projects": {
     "ha-acwd": {
-      "norm-mbp": "/Users/norm/code/ha-acwd",
-      "cyberpower": "/home/norm/code/ha-acwd",
-      "homelab-nuc": "/home/norm/projects/ha-acwd"
+      "<your-mac>": "/Users/you/code/ha-acwd",
+      "<your-wsl-host>": "/home/you/code/ha-acwd",
+      "<your-nuc>": "TBD"
     }
   }
 }
 ```
 
-On `push`, sessions in `~/.claude/projects/-Users-norm-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them.
+The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Use the literal string `"TBD"` for hosts you haven't onboarded yet — `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
+
+On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [Known limits](#known-limits-deliberate) for the cross-OS cwd-binding gotcha).
 
 ## Per-host overrides
 
-`settings.base.json` holds shared defaults. `hosts/<hostname>.json` holds machine-specific patches. They're deep-merged on every pull. Example:
+`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches — especially keys that embed absolute paths like `hooks` and `statusLine.command`. They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace).
 
 `shared/settings.base.json`:
 
@@ -103,7 +108,7 @@ On `push`, sessions in `~/.claude/projects/-Users-norm-code-ha-acwd/` get copied
 }
 ```
 
-`hosts/cyberpower.json`:
+`hosts/<your-wsl-host>.json`:
 
 ```json
 {
@@ -112,7 +117,9 @@ On `push`, sessions in `~/.claude/projects/-Users-norm-code-ha-acwd/` get copied
 }
 ```
 
-Result on `cyberpower`: opus model, the local Ollama env var, plus the shared permissions array.
+Result on that host: opus model, the local Ollama env var, plus the shared permissions array.
+
+**Never hand-edit `~/.claude/settings.json` on a synced host** — it's regenerated on every `nomad pull` from base + host. Edit the base or host file in the repo instead.
 
 ## Requirements
 
@@ -148,21 +155,80 @@ cd ~/claude-nomad
 
 On every additional host, only step 3 is needed (your private repo already exists).
 
-Add to `~/.zshrc` or `~/.bashrc` (the installer prints this exact line):
+Add to `~/.zshrc` or `~/.bashrc` (the installer prints the alias line):
 
 ```bash
+export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
 alias nomad='tsx ~/claude-nomad/src/nomad.ts'
 # optional: pull on shell start
 nomad pull -q 2>/dev/null &
 ```
 
-Populate your config by adding files under `shared/`, a per-host file at `hosts/<hostname>.json`, and `path-map.json`. Then:
+`NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
+
+Populate your config by adding files under `shared/`, a per-host file at `hosts/<NOMAD_HOST>.json`, and `path-map.json`. Then:
 
 ```bash
-nomad doctor     # read-only state check
+nomad doctor     # read-only state check; reports host: <NOMAD_HOST>
 nomad push       # send current state to the private remote
 nomad pull       # apply on another host
 ```
+
+If the destination host already has populated `~/.claude/{CLAUDE.md, agents/, ...}`, the first `nomad pull` will refuse to overwrite real files. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the safe backup-and-rename flow.
+
+## Migrating an existing ~/.claude/
+
+If a host already has real files at `~/.claude/{CLAUDE.md, agents/, skills/, ...}`, the first `nomad pull` will fail with `FATAL: <path> exists and is not a symlink` because `applySharedLinks` refuses to silently clobber user content. You can either move each conflicting item aside manually (`mv ~/.claude/CLAUDE.md ~/.claude/CLAUDE.md.preNomad`) and re-run pull, or use a single-pull migration script that backs up and prepares the host in one shot:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLAUDE_HOME="${HOME}/.claude"
+REPO_HOME="${HOME}/claude-nomad"
+ITEMS=(CLAUDE.md agents skills commands rules my-statusline.js)
+TS="$(date -u +%Y%m%dT%H%M%SZ)"
+BACKUP="${HOME}/.cache/claude-nomad/backup/${TS}/snapshot.tgz"
+
+# 1. Tar backup (rollback: tar -xzf "$BACKUP" -C "$CLAUDE_HOME").
+mkdir -p "$(dirname "$BACKUP")"
+present=()
+for i in "${ITEMS[@]}" settings.json; do
+  [ -e "$CLAUDE_HOME/$i" ] && present+=("$i")
+done
+[ ${#present[@]} -gt 0 ] && tar -C "$CLAUDE_HOME" -czf "$BACKUP" "${present[@]}"
+echo "Backup: $BACKUP"
+
+# 2. Copy items into shared/. rm -rf first so re-runs don't nest dirs (cp into
+#    an existing directory copies SRC *inside* DEST, producing shared/agents/agents).
+mkdir -p "$REPO_HOME/shared"
+for i in "${ITEMS[@]}"; do
+  [ -e "$CLAUDE_HOME/$i" ] || continue
+  rm -rf "$REPO_HOME/shared/$i"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    cp -pR "$CLAUDE_HOME/$i" "$REPO_HOME/shared/$i"
+  else
+    cp -a "$CLAUDE_HOME/$i" "$REPO_HOME/shared/$i"
+  fi
+done
+
+# 3. Confirm and remove originals.
+read -r -p "Remove originals from $CLAUDE_HOME? (yes/N) " ans
+[ "$ans" = "yes" ] || { echo "Aborted; originals intact."; exit 1; }
+for i in "${ITEMS[@]}"; do
+  [ -e "$CLAUDE_HOME/$i" ] && [ ! -L "$CLAUDE_HOME/$i" ] && rm -rf "$CLAUDE_HOME/$i"
+done
+
+# 4. Pull to materialize symlinks + regenerate settings.json.
+( cd "$REPO_HOME" && npx tsx src/nomad.ts pull )
+
+# 5. Verify.
+for i in "${ITEMS[@]}"; do
+  test -L "$CLAUDE_HOME/$i" && echo "ok $i" || echo "MISSING $i"
+done
+```
+
+Adapt the `ITEMS` list to match your `SHARED_LINKS`. The tar backup is your rollback path if anything goes wrong after the `rm`. Run from `~/claude-nomad/` after writing the script under `scripts/`. The script is also safe to re-run: items already symlinked are skipped.
 
 ## Upgrading the tool
 
@@ -185,9 +251,9 @@ git merge v0.2.0
 
 ## Commands
 
-- `nomad pull` - `git pull`, apply symlinks, regenerate `settings.json`, remap session paths
-- `nomad push` - export local sessions to logical names, commit, push
-- `nomad doctor` - report state, broken symlinks, unmapped projects
+- `nomad pull` — `git pull`, apply symlinks, regenerate `settings.json`, remap session paths
+- `nomad push` — export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push
+- `nomad doctor` — read-only health check: reports `host: <NOMAD_HOST>`, lists each symlink as `symlink OK` / `missing` / `NOT a symlink`, lists mapped projects for the current host
 
 ## Known limits (deliberate)
 
@@ -195,6 +261,9 @@ git merge v0.2.0
 - **Manual push/pull.** No file watcher. Shell hooks recommended.
 - **OAuth doesn't sync.** You'll log in once per host. This is intentional.
 - **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone, which is what you want.
+- **Cross-OS `claude --resume` cwd binding.** Each `.jsonl` session embeds the cwd where it was created. After a cross-OS pull, the picker is correctly scoped to your local cwd, but when you select an entry it prints `cd <recorded-cwd> && claude --resume <id>` — which fails on the new host (the source-host path doesn't exist there). Bypass: skip the `cd` and invoke `claude --resume <id>` directly from the locally-mapped cwd; Claude Code accepts the session ID. A future tool change can rewrite the in-file cwd on `remapPull` to remove this manual step.
+- **First pull on a populated host refuses to overwrite real files.** `applySharedLinks` is intentionally non-destructive. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the safe backup-and-rename flow.
+- **Empty directories don't survive sync.** Git doesn't track empty dirs, so if any `shared/<name>/` has no files (e.g., `shared/commands/` on a host with no commands), it won't materialize on the destination host. `nomad doctor` reports it as `missing`; behavior is benign. Drop a `.gitkeep` if you want the dir to materialize.
 
 ## Run tests
 
