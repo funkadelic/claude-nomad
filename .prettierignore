@@ -4,3 +4,6 @@ dist
 package-lock.json
 .planning
 .claude
+/shared/
+/hosts/
+/path-map.json
