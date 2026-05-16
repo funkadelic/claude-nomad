@@ -44,7 +44,7 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 │   ├── skills/
 │   ├── commands/
 │   ├── rules/
-│   ├── my-statusline.js      # any script you want symlinked into ~/.claude/
+│   ├── my-statusline.cjs     # any script you want symlinked into ~/.claude/
 │   ├── .gitignore            # defense-in-depth: blocks .claude.json, *.token, *.key, .env
 │   └── projects/             # session transcripts under logical names
 ├── hosts/
@@ -59,7 +59,7 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 
 **Synced** (symlinked into `~/.claude/` from `shared/`, see `SHARED_LINKS` in `src/config.ts`):
 
-- `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.js`
+- `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs`
 
 **Generated** (written fresh on every pull):
 
@@ -186,7 +186,7 @@ set -euo pipefail
 
 CLAUDE_HOME="${HOME}/.claude"
 REPO_HOME="${HOME}/claude-nomad"
-ITEMS=(CLAUDE.md agents skills commands rules my-statusline.js)
+ITEMS=(CLAUDE.md agents skills commands rules my-statusline.cjs)
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP="${HOME}/.cache/claude-nomad/backup/${TS}/snapshot.tgz"
 
