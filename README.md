@@ -186,7 +186,7 @@ set -euo pipefail
 
 CLAUDE_HOME="${HOME}/.claude"
 REPO_HOME="${HOME}/claude-nomad"
-ITEMS=(CLAUDE.md agents skills commands my-statusline.js)
+ITEMS=(CLAUDE.md agents skills commands rules my-statusline.js)
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP="${HOME}/.cache/claude-nomad/backup/${TS}/snapshot.tgz"
 
@@ -199,10 +199,12 @@ done
 [ ${#present[@]} -gt 0 ] && tar -C "$CLAUDE_HOME" -czf "$BACKUP" "${present[@]}"
 echo "Backup: $BACKUP"
 
-# 2. Copy items into shared/.
+# 2. Copy items into shared/. rm -rf first so re-runs don't nest dirs (cp into
+#    an existing directory copies SRC *inside* DEST, producing shared/agents/agents).
 mkdir -p "$REPO_HOME/shared"
 for i in "${ITEMS[@]}"; do
   [ -e "$CLAUDE_HOME/$i" ] || continue
+  rm -rf "$REPO_HOME/shared/$i"
   if [ "$(uname -s)" = "Darwin" ]; then
     cp -pR "$CLAUDE_HOME/$i" "$REPO_HOME/shared/$i"
   else
