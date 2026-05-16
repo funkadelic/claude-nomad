@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/funkadelic/claude-nomad/compare/v0.3.0...v0.3.1) (2026-05-16)
+
+
+### Fixed
+
+* harden nomad push pipeline against drift and lint failures ([#8](https://github.com/funkadelic/claude-nomad/issues/8)) ([541399f](https://github.com/funkadelic/claude-nomad/commit/541399fc1e07540132ab50c778729dead054eed1))
+
 ## [0.3.0](https://github.com/funkadelic/claude-nomad/compare/v0.2.1...v0.3.0) (2026-05-15)
 
 
