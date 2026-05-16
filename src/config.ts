@@ -13,7 +13,7 @@ export const SHARED_LINKS = [
   'skills',
   'commands',
   'rules',
-  'my-statusline.js',
+  'my-statusline.cjs',
 ] as const;
 
 export const NEVER_SYNC = new Set([
