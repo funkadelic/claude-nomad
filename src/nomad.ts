@@ -15,7 +15,7 @@
  *   path-map.json            logical project name -> { host: localPath }
  */
 
-import { cmdDoctor, cmdPull, cmdPush } from './commands.ts';
+import { cmdDoctor, cmdPull, cmdPush, resumeCmd } from './commands.ts';
 
 const cmd = process.argv[2];
 switch (cmd) {
@@ -26,9 +26,20 @@ switch (cmd) {
     cmdPush();
     break;
   case 'doctor':
-    cmdDoctor();
+    // D-11 sub-flag: `doctor --resume-cmd <session-id>` dispatches to the
+    // read-only sidecar that prints `cd <abspath> && claude --resume <id>`.
+    if (process.argv[3] === '--resume-cmd') {
+      const id = process.argv[4];
+      if (typeof id !== 'string' || id.length === 0) {
+        console.error('usage: nomad doctor --resume-cmd <session-id>');
+        process.exit(1);
+      }
+      resumeCmd(id);
+    } else {
+      cmdDoctor();
+    }
     break;
   default:
-    console.error('usage: nomad <pull|push|doctor>');
+    console.error('usage: nomad <pull|push|doctor [--resume-cmd <id>]>');
     process.exit(1);
 }
