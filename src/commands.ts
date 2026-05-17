@@ -20,6 +20,7 @@ import {
   die,
   encodePath,
   freshBackupTs,
+  gitStatusPorcelainZ,
   log,
   NomadFatal,
   readJson,
@@ -160,7 +161,9 @@ export function cmdPush(): void {
     const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
     remapPush(ts);
-    const status = sh('git status --porcelain=v1 -z', REPO_HOME);
+    // Routed through the shell-free, untrimmed helper. `sh` would .trim() the
+    // first record's leading status-space and shift parsePorcelainZ's offsets.
+    const status = gitStatusPorcelainZ(REPO_HOME);
     if (!status) {
       log('nothing to commit');
       return;

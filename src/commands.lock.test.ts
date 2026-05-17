@@ -68,20 +68,14 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
 
   it('releases the lockfile when cmdPush rejects a NEVER_SYNC entry via enforceAllowList', async () => {
     // Build a repo state where `git status --porcelain=v1 -z` would emit a
-    // NEVER_SYNC path. Easiest: stub sh to return the porcelain we want and
-    // existsSync(path-map.json) to true via fs writes.
+    // NEVER_SYNC path. Stub gitStatusPorcelainZ (the shell-free helper cmdPush
+    // routes through) to return the porcelain we want.
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
-        // First call: remapPush no-op. Second call: status with NEVER_SYNC.
-        // remapPush doesn't go through sh; only the status + add/commit/push
-        // chain does. Return the NEVER_SYNC porcelain for the status query.
-        sh: vi.fn((cmd: string) => {
-          if (cmd.includes('status')) return '?? .claude.json\0';
-          return '';
-        }),
+        gitStatusPorcelainZ: vi.fn(() => '?? .claude.json\0'),
       };
     });
     const { cmdPush } = await import('./commands.ts');

@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import {
   closeSync,
   cpSync,
@@ -46,6 +46,16 @@ export const sh = (cmd: string, cwd?: string): string =>
     .toString()
     .trim();
 
+// Shell-free, untrimmed git status reader. Untrimmed because porcelain v1 -z
+// records start with a 2-char status + 1 space, and the first record's leading
+// space is part of the format (e.g. " M path\0" for unstaged-modified). Going
+// through `sh` would strip that space and shift the fixed-offset parse.
+export const gitStatusPorcelainZ = (cwd?: string): string =>
+  execFileSync('git', ['status', '--porcelain=v1', '-z'], {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).toString();
+
 export function readJson<T>(path: string): T {
   const data: unknown = JSON.parse(readFileSync(path, 'utf8'));
   return data as T;
@@ -55,7 +65,7 @@ export function writeJson(path: string, data: unknown): void {
   writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
 }
 
-/** Atomic write: temp + fsync + rename. Use for files that must survive interrupted pulls. */
+/** Atomic write: temp + fsync + rename + parent-dir fsync. Survives interrupted pulls. */
 export function writeJsonAtomic(path: string, data: unknown): void {
   const tmp = `${path}.tmp.${process.pid}`;
   const fd = openSync(tmp, 'w');
@@ -66,6 +76,15 @@ export function writeJsonAtomic(path: string, data: unknown): void {
     closeSync(fd);
   }
   renameSync(tmp, path);
+  // Fsync the parent directory so the rename itself is durable across a crash;
+  // otherwise the file contents are persisted but the directory entry can be
+  // lost. Linux/macOS support this on a read-only fd to the dir.
+  const dirFd = openSync(dirname(path), 'r');
+  try {
+    fsyncSync(dirFd);
+  } finally {
+    closeSync(dirFd);
+  }
 }
 
 /** Deep merge: source overrides target. Arrays replace, objects merge recursively. */
@@ -188,6 +207,25 @@ export function releaseLock(handle: LockHandle | null): void {
   }
 }
 
+// Compare-and-delete to close the TOCTOU window between reading a stale lock's
+// pid and removing it: another process could legitimately acquire the lock
+// between those steps, and a naive unlink would clobber it.
+function unlinkIfSamePid(expectedPidStr: string): boolean {
+  let current: string;
+  try {
+    current = readFileSync(LOCK_PATH, 'utf8').trim();
+  } catch {
+    return false;
+  }
+  if (current !== expectedPidStr) return false;
+  try {
+    unlinkSync(LOCK_PATH);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function checkStaleAndRetry(verb: string): LockHandle | null {
   let pidStr: string;
   try {
@@ -197,12 +235,9 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
   }
   const pid = Number.parseInt(pidStr, 10);
   if (!Number.isFinite(pid) || pid <= 0) {
-    try {
-      unlinkSync(LOCK_PATH);
-    } catch {
-      /* race; ignore */
-    }
-    return retryOnce(verb);
+    if (unlinkIfSamePid(pidStr)) return retryOnce(verb);
+    process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+    return null;
   }
   try {
     process.kill(pid, 0);
@@ -211,12 +246,9 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ESRCH') {
-      try {
-        unlinkSync(LOCK_PATH);
-      } catch {
-        /* race; ignore */
-      }
-      return retryOnce(verb);
+      if (unlinkIfSamePid(pidStr)) return retryOnce(verb);
+      process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+      return null;
     }
     process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
     return null;
