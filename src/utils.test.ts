@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -168,5 +176,98 @@ describe('backupBeforeWrite', () => {
     const backupAgents = join(testHome, '.cache', 'claude-nomad', 'backup', ts, 'agents');
     expect(readFileSync(join(backupAgents, 'foo.md'), 'utf8')).toBe('foo');
     expect(readFileSync(join(backupAgents, 'bar.md'), 'utf8')).toBe('bar');
+  });
+});
+
+describe('acquireLock / releaseLock', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+  let lockPath: string;
+  let stderrWrites: string[];
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+    lockPath = join(testHome, '.cache', 'claude-nomad', 'nomad.lock');
+    stderrWrites = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      /* defensive cleanup; ignore */
+    }
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('fresh acquire creates lockfile with our PID, release removes it', async () => {
+    const { acquireLock, releaseLock } = await import('./utils.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    expect(existsSync(lockPath)).toBe(true);
+    expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    releaseLock(handle);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('returns null and writes stderr skip line when a live PID owns the lock', async () => {
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(lockPath, String(process.pid));
+    const { acquireLock } = await import('./utils.ts');
+    const handle = acquireLock('pull');
+    expect(handle).toBeNull();
+    expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
+    expect(existsSync(lockPath)).toBe(true);
+  });
+
+  it('unlinks stale lockfile and retries when PID file references a dead process', async () => {
+    const deadPid = 2147483647;
+    let guarded = false;
+    try {
+      process.kill(deadPid, 0);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ESRCH') guarded = true;
+    }
+    if (!guarded) {
+      throw new Error(
+        `PID ${deadPid} unexpectedly live on this host; raise pid_max guard or pick a higher PID.`,
+      );
+    }
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(lockPath, String(deadPid));
+    const { acquireLock, releaseLock } = await import('./utils.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    releaseLock(handle);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('returns null on double-acquire in the same process (own PID is alive)', async () => {
+    const { acquireLock, releaseLock } = await import('./utils.ts');
+    const first = acquireLock('pull');
+    expect(first).not.toBeNull();
+    const second = acquireLock('pull');
+    expect(second).toBeNull();
+    expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
+    releaseLock(first);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('releaseLock(null) is a safe no-op', async () => {
+    const { releaseLock } = await import('./utils.ts');
+    expect(() => releaseLock(null)).not.toThrow();
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad'))).toBe(false);
   });
 });
