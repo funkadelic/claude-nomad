@@ -19,6 +19,7 @@ import {
   die,
   encodePath,
   log,
+  NomadFatal,
   nowTimestamp,
   readJson,
   releaseLock,
@@ -43,10 +44,39 @@ function isNeverSync(path: string): boolean {
   return false;
 }
 
-// D-14/D-15/D-16: parse `git status --porcelain` output, classify each path
-// against PUSH_ALLOWED_STATIC plus runtime data-driven shared/projects/<logical>/
-// entries, and refuse the whole push if anything is in NEVER_SYNC or not in the
-// allow-list. Whole-push refusal (no per-file skipping) per D-15.
+// D-14/D-15/D-16: parse `git status --porcelain=v1 -z` (NUL-delimited) output,
+// classify each path against PUSH_ALLOWED_STATIC plus runtime data-driven
+// shared/projects/<logical>/ entries, and refuse the whole push if anything is
+// in NEVER_SYNC or not in the allow-list. Whole-push refusal (no per-file
+// skipping) per D-15.
+//
+// `-z` is required for CR-02: it emits no quoting (filenames with spaces or
+// special chars stay literal) and uses `XY path\0` records. For rename (`R`)
+// and copy (`C`) records the format is `XY new\0old\0`: the NEW path follows
+// the status, then the OLD path is a separate NUL-terminated field. We
+// classify BOTH halves against the allow-list so `git mv` operations within
+// the allow-list pass and stray sources are caught.
+export function parsePorcelainZ(statusPorcelain: string): string[] {
+  const records = statusPorcelain.split('\0');
+  const paths: string[] = [];
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i];
+    if (rec === undefined || rec === '') continue;
+    // Each record starts with "XY " (2 status chars + 1 space). The path is
+    // everything after byte 3. For R/C the NEXT record holds the old path.
+    if (rec.length < 4) continue;
+    const xy = rec.slice(0, 2);
+    const newPath = rec.slice(3);
+    paths.push(newPath);
+    if (xy.startsWith('R') || xy.startsWith('C')) {
+      const oldPath = records[i + 1];
+      if (oldPath !== undefined && oldPath !== '') paths.push(oldPath);
+      i++; // consume the paired old-path record
+    }
+  }
+  return paths;
+}
+
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   const allowed = [
     ...PUSH_ALLOWED_STATIC,
@@ -54,11 +84,7 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   ];
   const neverSyncHits: string[] = [];
   const violations: string[] = [];
-  for (const rawLine of statusPorcelain.split('\n')) {
-    if (!rawLine) continue;
-    // porcelain v1: 2 status chars + 1 space + path.
-    const path = rawLine.slice(3).trim();
-    if (!path) continue;
+  for (const path of parsePorcelainZ(statusPorcelain)) {
     if (isNeverSync(path)) {
       neverSyncHits.push(path);
     } else if (!isAllowed(path, allowed)) {
@@ -72,7 +98,7 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   for (const p of violations) {
     console.error(`[nomad] FATAL: to sync ${p}, add to PUSH_ALLOWED in src/config.ts`);
   }
-  process.exit(1);
+  throw new NomadFatal('push allow-list violations');
 }
 
 export function cmdPull(): void {
@@ -82,8 +108,8 @@ export function cmdPull(): void {
   try {
     const ts = nowTimestamp();
     // D-03 fail-fast: create backup root BEFORE any mutation. If mkdir fails
-    // (out of disk, permission denied), die() aborts before git pull / symlink
-    // / remap, and the outer finally still releases the lock.
+    // (out of disk, permission denied), die() throws (NomadFatal) and the
+    // outer catch logs + sets exitCode, then finally releases the lock.
     const backupRoot = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup', ts);
     try {
       mkdirSync(backupRoot, { recursive: true });
@@ -96,6 +122,15 @@ export function cmdPull(): void {
     regenerateSettings(ts);
     remapPull(ts);
     log('pull complete');
+  } catch (err) {
+    // CR-01: catch fatal errors here so the finally block runs and releases
+    // the lock. Throwing through process.exit() would skip finally.
+    if (err instanceof NomadFatal) {
+      console.error(`[nomad] FATAL: ${err.message}`);
+      process.exitCode = 1;
+    } else {
+      throw err;
+    }
   } finally {
     releaseLock(handle);
   }
@@ -108,7 +143,7 @@ export function cmdPush(): void {
   try {
     log(`pushing on host=${HOST}`);
     remapPush();
-    const status = sh('git status --porcelain', REPO_HOME);
+    const status = sh('git status --porcelain=v1 -z', REPO_HOME);
     if (!status) {
       log('nothing to commit');
       return;
@@ -121,6 +156,13 @@ export function cmdPush(): void {
     sh(`git commit -m "chore: sync from ${HOST}"`, REPO_HOME);
     sh('git push', REPO_HOME);
     log('push complete');
+  } catch (err) {
+    if (err instanceof NomadFatal) {
+      console.error(`[nomad] FATAL: ${err.message}`);
+      process.exitCode = 1;
+    } else {
+      throw err;
+    }
   } finally {
     releaseLock(handle);
   }

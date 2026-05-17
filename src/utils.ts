@@ -23,10 +23,22 @@ export type LockHandle = { fd: number };
 
 export const log = (msg: string): void => console.log(`[nomad] ${msg}`);
 
+/**
+ * Sentinel error class for fatal nomad failures. Thrown by `die()` and caught
+ * by top-level command wrappers (cmdPull, cmdPush, nomad.ts dispatcher) so a
+ * `finally` block can release locks before the process exits. Avoids the
+ * pre-fix bug where `process.exit()` skipped pending `finally` clauses and
+ * leaked the lockfile (CR-01).
+ */
+export class NomadFatal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NomadFatal';
+  }
+}
+
 export const die = (msg: string): never => {
-  console.error(`[nomad] FATAL: ${msg}`);
-  process.exit(1);
-  throw new Error(msg);
+  throw new NomadFatal(msg);
 };
 
 export const sh = (cmd: string, cwd?: string): string =>
