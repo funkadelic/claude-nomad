@@ -94,7 +94,9 @@ describe('resumeCmd', () => {
     const { resumeCmd } = await import('./resume.ts');
     resumeCmd('abc-123');
     expect(env.logSpy).toHaveBeenCalledTimes(1);
-    expect(env.logSpy).toHaveBeenCalledWith('cd /tmp/foo && claude --resume abc-123');
+    // WR-06: localPath and sessionId are single-quoted so spaces and shell
+    // metachars survive `eval`.
+    expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'abc-123'`);
     expect(env.exitSpy).not.toHaveBeenCalled();
   });
 
@@ -164,7 +166,43 @@ describe('resumeCmd', () => {
     const { resumeCmd } = await import('./resume.ts');
     resumeCmd('first-match-id');
     expect(env.logSpy).toHaveBeenCalledWith(
-      'cd /local/mapped/correct && claude --resume first-match-id',
+      `cd '/local/mapped/correct' && claude --resume 'first-match-id'`,
+    );
+  });
+
+  // WR-06 regression: spaces in localPath must survive `eval` so cd lands at
+  // the intended dir (and not "cd" with three args dropping into /local/mapped).
+  it('shell-quotes localPath with spaces so eval works', async () => {
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/local/path with spaces/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('abc-123');
+    expect(env.logSpy).toHaveBeenCalledWith(
+      `cd '/local/path with spaces/foo' && claude --resume 'abc-123'`,
+    );
+  });
+
+  // WR-06 regression: single quotes in either argument get escaped via the
+  // POSIX '\'' pattern (close quote, escaped quote, reopen quote).
+  it('escapes single quotes in localPath using the POSIX close-escape-reopen pattern', async () => {
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': "/local/it's/foo" },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('abc-123');
+    expect(env.logSpy).toHaveBeenCalledWith(
+      `cd '/local/it'\\''s/foo' && claude --resume 'abc-123'`,
     );
   });
 });

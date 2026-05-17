@@ -94,6 +94,15 @@ export function resumeCmd(sessionId: string): void {
     process.exit(1);
   }
 
+  // WR-06: single-quote both interpolations so paths with spaces (or any
+  // shell metachar in sessionId) survive `eval` and the cd ends up at the
+  // intended directory rather than splitting on whitespace.
   // Success line: NO [nomad] prefix; meant to be `eval`'d by the user.
-  console.log(`cd ${localPath} && claude --resume ${sessionId}`);
+  console.log(`cd ${shQuote(localPath)} && claude --resume ${shQuote(sessionId)}`);
+}
+
+// POSIX single-quote escape: wrap in '...' and rewrite each interior ' as
+// '\''. Safe for `eval` and `bash -c`.
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
