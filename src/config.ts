@@ -3,7 +3,12 @@ import { resolve } from 'node:path';
 
 export const CLAUDE_HOME = resolve(process.env.HOME ?? '', '.claude');
 export const REPO_HOME = resolve(process.env.HOME ?? '', 'claude-nomad');
-// Empty string must fall through to hostname(); `??` would treat '' as set.
+// IN-05: a set-but-empty NOMAD_HOST (e.g. `export NOMAD_HOST=` then nothing,
+// or a dotfile that defines it before clobbering) must fall through to
+// hostname(). `??` only triggers on null/undefined, so an empty string would
+// otherwise stick and HOST would resolve to ''. `||` correctly falls through
+// for both unset and empty. toLowerCase() applies AFTER the fallback so
+// hostname() noise like 'WINDOWS-I5NT6OH' or 'foo.local' is also normalized.
 // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 export const HOST = (process.env.NOMAD_HOST || hostname()).toLowerCase();
 
