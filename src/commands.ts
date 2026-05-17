@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -152,8 +152,31 @@ export function cmdDoctor(): void {
     }
   }
 
+  // FMT-04: doctor FAIL complements pull-side WARN in src/links.ts; uses
+  // process.exitCode (NOT process.exit) so doctor's output continues.
   const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
-  log(`host overrides: ${existsSync(hostFile) ? hostFile : 'none'}`);
+  const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
+  let drift: string[] = [];
+  if (existsSync(basePath) && existsSync(settingsPath)) {
+    const base = readJson<Record<string, unknown>>(basePath);
+    const baseKeys = new Set(Object.keys(base));
+    drift = Object.keys(readJson<Record<string, unknown>>(settingsPath)).filter(
+      (k) => !baseKeys.has(k),
+    );
+  }
+  if (existsSync(hostFile)) {
+    log(`host overrides: ${hostFile}`);
+  } else if (drift.length > 0) {
+    log(`FAIL no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`);
+    const hostsDir = join(REPO_HOME, 'hosts');
+    if (existsSync(hostsDir)) {
+      const cands = readdirSync(hostsDir).filter((f) => f.endsWith('.json'));
+      if (cands.length > 0) log(`  candidates: ${cands.join(', ')}`);
+    }
+    process.exitCode = 1;
+  } else {
+    log('host overrides: none (base-only is fine, no settings drift)');
+  }
 
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (existsSync(mapPath)) {

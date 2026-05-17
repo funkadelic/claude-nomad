@@ -146,6 +146,10 @@ describe('cmdDoctor FMT-04 host-override-missing', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    // Reset here too: prior test files in the same run (or vitest's own
+    // worker bookkeeping) can leave process.exitCode non-zero, which would
+    // false-positive the hostFile-exists assertion in Test 1.
+    process.exitCode = 0;
     env = makeDoctorEnv({});
   });
 
