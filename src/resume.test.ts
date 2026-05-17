@@ -97,6 +97,26 @@ describe('resumeCmd', () => {
     expect(env.exitSpy).not.toHaveBeenCalled();
   });
 
+  it('rejects sessionId with path-traversal segments before touching the filesystem', async () => {
+    env = makeEnv('test-host');
+    writePathMap(env.testHome, {});
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('../../etc/passwd')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('FATAL: invalid session id: ../../etc/passwd'),
+    );
+  });
+
+  it('rejects sessionId containing a path separator', async () => {
+    env = makeEnv('test-host');
+    writePathMap(env.testHome, {});
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('abc/def')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('FATAL: invalid session id: abc/def'),
+    );
+  });
+
   it('FATALs and exits 1 when session is not found in any encoded dir', async () => {
     env = makeEnv('test-host');
     writePathMap(env.testHome, {});

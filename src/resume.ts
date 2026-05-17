@@ -20,6 +20,14 @@ type TranscriptLine = { type?: string; cwd?: string };
  * prefix so `eval "$(...)"` works.
  */
 export function resumeCmd(sessionId: string): void {
+  // Reject anything that could escape the transcript scope when interpolated
+  // into a filesystem path below. Claude Code session ids are UUIDs (hex +
+  // dashes); 128 chars is generous headroom without becoming a DoS vector.
+  if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || sessionId.length > 128) {
+    console.error(`[nomad] FATAL: invalid session id: ${sessionId}`);
+    process.exit(1);
+  }
+
   const projectsRoot = join(CLAUDE_HOME, 'projects');
   if (!existsSync(projectsRoot)) {
     console.error(`[nomad] FATAL: ${projectsRoot} does not exist`);
