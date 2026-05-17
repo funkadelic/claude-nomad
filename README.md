@@ -276,7 +276,7 @@ nomad doctor --resume-cmd <session-id> | bash
 
 If the session isn't mapped on this host, you'll see:
 
-```
+```text
 [nomad] FATAL: session <id> not mapped on this host; add the logical to path-map.json
 ```
 
