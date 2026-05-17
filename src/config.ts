@@ -31,4 +31,20 @@ export const NEVER_SYNC = new Set([
   'ide',
 ]);
 
+// PUSH_ALLOWED_STATIC: D-14 static half. Entries with trailing '/' are prefix
+// matches; others are exact matches. Data-driven shared/projects/<logical>/
+// entries are added at runtime in enforceAllowList.
+export const PUSH_ALLOWED_STATIC = [
+  'shared/CLAUDE.md',
+  'shared/my-statusline.cjs',
+  'shared/settings.base.json',
+  'shared/agents/',
+  'shared/skills/',
+  'shared/commands/',
+  'shared/rules/',
+  'shared/.gitignore',
+  'hosts/',
+  'path-map.json',
+] as const;
+
 export type PathMap = { projects: Record<string, Record<string, string>> };
