@@ -1,21 +1,31 @@
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, NEVER_SYNC, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { remapPull, remapPush } from './remap.ts';
-import { acquireLock, die, log, readJson, releaseLock, sh } from './utils.ts';
+import { acquireLock, die, log, nowTimestamp, readJson, releaseLock, sh } from './utils.ts';
 
 export function cmdPull(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   const handle = acquireLock('pull');
   if (handle === null) process.exit(0);
   try {
-    log(`pulling on host=${HOST}`);
+    const ts = nowTimestamp();
+    // D-03 fail-fast: create backup root BEFORE any mutation. If mkdir fails
+    // (out of disk, permission denied), die() aborts before git pull / symlink
+    // / remap, and the outer finally still releases the lock.
+    const backupRoot = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup', ts);
+    try {
+      mkdirSync(backupRoot, { recursive: true });
+    } catch (err) {
+      die(`could not create backup dir: ${(err as Error).message}`);
+    }
+    log(`pulling on host=${HOST} (backup=${ts})`);
     sh('git pull --rebase', REPO_HOME);
-    applySharedLinks();
-    regenerateSettings();
-    remapPull();
+    applySharedLinks(ts);
+    regenerateSettings(ts);
+    remapPull(ts);
     log('pull complete');
   } finally {
     releaseLock(handle);

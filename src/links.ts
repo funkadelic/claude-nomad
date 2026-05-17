@@ -8,7 +8,6 @@ import {
   die,
   ensureSymlink,
   log,
-  nowTimestamp,
   readJson,
   writeJsonAtomic,
 } from './utils.ts';
@@ -30,8 +29,7 @@ export function applySharedLinks(ts: string): void {
   }
 }
 
-export function regenerateSettings(ts?: string): void {
-  const effectiveTs = ts ?? nowTimestamp();
+export function regenerateSettings(ts: string): void {
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   const hostPath = join(REPO_HOME, 'hosts', `${HOST}.json`);
   if (!existsSync(basePath)) die(`missing ${basePath}`);
@@ -58,7 +56,7 @@ export function regenerateSettings(ts?: string): void {
     }
   }
 
-  backupBeforeWrite(settingsPath, effectiveTs);
+  backupBeforeWrite(settingsPath, ts);
   writeJsonAtomic(settingsPath, merged);
   log(`wrote settings.json (base + ${hasOverrides ? `${HOST}.json` : 'no host overrides'})`);
 }
