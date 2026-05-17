@@ -227,6 +227,41 @@ describe('applySharedLinks D-02 auto-move', () => {
     expect(readlinkSync(linkPath)).toBe(sharedTarget);
   });
 
+  it('leaves local SHARED_LINK content alone when repo has no counterpart (WR-02 regression)', async () => {
+    // shared/commands/ does NOT exist in the repo. ~/.claude/commands/ has
+    // local content. Pre-fix, the first loop would back up and delete the
+    // local dir; the second loop would NOT recreate it. Post-fix, both loops
+    // skip names without a repo counterpart so the local dir survives.
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'local-only.md'), '# local-only\n');
+    // Sanity: at least one OTHER shared link MUST be a real symlinkable
+    // target so the function does something on the happy paths. Writing
+    // shared/CLAUDE.md so the test does not regress to a no-op.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000');
+
+    expect(existsSync(join(claudeDir, 'commands', 'local-only.md'))).toBe(true);
+    expect(readFileSync(join(claudeDir, 'commands', 'local-only.md'), 'utf8')).toBe(
+      '# local-only\n',
+    );
+    expect(lstatSync(join(claudeDir, 'commands')).isDirectory()).toBe(true);
+    expect(lstatSync(join(claudeDir, 'commands')).isSymbolicLink()).toBe(false);
+    // CLAUDE.md is still symlinked as expected.
+    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    // And no backup of commands/ was made (since we never touched it).
+    const backupCommands = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      '20260516-000000',
+      'commands',
+    );
+    expect(existsSync(backupCommands)).toBe(false);
+  });
+
   it('handles multiple non-symlink conflicts in a single pass (regression: Phase 1 Mac two-iteration .preNomad ritual)', async () => {
     mkdirSync(join(sharedDir, 'agents'), { recursive: true });
     writeFileSync(join(sharedDir, 'agents', 'a.md'), '# shared a\n');

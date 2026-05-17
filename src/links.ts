@@ -15,10 +15,15 @@ import {
 export function applySharedLinks(ts: string): void {
   // D-02 single-pass pre-scan: detect ALL non-symlink conflicts up front, backup +
   // remove each, then proceed with symlink writes (fixes Phase 1 Mac two-iteration ritual).
+  // WR-02: skip pre-existing local content when the repo has no counterpart;
+  // otherwise pull would silently delete host-local files (e.g.
+  // ~/.claude/commands/ on a host where shared/commands/ does not exist).
   for (const name of SHARED_LINKS) {
     const linkPath = join(CLAUDE_HOME, name);
+    const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(linkPath)) continue;
     if (lstatSync(linkPath).isSymbolicLink()) continue;
+    if (!existsSync(target)) continue;
     backupBeforeWrite(linkPath, ts);
     rmSync(linkPath, { recursive: true, force: true });
   }
