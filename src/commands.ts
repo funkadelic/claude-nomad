@@ -13,6 +13,7 @@ import {
 } from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { remapPull, remapPush } from './remap.ts';
+import { resumeCmd } from './resume.ts';
 import {
   acquireLock,
   die,
@@ -23,6 +24,9 @@ import {
   releaseLock,
   sh,
 } from './utils.ts';
+
+// D-11 sidecar lives in src/resume.ts; re-exported so callers keep importing it from ./commands.ts.
+export { resumeCmd };
 
 function isAllowed(path: string, allowed: readonly string[]): boolean {
   for (const entry of allowed) {

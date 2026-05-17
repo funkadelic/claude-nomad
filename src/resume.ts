@@ -1,0 +1,99 @@
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { readJson } from './utils.ts';
+
+type TranscriptLine = { type?: string; cwd?: string };
+
+/**
+ * D-11: read-only sidecar that resolves a session ID to a host-local
+ * `cd <abspath> && claude --resume <id>` line, printed to stdout for `eval`.
+ *
+ * Flow: locate <id>.jsonl under ~/.claude/projects/<encoded>/, extract the
+ * first non-file-history-snapshot line's `cwd`, reverse-lookup the logical
+ * in path-map.json, then look up the current host's abspath for it.
+ *
+ * Does NOT acquire the lock (D-08) and does NOT mutate any .jsonl byte
+ * (preserves Phase 1 transcript byte-equality). All errors go to stderr
+ * with the `[nomad] FATAL: ` prefix; success goes to stdout WITHOUT the
+ * prefix so `eval "$(...)"` works.
+ */
+export function resumeCmd(sessionId: string): void {
+  const projectsRoot = join(CLAUDE_HOME, 'projects');
+  if (!existsSync(projectsRoot)) {
+    console.error(`[nomad] FATAL: ${projectsRoot} does not exist`);
+    process.exit(1);
+  }
+
+  let jsonlPath: string | null = null;
+  for (const dir of readdirSync(projectsRoot)) {
+    const candidate = join(projectsRoot, dir, `${sessionId}.jsonl`);
+    if (existsSync(candidate)) {
+      jsonlPath = candidate;
+      break;
+    }
+  }
+  if (jsonlPath === null) {
+    console.error(
+      `[nomad] FATAL: session ${sessionId} not found in any ~/.claude/projects/<encoded>/`,
+    );
+    process.exit(1);
+  }
+
+  // Read the FIRST non-file-history-snapshot line that has a `cwd` field.
+  // Line 1 of a transcript is always `{"type":"file-history-snapshot",...}` and
+  // carries no cwd; the cwd lives on the next semantic event (attachment/user).
+  const content = readFileSync(jsonlPath, 'utf8');
+  let recordedCwd: string | null = null;
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    let obj: TranscriptLine;
+    try {
+      obj = JSON.parse(line) as TranscriptLine;
+    } catch {
+      continue;
+    }
+    if (obj.type === 'file-history-snapshot') continue;
+    if (typeof obj.cwd === 'string' && obj.cwd.length > 0) {
+      recordedCwd = obj.cwd;
+      break;
+    }
+  }
+  if (recordedCwd === null) {
+    console.error(`[nomad] FATAL: no cwd field found in ${jsonlPath}`);
+    process.exit(1);
+  }
+
+  const mapPath = join(REPO_HOME, 'path-map.json');
+  if (!existsSync(mapPath)) {
+    console.error('[nomad] FATAL: path-map.json missing');
+    process.exit(1);
+  }
+  const map = readJson<PathMap>(mapPath);
+
+  let logical: string | null = null;
+  for (const [name, hosts] of Object.entries(map.projects)) {
+    if (Object.values(hosts).includes(recordedCwd)) {
+      logical = name;
+      break;
+    }
+  }
+  if (logical === null) {
+    console.error(
+      `[nomad] FATAL: cwd ${recordedCwd} from session ${sessionId} not found in path-map.json`,
+    );
+    process.exit(1);
+  }
+
+  const localPath = map.projects[logical][HOST];
+  if (localPath === undefined || localPath === 'TBD') {
+    console.error(
+      `[nomad] FATAL: session ${sessionId} not mapped on this host; add the logical to path-map.json`,
+    );
+    process.exit(1);
+  }
+
+  // Success line: NO [nomad] prefix; meant to be `eval`'d by the user.
+  console.log(`cd ${localPath} && claude --resume ${sessionId}`);
+}
