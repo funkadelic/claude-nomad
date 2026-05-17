@@ -31,6 +31,43 @@ export const NEVER_SYNC = new Set([
   'ide',
 ]);
 
+// KNOWN_SETTINGS_KEYS: FMT-02 schema-drift baseline. Keys NOT in this set trigger a doctor WARN. Update on Anthropic settings.json schema changes.
+export const KNOWN_SETTINGS_KEYS = new Set<string>([
+  '$schema',
+  'agent',
+  'agents',
+  'agentPushNotifEnabled',
+  'allowedHttpHookUrls',
+  'apiKeyHelper',
+  'apiKeyHelperTimeoutMs',
+  'awsAuthRefresh',
+  'awsCredentialExport',
+  'awsLoginRefresh',
+  'awsRegion',
+  'awsRetryMode',
+  'cleanupPeriodDays',
+  'disableNonEssentialModelCalls',
+  'enabledExperimentalFeatures',
+  'enabledPlugins',
+  'env',
+  'forceLoginMethod',
+  'forceLoginOrgUUID',
+  'hooks',
+  'includeCoAuthoredBy',
+  'installMethod',
+  'model',
+  'outputStyle',
+  'permissions',
+  'pluginGroups',
+  'pluginRepositoryEnabled',
+  'pluginsLocalConfig',
+  'proxy',
+  'statsig',
+  'statusLine',
+  'subagents',
+  'theme',
+]);
+
 // PUSH_ALLOWED_STATIC: D-14 static half. Entries with trailing '/' are prefix
 // matches; others are exact matches. Data-driven shared/projects/<logical>/
 // entries are added at runtime in enforceAllowList.
