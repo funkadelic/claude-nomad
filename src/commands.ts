@@ -170,7 +170,14 @@ export function cmdPush(): void {
     }
     const mapPath = join(REPO_HOME, 'path-map.json');
     if (!existsSync(mapPath)) die('path-map.json missing, cannot enforce push allow-list');
-    const map = readJson<PathMap>(mapPath);
+    // Route a malformed path-map.json through the NomadFatal flow so the
+    // finally block releases the lock; a raw SyntaxError would skip cleanup.
+    let map: PathMap;
+    try {
+      map = readJson<PathMap>(mapPath);
+    } catch (err) {
+      throw new NomadFatal(`could not parse path-map.json: ${(err as Error).message}`);
+    }
     enforceAllowList(status, map);
     // Use execFileSync (no implicit shell) so a NOMAD_HOST containing a
     // double-quote or backtick can't escape the commit-message quoting.

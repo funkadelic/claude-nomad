@@ -1,9 +1,11 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -309,6 +311,21 @@ describe('writeJsonAtomic', () => {
     writeFileSync(target, '{"old":true}\n');
     writeJsonAtomic(target, { fresh: 1 });
     expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ fresh: 1 });
+  });
+
+  it('preserves an existing destination file mode (0o600 stays 0o600)', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    writeFileSync(target, '{"a":1}\n');
+    chmodSync(target, 0o600);
+    writeJsonAtomic(target, { a: 2 });
+    expect(statSync(target).mode & 0o777).toBe(0o600);
+  });
+
+  it('defaults to 0o600 when destination did not exist', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    expect(existsSync(target)).toBe(false);
+    writeJsonAtomic(target, { fresh: 1 });
+    expect(statSync(target).mode & 0o777).toBe(0o600);
   });
 });
 

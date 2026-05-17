@@ -9,6 +9,7 @@ import {
   openSync,
   readFileSync,
   renameSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -82,10 +83,16 @@ export function writeJson(path: string, data: unknown): void {
   writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
 }
 
-/** Atomic write: temp + fsync + rename + parent-dir fsync. Survives interrupted pulls. */
+/**
+ * Atomic write: temp + fsync + rename + parent-dir fsync. Survives
+ * interrupted pulls. Preserves the destination file's existing mode when it
+ * exists, defaults to 0o600 otherwise so credentials in `settings.json` are
+ * not widened by the process umask on every regenerate.
+ */
 export function writeJsonAtomic(path: string, data: unknown): void {
+  const mode = existsSync(path) ? statSync(path).mode & 0o777 : 0o600;
   const tmp = `${path}.tmp.${process.pid}`;
-  const fd = openSync(tmp, 'w');
+  const fd = openSync(tmp, 'w', mode);
   try {
     writeFileSync(fd, JSON.stringify(data, null, 2) + '\n');
     fsyncSync(fd);
