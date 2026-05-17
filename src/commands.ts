@@ -31,13 +31,16 @@ import {
 // D-11 sidecar lives in src/resume.ts; re-exported so callers keep importing it from ./commands.ts.
 export { resumeCmd };
 
+/**
+ * Match `path` against an entry in the push allow-list. Exact match for
+ * non-`/`-terminated entries; prefix match for `/`-terminated entries; and
+ * a special case for `hosts/`: only `hosts/<name>.json` (single-level,
+ * `.json` extension) is allowed, so arbitrary credentials like
+ * `hosts/dell-wsl.key` are rejected even though they share the prefix.
+ */
 function isAllowed(path: string, allowed: readonly string[]): boolean {
   for (const entry of allowed) {
     if (path === entry) return true;
-    // WR-01: `hosts/` is a special prefix entry that must NOT permit
-    // arbitrary credential filenames (e.g., hosts/dell-wsl.key). Only allow
-    // `hosts/<name>.json` (exact single-level depth, .json extension). This
-    // is a defense-in-depth pair with shared/.gitignore + hosts/.gitignore.
     if (entry === 'hosts/') {
       if (/^hosts\/[^/]+\.json$/.test(path)) return true;
       continue;
@@ -47,6 +50,7 @@ function isAllowed(path: string, allowed: readonly string[]): boolean {
   return false;
 }
 
+/** True when any path segment matches a `NEVER_SYNC` entry (hard-block list). */
 function isNeverSync(path: string): boolean {
   for (const segment of path.split('/')) {
     if (NEVER_SYNC.has(segment)) return true;
@@ -54,18 +58,14 @@ function isNeverSync(path: string): boolean {
   return false;
 }
 
-// D-14/D-15/D-16: parse `git status --porcelain=v1 -z` (NUL-delimited) output,
-// classify each path against PUSH_ALLOWED_STATIC plus runtime data-driven
-// shared/projects/<logical>/ entries, and refuse the whole push if anything is
-// in NEVER_SYNC or not in the allow-list. Whole-push refusal (no per-file
-// skipping) per D-15.
-//
-// `-z` is required for CR-02: it emits no quoting (filenames with spaces or
-// special chars stay literal) and uses `XY path\0` records. For rename (`R`)
-// and copy (`C`) records the format is `XY new\0old\0`: the NEW path follows
-// the status, then the OLD path is a separate NUL-terminated field. We
-// classify BOTH halves against the allow-list so `git mv` operations within
-// the allow-list pass and stray sources are caught.
+/**
+ * Parse `git status --porcelain=v1 -z` (NUL-delimited) output into a flat
+ * list of paths. Handles rename (`R`) and copy (`C`) records, which span
+ * two NUL fields (`XY new\0old\0`): both halves are returned so the
+ * allow-list can reject either side. `-z` avoids the quoting that LF
+ * porcelain applies to paths containing spaces or specials, which would
+ * otherwise cause parser misclassification.
+ */
 export function parsePorcelainZ(statusPorcelain: string): string[] {
   const records = statusPorcelain.split('\0');
   const paths: string[] = [];

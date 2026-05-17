@@ -4,8 +4,12 @@ import { join } from 'node:path';
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { backupBeforeWrite, backupRepoWrite, encodePath, log, readJson } from './utils.ts';
 
-// cpSync(force:true) overwrites matching files but does not remove dst-only
-// entries; rmSync first so dst mirrors src instead of accumulating stale files.
+/**
+ * Recursive mirror copy: removes `dst` first, then copies `src` into it.
+ * `cpSync(force:true)` overwrites matching files but does not delete
+ * dst-only entries; the upfront `rmSync` makes the operation a true mirror
+ * so `dst` reflects `src` exactly rather than accumulating stale files.
+ */
 function copyDir(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, { recursive: true, force: true });

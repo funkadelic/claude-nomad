@@ -12,12 +12,16 @@ import {
   writeJsonAtomic,
 } from './utils.ts';
 
+/**
+ * Symlink the `SHARED_LINKS` names from the repo's `shared/` dir into
+ * `~/.claude/`. Two-pass: first back up and remove any pre-existing
+ * non-symlink at each link path (auto-move using `ts` as the backup
+ * timestamp), then create the symlinks. Skips a link entirely when the repo
+ * has no counterpart, so a host where `shared/commands/` does not exist
+ * keeps its local `~/.claude/commands/` instead of having it silently
+ * deleted.
+ */
 export function applySharedLinks(ts: string): void {
-  // D-02 single-pass pre-scan: detect ALL non-symlink conflicts up front, backup +
-  // remove each, then proceed with symlink writes (fixes Phase 1 Mac two-iteration ritual).
-  // WR-02: skip pre-existing local content when the repo has no counterpart;
-  // otherwise pull would silently delete host-local files (e.g.
-  // ~/.claude/commands/ on a host where shared/commands/ does not exist).
   for (const name of SHARED_LINKS) {
     const linkPath = join(CLAUDE_HOME, name);
     const target = join(REPO_HOME, 'shared', name);
@@ -34,6 +38,16 @@ export function applySharedLinks(ts: string): void {
   }
 }
 
+/**
+ * Deep-merge `shared/settings.base.json` with `hosts/<HOST>.json` (when
+ * present) and atomically rewrite `~/.claude/settings.json`. Composes
+ * `writeJsonAtomic` (temp + fsync + rename + parent fsync) on top of
+ * `backupBeforeWrite`, so an interrupted pull leaves either the pre-pull
+ * file or the fully-merged file, never a half-written one. Surfaces a
+ * stderr WARN when no host override exists AND prior settings has top-level
+ * keys not in base; the matching doctor-side FAIL with non-zero exit lives
+ * in `cmdDoctor`.
+ */
 export function regenerateSettings(ts: string): void {
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   const hostPath = join(REPO_HOME, 'hosts', `${HOST}.json`);

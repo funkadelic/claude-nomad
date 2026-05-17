@@ -19,8 +19,10 @@ import { CLAUDE_HOME } from './config.ts';
 
 const LOCK_PATH = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'nomad.lock');
 
+/** Opaque handle for an acquired lockfile. Pass to `releaseLock` in a `finally`. */
 export type LockHandle = { fd: number };
 
+/** Print a `[nomad]`-prefixed informational line to stdout. */
 export const log = (msg: string): void => console.log(`[nomad] ${msg}`);
 
 /**
@@ -37,30 +39,45 @@ export class NomadFatal extends Error {
   }
 }
 
+/**
+ * Throw a `NomadFatal` with the given message. Callers should `catch` it in
+ * the cmdPull/cmdPush try/finally so the lock is released before exit.
+ */
 export const die = (msg: string): never => {
   throw new NomadFatal(msg);
 };
 
+/**
+ * Run a shell command and return its trimmed stdout. Convenience wrapper for
+ * one-liners where leading/trailing whitespace is noise. Do not use for git
+ * porcelain output (the leading status-space is significant); use
+ * `gitStatusPorcelainZ` instead.
+ */
 export const sh = (cmd: string, cwd?: string): string =>
   execSync(cmd, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
     .toString()
     .trim();
 
-// Shell-free, untrimmed git status reader. Untrimmed because porcelain v1 -z
-// records start with a 2-char status + 1 space, and the first record's leading
-// space is part of the format (e.g. " M path\0" for unstaged-modified). Going
-// through `sh` would strip that space and shift the fixed-offset parse.
+/**
+ * Shell-free, untrimmed `git status --porcelain=v1 -z` reader. Untrimmed
+ * because porcelain v1 -z records start with a 2-char status plus 1 space,
+ * and the first record's leading space is part of the format (e.g.
+ * `" M path\0"` for unstaged-modified). Going through `sh` would strip that
+ * space and shift the fixed-offset parse in `parsePorcelainZ`.
+ */
 export const gitStatusPorcelainZ = (cwd?: string): string =>
   execFileSync('git', ['status', '--porcelain=v1', '-z'], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).toString();
 
+/** Read and JSON-parse `path`. Throws `SyntaxError` on malformed content. */
 export function readJson<T>(path: string): T {
   const data: unknown = JSON.parse(readFileSync(path, 'utf8'));
   return data as T;
 }
 
+/** Write `data` as pretty-printed JSON (2-space indent, trailing newline). Non-atomic. */
 export function writeJson(path: string, data: unknown): void {
   writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
 }
@@ -138,6 +155,11 @@ export function freshBackupTs(backupRoot: string): string {
   return `${base}-${n}`;
 }
 
+/**
+ * Create a symlink at `linkPath` pointing to `target`, idempotently. No-op if
+ * a symlink already exists at `linkPath`; dies if a non-symlink exists there
+ * (caller should pre-scan and back up first; see `applySharedLinks`).
+ */
 export function ensureSymlink(linkPath: string, target: string): void {
   if (existsSync(linkPath)) {
     if (lstatSync(linkPath).isSymbolicLink()) return;
@@ -178,8 +200,15 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
 }
 
-// Lock-contention returns null (NOT die()); caller exits 0 because skip-on-contention is
-// intended UX for backgrounded shell-rc invocations per D-05.
+/**
+ * Acquire the exclusive nomad lockfile so two pulls/pushes cannot mutate
+ * `~/.claude/` concurrently. Returns the handle on success, or `null` on
+ * contention (caller should `process.exit(0)`; skip-on-contention is the
+ * intended UX for backgrounded shell-rc invocations). Detects stale locks by
+ * probing the recorded pid with `kill(pid, 0)` and recovers via
+ * `unlinkIfSamePid` + `retryOnce`. `verb` is `'pull'` or `'push'`; surfaces
+ * in the contention-skip message.
+ */
 export function acquireLock(verb: string): LockHandle | null {
   mkdirSync(dirname(LOCK_PATH), { recursive: true });
   try {
@@ -193,6 +222,12 @@ export function acquireLock(verb: string): LockHandle | null {
   }
 }
 
+/**
+ * Release a previously-acquired lock handle. No-op when `handle` is null
+ * (matches `acquireLock`'s contention return). Tolerates the lockfile having
+ * already been unlinked. MUST be called from a `finally` so it runs even when
+ * the wrapped command throws.
+ */
 export function releaseLock(handle: LockHandle | null): void {
   if (handle === null) return;
   try {
@@ -207,9 +242,16 @@ export function releaseLock(handle: LockHandle | null): void {
   }
 }
 
-// Compare-and-delete to close the TOCTOU window between reading a stale lock's
-// pid and removing it: another process could legitimately acquire the lock
-// between those steps, and a naive unlink would clobber it.
+/**
+ * Compare-and-delete helper that closes most of the TOCTOU window between
+ * reading a stale lock's pid and removing it: another process could
+ * legitimately acquire the lock between those steps, and a naive unlink
+ * would clobber it. Re-reads the file and only unlinks if the contents
+ * still equal `expectedPidStr`. Returns `true` if the lock was unlinked,
+ * `false` if the content drifted or the file already vanished. A microsecond
+ * window between the re-read and the unlink remains; the residual race is
+ * documented as a backlog item rather than fully closed here.
+ */
 function unlinkIfSamePid(expectedPidStr: string): boolean {
   let current: string;
   try {
@@ -226,6 +268,13 @@ function unlinkIfSamePid(expectedPidStr: string): boolean {
   }
 }
 
+/**
+ * EEXIST recovery path for `acquireLock`. Reads the lockfile pid, probes
+ * liveness with `kill(pid, 0)`, and tries one retry only when the pid is
+ * dead AND the compare-and-delete in `unlinkIfSamePid` confirms the file
+ * has not been replaced under us. Returns `null` (contention skip) in any
+ * other case.
+ */
 function checkStaleAndRetry(verb: string): LockHandle | null {
   let pidStr: string;
   try {
@@ -255,6 +304,11 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
   }
 }
 
+/**
+ * Single retry of `openSync(..., 'wx')` after `unlinkIfSamePid` cleared a
+ * confirmed-stale lock. Bounded to one attempt to avoid spin loops if the
+ * lock is being rapidly recreated by another live process.
+ */
 function retryOnce(verb: string): LockHandle | null {
   try {
     const fd = openSync(LOCK_PATH, 'wx');
