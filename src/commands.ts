@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -168,9 +169,16 @@ export function cmdPush(): void {
     if (!existsSync(mapPath)) die('path-map.json missing, cannot enforce push allow-list');
     const map = readJson<PathMap>(mapPath);
     enforceAllowList(status, map);
-    sh('git add -A', REPO_HOME);
-    sh(`git commit -m "chore: sync from ${HOST}"`, REPO_HOME);
-    sh('git push', REPO_HOME);
+    // WR-07: use execFileSync (no implicit shell) so a NOMAD_HOST containing
+    // a double-quote or backtick can't escape the commit-message quoting.
+    // Same reasoning for `git add -A` and `git push` (no interpolation, but
+    // shell-free is consistent and audit-friendly).
+    execFileSync('git', ['add', '-A'], { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('git', ['commit', '-m', `chore: sync from ${HOST}`], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    execFileSync('git', ['push'], { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
     log('push complete');
   } catch (err) {
     if (err instanceof NomadFatal) {
