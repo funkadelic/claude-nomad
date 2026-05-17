@@ -161,7 +161,7 @@ Add to `~/.zshrc` or `~/.bashrc` (the installer prints the alias line):
 export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
 alias nomad='tsx ~/claude-nomad/src/nomad.ts'
 # optional: pull on shell start
-nomad pull -q 2>/dev/null &
+nomad pull 2>/dev/null &
 ```
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
