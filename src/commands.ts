@@ -32,6 +32,14 @@ export { resumeCmd };
 function isAllowed(path: string, allowed: readonly string[]): boolean {
   for (const entry of allowed) {
     if (path === entry) return true;
+    // WR-01: `hosts/` is a special prefix entry that must NOT permit
+    // arbitrary credential filenames (e.g., hosts/dell-wsl.key). Only allow
+    // `hosts/<name>.json` (exact single-level depth, .json extension). This
+    // is a defense-in-depth pair with shared/.gitignore + hosts/.gitignore.
+    if (entry === 'hosts/') {
+      if (/^hosts\/[^/]+\.json$/.test(path)) return true;
+      continue;
+    }
     if (entry.endsWith('/') && path.startsWith(entry)) return true;
   }
   return false;

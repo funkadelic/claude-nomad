@@ -130,6 +130,42 @@ describe('enforceAllowList', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  // WR-01: hosts/ allow-list entry must NOT accept arbitrary filenames.
+  it('rejects hosts/secret.key (extension other than .json under hosts/)', () => {
+    const status = z(['?? hosts/secret.key']);
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('to sync hosts/secret.key'),
+    );
+  });
+
+  it('rejects hosts/.env.production (no .json extension)', () => {
+    const status = z(['?? hosts/.env.production']);
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('to sync hosts/.env.production'),
+    );
+  });
+
+  it('rejects hosts/sub/nested.json (nested depth beyond one level)', () => {
+    const status = z(['?? hosts/sub/nested.json']);
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('to sync hosts/sub/nested.json'),
+    );
+  });
+
+  it('allows hosts/dell-wsl.json (single-level .json file under hosts/)', () => {
+    const status = z([' M hosts/dell-wsl.json']);
+    const map: PathMap = { projects: {} };
+    enforceAllowList(status, map);
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
   it('flags unknown path with spaces using the literal filename in the error', () => {
     // Filename contains spaces and lands outside the allow-list. The pre-fix
     // LF parser would have emitted "\"random dir/foo bar.token\"" (with
