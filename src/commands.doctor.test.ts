@@ -39,7 +39,7 @@ function joinedLog(logSpy: LogSpy): string {
   return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
 }
 
-describe('cmdDoctor FMT-02 schema sanity', () => {
+describe('cmdDoctor settings.json schema sanity', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let env: Env;
@@ -84,7 +84,7 @@ describe('cmdDoctor FMT-02 schema sanity', () => {
   });
 });
 
-describe('cmdDoctor FMT-03 collision detection', () => {
+describe('cmdDoctor path-encoding collision detection', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let env: Env;
@@ -120,13 +120,13 @@ describe('cmdDoctor FMT-03 collision detection', () => {
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
   });
 
-  // IN-04: FMT-03 collisions cause silent data loss in remap, so doctor now
-  // emits FAIL (not WARN) and sets exitCode=1 so downstream automation can
-  // gate on collisions.
-  it('emits FAIL with exit code 1 listing both abspaths and the encoded result on Pitfall 7 collision', async () => {
-    // RESEARCH.md Pitfall 7: `/foo/bar-baz` and `/foo-bar/baz` both encode to
-    // `-foo-bar-baz`. Per-host abspaths in different logical projects share
-    // the same encoded dir name, so remap would clobber one with the other.
+  // Collisions cause silent data loss in remap, so doctor emits FAIL (not
+  // WARN) and sets exitCode=1 so downstream automation can gate on them.
+  it('emits FAIL with exit code 1 listing both abspaths and the encoded result on collision', async () => {
+    // `/foo/bar-baz` and `/foo-bar/baz` both encode to `-foo-bar-baz`
+    // because encodePath swaps `/` for `-` without escaping literal dashes.
+    // Per-host abspaths in different logical projects share the same encoded
+    // dir name, so remap would clobber one with the other.
     const map: PathMap = {
       projects: {
         a: { 'test-host': '/foo/bar-baz', 'other-host': '/X' },
@@ -145,7 +145,7 @@ describe('cmdDoctor FMT-03 collision detection', () => {
   });
 });
 
-describe('cmdDoctor FMT-04 host-override-missing', () => {
+describe('cmdDoctor host-override-missing diagnostic', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let env: Env;
@@ -161,9 +161,8 @@ describe('cmdDoctor FMT-04 host-override-missing', () => {
   });
 
   afterEach(() => {
-    // Reset BEFORE spy restore so a Test 2 leak of process.exitCode = 1 does
-    // not surface as a runner failure on a subsequent test. Per plan 02-07
-    // Task 2 step 2.
+    // Reset BEFORE spy restore so a Test 2 leak of process.exitCode = 1
+    // does not surface as a runner failure on a subsequent test.
     process.exitCode = 0;
     vi.restoreAllMocks();
     if (originalHome !== undefined) process.env.HOME = originalHome;
@@ -223,7 +222,7 @@ describe('cmdDoctor FMT-04 host-override-missing', () => {
   });
 });
 
-describe('cmdDoctor WR-05 malformed JSON tolerance', () => {
+describe('cmdDoctor malformed JSON tolerance', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let env: Env;

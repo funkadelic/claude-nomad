@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-// FMT-05 harness, inline per file (RESEARCH.md A8: extraction deferred).
+// Spy harness, inline per file (extraction to a shared helper deferred).
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 type ErrorSpy = MockInstance<(...args: unknown[]) => void>;
 type ExitSpy = MockInstance<(code?: string | number | null) => never>;
@@ -91,7 +91,7 @@ describe('resumeCmd', () => {
     const { resumeCmd } = await import('./resume.ts');
     resumeCmd('abc-123');
     expect(env.logSpy).toHaveBeenCalledTimes(1);
-    // WR-06: localPath and sessionId are single-quoted so spaces and shell
+    // localPath and sessionId are single-quoted so spaces and shell
     // metachars survive `eval`.
     expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'abc-123'`);
     expect(env.exitSpy).not.toHaveBeenCalled();
@@ -185,8 +185,8 @@ describe('resumeCmd', () => {
     );
   });
 
-  // WR-06 regression: spaces in localPath must survive `eval` so cd lands at
-  // the intended dir (and not "cd" with three args dropping into /local/mapped).
+  // Spaces in localPath must survive `eval` so cd lands at the intended
+  // dir, not "cd" with three args dropping into /local/mapped.
   it('shell-quotes localPath with spaces so eval works', async () => {
     env = makeEnv('test-host');
     writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
@@ -203,8 +203,8 @@ describe('resumeCmd', () => {
     );
   });
 
-  // WR-06 regression: single quotes in either argument get escaped via the
-  // POSIX '\'' pattern (close quote, escaped quote, reopen quote).
+  // Single quotes in either argument get escaped via the POSIX '\''
+  // pattern (close quote, escaped quote, reopen quote).
   it('escapes single quotes in localPath using the POSIX close-escape-reopen pattern', async () => {
     env = makeEnv('test-host');
     writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [

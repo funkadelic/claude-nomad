@@ -60,9 +60,10 @@ export function regenerateSettings(ts: string): void {
 
   const settingsPath = join(CLAUDE_HOME, 'settings.json');
 
-  // Folded todo (pull-side surface): warn-then-proceed when no host file matches
-  // AND existing settings has top-level keys not in base. Informational only;
-  // pull does NOT abort. Doctor-side FAIL lands in plan 07.
+  // Pull-side surface: warn-then-proceed when no host file matches AND
+  // existing settings has top-level keys not in base. Informational only;
+  // pull does NOT abort. The matching doctor-side FAIL with non-zero exit
+  // lives in `cmdDoctor`.
   if (!hasOverrides && existsSync(settingsPath)) {
     // Best-effort drift report. Malformed prior settings.json must not block
     // regeneration: the whole point here is to overwrite it from base+overrides.

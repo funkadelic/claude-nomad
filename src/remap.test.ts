@@ -97,8 +97,9 @@ describe('remapPull (integration)', () => {
     expect(readFileSync(join(encodedDir, 'c.jsonl'), 'utf8')).toBe('{"c":1}\n');
   });
 
-  it('copies 3-level-nested files recursively under <encoded>/ (FMT-01 regression)', async () => {
-    // FMT-01 regression: 3-level-deep path foo/attachments/sub/deep.bin must survive cpSync recursion.
+  it('copies 3-level-nested files recursively under <encoded>/', async () => {
+    // Regression: 3-level-deep path foo/attachments/sub/deep.bin must
+    // survive cpSync recursion.
     const deepSrc = join(sharedProjects, 'foo', 'attachments', 'sub');
     mkdirSync(deepSrc, { recursive: true });
     writeFileSync(join(deepSrc, 'deep.bin'), 'deep-bytes');
@@ -115,11 +116,11 @@ describe('remapPull (integration)', () => {
     expect(readFileSync(deepDst, 'utf8')).toBe('deep-bytes');
   });
 
-  it('remapPush backs up prior REPO_HOME destination before clobber (WR-03 regression)', async () => {
+  it('remapPush backs up prior REPO_HOME destination before clobber', async () => {
     // Local encoded dir has fresh sessions; repo already has older sessions
-    // for the same logical. Pre-fix, remapPush blindly copied over the repo
-    // copy and the only rollback was git history (which doesn't exist until
-    // the later commit step). Post-fix, repo-side state is snapshotted to
+    // for the same logical. Earlier code blindly copied over the repo copy
+    // and the only rollback was git history (which doesn't exist until the
+    // later commit step). Current behavior snapshots repo-side state to
     // ~/.cache/claude-nomad/backup/<ts>/repo/ before the clobber.
     mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
     writeFileSync(join(sharedProjects, 'foo', 'older.jsonl'), '{"old":true}\n');

@@ -4,7 +4,7 @@ import { enforceAllowList } from './commands.ts';
 import { type PathMap } from './config.ts';
 import { NomadFatal } from './utils.ts';
 
-// CR-02: parsePorcelainZ tests cover the format switch from `--porcelain` (LF,
+// parsePorcelainZ tests cover the format switch from `--porcelain` (LF,
 // quoted, "old -> new" rename strings) to `--porcelain=v1 -z` (NUL records,
 // no quoting, rename = two records "R  new\0old\0").
 // Helper: build a NUL-delimited porcelain stream from rows. Use `null` as a
@@ -90,10 +90,10 @@ describe('enforceAllowList', () => {
     );
   });
 
-  // CR-02 regression: porcelain rename rows in -z mode emit "R  new\0old\0",
-  // NOT the LF-mode "R  old -> new". Both halves should classify against the
-  // allow-list (so legitimate `git mv shared/CLAUDE.md shared/CLAUDE2.md`
-  // passes because both halves match `shared/CLAUDE.md` / via shared/ prefix).
+  // Porcelain rename rows in -z mode emit "R  new\0old\0", NOT the LF-mode
+  // "R  old -> new". Both halves should classify against the allow-list
+  // (so legitimate `git mv shared/CLAUDE.md shared/CLAUDE2.md` passes
+  // because both halves match `shared/CLAUDE.md` via the shared/ prefix).
   it('classifies both halves of a rename row independently and allows clean git mv', () => {
     // Rename within allow-list: status "R  shared/CLAUDE.md\0shared/CLAUDE.md\0"
     // (new + old both shared/CLAUDE.md exact match; in real usage they would
@@ -116,10 +116,10 @@ describe('enforceAllowList', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/secret.key'));
   });
 
-  // CR-02 regression: in -z mode quoted paths are NOT used; filenames with
-  // spaces remain literal. Pre-fix the parser used slice(3).trim() on LF
-  // output which left literal double-quotes in the path. After fix, the
-  // shared/agents/ prefix correctly matches the literal-space filename.
+  // In -z mode quoted paths are NOT used; filenames with spaces remain
+  // literal. Earlier code used slice(3).trim() on LF output, which left
+  // literal double-quotes in the path. The current parser keeps spaces
+  // literal so the shared/agents/ prefix matches the filename directly.
   it('matches literal filename containing spaces against shared/agents/ prefix', () => {
     const status = z(['?? shared/agents/My Agent.md']);
     const map: PathMap = { projects: {} };
@@ -128,7 +128,7 @@ describe('enforceAllowList', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  // WR-01: hosts/ allow-list entry must NOT accept arbitrary filenames.
+  // hosts/ allow-list entry must NOT accept arbitrary filenames.
   it('rejects hosts/secret.key (extension other than .json under hosts/)', () => {
     const status = z(['?? hosts/secret.key']);
     const map: PathMap = { projects: {} };

@@ -41,7 +41,7 @@ export function remapPull(ts: string): void {
     const src = join(repoProjects, logical);
     if (!existsSync(src)) continue;
     const dst = join(localProjects, encodePath(localPath));
-    // D-01: snapshot prior encoded-path-dir state BEFORE copyDir overwrites it.
+    // Snapshot prior encoded-path-dir state BEFORE copyDir overwrites it.
     backupBeforeWrite(dst, ts);
     copyDir(src, dst);
     log(`pulled ${logical} -> ${encodePath(localPath)}`);
@@ -76,10 +76,10 @@ export function remapPush(ts: string): void {
       continue;
     }
     const repoDst = join(repoProjects, logical);
-    // WR-03: snapshot repo-side destination before copyDir clobbers it. Git
+    // Snapshot repo-side destination before copyDir clobbers it. Git
     // history exists only AFTER the commit step, so a corrupt or
-    // path-encoding-collided local dir would otherwise have no rollback path.
-    // Symmetric with remapPull's backupBeforeWrite on the local dst.
+    // path-encoding-collided local dir would otherwise have no rollback
+    // path. Symmetric with remapPull's backupBeforeWrite on the local dst.
     backupRepoWrite(repoDst, ts, REPO_HOME);
     copyDir(join(localProjects, dir), repoDst);
     log(`pushed ${dir} -> ${logical}`);

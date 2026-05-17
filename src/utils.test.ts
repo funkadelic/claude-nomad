@@ -146,7 +146,7 @@ describe('freshBackupTs', () => {
     expect(freshBackupTs(testRoot)).toBe('20260516-143501');
   });
 
-  it('appends -1 when bare timestamp dir already exists (WR-04 regression)', () => {
+  it('appends -1 when bare timestamp dir already exists (same-second collision)', () => {
     mkdirSync(join(testRoot, '20260516-143501'));
     expect(freshBackupTs(testRoot)).toBe('20260516-143501-1');
   });
@@ -217,7 +217,7 @@ describe('backupBeforeWrite', () => {
   });
 });
 
-describe('backupRepoWrite (WR-03)', () => {
+describe('backupRepoWrite', () => {
   let originalHome: string | undefined;
   let testHome: string;
   let repoHome: string;

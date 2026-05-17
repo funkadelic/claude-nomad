@@ -28,7 +28,7 @@ import {
   sh,
 } from './utils.ts';
 
-// D-11 sidecar lives in src/resume.ts; re-exported so callers keep importing it from ./commands.ts.
+// resume sidecar lives in src/resume.ts; re-exported so callers keep importing it from ./commands.ts.
 export { resumeCmd };
 
 /**
@@ -116,12 +116,12 @@ export function cmdPull(): void {
   const handle = acquireLock('pull');
   if (handle === null) process.exit(0);
   try {
-    // WR-04: collision-resistant ts. nowTimestamp() is second-resolution; two
+    // Collision-resistant ts: nowTimestamp() is second-resolution, so two
     // pulls in the same wall-clock second would share `ts` and the second's
     // backupBeforeWrite calls (cpSync force:false) would silently no-op.
     const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
-    // D-03 fail-fast: create backup root BEFORE any mutation. If mkdir fails
+    // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
     // (out of disk, permission denied), die() throws (NomadFatal) and the
     // outer catch logs + sets exitCode, then finally releases the lock.
     const backupRoot = join(backupBase, ts);
@@ -137,8 +137,8 @@ export function cmdPull(): void {
     remapPull(ts);
     log('pull complete');
   } catch (err) {
-    // CR-01: catch fatal errors here so the finally block runs and releases
-    // the lock. Throwing through process.exit() would skip finally.
+    // Catch fatal errors here so the finally block runs and releases the
+    // lock. Throwing through process.exit() would skip finally.
     if (err instanceof NomadFatal) {
       console.error(`[nomad] FATAL: ${err.message}`);
       process.exitCode = 1;
@@ -156,8 +156,8 @@ export function cmdPush(): void {
   if (handle === null) process.exit(0);
   try {
     log(`pushing on host=${HOST}`);
-    // WR-03 + WR-04: pass a collision-resistant ts down to remapPush so it
-    // can snapshot repo-side encoded-dir state before copyDir clobbers it.
+    // Pass a collision-resistant ts down to remapPush so it can snapshot
+    // repo-side encoded-dir state before copyDir clobbers it.
     const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
     remapPush(ts);
@@ -172,8 +172,8 @@ export function cmdPush(): void {
     if (!existsSync(mapPath)) die('path-map.json missing, cannot enforce push allow-list');
     const map = readJson<PathMap>(mapPath);
     enforceAllowList(status, map);
-    // WR-07: use execFileSync (no implicit shell) so a NOMAD_HOST containing
-    // a double-quote or backtick can't escape the commit-message quoting.
+    // Use execFileSync (no implicit shell) so a NOMAD_HOST containing a
+    // double-quote or backtick can't escape the commit-message quoting.
     // Same reasoning for `git add -A` and `git push` (no interpolation, but
     // shell-free is consistent and audit-friendly).
     execFileSync('git', ['add', '-A'], { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -195,12 +195,16 @@ export function cmdPush(): void {
   }
 }
 
-// WR-05: doctor reads three JSON files (settings.json, settings.base.json,
-// path-map.json). Pre-fix any malformed JSON threw an uncaught SyntaxError
-// mid-output; users got a stack trace instead of a FAIL line, and the
-// remainder of the diagnostic never ran. readJsonSafe returns null on parse
-// failure, logs the FAIL line on the SAME stream as other doctor output
-// (stdout per IN-03 doctor convention), and bumps exitCode.
+/**
+ * Tolerant JSON reader for `cmdDoctor`. Doctor reads three JSON files
+ * (`settings.json`, `settings.base.json`, `path-map.json`) and any
+ * malformed input must not throw an uncaught `SyntaxError` mid-output;
+ * users would otherwise get a stack trace instead of a FAIL line and the
+ * remainder of the diagnostic would never run. Returns `null` on parse
+ * failure, logs the FAIL line on the same stream as the rest of doctor's
+ * output (stdout, so `2>/dev/null` does not swallow failure detail), and
+ * sets `process.exitCode = 1` so scripts can gate on the result.
+ */
 function readJsonSafe<T>(path: string, label: string): T | null {
   try {
     return readJson<T>(path);
@@ -211,12 +215,19 @@ function readJsonSafe<T>(path: string, label: string): T | null {
   }
 }
 
-// IN-03: doctor intentionally emits ALL diagnostics (PASS/WARN/FAIL) on
-// stdout via log() rather than splitting WARN/FAIL to stderr. The intent is
-// that users see the full diagnostic cohesively; piping `nomad doctor 2>/dev/null`
-// must NOT lose FAIL lines. This differs from cmdPull / cmdPush / resumeCmd
-// where FATAL is on stderr because those callers want clean stdout. Doctor
-// signals failure to scripts via process.exitCode instead.
+/**
+ * Read-only health check for the nomad install on the current host. Reports
+ * host identity, repo presence, shared-link health, settings.json schema
+ * sanity, host-override status, path-map collisions, and the never-sync
+ * list.
+ *
+ * Doctor intentionally emits ALL diagnostics (PASS/WARN/FAIL) on stdout via
+ * `log()` rather than splitting WARN/FAIL to stderr. The intent is that
+ * users see the full diagnostic cohesively; piping `nomad doctor 2>/dev/null`
+ * must NOT lose FAIL lines. This differs from `cmdPull` / `cmdPush` /
+ * `resumeCmd`, where FATAL is on stderr because those callers want clean
+ * stdout. Doctor signals failure to scripts via `process.exitCode` instead.
+ */
 export function cmdDoctor(): void {
   log(`host: ${HOST}`);
   log(`repo: ${REPO_HOME} ${existsSync(REPO_HOME) ? 'OK' : 'MISSING'}`);
@@ -233,18 +244,19 @@ export function cmdDoctor(): void {
     );
   }
 
-  // WR-05: preemptively report missing shared/settings.base.json since pull
-  // would die() on it anyway. Doctor is the read-only path so it's the
-  // appropriate place to surface the gap.
+  // Preemptively report missing shared/settings.base.json since pull would
+  // die() on it anyway. Doctor is the read-only path so it's the appropriate
+  // place to surface the gap.
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   if (!existsSync(basePath)) {
     log(`FAIL shared/settings.base.json missing at ${basePath}`);
     process.exitCode = 1;
   }
 
-  // FMT-02: scan settings.json top-level keys against the schema baseline; WARN
-  // surfaces Anthropic-added keys we have not catalogued yet (informational, no
-  // exitCode effect per RESEARCH.md A6).
+  // Scan settings.json top-level keys against the schema baseline. WARN
+  // surfaces Anthropic-added keys we have not catalogued yet. Informational
+  // only; no exitCode effect because unknown keys are forward-compatible by
+  // default and we do not want to break sync on every Anthropic release.
   const settingsPath = join(CLAUDE_HOME, 'settings.json');
   let settings: Record<string, unknown> | null = null;
   if (existsSync(settingsPath)) {
@@ -259,8 +271,9 @@ export function cmdDoctor(): void {
     }
   }
 
-  // FMT-04: doctor FAIL complements pull-side WARN in src/links.ts; uses
-  // process.exitCode (NOT process.exit) so doctor's output continues.
+  // Host-override-missing FAIL: complements the pull-side WARN in
+  // src/links.ts. Uses process.exitCode (NOT process.exit) so doctor's
+  // remaining output continues to print after the diagnostic line.
   const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
   let drift: string[] = [];
   if (existsSync(basePath) && settings !== null) {
@@ -292,9 +305,10 @@ export function cmdDoctor(): void {
       log(`mapped projects for ${HOST}: ${mapped.length}`);
       for (const [name, hosts] of mapped) log(`  ${name} -> ${hosts[HOST]}`);
 
-      // FMT-03: scan ALL hosts in path-map.json, group by encodePath result.
-      // IN-04: collisions are upgraded to FAIL with exitCode 1 (was WARN).
-      // Silent data loss in remap warrants gating downstream automation.
+      // Scan ALL hosts in path-map.json and group by encodePath result.
+      // Collisions are FAIL (exitCode 1), not WARN: two real paths that
+      // encode to the same directory cause silent data loss in remap, so
+      // gating downstream automation on the failure is the safer default.
       const seen = new Map<string, string>();
       let collisionCount = 0;
       for (const hosts of Object.values(map.projects)) {

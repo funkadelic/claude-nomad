@@ -6,9 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as utilsModule from './utils.ts';
 
-// CR-01 regression: cmdPull and cmdPush must release the lockfile even when
-// a fatal error fires mid-flight. Pre-fix, die() called process.exit() which
-// skipped the try/finally and left a stale lock holding the now-dead PID.
+// Regression: cmdPull and cmdPush must release the lockfile even when a
+// fatal error fires mid-flight. Earlier code path called process.exit()
+// from die(), which skipped the try/finally and left a stale lock holding
+// the now-dead PID.
 describe('cmdPull / cmdPush lock release on fatal', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;

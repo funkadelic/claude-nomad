@@ -28,7 +28,7 @@ try {
       cmdPush();
       break;
     case 'doctor':
-      // D-11 sub-flag: `doctor --resume-cmd <session-id>` dispatches to the
+      // Sub-flag: `doctor --resume-cmd <session-id>` dispatches to the
       // read-only sidecar that prints `cd <abspath> && claude --resume <id>`.
       if (process.argv[3] === '--resume-cmd') {
         const id = process.argv[4];

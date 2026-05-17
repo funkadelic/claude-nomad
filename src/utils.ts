@@ -30,7 +30,7 @@ export const log = (msg: string): void => console.log(`[nomad] ${msg}`);
  * by top-level command wrappers (cmdPull, cmdPush, nomad.ts dispatcher) so a
  * `finally` block can release locks before the process exits. Avoids the
  * pre-fix bug where `process.exit()` skipped pending `finally` clauses and
- * leaked the lockfile (CR-01).
+ * leaked the lockfile.
  */
 export class NomadFatal extends Error {
   constructor(message: string) {
@@ -142,10 +142,11 @@ export function nowTimestamp(): string {
 }
 
 /**
- * WR-04: nowTimestamp() is second-resolution. Two pulls in the same wall-clock
- * second would share `ts`, and the second's backupBeforeWrite calls (which use
- * cpSync with force:false) would silently no-op against the existing first
- * snapshot. Append `-N` suffix until the backup dir is unique.
+ * Collision-resistant backup timestamp. `nowTimestamp()` is second-resolution,
+ * so two pulls in the same wall-clock second would share `ts`, and the
+ * second's `backupBeforeWrite` calls (which use `cpSync` with `force:false`)
+ * would silently no-op against the existing first snapshot. Append a `-N`
+ * suffix until the backup dir is unique.
  */
 export function freshBackupTs(backupRoot: string): string {
   const base = nowTimestamp();
@@ -185,10 +186,10 @@ export function backupBeforeWrite(absPath: string, ts: string): void {
 }
 
 /**
- * WR-03: parallel of backupBeforeWrite, but scoped to REPO_HOME instead of
- * CLAUDE_HOME. Used by remapPush to snapshot repo-side encoded-dir state
- * before copyDir clobbers it. Backup root is repo-prefixed so the dump is
- * distinguishable from CLAUDE_HOME backups in the same ts dir.
+ * Parallel of `backupBeforeWrite`, but scoped to `REPO_HOME` instead of
+ * `CLAUDE_HOME`. Used by `remapPush` to snapshot repo-side encoded-dir
+ * state before `copyDir` clobbers it. Backup root is repo-prefixed so the
+ * dump is distinguishable from `CLAUDE_HOME` backups in the same `ts` dir.
  */
 export function backupRepoWrite(absPath: string, ts: string, repoHome: string): void {
   if (!existsSync(absPath)) return;

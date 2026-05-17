@@ -158,7 +158,7 @@ describe('regenerateSettings (integration)', () => {
   });
 });
 
-describe('applySharedLinks D-02 auto-move', () => {
+describe('applySharedLinks auto-move', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let testHome: string;
@@ -261,7 +261,7 @@ describe('applySharedLinks D-02 auto-move', () => {
     expect(readlinkSync(linkPath)).toBe(sharedTarget);
   });
 
-  it('leaves local SHARED_LINK content alone when repo has no counterpart (WR-02 regression)', async () => {
+  it('leaves local SHARED_LINK content alone when repo has no counterpart', async () => {
     // shared/commands/ does NOT exist in the repo. ~/.claude/commands/ has
     // local content. Pre-fix, the first loop would back up and delete the
     // local dir; the second loop would NOT recreate it. Post-fix, both loops
@@ -296,7 +296,7 @@ describe('applySharedLinks D-02 auto-move', () => {
     expect(existsSync(backupCommands)).toBe(false);
   });
 
-  it('handles multiple non-symlink conflicts in a single pass (regression: Phase 1 Mac two-iteration .preNomad ritual)', async () => {
+  it('handles multiple non-symlink conflicts in a single pass', async () => {
     mkdirSync(join(sharedDir, 'agents'), { recursive: true });
     writeFileSync(join(sharedDir, 'agents', 'a.md'), '# shared a\n');
     mkdirSync(join(sharedDir, 'skills'), { recursive: true });
