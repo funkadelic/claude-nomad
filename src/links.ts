@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, SHARED_LINKS } from './config.ts';
@@ -13,7 +13,16 @@ import {
   writeJsonAtomic,
 } from './utils.ts';
 
-export function applySharedLinks(): void {
+export function applySharedLinks(ts: string): void {
+  // D-02 single-pass pre-scan: detect ALL non-symlink conflicts up front, backup +
+  // remove each, then proceed with symlink writes (fixes Phase 1 Mac two-iteration ritual).
+  for (const name of SHARED_LINKS) {
+    const linkPath = join(CLAUDE_HOME, name);
+    if (!existsSync(linkPath)) continue;
+    if (lstatSync(linkPath).isSymbolicLink()) continue;
+    backupBeforeWrite(linkPath, ts);
+    rmSync(linkPath, { recursive: true, force: true });
+  }
   for (const name of SHARED_LINKS) {
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(target)) continue;
