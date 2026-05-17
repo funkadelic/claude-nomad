@@ -4,31 +4,43 @@ import { join } from 'node:path';
 import { CLAUDE_HOME, HOST, NEVER_SYNC, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { remapPull, remapPush } from './remap.ts';
-import { die, log, readJson, sh } from './utils.ts';
+import { acquireLock, die, log, readJson, releaseLock, sh } from './utils.ts';
 
 export function cmdPull(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
-  log(`pulling on host=${HOST}`);
-  sh('git pull --rebase', REPO_HOME);
-  applySharedLinks();
-  regenerateSettings();
-  remapPull();
-  log('pull complete');
+  const handle = acquireLock('pull');
+  if (handle === null) process.exit(0);
+  try {
+    log(`pulling on host=${HOST}`);
+    sh('git pull --rebase', REPO_HOME);
+    applySharedLinks();
+    regenerateSettings();
+    remapPull();
+    log('pull complete');
+  } finally {
+    releaseLock(handle);
+  }
 }
 
 export function cmdPush(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
-  log(`pushing on host=${HOST}`);
-  remapPush();
-  const status = sh('git status --porcelain', REPO_HOME);
-  if (!status) {
-    log('nothing to commit');
-    return;
+  const handle = acquireLock('push');
+  if (handle === null) process.exit(0);
+  try {
+    log(`pushing on host=${HOST}`);
+    remapPush();
+    const status = sh('git status --porcelain', REPO_HOME);
+    if (!status) {
+      log('nothing to commit');
+      return;
+    }
+    sh('git add -A', REPO_HOME);
+    sh(`git commit -m "chore: sync from ${HOST}"`, REPO_HOME);
+    sh('git push', REPO_HOME);
+    log('push complete');
+  } finally {
+    releaseLock(handle);
   }
-  sh('git add -A', REPO_HOME);
-  sh(`git commit -m "chore: sync from ${HOST}"`, REPO_HOME);
-  sh('git push', REPO_HOME);
-  log('push complete');
 }
 
 export function cmdDoctor(): void {
