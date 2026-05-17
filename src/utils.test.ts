@@ -12,7 +12,14 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { deepMerge, encodePath, nowTimestamp, writeJsonAtomic } from './utils.ts';
+import {
+  backupRepoWrite,
+  deepMerge,
+  encodePath,
+  freshBackupTs,
+  nowTimestamp,
+  writeJsonAtomic,
+} from './utils.ts';
 
 describe('deepMerge', () => {
   it('overrides scalar values from source', () => {
@@ -121,6 +128,37 @@ describe('nowTimestamp', () => {
   });
 });
 
+describe('freshBackupTs', () => {
+  let testRoot: string;
+
+  beforeEach(() => {
+    testRoot = mkdtempSync(join(tmpdir(), 'nomad-freshts-'));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 16, 14, 35, 1));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    rmSync(testRoot, { recursive: true, force: true });
+  });
+
+  it('returns the bare timestamp when no collision exists', () => {
+    expect(freshBackupTs(testRoot)).toBe('20260516-143501');
+  });
+
+  it('appends -1 when bare timestamp dir already exists (WR-04 regression)', () => {
+    mkdirSync(join(testRoot, '20260516-143501'));
+    expect(freshBackupTs(testRoot)).toBe('20260516-143501-1');
+  });
+
+  it('skips through -1, -2, -3 to find first free suffix', () => {
+    mkdirSync(join(testRoot, '20260516-143501'));
+    mkdirSync(join(testRoot, '20260516-143501-1'));
+    mkdirSync(join(testRoot, '20260516-143501-2'));
+    expect(freshBackupTs(testRoot)).toBe('20260516-143501-3');
+  });
+});
+
 describe('backupBeforeWrite', () => {
   let originalHome: string | undefined;
   let testHome: string;
@@ -176,6 +214,61 @@ describe('backupBeforeWrite', () => {
     const backupAgents = join(testHome, '.cache', 'claude-nomad', 'backup', ts, 'agents');
     expect(readFileSync(join(backupAgents, 'foo.md'), 'utf8')).toBe('foo');
     expect(readFileSync(join(backupAgents, 'bar.md'), 'utf8')).toBe('bar');
+  });
+});
+
+describe('backupRepoWrite (WR-03)', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+  let repoHome: string;
+  const ts = '20260516-000000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-repo-backup-'));
+    process.env.HOME = testHome;
+    repoHome = join(testHome, 'claude-nomad');
+    mkdirSync(repoHome, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('copies a repo-scoped file to the repo subdir of the backup root', () => {
+    const src = join(repoHome, 'shared', 'projects', 'foo', 'session.jsonl');
+    mkdirSync(join(repoHome, 'shared', 'projects', 'foo'), { recursive: true });
+    writeFileSync(src, '{"a":1}');
+    backupRepoWrite(src, ts, repoHome);
+    const dst = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      ts,
+      'repo',
+      'shared',
+      'projects',
+      'foo',
+      'session.jsonl',
+    );
+    expect(existsSync(dst)).toBe(true);
+    expect(readFileSync(dst, 'utf8')).toBe('{"a":1}');
+  });
+
+  it('is a no-op when the source path does not exist', () => {
+    const src = join(repoHome, 'shared', 'projects', 'missing');
+    backupRepoWrite(src, ts, repoHome);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
+  it('refuses paths outside REPO_HOME', () => {
+    const outsidePath = join(testHome, 'elsewhere.json');
+    writeFileSync(outsidePath, '{"a":1}');
+    backupRepoWrite(outsidePath, ts, repoHome);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 });
 

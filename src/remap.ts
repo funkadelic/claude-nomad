@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { backupBeforeWrite, encodePath, log, readJson } from './utils.ts';
+import { backupBeforeWrite, backupRepoWrite, encodePath, log, readJson } from './utils.ts';
 
 // cpSync(force:true) overwrites matching files but does not remove dst-only
 // entries; rmSync first so dst mirrors src instead of accumulating stale files.
@@ -45,7 +45,7 @@ export function remapPull(ts: string): void {
 }
 
 /** Push: copy local path-encoded dirs back to repo under logical names. */
-export function remapPush(): void {
+export function remapPush(ts: string): void {
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (!existsSync(mapPath)) {
     log('no path-map.json; skipping session export');
@@ -71,7 +71,13 @@ export function remapPush(): void {
       log(`skip ${dir}: not in path-map for ${HOST}`);
       continue;
     }
-    copyDir(join(localProjects, dir), join(repoProjects, logical));
+    const repoDst = join(repoProjects, logical);
+    // WR-03: snapshot repo-side destination before copyDir clobbers it. Git
+    // history exists only AFTER the commit step, so a corrupt or
+    // path-encoding-collided local dir would otherwise have no rollback path.
+    // Symmetric with remapPull's backupBeforeWrite on the local dst.
+    backupRepoWrite(repoDst, ts, REPO_HOME);
+    copyDir(join(localProjects, dir), repoDst);
     log(`pushed ${dir} -> ${logical}`);
   }
 }

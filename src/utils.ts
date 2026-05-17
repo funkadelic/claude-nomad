@@ -105,6 +105,20 @@ export function nowTimestamp(): string {
   );
 }
 
+/**
+ * WR-04: nowTimestamp() is second-resolution. Two pulls in the same wall-clock
+ * second would share `ts`, and the second's backupBeforeWrite calls (which use
+ * cpSync with force:false) would silently no-op against the existing first
+ * snapshot. Append `-N` suffix until the backup dir is unique.
+ */
+export function freshBackupTs(backupRoot: string): string {
+  const base = nowTimestamp();
+  if (!existsSync(join(backupRoot, base))) return base;
+  let n = 1;
+  while (existsSync(join(backupRoot, `${base}-${n}`))) n++;
+  return `${base}-${n}`;
+}
+
 export function ensureSymlink(linkPath: string, target: string): void {
   if (existsSync(linkPath)) {
     if (lstatSync(linkPath).isSymbolicLink()) return;
@@ -124,6 +138,22 @@ export function backupBeforeWrite(absPath: string, ts: string): void {
   const rel = relative(CLAUDE_HOME, absPath);
   if (rel.startsWith('..') || rel === '') return;
   const backupRoot = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup', ts);
+  const dst = join(backupRoot, rel);
+  mkdirSync(dirname(dst), { recursive: true });
+  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+}
+
+/**
+ * WR-03: parallel of backupBeforeWrite, but scoped to REPO_HOME instead of
+ * CLAUDE_HOME. Used by remapPush to snapshot repo-side encoded-dir state
+ * before copyDir clobbers it. Backup root is repo-prefixed so the dump is
+ * distinguishable from CLAUDE_HOME backups in the same ts dir.
+ */
+export function backupRepoWrite(absPath: string, ts: string, repoHome: string): void {
+  if (!existsSync(absPath)) return;
+  const rel = relative(repoHome, absPath);
+  if (rel.startsWith('..') || rel === '') return;
+  const backupRoot = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup', ts, 'repo');
   const dst = join(backupRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });

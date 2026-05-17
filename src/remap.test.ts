@@ -115,6 +115,45 @@ describe('remapPull (integration)', () => {
     expect(readFileSync(deepDst, 'utf8')).toBe('deep-bytes');
   });
 
+  it('remapPush backs up prior REPO_HOME destination before clobber (WR-03 regression)', async () => {
+    // Local encoded dir has fresh sessions; repo already has older sessions
+    // for the same logical. Pre-fix, remapPush blindly copied over the repo
+    // copy and the only rollback was git history (which doesn't exist until
+    // the later commit step). Post-fix, repo-side state is snapshotted to
+    // ~/.cache/claude-nomad/backup/<ts>/repo/ before the clobber.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'older.jsonl'), '{"old":true}\n');
+    const encodedLocal = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'newer.jsonl'), '{"new":true}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    remapPush('20260516-000000');
+
+    // Repo side now has the newer file (clobber happened as before).
+    expect(existsSync(join(sharedProjects, 'foo', 'newer.jsonl'))).toBe(true);
+    expect(existsSync(join(sharedProjects, 'foo', 'older.jsonl'))).toBe(false);
+    // And the older file lives in the repo-scoped backup root.
+    const backupOlder = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      '20260516-000000',
+      'repo',
+      'shared',
+      'projects',
+      'foo',
+      'older.jsonl',
+    );
+    expect(existsSync(backupOlder)).toBe(true);
+    expect(readFileSync(backupOlder, 'utf8')).toBe('{"old":true}\n');
+  });
+
   it('skips entries whose host path is the TBD placeholder (no mutation, no backup)', async () => {
     mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
     writeFileSync(join(sharedProjects, 'foo', 'should-not-copy.jsonl'), '{"x":1}\n');
