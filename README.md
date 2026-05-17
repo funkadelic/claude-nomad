@@ -91,13 +91,13 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 }
 ```
 
-The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Use the literal string `"TBD"` for hosts you haven't onboarded yet — `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
+The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
 
 On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [Known limits](#known-limits-deliberate) for the cross-OS cwd-binding gotcha).
 
 ## Per-host overrides
 
-`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches — especially keys that embed absolute paths like `hooks` and `statusLine.command`. They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace).
+`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches (especially keys that embed absolute paths like `hooks` and `statusLine.command`). They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace).
 
 `shared/settings.base.json`:
 
@@ -119,7 +119,7 @@ On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied 
 
 Result on that host: opus model, the local Ollama env var, plus the shared permissions array.
 
-**Never hand-edit `~/.claude/settings.json` on a synced host** — it's regenerated on every `nomad pull` from base + host. Edit the base or host file in the repo instead.
+**Never hand-edit `~/.claude/settings.json` on a synced host.** It's regenerated on every `nomad pull` from base + host. Edit the base or host file in the repo instead.
 
 ## Requirements
 
@@ -161,7 +161,7 @@ Add to `~/.zshrc` or `~/.bashrc` (the installer prints the alias line):
 export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
 alias nomad='tsx ~/claude-nomad/src/nomad.ts'
 # optional: pull on shell start
-nomad pull -q 2>/dev/null &
+nomad pull 2>/dev/null &
 ```
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
@@ -251,9 +251,36 @@ git merge v0.2.0
 
 ## Commands
 
-- `nomad pull` — `git pull`, apply symlinks, regenerate `settings.json`, remap session paths
-- `nomad push` — export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push
-- `nomad doctor` — read-only health check: reports `host: <NOMAD_HOST>`, lists each symlink as `symlink OK` / `missing` / `NOT a symlink`, lists mapped projects for the current host
+- `nomad pull`: `git pull`, apply symlinks, regenerate `settings.json`, remap session paths
+- `nomad push`: export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push
+- `nomad doctor`: read-only health check. Reports `host: <NOMAD_HOST>`, lists each symlink as `symlink OK` / `missing` / `NOT a symlink`, lists mapped projects for the current host
+- `nomad doctor --resume-cmd <session-id>` prints a host-local `cd ... && claude --resume <id>` line for the given session (see [Cross-OS resume](#cross-os-resume))
+
+## Cross-OS resume
+
+Claude Code embeds the original `cwd` in each session transcript. When you resume on a different host where that path doesn't exist, the picker prints a `cd <orig-cwd> && claude --resume <id>` line that fails (the source-host path isn't there).
+
+Run this instead:
+
+```bash
+eval "$(nomad doctor --resume-cmd <session-id>)"
+```
+
+Or pipe through bash:
+
+```bash
+nomad doctor --resume-cmd <session-id> | bash
+```
+
+`nomad doctor --resume-cmd <id>` reads the `.jsonl`'s recorded `cwd`, reverse-looks up the logical project in `path-map.json`, finds your current host's abspath for that logical, and prints `cd <local-abspath> && claude --resume <id>` to stdout. The command is read-only: it never modifies any transcript byte (Phase 1's sha256 byte-equality invariant is preserved).
+
+If the session isn't mapped on this host, you'll see:
+
+```text
+[nomad] FATAL: session <id> not mapped on this host; add the logical to path-map.json
+```
+
+Other FATAL surfaces: missing `~/.claude/projects/`, session id absent from every encoded dir, no `cwd` field anywhere in the transcript, missing `path-map.json`, recorded cwd not present in any logical's host map. All errors go to stderr with the `[nomad]` prefix; success goes to stdout WITHOUT the prefix so `eval` works.
 
 ## Known limits (deliberate)
 
@@ -261,7 +288,7 @@ git merge v0.2.0
 - **Manual push/pull.** No file watcher. Shell hooks recommended.
 - **OAuth doesn't sync.** You'll log in once per host. This is intentional.
 - **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone, which is what you want.
-- **Cross-OS `claude --resume` cwd binding.** Each `.jsonl` session embeds the cwd where it was created. After a cross-OS pull, the picker is correctly scoped to your local cwd, but when you select an entry it prints `cd <recorded-cwd> && claude --resume <id>` — which fails on the new host (the source-host path doesn't exist there). Bypass: skip the `cd` and invoke `claude --resume <id>` directly from the locally-mapped cwd; Claude Code accepts the session ID. A future tool change can rewrite the in-file cwd on `remapPull` to remove this manual step.
+- **Cross-OS `claude --resume` cwd binding.** Each `.jsonl` session embeds the cwd where it was created, and the picker prints a `cd <recorded-cwd> && claude --resume <id>` line that fails on the new host. Use `nomad doctor --resume-cmd <id>` to print a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach was chosen over rewriting `cwd` in the transcript so Phase 1's transcript byte-equality invariant stays intact.
 - **First pull on a populated host refuses to overwrite real files.** `applySharedLinks` is intentionally non-destructive. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the safe backup-and-rename flow.
 - **Empty directories don't survive sync.** Git doesn't track empty dirs, so if any `shared/<name>/` has no files (e.g., `shared/commands/` on a host with no commands), it won't materialize on the destination host. `nomad doctor` reports it as `missing`; behavior is benign. Drop a `.gitkeep` if you want the dir to materialize.
 

@@ -1,10 +1,36 @@
-import { existsSync } from 'node:fs';
+import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, SHARED_LINKS } from './config.ts';
-import { die, ensureSymlink, deepMerge, log, readJson, writeJson } from './utils.ts';
+import {
+  backupBeforeWrite,
+  deepMerge,
+  die,
+  ensureSymlink,
+  log,
+  readJson,
+  writeJsonAtomic,
+} from './utils.ts';
 
-export function applySharedLinks(): void {
+/**
+ * Symlink the `SHARED_LINKS` names from the repo's `shared/` dir into
+ * `~/.claude/`. Two-pass: first back up and remove any pre-existing
+ * non-symlink at each link path (auto-move using `ts` as the backup
+ * timestamp), then create the symlinks. Skips a link entirely when the repo
+ * has no counterpart, so a host where `shared/commands/` does not exist
+ * keeps its local `~/.claude/commands/` instead of having it silently
+ * deleted.
+ */
+export function applySharedLinks(ts: string): void {
+  for (const name of SHARED_LINKS) {
+    const linkPath = join(CLAUDE_HOME, name);
+    const target = join(REPO_HOME, 'shared', name);
+    if (!existsSync(linkPath)) continue;
+    if (lstatSync(linkPath).isSymbolicLink()) continue;
+    if (!existsSync(target)) continue;
+    backupBeforeWrite(linkPath, ts);
+    rmSync(linkPath, { recursive: true, force: true });
+  }
   for (const name of SHARED_LINKS) {
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(target)) continue;
@@ -12,7 +38,17 @@ export function applySharedLinks(): void {
   }
 }
 
-export function regenerateSettings(): void {
+/**
+ * Deep-merge `shared/settings.base.json` with `hosts/<HOST>.json` (when
+ * present) and atomically rewrite `~/.claude/settings.json`. Composes
+ * `writeJsonAtomic` (temp + fsync + rename + parent fsync) on top of
+ * `backupBeforeWrite`, so an interrupted pull leaves either the pre-pull
+ * file or the fully-merged file, never a half-written one. Surfaces a
+ * stderr WARN when no host override exists AND prior settings has top-level
+ * keys not in base; the matching doctor-side FAIL with non-zero exit lives
+ * in `cmdDoctor`.
+ */
+export function regenerateSettings(ts: string): void {
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   const hostPath = join(REPO_HOME, 'hosts', `${HOST}.json`);
   if (!existsSync(basePath)) die(`missing ${basePath}`);
@@ -22,6 +58,33 @@ export function regenerateSettings(): void {
   const overrides = hasOverrides ? readJson<Record<string, unknown>>(hostPath) : {};
   const merged = deepMerge(base, overrides);
 
-  writeJson(join(CLAUDE_HOME, 'settings.json'), merged);
+  const settingsPath = join(CLAUDE_HOME, 'settings.json');
+
+  // Pull-side surface: warn-then-proceed when no host file matches AND
+  // existing settings has top-level keys not in base. Informational only;
+  // pull does NOT abort. The matching doctor-side FAIL with non-zero exit
+  // lives in `cmdDoctor`.
+  if (!hasOverrides && existsSync(settingsPath)) {
+    // Best-effort drift report. Malformed prior settings.json must not block
+    // regeneration: the whole point here is to overwrite it from base+overrides.
+    try {
+      const existing = readJson<Record<string, unknown>>(settingsPath);
+      const baseKeys = new Set(Object.keys(base));
+      const drift = Object.keys(existing).filter((k) => !baseKeys.has(k));
+      if (drift.length > 0) {
+        process.stderr.write(
+          `[nomad] WARN: no hosts/${HOST}.json found; existing settings has unbased keys ${JSON.stringify(drift)}. ` +
+            `Set NOMAD_HOST to match a hosts/*.json or rerun 'nomad doctor' for candidates.\n`,
+        );
+      }
+    } catch {
+      process.stderr.write(
+        `[nomad] WARN: existing settings.json is malformed; skipping drift-check and regenerating.\n`,
+      );
+    }
+  }
+
+  backupBeforeWrite(settingsPath, ts);
+  writeJsonAtomic(settingsPath, merged);
   log(`wrote settings.json (base + ${hasOverrides ? `${HOST}.json` : 'no host overrides'})`);
 }

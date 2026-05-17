@@ -1,8 +1,27 @@
-import { hostname } from 'node:os';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { hostname, tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { deepMerge, encodePath } from './utils.ts';
+import {
+  backupRepoWrite,
+  deepMerge,
+  encodePath,
+  freshBackupTs,
+  nowTimestamp,
+  writeJsonAtomic,
+} from './utils.ts';
 
 describe('deepMerge', () => {
   it('overrides scalar values from source', () => {
@@ -90,5 +109,315 @@ describe('HOST resolution', () => {
     } finally {
       restoreNomadHost();
     }
+  });
+});
+
+describe('nowTimestamp', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('formats local time as YYYYMMDD-HHMMSS', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 16, 14, 35, 1));
+    expect(nowTimestamp()).toBe('20260516-143501');
+  });
+
+  it('zero-pads single-digit month, day, hour, minute, second', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 0, 5, 3, 7, 9));
+    expect(nowTimestamp()).toBe('20260105-030709');
+  });
+});
+
+describe('freshBackupTs', () => {
+  let testRoot: string;
+
+  beforeEach(() => {
+    testRoot = mkdtempSync(join(tmpdir(), 'nomad-freshts-'));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 16, 14, 35, 1));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    rmSync(testRoot, { recursive: true, force: true });
+  });
+
+  it('returns the bare timestamp when no collision exists', () => {
+    expect(freshBackupTs(testRoot)).toBe('20260516-143501');
+  });
+
+  it('appends -1 when bare timestamp dir already exists (same-second collision)', () => {
+    mkdirSync(join(testRoot, '20260516-143501'));
+    expect(freshBackupTs(testRoot)).toBe('20260516-143501-1');
+  });
+
+  it('skips through -1, -2, -3 to find first free suffix', () => {
+    mkdirSync(join(testRoot, '20260516-143501'));
+    mkdirSync(join(testRoot, '20260516-143501-1'));
+    mkdirSync(join(testRoot, '20260516-143501-2'));
+    expect(freshBackupTs(testRoot)).toBe('20260516-143501-3');
+  });
+});
+
+describe('backupBeforeWrite', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+  const ts = '20260516-000000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('copies an existing file under CLAUDE_HOME to the backup dir byte-equal', async () => {
+    const { backupBeforeWrite } = await import('./utils.ts');
+    const src = join(testHome, '.claude', 'settings.json');
+    writeFileSync(src, '{"a":1}');
+    backupBeforeWrite(src, ts);
+    const dst = join(testHome, '.cache', 'claude-nomad', 'backup', ts, 'settings.json');
+    expect(existsSync(dst)).toBe(true);
+    expect(readFileSync(dst, 'utf8')).toBe('{"a":1}');
+  });
+
+  it('is a no-op when the source path does not exist', async () => {
+    const { backupBeforeWrite } = await import('./utils.ts');
+    const src = join(testHome, '.claude', 'settings.json');
+    backupBeforeWrite(src, ts);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
+  it('refuses paths outside CLAUDE_HOME', async () => {
+    const { backupBeforeWrite } = await import('./utils.ts');
+    mkdirSync(join(testHome, '.other'), { recursive: true });
+    const src = join(testHome, '.other', 'data.json');
+    writeFileSync(src, '{"a":1}');
+    backupBeforeWrite(src, ts);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
+  it('recursively copies a directory under CLAUDE_HOME', async () => {
+    const { backupBeforeWrite } = await import('./utils.ts');
+    const agentsDir = join(testHome, '.claude', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+    writeFileSync(join(agentsDir, 'foo.md'), 'foo');
+    writeFileSync(join(agentsDir, 'bar.md'), 'bar');
+    backupBeforeWrite(agentsDir, ts);
+    const backupAgents = join(testHome, '.cache', 'claude-nomad', 'backup', ts, 'agents');
+    expect(readFileSync(join(backupAgents, 'foo.md'), 'utf8')).toBe('foo');
+    expect(readFileSync(join(backupAgents, 'bar.md'), 'utf8')).toBe('bar');
+  });
+});
+
+describe('backupRepoWrite', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+  let repoHome: string;
+  const ts = '20260516-000000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-repo-backup-'));
+    process.env.HOME = testHome;
+    repoHome = join(testHome, 'claude-nomad');
+    mkdirSync(repoHome, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('copies a repo-scoped file to the repo subdir of the backup root', () => {
+    const src = join(repoHome, 'shared', 'projects', 'foo', 'session.jsonl');
+    mkdirSync(join(repoHome, 'shared', 'projects', 'foo'), { recursive: true });
+    writeFileSync(src, '{"a":1}');
+    backupRepoWrite(src, ts, repoHome);
+    const dst = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      ts,
+      'repo',
+      'shared',
+      'projects',
+      'foo',
+      'session.jsonl',
+    );
+    expect(existsSync(dst)).toBe(true);
+    expect(readFileSync(dst, 'utf8')).toBe('{"a":1}');
+  });
+
+  it('is a no-op when the source path does not exist', () => {
+    const src = join(repoHome, 'shared', 'projects', 'missing');
+    backupRepoWrite(src, ts, repoHome);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
+  it('refuses paths outside REPO_HOME', () => {
+    const outsidePath = join(testHome, 'elsewhere.json');
+    writeFileSync(outsidePath, '{"a":1}');
+    backupRepoWrite(outsidePath, ts, repoHome);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+});
+
+describe('writeJsonAtomic', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('writes JSON with two-space indent and trailing newline (writeJson parity)', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    writeJsonAtomic(target, { model: 'sonnet', hooks: {} });
+    const content = readFileSync(target, 'utf8');
+    expect(content).toBe(JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n');
+  });
+
+  it('leaves no .tmp.<pid> sibling after successful write', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    writeJsonAtomic(target, { a: 1 });
+    const leftover = join(testHome, '.claude', `settings.json.tmp.${process.pid}`);
+    expect(existsSync(leftover)).toBe(false);
+    expect(existsSync(target)).toBe(true);
+  });
+
+  it('replaces an existing file atomically (final destination has new content)', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    writeFileSync(target, '{"old":true}\n');
+    writeJsonAtomic(target, { fresh: 1 });
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ fresh: 1 });
+  });
+
+  it('preserves an existing destination file mode (0o600 stays 0o600)', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    writeFileSync(target, '{"a":1}\n');
+    chmodSync(target, 0o600);
+    writeJsonAtomic(target, { a: 2 });
+    expect(statSync(target).mode & 0o777).toBe(0o600);
+  });
+
+  it('defaults to 0o600 when destination did not exist', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    expect(existsSync(target)).toBe(false);
+    writeJsonAtomic(target, { fresh: 1 });
+    expect(statSync(target).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe('acquireLock / releaseLock', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+  let lockPath: string;
+  let stderrWrites: string[];
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+    lockPath = join(testHome, '.cache', 'claude-nomad', 'nomad.lock');
+    stderrWrites = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      /* defensive cleanup; ignore */
+    }
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('fresh acquire creates lockfile with our PID, release removes it', async () => {
+    const { acquireLock, releaseLock } = await import('./utils.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    expect(existsSync(lockPath)).toBe(true);
+    expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    releaseLock(handle);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('returns null and writes stderr skip line when a live PID owns the lock', async () => {
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(lockPath, String(process.pid));
+    const { acquireLock } = await import('./utils.ts');
+    const handle = acquireLock('pull');
+    expect(handle).toBeNull();
+    expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
+    expect(existsSync(lockPath)).toBe(true);
+  });
+
+  it('unlinks stale lockfile and retries when PID file references a dead process', async () => {
+    const deadPid = 2147483647;
+    let guarded = false;
+    try {
+      process.kill(deadPid, 0);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ESRCH') guarded = true;
+    }
+    if (!guarded) {
+      throw new Error(
+        `PID ${deadPid} unexpectedly live on this host; raise pid_max guard or pick a higher PID.`,
+      );
+    }
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(lockPath, String(deadPid));
+    const { acquireLock, releaseLock } = await import('./utils.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    releaseLock(handle);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('returns null on double-acquire in the same process (own PID is alive)', async () => {
+    const { acquireLock, releaseLock } = await import('./utils.ts');
+    const first = acquireLock('pull');
+    expect(first).not.toBeNull();
+    const second = acquireLock('pull');
+    expect(second).toBeNull();
+    expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
+    releaseLock(first);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('releaseLock(null) is a safe no-op', async () => {
+    const { releaseLock } = await import('./utils.ts');
+    expect(() => releaseLock(null)).not.toThrow();
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad'))).toBe(false);
   });
 });
