@@ -208,6 +208,12 @@ function readJsonSafe<T>(path: string, label: string): T | null {
   }
 }
 
+// IN-03: doctor intentionally emits ALL diagnostics (PASS/WARN/FAIL) on
+// stdout via log() rather than splitting WARN/FAIL to stderr. The intent is
+// that users see the full diagnostic cohesively; piping `nomad doctor 2>/dev/null`
+// must NOT lose FAIL lines. This differs from cmdPull / cmdPush / resumeCmd
+// where FATAL is on stderr because those callers want clean stdout. Doctor
+// signals failure to scripts via process.exitCode instead.
 export function cmdDoctor(): void {
   log(`host: ${HOST}`);
   log(`repo: ${REPO_HOME} ${existsSync(REPO_HOME) ? 'OK' : 'MISSING'}`);
