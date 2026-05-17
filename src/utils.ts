@@ -1,16 +1,23 @@
 import { execSync } from 'node:child_process';
 import {
+  closeSync,
   cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
 import { CLAUDE_HOME } from './config.ts';
+
+const LOCK_PATH = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'nomad.lock');
+
+export type LockHandle = { fd: number };
 
 export const log = (msg: string): void => console.log(`[nomad] ${msg}`);
 
@@ -93,4 +100,79 @@ export function backupBeforeWrite(absPath: string, ts: string): void {
   const dst = join(backupRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+}
+
+// Lock-contention returns null (NOT die()); caller exits 0 because skip-on-contention is
+// intended UX for backgrounded shell-rc invocations per D-05.
+export function acquireLock(verb: string): LockHandle | null {
+  mkdirSync(dirname(LOCK_PATH), { recursive: true });
+  try {
+    const fd = openSync(LOCK_PATH, 'wx');
+    writeFileSync(fd, String(process.pid));
+    return { fd };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'EEXIST') throw err;
+    return checkStaleAndRetry(verb);
+  }
+}
+
+export function releaseLock(handle: LockHandle | null): void {
+  if (handle === null) return;
+  try {
+    closeSync(handle.fd);
+  } catch {
+    /* already closed; ignore */
+  }
+  try {
+    unlinkSync(LOCK_PATH);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+}
+
+function checkStaleAndRetry(verb: string): LockHandle | null {
+  let pidStr: string;
+  try {
+    pidStr = readFileSync(LOCK_PATH, 'utf8').trim();
+  } catch {
+    pidStr = '';
+  }
+  const pid = Number.parseInt(pidStr, 10);
+  if (!Number.isFinite(pid) || pid <= 0) {
+    try {
+      unlinkSync(LOCK_PATH);
+    } catch {
+      /* race; ignore */
+    }
+    return retryOnce(verb);
+  }
+  try {
+    process.kill(pid, 0);
+    process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+    return null;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ESRCH') {
+      try {
+        unlinkSync(LOCK_PATH);
+      } catch {
+        /* race; ignore */
+      }
+      return retryOnce(verb);
+    }
+    process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+    return null;
+  }
+}
+
+function retryOnce(verb: string): LockHandle | null {
+  try {
+    const fd = openSync(LOCK_PATH, 'wx');
+    writeFileSync(fd, String(process.pid));
+    return { fd };
+  } catch {
+    process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+    return null;
+  }
 }
