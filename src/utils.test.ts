@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { deepMerge, encodePath, nowTimestamp } from './utils.ts';
+import { deepMerge, encodePath, nowTimestamp, writeJsonAtomic } from './utils.ts';
 
 describe('deepMerge', () => {
   it('overrides scalar values from source', () => {
@@ -176,6 +176,46 @@ describe('backupBeforeWrite', () => {
     const backupAgents = join(testHome, '.cache', 'claude-nomad', 'backup', ts, 'agents');
     expect(readFileSync(join(backupAgents, 'foo.md'), 'utf8')).toBe('foo');
     expect(readFileSync(join(backupAgents, 'bar.md'), 'utf8')).toBe('bar');
+  });
+});
+
+describe('writeJsonAtomic', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('writes JSON with two-space indent and trailing newline (writeJson parity)', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    writeJsonAtomic(target, { model: 'sonnet', hooks: {} });
+    const content = readFileSync(target, 'utf8');
+    expect(content).toBe(JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n');
+  });
+
+  it('leaves no .tmp.<pid> sibling after successful write', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    writeJsonAtomic(target, { a: 1 });
+    const leftover = join(testHome, '.claude', `settings.json.tmp.${process.pid}`);
+    expect(existsSync(leftover)).toBe(false);
+    expect(existsSync(target)).toBe(true);
+  });
+
+  it('replaces an existing file atomically (final destination has new content)', () => {
+    const target = join(testHome, '.claude', 'settings.json');
+    writeFileSync(target, '{"old":true}\n');
+    writeJsonAtomic(target, { fresh: 1 });
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ fresh: 1 });
   });
 });
 
