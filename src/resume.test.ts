@@ -2,15 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-  type MockInstance,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 // FMT-05 harness, inline per file (RESEARCH.md A8: extraction deferred).
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
@@ -43,7 +35,12 @@ function makeEnv(host: string): Env {
   return { testHome, logSpy, errorSpy, exitSpy };
 }
 
-function writeTranscript(testHome: string, encodedDir: string, sessionId: string, lines: string[]): void {
+function writeTranscript(
+  testHome: string,
+  encodedDir: string,
+  sessionId: string,
+  lines: string[],
+): void {
   const dir = join(testHome, '.claude', 'projects', encodedDir);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${sessionId}.jsonl`), lines.join('\n') + '\n');
@@ -123,9 +120,7 @@ describe('resumeCmd', () => {
     });
     const { resumeCmd } = await import('./resume.ts');
     expect(() => resumeCmd('orphan-1')).toThrow('exit:1');
-    expect(env.errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('/strange/path/not/in/map'),
-    );
+    expect(env.errorSpy).toHaveBeenCalledWith(expect.stringContaining('/strange/path/not/in/map'));
     expect(env.errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('not found in path-map.json'),
     );

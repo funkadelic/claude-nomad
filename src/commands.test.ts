@@ -113,9 +113,7 @@ describe('enforceAllowList', () => {
     const status = z(['R  shared/agents/secret.key', 'random/secret.key']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync random/secret.key'),
-    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/secret.key'));
   });
 
   // CR-02 regression: in -z mode quoted paths are NOT used; filenames with
@@ -135,27 +133,21 @@ describe('enforceAllowList', () => {
     const status = z(['?? hosts/secret.key']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync hosts/secret.key'),
-    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/secret.key'));
   });
 
   it('rejects hosts/.env.production (no .json extension)', () => {
     const status = z(['?? hosts/.env.production']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync hosts/.env.production'),
-    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/.env.production'));
   });
 
   it('rejects hosts/sub/nested.json (nested depth beyond one level)', () => {
     const status = z(['?? hosts/sub/nested.json']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync hosts/sub/nested.json'),
-    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/sub/nested.json'));
   });
 
   it('allows hosts/dell-wsl.json (single-level .json file under hosts/)', () => {

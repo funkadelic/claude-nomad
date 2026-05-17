@@ -70,10 +70,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // Build a repo state where `git status --porcelain=v1 -z` would emit a
     // NEVER_SYNC path. Easiest: stub sh to return the porcelain we want and
     // existsSync(path-map.json) to true via fs writes.
-    writeFileSync(
-      join(repoUnderHome, 'path-map.json'),
-      JSON.stringify({ projects: {} }) + '\n',
-    );
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {

@@ -300,9 +300,7 @@ export function cmdDoctor(): void {
           const encoded = encodePath(abspath);
           const prior = seen.get(encoded);
           if (prior !== undefined && prior !== abspath) {
-            log(
-              `FAIL path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`,
-            );
+            log(`FAIL path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`);
             collisionCount++;
           } else {
             seen.set(encoded, abspath);

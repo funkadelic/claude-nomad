@@ -50,7 +50,10 @@ describe('regenerateSettings (integration)', () => {
   });
 
   it('writes settings.json with base + host overrides applied', async () => {
-    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'sonnet' }) + '\n');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
@@ -59,7 +62,10 @@ describe('regenerateSettings (integration)', () => {
   });
 
   it('leaves no .tmp sibling after a successful atomic write', async () => {
-    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'sonnet' }) + '\n');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
@@ -68,7 +74,10 @@ describe('regenerateSettings (integration)', () => {
   });
 
   it('snapshots the prior settings.json to ~/.cache/.../backup/<ts>/ before overwrite', async () => {
-    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'sonnet' }) + '\n');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
     const priorContent = JSON.stringify({ model: 'opus', old: true }) + '\n';
     writeFileSync(join(claudeDir, 'settings.json'), priorContent);
@@ -92,7 +101,10 @@ describe('regenerateSettings (integration)', () => {
   });
 
   it('fires stderr WARN when host file is missing AND prior settings has unbased keys', async () => {
-    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'sonnet' }) + '\n');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
     writeFileSync(
       join(claudeDir, 'settings.json'),
       JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
@@ -111,7 +123,10 @@ describe('regenerateSettings (integration)', () => {
   });
 
   it('does NOT fire WARN when host file is missing but prior settings only has base keys', async () => {
-    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'sonnet' }) + '\n');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
     writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ model: 'opus' }) + '\n');
     const writes: string[] = [];
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
