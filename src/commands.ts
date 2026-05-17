@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   CLAUDE_HOME,
   HOST,
+  KNOWN_SETTINGS_KEYS,
   NEVER_SYNC,
   PUSH_ALLOWED_STATIC,
   REPO_HOME,
@@ -12,7 +13,16 @@ import {
 } from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { remapPull, remapPush } from './remap.ts';
-import { acquireLock, die, log, nowTimestamp, readJson, releaseLock, sh } from './utils.ts';
+import {
+  acquireLock,
+  die,
+  encodePath,
+  log,
+  nowTimestamp,
+  readJson,
+  releaseLock,
+  sh,
+} from './utils.ts';
 
 function isAllowed(path: string, allowed: readonly string[]): boolean {
   for (const entry of allowed) {
@@ -128,6 +138,20 @@ export function cmdDoctor(): void {
     );
   }
 
+  // FMT-02: scan settings.json top-level keys against the schema baseline; WARN
+  // surfaces Anthropic-added keys we have not catalogued yet (informational, no
+  // exitCode effect per RESEARCH.md A6).
+  const settingsPath = join(CLAUDE_HOME, 'settings.json');
+  if (existsSync(settingsPath)) {
+    const settings = readJson<Record<string, unknown>>(settingsPath);
+    const unknownKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS_KEYS.has(k));
+    if (unknownKeys.length > 0) {
+      log(`WARN settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`);
+    } else {
+      log('settings.json schema: known keys only');
+    }
+  }
+
   const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
   log(`host overrides: ${existsSync(hostFile) ? hostFile : 'none'}`);
 
@@ -137,6 +161,23 @@ export function cmdDoctor(): void {
     const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
     log(`mapped projects for ${HOST}: ${mapped.length}`);
     for (const [name, hosts] of mapped) log(`  ${name} -> ${hosts[HOST]}`);
+
+    // FMT-03: scan ALL hosts in path-map.json, group by encodePath result, WARN
+    // on collisions (Pitfall 7: `/foo/bar-baz` vs `/foo-bar/baz` both encode to
+    // `-foo-bar-baz`). Informational, no exitCode effect.
+    const seen = new Map<string, string>();
+    for (const hosts of Object.values(map.projects)) {
+      for (const abspath of Object.values(hosts)) {
+        if (!abspath || abspath === 'TBD') continue;
+        const encoded = encodePath(abspath);
+        const prior = seen.get(encoded);
+        if (prior !== undefined && prior !== abspath) {
+          log(`WARN path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`);
+        } else {
+          seen.set(encoded, abspath);
+        }
+      }
+    }
   } else {
     log('path-map.json: missing');
   }
