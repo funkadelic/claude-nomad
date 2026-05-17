@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/funkadelic/claude-nomad/compare/v0.3.2...v0.4.0) (2026-05-17)
+
+
+### Added
+
+* add backup, lockfile, atomic write, and push allow-list to nomad ([#14](https://github.com/funkadelic/claude-nomad/issues/14)) ([95249e0](https://github.com/funkadelic/claude-nomad/commit/95249e0a658b96d2ce94989d91763f64c7cc8bc3))
+
+
+### Fixed
+
+* **links:** expect my-statusline.cjs since parent package is ESM ([#12](https://github.com/funkadelic/claude-nomad/issues/12)) ([a59d4d1](https://github.com/funkadelic/claude-nomad/commit/a59d4d1e23904cef9c6c65868f8f3e3ee9f86c1c))
+
 ## [0.3.2](https://github.com/funkadelic/claude-nomad/compare/v0.3.1...v0.3.2) (2026-05-16)
 
 
