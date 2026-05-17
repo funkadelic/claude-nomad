@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { encodePath, log, readJson } from './utils.ts';
+import { backupBeforeWrite, encodePath, log, readJson } from './utils.ts';
 
 // cpSync(force:true) overwrites matching files but does not remove dst-only
 // entries; rmSync first so dst mirrors src instead of accumulating stale files.
@@ -12,7 +12,7 @@ function copyDir(src: string, dst: string): void {
 }
 
 /** Pull: copy from repo's logical project names into local path-encoded dirs. */
-export function remapPull(): void {
+export function remapPull(ts: string): void {
   const mapPath = join(REPO_HOME, 'path-map.json');
   const repoProjects = join(REPO_HOME, 'shared', 'projects');
   if (!existsSync(mapPath) || !existsSync(repoProjects)) {
@@ -36,7 +36,10 @@ export function remapPull(): void {
     }
     const src = join(repoProjects, logical);
     if (!existsSync(src)) continue;
-    copyDir(src, join(localProjects, encodePath(localPath)));
+    const dst = join(localProjects, encodePath(localPath));
+    // D-01: snapshot prior encoded-path-dir state BEFORE copyDir overwrites it.
+    backupBeforeWrite(dst, ts);
+    copyDir(src, dst);
     log(`pulled ${logical} -> ${encodePath(localPath)}`);
   }
 }
