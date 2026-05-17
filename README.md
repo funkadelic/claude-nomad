@@ -91,13 +91,13 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 }
 ```
 
-The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Use the literal string `"TBD"` for hosts you haven't onboarded yet — `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
+The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
 
 On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [Known limits](#known-limits-deliberate) for the cross-OS cwd-binding gotcha).
 
 ## Per-host overrides
 
-`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches — especially keys that embed absolute paths like `hooks` and `statusLine.command`. They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace).
+`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches (especially keys that embed absolute paths like `hooks` and `statusLine.command`). They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace).
 
 `shared/settings.base.json`:
 
@@ -119,7 +119,7 @@ On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied 
 
 Result on that host: opus model, the local Ollama env var, plus the shared permissions array.
 
-**Never hand-edit `~/.claude/settings.json` on a synced host** — it's regenerated on every `nomad pull` from base + host. Edit the base or host file in the repo instead.
+**Never hand-edit `~/.claude/settings.json` on a synced host.** It's regenerated on every `nomad pull` from base + host. Edit the base or host file in the repo instead.
 
 ## Requirements
 
@@ -251,9 +251,9 @@ git merge v0.2.0
 
 ## Commands
 
-- `nomad pull` — `git pull`, apply symlinks, regenerate `settings.json`, remap session paths
-- `nomad push` — export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push
-- `nomad doctor` — read-only health check: reports `host: <NOMAD_HOST>`, lists each symlink as `symlink OK` / `missing` / `NOT a symlink`, lists mapped projects for the current host
+- `nomad pull`: `git pull`, apply symlinks, regenerate `settings.json`, remap session paths
+- `nomad push`: export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push
+- `nomad doctor`: read-only health check. Reports `host: <NOMAD_HOST>`, lists each symlink as `symlink OK` / `missing` / `NOT a symlink`, lists mapped projects for the current host
 - `nomad doctor --resume-cmd <session-id>` prints a host-local `cd ... && claude --resume <id>` line for the given session (see [Cross-OS resume](#cross-os-resume))
 
 ## Cross-OS resume

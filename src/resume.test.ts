@@ -152,7 +152,7 @@ describe('resumeCmd', () => {
   it('reads cwd from the FIRST non-file-history-snapshot line, skipping line 1', async () => {
     env = makeEnv('test-host');
     // Line 1 is file-history-snapshot (no cwd); line 2 has the cwd; line 3 has
-    // a DIFFERENT cwd — resumeCmd must pick line 2's value, proving it stops
+    // a DIFFERENT cwd, so resumeCmd must pick line 2's value, proving it stops
     // at the first match rather than scanning to the last or scanning line 1.
     writeTranscript(env.testHome, '-some-encoded', 'first-match-id', [
       JSON.stringify({ type: 'file-history-snapshot', fileName: 'noise' }),
