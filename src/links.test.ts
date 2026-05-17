@@ -137,6 +137,25 @@ describe('regenerateSettings (integration)', () => {
     regenerateSettings('20260516-000000');
     expect(writes.join('')).not.toContain('WARN');
   });
+
+  it('regenerates settings even when prior settings.json is malformed JSON', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(claudeDir, 'settings.json'), '{ this is not, valid json');
+    const writes: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    expect(() => regenerateSettings('20260516-000000')).not.toThrow();
+    expect(writes.join('')).toContain('WARN: existing settings.json is malformed');
+    expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toEqual({
+      model: 'sonnet',
+    });
+  });
 });
 
 describe('applySharedLinks D-02 auto-move', () => {

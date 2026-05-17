@@ -50,13 +50,21 @@ export function regenerateSettings(ts: string): void {
   // AND existing settings has top-level keys not in base. Informational only;
   // pull does NOT abort. Doctor-side FAIL lands in plan 07.
   if (!hasOverrides && existsSync(settingsPath)) {
-    const existing = readJson<Record<string, unknown>>(settingsPath);
-    const baseKeys = new Set(Object.keys(base));
-    const drift = Object.keys(existing).filter((k) => !baseKeys.has(k));
-    if (drift.length > 0) {
+    // Best-effort drift report. Malformed prior settings.json must not block
+    // regeneration: the whole point here is to overwrite it from base+overrides.
+    try {
+      const existing = readJson<Record<string, unknown>>(settingsPath);
+      const baseKeys = new Set(Object.keys(base));
+      const drift = Object.keys(existing).filter((k) => !baseKeys.has(k));
+      if (drift.length > 0) {
+        process.stderr.write(
+          `[nomad] WARN: no hosts/${HOST}.json found; existing settings has unbased keys ${JSON.stringify(drift)}. ` +
+            `Set NOMAD_HOST to match a hosts/*.json or rerun 'nomad doctor' for candidates.\n`,
+        );
+      }
+    } catch {
       process.stderr.write(
-        `[nomad] WARN: no hosts/${HOST}.json found; existing settings has unbased keys ${JSON.stringify(drift)}. ` +
-          `Set NOMAD_HOST to match a hosts/*.json or rerun 'nomad doctor' for candidates.\n`,
+        `[nomad] WARN: existing settings.json is malformed; skipping drift-check and regenerating.\n`,
       );
     }
   }
