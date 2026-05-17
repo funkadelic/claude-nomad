@@ -184,6 +184,22 @@ export function cmdPush(): void {
   }
 }
 
+// WR-05: doctor reads three JSON files (settings.json, settings.base.json,
+// path-map.json). Pre-fix any malformed JSON threw an uncaught SyntaxError
+// mid-output; users got a stack trace instead of a FAIL line, and the
+// remainder of the diagnostic never ran. readJsonSafe returns null on parse
+// failure, logs the FAIL line on the SAME stream as other doctor output
+// (stdout per IN-03 doctor convention), and bumps exitCode.
+function readJsonSafe<T>(path: string, label: string): T | null {
+  try {
+    return readJson<T>(path);
+  } catch (err) {
+    log(`FAIL ${label} malformed JSON: ${(err as Error).message}`);
+    process.exitCode = 1;
+    return null;
+  }
+}
+
 export function cmdDoctor(): void {
   log(`host: ${HOST}`);
   log(`repo: ${REPO_HOME} ${existsSync(REPO_HOME) ? 'OK' : 'MISSING'}`);
@@ -200,31 +216,42 @@ export function cmdDoctor(): void {
     );
   }
 
+  // WR-05: preemptively report missing shared/settings.base.json since pull
+  // would die() on it anyway. Doctor is the read-only path so it's the
+  // appropriate place to surface the gap.
+  const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
+  if (!existsSync(basePath)) {
+    log(`FAIL shared/settings.base.json missing at ${basePath}`);
+    process.exitCode = 1;
+  }
+
   // FMT-02: scan settings.json top-level keys against the schema baseline; WARN
   // surfaces Anthropic-added keys we have not catalogued yet (informational, no
   // exitCode effect per RESEARCH.md A6).
   const settingsPath = join(CLAUDE_HOME, 'settings.json');
+  let settings: Record<string, unknown> | null = null;
   if (existsSync(settingsPath)) {
-    const settings = readJson<Record<string, unknown>>(settingsPath);
-    const unknownKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS_KEYS.has(k));
-    if (unknownKeys.length > 0) {
-      log(`WARN settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`);
-    } else {
-      log('settings.json schema: known keys only');
+    settings = readJsonSafe<Record<string, unknown>>(settingsPath, settingsPath);
+    if (settings !== null) {
+      const unknownKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS_KEYS.has(k));
+      if (unknownKeys.length > 0) {
+        log(`WARN settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`);
+      } else {
+        log('settings.json schema: known keys only');
+      }
     }
   }
 
   // FMT-04: doctor FAIL complements pull-side WARN in src/links.ts; uses
   // process.exitCode (NOT process.exit) so doctor's output continues.
   const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
-  const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   let drift: string[] = [];
-  if (existsSync(basePath) && existsSync(settingsPath)) {
-    const base = readJson<Record<string, unknown>>(basePath);
-    const baseKeys = new Set(Object.keys(base));
-    drift = Object.keys(readJson<Record<string, unknown>>(settingsPath)).filter(
-      (k) => !baseKeys.has(k),
-    );
+  if (existsSync(basePath) && settings !== null) {
+    const base = readJsonSafe<Record<string, unknown>>(basePath, basePath);
+    if (base !== null) {
+      const baseKeys = new Set(Object.keys(base));
+      drift = Object.keys(settings).filter((k) => !baseKeys.has(k));
+    }
   }
   if (existsSync(hostFile)) {
     log(`host overrides: ${hostFile}`);
@@ -242,26 +269,33 @@ export function cmdDoctor(): void {
 
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (existsSync(mapPath)) {
-    const map = readJson<PathMap>(mapPath);
-    const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
-    log(`mapped projects for ${HOST}: ${mapped.length}`);
-    for (const [name, hosts] of mapped) log(`  ${name} -> ${hosts[HOST]}`);
+    const map = readJsonSafe<PathMap>(mapPath, mapPath);
+    if (map !== null) {
+      const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
+      log(`mapped projects for ${HOST}: ${mapped.length}`);
+      for (const [name, hosts] of mapped) log(`  ${name} -> ${hosts[HOST]}`);
 
-    // FMT-03: scan ALL hosts in path-map.json, group by encodePath result, WARN
-    // on collisions (Pitfall 7: `/foo/bar-baz` vs `/foo-bar/baz` both encode to
-    // `-foo-bar-baz`). Informational, no exitCode effect.
-    const seen = new Map<string, string>();
-    for (const hosts of Object.values(map.projects)) {
-      for (const abspath of Object.values(hosts)) {
-        if (!abspath || abspath === 'TBD') continue;
-        const encoded = encodePath(abspath);
-        const prior = seen.get(encoded);
-        if (prior !== undefined && prior !== abspath) {
-          log(`WARN path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`);
-        } else {
-          seen.set(encoded, abspath);
+      // FMT-03: scan ALL hosts in path-map.json, group by encodePath result.
+      // IN-04: collisions are upgraded to FAIL with exitCode 1 (was WARN).
+      // Silent data loss in remap warrants gating downstream automation.
+      const seen = new Map<string, string>();
+      let collisionCount = 0;
+      for (const hosts of Object.values(map.projects)) {
+        for (const abspath of Object.values(hosts)) {
+          if (!abspath || abspath === 'TBD') continue;
+          const encoded = encodePath(abspath);
+          const prior = seen.get(encoded);
+          if (prior !== undefined && prior !== abspath) {
+            log(
+              `FAIL path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`,
+            );
+            collisionCount++;
+          } else {
+            seen.set(encoded, abspath);
+          }
         }
       }
+      if (collisionCount > 0) process.exitCode = 1;
     }
   } else {
     log('path-map.json: missing');

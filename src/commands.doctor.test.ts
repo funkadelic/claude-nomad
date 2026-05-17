@@ -92,10 +92,12 @@ describe('cmdDoctor FMT-03 collision detection', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
     env = makeDoctorEnv({ host: 'test-host', writeSettings: true });
   });
 
   afterEach(() => {
+    process.exitCode = 0;
     vi.restoreAllMocks();
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -115,9 +117,13 @@ describe('cmdDoctor FMT-03 collision detection', () => {
     const { cmdDoctor } = await import('./commands.ts');
     cmdDoctor();
     expect(joinedLog(env.logSpy)).not.toContain('path-encoding collision');
+    expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
   });
 
-  it('emits WARN listing both abspaths and the encoded result on Pitfall 7 collision', async () => {
+  // IN-04: FMT-03 collisions cause silent data loss in remap, so doctor now
+  // emits FAIL (not WARN) and sets exitCode=1 so downstream automation can
+  // gate on collisions.
+  it('emits FAIL with exit code 1 listing both abspaths and the encoded result on Pitfall 7 collision', async () => {
     // RESEARCH.md Pitfall 7: `/foo/bar-baz` and `/foo-bar/baz` both encode to
     // `-foo-bar-baz`. Per-host abspaths in different logical projects share
     // the same encoded dir name, so remap would clobber one with the other.
@@ -131,10 +137,11 @@ describe('cmdDoctor FMT-03 collision detection', () => {
     const { cmdDoctor } = await import('./commands.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN path-encoding collision:');
+    expect(out).toContain('FAIL path-encoding collision:');
     expect(out).toContain('/foo/bar-baz');
     expect(out).toContain('/foo-bar/baz');
     expect(out).toContain('-foo-bar-baz');
+    expect(process.exitCode).toBe(1);
   });
 });
 
@@ -213,5 +220,71 @@ describe('cmdDoctor FMT-04 host-override-missing', () => {
     expect(out).toContain('host overrides: none (base-only is fine, no settings drift)');
     expect(out).not.toContain('FAIL');
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
+  });
+});
+
+describe('cmdDoctor WR-05 malformed JSON tolerance', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('reports FAIL line and continues when settings.json is malformed', async () => {
+    writeFileSync(join(env.testHome, '.claude', 'settings.json'), '{ this is not json');
+    // Also write path-map.json so the LATER section runs and we can assert
+    // doctor did not abort mid-output.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: {} }) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL');
+    expect(out).toContain('malformed JSON');
+    expect(out).toContain('settings.json');
+    // Sentinel: the never-sync log line lives at the very end of doctor and
+    // would not appear if doctor had thrown mid-output.
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports FAIL line and continues when path-map.json is malformed', async () => {
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{not valid');
+    const { cmdDoctor } = await import('./commands.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL');
+    expect(out).toContain('malformed JSON');
+    expect(out).toContain('path-map.json');
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports FAIL when shared/settings.base.json is missing', async () => {
+    // makeDoctorEnv with writeBase:false leaves no base file.
+    rmSync(env.testHome, { recursive: true, force: true });
+    env = makeDoctorEnv({ host: 'test-host', writeBase: false });
+    const { cmdDoctor } = await import('./commands.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL shared/settings.base.json missing');
+    expect(process.exitCode).toBe(1);
   });
 });
