@@ -1,10 +1,65 @@
 import { existsSync, lstatSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOST, NEVER_SYNC, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
+import {
+  CLAUDE_HOME,
+  HOST,
+  NEVER_SYNC,
+  PUSH_ALLOWED_STATIC,
+  REPO_HOME,
+  SHARED_LINKS,
+  type PathMap,
+} from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { remapPull, remapPush } from './remap.ts';
 import { acquireLock, die, log, nowTimestamp, readJson, releaseLock, sh } from './utils.ts';
+
+function isAllowed(path: string, allowed: readonly string[]): boolean {
+  for (const entry of allowed) {
+    if (path === entry) return true;
+    if (entry.endsWith('/') && path.startsWith(entry)) return true;
+  }
+  return false;
+}
+
+function isNeverSync(path: string): boolean {
+  for (const segment of path.split('/')) {
+    if (NEVER_SYNC.has(segment)) return true;
+  }
+  return false;
+}
+
+// D-14/D-15/D-16: parse `git status --porcelain` output, classify each path
+// against PUSH_ALLOWED_STATIC plus runtime data-driven shared/projects/<logical>/
+// entries, and refuse the whole push if anything is in NEVER_SYNC or not in the
+// allow-list. Whole-push refusal (no per-file skipping) per D-15.
+export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
+  const allowed = [
+    ...PUSH_ALLOWED_STATIC,
+    ...Object.keys(map.projects).map((l) => `shared/projects/${l}/`),
+  ];
+  const neverSyncHits: string[] = [];
+  const violations: string[] = [];
+  for (const rawLine of statusPorcelain.split('\n')) {
+    if (!rawLine) continue;
+    // porcelain v1: 2 status chars + 1 space + path.
+    const path = rawLine.slice(3).trim();
+    if (!path) continue;
+    if (isNeverSync(path)) {
+      neverSyncHits.push(path);
+    } else if (!isAllowed(path, allowed)) {
+      violations.push(path);
+    }
+  }
+  if (neverSyncHits.length === 0 && violations.length === 0) return;
+  for (const p of neverSyncHits) {
+    console.error(`[nomad] FATAL: ${p} is in NEVER_SYNC and must never be pushed`);
+  }
+  for (const p of violations) {
+    console.error(`[nomad] FATAL: to sync ${p}, add to PUSH_ALLOWED in src/config.ts`);
+  }
+  process.exit(1);
+}
 
 export function cmdPull(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
@@ -44,6 +99,10 @@ export function cmdPush(): void {
       log('nothing to commit');
       return;
     }
+    const mapPath = join(REPO_HOME, 'path-map.json');
+    if (!existsSync(mapPath)) die('path-map.json missing, cannot enforce push allow-list');
+    const map = readJson<PathMap>(mapPath);
+    enforceAllowList(status, map);
     sh('git add -A', REPO_HOME);
     sh(`git commit -m "chore: sync from ${HOST}"`, REPO_HOME);
     sh('git push', REPO_HOME);
