@@ -3,10 +3,12 @@ import {
   closeSync,
   cpSync,
   existsSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -39,6 +41,19 @@ export function readJson<T>(path: string): T {
 
 export function writeJson(path: string, data: unknown): void {
   writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
+}
+
+/** Atomic write: temp + fsync + rename. Use for files that must survive interrupted pulls. */
+export function writeJsonAtomic(path: string, data: unknown): void {
+  const tmp = `${path}.tmp.${process.pid}`;
+  const fd = openSync(tmp, 'w');
+  try {
+    writeFileSync(fd, JSON.stringify(data, null, 2) + '\n');
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmp, path);
 }
 
 /** Deep merge: source overrides target. Arrays replace, objects merge recursively. */
