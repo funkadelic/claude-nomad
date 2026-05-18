@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/funkadelic/claude-nomad/compare/v0.5.1...v0.6.0) (2026-05-18)
+
+
+### Added
+
+* add `npm run update` for one-command CLI updates ([#20](https://github.com/funkadelic/claude-nomad/issues/20)) ([3ff7191](https://github.com/funkadelic/claude-nomad/commit/3ff7191c70af55c174a51313074358733bf10983))
+
 ## [0.5.1](https://github.com/funkadelic/claude-nomad/compare/v0.5.0...v0.5.1) (2026-05-18)
 
 
