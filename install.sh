@@ -51,9 +51,28 @@ if command -v gitleaks >/dev/null 2>&1; then
 else
   log "gitleaks not on PATH (optional for nomad doctor, required for nomad push)"
   case "$(uname -s)" in
-    Darwin) log "  Install:  brew install gitleaks" ;;
-    Linux)  log "  Install:  download the linux_x64 tarball from https://github.com/gitleaks/gitleaks/releases and extract to ~/.local/bin/" ;;
-    *)      log "  Install:  https://github.com/gitleaks/gitleaks/releases" ;;
+    Darwin)
+      log "  Install:  brew install gitleaks"
+      ;;
+    Linux)
+      # Map uname -m (x86_64 / aarch64 / armv7l ...) to gitleaks release asset
+      # suffixes (x64 / arm64 / armv7). Fall back to a generic hint if the
+      # arch is unfamiliar so we never name the wrong tarball.
+      case "$(uname -m)" in
+        x86_64|amd64) GL_ARCH="x64" ;;
+        aarch64|arm64) GL_ARCH="arm64" ;;
+        armv7l) GL_ARCH="armv7" ;;
+        *) GL_ARCH="" ;;
+      esac
+      if [ -n "$GL_ARCH" ]; then
+        log "  Install:  download the linux_${GL_ARCH} tarball from https://github.com/gitleaks/gitleaks/releases and extract to ~/.local/bin/"
+      else
+        log "  Install:  https://github.com/gitleaks/gitleaks/releases (pick the linux artifact matching $(uname -m); extract to ~/.local/bin/)"
+      fi
+      ;;
+    *)
+      log "  Install:  https://github.com/gitleaks/gitleaks/releases"
+      ;;
   esac
 fi
 
