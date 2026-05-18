@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/funkadelic/claude-nomad/compare/v0.7.1...v0.8.0) (2026-05-18)
+
+
+### Added
+
+* **push-checks:** mirror install.sh gitleaks scaffold in runtime hint ([#26](https://github.com/funkadelic/claude-nomad/issues/26)) ([642d023](https://github.com/funkadelic/claude-nomad/commit/642d0235a1166b459f9ef973dd24016f8704d769))
+
 ## [0.7.1](https://github.com/funkadelic/claude-nomad/compare/v0.7.0...v0.7.1) (2026-05-18)
 
 
