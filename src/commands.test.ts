@@ -7,8 +7,12 @@ import { NomadFatal } from './utils.ts';
 // parsePorcelainZ tests cover the format switch from `--porcelain` (LF,
 // quoted, "old -> new" rename strings) to `--porcelain=v1 -z` (NUL records,
 // no quoting, rename = two records "R  new\0old\0").
-// Helper: build a NUL-delimited porcelain stream from rows. Use `null` as a
-// row to inject a trailing NUL pair (e.g. for rename's old-path field).
+
+/**
+ * Build a NUL-delimited porcelain stream from rows. Each row is joined with
+ * `\0` and a trailing `\0` terminator is appended (mirrors `git status -z`
+ * output where every record ends in a NUL byte, including the last one).
+ */
 function z(rows: string[]): string {
   return rows.join('\0') + '\0';
 }

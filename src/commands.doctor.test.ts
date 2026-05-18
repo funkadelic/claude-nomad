@@ -11,6 +11,15 @@ import { type PathMap } from './config.ts';
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 type Env = { testHome: string; logSpy: LogSpy };
 
+/**
+ * Build a sandbox env for `cmdDoctor` tests: creates a temp `HOME` with the
+ * expected `claude-nomad/{shared,hosts}` and `.claude/` skeletons, optionally
+ * writes `settings.base.json` (default on), optionally writes a
+ * `.claude/settings.json` (default off), and optionally initializes a git
+ * repo at `REPO_HOME` (default off; needed for the remote-URL and
+ * rebase-clean-tree diagnostics). Returns the temp dir plus a `console.log`
+ * spy so callers can assert on doctor's output.
+ */
 function makeDoctorEnv(opts: {
   host?: string;
   writeBase?: boolean;
@@ -36,8 +45,8 @@ function makeDoctorEnv(opts: {
     );
   }
   if (opts.setupGitRepo) {
-    // Initialize a real git repo at REPO_HOME so cmdDoctor's D-16 (remote URL)
-    // and D-17 (rebase clean-tree WARN) git invocations can run against it.
+    // Initialize a real git repo at REPO_HOME so cmdDoctor's remote-URL and
+    // rebase-clean-tree-WARN git invocations can run against it.
     // --quiet suppresses git's "hint: Using 'master' as the name..." stderr;
     // -b main pins the initial branch to avoid host-specific defaults.
     execFileSync('git', ['init', '--quiet', '-b', 'main'], {
@@ -52,6 +61,8 @@ function makeDoctorEnv(opts: {
   return { testHome, logSpy };
 }
 
+/** Concatenate every captured `console.log` call into a single newline-joined
+ * string, so tests can assert on substrings without iterating `mock.calls`. */
 function joinedLog(logSpy: LogSpy): string {
   return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
 }
@@ -146,9 +157,10 @@ describe('cmdDoctor path-encoding collision detection', () => {
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
     const { cmdDoctor } = await import('./commands.ts');
     cmdDoctor();
-    // D-14 may set exitCode=1 on dev hosts without gitleaks; this test only
-    // asserts the path-encoding diagnostic is silent and that no NEW
-    // exitCode-setting condition fires from THIS describe's setup.
+    // The gitleaks-presence diagnostic may set exitCode=1 on dev hosts
+    // without gitleaks; this test only asserts the path-encoding diagnostic
+    // is silent and that no NEW exitCode-setting condition fires from THIS
+    // describe's setup.
     expect(joinedLog(env.logSpy)).not.toContain('path-encoding collision');
   });
 
@@ -221,8 +233,9 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     const out = joinedLog(env.logSpy);
     expect(out).toContain('host overrides:');
     expect(out).toContain(join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'));
-    // D-14 may set exitCode=1 on dev hosts without gitleaks; this test only
-    // asserts the host-override-missing diagnostic itself does not FAIL.
+    // The gitleaks-presence diagnostic may set exitCode=1 on dev hosts
+    // without gitleaks; this test only asserts the host-override-missing
+    // diagnostic itself does not FAIL.
     expect(out).not.toContain('FAIL no hosts/');
   });
 
@@ -255,8 +268,9 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('host overrides: none (base-only is fine, no settings drift)');
-    // D-14 may log "FAIL gitleaks" on dev hosts without gitleaks; this test
-    // only asserts the host-override-missing diagnostic itself does not FAIL.
+    // The gitleaks-presence diagnostic may log "FAIL gitleaks" on dev hosts
+    // without gitleaks; this test only asserts the host-override-missing
+    // diagnostic itself does not FAIL.
     expect(out).not.toContain('FAIL no hosts/');
   });
 });
@@ -375,7 +389,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
   });
 });
 
-describe('cmdDoctor gitleaks presence (D-14)', () => {
+describe('cmdDoctor gitleaks presence', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNoColor: string | undefined;
@@ -479,7 +493,7 @@ describe('cmdDoctor gitleaks presence (D-14)', () => {
   });
 });
 
-describe('cmdDoctor gitlink scan (D-15)', () => {
+describe('cmdDoctor gitlink scan', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNoColor: string | undefined;
@@ -549,7 +563,7 @@ describe('cmdDoctor gitlink scan (D-15)', () => {
   });
 });
 
-describe('cmdDoctor remote URL (D-16)', () => {
+describe('cmdDoctor remote URL', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNoColor: string | undefined;
@@ -598,7 +612,7 @@ describe('cmdDoctor remote URL (D-16)', () => {
   });
 });
 
-describe('cmdDoctor rebase clean-tree WARN (D-17)', () => {
+describe('cmdDoctor rebase clean-tree WARN', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNoColor: string | undefined;

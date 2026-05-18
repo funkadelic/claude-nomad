@@ -48,7 +48,7 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     expect(hits.length).toBe(1);
   });
 
-  it('returns empty for a self-referential symlink cycle (load-bearing per RESEARCH Pitfall #1)', async () => {
+  it('returns empty for a self-referential symlink cycle (load-bearing: recursive readdirSync follows cycles)', async () => {
     const { findGitlinks } = await import('./push-checks.ts');
     // Build a cycle: testDir/cycle -> testDir. With { recursive: true } this
     // would yield ~82 entries before libuv's internal cap; the hand-rolled

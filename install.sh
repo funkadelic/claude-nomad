@@ -44,8 +44,8 @@ fi
 
 # 4. gitleaks present? Optional for `nomad doctor`, required for `nomad push`.
 # Not auto-installed: gitleaks is a security tool and users may want a specific
-# version, package-manager-managed install, or pre-vetted binary. The doctor
-# D-14 check emits the same hint at runtime.
+# version, package-manager-managed install, or pre-vetted binary. The doctor's
+# gitleaks-presence diagnostic emits the same hint at runtime.
 if command -v gitleaks >/dev/null 2>&1; then
   log "gitleaks $(gitleaks version 2>/dev/null | head -1 || echo unknown) OK"
 else
