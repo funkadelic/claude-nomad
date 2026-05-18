@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as childProcessModule from 'node:child_process';
 import type * as utilsModule from './utils.ts';
 
 // Regression: cmdPull and cmdPush must release the lockfile even when a
@@ -53,13 +54,13 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // will call die(), which throws NomadFatal; cmdPull's catch sets exitCode
     // and the finally must release the lock.
     mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
-    // No `.git` so `git pull --rebase` would fail too. To isolate the die()
-    // path, stub `sh` via mocking the utils module's sh export. Simpler: skip
-    // the git step by pre-creating .git/config to a usable state? Cleaner is
-    // to stub sh.
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return { ...actual, sh: vi.fn(() => '') };
+    // No `.git` so `git pull --rebase --autostash` would fail too. To isolate
+    // the die() path, mock execFileSync at the `node:child_process` level so
+    // cmdPull's inline argv-array rebase call is a no-op for this test. Same
+    // mock-via-importOriginal shape as the cmdPush-NEVER_SYNC test below.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
     const { cmdPull } = await import('./commands.ts');
     expect(() => cmdPull()).not.toThrow();
