@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as cpModule from 'node:child_process';
+import type * as osModule from 'node:os';
 
 describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
   let originalHome: string | undefined;
@@ -239,5 +240,98 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
         (typeof chunk === 'string' && chunk.includes('CONFLICT')),
     );
     expect(matched).toBe(true);
+  });
+});
+
+// gitleaksInstallHint() composes a platform-aware multi-line scaffold that
+// mirrors the install.sh onboarding message. The function reads platform(),
+// homedir(), process.arch, and process.env.PATH at call time, so each test
+// here mocks node:os and saves/restores the process fields it touches.
+describe('gitleaksInstallHint (platform-aware install scaffold)', () => {
+  let originalArch: NodeJS.Architecture;
+  let originalPath: string | undefined;
+
+  beforeEach(() => {
+    originalArch = process.arch;
+    originalPath = process.env.PATH;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'arch', { value: originalArch, configurable: true });
+    if (originalPath !== undefined) process.env.PATH = originalPath;
+    else delete process.env.PATH;
+    vi.doUnmock('node:os');
+  });
+
+  /** Swap `node:os`'s platform() and homedir() for fixed test values. */
+  function mockOs(plat: NodeJS.Platform, home: string): void {
+    vi.doMock('node:os', async (importOriginal) => {
+      const actual = await importOriginal<typeof osModule>();
+      return { ...actual, platform: () => plat, homedir: () => home };
+    });
+  }
+
+  /** Set process.arch in a way TS-strict mode tolerates. */
+  function setArch(value: string): void {
+    Object.defineProperty(process, 'arch', { value, configurable: true });
+  }
+
+  it('macOS returns the brew one-liner and no Linux scaffold', async () => {
+    mockOs('darwin', '/Users/test');
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).toMatch(/gitleaks not on PATH/);
+    expect(out).toContain('brew install gitleaks');
+    expect(out).not.toMatch(/mkdir -p ~\/\.local\/bin/);
+  });
+
+  it('Linux + mapped arch (x64) names the linux_x64 tarball', async () => {
+    mockOs('linux', '/home/test');
+    setArch('x64');
+    process.env.PATH = '/home/test/.local/bin:/usr/bin';
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).toContain('linux_x64 tarball');
+    expect(out).toContain('mkdir -p ~/.local/bin');
+  });
+
+  it('Linux + unmapped arch falls back to generic "arch=<x>" wording', async () => {
+    mockOs('linux', '/home/test');
+    setArch('mips');
+    process.env.PATH = '/home/test/.local/bin:/usr/bin';
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).toContain('arch=mips');
+    expect(out).not.toMatch(/linux_mips tarball/);
+  });
+
+  it('Linux + ~/.local/bin missing from PATH adds the PATH-fix step', async () => {
+    mockOs('linux', '/home/test');
+    setArch('x64');
+    process.env.PATH = '/usr/local/bin:/usr/bin'; // no ~/.local/bin
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).toMatch(/~\/\.local\/bin is not on PATH/);
+    expect(out).toContain('export PATH="$HOME/.local/bin:$PATH"');
+  });
+
+  it('Linux + ~/.local/bin already on PATH omits the PATH-fix step', async () => {
+    mockOs('linux', '/home/test');
+    setArch('x64');
+    process.env.PATH = '/home/test/.local/bin:/usr/bin';
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).not.toMatch(/~\/\.local\/bin is not on PATH/);
+  });
+
+  it('Unsupported platform returns just the releases link', async () => {
+    mockOs('win32', 'C:/Users/test');
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).toMatch(/gitleaks not on PATH/);
+    expect(out).toContain('https://github.com/gitleaks/gitleaks/releases');
+    expect(out).not.toContain('brew install');
+    expect(out).not.toMatch(/mkdir -p ~\/\.local\/bin/);
   });
 });
