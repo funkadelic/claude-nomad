@@ -17,6 +17,14 @@ MIN_NODE_MINOR=6
 log() { printf '[install] %s\n' "$*"; }
 die() { printf '[install] FATAL: %s\n' "$*" >&2; exit 1; }
 
+# Detect shell rc up front so gitleaks PATH hint and the closing alias snippet
+# can both reference it.
+case "${SHELL:-}" in
+  */zsh)  RC_FILE="$HOME/.zshrc" ;;
+  */bash) RC_FILE="$HOME/.bashrc" ;;
+  *)      RC_FILE="your shell rc" ;;
+esac
+
 # 1. Node present?
 command -v node >/dev/null 2>&1 || die "Node.js not found. Install Node 22.6+ from https://nodejs.org (or via nvm/fnm/asdf), then re-run."
 
@@ -65,10 +73,22 @@ else
         *) GL_ARCH="" ;;
       esac
       if [ -n "$GL_ARCH" ]; then
-        log "  Install:  download the linux_${GL_ARCH} tarball from https://github.com/gitleaks/gitleaks/releases and extract to ~/.local/bin/"
+        log "  1. Download the linux_${GL_ARCH} tarball: https://github.com/gitleaks/gitleaks/releases"
       else
-        log "  Install:  https://github.com/gitleaks/gitleaks/releases (pick the linux artifact matching $(uname -m); extract to ~/.local/bin/)"
+        log "  1. Download the linux artifact matching $(uname -m): https://github.com/gitleaks/gitleaks/releases"
       fi
+      log "  2. Install (replace TARBALL with the path to your download):"
+      log "       mkdir -p ~/.local/bin"
+      log "       tar -xzf TARBALL -C ~/.local/bin gitleaks"
+      log "       chmod +x ~/.local/bin/gitleaks"
+      log "       gitleaks version   # verify"
+      case ":${PATH:-}:" in
+        *:"$HOME/.local/bin":*) ;;
+        *)
+          log "  3. ~/.local/bin is not on PATH; add to $RC_FILE:"
+          log "       export PATH=\"\$HOME/.local/bin:\$PATH\""
+          ;;
+      esac
       ;;
     *)
       log "  Install:  https://github.com/gitleaks/gitleaks/releases"
@@ -82,13 +102,7 @@ if [ ! -d "$REPO_DIR/node_modules" ]; then
   (cd "$REPO_DIR" && npm install)
 fi
 
-# 6. Print the alias snippet. Detect zsh vs bash so we point at the right rc.
-case "${SHELL:-}" in
-  */zsh)  RC_FILE="$HOME/.zshrc" ;;
-  */bash) RC_FILE="$HOME/.bashrc" ;;
-  *)      RC_FILE="your shell rc" ;;
-esac
-
+# 6. Print the alias snippet (RC_FILE was detected at the top).
 cat <<EOF
 
 [install] Done. Add this to $RC_FILE:
