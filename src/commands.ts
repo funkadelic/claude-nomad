@@ -105,6 +105,14 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
   return paths;
 }
 
+/**
+ * Reject any staged path that is not on the push allow-list or that matches a
+ * `NEVER_SYNC` entry. Builds the runtime allow-list by combining
+ * `PUSH_ALLOWED_STATIC` with one `shared/projects/<logical>/` prefix per entry
+ * in `path-map.json`. Logs every violation as a FATAL line so the user sees
+ * the full set (not just the first), then throws `NomadFatal` to unwind the
+ * caller's try/finally and release the push lock.
+ */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   const allowed = [
     ...PUSH_ALLOWED_STATIC,
@@ -129,6 +137,18 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   throw new NomadFatal('push allow-list violations');
 }
 
+/**
+ * `nomad pull` command. Acquires the push/pull lock, takes a backup
+ * timestamp, runs `git pull --rebase --autostash` in `REPO_HOME`, then
+ * applies the three side-effecting sync steps in order:
+ *   1. `applySharedLinks` (symlink shared/* into ~/.claude/)
+ *   2. `regenerateSettings` (deep-merge base + host-override into settings.json)
+ *   3. `remapPull` (copy repo-side session transcripts into host-encoded dirs)
+ *
+ * Any `NomadFatal` thrown along the way is caught here so the `finally` block
+ * releases the lock before exit (a raw `process.exit()` would skip `finally`
+ * and leak the lock — see `NomadFatal` JSDoc). Non-fatal errors rethrow.
+ */
 export function cmdPull(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   const handle = acquireLock('pull');
@@ -168,6 +188,23 @@ export function cmdPull(): void {
   }
 }
 
+/**
+ * `nomad push` command. Acquires the lock, runs the four pre-push safety
+ * checks in the order from CONTEXT.md, stages, and pushes:
+ *   1. `probeGitleaks` (fail fast if the secret scanner isn't on PATH)
+ *   2. `rebaseBeforePush` (surface remote conflicts against committed state,
+ *      not against in-flight `remapPush` copies)
+ *   3. `findGitlinks` walk of `shared/` (refuse to push nested .git entries)
+ *   4. `remapPush` (copy host-encoded session dirs into shared logical names)
+ *   5. allow-list enforcement on the resulting `git status` (refuse any path
+ *      not on `PUSH_ALLOWED_STATIC` or matching `NEVER_SYNC`)
+ *   6. `git add -A` → `runGitleaksScan` on staged tree → `git commit` → `git push`
+ *
+ * The gitleaks scan runs AFTER staging so it sees what would actually be
+ * pushed, but BEFORE commit so a detection unwinds cleanly without leaving a
+ * commit to amend or revert. Any `NomadFatal` is caught here so `finally`
+ * releases the lock.
+ */
 export function cmdPush(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   const handle = acquireLock('push');
