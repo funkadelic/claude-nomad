@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 import {
   CLAUDE_HOME,
@@ -13,6 +13,7 @@ import {
   type PathMap,
 } from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
+import { findGitlinks, probeGitleaks, rebaseBeforePush, runGitleaksScan } from './push-checks.ts';
 import { remapPull, remapPush } from './remap.ts';
 import { resumeCmd } from './resume.ts';
 import {
@@ -158,6 +159,30 @@ export function cmdPush(): void {
   if (handle === null) process.exit(0);
   try {
     log(`pushing on host=${HOST}`);
+    // D-19 step 4: gitleaks presence probe. Fail fast if missing so the
+    // remaining steps don't waste time mutating local state.
+    probeGitleaks();
+    // D-19 step 5: rebase BEFORE any local mutation (D-07). Surfaces remote
+    // conflicts against the user's committed state, not against in-flight
+    // remapPush copies. NomadFatal here unwinds via the existing finally.
+    rebaseBeforePush();
+    // D-19 step 6: gitlink walk of shared/ only (D-05, D-06). Per-hit FATAL
+    // on stderr plus a single summarizing throw, mirroring enforceAllowList.
+    // findGitlinks tolerates a missing dir (returns []), so this is a no-op
+    // on a freshly-initialized repo.
+    const sharedDir = join(REPO_HOME, 'shared');
+    const gitlinks = findGitlinks(sharedDir);
+    if (gitlinks.length > 0) {
+      for (const p of gitlinks) {
+        const rel = relative(REPO_HOME, p);
+        console.error(
+          `[nomad] FATAL: gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
+        );
+      }
+      throw new NomadFatal(
+        `gitlink trap: ${gitlinks.length} nested .git ${gitlinks.length === 1 ? 'entry' : 'entries'} in shared/; remove before retry`,
+      );
+    }
     // Pass a collision-resistant ts down to remapPush so it can snapshot
     // repo-side encoded-dir state before copyDir clobbers it.
     const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
@@ -186,6 +211,10 @@ export function cmdPush(): void {
     // Same reasoning for `git add -A` and `git push` (no interpolation, but
     // shell-free is consistent and audit-friendly).
     execFileSync('git', ['add', '-A'], { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
+    // D-19 step 10: gitleaks scan AFTER staging, BEFORE commit. The early-
+    // return short-circuit above guarantees we only reach here when there is
+    // something to scan (Pitfall #7).
+    runGitleaksScan();
     execFileSync('git', ['commit', '-m', `chore: sync from ${HOST}`], {
       cwd: REPO_HOME,
       stdio: ['ignore', 'pipe', 'pipe'],
