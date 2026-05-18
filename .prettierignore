@@ -7,3 +7,5 @@ package-lock.json
 /shared/
 /hosts/
 /path-map.json
+# Owned by release-please; format drifts on every release.
+CHANGELOG.md

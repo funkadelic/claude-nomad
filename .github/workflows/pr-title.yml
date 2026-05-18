@@ -1,0 +1,36 @@
+name: PR Title
+permissions:
+  contents: read
+  pull-requests: read
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  lint-pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Types must match commitlint.config.js / CLAUDE.md. Squash-merge
+          # uses the PR title as the commit subject, so this is the
+          # server-side gate that keeps main's history conventional.
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            chore
+            build
+            ci
+            perf
+            style
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" must start with a lowercase letter.
