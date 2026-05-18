@@ -69,7 +69,8 @@ if [ "$HAS_UPSTREAM" -eq 1 ]; then
   UPSTREAM_AHEAD="$(git rev-list --count "HEAD..upstream/main")"
   if [ "$UPSTREAM_AHEAD" -gt 0 ]; then
     log "merging upstream/main ($UPSTREAM_AHEAD commit(s))..."
-    git merge upstream/main --no-edit
+    git merge upstream/main --no-edit \
+      || die "upstream/main merge failed (likely conflicts); run 'git merge --abort' to reset, then resolve manually"
     NEED_PUSH=1
   fi
 fi
