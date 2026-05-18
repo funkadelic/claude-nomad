@@ -7,6 +7,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -15,6 +16,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +50,7 @@ jobs:
         if: >-
           ${{ env.SONAR_TOKEN != '' && matrix.node-version == '24'
           && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
-        uses: SonarSource/sonarqube-scan-action@v8
+        uses: SonarSource/sonarqube-scan-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432 # v8
         env:
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
 
@@ -56,7 +58,7 @@ jobs:
         if: >-
           ${{ matrix.node-version == '24'
           && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6
         with:
           files: ./coverage/lcov.info
           flags: unittests

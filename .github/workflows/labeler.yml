@@ -1,3 +1,10 @@
+# SECURITY NOTE: this workflow runs on `pull_request_target`, which means
+# it executes against the base branch's checkout with write permissions
+# scoped to pull-requests. Do NOT add any step that runs PR-supplied
+# content (e.g. `run:` commands that consume PR file contents, untrusted
+# scripts, or `actions/checkout` of github.event.pull_request.head). The
+# current invocation only consumes the labeler action's own logic, which
+# is safe. See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
 name: Labeler
 permissions:
   contents: read
@@ -10,8 +17,9 @@ on:
 jobs:
   label:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/labeler@v6
+      - uses: actions/labeler@f27b608878404679385c85cfa523b85ccb86e213 # v6
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           sync-labels: true
