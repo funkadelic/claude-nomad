@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.9.0](https://github.com/funkadelic/claude-nomad/compare/v0.8.0...v0.9.0) (2026-05-18)
+
+
+### Added
+
+* **release-please:** route Dependabot updates to a Dependencies section ([#35](https://github.com/funkadelic/claude-nomad/issues/35)) ([a04c2e9](https://github.com/funkadelic/claude-nomad/commit/a04c2e926e7263a416452ca3824e7926eec44fcd))
+
+
+### Changed
+
+* add tests, lint, codeql, labeler, dependabot, pr-title, codecov workflows ([#28](https://github.com/funkadelic/claude-nomad/issues/28)) ([88a7f0b](https://github.com/funkadelic/claude-nomad/commit/88a7f0bf36c19ae817631da60e169b58db13e39f))
+* **dependabot:** drop include:scope to avoid redundant deps(deps) titles ([#37](https://github.com/funkadelic/claude-nomad/issues/37)) ([d49d20f](https://github.com/funkadelic/claude-nomad/commit/d49d20f526b507aaa4962cc3ffc4d9794d62b48e))
+* **dependabot:** pin @types/node major to track supported runtime ([#38](https://github.com/funkadelic/claude-nomad/issues/38)) ([026ab83](https://github.com/funkadelic/claude-nomad/commit/026ab833c97cb057984d8b536813efafc1672f55))
+* **deps-dev:** bump lint-staged from 16.4.0 to 17.0.5 ([#34](https://github.com/funkadelic/claude-nomad/issues/34)) ([f08de47](https://github.com/funkadelic/claude-nomad/commit/f08de4737f0a28dd816ca812dda09aac0f25829e))
+* **deps-dev:** bump the dev-dependencies group across 1 directory with 3 updates ([#31](https://github.com/funkadelic/claude-nomad/issues/31)) ([7edf58e](https://github.com/funkadelic/claude-nomad/commit/7edf58e5a7e9e6cece45bc3b5335383d3b582302))
+* **deps-dev:** bump typescript from 5.9.3 to 6.0.3 ([#32](https://github.com/funkadelic/claude-nomad/issues/32)) ([97166f3](https://github.com/funkadelic/claude-nomad/commit/97166f30b364e7870b0d68358baa31de60bc1dcb))
+* **deps:** bump github/codeql-action from 3 to 4 ([#30](https://github.com/funkadelic/claude-nomad/issues/30)) ([f9142e4](https://github.com/funkadelic/claude-nomad/commit/f9142e46dc49e2619139c306dac87ccd410c169d))
+* skip workflows on private repos so user mirrors stay quiet ([#39](https://github.com/funkadelic/claude-nomad/issues/39)) ([635e46c](https://github.com/funkadelic/claude-nomad/commit/635e46c673c46146e3d052d009d166dc931b1c12))
+
+
+### Dependencies
+
+* **deps:** bump codecov/codecov-action from 6.0.0 to 6.0.1 ([#36](https://github.com/funkadelic/claude-nomad/issues/36)) ([bee25d9](https://github.com/funkadelic/claude-nomad/commit/bee25d9191de2dfc1c0460ec5a2e81bba46a405d))
+
 ## [0.8.0](https://github.com/funkadelic/claude-nomad/compare/v0.7.1...v0.8.0) (2026-05-18)
 
 
