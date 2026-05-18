@@ -369,7 +369,8 @@ export function cmdDoctor(): void {
       if (collisionCount > 0) process.exitCode = 1;
     }
   } else {
-    log(`path-map.json: ${red('missing')}`);
+    log(`${red('FAIL')} path-map.json missing at ${blue(mapPath)}`);
+    process.exitCode = 1;
   }
 
   log(`never-sync items: ${[...NEVER_SYNC].join(', ')}`);

@@ -330,6 +330,17 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(out).toContain('FAIL shared/settings.base.json missing');
     expect(process.exitCode).toBe(1);
   });
+
+  it('reports FAIL and sets exitCode=1 when path-map.json is missing', async () => {
+    // makeDoctorEnv does not write path-map.json by default; assert the
+    // missing-file FAIL path so doctor matches cmdPush's hard-stop behavior.
+    const { cmdDoctor } = await import('./commands.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL path-map.json missing');
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
 });
 
 describe('cmdDoctor gitleaks presence (D-14)', () => {
