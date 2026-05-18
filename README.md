@@ -232,14 +232,35 @@ Adapt the `ITEMS` list to match your `SHARED_LINKS`. The tar backup is your roll
 
 ## Upgrading the tool
 
-Your private repo is not a fork, so GitHub's "Sync fork" UI doesn't apply. To pull in upstream tool updates:
+Your private repo is not a fork, so GitHub's "Sync fork" UI doesn't apply. The shortcut on a configured host is:
 
 ```bash
 cd ~/claude-nomad
-git remote add upstream git@github.com:funkadelic/claude-nomad.git    # one-time
+npm run update
+```
+
+`npm run update` runs `scripts/update.sh`, which:
+
+1. Refuses to run on a dirty tree or off `main` (fail-fast, no half-merges).
+2. Auto-detects layout — uses `upstream/main` if an `upstream` remote is configured (fork workflow), otherwise falls back to `origin/main` (direct clone).
+3. Skips entirely when there's nothing new.
+4. Merges, then pushes to `origin/main` if running on a fork.
+5. Re-runs `npm install` only if `package-lock.json` actually changed.
+
+One-time setup if you don't have the `upstream` remote yet:
+
+```bash
+git remote add upstream git@github.com:funkadelic/claude-nomad.git
+```
+
+Or do it manually:
+
+```bash
+cd ~/claude-nomad
 git fetch upstream
-git merge upstream/main                                                # or rebase
-nomad push
+git merge upstream/main          # or rebase
+git push origin main             # publish the merge to your fork
+npm install                      # only if package-lock.json changed
 ```
 
 Upstream tags releases as `vX.Y.Z` (release-please). To track a specific release instead of `main`:
@@ -247,6 +268,8 @@ Upstream tags releases as `vX.Y.Z` (release-please). To track a specific release
 ```bash
 git fetch upstream --tags
 git merge v0.2.0
+git push origin main
+npm install
 ```
 
 ## Commands

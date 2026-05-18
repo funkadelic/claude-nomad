@@ -9,6 +9,7 @@
     "pull": "tsx src/nomad.ts pull",
     "push": "tsx src/nomad.ts push",
     "doctor": "tsx src/nomad.ts doctor",
+    "update": "bash scripts/update.sh",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
