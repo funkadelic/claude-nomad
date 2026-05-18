@@ -25,7 +25,9 @@ die() { printf '[update] FATAL: %s\n' "$*" >&2; exit 1; }
 # 1. Must be on main with a clean working tree.
 BRANCH="$(git branch --show-current)"
 [ "$BRANCH" = "main" ] || die "must be on main; currently on '$BRANCH'"
-git diff-index --quiet HEAD -- || die "working tree has uncommitted changes; stash or commit before updating"
+if [ -n "$(git status --porcelain)" ]; then
+  die "working tree has uncommitted or untracked changes; stash, commit, or clean before updating"
+fi
 
 # 2. Pick the remote to pull from based on what's configured.
 if git remote get-url upstream >/dev/null 2>&1; then
@@ -62,10 +64,10 @@ fi
 # 6. npm install only if package-lock.json changed.
 LOCK_AFTER="$(git hash-object package-lock.json 2>/dev/null || echo "")"
 if [ "$LOCK_BEFORE" != "$LOCK_AFTER" ]; then
-  log "package-lock.json changed — running npm install..."
+  log "package-lock.json changed, running npm install..."
   npm install --no-audit --no-fund --silent
 else
-  log "package-lock.json unchanged — skipping npm install"
+  log "package-lock.json unchanged, skipping npm install"
 fi
 
 log "done"
