@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/funkadelic/claude-nomad/compare/v0.5.0...v0.5.1) (2026-05-18)
+
+
+### Changed
+
+* **install:** advise on gitleaks presence during setup ([#17](https://github.com/funkadelic/claude-nomad/issues/17)) ([4747440](https://github.com/funkadelic/claude-nomad/commit/4747440a610e53d311bf00e7106d4e1b1dc065fa))
+* track src/nomad.ts as executable, drop chmod from install.sh ([#19](https://github.com/funkadelic/claude-nomad/issues/19)) ([a859893](https://github.com/funkadelic/claude-nomad/commit/a85989321336b5aaa55d1765906404ed95deccd8))
+
 ## [0.5.0](https://github.com/funkadelic/claude-nomad/compare/v0.4.0...v0.5.0) (2026-05-18)
 
 
