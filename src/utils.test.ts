@@ -14,14 +14,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  backupRepoWrite,
-  deepMerge,
-  encodePath,
-  freshBackupTs,
-  nowTimestamp,
-  writeJsonAtomic,
-} from './utils.ts';
+import { deepMerge, encodePath, freshBackupTs, nowTimestamp, writeJsonAtomic } from './utils.ts';
 
 describe('deepMerge', () => {
   it('overrides scalar values from source', () => {
@@ -231,6 +224,7 @@ describe('backupRepoWrite', () => {
     process.env.HOME = testHome;
     repoHome = join(testHome, 'claude-nomad');
     mkdirSync(repoHome, { recursive: true });
+    vi.resetModules();
   });
 
   afterEach(() => {
@@ -239,7 +233,8 @@ describe('backupRepoWrite', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('copies a repo-scoped file to the repo subdir of the backup root', () => {
+  it('copies a repo-scoped file to the repo subdir of the backup root', async () => {
+    const { backupRepoWrite } = await import('./utils.ts');
     const src = join(repoHome, 'shared', 'projects', 'foo', 'session.jsonl');
     mkdirSync(join(repoHome, 'shared', 'projects', 'foo'), { recursive: true });
     writeFileSync(src, '{"a":1}');
@@ -260,13 +255,15 @@ describe('backupRepoWrite', () => {
     expect(readFileSync(dst, 'utf8')).toBe('{"a":1}');
   });
 
-  it('is a no-op when the source path does not exist', () => {
+  it('is a no-op when the source path does not exist', async () => {
+    const { backupRepoWrite } = await import('./utils.ts');
     const src = join(repoHome, 'shared', 'projects', 'missing');
     backupRepoWrite(src, ts, repoHome);
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 
-  it('refuses paths outside REPO_HOME', () => {
+  it('refuses paths outside REPO_HOME', async () => {
+    const { backupRepoWrite } = await import('./utils.ts');
     const outsidePath = join(testHome, 'elsewhere.json');
     writeFileSync(outsidePath, '{"a":1}');
     backupRepoWrite(outsidePath, ts, repoHome);

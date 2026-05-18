@@ -1,0 +1,41 @@
+/**
+ * Identity-fallback ANSI color helpers used exclusively by `cmdDoctor`.
+ *
+ * The seven exports wrap their picocolors equivalents when color is enabled
+ * (per the picocolors `isColorSupported` flag) and return their input unchanged
+ * when disabled. Picocolors already handles `NO_COLOR`, `FORCE_COLOR`,
+ * `--no-color`, `--color`, `win32`, `TTY`, `TERM=dumb`, and `CI` natively, so
+ * we delegate detection rather than rolling a hand-built TTY probe.
+ *
+ * Win32 caveat (RESEARCH Pitfall #5): picocolors forces color ON for
+ * `process.platform === 'win32'` even on piped output. The supported user
+ * surface is WSL / Linux / macOS where `process.platform` is `linux` or
+ * `darwin`; native Windows users can opt out via `NO_COLOR=1`.
+ *
+ * The `enabled` flag is read once at module load and constant for the rest of
+ * the CLI invocation; tests must `vi.resetModules()` between env-var toggles.
+ */
+import pc from 'picocolors';
+
+const enabled = pc.isColorSupported;
+
+/** FAIL prefixes and gitlink path-warnings. */
+export const red = (s: string): string => (enabled ? pc.red(s) : s);
+
+/** WARN prefixes. */
+export const yellow = (s: string): string => (enabled ? pc.yellow(s) : s);
+
+/** PASS / OK status tags. */
+export const green = (s: string): string => (enabled ? pc.green(s) : s);
+
+/** Hostnames and URLs. */
+export const cyan = (s: string): string => (enabled ? pc.cyan(s) : s);
+
+/** Absolute paths. */
+export const blue = (s: string): string => (enabled ? pc.blue(s) : s);
+
+/** Version strings and counts. */
+export const dim = (s: string): string => (enabled ? pc.dim(s) : s);
+
+/** Combined-bold variant (e.g., `red(bold(...))` for FATAL). */
+export const bold = (s: string): string => (enabled ? pc.bold(s) : s);

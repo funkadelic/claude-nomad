@@ -43,5 +43,8 @@
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.59.3",
     "vitest": "^4.1.6"
+  },
+  "dependencies": {
+    "picocolors": "^1.1.1"
   }
 }

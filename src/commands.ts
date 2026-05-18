@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
+import { blue, cyan, dim, green, red, yellow } from './color.ts';
 import {
   CLAUDE_HOME,
+  HOME,
   HOST,
   KNOWN_SETTINGS_KEYS,
   NEVER_SYNC,
@@ -13,6 +15,7 @@ import {
   type PathMap,
 } from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
+import { findGitlinks, probeGitleaks, rebaseBeforePush, runGitleaksScan } from './push-checks.ts';
 import { remapPull, remapPush } from './remap.ts';
 import { resumeCmd } from './resume.ts';
 import {
@@ -25,11 +28,26 @@ import {
   NomadFatal,
   readJson,
   releaseLock,
-  sh,
 } from './utils.ts';
 
 // resume sidecar lives in src/resume.ts; re-exported so callers keep importing it from ./commands.ts.
 export { resumeCmd };
+
+/**
+ * Run `git <args>` in REPO_HOME, forwarding stderr and converting non-zero
+ * exits to NomadFatal. Without this wrap, an ExecException would bubble past
+ * the cmdPull/cmdPush NomadFatal-only catch blocks and surface as a stack
+ * trace; the finally still releases the lock, but the user UX degrades.
+ */
+function gitOrFatal(args: readonly string[], context: string): void {
+  try {
+    execFileSync('git', args, { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    const e = err as Error & { stderr?: Buffer };
+    if (e.stderr) process.stderr.write(e.stderr);
+    throw new NomadFatal(`${context} failed`);
+  }
+}
 
 /**
  * Match `path` against an entry in the push allow-list. Exact match for
@@ -87,6 +105,14 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
   return paths;
 }
 
+/**
+ * Reject any staged path that is not on the push allow-list or that matches a
+ * `NEVER_SYNC` entry. Builds the runtime allow-list by combining
+ * `PUSH_ALLOWED_STATIC` with one `shared/projects/<logical>/` prefix per entry
+ * in `path-map.json`. Logs every violation as a FATAL line so the user sees
+ * the full set (not just the first), then throws `NomadFatal` to unwind the
+ * caller's try/finally and release the push lock.
+ */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   const allowed = [
     ...PUSH_ALLOWED_STATIC,
@@ -111,6 +137,18 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   throw new NomadFatal('push allow-list violations');
 }
 
+/**
+ * `nomad pull` command. Acquires the push/pull lock, takes a backup
+ * timestamp, runs `git pull --rebase --autostash` in `REPO_HOME`, then
+ * applies the three side-effecting sync steps in order:
+ *   1. `applySharedLinks` (symlink shared/* into ~/.claude/)
+ *   2. `regenerateSettings` (deep-merge base + host-override into settings.json)
+ *   3. `remapPull` (copy repo-side session transcripts into host-encoded dirs)
+ *
+ * Any `NomadFatal` thrown along the way is caught here so the `finally` block
+ * releases the lock before exit (a raw `process.exit()` would skip `finally`
+ * and leak the lock — see `NomadFatal` JSDoc). Non-fatal errors rethrow.
+ */
 export function cmdPull(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   const handle = acquireLock('pull');
@@ -119,7 +157,7 @@ export function cmdPull(): void {
     // Collision-resistant ts: nowTimestamp() is second-resolution, so two
     // pulls in the same wall-clock second would share `ts` and the second's
     // backupBeforeWrite calls (cpSync force:false) would silently no-op.
-    const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
+    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
     // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
     // (out of disk, permission denied), die() throws (NomadFatal) and the
@@ -131,7 +169,7 @@ export function cmdPull(): void {
       die(`could not create backup dir: ${(err as Error).message}`);
     }
     log(`pulling on host=${HOST} (backup=${ts})`);
-    sh('git pull --rebase', REPO_HOME);
+    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase');
     applySharedLinks(ts);
     regenerateSettings(ts);
     remapPull(ts);
@@ -150,19 +188,70 @@ export function cmdPull(): void {
   }
 }
 
+/**
+ * `nomad push` command. Acquires the lock, runs the four pre-push safety
+ * checks in the order from CONTEXT.md, stages, and pushes:
+ *   1. `probeGitleaks` (fail fast if the secret scanner isn't on PATH)
+ *   2. `rebaseBeforePush` (surface remote conflicts against committed state,
+ *      not against in-flight `remapPush` copies)
+ *   3. `remapPush` (copy host-encoded session dirs into shared logical names)
+ *   4. `findGitlinks` walk of `shared/` (refuse to push nested .git entries;
+ *      runs AFTER `remapPush` so it catches .git dirs copied in from the host)
+ *   5. allow-list enforcement on the resulting `git status` (refuse any path
+ *      not on `PUSH_ALLOWED_STATIC` or matching `NEVER_SYNC`)
+ *   6. `git add -A` → `runGitleaksScan` on staged tree → `git commit` → `git push`
+ *
+ * The gitleaks scan runs AFTER staging so it sees what would actually be
+ * pushed, but BEFORE commit so a detection unwinds cleanly without leaving a
+ * commit to amend or revert. Any `NomadFatal` is caught here so `finally`
+ * releases the lock.
+ */
 export function cmdPush(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   const handle = acquireLock('push');
   if (handle === null) process.exit(0);
   try {
     log(`pushing on host=${HOST}`);
+    // D-19 step 4: gitleaks presence probe. Fail fast if missing so the
+    // remaining steps don't waste time mutating local state.
+    probeGitleaks();
+    // D-19 step 5: rebase BEFORE any local mutation (D-07). Surfaces remote
+    // conflicts against the user's committed state, not against in-flight
+    // remapPush copies. NomadFatal here unwinds via the existing finally.
+    rebaseBeforePush();
     // Pass a collision-resistant ts down to remapPush so it can snapshot
     // repo-side encoded-dir state before copyDir clobbers it.
-    const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
+    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
+    // remapPush runs BEFORE the empty-status check below: it produces the
+    // diffs that status observes, so swapping the order would short-circuit
+    // before anything is staged.
     remapPush(ts);
-    // Routed through the shell-free, untrimmed helper. `sh` would .trim() the
-    // first record's leading status-space and shift parsePorcelainZ's offsets.
+    // Gitlink walk of shared/ AFTER remapPush so it inspects the post-copy
+    // tree. A nested .git inside a host's ~/.claude/projects/<encoded>/ dir
+    // (rare but possible — manual git init, accidental clone) would be
+    // copied into shared/projects/<logical>/ by remapPush and slip past a
+    // pre-remap scan; the allow-list prefix-matches everything under
+    // shared/projects/<logical>/, so the gitlink would otherwise reach the
+    // remote. Per-hit FATAL on stderr plus a single summarizing throw,
+    // mirroring enforceAllowList. findGitlinks tolerates a missing dir
+    // (returns []), so this is a no-op on a freshly-initialized repo.
+    const sharedDir = join(REPO_HOME, 'shared');
+    const gitlinks = findGitlinks(sharedDir);
+    if (gitlinks.length > 0) {
+      for (const p of gitlinks) {
+        const rel = relative(REPO_HOME, p);
+        console.error(
+          `[nomad] FATAL: gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
+        );
+      }
+      throw new NomadFatal(
+        `gitlink trap: ${gitlinks.length} nested .git ${gitlinks.length === 1 ? 'entry' : 'entries'} in shared/; remove before retry`,
+      );
+    }
+    // Routed through the shell-free, untrimmed helper because `sh` would
+    // .trim() the first record's leading status-space and shift
+    // parsePorcelainZ's offsets.
     const status = gitStatusPorcelainZ(REPO_HOME);
     if (!status) {
       log('nothing to commit');
@@ -179,16 +268,16 @@ export function cmdPush(): void {
       throw new NomadFatal(`could not parse path-map.json: ${(err as Error).message}`);
     }
     enforceAllowList(status, map);
-    // Use execFileSync (no implicit shell) so a NOMAD_HOST containing a
-    // double-quote or backtick can't escape the commit-message quoting.
-    // Same reasoning for `git add -A` and `git push` (no interpolation, but
-    // shell-free is consistent and audit-friendly).
-    execFileSync('git', ['add', '-A'], { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
-    execFileSync('git', ['commit', '-m', `chore: sync from ${HOST}`], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    execFileSync('git', ['push'], { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
+    // gitOrFatal uses execFileSync (no implicit shell) so a NOMAD_HOST
+    // containing a double-quote or backtick can't escape the commit-message
+    // quoting. Non-zero exits surface as NomadFatal with forwarded stderr.
+    gitOrFatal(['add', '-A'], 'git add');
+    // D-19 step 10: gitleaks scan AFTER staging, BEFORE commit. The early-
+    // return short-circuit above guarantees we only reach here when there is
+    // something to scan (Pitfall #7).
+    runGitleaksScan();
+    gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit');
+    gitOrFatal(['push'], 'git push');
     log('push complete');
   } catch (err) {
     if (err instanceof NomadFatal) {
@@ -236,9 +325,11 @@ function readJsonSafe<T>(path: string, label: string): T | null {
  * stdout. Doctor signals failure to scripts via `process.exitCode` instead.
  */
 export function cmdDoctor(): void {
-  log(`host: ${HOST}`);
-  log(`repo: ${REPO_HOME} ${existsSync(REPO_HOME) ? 'OK' : 'MISSING'}`);
-  log(`claude home: ${CLAUDE_HOME} ${existsSync(CLAUDE_HOME) ? 'OK' : 'MISSING'}`);
+  log(`host: ${cyan(HOST)}`);
+  log(`repo: ${blue(REPO_HOME)} ${existsSync(REPO_HOME) ? green('OK') : red('MISSING')}`);
+  log(
+    `claude home: ${blue(CLAUDE_HOME)} ${existsSync(CLAUDE_HOME) ? green('OK') : red('MISSING')}`,
+  );
 
   for (const name of SHARED_LINKS) {
     const p = join(CLAUDE_HOME, name);
@@ -247,23 +338,24 @@ export function cmdDoctor(): void {
       continue;
     }
     log(
-      `  ${name}: ${lstatSync(p).isSymbolicLink() ? 'symlink OK' : 'NOT a symlink (blocks sync)'}`,
+      `  ${name}: ${lstatSync(p).isSymbolicLink() ? green('symlink OK') : red('NOT a symlink (blocks sync)')}`,
     );
   }
 
-  // Preemptively report missing shared/settings.base.json since pull would
-  // die() on it anyway. Doctor is the read-only path so it's the appropriate
-  // place to surface the gap.
+  // Preemptively report missing OR malformed shared/settings.base.json (pull
+  // would die() on either). Parse unconditionally when present so a fresh host
+  // (no settings.json yet) still catches a broken base before the first pull.
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
+  let base: Record<string, unknown> | null = null;
   if (!existsSync(basePath)) {
-    log(`FAIL shared/settings.base.json missing at ${basePath}`);
+    log(`${red('FAIL')} shared/settings.base.json missing at ${blue(basePath)}`);
     process.exitCode = 1;
+  } else {
+    base = readJsonSafe<Record<string, unknown>>(basePath, basePath);
   }
 
-  // Scan settings.json top-level keys against the schema baseline. WARN
-  // surfaces Anthropic-added keys we have not catalogued yet. Informational
-  // only; no exitCode effect because unknown keys are forward-compatible by
-  // default and we do not want to break sync on every Anthropic release.
+  // Scan settings.json top-level keys against the schema baseline. WARN on
+  // unknown keys (forward-compatible by default; no exitCode change).
   const settingsPath = join(CLAUDE_HOME, 'settings.json');
   let settings: Record<string, unknown> | null = null;
   if (existsSync(settingsPath)) {
@@ -271,29 +363,33 @@ export function cmdDoctor(): void {
     if (settings !== null) {
       const unknownKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS_KEYS.has(k));
       if (unknownKeys.length > 0) {
-        log(`WARN settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`);
+        log(
+          `${yellow('WARN')} settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`,
+        );
       } else {
         log('settings.json schema: known keys only');
       }
     }
   }
 
-  // Host-override-missing FAIL: complements the pull-side WARN in
-  // src/links.ts. Uses process.exitCode (NOT process.exit) so doctor's
-  // remaining output continues to print after the diagnostic line.
+  // Host-override-missing FAIL (complements links.ts pull-side WARN). Drift
+  // calculation only runs when both base and settings parsed successfully.
   const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
   let drift: string[] = [];
-  if (existsSync(basePath) && settings !== null) {
-    const base = readJsonSafe<Record<string, unknown>>(basePath, basePath);
-    if (base !== null) {
-      const baseKeys = new Set(Object.keys(base));
-      drift = Object.keys(settings).filter((k) => !baseKeys.has(k));
-    }
+  if (base !== null && settings !== null) {
+    const baseKeys = new Set(Object.keys(base));
+    drift = Object.keys(settings).filter((k) => !baseKeys.has(k));
   }
   if (existsSync(hostFile)) {
-    log(`host overrides: ${hostFile}`);
+    // Parse hostFile to surface malformed JSON before pull's deep-merge would
+    // fail on it; readJsonSafe FAILs and sets exitCode=1 on parse error.
+    if (readJsonSafe<Record<string, unknown>>(hostFile, hostFile) !== null) {
+      log(`host overrides: ${blue(hostFile)}`);
+    }
   } else if (drift.length > 0) {
-    log(`FAIL no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`);
+    log(
+      `${red('FAIL')} no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`,
+    );
     const hostsDir = join(REPO_HOME, 'hosts');
     if (existsSync(hostsDir)) {
       const cands = readdirSync(hostsDir).filter((f) => f.endsWith('.json'));
@@ -309,13 +405,10 @@ export function cmdDoctor(): void {
     const map = readJsonSafe<PathMap>(mapPath, mapPath);
     if (map !== null) {
       const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
-      log(`mapped projects for ${HOST}: ${mapped.length}`);
-      for (const [name, hosts] of mapped) log(`  ${name} -> ${hosts[HOST]}`);
+      log(`mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`);
+      for (const [name, hosts] of mapped) log(`  ${name} -> ${blue(hosts[HOST])}`);
 
-      // Scan ALL hosts in path-map.json and group by encodePath result.
-      // Collisions are FAIL (exitCode 1), not WARN: two real paths that
-      // encode to the same directory cause silent data loss in remap, so
-      // gating downstream automation on the failure is the safer default.
+      // Encode-collision scan across all hosts; FAIL because remap data loss is silent.
       const seen = new Map<string, string>();
       let collisionCount = 0;
       for (const hosts of Object.values(map.projects)) {
@@ -324,7 +417,9 @@ export function cmdDoctor(): void {
           const encoded = encodePath(abspath);
           const prior = seen.get(encoded);
           if (prior !== undefined && prior !== abspath) {
-            log(`FAIL path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`);
+            log(
+              `${red('FAIL')} path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`,
+            );
             collisionCount++;
           } else {
             seen.set(encoded, abspath);
@@ -334,8 +429,62 @@ export function cmdDoctor(): void {
       if (collisionCount > 0) process.exitCode = 1;
     }
   } else {
-    log('path-map.json: missing');
+    log(`${red('FAIL')} path-map.json missing at ${blue(mapPath)}`);
+    process.exitCode = 1;
   }
 
   log(`never-sync items: ${[...NEVER_SYNC].join(', ')}`);
+
+  // D-14: gitleaks presence probe (read-only; logs PASS/FAIL, never throws).
+  try {
+    const v = execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+      .toString()
+      .trim();
+    log(`gitleaks: ${dim(v)}`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      log(`${red('FAIL')} gitleaks: not on PATH (required for nomad push)`);
+    } else {
+      log(`${red('FAIL')} gitleaks: probe failed: ${(err as Error).message}`);
+    }
+    process.exitCode = 1;
+  }
+
+  // D-15: gitlink scan of shared/ (read-only mirror of cmdPush's D-05 walk).
+  const sharedDir = join(REPO_HOME, 'shared');
+  if (existsSync(sharedDir)) {
+    const gitlinks = findGitlinks(sharedDir);
+    for (const p of gitlinks) {
+      const rel = relative(REPO_HOME, p);
+      log(
+        `${red('FAIL')} gitlink: ${blue(rel)} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
+      );
+    }
+    if (gitlinks.length > 0) process.exitCode = 1;
+  }
+
+  // D-16: remote URL informational (no PASS/FAIL prefix).
+  try {
+    const url = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .trim();
+    log(`remote origin: ${cyan(url)}`);
+  } catch {
+    log('remote origin: not configured');
+  }
+
+  // D-17: rebase clean-tree WARN; surfaces the autostash behavior on push.
+  try {
+    const status = gitStatusPorcelainZ(REPO_HOME);
+    if (status.length > 0) {
+      log(
+        `${yellow('WARN')} ${blue('~/claude-nomad/')} has uncommitted changes (nomad push will --autostash these)`,
+      );
+    }
+  } catch {
+    // Repo missing .git is already surfaced by the repo: MISSING line above.
+  }
 }

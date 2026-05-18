@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   closeSync,
   cpSync,
@@ -16,9 +16,9 @@ import {
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
-import { CLAUDE_HOME } from './config.ts';
+import { CLAUDE_HOME, HOME } from './config.ts';
 
-const LOCK_PATH = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'nomad.lock');
+const LOCK_PATH = join(HOME, '.cache', 'claude-nomad', 'nomad.lock');
 
 /** Opaque handle for an acquired lockfile. Pass to `releaseLock` in a `finally`. */
 export type LockHandle = { fd: number };
@@ -47,17 +47,6 @@ export class NomadFatal extends Error {
 export const die = (msg: string): never => {
   throw new NomadFatal(msg);
 };
-
-/**
- * Run a shell command and return its trimmed stdout. Convenience wrapper for
- * one-liners where leading/trailing whitespace is noise. Do not use for git
- * porcelain output (the leading status-space is significant); use
- * `gitStatusPorcelainZ` instead.
- */
-export const sh = (cmd: string, cwd?: string): string =>
-  execSync(cmd, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    .toString()
-    .trim();
 
 /**
  * Shell-free, untrimmed `git status --porcelain=v1 -z` reader. Untrimmed
@@ -186,7 +175,7 @@ export function backupBeforeWrite(absPath: string, ts: string): void {
   if (!existsSync(absPath)) return;
   const rel = relative(CLAUDE_HOME, absPath);
   if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup', ts);
+  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts);
   const dst = join(backupRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
@@ -202,7 +191,7 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
   if (!existsSync(absPath)) return;
   const rel = relative(repoHome, absPath);
   if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup', ts, 'repo');
+  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'repo');
   const dst = join(backupRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
