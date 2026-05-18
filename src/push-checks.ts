@@ -13,13 +13,52 @@
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, type Dirent } from 'node:fs';
+import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
 import { NomadFatal } from './utils.ts';
 
-const GITLEAKS_INSTALL_HINT =
-  'gitleaks not on PATH (required for nomad push). Install: brew install gitleaks (macOS) or download from https://github.com/gitleaks/gitleaks/releases (Linux/WSL).';
+/**
+ * Platform-aware "gitleaks not on PATH" hint, mirroring the scaffold
+ * `install.sh` prints during onboarding:
+ *   - macOS: `brew install gitleaks`.
+ *   - Linux: numbered steps (download arch-matched tarball, extract to
+ *            `~/.local/bin`, optional PATH note when the dir isn't on PATH).
+ *   - Other: just the release-page link.
+ * Evaluated at call time so the PATH-on-rc check reflects the runtime
+ * env, not the value at module load.
+ */
+export function gitleaksInstallHint(): string {
+  const head = 'gitleaks not on PATH (required for nomad push). Install:';
+  const plat = platform();
+  if (plat === 'darwin') {
+    return `${head}\n  brew install gitleaks`;
+  }
+  if (plat === 'linux') {
+    const archMap: Record<string, string> = { x64: 'x64', arm64: 'arm64', arm: 'armv7' };
+    const arch = archMap[process.arch];
+    const lines = [
+      head,
+      arch
+        ? `  1. Download the linux_${arch} tarball: https://github.com/gitleaks/gitleaks/releases`
+        : `  1. Download the linux artifact for arch=${process.arch}: https://github.com/gitleaks/gitleaks/releases`,
+      '  2. Install (replace TARBALL with the path to your download):',
+      '       mkdir -p ~/.local/bin',
+      '       tar -xzf TARBALL -C ~/.local/bin gitleaks',
+      '       chmod +x ~/.local/bin/gitleaks',
+      '       ~/.local/bin/gitleaks version   # verify',
+    ];
+    const localBin = `${homedir()}/.local/bin`;
+    const paths = (process.env.PATH ?? '').split(':');
+    if (!paths.includes(localBin)) {
+      lines.push('  3. ~/.local/bin is not on PATH; add to your shell rc:');
+      lines.push('       export PATH="$HOME/.local/bin:$PATH"');
+    }
+    return lines.join('\n');
+  }
+  return `${head}\n  See https://github.com/gitleaks/gitleaks/releases`;
+}
 
 /**
  * Recursively find every entry whose basename is `.git` under `dir`. Returns
@@ -74,7 +113,7 @@ export function probeGitleaks(): string {
       .trim();
   } catch (err) {
     const e = err as NodeJS.ErrnoException;
-    if (e.code === 'ENOENT') throw new NomadFatal(GITLEAKS_INSTALL_HINT);
+    if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
     throw new NomadFatal(`gitleaks --version failed: ${e.message}`);
   }
 }
@@ -102,7 +141,7 @@ export function runGitleaksScan(): void {
       stderr?: Buffer;
       stdout?: Buffer;
     };
-    if (e.code === 'ENOENT') throw new NomadFatal(GITLEAKS_INSTALL_HINT);
+    if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
     if (e.stderr) process.stderr.write(e.stderr);
     if (e.stdout) process.stdout.write(e.stdout);
     throw new NomadFatal(
