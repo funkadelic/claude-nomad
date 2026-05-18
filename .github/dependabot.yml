@@ -1,7 +1,9 @@
 version: 2
 updates:
   # npm: keep prod + dev deps current. Group dev deps so we get one PR
-  # per cadence instead of N small ones.
+  # per cadence instead of N small ones. Prefixes route through
+  # release-please's `deps` / `deps-dev` types so updates land under
+  # the CHANGELOG's "Dependencies" section.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -18,10 +20,12 @@ updates:
         dependency-type: production
         update-types: [patch]
     commit-message:
-      prefix: chore
+      prefix: deps
+      prefix-development: deps-dev
       include: scope
 
-  # github-actions: pin major versions of third-party actions get bumped here.
+  # github-actions: third-party action major bumps land here. No
+  # dev/prod distinction; everything is `deps`.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -31,5 +35,5 @@ updates:
       timezone: Etc/UTC
     open-pull-requests-limit: 3
     commit-message:
-      prefix: ci
+      prefix: deps
       include: scope

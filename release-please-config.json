@@ -18,7 +18,9 @@
         { "type": "test", "section": "Testing" },
         { "type": "build", "section": "Changed" },
         { "type": "ci", "section": "Changed" },
-        { "type": "chore", "section": "Changed" }
+        { "type": "chore", "section": "Changed" },
+        { "type": "deps", "section": "Dependencies" },
+        { "type": "deps-dev", "section": "Dependencies" }
       ]
     }
   }

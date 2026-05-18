@@ -19,6 +19,8 @@ jobs:
           # Types must match commitlint.config.js / CLAUDE.md. Squash-merge
           # uses the PR title as the commit subject, so this is the
           # server-side gate that keeps main's history conventional.
+          # `deps` / `deps-dev` are non-standard but Dependabot emits them
+          # when configured to do so (see .github/dependabot.yml).
           types: |
             feat
             fix
@@ -31,6 +33,8 @@ jobs:
             perf
             style
             revert
+            deps
+            deps-dev
           requireScope: false
           subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |
