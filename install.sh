@@ -42,17 +42,32 @@ else
   log "tsx installed"
 fi
 
-# 4. Project deps installed?
+# 4. gitleaks present? Optional for `nomad doctor`, required for `nomad push`.
+# Not auto-installed: gitleaks is a security tool and users may want a specific
+# version, package-manager-managed install, or pre-vetted binary. The doctor
+# D-14 check emits the same hint at runtime.
+if command -v gitleaks >/dev/null 2>&1; then
+  log "gitleaks $(gitleaks version 2>/dev/null | head -1 || echo unknown) OK"
+else
+  log "gitleaks not on PATH (optional for nomad doctor, required for nomad push)"
+  case "$(uname -s)" in
+    Darwin) log "  Install:  brew install gitleaks" ;;
+    Linux)  log "  Install:  download the linux_x64 tarball from https://github.com/gitleaks/gitleaks/releases and extract to ~/.local/bin/" ;;
+    *)      log "  Install:  https://github.com/gitleaks/gitleaks/releases" ;;
+  esac
+fi
+
+# 5. Project deps installed?
 if [ ! -d "$REPO_DIR/node_modules" ]; then
   log "Installing project dev dependencies..."
   (cd "$REPO_DIR" && npm install)
 fi
 
-# 5. Make CLI entry executable so the shebang works directly.
+# 6. Make CLI entry executable so the shebang works directly.
 chmod +x "$REPO_DIR/src/nomad.ts"
 log "src/nomad.ts marked executable"
 
-# 6. Print the alias snippet. Detect zsh vs bash so we point at the right rc.
+# 7. Print the alias snippet. Detect zsh vs bash so we point at the right rc.
 case "${SHELL:-}" in
   */zsh)  RC_FILE="$HOME/.zshrc" ;;
   */bash) RC_FILE="$HOME/.bashrc" ;;
