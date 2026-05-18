@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import { blue, cyan, dim, green, red, yellow } from './color.ts';
 import {
   CLAUDE_HOME,
   HOST,
@@ -267,9 +268,11 @@ function readJsonSafe<T>(path: string, label: string): T | null {
  * stdout. Doctor signals failure to scripts via `process.exitCode` instead.
  */
 export function cmdDoctor(): void {
-  log(`host: ${HOST}`);
-  log(`repo: ${REPO_HOME} ${existsSync(REPO_HOME) ? 'OK' : 'MISSING'}`);
-  log(`claude home: ${CLAUDE_HOME} ${existsSync(CLAUDE_HOME) ? 'OK' : 'MISSING'}`);
+  log(`host: ${cyan(HOST)}`);
+  log(`repo: ${blue(REPO_HOME)} ${existsSync(REPO_HOME) ? green('OK') : red('MISSING')}`);
+  log(
+    `claude home: ${blue(CLAUDE_HOME)} ${existsSync(CLAUDE_HOME) ? green('OK') : red('MISSING')}`,
+  );
 
   for (const name of SHARED_LINKS) {
     const p = join(CLAUDE_HOME, name);
@@ -278,23 +281,19 @@ export function cmdDoctor(): void {
       continue;
     }
     log(
-      `  ${name}: ${lstatSync(p).isSymbolicLink() ? 'symlink OK' : 'NOT a symlink (blocks sync)'}`,
+      `  ${name}: ${lstatSync(p).isSymbolicLink() ? green('symlink OK') : red('NOT a symlink (blocks sync)')}`,
     );
   }
 
-  // Preemptively report missing shared/settings.base.json since pull would
-  // die() on it anyway. Doctor is the read-only path so it's the appropriate
-  // place to surface the gap.
+  // Preemptively report missing shared/settings.base.json (pull would die() on it).
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   if (!existsSync(basePath)) {
-    log(`FAIL shared/settings.base.json missing at ${basePath}`);
+    log(`${red('FAIL')} shared/settings.base.json missing at ${blue(basePath)}`);
     process.exitCode = 1;
   }
 
-  // Scan settings.json top-level keys against the schema baseline. WARN
-  // surfaces Anthropic-added keys we have not catalogued yet. Informational
-  // only; no exitCode effect because unknown keys are forward-compatible by
-  // default and we do not want to break sync on every Anthropic release.
+  // Scan settings.json top-level keys against the schema baseline. WARN on
+  // unknown keys (forward-compatible by default; no exitCode change).
   const settingsPath = join(CLAUDE_HOME, 'settings.json');
   let settings: Record<string, unknown> | null = null;
   if (existsSync(settingsPath)) {
@@ -302,16 +301,16 @@ export function cmdDoctor(): void {
     if (settings !== null) {
       const unknownKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS_KEYS.has(k));
       if (unknownKeys.length > 0) {
-        log(`WARN settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`);
+        log(
+          `${yellow('WARN')} settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`,
+        );
       } else {
         log('settings.json schema: known keys only');
       }
     }
   }
 
-  // Host-override-missing FAIL: complements the pull-side WARN in
-  // src/links.ts. Uses process.exitCode (NOT process.exit) so doctor's
-  // remaining output continues to print after the diagnostic line.
+  // Host-override-missing FAIL (complements links.ts pull-side WARN).
   const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
   let drift: string[] = [];
   if (existsSync(basePath) && settings !== null) {
@@ -322,9 +321,11 @@ export function cmdDoctor(): void {
     }
   }
   if (existsSync(hostFile)) {
-    log(`host overrides: ${hostFile}`);
+    log(`host overrides: ${blue(hostFile)}`);
   } else if (drift.length > 0) {
-    log(`FAIL no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`);
+    log(
+      `${red('FAIL')} no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`,
+    );
     const hostsDir = join(REPO_HOME, 'hosts');
     if (existsSync(hostsDir)) {
       const cands = readdirSync(hostsDir).filter((f) => f.endsWith('.json'));
@@ -340,13 +341,10 @@ export function cmdDoctor(): void {
     const map = readJsonSafe<PathMap>(mapPath, mapPath);
     if (map !== null) {
       const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
-      log(`mapped projects for ${HOST}: ${mapped.length}`);
-      for (const [name, hosts] of mapped) log(`  ${name} -> ${hosts[HOST]}`);
+      log(`mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`);
+      for (const [name, hosts] of mapped) log(`  ${name} -> ${blue(hosts[HOST])}`);
 
-      // Scan ALL hosts in path-map.json and group by encodePath result.
-      // Collisions are FAIL (exitCode 1), not WARN: two real paths that
-      // encode to the same directory cause silent data loss in remap, so
-      // gating downstream automation on the failure is the safer default.
+      // Encode-collision scan across all hosts; FAIL because remap data loss is silent.
       const seen = new Map<string, string>();
       let collisionCount = 0;
       for (const hosts of Object.values(map.projects)) {
@@ -355,7 +353,9 @@ export function cmdDoctor(): void {
           const encoded = encodePath(abspath);
           const prior = seen.get(encoded);
           if (prior !== undefined && prior !== abspath) {
-            log(`FAIL path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`);
+            log(
+              `${red('FAIL')} path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`,
+            );
             collisionCount++;
           } else {
             seen.set(encoded, abspath);
@@ -365,8 +365,64 @@ export function cmdDoctor(): void {
       if (collisionCount > 0) process.exitCode = 1;
     }
   } else {
-    log('path-map.json: missing');
+    log(`path-map.json: ${red('missing')}`);
   }
 
   log(`never-sync items: ${[...NEVER_SYNC].join(', ')}`);
+
+  // D-14: gitleaks presence probe (read-only; logs PASS/FAIL, never throws).
+  try {
+    const v = execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+      .toString()
+      .trim();
+    log(`gitleaks: ${dim(v)}`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      log(`${red('FAIL')} gitleaks: not on PATH (required for nomad push)`);
+    } else {
+      log(`${red('FAIL')} gitleaks: probe failed: ${(err as Error).message}`);
+    }
+    process.exitCode = 1;
+  }
+
+  // D-15: gitlink scan of shared/ (read-only mirror of cmdPush's D-05 walk).
+  const sharedDir = join(REPO_HOME, 'shared');
+  if (existsSync(sharedDir)) {
+    const gitlinks = findGitlinks(sharedDir);
+    for (const p of gitlinks) {
+      const rel = relative(REPO_HOME, p);
+      log(
+        `${red('FAIL')} gitlink: ${blue(rel)} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
+      );
+    }
+    if (gitlinks.length > 0) process.exitCode = 1;
+  }
+
+  // D-16: remote URL informational (no PASS/FAIL prefix).
+  try {
+    const url = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .trim();
+    log(`remote origin: ${cyan(url)}`);
+  } catch {
+    log('remote origin: not configured');
+  }
+
+  // D-17: rebase clean-tree WARN; surfaces the autostash behavior on push.
+  try {
+    const status = execFileSync('git', ['status', '--porcelain=v1', '-z'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    if (status.length > 0) {
+      log(
+        `${yellow('WARN')} ${blue('~/claude-nomad/')} has uncommitted changes (nomad push will --autostash these)`,
+      );
+    }
+  } catch {
+    // Repo missing .git is already surfaced by the repo: MISSING line above.
+  }
 }
