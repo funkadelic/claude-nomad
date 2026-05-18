@@ -81,7 +81,7 @@ else
       log "       mkdir -p ~/.local/bin"
       log "       tar -xzf TARBALL -C ~/.local/bin gitleaks"
       log "       chmod +x ~/.local/bin/gitleaks"
-      log "       gitleaks version   # verify"
+      log "       ~/.local/bin/gitleaks version   # verify (absolute path: works before PATH update)"
       case ":${PATH:-}:" in
         *:"$HOME/.local/bin":*) ;;
         *)
