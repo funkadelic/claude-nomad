@@ -107,6 +107,7 @@ cat <<EOF
 
 [install] Done. Add this to $RC_FILE:
 
+  export NOMAD_HOST=<your-host-label>      # short, stable name (e.g. wsl-laptop, macbook)
   alias nomad='tsx $REPO_DIR/src/nomad.ts'
 
 Then in a new shell:
