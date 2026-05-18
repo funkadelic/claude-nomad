@@ -34,6 +34,22 @@ import {
 export { resumeCmd };
 
 /**
+ * Run `git <args>` in REPO_HOME, forwarding stderr and converting non-zero
+ * exits to NomadFatal. Without this wrap, an ExecException would bubble past
+ * the cmdPull/cmdPush NomadFatal-only catch blocks and surface as a stack
+ * trace; the finally still releases the lock, but the user UX degrades.
+ */
+function gitOrFatal(args: readonly string[], context: string): void {
+  try {
+    execFileSync('git', args, { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    const e = err as Error & { stderr?: Buffer };
+    if (e.stderr) process.stderr.write(e.stderr);
+    throw new NomadFatal(`${context} failed`);
+  }
+}
+
+/**
  * Match `path` against an entry in the push allow-list. Exact match for
  * non-`/`-terminated entries; prefix match for `/`-terminated entries; and
  * a special case for `hosts/`: only `hosts/<name>.json` (single-level,
@@ -133,10 +149,7 @@ export function cmdPull(): void {
       die(`could not create backup dir: ${(err as Error).message}`);
     }
     log(`pulling on host=${HOST} (backup=${ts})`);
-    execFileSync('git', ['pull', '--rebase', '--autostash'], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase');
     applySharedLinks(ts);
     regenerateSettings(ts);
     remapPull(ts);
@@ -211,20 +224,16 @@ export function cmdPush(): void {
       throw new NomadFatal(`could not parse path-map.json: ${(err as Error).message}`);
     }
     enforceAllowList(status, map);
-    // Use execFileSync (no implicit shell) so a NOMAD_HOST containing a
-    // double-quote or backtick can't escape the commit-message quoting.
-    // Same reasoning for `git add -A` and `git push` (no interpolation, but
-    // shell-free is consistent and audit-friendly).
-    execFileSync('git', ['add', '-A'], { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
+    // gitOrFatal uses execFileSync (no implicit shell) so a NOMAD_HOST
+    // containing a double-quote or backtick can't escape the commit-message
+    // quoting. Non-zero exits surface as NomadFatal with forwarded stderr.
+    gitOrFatal(['add', '-A'], 'git add');
     // D-19 step 10: gitleaks scan AFTER staging, BEFORE commit. The early-
     // return short-circuit above guarantees we only reach here when there is
     // something to scan (Pitfall #7).
     runGitleaksScan();
-    execFileSync('git', ['commit', '-m', `chore: sync from ${HOST}`], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    execFileSync('git', ['push'], { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
+    gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit');
+    gitOrFatal(['push'], 'git push');
     log('push complete');
   } catch (err) {
     if (err instanceof NomadFatal) {
