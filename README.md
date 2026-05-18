@@ -132,7 +132,7 @@ Result on that host: opus model, the local Ollama env var, plus the shared permi
 
 **Why not just fork?** GitHub doesn't let you flip a public fork to private, and your config (especially session transcripts) must stay private. So the bootstrap is a one-time mirror-push into a fresh private repo, not a fork.
 
-**Keep the mirror private.** Every workflow in `.github/workflows/` is gated on `${{ !github.event.repository.private }}`, so they no-op on a private mirror and run only on the canonical public repo. If you flip your mirror to public, CI will start firing on every `nomad push` (and will likely fail because your config commits land on `main`).
+**Keep the mirror private.** Every workflow in `.github/workflows/` is gated on `${{ !github.event.repository.private }}`. The gate keys on repo visibility, not on a specific name, so workflows skip on _any_ private repo (your mirror, every adopter's mirror) and run on _any_ public repo where they're present (the canonical upstream, contributor forks, your own public mirror if you flip it). If you flip your mirror to public, CI will start firing on every `nomad push` and will likely fail because your config commits land on `main`.
 
 One-time, on your first host:
 
