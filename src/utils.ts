@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   closeSync,
   cpSync,
@@ -47,17 +47,6 @@ export class NomadFatal extends Error {
 export const die = (msg: string): never => {
   throw new NomadFatal(msg);
 };
-
-/**
- * Run a shell command and return its trimmed stdout. Convenience wrapper for
- * one-liners where leading/trailing whitespace is noise. Do not use for git
- * porcelain output (the leading status-space is significant); use
- * `gitStatusPorcelainZ` instead.
- */
-export const sh = (cmd: string, cwd?: string): string =>
-  execSync(cmd, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    .toString()
-    .trim();
 
 /**
  * Shell-free, untrimmed `git status --porcelain=v1 -z` reader. Untrimmed

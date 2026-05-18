@@ -25,7 +25,6 @@ import {
   NomadFatal,
   readJson,
   releaseLock,
-  sh,
 } from './utils.ts';
 
 // resume sidecar lives in src/resume.ts; re-exported so callers keep importing it from ./commands.ts.
@@ -131,7 +130,10 @@ export function cmdPull(): void {
       die(`could not create backup dir: ${(err as Error).message}`);
     }
     log(`pulling on host=${HOST} (backup=${ts})`);
-    sh('git pull --rebase', REPO_HOME);
+    execFileSync('git', ['pull', '--rebase', '--autostash'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     applySharedLinks(ts);
     regenerateSettings(ts);
     remapPull(ts);
