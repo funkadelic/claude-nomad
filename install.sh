@@ -82,11 +82,7 @@ if [ ! -d "$REPO_DIR/node_modules" ]; then
   (cd "$REPO_DIR" && npm install)
 fi
 
-# 6. Make CLI entry executable so the shebang works directly.
-chmod +x "$REPO_DIR/src/nomad.ts"
-log "src/nomad.ts marked executable"
-
-# 7. Print the alias snippet. Detect zsh vs bash so we point at the right rc.
+# 6. Print the alias snippet. Detect zsh vs bash so we point at the right rc.
 case "${SHELL:-}" in
   */zsh)  RC_FILE="$HOME/.zshrc" ;;
   */bash) RC_FILE="$HOME/.bashrc" ;;
