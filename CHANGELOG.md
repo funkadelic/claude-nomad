@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/funkadelic/claude-nomad/compare/v0.9.0...v0.9.1) (2026-05-18)
+
+
+### Changed
+
+* **release-please:** authenticate via GitHub App so PRs trigger CI ([#40](https://github.com/funkadelic/claude-nomad/issues/40)) ([8ab97b9](https://github.com/funkadelic/claude-nomad/commit/8ab97b92c917b9a0d8dd65d809c6563121853c53))
+
 ## [0.9.0](https://github.com/funkadelic/claude-nomad/compare/v0.8.0...v0.9.0) (2026-05-18)
 
 
