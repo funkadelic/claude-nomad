@@ -16,10 +16,11 @@ import type * as utilsModule from './utils.ts';
 type ErrSpy = MockInstance<(...args: unknown[]) => void>;
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
-// Integration coverage for cmdPush's D-19 ordering: probeGitleaks (step 4)
-// -> rebaseBeforePush (step 5) -> findGitlinks (step 6) -> existing flow
-// -> runGitleaksScan (step 10). Each FATAL path also proves the lockfile is
-// released via the existing try/catch/finally (zero infrastructure change).
+// Integration coverage for cmdPush's safety-check ordering:
+//   probeGitleaks -> rebaseBeforePush -> remapPush -> findGitlinks ->
+//   allow-list -> git add -> runGitleaksScan -> git commit -> git push.
+// Each FATAL path also proves the lockfile is released via the existing
+// try/catch/finally (zero infrastructure change).
 describe('cmdPush Phase 3 push-boundary safety', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -78,7 +79,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
   }
 
-  it('Test 1: clean push proceeds; runGitleaksScan is NOT called on empty index (Pitfall #7)', async () => {
+  it('Test 1: clean push proceeds; runGitleaksScan is NOT called on empty index', async () => {
     // The scan mock is declared at outer scope so its call count survives
     // the dynamic import of ./commands.ts.
     const runGitleaksScanMock = vi.fn(() => {
@@ -110,9 +111,9 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // The early-return path fired, proving probe/rebase/gitlinks all ran
     // successfully (otherwise one of them would have thrown).
     expect(logOutput()).toMatch(/nothing to commit/);
-    // Pitfall #7: scan must NOT be invoked when the index is empty. A future
-    // refactor that accidentally moves runGitleaksScan above the early-return
-    // will fail this assertion.
+    // The scan must NOT be invoked when the index is empty. A future
+    // refactor that accidentally moves runGitleaksScan above the early
+    // return will fail this assertion.
     expect(runGitleaksScanMock).not.toHaveBeenCalled();
   });
 

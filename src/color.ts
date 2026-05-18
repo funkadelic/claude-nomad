@@ -7,10 +7,10 @@
  * `--no-color`, `--color`, `win32`, `TTY`, `TERM=dumb`, and `CI` natively, so
  * we delegate detection rather than rolling a hand-built TTY probe.
  *
- * Win32 caveat (RESEARCH Pitfall #5): picocolors forces color ON for
- * `process.platform === 'win32'` even on piped output. The supported user
- * surface is WSL / Linux / macOS where `process.platform` is `linux` or
- * `darwin`; native Windows users can opt out via `NO_COLOR=1`.
+ * Win32 caveat: picocolors forces color ON for `process.platform === 'win32'`
+ * even on piped output. The supported user surface is WSL / Linux / macOS
+ * where `process.platform` is `linux` or `darwin`; native Windows users can
+ * opt out via `NO_COLOR=1`.
  *
  * The `enabled` flag is read once at module load and constant for the rest of
  * the CLI invocation; tests must `vi.resetModules()` between env-var toggles.

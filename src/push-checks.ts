@@ -1,14 +1,14 @@
 /**
- * Reusable helpers for Phase 3 push-boundary safety: gitlink walker (D-05),
- * gitleaks presence probe (D-02), gitleaks staged scan (D-01, D-03), and
- * rebase-before-push (D-07, D-09, D-11).
+ * Reusable helpers for push-boundary safety: gitlink walker, gitleaks
+ * presence probe, gitleaks staged scan, and rebase-before-push.
  *
- * All three execFileSync-backed helpers use argv-array form with
+ * All execFileSync-backed helpers use argv-array form with
  * `stdio: ['ignore', 'pipe', 'pipe']` (no shell). Same shape as
  * `gitStatusPorcelainZ` in src/utils.ts so the audit surface is uniform.
  *
- * Used by cmdPush (Plan 04) and cmdDoctor (Plan 05; the latter only consumes
- * `findGitlinks` and `probeGitleaks` as read-only diagnostics).
+ * Used by `cmdPush` for refuse-on-hit safety and by `cmdDoctor` for
+ * read-only diagnostics (doctor only consumes `findGitlinks` and
+ * `probeGitleaks`).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -23,17 +23,17 @@ const GITLEAKS_INSTALL_HINT =
 
 /**
  * Recursively find every entry whose basename is `.git` under `dir`. Returns
- * absolute paths. Used by cmdPush (D-05, refuse-on-hit) and cmdDoctor (D-15,
- * read-only diagnostic). Callers feed `REPO_HOME/shared/` only (D-06); the
- * tool's own repo .git at `~/claude-nomad/.git/` is outside the walk root.
+ * absolute paths. Used by `cmdPush` (refuse-on-hit) and `cmdDoctor`
+ * (read-only diagnostic). Callers feed `REPO_HOME/shared/` only; the tool's
+ * own repo .git at `~/claude-nomad/.git/` is outside the walk root.
  *
  * Does NOT follow symlinks. `Dirent.isDirectory()` returns `false` for
  * `S_IFLNK` entries even when the link target is a directory, so the
- * recursion naturally short-circuits at any symlink. This is the load-bearing
- * fix for RESEARCH Pitfall #1: an empirical test on Node 22.16 showed that
- * `readdirSync` in recursive mode followed a self-referential symlink cycle
- * to 82 entries at depth 83 before libuv's internal cap fired. The
- * hand-rolled walker below is cycle-safe by construction.
+ * recursion naturally short-circuits at any symlink. This is the
+ * load-bearing fix for a known hazard: `readdirSync` in recursive mode
+ * follows self-referential symlink cycles up to libuv's internal cap
+ * (empirically verified on Node 22.16: 82 entries at depth 83 before the
+ * cap fired). The hand-rolled walker below is cycle-safe by construction.
  *
  * Tolerates permission errors silently (returns whatever was collected before
  * the error). Reports both file gitlinks (submodule pointer) and directory
@@ -62,10 +62,10 @@ export function findGitlinks(dir: string): string[] {
 }
 
 /**
- * Probe for the gitleaks binary on PATH (D-02). Returns the trimmed `gitleaks
+ * Probe for the gitleaks binary on PATH. Returns the trimmed `gitleaks
  * version` stdout on success. Throws NomadFatal with the install hint on
  * ENOENT; throws NomadFatal with the error message on any other failure.
- * Used by cmdPush (top-of-flow probe) and cmdDoctor (D-14 diagnostic).
+ * Used by `cmdPush` (top-of-flow probe) and `cmdDoctor` (read-only).
  */
 export function probeGitleaks(): string {
   try {
@@ -80,15 +80,15 @@ export function probeGitleaks(): string {
 }
 
 /**
- * Run gitleaks against the staged index (D-01). On non-zero exit (detection),
+ * Run gitleaks against the staged index. On non-zero exit (detection),
  * forwards gitleaks' own redacted stderr/stdout so the user sees which file
- * is dirty, then throws NomadFatal (D-03). Does NOT auto-rollback staging;
- * the user runs `git diff --cached` to identify the offending file.
+ * is dirty, then throws NomadFatal. Does NOT auto-rollback staging; the
+ * user runs `git diff --cached` to identify the offending file.
  *
- * ENOENT branch is defense-in-depth: the D-02 probe at the top of cmdPush
- * should have caught a missing binary, but if cmdPush ever bypasses the
- * probe (or the user uninstalls gitleaks mid-flow) the same install-hint
- * FATAL fires here.
+ * ENOENT branch is defense-in-depth: the presence probe at the top of
+ * `cmdPush` should have caught a missing binary, but if `cmdPush` ever
+ * bypasses the probe (or the user uninstalls gitleaks mid-flow) the same
+ * install-hint FATAL fires here.
  */
 export function runGitleaksScan(): void {
   try {
@@ -112,23 +112,21 @@ export function runGitleaksScan(): void {
 }
 
 /**
- * Run `git pull --rebase --autostash` in REPO_HOME before push (D-07, D-11).
+ * Run `git pull --rebase --autostash` in REPO_HOME before push.
  * The `--autostash` absorbs dirty trees (in-progress path-map.json edits,
  * host overrides) so users do not need to commit-or-stash first.
  *
  * On failure, forwards git's stderr so the user sees the actual reason
- * (conflict, no-upstream, unreachable remote, auth failure, etc.; see
- * RESEARCH Pitfall #3 option (a)), then throws NomadFatal.
+ * (conflict, no-upstream, unreachable remote, auth failure, etc.), then
+ * throws NomadFatal.
  *
- * FATAL wording references `git rebase --continue` / `--abort` per the
- * RESEARCH Pitfall #2 correction. D-09 in CONTEXT.md originally suggested
- * pointing users at the stash list, but the autostash actually lives in
+ * FATAL wording references `git rebase --continue` / `--abort` (not the
+ * stash list): when `--autostash` is in flight, the stashed work lives in
  * `.git/rebase-merge/autostash` mid-conflict and is reapplied by
- * `--continue` / `--abort` automatically. Pointing at the stash would
- * mislead the user; the corrected wording points at the actual recovery
- * commands.
+ * `--continue` / `--abort` automatically. Pointing the user at the stash
+ * list would mislead them; the recovery commands are the actual fix.
  *
- * cmdPull (D-10) may adopt the same helper in a future refactor.
+ * `cmdPull` may adopt the same helper in a future refactor.
  */
 export function rebaseBeforePush(): void {
   try {

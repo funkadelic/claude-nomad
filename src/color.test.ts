@@ -32,6 +32,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const COLOR_TS = join(HERE, 'color.ts');
 
+/**
+ * Spawn a fresh Node subprocess that imports `red` from `color.ts` and writes
+ * `red(input)` to stdout. Used to test FORCE_COLOR / NO_COLOR behavior with
+ * a clean module load — `vi.resetModules()` can't re-evaluate picocolors'
+ * load-time `isColorSupported` cache from within the same process.
+ */
 function spawnRed(input: string, env: NodeJS.ProcessEnv): string {
   const script = `import { red } from ${JSON.stringify(COLOR_TS)}; process.stdout.write(red(${JSON.stringify(input)}));`;
   return execFileSync('node', ['--experimental-strip-types', '--input-type=module', '-e', script], {

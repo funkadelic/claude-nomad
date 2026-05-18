@@ -212,12 +212,12 @@ export function cmdPush(): void {
   if (handle === null) process.exit(0);
   try {
     log(`pushing on host=${HOST}`);
-    // D-19 step 4: gitleaks presence probe. Fail fast if missing so the
-    // remaining steps don't waste time mutating local state.
+    // Gitleaks presence probe at the top of the flow. Fail fast if missing
+    // so the remaining steps don't waste time mutating local state.
     probeGitleaks();
-    // D-19 step 5: rebase BEFORE any local mutation (D-07). Surfaces remote
-    // conflicts against the user's committed state, not against in-flight
-    // remapPush copies. NomadFatal here unwinds via the existing finally.
+    // Rebase BEFORE any local mutation. Surfaces remote conflicts against
+    // the user's committed state, not against in-flight remapPush copies.
+    // NomadFatal here unwinds via the existing finally.
     rebaseBeforePush();
     // Pass a collision-resistant ts down to remapPush so it can snapshot
     // repo-side encoded-dir state before copyDir clobbers it.
@@ -272,9 +272,9 @@ export function cmdPush(): void {
     // containing a double-quote or backtick can't escape the commit-message
     // quoting. Non-zero exits surface as NomadFatal with forwarded stderr.
     gitOrFatal(['add', '-A'], 'git add');
-    // D-19 step 10: gitleaks scan AFTER staging, BEFORE commit. The early-
-    // return short-circuit above guarantees we only reach here when there is
-    // something to scan (Pitfall #7).
+    // Gitleaks scan AFTER staging, BEFORE commit. The empty-status early
+    // return above guarantees we only reach here when something is staged
+    // (scanning an empty index would produce a confusing no-op success).
     runGitleaksScan();
     gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit');
     gitOrFatal(['push'], 'git push');
@@ -435,7 +435,7 @@ export function cmdDoctor(): void {
 
   log(`never-sync items: ${[...NEVER_SYNC].join(', ')}`);
 
-  // D-14: gitleaks presence probe (read-only; logs PASS/FAIL, never throws).
+  // Gitleaks presence probe (read-only; logs PASS/FAIL, never throws).
   try {
     const v = execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
       .toString()
@@ -450,7 +450,7 @@ export function cmdDoctor(): void {
     process.exitCode = 1;
   }
 
-  // D-15: gitlink scan of shared/ (read-only mirror of cmdPush's D-05 walk).
+  // Gitlink scan of shared/ (read-only mirror of cmdPush's walk).
   const sharedDir = join(REPO_HOME, 'shared');
   if (existsSync(sharedDir)) {
     const gitlinks = findGitlinks(sharedDir);
@@ -463,7 +463,7 @@ export function cmdDoctor(): void {
     if (gitlinks.length > 0) process.exitCode = 1;
   }
 
-  // D-16: remote URL informational (no PASS/FAIL prefix).
+  // Remote URL informational (no PASS/FAIL prefix).
   try {
     const url = execFileSync('git', ['remote', 'get-url', 'origin'], {
       cwd: REPO_HOME,
@@ -476,7 +476,7 @@ export function cmdDoctor(): void {
     log('remote origin: not configured');
   }
 
-  // D-17: rebase clean-tree WARN; surfaces the autostash behavior on push.
+  // Rebase clean-tree WARN; surfaces the autostash behavior on push.
   try {
     const status = gitStatusPorcelainZ(REPO_HOME);
     if (status.length > 0) {

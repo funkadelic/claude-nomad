@@ -16,6 +16,13 @@ type Env = {
   exitSpy: ExitSpy;
 };
 
+/**
+ * Build a sandbox env for `resumeCmd` tests: creates a temp `HOME` with
+ * `claude-nomad/` and `.claude/projects/` scaffolding, sets `NOMAD_HOST`,
+ * resets modules so the test's dynamic import sees the new env, and spies
+ * on `console.log` / `console.error` / `process.exit`. Returns the spies
+ * plus the temp dir.
+ */
 function makeEnv(host: string): Env {
   const testHome = mkdtempSync(join(tmpdir(), 'nomad-test-resume-'));
   process.env.HOME = testHome;
@@ -35,6 +42,11 @@ function makeEnv(host: string): Env {
   return { testHome, logSpy, errorSpy, exitSpy };
 }
 
+/**
+ * Write a `<sessionId>.jsonl` transcript file under
+ * `<testHome>/.claude/projects/<encodedDir>/` with one JSON line per entry
+ * in `lines`. Mirrors Claude Code's on-disk session storage layout.
+ */
 function writeTranscript(
   testHome: string,
   encodedDir: string,
@@ -46,6 +58,10 @@ function writeTranscript(
   writeFileSync(join(dir, `${sessionId}.jsonl`), lines.join('\n') + '\n');
 }
 
+/**
+ * Write a `path-map.json` at `<testHome>/claude-nomad/path-map.json` with
+ * the given `projects` map (`{ <logical>: { <host>: <abspath> } }`).
+ */
 function writePathMap(testHome: string, projects: Record<string, Record<string, string>>): void {
   writeFileSync(
     join(testHome, 'claude-nomad', 'path-map.json'),
