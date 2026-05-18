@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/funkadelic/claude-nomad/compare/v0.6.0...v0.7.0) (2026-05-18)
+
+
+### Added
+
+* **install:** add explicit gitleaks install commands and PATH detection ([#22](https://github.com/funkadelic/claude-nomad/issues/22)) ([1aaafff](https://github.com/funkadelic/claude-nomad/commit/1aaafffaf5b433feefb36eaaba84eeda75a56c53))
+
 ## [0.6.0](https://github.com/funkadelic/claude-nomad/compare/v0.5.1...v0.6.0) (2026-05-18)
 
 
