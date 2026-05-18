@@ -114,7 +114,7 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     });
     const { probeGitleaks } = await import('./push-checks.ts');
     expect(() => probeGitleaks()).toThrow(/gitleaks not on PATH/);
-    expect(() => probeGitleaks()).toThrow(/brew install gitleaks/);
+    expect(() => probeGitleaks()).toThrow(/Install:/);
     const { NomadFatal } = await import('./utils.ts');
     try {
       probeGitleaks();
@@ -191,7 +191,7 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     });
     const { runGitleaksScan } = await import('./push-checks.ts');
     expect(() => runGitleaksScan()).toThrow(/gitleaks not on PATH/);
-    expect(() => runGitleaksScan()).toThrow(/brew install gitleaks/);
+    expect(() => runGitleaksScan()).toThrow(/Install:/);
   });
 
   // rebaseBeforePush

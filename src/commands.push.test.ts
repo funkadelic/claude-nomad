@@ -158,9 +158,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       return {
         ...actual,
         probeGitleaks: vi.fn(() => {
-          throw new NomadFatal(
-            'gitleaks not on PATH (required for nomad push). Install: brew install gitleaks (macOS) or download from https://github.com/gitleaks/gitleaks/releases (Linux/WSL).',
-          );
+          throw new NomadFatal(actual.gitleaksInstallHint());
         }),
         rebaseBeforePush: vi.fn(() => {
           /* no-op success */
@@ -177,7 +175,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(existsSync(lockPath)).toBe(false);
     const out = errOutput();
     expect(out).toMatch(/gitleaks not on PATH/);
-    expect(out).toMatch(/brew install gitleaks/);
+    expect(out).toMatch(/Install:/);
   });
 
   it('Test 4: gitlink hit -> per-hit FATAL + summary FATAL; lock released', async () => {
