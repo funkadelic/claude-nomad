@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   release-please:
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v5

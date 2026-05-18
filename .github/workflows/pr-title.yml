@@ -9,6 +9,7 @@ on:
 
 jobs:
   lint-pr-title:
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

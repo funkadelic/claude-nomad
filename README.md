@@ -36,7 +36,7 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 ```
 ~/claude-nomad/
 ├── src/                      # the CLI (came from the public tool repo)
-├── scripts/                  # optional helpers (e.g., migrate.sh, see Migrating below)
+├── scripts/                  # tool helpers (update.sh; plus any one-shot scripts you add)
 ├── shared/                   # synced to every machine
 │   ├── CLAUDE.md
 │   ├── settings.base.json    # baseline settings
@@ -73,6 +73,10 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 
 - `~/.claude.json` (OAuth tokens, MCP state), `history.jsonl`, `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/`
 
+**Auto-rehydrated by Claude Code** (not synced as files, but reconstructed from the enable list):
+
+- `~/.claude/plugins/cache/<plugin>/...` — plugin binaries and manifests. The enable list (`enabledPlugins` in `settings.base.json`) syncs via the regenerated `settings.json`; the plugin payloads do not. On a new host, Claude Code reads the enable list and downloads the corresponding plugin payloads on first use. You do not need to manually `claude plugins install ...` per host. Caveat: plugins that depend on host-specific state (external binaries, API keys in env, MCP server URLs) still need that side set up — put those in `hosts/<host>.json` or the plugin's own per-host config.
+
 ## Path remapping
 
 The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-path>/` where the encoded path is the absolute path with `/` replaced by `-`. So the same logical project ends up in different directories on each host.
@@ -97,7 +101,7 @@ On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied 
 
 ## Per-host overrides
 
-`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches (especially keys that embed absolute paths like `hooks` and `statusLine.command`). They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace).
+`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches. They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace). Keys that used to be force-marked per-host because they embedded absolute paths (`statusLine.command`, `hooks`) can live in base if you write the commands with `$HOME` (e.g. `"command": "node \"$HOME/.claude/my-statusline.cjs\""`) — Claude Code runs them through a shell so shell expansion applies. Reserve per-host files for truly machine-specific values (env, MCP URLs, host-only model overrides).
 
 `shared/settings.base.json`:
 
@@ -123,7 +127,7 @@ Result on that host: opus model, the local Ollama env var, plus the shared permi
 
 ## Requirements
 
-- Node.js 22 or newer (24 LTS recommended)
+- Node.js 22.6 or newer (24 LTS recommended; `install.sh` enforces the 22.6 floor)
 - `tsx` (installed automatically by `install.sh`, or `npm install -g tsx` manually)
 - Git
 - A **private** GitHub repo (or any Git remote you control)
@@ -131,6 +135,8 @@ Result on that host: opus model, the local Ollama env var, plus the shared permi
 ## Setup
 
 **Why not just fork?** GitHub doesn't let you flip a public fork to private, and your config (especially session transcripts) must stay private. So the bootstrap is a one-time mirror-push into a fresh private repo, not a fork.
+
+**Keep the mirror private.** Every workflow in `.github/workflows/` is gated on `${{ !github.event.repository.private }}`. The gate keys on repo visibility, not on a specific name, so workflows skip on _any_ private repo (your mirror, every adopter's mirror) and run on _any_ public repo where they're present (the canonical upstream, contributor forks, your own public mirror if you flip it). If you flip your mirror to public, CI will start firing on every `nomad push` and will likely fail because your config commits land on `main`.
 
 One-time, on your first host:
 
@@ -239,11 +245,12 @@ npm run update
 
 `npm run update` runs `scripts/update.sh`, which:
 
-1. Refuses to run on a dirty tree or off `main` (fail-fast, no half-merges).
-2. Auto-detects layout — uses `upstream/main` if an `upstream` remote is configured (fork workflow), otherwise falls back to `origin/main` (direct clone).
-3. Skips entirely when there's nothing new.
-4. Merges, then pushes to `origin/main` if running on a fork.
-5. Re-runs `npm install` only if `package-lock.json` actually changed.
+1. Refuses to run on a dirty tree (tracked OR untracked changes) or off `main` (fail-fast, no half-merges).
+2. Detects layout: fork (origin + upstream) vs direct clone (origin only); fetches the remotes that apply.
+3. Fast-forwards local `main` to `origin/main` first if origin is ahead. On a fork this absorbs any externally-applied "Sync fork" merge so the next step doesn't create a duplicate merge commit.
+4. On a fork, if `upstream/main` is still ahead after the fast-forward, merges it and pushes the result to `origin/main`. On a direct clone, step 3 was sufficient.
+5. Bails cleanly if nothing changed.
+6. Re-runs `npm install` only if `package-lock.json` actually shifted.
 
 One-time setup if you don't have the `upstream` remote yet:
 
@@ -272,7 +279,7 @@ npm install
 
 ## Commands
 
-- `nomad pull`: `git pull`, apply symlinks, regenerate `settings.json`, remap session paths
+- `nomad pull`: `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths
 - `nomad push`: export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push
 - `nomad doctor`: read-only health check. Reports `host: <NOMAD_HOST>`, lists each symlink as `symlink OK` / `missing` / `NOT a symlink`, lists mapped projects for the current host
 - `nomad doctor --resume-cmd <session-id>` prints a host-local `cd ... && claude --resume <id>` line for the given session (see [Cross-OS resume](#cross-os-resume))
