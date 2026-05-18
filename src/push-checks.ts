@@ -50,7 +50,10 @@ export function findGitlinks(dir: string): string[] {
     }
     for (const e of entries) {
       const p = join(current, e.name);
-      if (e.name === '.git') hits.push(p);
+      if (e.name === '.git') {
+        hits.push(p);
+        continue;
+      }
       if (e.isDirectory()) walk(p);
     }
   }
