@@ -188,9 +188,12 @@ export function cmdPush(): void {
     // repo-side encoded-dir state before copyDir clobbers it.
     const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
+    // remapPush runs BEFORE the empty-status check below: it produces the
+    // diffs that status observes, so swapping the order would short-circuit
+    // before anything is staged. Routed through the shell-free, untrimmed
+    // helper because `sh` would .trim() the first record's leading
+    // status-space and shift parsePorcelainZ's offsets.
     remapPush(ts);
-    // Routed through the shell-free, untrimmed helper. `sh` would .trim() the
-    // first record's leading status-space and shift parsePorcelainZ's offsets.
     const status = gitStatusPorcelainZ(REPO_HOME);
     if (!status) {
       log('nothing to commit');
@@ -413,10 +416,7 @@ export function cmdDoctor(): void {
 
   // D-17: rebase clean-tree WARN; surfaces the autostash behavior on push.
   try {
-    const status = execFileSync('git', ['status', '--porcelain=v1', '-z'], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).toString();
+    const status = gitStatusPorcelainZ(REPO_HOME);
     if (status.length > 0) {
       log(
         `${yellow('WARN')} ${blue('~/claude-nomad/')} has uncommitted changes (nomad push will --autostash these)`,
