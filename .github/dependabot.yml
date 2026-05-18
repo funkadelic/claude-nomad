@@ -25,6 +25,13 @@ updates:
       # `deps(deps): bump foo` / `deps-dev(deps-dev): bump foo`.
       prefix: deps
       prefix-development: deps-dev
+    ignore:
+      # @types/node majors track Node majors. Pin to the lowest supported
+      # runtime (currently 22.x per install.sh) so typecheck stays honest
+      # about the API surface available at runtime; otherwise a Node-25-
+      # only API would compile fine and crash on Node 22 / 24.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
 
   # github-actions: third-party action major bumps land here. No
   # dev/prod distinction; everything is `deps`.
