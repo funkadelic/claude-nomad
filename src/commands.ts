@@ -335,11 +335,16 @@ export function cmdDoctor(): void {
     );
   }
 
-  // Preemptively report missing shared/settings.base.json (pull would die() on it).
+  // Preemptively report missing OR malformed shared/settings.base.json (pull
+  // would die() on either). Parse unconditionally when present so a fresh host
+  // (no settings.json yet) still catches a broken base before the first pull.
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
+  let base: Record<string, unknown> | null = null;
   if (!existsSync(basePath)) {
     log(`${red('FAIL')} shared/settings.base.json missing at ${blue(basePath)}`);
     process.exitCode = 1;
+  } else {
+    base = readJsonSafe<Record<string, unknown>>(basePath, basePath);
   }
 
   // Scan settings.json top-level keys against the schema baseline. WARN on
@@ -360,18 +365,20 @@ export function cmdDoctor(): void {
     }
   }
 
-  // Host-override-missing FAIL (complements links.ts pull-side WARN).
+  // Host-override-missing FAIL (complements links.ts pull-side WARN). Drift
+  // calculation only runs when both base and settings parsed successfully.
   const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
   let drift: string[] = [];
-  if (existsSync(basePath) && settings !== null) {
-    const base = readJsonSafe<Record<string, unknown>>(basePath, basePath);
-    if (base !== null) {
-      const baseKeys = new Set(Object.keys(base));
-      drift = Object.keys(settings).filter((k) => !baseKeys.has(k));
-    }
+  if (base !== null && settings !== null) {
+    const baseKeys = new Set(Object.keys(base));
+    drift = Object.keys(settings).filter((k) => !baseKeys.has(k));
   }
   if (existsSync(hostFile)) {
-    log(`host overrides: ${blue(hostFile)}`);
+    // Parse hostFile to surface malformed JSON before pull's deep-merge would
+    // fail on it; readJsonSafe FAILs and sets exitCode=1 on parse error.
+    if (readJsonSafe<Record<string, unknown>>(hostFile, hostFile) !== null) {
+      log(`host overrides: ${blue(hostFile)}`);
+    }
   } else if (drift.length > 0) {
     log(
       `${red('FAIL')} no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`,

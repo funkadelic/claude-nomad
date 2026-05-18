@@ -341,6 +341,38 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(out).toContain('never-sync items:');
     expect(process.exitCode).toBe(1);
   });
+
+  it('reports FAIL when shared/settings.base.json is malformed (even without settings.json)', async () => {
+    // Overwrite the valid base with garbage, leaving settings.json absent.
+    // Pre-fix, base was only parsed when settings.json existed, so this
+    // scenario silently passed even though cmdPull would die on it.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      '{ not valid',
+    );
+    const { cmdDoctor } = await import('./commands.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL');
+    expect(out).toContain('malformed JSON');
+    expect(out).toContain('settings.base.json');
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports FAIL when hosts/<HOST>.json is malformed', async () => {
+    // Write a garbage host file. Pre-fix, doctor never parsed it — pull's
+    // deep-merge would be the first place the malformed JSON surfaced.
+    writeFileSync(join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'), '{ not valid');
+    const { cmdDoctor } = await import('./commands.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL');
+    expect(out).toContain('malformed JSON');
+    expect(out).toContain('test-host.json');
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
 });
 
 describe('cmdDoctor gitleaks presence (D-14)', () => {
