@@ -20,9 +20,11 @@ updates:
         dependency-type: production
         update-types: [patch]
     commit-message:
+      # No `include: scope` -- the prefix already encodes dep-type, and
+      # `include: scope` would produce redundant titles like
+      # `deps(deps): bump foo` / `deps-dev(deps-dev): bump foo`.
       prefix: deps
       prefix-development: deps-dev
-      include: scope
 
   # github-actions: third-party action major bumps land here. No
   # dev/prod distinction; everything is `deps`.
@@ -36,4 +38,3 @@ updates:
     open-pull-requests-limit: 3
     commit-message:
       prefix: deps
-      include: scope
