@@ -8,5 +8,28 @@ export default {
     // let the renderer soft-wrap.
     'body-max-line-length': [0],
     'footer-max-line-length': [0],
+
+    // Extend Conventional Commits' default type list with `deps` and
+    // `deps-dev` so Dependabot's PRs land in the CHANGELOG under a
+    // "Dependencies" section instead of a generic "Changed" bucket.
+    'type-enum': [
+      2,
+      'always',
+      [
+        'build',
+        'chore',
+        'ci',
+        'deps',
+        'deps-dev',
+        'docs',
+        'feat',
+        'fix',
+        'perf',
+        'refactor',
+        'revert',
+        'style',
+        'test',
+      ],
+    ],
   },
 };
