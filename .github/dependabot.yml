@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # npm: keep prod + dev deps current. Group dev deps so we get one PR
+  # per cadence instead of N small ones.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      prod-dependencies:
+        dependency-type: production
+        update-types: [patch]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # github-actions: pin major versions of third-party actions get bumped here.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci
+      include: scope

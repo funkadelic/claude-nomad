@@ -1,0 +1,56 @@
+# Auto-label rules consumed by actions/labeler in labeler.yml.
+# Paths are matched against the PR's changed files; touch a path,
+# get the label.
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+          - .github/labeler.yml
+          - .github/dependabot.yml
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - LICENSE
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/**/*.test.ts
+          - vitest.config.ts
+
+source:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/**/*.ts
+
+scripts:
+  - changed-files:
+      - any-glob-to-any-file:
+          - scripts/**
+          - install.sh
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - package.json
+          - package-lock.json
+
+config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tsconfig.json
+          - eslint.config.js
+          - commitlint.config.js
+          - .prettierrc*
+          - .prettierignore
+          - .gitignore
+
+release:
+  - changed-files:
+      - any-glob-to-any-file:
+          - release-please-config.json
+          - .release-please-manifest.json
+          - CHANGELOG.md

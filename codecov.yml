@@ -1,0 +1,19 @@
+# Codecov configuration. Adapted from funkadelic/ha-acwd's template.
+coverage:
+  status:
+    project:
+      default:
+        # Allow up to 1% drop in overall coverage without failing the check.
+        threshold: 1%
+    patch:
+      default:
+        # New / changed lines should be fully covered; report as a separate
+        # status check from project coverage so a refactor that drops
+        # overall coverage by a fraction doesn't mask uncovered new code.
+        target: 100%
+        threshold: 0%
+
+comment:
+  layout: 'header, diff, flags, components, files, footer'
+  behavior: default
+  require_changes: false
