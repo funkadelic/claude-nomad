@@ -194,8 +194,9 @@ export function cmdPull(): void {
  *   1. `probeGitleaks` (fail fast if the secret scanner isn't on PATH)
  *   2. `rebaseBeforePush` (surface remote conflicts against committed state,
  *      not against in-flight `remapPush` copies)
- *   3. `findGitlinks` walk of `shared/` (refuse to push nested .git entries)
- *   4. `remapPush` (copy host-encoded session dirs into shared logical names)
+ *   3. `remapPush` (copy host-encoded session dirs into shared logical names)
+ *   4. `findGitlinks` walk of `shared/` (refuse to push nested .git entries;
+ *      runs AFTER `remapPush` so it catches .git dirs copied in from the host)
  *   5. allow-list enforcement on the resulting `git status` (refuse any path
  *      not on `PUSH_ALLOWED_STATIC` or matching `NEVER_SYNC`)
  *   6. `git add -A` → `runGitleaksScan` on staged tree → `git commit` → `git push`
@@ -218,10 +219,23 @@ export function cmdPush(): void {
     // conflicts against the user's committed state, not against in-flight
     // remapPush copies. NomadFatal here unwinds via the existing finally.
     rebaseBeforePush();
-    // D-19 step 6: gitlink walk of shared/ only (D-05, D-06). Per-hit FATAL
-    // on stderr plus a single summarizing throw, mirroring enforceAllowList.
-    // findGitlinks tolerates a missing dir (returns []), so this is a no-op
-    // on a freshly-initialized repo.
+    // Pass a collision-resistant ts down to remapPush so it can snapshot
+    // repo-side encoded-dir state before copyDir clobbers it.
+    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
+    const ts = freshBackupTs(backupBase);
+    // remapPush runs BEFORE the empty-status check below: it produces the
+    // diffs that status observes, so swapping the order would short-circuit
+    // before anything is staged.
+    remapPush(ts);
+    // Gitlink walk of shared/ AFTER remapPush so it inspects the post-copy
+    // tree. A nested .git inside a host's ~/.claude/projects/<encoded>/ dir
+    // (rare but possible — manual git init, accidental clone) would be
+    // copied into shared/projects/<logical>/ by remapPush and slip past a
+    // pre-remap scan; the allow-list prefix-matches everything under
+    // shared/projects/<logical>/, so the gitlink would otherwise reach the
+    // remote. Per-hit FATAL on stderr plus a single summarizing throw,
+    // mirroring enforceAllowList. findGitlinks tolerates a missing dir
+    // (returns []), so this is a no-op on a freshly-initialized repo.
     const sharedDir = join(REPO_HOME, 'shared');
     const gitlinks = findGitlinks(sharedDir);
     if (gitlinks.length > 0) {
@@ -235,16 +249,9 @@ export function cmdPush(): void {
         `gitlink trap: ${gitlinks.length} nested .git ${gitlinks.length === 1 ? 'entry' : 'entries'} in shared/; remove before retry`,
       );
     }
-    // Pass a collision-resistant ts down to remapPush so it can snapshot
-    // repo-side encoded-dir state before copyDir clobbers it.
-    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
-    const ts = freshBackupTs(backupBase);
-    // remapPush runs BEFORE the empty-status check below: it produces the
-    // diffs that status observes, so swapping the order would short-circuit
-    // before anything is staged. Routed through the shell-free, untrimmed
-    // helper because `sh` would .trim() the first record's leading
-    // status-space and shift parsePorcelainZ's offsets.
-    remapPush(ts);
+    // Routed through the shell-free, untrimmed helper because `sh` would
+    // .trim() the first record's leading status-space and shift
+    // parsePorcelainZ's offsets.
     const status = gitStatusPorcelainZ(REPO_HOME);
     if (!status) {
       log('nothing to commit');
