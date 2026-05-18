@@ -5,6 +5,7 @@ import { join, relative } from 'node:path';
 import { blue, cyan, dim, green, red, yellow } from './color.ts';
 import {
   CLAUDE_HOME,
+  HOME,
   HOST,
   KNOWN_SETTINGS_KEYS,
   NEVER_SYNC,
@@ -120,7 +121,7 @@ export function cmdPull(): void {
     // Collision-resistant ts: nowTimestamp() is second-resolution, so two
     // pulls in the same wall-clock second would share `ts` and the second's
     // backupBeforeWrite calls (cpSync force:false) would silently no-op.
-    const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
+    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
     // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
     // (out of disk, permission denied), die() throws (NomadFatal) and the
@@ -186,7 +187,7 @@ export function cmdPush(): void {
     }
     // Pass a collision-resistant ts down to remapPush so it can snapshot
     // repo-side encoded-dir state before copyDir clobbers it.
-    const backupBase = join(process.env.HOME ?? '', '.cache', 'claude-nomad', 'backup');
+    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
     // remapPush runs BEFORE the empty-status check below: it produces the
     // diffs that status observes, so swapping the order would short-circuit

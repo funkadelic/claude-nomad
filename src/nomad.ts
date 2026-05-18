@@ -16,7 +16,15 @@
  */
 
 import { cmdDoctor, cmdPull, cmdPush, resumeCmd } from './commands.ts';
+import { HOME } from './config.ts';
 import { NomadFatal } from './utils.ts';
+
+if (!HOME) {
+  console.error(
+    '[nomad] FATAL: could not determine home directory (HOME env unset and no uid mapping). Set HOME and retry.',
+  );
+  process.exit(1);
+}
 
 try {
   const cmd = process.argv[2];

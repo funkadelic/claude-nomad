@@ -1,11 +1,21 @@
-import { hostname } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { resolve } from 'node:path';
 
+/**
+ * Resolved home directory. Uses Node's `os.homedir()` which reads `$HOME` on
+ * POSIX and falls back to `getpwuid_r()` when the env var is unset. Returns
+ * `""` only in pathological environments (no env, no uid mapping); callers
+ * should verify it is non-empty at CLI entry via `nomad.ts`. Centralizing the
+ * lookup here prevents the `process.env.HOME ?? ''` footgun where an unset
+ * `HOME` silently produced relative lockfile/backup paths.
+ */
+export const HOME = homedir();
+
 /** Absolute path to the user's Claude Code config directory (`~/.claude`). */
-export const CLAUDE_HOME = resolve(process.env.HOME ?? '', '.claude');
+export const CLAUDE_HOME = resolve(HOME, '.claude');
 
 /** Absolute path to the local checkout of the private sync repo (`~/claude-nomad`). */
-export const REPO_HOME = resolve(process.env.HOME ?? '', 'claude-nomad');
+export const REPO_HOME = resolve(HOME, 'claude-nomad');
 
 /**
  * Resolved host identity used to pick `hosts/<HOST>.json` and key entries in
