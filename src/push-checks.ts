@@ -37,7 +37,7 @@ const GITLEAKS_INSTALL_HINT =
  *
  * Tolerates permission errors silently (returns whatever was collected before
  * the error). Reports both file gitlinks (submodule pointer) and directory
- * gitlinks (real nested repo) — both push as gitlinks and both break clone.
+ * gitlinks (real nested repo); both push as gitlinks and both break clone.
  */
 export function findGitlinks(dir: string): string[] {
   const hits: string[] = [];
@@ -79,7 +79,7 @@ export function probeGitleaks(): string {
 /**
  * Run gitleaks against the staged index (D-01). On non-zero exit (detection),
  * forwards gitleaks' own redacted stderr/stdout so the user sees which file
- * is dirty, then throws NomadFatal (D-03). Does NOT auto-rollback staging —
+ * is dirty, then throws NomadFatal (D-03). Does NOT auto-rollback staging;
  * the user runs `git diff --cached` to identify the offending file.
  *
  * ENOENT branch is defense-in-depth: the D-02 probe at the top of cmdPush
@@ -88,7 +88,6 @@ export function probeGitleaks(): string {
  * FATAL fires here.
  */
 export function runGitleaksScan(): void {
-  // TODO(gitleaks v9): if "protect" is removed, migrate to "gitleaks git --pre-commit --staged".
   try {
     execFileSync('gitleaks', ['protect', '--staged', '--redact', '-v'], {
       cwd: REPO_HOME,
@@ -115,8 +114,8 @@ export function runGitleaksScan(): void {
  * host overrides) so users do not need to commit-or-stash first.
  *
  * On failure, forwards git's stderr so the user sees the actual reason
- * (conflict, no-upstream, unreachable remote, auth failure, etc. — RESEARCH
- * Pitfall #3 option (a)), then throws NomadFatal.
+ * (conflict, no-upstream, unreachable remote, auth failure, etc.; see
+ * RESEARCH Pitfall #3 option (a)), then throws NomadFatal.
  *
  * FATAL wording references `git rebase --continue` / `--abort` per the
  * RESEARCH Pitfall #2 correction. D-09 in CONTEXT.md originally suggested
