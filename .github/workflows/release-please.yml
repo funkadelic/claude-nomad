@@ -5,9 +5,11 @@ on:
     branches:
       - main
 
+# Downgraded from `contents: write` / `pull-requests: write` because the
+# release PR is now authored by the GitHub App via actions/create-github-app-token.
+# The default GITHUB_TOKEN no longer needs write access.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: release-please-${{ github.ref }}
@@ -18,8 +20,20 @@ jobs:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
+      - name: Generate App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Authenticating release-please via the App (not GITHUB_TOKEN) so
+          # PRs it creates trigger the required CI workflows. GITHUB_TOKEN-
+          # authored PRs are skipped by GitHub's anti-recursion safeguard,
+          # which leaves required checks in 'waiting' forever and blocks the
+          # merge under branch protection.
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
