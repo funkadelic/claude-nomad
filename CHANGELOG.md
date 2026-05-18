@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/funkadelic/claude-nomad/compare/v0.7.0...v0.7.1) (2026-05-18)
+
+
+### Fixed
+
+* **update:** absorb origin/main before merging upstream ([#24](https://github.com/funkadelic/claude-nomad/issues/24)) ([4d91679](https://github.com/funkadelic/claude-nomad/commit/4d916793e8a8036defc465dc271f42ed34ddb540))
+
 ## [0.7.0](https://github.com/funkadelic/claude-nomad/compare/v0.6.0...v0.7.0) (2026-05-18)
 
 
