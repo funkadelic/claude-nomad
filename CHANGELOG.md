@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/funkadelic/claude-nomad/compare/v0.4.0...v0.5.0) (2026-05-18)
+
+
+### Added
+
+* **push:** safe push pipeline + doctor push-readiness diagnostics ([#15](https://github.com/funkadelic/claude-nomad/issues/15)) ([c0b2c4a](https://github.com/funkadelic/claude-nomad/commit/c0b2c4a852a087eabe81297337b76e01647a460f))
+
 ## [0.4.0](https://github.com/funkadelic/claude-nomad/compare/v0.3.2...v0.4.0) (2026-05-17)
 
 
