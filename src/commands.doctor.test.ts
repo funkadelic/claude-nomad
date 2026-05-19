@@ -677,6 +677,123 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
   });
 });
 
+describe('cmdDoctor repo-state header', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    // NO_COLOR=1 so substring asserts on `PASS`/`WARN`/`FAIL` aren't split
+    // by ANSI escapes (matches the convention in every other doctor describe
+    // block in this file).
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', writeBase: false });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('emits FAIL empty with init-hint and sets exitCode=1 when scaffold is absent', async () => {
+    // Fresh sandbox: makeDoctorEnv with writeBase:false leaves no
+    // settings.base.json. The empty branch should fire.
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('repo state: FAIL empty');
+    expect(out).toContain("run 'nomad init' to scaffold");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('emits WARN partial with path-map.json missing suffix when only base is present', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({}) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // base present, path-map.json missing -> partial with the second priority
+    // suffix (settings.base.json missing is suffix #1; path-map.json missing
+    // is suffix #2 and fires next).
+    expect(out).toContain('repo state: WARN partial - path-map.json missing');
+  });
+
+  it('emits WARN partial with hosts/<HOST>.json missing suffix when base + path-map populated', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // base + populated path-map.projects, host file missing -> partial with
+    // the hosts/<HOST>.json suffix (priority order #4).
+    expect(out).toContain('repo state: WARN partial - hosts/test-host.json missing');
+  });
+
+  it('emits WARN partial with empty-projects suffix when path-map.json exists but has zero entries', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: {} }) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('repo state: WARN partial - path-map.json.projects has no entries');
+  });
+
+  it('emits PASS populated when settings.base.json + populated path-map + hosts/<host>.json all present', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('repo state: PASS populated');
+  });
+
+  it('logs the repo state line above the SHARED_LINKS / symlink section', async () => {
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    const repoIdx = out.indexOf('repo state:');
+    const symlinkIdx = out.indexOf('symlink');
+    expect(repoIdx).toBeGreaterThanOrEqual(0);
+    expect(symlinkIdx).toBeGreaterThan(repoIdx);
+  });
+});
+
 describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
