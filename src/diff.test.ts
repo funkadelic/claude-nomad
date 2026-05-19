@@ -141,4 +141,32 @@ describe('cmdDiff (offline, lockless preview)', () => {
     expect(() => cmdDiff()).not.toThrow();
     expect(existsSync(lockPath)).toBe(false);
   });
+
+  it('rethrows non-NomadFatal errors raised by computePreview unchanged', async () => {
+    // Sandbox is otherwise normal; computePreview is mocked to throw a plain
+    // Error so the cmdDiff catch hits its else branch (the NomadFatal arm is
+    // already covered by the REPO_HOME-missing test). The caught Error must
+    // propagate as-is rather than be converted into a NomadFatal.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    const sentinel = new Error('synthetic computePreview failure');
+    vi.doMock('./preview.ts', () => ({
+      computePreview: vi.fn(() => {
+        throw sentinel;
+      }),
+    }));
+    const { cmdDiff } = await import('./diff.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let thrown: unknown;
+    try {
+      cmdDiff();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBe(sentinel);
+    expect(thrown).not.toBeInstanceOf(NomadFatal);
+    // The catch arm should not have set the FATAL exitCode for non-NomadFatal.
+    expect(process.exitCode === 1).toBe(false);
+    vi.doUnmock('./preview.ts');
+  });
 });
