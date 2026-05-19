@@ -5,18 +5,17 @@ import { join, relative } from 'node:path';
 import { blue, cyan, dim, green, red, yellow } from './color.ts';
 // prettier-ignore
 import { CLAUDE_HOME, HOST, KNOWN_SETTINGS_KEYS, NEVER_SYNC, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
+import { classifyRepoState, reasonForPartial } from './init.ts';
 import { findGitlinks } from './push-checks.ts';
 import { encodePath, gitStatusPorcelainZ, log, readJson } from './utils.ts';
 
 /**
  * Tolerant JSON reader for `cmdDoctor`. Doctor reads three JSON files
- * (`settings.json`, `settings.base.json`, `path-map.json`) and any
- * malformed input must not throw an uncaught `SyntaxError` mid-output;
- * users would otherwise get a stack trace instead of a FAIL line and the
- * remainder of the diagnostic would never run. Returns `null` on parse
- * failure, logs the FAIL line on the same stream as the rest of doctor's
- * output (stdout, so `2>/dev/null` does not swallow failure detail), and
- * sets `process.exitCode = 1` so scripts can gate on the result.
+ * (`settings.json`, `settings.base.json`, `path-map.json`); a malformed
+ * input must not throw mid-output (user would lose every line below it).
+ * Returns `null` on parse failure, logs a FAIL line on stdout (so
+ * `2>/dev/null` does not swallow detail), and sets `process.exitCode = 1`
+ * so scripts can gate on the result.
  */
 function readJsonSafe<T>(path: string, label: string): T | null {
   try {
@@ -29,17 +28,11 @@ function readJsonSafe<T>(path: string, label: string): T | null {
 }
 
 /**
- * Read-only health check for the nomad install on the current host. Reports
- * host identity, repo presence, shared-link health, settings.json schema
- * sanity, host-override status, path-map collisions, and the never-sync
- * list.
- *
- * Doctor intentionally emits ALL diagnostics (PASS/WARN/FAIL) on stdout via
- * `log()` rather than splitting WARN/FAIL to stderr. The intent is that
- * users see the full diagnostic cohesively; piping `nomad doctor 2>/dev/null`
- * must NOT lose FAIL lines. This differs from `cmdPull` / `cmdPush` /
- * `resumeCmd`, where FATAL is on stderr because those callers want clean
- * stdout. Doctor signals failure to scripts via `process.exitCode` instead.
+ * Read-only health check for the nomad install on the current host. Emits
+ * ALL diagnostics (PASS/WARN/FAIL) on stdout via `log()` so a piped
+ * `nomad doctor 2>/dev/null` does not lose FAIL lines; failure is signaled
+ * to scripts via `process.exitCode` instead. Differs from `cmdPull` /
+ * `cmdPush` / `resumeCmd`, where FATAL is on stderr.
  */
 export function cmdDoctor(): void {
   log(`host: ${cyan(HOST)}`);
@@ -47,6 +40,20 @@ export function cmdDoctor(): void {
   log(
     `claude home: ${blue(CLAUDE_HOME)} ${existsSync(CLAUDE_HOME) ? green('OK') : red('MISSING')}`,
   );
+
+  // Repo-state header. Single line summarizing the three signals
+  // classifyRepoState reads (settings.base.json, path-map.json entries,
+  // hosts/<HOST>.json). FAIL empty sets exitCode=1 (matches existing FAIL
+  // paths); WARN partial does not; PASS populated is informational.
+  const state = classifyRepoState(REPO_HOME, HOST);
+  if (state === 'populated') {
+    log(`repo state: ${green('PASS')} populated`);
+  } else if (state === 'partial') {
+    log(`repo state: ${yellow('WARN')} partial ${reasonForPartial(REPO_HOME, HOST)}`);
+  } else {
+    log(`repo state: ${red('FAIL')} empty - run 'nomad init' to scaffold`);
+    process.exitCode = 1;
+  }
 
   for (const name of SHARED_LINKS) {
     const p = join(CLAUDE_HOME, name);
