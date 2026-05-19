@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.0](https://github.com/funkadelic/claude-nomad/compare/v0.9.2...v0.10.0) (2026-05-19)
+
+
+### Added
+
+* **doctor:** mark every check-result line with an explicit PASS token ([#47](https://github.com/funkadelic/claude-nomad/issues/47)) ([f33c034](https://github.com/funkadelic/claude-nomad/commit/f33c034b3339831f0a9397022c35ba0c7b7166e0))
+* **init:** add nomad init --snapshot mode ([#49](https://github.com/funkadelic/claude-nomad/issues/49)) ([35fd279](https://github.com/funkadelic/claude-nomad/commit/35fd2798d6b38e1945a16666196a316e02a07b4b))
+* **init:** add nomad init verb, first-run FATAL, doctor repo state header ([#45](https://github.com/funkadelic/claude-nomad/issues/45)) ([f37cf95](https://github.com/funkadelic/claude-nomad/commit/f37cf95ebed2379a1c1550578f0428fdd773a99e))
+* **pull,diff:** add nomad pull --dry-run and nomad diff verb ([#48](https://github.com/funkadelic/claude-nomad/issues/48)) ([bfcf457](https://github.com/funkadelic/claude-nomad/commit/bfcf457654a5b93f49c91b8531822e51e4eed7ce))
+* **summary:** add end-of-run summary line for pull, push, diff ([#50](https://github.com/funkadelic/claude-nomad/issues/50)) ([90f294c](https://github.com/funkadelic/claude-nomad/commit/90f294ca7a7b7c93bcd054477a578b60942d4e67))
+
+
+### Documentation
+
+* **readme:** document nomad init, diff, dry-run, doctor PASS, summary line ([#51](https://github.com/funkadelic/claude-nomad/issues/51)) ([adeeb29](https://github.com/funkadelic/claude-nomad/commit/adeeb29493c8a085a80719df01d9423f817c682e))
+
 ## [0.9.2](https://github.com/funkadelic/claude-nomad/compare/v0.9.1...v0.9.2) (2026-05-19)
 
 
