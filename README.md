@@ -115,7 +115,7 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 
 The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
 
-On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [Known limits](#known-limits-deliberate) for the cross-OS cwd-binding gotcha).
+On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the cross-OS cwd-binding gotcha).
 
 ## Per-host overrides
 
