@@ -676,3 +676,40 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
     expect(out).toContain('never-sync items:');
   });
 });
+
+describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    env = makeDoctorEnv({ host: 'test-host' });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('reports NOT a symlink when a SHARED_LINKS entry exists as a regular file in ~/.claude/', async () => {
+    // Place a regular file (not a symlink) at ~/.claude/CLAUDE.md. The
+    // SHARED_LINKS loop's lstatSync().isSymbolicLink() branch should report
+    // the blocks-sync diagnostic.
+    writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# regular file\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('CLAUDE.md: NOT a symlink (blocks sync)');
+  });
+});
