@@ -152,7 +152,7 @@ These are intentional design choices. Read them before adopting `claude-nomad` s
 - **OAuth doesn't sync.** You'll log in once per host. This is intentional.
 - **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone, which is what you want.
 - **Cross-OS `claude --resume` cwd binding.** Each `.jsonl` session embeds the cwd where it was created, and the picker prints a `cd <recorded-cwd> && claude --resume <id>` line that fails on the new host. Use `nomad doctor --resume-cmd <id>` to print a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach was chosen over rewriting `cwd` in the transcript so Phase 1's transcript byte-equality invariant stays intact.
-- **First pull on a populated host refuses to overwrite real files.** `applySharedLinks` is intentionally non-destructive. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the safe backup-and-rename flow.
+- **First pull on a populated host auto-moves conflicts to backup.** `applySharedLinks` is intentionally non-destructive: any pre-existing non-symlink under `~/.claude/` whose counterpart exists in `shared/` is renamed into `~/.cache/claude-nomad/backup/<ts>/` before the symlink is created. Originals are preserved, not deleted. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the recommended sequence.
 - **Empty directories don't survive sync.** Git doesn't track empty dirs, so if any `shared/<name>/` has no files (e.g., `shared/commands/` on a host with no commands), it won't materialize on the destination host. `nomad doctor` reports it as `missing`; behavior is benign. Drop a `.gitkeep` if you want the dir to materialize.
 
 ## Requirements
@@ -229,16 +229,20 @@ If the destination host already has populated `~/.claude/{CLAUDE.md, agents/, ..
 
 ## Migrating an existing ~/.claude/
 
-If a host already has real files at `~/.claude/{CLAUDE.md, agents/, skills/, ...}`, the first `nomad pull` will fail with `FATAL: <path> exists and is not a symlink` because `applySharedLinks` refuses to silently clobber user content.
-
-The fastest migration path is to run `nomad init --snapshot` on the host that has the canonical config:
+If a host already has real files at `~/.claude/{CLAUDE.md, agents/, skills/, ...}` and you want to bring them into the sync, the required sequence is `nomad init --snapshot` → `nomad push` → `nomad pull`:
 
 ```bash
-nomad init --snapshot   # stages shared/ and hosts/<HOST>.json from ~/.claude/ without touching originals
+# From the host that has the canonical config (the originals are not modified):
+nomad init --snapshot   # stages shared/ and writes hosts/<NOMAD_HOST>.json from ~/.claude/
 nomad push              # publish the captured state to the private remote
+
+# Then, on this host or any other host that has the private remote checked out:
+nomad pull              # materializes the symlinks
 ```
 
-The originals under `~/.claude/` stay intact. After a subsequent `nomad pull` materializes the symlinks (on this or any other host), `applySharedLinks` will auto-rename any conflicting non-symlinks aside into `~/.cache/claude-nomad/backup/<ts>/` and put the symlink in place; nothing is destroyed.
+`nomad pull` is what actually migrates the host. `applySharedLinks` runs a two-pass scan: any pre-existing non-symlink at a `SHARED_LINKS` path whose counterpart exists under `shared/` is renamed into `~/.cache/claude-nomad/backup/<ts>/` first, then the symlink is created. Your originals are preserved under that timestamped backup directory, not deleted. Paths whose `shared/<name>` is absent from the remote are left untouched, so a partial publish does not delete data on the destination host.
+
+If the remote has not been populated yet (you skipped `nomad init --snapshot` and `nomad push`), `nomad pull` is a no-op for SHARED_LINKS: there is nothing on the remote to symlink against, so your local `~/.claude/` files stay in place. The auto-move only triggers once the canonical state is published.
 
 If you want full manual control instead (e.g. you want a single tar.gz rollback artifact and explicit confirmation before deletion), this script does the same job:
 
