@@ -49,9 +49,21 @@ try {
       }
       break;
     }
-    case 'push':
-      cmdPush();
+    case 'push': {
+      // Sub-flag: `push --dry-run` runs the pre-checks and remap preview
+      // without staging, scanning, committing, or pushing. Any other argv
+      // after `push` is rejected so a typo does not silently degrade.
+      const sub = process.argv[3];
+      if (sub === undefined) {
+        cmdPush();
+      } else if (sub === '--dry-run' && process.argv.length === 4) {
+        cmdPush({ dryRun: true });
+      } else {
+        console.error('usage: nomad push [--dry-run]');
+        process.exit(1);
+      }
       break;
+    }
     case 'init':
       // Two valid forms: `nomad init` (empty scaffold) and
       // `nomad init --snapshot` (overlay user's current ~/.claude/ into
@@ -92,7 +104,7 @@ try {
       break;
     default:
       console.error(
-        'usage: nomad <pull [--dry-run] | push | doctor [--resume-cmd <id>] | init [--snapshot] | diff>',
+        'usage: nomad <pull [--dry-run] | push [--dry-run] | doctor [--resume-cmd <id>] | init [--snapshot] | diff>',
       );
       process.exit(1);
   }

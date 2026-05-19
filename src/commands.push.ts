@@ -120,24 +120,34 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
  * pushed, but BEFORE commit so a detection unwinds cleanly without leaving a
  * commit to amend or revert. Any `NomadFatal` is caught here so `finally`
  * releases the lock.
+ *
+ * `opts.dryRun` (default `false`): when `true`, the network round-trip
+ * (`rebaseBeforePush`) still runs so users see what a real push would see,
+ * but `remapPush` runs with `dryRun: true` (no session copies into shared/),
+ * and the `git add` / `runGitleaksScan` / `git commit` / `git push` quartet
+ * is skipped. The allow-list check still classifies the existing `git
+ * status` so a pre-existing violation surfaces before the user thinks
+ * everything is fine. Mirrors `cmdPull`'s `dryRun` contract.
  */
-export function cmdPush(): void {
+export function cmdPush(opts: { dryRun?: boolean } = {}): void {
+  const dryRun = opts.dryRun === true;
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   const handle = acquireLock('push');
   if (handle === null) process.exit(0);
   try {
-    log(`pushing on host=${HOST}`);
+    log(dryRun ? `pushing on host=${HOST} (dry-run)` : `pushing on host=${HOST}`);
     // Probe at top of flow: fail fast if gitleaks is missing, before any mutation.
     probeGitleaks();
     // Rebase BEFORE any local mutation: surfaces remote conflicts against the
-    // user's committed state, not against in-flight remapPush copies.
+    // user's committed state, not against in-flight remapPush copies. Runs
+    // under dryRun too so the network round-trip mirrors a real push.
     rebaseBeforePush();
     // Collision-resistant ts for remapPush's pre-copy snapshot of repo-side state.
     const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
-    const remapResult = remapPush(ts);
+    const remapResult = remapPush(ts, { dryRun });
     // Gitlink walk of shared/ AFTER remapPush so it inspects the post-copy tree.
     // A nested .git copied in from a host's encoded session dir would slip past a
     // pre-remap scan and reach the remote via the shared/projects/<logical>/ prefix.
@@ -173,6 +183,14 @@ export function cmdPush(): void {
       throw new NomadFatal(`could not parse path-map.json: ${(err as Error).message}`);
     }
     enforceAllowList(status, map);
+    if (dryRun) {
+      // Skip the staging quartet so no commit lands and nothing is pushed.
+      // The user has already seen probeGitleaks pass, the rebase result, the
+      // remap preview, the gitlink scan, and the allow-list classification.
+      log('push: dry-run; skipping git add, gitleaks scan, commit, and push');
+      emitSummary('push', remapResult.unmapped, remapResult.collisions);
+      return;
+    }
     // gitOrFatal uses execFileSync (no shell) so NOMAD_HOST cannot escape quoting.
     gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
     // Gitleaks scan AFTER staging (sees what would push), BEFORE commit (no cleanup
