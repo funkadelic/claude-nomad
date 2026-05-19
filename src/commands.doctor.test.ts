@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import type * as cpModule from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -826,14 +826,193 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
-  it('reports NOT a symlink when a SHARED_LINKS entry exists as a regular file in ~/.claude/', async () => {
+  it('reports FAIL and sets exitCode=1 when a SHARED_LINKS entry exists as a regular file in ~/.claude/', async () => {
     // Place a regular file (not a symlink) at ~/.claude/CLAUDE.md. The
-    // SHARED_LINKS loop's lstatSync().isSymbolicLink() branch should report
-    // the blocks-sync diagnostic.
+    // SHARED_LINKS loop's lstatSync().isSymbolicLink() branch must surface
+    // the blocks-sync diagnostic as an explicit FAIL and mark the run failed
+    // so scripts and CI catch the regression.
     writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# regular file\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('CLAUDE.md: NOT a symlink (blocks sync)');
+    expect(out).toContain('CLAUDE.md: FAIL NOT a symlink (blocks sync)');
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('cmdDoctor explicit PASS tokens', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    // NO_COLOR=1 so PASS substring assertions are not split by ANSI escapes
+    // (matches the convention used in every other doctor describe block).
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Build a "fully healthy" sandbox for the PASS-token tests: populated repo
+   * (settings.base.json, path-map.json, hosts/test-host.json), known-keys-only
+   * settings.json, a real symlink at ~/.claude/CLAUDE.md so the SHARED_LINKS
+   * loop exercises its success branch, and a gitleaks mock so the probe
+   * succeeds even on dev hosts without the binary on PATH.
+   */
+  function populateHealthy(): void {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    // Real symlink so the SHARED_LINKS loop hits its success branch.
+    const sharedClaude = join(env.testHome, 'claude-nomad', 'shared', 'CLAUDE.md');
+    writeFileSync(sharedClaude, '# shared\n');
+    symlinkSync(sharedClaude, join(env.testHome, '.claude', 'CLAUDE.md'));
+  }
+
+  /** Mock gitleaks as present so its probe succeeds in the healthy-host tests. */
+  function mockGitleaksPresent(): void {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args: readonly string[], opts?: unknown) => {
+          if (bin === 'gitleaks' && args[0] === 'version') {
+            return Buffer.from('v8.18.2\n');
+          }
+          return actual.execFileSync(bin, args, opts as never);
+        }),
+      };
+    });
+    vi.resetModules();
+  }
+
+  it('emits at least 5 PASS tokens on a fully-healthy host', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    const passCount = out.match(/PASS/g)?.length ?? 0;
+    // One per check: repo state, SHARED_LINKS (1 real symlink), settings
+    // schema, host overrides, path-encoding, gitleaks, gitlink scan.
+    expect(passCount).toBeGreaterThanOrEqual(5);
+  });
+
+  it('prepends PASS to the settings.json schema line when all keys are known', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('PASS settings.json schema: known keys only');
+  });
+
+  it('emits PASS path-encoding when no encoded-dir collisions exist', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('PASS path-encoding: no collisions');
+  });
+
+  it('prepends PASS to the gitleaks version line when gitleaks is present', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('PASS gitleaks:');
+    expect(out).toMatch(/v\d+\.\d+/);
+  });
+
+  it('emits PASS gitlink scan when shared/ contains no nested .git entries', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('PASS gitlink scan:');
+  });
+
+  it('replaces "symlink OK" with "PASS symlink" on a valid SHARED_LINKS entry', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Positive: new PASS-prefixed phrasing for the symlink success branch.
+    expect(out).toContain('PASS symlink');
+    // Negative: the legacy literal must be gone (load-bearing per plan W-1).
+    expect(out).not.toContain('symlink OK');
+  });
+
+  it('emits WARN when a SHARED_LINKS entry is missing from ~/.claude/', async () => {
+    // No real symlink and no regular-file placeholder. The loop's
+    // !existsSync branch should emit the explicit WARN token.
+    populateHealthy();
+    mockGitleaksPresent();
+    // Remove the symlink populateHealthy created so CLAUDE.md is missing.
+    rmSync(join(env.testHome, '.claude', 'CLAUDE.md'));
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('WARN CLAUDE.md: missing');
+  });
+
+  it('does not prefix informational header lines with PASS', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Header lines stay unprefixed; only check-result lines carry the token.
+    expect(out).not.toMatch(/PASS host:/);
+    expect(out).not.toMatch(/PASS repo:/);
+    expect(out).not.toMatch(/PASS claude home:/);
+    expect(out).not.toMatch(/PASS mapped projects for/);
+    expect(out).not.toMatch(/PASS host overrides:/);
+    expect(out).not.toMatch(/PASS never-sync items:/);
+    expect(out).not.toMatch(/PASS remote origin:/);
+  });
+
+  it('preserves the exit-code contract: a fully-healthy host does not set exitCode=1', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    // PASS does not mutate exitCode; only FAIL does. undefined and 0 both pass.
+    expect(process.exitCode === 1).toBe(false);
   });
 });
