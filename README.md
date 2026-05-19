@@ -5,6 +5,22 @@ A thin wrapper around the "private Git repo" approach to syncing Claude Code con
 1. **Path remapping** so session history follows you across machines even when the same repo lives at `/Users/norm/code/foo` on one host and `/home/norm/foo` on another.
 2. **Per-host overrides** for `settings.json` via deep merge, so machine-specific keys (MCP server URLs, hooks, model preferences) don't fight you.
 
+## Table of contents
+
+- [How it works (two-repo model)](#how-it-works-two-repo-model)
+- [Repo layout (what `~/claude-nomad/` looks like on a configured host)](#repo-layout-what-claude-nomad-looks-like-on-a-configured-host)
+- [What gets synced vs. not](#what-gets-synced-vs-not)
+- [Path remapping](#path-remapping)
+- [Per-host overrides](#per-host-overrides)
+- [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs)
+- [Requirements](#requirements)
+- [Setup](#setup)
+- [Migrating an existing ~/.claude/](#migrating-an-existing-claude)
+- [Upgrading the tool](#upgrading-the-tool)
+- [Commands](#commands)
+- [Cross-OS resume](#cross-os-resume)
+- [Run tests](#run-tests)
+
 ## How it works (two-repo model)
 
 claude-nomad is a **tool**, not a config store. You maintain a separate **private** repo that holds your actual config (`CLAUDE.md`, agents, skills, settings overrides, session transcripts). The tool's source and your config end up coexisting in one working tree on each host.
@@ -75,7 +91,9 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 
 **Auto-rehydrated by Claude Code** (not synced as files, but reconstructed from the enable list):
 
-- `~/.claude/plugins/cache/<plugin>/...` — plugin binaries and manifests. The enable list (`enabledPlugins` in `settings.base.json`) syncs via the regenerated `settings.json`; the plugin payloads do not. On a new host, Claude Code reads the enable list and downloads the corresponding plugin payloads on first use. You do not need to manually `claude plugins install ...` per host. Caveat: plugins that depend on host-specific state (external binaries, API keys in env, MCP server URLs) still need that side set up — put those in `hosts/<host>.json` or the plugin's own per-host config.
+- `~/.claude/plugins/cache/<plugin>/...`: plugin binaries and manifests. The enable list (`enabledPlugins` in `settings.base.json`) syncs via the regenerated `settings.json`; the plugin payloads do not. On a new host, Claude Code reads the enable list and downloads the corresponding plugin payloads on first use. You do not need to manually `claude plugins install ...` per host. Caveat: plugins that depend on host-specific state (external binaries, API keys in env, MCP server URLs) still need that side set up; put those in `hosts/<host>.json` or the plugin's own per-host config.
+
+For the deliberate trade-offs (what does NOT sync and why), see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs).
 
 ## Path remapping
 
@@ -97,11 +115,11 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 
 The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
 
-On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [Known limits](#known-limits-deliberate) for the cross-OS cwd-binding gotcha).
+On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the cross-OS cwd-binding gotcha).
 
 ## Per-host overrides
 
-`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches. They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace). Keys that used to be force-marked per-host because they embedded absolute paths (`statusLine.command`, `hooks`) can live in base if you write the commands with `$HOME` (e.g. `"command": "node \"$HOME/.claude/my-statusline.cjs\""`) — Claude Code runs them through a shell so shell expansion applies. Reserve per-host files for truly machine-specific values (env, MCP URLs, host-only model overrides).
+`settings.base.json` holds portable defaults (model, permissions, plugins). `hosts/<NOMAD_HOST>.json` holds machine-specific patches. They're deep-merged on every pull (scalars override, objects merge recursively, arrays replace). Keys that used to be force-marked per-host because they embedded absolute paths (`statusLine.command`, `hooks`) can live in base if you write the commands with `$HOME` (e.g. `"command": "node \"$HOME/.claude/my-statusline.cjs\""`); Claude Code runs them through a shell so shell expansion applies. Reserve per-host files for truly machine-specific values (env, MCP URLs, host-only model overrides).
 
 `shared/settings.base.json`:
 
@@ -124,6 +142,18 @@ On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied 
 Result on that host: opus model, the local Ollama env var, plus the shared permissions array.
 
 **Never hand-edit `~/.claude/settings.json` on a synced host.** It's regenerated on every `nomad pull` from base + host. Edit the base or host file in the repo instead.
+
+## What does NOT sync (deliberate trade-offs)
+
+These are intentional design choices. Read them before adopting `claude-nomad` so you opt in with eyes open. Each item lists the user-visible behavior and the rationale. The [What gets synced vs. not](#what-gets-synced-vs-not) overview above is the quick reference; this section is the deep cut.
+
+- **Last-write-wins on conflicts.** Git surfaces them on merge; no field-level JSON merging.
+- **Manual push/pull.** No file watcher. Shell hooks recommended.
+- **OAuth doesn't sync.** You'll log in once per host. This is intentional.
+- **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone, which is what you want.
+- **Cross-OS `claude --resume` cwd binding.** Each `.jsonl` session embeds the cwd where it was created, and the picker prints a `cd <recorded-cwd> && claude --resume <id>` line that fails on the new host. Use `nomad doctor --resume-cmd <id>` to print a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach was chosen over rewriting `cwd` in the transcript so Phase 1's transcript byte-equality invariant stays intact.
+- **First pull on a populated host refuses to overwrite real files.** `applySharedLinks` is intentionally non-destructive. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the safe backup-and-rename flow.
+- **Empty directories don't survive sync.** Git doesn't track empty dirs, so if any `shared/<name>/` has no files (e.g., `shared/commands/` on a host with no commands), it won't materialize on the destination host. `nomad doctor` reports it as `missing`; behavior is benign. Drop a `.gitkeep` if you want the dir to materialize.
 
 ## Requirements
 
@@ -309,16 +339,6 @@ If the session isn't mapped on this host, you'll see:
 ```
 
 Other FATAL surfaces: missing `~/.claude/projects/`, session id absent from every encoded dir, no `cwd` field anywhere in the transcript, missing `path-map.json`, recorded cwd not present in any logical's host map. All errors go to stderr with the `[nomad]` prefix; success goes to stdout WITHOUT the prefix so `eval` works.
-
-## Known limits (deliberate)
-
-- **Last-write-wins on conflicts.** Git surfaces them on merge; no field-level JSON merging.
-- **Manual push/pull.** No file watcher. Shell hooks recommended.
-- **OAuth doesn't sync.** You'll log in once per host. This is intentional.
-- **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone, which is what you want.
-- **Cross-OS `claude --resume` cwd binding.** Each `.jsonl` session embeds the cwd where it was created, and the picker prints a `cd <recorded-cwd> && claude --resume <id>` line that fails on the new host. Use `nomad doctor --resume-cmd <id>` to print a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach was chosen over rewriting `cwd` in the transcript so Phase 1's transcript byte-equality invariant stays intact.
-- **First pull on a populated host refuses to overwrite real files.** `applySharedLinks` is intentionally non-destructive. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the safe backup-and-rename flow.
-- **Empty directories don't survive sync.** Git doesn't track empty dirs, so if any `shared/<name>/` has no files (e.g., `shared/commands/` on a host with no commands), it won't materialize on the destination host. `nomad doctor` reports it as `missing`; behavior is benign. Drop a `.gitkeep` if you want the dir to materialize.
 
 ## Run tests
 
