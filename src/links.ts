@@ -20,20 +20,35 @@ import {
  * has no counterpart, so a host where `shared/commands/` does not exist
  * keeps its local `~/.claude/commands/` instead of having it silently
  * deleted.
+ *
+ * `opts.dryRun` (default `false`): when `true`, no disk mutation occurs. The
+ * function logs `would auto-move non-symlink:` and `would create symlink:`
+ * lines describing the would-be effect and returns. Backwards-compatible: a
+ * call with no opts arg or with `dryRun: false` keeps the prior mutating
+ * behavior.
  */
-export function applySharedLinks(ts: string): void {
+export function applySharedLinks(ts: string, opts: { dryRun?: boolean } = {}): void {
+  const dryRun = opts.dryRun === true;
   for (const name of SHARED_LINKS) {
     const linkPath = join(CLAUDE_HOME, name);
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(linkPath)) continue;
     if (lstatSync(linkPath).isSymbolicLink()) continue;
     if (!existsSync(target)) continue;
+    if (dryRun) {
+      log(`would auto-move non-symlink: ${linkPath} -> backup/${ts}/${name}`);
+      continue;
+    }
     backupBeforeWrite(linkPath, ts);
     rmSync(linkPath, { recursive: true, force: true });
   }
   for (const name of SHARED_LINKS) {
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(target)) continue;
+    if (dryRun) {
+      log(`would create symlink: ${join(CLAUDE_HOME, name)} -> ${target}`);
+      continue;
+    }
     ensureSymlink(join(CLAUDE_HOME, name), target);
   }
 }
@@ -47,8 +62,17 @@ export function applySharedLinks(ts: string): void {
  * stderr WARN when no host override exists AND prior settings has top-level
  * keys not in base; the matching doctor-side FAIL with non-zero exit lives
  * in `cmdDoctor`.
+ *
+ * `opts.dryRun` (default `false`): when `true`, skip the
+ * `backupBeforeWrite` + `writeJsonAtomic` pair and instead log a single
+ * `would write settings.json ...` line. The drift-detection WARN above
+ * still fires (informational), so users see the same warning a real pull
+ * would produce. The unified textual diff of the would-be-written content
+ * is produced by `computePreview` in `src/preview.ts`, not here, to keep
+ * this function's contract simple (mutation or log-only).
  */
-export function regenerateSettings(ts: string): void {
+export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}): void {
+  const dryRun = opts.dryRun === true;
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   const hostPath = join(REPO_HOME, 'hosts', `${HOST}.json`);
   if (!existsSync(basePath)) {
@@ -65,7 +89,8 @@ export function regenerateSettings(ts: string): void {
   // Pull-side surface: warn-then-proceed when no host file matches AND
   // existing settings has top-level keys not in base. Informational only;
   // pull does NOT abort. The matching doctor-side FAIL with non-zero exit
-  // lives in `cmdDoctor`.
+  // lives in `cmdDoctor`. The WARN runs in dry-run mode too: the user sees
+  // the same drift signal they would see on a real pull.
   if (!hasOverrides && existsSync(settingsPath)) {
     // Best-effort drift report. Malformed prior settings.json must not block
     // regeneration: the whole point here is to overwrite it from base+overrides.
@@ -84,6 +109,13 @@ export function regenerateSettings(ts: string): void {
         `[nomad] WARN: existing settings.json is malformed; skipping drift-check and regenerating.\n`,
       );
     }
+  }
+
+  if (dryRun) {
+    log(
+      `would write settings.json (base + ${hasOverrides ? `${HOST}.json` : 'no host overrides'})`,
+    );
+    return;
   }
 
   backupBeforeWrite(settingsPath, ts);
