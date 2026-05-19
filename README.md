@@ -1,5 +1,9 @@
 # claude-nomad
 
+[![tests](https://img.shields.io/github/actions/workflow/status/funkadelic/claude-nomad/tests.yml?branch=main&label=tests)](https://github.com/funkadelic/claude-nomad/actions/workflows/tests.yml)
+[![release](https://img.shields.io/github/v/release/funkadelic/claude-nomad?label=release&sort=semver)](https://github.com/funkadelic/claude-nomad/releases)
+[![coverage](https://img.shields.io/codecov/c/github/funkadelic/claude-nomad/main?label=coverage)](https://codecov.io/gh/funkadelic/claude-nomad)
+
 A thin wrapper around the "private Git repo" approach to syncing Claude Code config, adding two features the existing community tools don't handle:
 
 1. **Path remapping** so session history follows you across machines even when the same repo lives at `/Users/norm/code/foo` on one host and `/home/norm/foo` on another.
