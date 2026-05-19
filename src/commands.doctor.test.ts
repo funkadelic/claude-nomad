@@ -826,15 +826,17 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
-  it('reports NOT a symlink when a SHARED_LINKS entry exists as a regular file in ~/.claude/', async () => {
+  it('reports FAIL and sets exitCode=1 when a SHARED_LINKS entry exists as a regular file in ~/.claude/', async () => {
     // Place a regular file (not a symlink) at ~/.claude/CLAUDE.md. The
-    // SHARED_LINKS loop's lstatSync().isSymbolicLink() branch should report
-    // the blocks-sync diagnostic.
+    // SHARED_LINKS loop's lstatSync().isSymbolicLink() branch must surface
+    // the blocks-sync diagnostic as an explicit FAIL and mark the run failed
+    // so scripts and CI catch the regression.
     writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# regular file\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('CLAUDE.md: NOT a symlink (blocks sync)');
+    expect(out).toContain('CLAUDE.md: FAIL NOT a symlink (blocks sync)');
+    expect(process.exitCode).toBe(1);
   });
 });
 

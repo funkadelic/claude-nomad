@@ -60,13 +60,19 @@ export function cmdDoctor(): void {
     if (!existsSync(p)) {
       // WARN, not FAIL: a missing SHARED_LINKS entry is recoverable by the
       // next pull and a user may legitimately not have an entry populated yet.
-      // Matches the Phase 3 host-override-missing pattern.
+      // Same shape as the existing host-override-missing diagnostic.
       log(`${yellow('WARN')} ${name}: missing`);
       continue;
     }
-    log(
-      `  ${name}: ${lstatSync(p).isSymbolicLink() ? `${green('PASS')} symlink` : red('NOT a symlink (blocks sync)')}`,
-    );
+    if (lstatSync(p).isSymbolicLink()) {
+      log(`  ${name}: ${green('PASS')} symlink`);
+    } else {
+      // A non-symlink at a SHARED_LINKS path actively blocks sync (the next
+      // pull would refuse to overwrite the user's hand-edited file). Surface
+      // as FAIL with a non-zero exit so scripts and CI catch the regression.
+      log(`  ${name}: ${red('FAIL')} NOT a symlink (blocks sync)`);
+      process.exitCode = 1;
+    }
   }
 
   // Preemptively report missing OR malformed shared/settings.base.json (pull
