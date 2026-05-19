@@ -62,7 +62,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    const { cmdPull } = await import('./commands.ts');
+    const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull()).not.toThrow();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
@@ -80,7 +80,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
         gitStatusPorcelainZ: vi.fn(() => '?? .claude.json\0'),
       };
     });
-    const { cmdPush } = await import('./commands.ts');
+    const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);

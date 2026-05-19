@@ -15,8 +15,11 @@
  *   path-map.json            logical project name -> { host: localPath }
  */
 
-import { cmdDoctor, cmdPull, cmdPush, resumeCmd } from './commands.ts';
+import { cmdDoctor } from './commands.doctor.ts';
+import { cmdPull } from './commands.pull.ts';
+import { cmdPush } from './commands.push.ts';
 import { HOME } from './config.ts';
+import { resumeCmd } from './resume.ts';
 import { NomadFatal } from './utils.ts';
 
 if (!HOME) {
