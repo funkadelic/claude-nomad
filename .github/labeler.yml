@@ -32,11 +32,14 @@ scripts:
           - scripts/**
           - install.sh
 
+# Exclude release-please PRs: they bump package.json version but are not real dep changes.
 dependencies:
-  - changed-files:
-      - any-glob-to-any-file:
-          - package.json
-          - package-lock.json
+  - all:
+      - changed-files:
+          - any-glob-to-any-file:
+              - package.json
+              - package-lock.json
+      - head-branch: ['^(?!release-please--).*']
 
 config:
   - changed-files:
