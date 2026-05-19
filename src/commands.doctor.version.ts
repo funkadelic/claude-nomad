@@ -9,7 +9,7 @@ import { log } from './utils.ts';
 /**
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads
  * the local `package.json.version`, compares it to the latest release tag on
- * the upstream GitHub repo (cached 6h, 3s curl timeout), and emits one of:
+ * the upstream GitHub repo (cached 1h, 3s curl timeout), and emits one of:
  *   - PASS line when local == latest
  *   - WARN line when local < latest
  *   - informational (no prefix) line when local > latest
@@ -22,9 +22,10 @@ import { log } from './utils.ts';
  * override `process.env.HOME` get a sandboxed cache for free. */
 const CACHE_PATH = join(HOME, '.cache', 'claude-nomad', 'version-check.json');
 
-/** 6 hours in milliseconds. After this, the cached entry is considered stale
- * and a fresh curl is attempted. */
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+/** Cache TTL in milliseconds. Matches GitHub's 1-hour anonymous rate-limit
+ * reset window: long enough to collapse `nomad doctor` debugging bursts into a
+ * single fetch, short enough that new releases surface within the same day. */
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 /** Strict-semver regex used to gate both the local version and the latest tag
  * fed into `compareSemver`. Pre-release suffixes like `-dev` are rejected at

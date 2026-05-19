@@ -1194,7 +1194,7 @@ describe('cmdDoctor version check', () => {
   });
 
   it('reuses fresh cache entry without calling curl (Test E)', async () => {
-    // Pre-seed a fresh cache (within the 6h TTL). Mock curl to THROW so the
+    // Pre-seed a fresh cache (within the 1h TTL). Mock curl to THROW so the
     // assertion "PASS line was emitted" can only be true if the cache hit
     // short-circuited the fetch. If the cache were missed, the throwing
     // curl mock would trigger the silent-skip path instead.
@@ -1242,8 +1242,8 @@ describe('cmdDoctor version check', () => {
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('refetches when cache is stale beyond the 6h TTL (Test G)', async () => {
-    // Pre-seed a STALE cache (7h old). The TTL gate must reject it and the
+  it('refetches when cache is stale beyond the 1h TTL (Test G)', async () => {
+    // Pre-seed a STALE cache (2h old). The TTL gate must reject it and the
     // mock curl response must drive the diagnostic. If the gate were
     // broken (e.g. > vs <), the WARN line below would carry the stale
     // tag `0.10.0` instead of the fresh `0.11.3`.
@@ -1251,7 +1251,7 @@ describe('cmdDoctor version check', () => {
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(
       join(cacheDir, 'version-check.json'),
-      JSON.stringify({ checked_at: Date.now() - 7 * 60 * 60 * 1000, latest: '0.10.0' }),
+      JSON.stringify({ checked_at: Date.now() - 2 * 60 * 60 * 1000, latest: '0.10.0' }),
     );
     mockPackageJsonVersion('0.11.2');
     mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
