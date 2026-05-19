@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/funkadelic/claude-nomad/compare/v0.11.1...v0.11.2) (2026-05-19)
+
+
+### Changed
+
+* **doctor:** extract per-check helpers to reduce cognitive complexity ([#58](https://github.com/funkadelic/claude-nomad/issues/58)) ([0876747](https://github.com/funkadelic/claude-nomad/commit/08767470d1c6c8406f528e962f8727fac9187f1d))
+
 ## [0.11.1](https://github.com/funkadelic/claude-nomad/compare/v0.11.0...v0.11.1) (2026-05-19)
 
 
