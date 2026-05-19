@@ -174,3 +174,169 @@ describe('remapPull (integration)', () => {
     expect(existsSync(backupRoot)).toBe(false);
   });
 });
+
+describe('remapPull dry-run and unmapped count', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-test-home-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('does not write to ~/.claude/projects or backup under dryRun and returns unmapped count', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
+    mkdirSync(join(sharedProjects, 'bar'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'bar', 'b.jsonl'), '{"b":1}\n');
+    mkdirSync(join(sharedProjects, 'baz'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'baz', 'c.jsonl'), '{"c":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          foo: { 'test-host': '/tmp/foo' },
+          bar: { 'test-host': 'TBD' },
+          baz: { 'other-host': '/tmp/baz' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPull } = await import('./remap.ts');
+    const result = remapPull('20260516-000000', { dryRun: true });
+
+    expect(result.unmapped).toBe(2);
+    expect(existsSync(join(claudeProjects, '-tmp-foo'))).toBe(false);
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('default (no opts) returns the same unmapped count AND performs the copy for non-skipped entries', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
+    mkdirSync(join(sharedProjects, 'bar'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'bar', 'b.jsonl'), '{"b":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          foo: { 'test-host': '/tmp/foo' },
+          bar: { 'test-host': 'TBD' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPull } = await import('./remap.ts');
+    const result = remapPull('20260516-000000');
+
+    expect(result.unmapped).toBe(1);
+    expect(existsSync(join(claudeProjects, '-tmp-foo', 'a.jsonl'))).toBe(true);
+  });
+
+  it('early-return path (no path-map.json) returns unmapped:0', async () => {
+    // No path-map.json written.
+    const { remapPull } = await import('./remap.ts');
+    const result = remapPull('20260516-000000');
+    expect(result.unmapped).toBe(0);
+  });
+});
+
+describe('remapPush dry-run and unmapped count', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-test-home-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('does not copy anything under dryRun and returns unmapped + collisions:0', async () => {
+    // -tmp-foo is mapped; -tmp-drive-by is not mapped (counts as unmapped).
+    mkdirSync(join(claudeProjects, '-tmp-foo'), { recursive: true });
+    writeFileSync(join(claudeProjects, '-tmp-foo', 'a.jsonl'), '{"a":1}\n');
+    mkdirSync(join(claudeProjects, '-tmp-drive-by'), { recursive: true });
+    writeFileSync(join(claudeProjects, '-tmp-drive-by', 'd.jsonl'), '{"d":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260516-000000', { dryRun: true });
+
+    expect(result.unmapped).toBe(1);
+    expect(result.collisions).toBe(0);
+    expect(existsSync(join(sharedProjects, 'foo', 'a.jsonl'))).toBe(false);
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('default (no opts) returns same shape and still performs the copy', async () => {
+    mkdirSync(join(claudeProjects, '-tmp-foo'), { recursive: true });
+    writeFileSync(join(claudeProjects, '-tmp-foo', 'a.jsonl'), '{"a":1}\n');
+    mkdirSync(join(claudeProjects, '-tmp-drive-by'), { recursive: true });
+    writeFileSync(join(claudeProjects, '-tmp-drive-by', 'd.jsonl'), '{"d":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260516-000000');
+
+    expect(result.unmapped).toBe(1);
+    expect(result.collisions).toBe(0);
+    expect(existsSync(join(sharedProjects, 'foo', 'a.jsonl'))).toBe(true);
+  });
+
+  it('early-return path (no path-map.json) returns unmapped:0 and collisions:0', async () => {
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260516-000000');
+    expect(result.unmapped).toBe(0);
+    expect(result.collisions).toBe(0);
+  });
+});
