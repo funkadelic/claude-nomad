@@ -100,7 +100,7 @@ describe('cmdDoctor settings.json schema sanity', () => {
       join(env.testHome, '.claude', 'settings.json'),
       JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('settings.json schema: known keys only');
@@ -112,7 +112,7 @@ describe('cmdDoctor settings.json schema sanity', () => {
       join(env.testHome, '.claude', 'settings.json'),
       JSON.stringify({ model: 'sonnet', newAnthropicFeature: true }) + '\n',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('WARN settings.json has unknown keys');
@@ -155,7 +155,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
       },
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     // The gitleaks-presence diagnostic may set exitCode=1 on dev hosts
     // without gitleaks; this test only asserts the path-encoding diagnostic
@@ -178,7 +178,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
       },
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL path-encoding collision:');
@@ -228,7 +228,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
       join(env.testHome, '.claude', 'settings.json'),
       JSON.stringify({ model: 'opus' }) + '\n',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('host overrides:');
@@ -247,7 +247,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
       join(env.testHome, '.claude', 'settings.json'),
       JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL no hosts/nonexistent-host.json AND settings.json has unbased keys');
@@ -264,7 +264,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
       join(env.testHome, '.claude', 'settings.json'),
       JSON.stringify({ model: 'opus' }) + '\n',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('host overrides: none (base-only is fine, no settings drift)');
@@ -310,7 +310,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
       join(env.testHome, 'claude-nomad', 'path-map.json'),
       JSON.stringify({ projects: {} }) + '\n',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL');
@@ -324,7 +324,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
 
   it('reports FAIL line and continues when path-map.json is malformed', async () => {
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{not valid');
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL');
@@ -338,7 +338,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     // makeDoctorEnv with writeBase:false leaves no base file.
     rmSync(env.testHome, { recursive: true, force: true });
     env = makeDoctorEnv({ host: 'test-host', writeBase: false });
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL shared/settings.base.json missing');
@@ -348,7 +348,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
   it('reports FAIL and sets exitCode=1 when path-map.json is missing', async () => {
     // makeDoctorEnv does not write path-map.json by default; assert the
     // missing-file FAIL path so doctor matches cmdPush's hard-stop behavior.
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL path-map.json missing');
@@ -364,7 +364,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
       '{ not valid',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL');
@@ -378,7 +378,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     // Write a garbage host file. Pre-fix, doctor never parsed it — pull's
     // deep-merge would be the first place the malformed JSON surfaced.
     writeFileSync(join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'), '{ not valid');
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL');
@@ -431,7 +431,7 @@ describe('cmdDoctor gitleaks presence', () => {
       };
     });
     vi.resetModules();
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('gitleaks:');
@@ -456,7 +456,7 @@ describe('cmdDoctor gitleaks presence', () => {
       };
     });
     vi.resetModules();
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL');
@@ -482,7 +482,7 @@ describe('cmdDoctor gitleaks presence', () => {
       };
     });
     vi.resetModules();
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL');
@@ -521,7 +521,7 @@ describe('cmdDoctor gitlink scan', () => {
   });
 
   it('emits no gitlink FAIL when shared/ has no nested .git entries', async () => {
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('FAIL gitlink');
@@ -534,7 +534,7 @@ describe('cmdDoctor gitlink scan', () => {
       join(env.testHome, 'claude-nomad', 'shared', 'foo', '.git', 'HEAD'),
       'ref: refs/heads/main\n',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL');
@@ -551,7 +551,7 @@ describe('cmdDoctor gitlink scan', () => {
       join(env.testHome, 'claude-nomad', 'shared', 'sub', '.git'),
       'gitdir: ../.git/modules/sub\n',
     );
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('FAIL');
@@ -595,7 +595,7 @@ describe('cmdDoctor remote URL', () => {
       cwd: join(env.testHome, 'claude-nomad'),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('remote origin:');
@@ -604,7 +604,7 @@ describe('cmdDoctor remote URL', () => {
   });
 
   it('logs "remote origin: not configured" when no remote is set', async () => {
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('remote origin: not configured');
@@ -657,7 +657,7 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
       cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('has uncommitted changes');
@@ -666,7 +666,7 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
 
   it('emits WARN line when REPO_HOME has uncommitted changes', async () => {
     writeFileSync(join(env.testHome, 'claude-nomad', 'dirty.txt'), 'not committed\n');
-    const { cmdDoctor } = await import('./commands.ts');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('WARN');
@@ -674,5 +674,44 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
     expect(out).toContain('has uncommitted changes');
     expect(out).toContain('--autostash');
     expect(out).toContain('never-sync items:');
+  });
+});
+
+describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('reports NOT a symlink when a SHARED_LINKS entry exists as a regular file in ~/.claude/', async () => {
+    // Place a regular file (not a symlink) at ~/.claude/CLAUDE.md. The
+    // SHARED_LINKS loop's lstatSync().isSymbolicLink() branch should report
+    // the blocks-sync diagnostic.
+    writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# regular file\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('CLAUDE.md: NOT a symlink (blocks sync)');
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { enforceAllowList } from './commands.ts';
+import { enforceAllowList } from './commands.push.ts';
 import { type PathMap } from './config.ts';
 import { NomadFatal } from './utils.ts';
 
@@ -118,6 +118,27 @@ describe('enforceAllowList', () => {
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/secret.key'));
+  });
+
+  it('flags rename detected in the Y column (working-tree rename, X is space)', () => {
+    // Y-column rename row format: ` R shared/agents/x\0random/y\0`. Earlier
+    // detection only checked X (xy.startsWith('R')) and would have parsed the
+    // OLD path record as a new entry on the next iteration, misclassifying
+    // random/y and potentially smuggling unallowed sources past the
+    // allow-list. parsePorcelainZ now checks both XY positions.
+    const status = z([' R shared/agents/new.md', 'random/escaped.md']);
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/escaped.md'));
+  });
+
+  it('flags copy detected in the Y column (working-tree copy, X is space)', () => {
+    // Y-column copy row format: ` C shared/agents/copy.md\0random/source.md\0`.
+    // Same defense as Y-column R, but for `C` (copy) records.
+    const status = z([' C shared/agents/copy.md', 'random/source.md']);
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/source.md'));
   });
 
   // In -z mode quoted paths are NOT used; filenames with spaces remain
