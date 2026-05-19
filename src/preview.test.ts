@@ -267,4 +267,26 @@ describe('computePreview orchestration', () => {
     expect(() => computePreview('20260516-000000')).not.toThrow();
     expect(logs.join('\n')).toContain('settings.json: malformed; skipping diff');
   });
+
+  it('does not die on malformed hosts/<HOST>.json; logs an ignore-overrides message instead', async () => {
+    // Base parses fine but the per-host override file is malformed. Without
+    // the tolerance branch, readJson throws SyntaxError and the dry-run
+    // crashes before users see the rest of the preview. Expect a single
+    // canonical message and continued execution.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(hostsDir, 'test-host.json'), '{ malformed json');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const { computePreview } = await import('./preview.ts');
+    expect(() => computePreview('20260516-000000')).not.toThrow();
+    expect(logs.join('\n')).toContain(
+      'settings.json: malformed hosts/test-host.json; ignoring overrides',
+    );
+  });
 });

@@ -109,7 +109,14 @@ export function computePreview(ts: string): { unmapped: number; collisions: numb
     // as `{}` and producing a normal diff; only base-missing is fatal-ish.
     log('settings.json: section skipped (base or current missing)');
   } else {
-    const overrides = existsSync(hostPath) ? readJson<Record<string, unknown>>(hostPath) : {};
+    // Tolerate a malformed hosts/<HOST>.json the same way base and current
+    // are tolerated: log once and fall back to no overrides so the preview
+    // keeps rendering instead of crashing the dry-run.
+    const hostOverrides = readJsonOrNull(hostPath);
+    if (hostOverrides === null && existsSync(hostPath)) {
+      log(`settings.json: malformed hosts/${HOST}.json; ignoring overrides`);
+    }
+    const overrides = hostOverrides ?? {};
     const merged = deepMerge(base, overrides);
     const current = readJsonOrNull(settingsPath);
     if (current === null && existsSync(settingsPath)) {
