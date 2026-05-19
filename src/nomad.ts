@@ -53,14 +53,18 @@ try {
       cmdPush();
       break;
     case 'init':
-      // Slice A only adds plain `nomad init` (empty-scaffold mode). The
-      // `--snapshot` variant arrives in Slice B. Reject any extra argv with
-      // the same usage-error pattern as `doctor --resume-cmd`'s validation.
-      if (process.argv.length > 3) {
-        console.error('usage: nomad init');
+      // Two valid forms: `nomad init` (empty scaffold) and
+      // `nomad init --snapshot` (overlay user's current ~/.claude/ into
+      // shared/). Anything else (unknown flag, extra positional arg, two
+      // flags) hits the same usage-error pattern as `doctor --resume-cmd`.
+      if (process.argv[3] === undefined) {
+        cmdInit();
+      } else if (process.argv[3] === '--snapshot' && process.argv[4] === undefined) {
+        cmdInit({ snapshot: true });
+      } else {
+        console.error('usage: nomad init [--snapshot]');
         process.exit(1);
       }
-      cmdInit();
       break;
     case 'diff':
       // Offline, lockless preview against local repo state. No git pull, no
@@ -88,7 +92,7 @@ try {
       break;
     default:
       console.error(
-        'usage: nomad <pull [--dry-run] | push | doctor [--resume-cmd <id>] | init | diff>',
+        'usage: nomad <pull [--dry-run] | push | doctor [--resume-cmd <id>] | init [--snapshot] | diff>',
       );
       process.exit(1);
   }
