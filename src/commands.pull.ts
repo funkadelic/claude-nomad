@@ -1,27 +1,11 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { HOME, HOST, REPO_HOME } from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { remapPull } from './remap.ts';
-import { acquireLock, die, freshBackupTs, log, NomadFatal, releaseLock } from './utils.ts';
-
-/**
- * Run `git <args>` in REPO_HOME, forwarding stderr and converting non-zero
- * exits to NomadFatal. Without this wrap, an ExecException would bubble past
- * the cmdPull/cmdPush NomadFatal-only catch blocks and surface as a stack
- * trace; the finally still releases the lock, but the user UX degrades.
- */
-function gitOrFatal(args: readonly string[], context: string): void {
-  try {
-    execFileSync('git', args, { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (err) {
-    const e = err as Error & { stderr?: Buffer };
-    if (e.stderr) process.stderr.write(e.stderr);
-    throw new NomadFatal(`${context} failed`);
-  }
-}
+// prettier-ignore
+import { acquireLock, die, freshBackupTs, gitOrFatal, log, NomadFatal, releaseLock } from './utils.ts';
 
 /**
  * `nomad pull` command. Acquires the push/pull lock, takes a backup
@@ -55,7 +39,7 @@ export function cmdPull(): void {
       die(`could not create backup dir: ${(err as Error).message}`);
     }
     log(`pulling on host=${HOST} (backup=${ts})`);
-    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase');
+    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', REPO_HOME);
     applySharedLinks(ts);
     regenerateSettings(ts);
     remapPull(ts);

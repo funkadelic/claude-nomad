@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
@@ -7,23 +6,7 @@ import { HOME, HOST, NEVER_SYNC, PUSH_ALLOWED_STATIC, REPO_HOME, type PathMap } 
 import { findGitlinks, probeGitleaks, rebaseBeforePush, runGitleaksScan } from './push-checks.ts';
 import { remapPush } from './remap.ts';
 // prettier-ignore
-import { acquireLock, die, freshBackupTs, gitStatusPorcelainZ, log, NomadFatal, readJson, releaseLock } from './utils.ts';
-
-/**
- * Run `git <args>` in REPO_HOME, forwarding stderr and converting non-zero
- * exits to NomadFatal. Without this wrap, an ExecException would bubble past
- * the cmdPull/cmdPush NomadFatal-only catch blocks and surface as a stack
- * trace; the finally still releases the lock, but the user UX degrades.
- */
-function gitOrFatal(args: readonly string[], context: string): void {
-  try {
-    execFileSync('git', args, { cwd: REPO_HOME, stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (err) {
-    const e = err as Error & { stderr?: Buffer };
-    if (e.stderr) process.stderr.write(e.stderr);
-    throw new NomadFatal(`${context} failed`);
-  }
-}
+import { acquireLock, die, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readJson, releaseLock } from './utils.ts';
 
 /**
  * Match `path` against an entry in the push allow-list. Exact match for
@@ -183,13 +166,13 @@ export function cmdPush(): void {
     }
     enforceAllowList(status, map);
     // gitOrFatal uses execFileSync (no shell) so NOMAD_HOST cannot escape quoting.
-    gitOrFatal(['add', '-A'], 'git add');
+    gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
     // Gitleaks scan AFTER staging (sees what would push), BEFORE commit (no cleanup
     // needed on detection). The empty-status early return above guarantees the
     // index is non-empty here.
     runGitleaksScan();
-    gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit');
-    gitOrFatal(['push'], 'git push');
+    gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
+    gitOrFatal(['push'], 'git push', REPO_HOME);
     log('push complete');
   } catch (err) {
     if (err instanceof NomadFatal) {

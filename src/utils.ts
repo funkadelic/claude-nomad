@@ -61,6 +61,22 @@ export const gitStatusPorcelainZ = (cwd?: string): string =>
     stdio: ['ignore', 'pipe', 'pipe'],
   }).toString();
 
+/**
+ * Run `git <args>` in `cwd`, forwarding stderr and converting non-zero exits
+ * to `NomadFatal`. Without this wrap, an ExecException would bubble past the
+ * cmdPull/cmdPush NomadFatal-only catch blocks and surface as a stack trace;
+ * the finally still releases the lock, but the user UX degrades.
+ */
+export function gitOrFatal(args: readonly string[], context: string, cwd?: string): void {
+  try {
+    execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    const e = err as Error & { stderr?: Buffer };
+    if (e.stderr) process.stderr.write(e.stderr);
+    throw new NomadFatal(`${context} failed`);
+  }
+}
+
 /** Read and JSON-parse `path`. Throws `SyntaxError` on malformed content. */
 export function readJson<T>(path: string): T {
   const data: unknown = JSON.parse(readFileSync(path, 'utf8'));

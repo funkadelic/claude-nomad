@@ -12,7 +12,9 @@ import {
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+
+import type * as cpModule from 'node:child_process';
 
 import { deepMerge, encodePath, freshBackupTs, nowTimestamp, writeJsonAtomic } from './utils.ts';
 
@@ -416,5 +418,65 @@ describe('acquireLock / releaseLock', () => {
     const { releaseLock } = await import('./utils.ts');
     expect(() => releaseLock(null)).not.toThrow();
     expect(existsSync(join(testHome, '.cache', 'claude-nomad'))).toBe(false);
+  });
+});
+
+describe('gitOrFatal (mocked child_process)', () => {
+  let stderrSpy: MockInstance<(...args: unknown[]) => boolean>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+  });
+
+  it('returns void when execFileSync succeeds', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+    const { gitOrFatal } = await import('./utils.ts');
+    expect(() => gitOrFatal(['pull'], 'git pull', '/tmp')).not.toThrow();
+  });
+
+  it('throws NomadFatal with the context message and forwards stderr on failure', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          const err = new Error('Command failed') as Error & { stderr?: Buffer };
+          err.stderr = Buffer.from('fatal: not a git repository\n');
+          throw err;
+        }),
+      };
+    });
+    const { gitOrFatal, NomadFatal } = await import('./utils.ts');
+    expect(() => gitOrFatal(['status'], 'git status', '/tmp')).toThrow(NomadFatal);
+    expect(() => gitOrFatal(['status'], 'git status', '/tmp')).toThrow('git status failed');
+    const forwarded = stderrSpy.mock.calls.some(
+      (c) => Buffer.isBuffer(c[0]) && c[0].toString().includes('not a git repository'),
+    );
+    expect(forwarded).toBe(true);
+  });
+
+  it('throws NomadFatal without writing to stderr when err.stderr is absent', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          throw new Error('Command failed');
+        }),
+      };
+    });
+    const { gitOrFatal, NomadFatal } = await import('./utils.ts');
+    expect(() => gitOrFatal(['push'], 'git push', '/tmp')).toThrow(NomadFatal);
+    expect(() => gitOrFatal(['push'], 'git push', '/tmp')).toThrow('git push failed');
+    expect(stderrSpy).not.toHaveBeenCalled();
   });
 });
