@@ -1350,4 +1350,76 @@ describe('cmdDoctor version check', () => {
     expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
     expect(process.exitCode === 1).toBe(false);
   });
+
+  it('accepts a tag_name without the leading `v` prefix (Test M)', async () => {
+    // GitHub usually returns `tag_name: "v0.11.3"`, but the field is
+    // freeform; covers the `startsWith('v')` falsy branch in fetchLatestTag.
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', tagName: '0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO version line when tag_name is not strict semver (Test N)', async () => {
+    // `tag_name: "beta"` is a string but not MAJOR.MINOR.PATCH.
+    // `fetchLatestTag` must reject it and produce a silent skip.
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', tagName: 'beta' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO version line when local version has no semver prefix (Test O)', async () => {
+    // `reportVersionCheck` peels `^MAJOR.MINOR.PATCH` off the local string
+    // for the comparison; an exotic local (e.g. `nightly`) yields no
+    // prefix match and must short-circuit to silence.
+    mockPackageJsonVersion('nightly');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
+    expect(process.exitCode === 1).toBe(false);
+  });
+});
+
+describe('compareSemver', () => {
+  it('returns 0 for equal MAJOR.MINOR.PATCH', async () => {
+    const { compareSemver } = await import('./commands.doctor.version.ts');
+    expect(compareSemver('1.2.3', '1.2.3')).toBe(0);
+  });
+
+  it('returns 1 when a has a higher major and -1 when lower', async () => {
+    const { compareSemver } = await import('./commands.doctor.version.ts');
+    expect(compareSemver('2.0.0', '1.9.9')).toBe(1);
+    expect(compareSemver('1.0.0', '2.0.0')).toBe(-1);
+  });
+
+  it('returns 1 when a has a higher minor and -1 when lower (same major)', async () => {
+    const { compareSemver } = await import('./commands.doctor.version.ts');
+    expect(compareSemver('1.5.0', '1.4.9')).toBe(1);
+    expect(compareSemver('1.4.0', '1.5.0')).toBe(-1);
+  });
+
+  it('returns 1 when a has a higher patch and -1 when lower (same major/minor)', async () => {
+    const { compareSemver } = await import('./commands.doctor.version.ts');
+    expect(compareSemver('1.0.5', '1.0.4')).toBe(1);
+    expect(compareSemver('1.0.4', '1.0.5')).toBe(-1);
+  });
+
+  it('returns 0 when either input fails the strict MAJOR.MINOR.PATCH regex', async () => {
+    const { compareSemver } = await import('./commands.doctor.version.ts');
+    expect(compareSemver('not-semver', '1.0.0')).toBe(0);
+    expect(compareSemver('1.0.0', '1.0.0-rc.1')).toBe(0);
+    expect(compareSemver('1.2', '1.2.0')).toBe(0);
+  });
 });
