@@ -19,6 +19,7 @@ import { cmdDoctor } from './commands.doctor.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
 import { HOME } from './config.ts';
+import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
 import { resumeCmd } from './resume.ts';
 import { NomadFatal } from './utils.ts';
@@ -33,9 +34,21 @@ if (!HOME) {
 try {
   const cmd = process.argv[2];
   switch (cmd) {
-    case 'pull':
-      cmdPull();
+    case 'pull': {
+      // Sub-flag: `pull --dry-run` runs the full pull flow (lock + git pull)
+      // in preview mode without mutating ~/.claude/. Any other argv after
+      // `pull` is rejected so a typo does not silently degrade to a real pull.
+      const sub = process.argv[3];
+      if (sub === undefined) {
+        cmdPull();
+      } else if (sub === '--dry-run' && process.argv.length === 4) {
+        cmdPull({ dryRun: true });
+      } else {
+        console.error('usage: nomad pull [--dry-run]');
+        process.exit(1);
+      }
       break;
+    }
     case 'push':
       cmdPush();
       break;
@@ -48,6 +61,16 @@ try {
         process.exit(1);
       }
       cmdInit();
+      break;
+    case 'diff':
+      // Offline, lockless preview against local repo state. No git pull, no
+      // lock acquisition. Reject any argv after `diff` since this slice
+      // accepts no flags.
+      if (process.argv.length > 3) {
+        console.error('usage: nomad diff');
+        process.exit(1);
+      }
+      cmdDiff();
       break;
     case 'doctor':
       // Sub-flag: `doctor --resume-cmd <session-id>` dispatches to the
@@ -64,7 +87,9 @@ try {
       }
       break;
     default:
-      console.error('usage: nomad <pull|push|doctor [--resume-cmd <id>] | init>');
+      console.error(
+        'usage: nomad <pull [--dry-run] | push | doctor [--resume-cmd <id>] | init | diff>',
+      );
       process.exit(1);
   }
 } catch (err) {

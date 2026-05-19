@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -242,5 +242,36 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     expect(() => cmdPull()).toThrow("repo not initialized; run 'nomad init'");
     expect(existsSync(lockPath)).toBe(false);
     expect(acquireSpy).not.toHaveBeenCalled();
+  });
+
+  it('cmdPull dryRun:true acquires the lock, leaves settings.json byte-identical, and creates no backup dir', async () => {
+    // Scaffold a minimally-valid repo so cmdPull reaches the dry-run branch.
+    // settings.base.json sets a key that differs from settings.json so the
+    // unified diff has something to produce; git pull is stubbed via the
+    // child_process mock so the rebase step succeeds without a remote.
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'opus' }) + '\n',
+    );
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    const priorSettings = JSON.stringify({ model: 'sonnet' }, null, 2) + '\n';
+    writeFileSync(join(testHome, '.claude', 'settings.json'), priorSettings);
+
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull({ dryRun: true });
+
+    // settings.json is byte-identical to its pre-call state.
+    expect(readFileSync(join(testHome, '.claude', 'settings.json'), 'utf8')).toBe(priorSettings);
+    // Lock was released (we never see it on disk after the finally block).
+    expect(existsSync(lockPath)).toBe(false);
+    // No backup-root dir exists for any timestamp. Walk the backup parent.
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup');
+    expect(existsSync(backupRoot)).toBe(false);
   });
 });
