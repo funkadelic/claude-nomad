@@ -337,6 +337,64 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     vi.doUnmock('./remap.ts');
   });
 
+  it('Test 8a: cmdPush({ dryRun: true }) skips git add / scan / commit / push and still emits summary', async () => {
+    // Dry-run preview: probeGitleaks + rebase + remap (in dryRun) + gitlink
+    // scan + status read + allow-list classification all run, but the
+    // staging quartet (git add, runGitleaksScan, git commit, git push) is
+    // skipped. The summary line still fires with the remapPush counts so
+    // the user gets a consistent terminator.
+    const runGitleaksScanMock = vi.fn(() => {
+      /* should not be invoked */
+    });
+    const gitOrFatalMock = vi.fn(() => {
+      /* should not be invoked for add/commit/push */
+    });
+    const remapPushMock = vi.fn(() => ({ unmapped: 2, collisions: 0 }));
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op success */
+        }),
+        findGitlinks: vi.fn(() => []),
+        runGitleaksScan: runGitleaksScanMock,
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: remapPushMock,
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        // Non-empty status: the dryRun branch should fire AFTER the
+        // allow-list pass, not bypass the early-return-on-empty path.
+        gitStatusPorcelainZ: vi.fn(() => ' M shared/CLAUDE.md\0'),
+        gitOrFatal: gitOrFatalMock,
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
+    expect(existsSync(lockPath)).toBe(false);
+    // remapPush received { dryRun: true } so no host-encoded copies landed.
+    expect(remapPushMock).toHaveBeenCalledWith(expect.any(String), { dryRun: true });
+    // Staging quartet skipped.
+    expect(runGitleaksScanMock).not.toHaveBeenCalled();
+    expect(gitOrFatalMock).not.toHaveBeenCalled();
+    const out = logOutput();
+    expect(out).toContain('pushing on host=test-host (dry-run)');
+    expect(out).toContain('push: dry-run; skipping git add, gitleaks scan, commit, and push');
+    expect(out).toContain(
+      '[nomad] summary: 2 unmapped on push, 0 collisions (run nomad doctor to list)',
+    );
+    expect(out).not.toContain('push complete');
+    vi.doUnmock('./remap.ts');
+  });
+
   it('Test 8: cmdPush emits the summary line on the nothing-to-commit early-return path', async () => {
     // gitStatusPorcelainZ returns empty, triggering the `log('nothing to
     // commit'); return;` branch. remapPush has already run, so its counts
