@@ -55,7 +55,13 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
     const xy = rec.slice(0, 2);
     const newPath = rec.slice(3);
     paths.push(newPath);
-    if (xy.startsWith('R') || xy.startsWith('C')) {
+    // Check BOTH XY positions: X is the index status, Y is the working-tree
+    // status. Either can carry R (rename) or C (copy), and the old-path record
+    // follows the new-path record in -z porcelain regardless of which column
+    // detected the rename. Missing the Y-column case (e.g. ` R`) would skip
+    // the consume and let the next iteration misread the old path as a new
+    // record, smuggling unallowed sources past the allow-list.
+    if (/[RC]/.test(xy)) {
       const oldPath = records[i + 1];
       if (oldPath !== undefined && oldPath !== '') paths.push(oldPath);
       i++; // consume the paired old-path record
