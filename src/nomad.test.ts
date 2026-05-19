@@ -71,4 +71,41 @@ describe('nomad.ts push dispatcher', () => {
     // silent exit. console.error is already spied in beforeEach.
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad push'));
   });
+
+  it('prints the multi-line default help on bare `nomad` invocation with exitCode=1', async () => {
+    // All six command modules are mocked so a misdispatch (any case arm
+    // accidentally firing on an empty argv) would surface as a non-zero
+    // call count, not a silent pass.
+    const cmdPullMock = vi.fn();
+    const cmdPushMock = vi.fn();
+    const cmdDoctorMock = vi.fn();
+    const cmdInitMock = vi.fn();
+    const cmdDiffMock = vi.fn();
+    const resumeCmdMock = vi.fn();
+    vi.doMock('./commands.pull.ts', () => ({ cmdPull: cmdPullMock }));
+    vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
+    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
+    vi.doMock('./diff.ts', () => ({ cmdDiff: cmdDiffMock }));
+    vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
+    process.argv = ['node', 'nomad.ts'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(cmdPullMock).not.toHaveBeenCalled();
+    expect(cmdPushMock).not.toHaveBeenCalled();
+    expect(cmdDoctorMock).not.toHaveBeenCalled();
+    expect(cmdInitMock).not.toHaveBeenCalled();
+    expect(cmdDiffMock).not.toHaveBeenCalled();
+    expect(resumeCmdMock).not.toHaveBeenCalled();
+    // The expanded help text is one console.error call carrying a single
+    // multi-line string. Assert on three structural anchors (header line,
+    // pull --dry-run flag, init --snapshot flag) so future copy edits do
+    // not silently drop a section.
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad <command> [flags]'),
+    );
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--dry-run'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--snapshot'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--resume-cmd'));
+  });
 });

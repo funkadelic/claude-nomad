@@ -24,6 +24,40 @@ import { cmdInit } from './init.ts';
 import { resumeCmd } from './resume.ts';
 import { NomadFatal } from './utils.ts';
 
+/**
+ * Multi-line help block printed on the `default:` arm of the dispatcher
+ * (bare `nomad` and any unknown subcommand). Per-subcommand `usage:` lines
+ * stay terse and live inside their own `case` arms; this block exists so a
+ * cold invocation of `nomad` is self-describing without forcing the user
+ * into the README. Channel is stderr, exit code is 1.
+ */
+const DEFAULT_HELP = [
+  'usage: nomad <command> [flags]',
+  '',
+  'Commands:',
+  '  pull             Sync ~/.claude/ from the shared repo (settings, symlinks, sessions).',
+  '       --dry-run   Run lock + git pull, then preview every mutation without writing.',
+  '',
+  '  push             Rebase, run safety checks (gitleaks, gitlinks, allow-list), commit, push.',
+  '       --dry-run   Run pre-checks (rebase, gitleaks probe, gitlink scan) and preview',
+  '                   remap, without staging or pushing.',
+  '',
+  '  diff             Offline preview of what `pull` would change against local repo state.',
+  '                   No git pull, no lock acquired.',
+  '',
+  '  init             Scaffold an empty ~/claude-nomad/ repo (shared/, hosts/, path-map).',
+  '       --snapshot  Overlay the current ~/.claude/ into shared/ as the initial seed.',
+  '',
+  '  doctor                  Read-only health check (symlinks, host file, path-map,',
+  '                          gitleaks, gitlinks).',
+  '       --resume-cmd <id>  Print `cd <abspath> && claude --resume <id>` for a session id',
+  '                          from ~/.claude/projects/.',
+  '',
+  'Run `nomad doctor` to validate your setup. Edit shared/ or hosts/<HOST>.json',
+  'in the repo, never ~/.claude/settings.json directly (it is regenerated on',
+  'every pull).',
+].join('\n');
+
 if (!HOME) {
   console.error(
     '[nomad] FATAL: could not determine home directory (HOME env unset and no uid mapping). Set HOME and retry.',
@@ -103,9 +137,7 @@ try {
       }
       break;
     default:
-      console.error(
-        'usage: nomad <pull [--dry-run] | push [--dry-run] | doctor [--resume-cmd <id>] | init [--snapshot] | diff>',
-      );
+      console.error(DEFAULT_HELP);
       process.exit(1);
   }
 } catch (err) {
