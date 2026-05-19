@@ -19,6 +19,7 @@ import { cmdDoctor } from './commands.doctor.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
 import { HOME } from './config.ts';
+import { cmdInit } from './init.ts';
 import { resumeCmd } from './resume.ts';
 import { NomadFatal } from './utils.ts';
 
@@ -38,6 +39,16 @@ try {
     case 'push':
       cmdPush();
       break;
+    case 'init':
+      // Slice A only adds plain `nomad init` (empty-scaffold mode). The
+      // `--snapshot` variant arrives in Slice B. Reject any extra argv with
+      // the same usage-error pattern as `doctor --resume-cmd`'s validation.
+      if (process.argv.length > 3) {
+        console.error('usage: nomad init');
+        process.exit(1);
+      }
+      cmdInit();
+      break;
     case 'doctor':
       // Sub-flag: `doctor --resume-cmd <session-id>` dispatches to the
       // read-only sidecar that prints `cd <abspath> && claude --resume <id>`.
@@ -53,7 +64,7 @@ try {
       }
       break;
     default:
-      console.error('usage: nomad <pull|push|doctor [--resume-cmd <id>]>');
+      console.error('usage: nomad <pull|push|doctor [--resume-cmd <id>] | init>');
       process.exit(1);
   }
 } catch (err) {

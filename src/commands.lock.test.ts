@@ -54,22 +54,22 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('releases the lockfile when cmdPull dies because shared/settings.base.json is missing', async () => {
-    // shared/ dir exists but settings.base.json is absent. regenerateSettings
-    // will call die(), which throws NomadFatal; cmdPull's catch sets exitCode
-    // and the finally must release the lock.
+  it('never acquires the lockfile when cmdPull hits the D-03 early-precondition (settings.base.json missing)', async () => {
+    // shared/ dir exists but settings.base.json is absent. The D-03 early-
+    // precondition in cmdPull fires BEFORE acquireLock and throws NomadFatal,
+    // which escapes to the top-level nomad.ts catch (NOT cmdPull's try/catch:
+    // the early-precondition lives outside the try block by design so a
+    // missing scaffold never creates a lock file). The lock therefore must
+    // not exist on disk and cmdPull throws the FATAL upward.
     mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
-    // No `.git` so `git pull --rebase --autostash` would fail too. To isolate
-    // the die() path, mock execFileSync at the `node:child_process` level so
-    // cmdPull's inline argv-array rebase call is a no-op for this test. Same
-    // mock-via-importOriginal shape as the cmdPush-NEVER_SYNC test below.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
     const { cmdPull } = await import('./commands.pull.ts');
-    expect(() => cmdPull()).not.toThrow();
-    expect(process.exitCode).toBe(1);
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => cmdPull()).toThrow(NomadFatal);
+    // The lock file MUST NOT exist: the check fires before acquireLock.
     expect(existsSync(lockPath)).toBe(false);
   });
 
@@ -78,6 +78,11 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // creates the parent dir; freshBackupTs only reads. mkdirSync(backupRoot,
     // recursive: true) then fails with ENOTDIR because it tries to descend
     // into a file. cmdPull's catch turns it into a fatal exit + lock release.
+    // Pre-write settings.base.json so the D-03 early-precondition passes and
+    // cmdPull reaches the lock+backup section; the test still exercises the
+    // post-lock-acquired die path that the existing finally must release.
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
     const cacheDir = join(testHome, '.cache', 'claude-nomad');
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(join(cacheDir, 'backup'), '');
@@ -218,26 +223,30 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   // so an unscaffolded REPO_HOME never leaves a lock file behind. Stronger
   // than the post-run `!existsSync(lockPath)` assertion (which also passes
   // when acquireLock + releaseLock both fired): we spy on acquireLock and
-  // assert it was NEVER invoked. The check is keyed off
-  // shared/settings.base.json (same signal regenerateSettings uses) and
-  // surfaces the canonical init-hint phrasing.
-  it('dies with init-hint and never invokes acquireLock when cmdPull runs against an unscaffolded repo', async () => {
+  // assert it was NEVER invoked. The early-precondition throws NomadFatal
+  // upward (NOT through cmdPull's try/catch which is scoped to the lock-
+  // held section), so the top-level nomad.ts catch is what users actually
+  // see in production. The check is keyed off shared/settings.base.json
+  // (same signal regenerateSettings uses) and surfaces the canonical
+  // init-hint phrasing.
+  it('throws init-hint NomadFatal and never invokes acquireLock when cmdPull runs against an unscaffolded repo', async () => {
     expect(existsSync(join(repoUnderHome, 'shared', 'settings.base.json'))).toBe(false);
-    const errWrites: string[] = [];
-    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-      errWrites.push(args.join(' '));
-    });
     const acquireSpy = vi.fn(() => null);
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, acquireLock: acquireSpy };
     });
     const { cmdPull } = await import('./commands.pull.ts');
-    expect(() => cmdPull()).not.toThrow();
-    expect(process.exitCode).toBe(1);
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => cmdPull()).toThrow(NomadFatal);
     expect(existsSync(lockPath)).toBe(false);
     expect(acquireSpy).not.toHaveBeenCalled();
-    // FATAL phrasing surfaced via console.error per cmdPull's NomadFatal catch.
-    expect(errWrites.join('\n')).toContain("repo not initialized; run 'nomad init'");
+    try {
+      cmdPull();
+    } catch (err) {
+      const msg = (err as Error).message;
+      expect(msg).toContain("repo not initialized; run 'nomad init'");
+      expect(msg).toContain("'nomad init --snapshot'");
+    }
   });
 });

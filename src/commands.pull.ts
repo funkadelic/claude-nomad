@@ -21,6 +21,15 @@ import { acquireLock, die, freshBackupTs, gitOrFatal, log, NomadFatal, releaseLo
  */
 export function cmdPull(): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
+  // ONBR-03 / D-03: fire the init-hint FATAL BEFORE acquireLock so an
+  // unscaffolded repo never creates a lock file. Keyed off the same signal
+  // regenerateSettings uses (shared/settings.base.json), so the two entry
+  // points share one phrasing instead of diverging on edits.
+  if (!existsSync(join(REPO_HOME, 'shared', 'settings.base.json'))) {
+    die(
+      "repo not initialized; run 'nomad init' to scaffold or 'nomad init --snapshot' to capture this host's current ~/.claude/",
+    );
+  }
   const handle = acquireLock('pull');
   if (handle === null) process.exit(0);
   try {
