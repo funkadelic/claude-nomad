@@ -34,8 +34,11 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 const STRICT_SEMVER = /^\d+\.\d+\.\d+$/;
 
 /** Capturing variant of `STRICT_SEMVER` used to peel a strict-semver prefix
- * off a pre-release version string (e.g. `0.12.0` out of `0.12.0-dev`). */
-const STRICT_SEMVER_PREFIX = /^(\d+\.\d+\.\d+)/;
+ * off a pre-release version string (e.g. `0.12.0` out of `0.12.0-dev`). The
+ * trailing `(?:[-+]|$)` anchor rejects malformed inputs like `1.2.3foo` or
+ * `1.2.3.4` that would otherwise be silently truncated to `1.2.3` and yield
+ * a false PASS against an identical `latest`. */
+const STRICT_SEMVER_PREFIX = /^(\d+\.\d+\.\d+)(?:[-+]|$)/;
 
 /** Shape of the on-disk cache entry. Both fields are validated structurally
  * in `loadCache` before use (typeof + finiteness + regex). */

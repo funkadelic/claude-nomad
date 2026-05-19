@@ -1390,6 +1390,21 @@ describe('cmdDoctor version check', () => {
     expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
     expect(process.exitCode === 1).toBe(false);
   });
+
+  it('does not falsely PASS when local has trailing junk after a semver prefix (Test P)', async () => {
+    // Inputs like `1.2.3foo` or `1.2.3.4` previously matched
+    // `STRICT_SEMVER_PREFIX` greedily and got truncated to `1.2.3`, which
+    // would emit a false PASS against an identical `latest`. The anchored
+    // regex now requires `-`, `+`, or end-of-string after the patch.
+    mockPackageJsonVersion('0.11.2foo');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.2' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
+    expect(process.exitCode === 1).toBe(false);
+  });
 });
 
 describe('compareSemver', () => {
