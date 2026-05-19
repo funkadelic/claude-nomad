@@ -784,6 +784,11 @@ describe('cmdDoctor repo-state header', () => {
   });
 
   it('logs the repo state line above the SHARED_LINKS / symlink section', async () => {
+    // Place a regular file (NOT a symlink) at ~/.claude/CLAUDE.md so the
+    // SHARED_LINKS loop emits a 'symlink' substring (the "NOT a symlink" or
+    // "symlink OK" branch). The repo-state line is fixed to land before the
+    // SHARED_LINKS loop, so its index must precede the first 'symlink' hit.
+    writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# placeholder\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
