@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.1](https://github.com/funkadelic/claude-nomad/compare/v0.11.0...v0.11.1) (2026-05-19)
+
+
+### Changed
+
+* **labeler:** exclude release-please PRs from dependencies label ([#56](https://github.com/funkadelic/claude-nomad/issues/56)) ([d4f1266](https://github.com/funkadelic/claude-nomad/commit/d4f126624589f119fa49f8769a7ba2f32e5a0368))
+
+
+### Documentation
+
+* **nomad:** expand default help output ([#54](https://github.com/funkadelic/claude-nomad/issues/54)) ([f535d8b](https://github.com/funkadelic/claude-nomad/commit/f535d8b69e44c589be5424bf40ccf2bfd09bf4c7))
+* **readme:** add tests, release, coverage badges ([#57](https://github.com/funkadelic/claude-nomad/issues/57)) ([d87136b](https://github.com/funkadelic/claude-nomad/commit/d87136ba70a298731e1eaa1b475d2370cedf70a1))
+
 ## [0.11.0](https://github.com/funkadelic/claude-nomad/compare/v0.10.0...v0.11.0) (2026-05-19)
 
 
