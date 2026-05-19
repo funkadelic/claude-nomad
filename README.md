@@ -200,19 +200,47 @@ alias nomad='tsx ~/claude-nomad/src/nomad.ts'
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
 
-Populate your config by adding files under `shared/`, a per-host file at `hosts/<NOMAD_HOST>.json`, and `path-map.json`. Then:
+Initialize the repo layout. Pick one:
 
 ```bash
-nomad doctor     # read-only state check; reports host: <NOMAD_HOST>
-nomad push       # send current state to the private remote
-nomad pull       # apply on another host
+# Fresh start: scaffold an empty shared/, hosts/, path-map.json skeleton.
+nomad init
+
+# Already have ~/.claude/ populated on this host? Capture it as the
+# starting point. Stages shared/ and writes hosts/<NOMAD_HOST>.json from
+# your current ~/.claude/settings.json. Does NOT touch the originals.
+nomad init --snapshot
 ```
 
-If the destination host already has populated `~/.claude/{CLAUDE.md, agents/, ...}`, the first `nomad pull` will refuse to overwrite real files. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the safe backup-and-rename flow.
+`nomad init` refuses to clobber existing scaffold artifacts, so re-running on a populated repo is a safe no-op (it errors out naming the offender). `nomad pull` against an unscaffolded repo fails fast with `FATAL: repo not initialized; run 'nomad init' to scaffold` instead of silently leaving a half-state.
+
+Edit `path-map.json` to add your logical projects (see [Path remapping](#path-remapping)), then:
+
+```bash
+nomad doctor     # read-only state check; reports host, repo state, every check as PASS/WARN/FAIL
+nomad diff       # preview what nomad pull would change on this host; no lock, no network, no mutation
+nomad push       # send current state to the private remote
+nomad pull       # apply on another host (or this one after a remote update)
+```
+
+`nomad pull --dry-run` is the network-aware twin of `nomad diff`: it acquires the lock and runs `git pull` so you see what the next real pull would do given the latest remote, then exits without mutating.
+
+If the destination host already has populated `~/.claude/{CLAUDE.md, agents/, ...}`, the first `nomad pull` will refuse to overwrite real files. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the safe migration flow.
 
 ## Migrating an existing ~/.claude/
 
-If a host already has real files at `~/.claude/{CLAUDE.md, agents/, skills/, ...}`, the first `nomad pull` will fail with `FATAL: <path> exists and is not a symlink` because `applySharedLinks` refuses to silently clobber user content. You can either move each conflicting item aside manually (`mv ~/.claude/CLAUDE.md ~/.claude/CLAUDE.md.preNomad`) and re-run pull, or use a single-pull migration script that backs up and prepares the host in one shot:
+If a host already has real files at `~/.claude/{CLAUDE.md, agents/, skills/, ...}`, the first `nomad pull` will fail with `FATAL: <path> exists and is not a symlink` because `applySharedLinks` refuses to silently clobber user content.
+
+The fastest migration path is to run `nomad init --snapshot` on the host that has the canonical config:
+
+```bash
+nomad init --snapshot   # stages shared/ and hosts/<HOST>.json from ~/.claude/ without touching originals
+nomad push              # publish the captured state to the private remote
+```
+
+The originals under `~/.claude/` stay intact. After a subsequent `nomad pull` materializes the symlinks (on this or any other host), `applySharedLinks` will auto-rename any conflicting non-symlinks aside into `~/.cache/claude-nomad/backup/<ts>/` and put the symlink in place; nothing is destroyed.
+
+If you want full manual control instead (e.g. you want a single tar.gz rollback artifact and explicit confirmation before deletion), this script does the same job:
 
 ```bash
 #!/usr/bin/env bash
@@ -309,10 +337,24 @@ npm install
 
 ## Commands
 
-- `nomad pull`: `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths
-- `nomad push`: export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push
-- `nomad doctor`: read-only health check. Reports `host: <NOMAD_HOST>`, lists each symlink as `symlink OK` / `missing` / `NOT a symlink`, lists mapped projects for the current host
-- `nomad doctor --resume-cmd <session-id>` prints a host-local `cd ... && claude --resume <id>` line for the given session (see [Cross-OS resume](#cross-os-resume))
+- `nomad init`: scaffold an empty `shared/`, `hosts/`, `path-map.json` skeleton on a fresh clone. Refuses to clobber any pre-existing scaffold artifact.
+- `nomad init --snapshot`: overlay the current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals under `~/.claude/` are not modified.
+- `nomad pull`: `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths. Fails fast with `repo not initialized` if the scaffold is missing.
+- `nomad pull --dry-run`: acquires the lock and runs `git pull --rebase` so the network round-trip mirrors a real pull, then prints the planned changes (symlink moves, `settings.json` unified diff, session-transcript overwrites) without touching disk.
+- `nomad diff`: offline, lockless twin of `pull --dry-run`. Same preview output, but does NOT acquire the lock and does NOT run `git pull`, so it works against the current local repo state. Use this for "what would be applied right now" against a possibly-partially-scaffolded repo.
+- `nomad push`: export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.
+- `nomad doctor`: read-only health check. Every check-result line carries an explicit `PASS`, `WARN`, or `FAIL` token; informational headers (`host:`, `repo:`, `claude home:`, `repo state:`, `mapped projects for ...`, `never-sync items:`, `remote origin:`) stay unprefixed. `repo state:` reports `PASS populated`, `WARN partial <reason>`, or `FAIL empty - run 'nomad init' to scaffold`. Any `FAIL` sets `process.exitCode = 1` so CI can gate on it; `WARN` does not.
+- `nomad doctor --resume-cmd <session-id>` prints a host-local `cd ... && claude --resume <id>` line for the given session (see [Cross-OS resume](#cross-os-resume)).
+
+Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summary:` line:
+
+```text
+[nomad] summary: clean
+[nomad] summary: 3 unmapped on pull (run nomad doctor to list)
+[nomad] summary: 2 unmapped on push, 1 collisions (run nomad doctor to list)
+```
+
+The summary is suppressed when a `FATAL` fires mid-run so you do not see "summary: clean" stacked under an error. Drive-by projects that have no entry in `path-map.json` for this host count as unmapped; the hint points at `nomad doctor`, which lists them by logical name.
 
 ## Cross-OS resume
 
