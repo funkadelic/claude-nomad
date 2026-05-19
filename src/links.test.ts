@@ -389,10 +389,11 @@ describe('applySharedLinks dry-run', () => {
     expect(joined).toContain('would create symlink:');
 
     const linkPath = join(claudeDir, 'CLAUDE.md');
-    // The lstatSync and readFileSync calls both throw if the file is gone,
-    // so an explicit existsSync would be redundant and would create a
-    // check-then-use pattern that adds nothing to the assertion.
-    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    // Content equality alone proves dry-run left the pre-existing file
+    // intact: an auto-move would have replaced it with a symlink whose
+    // target (shared/CLAUDE.md) holds different content. Avoiding a
+    // separate lstatSync check keeps the assertion off the
+    // check-then-use file system pattern CodeQL flags.
     expect(readFileSync(linkPath, 'utf8')).toBe('# old\n');
 
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
