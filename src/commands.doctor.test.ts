@@ -688,10 +688,12 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     originalNomadHost = process.env.NOMAD_HOST;
     originalNoColor = process.env.NO_COLOR;
     process.env.NO_COLOR = '1';
+    process.exitCode = 0;
     env = makeDoctorEnv({ host: 'test-host' });
   });
 
   afterEach(() => {
+    process.exitCode = 0;
     vi.restoreAllMocks();
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
