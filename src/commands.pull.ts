@@ -5,6 +5,7 @@ import { HOME, HOST, REPO_HOME } from './config.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
+import { emitSummary } from './summary.ts';
 // prettier-ignore
 import { acquireLock, die, freshBackupTs, gitOrFatal, log, NomadFatal, releaseLock } from './utils.ts';
 
@@ -62,13 +63,15 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
     log(`pulling on host=${HOST} (backup=${ts}${dryRun ? '; dry-run' : ''})`);
     gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', REPO_HOME);
     if (dryRun) {
-      computePreview(ts);
+      const previewResult = computePreview(ts);
       log('dry-run complete; no mutation');
+      emitSummary('pull', previewResult.unmapped);
     } else {
       applySharedLinks(ts);
       regenerateSettings(ts);
-      remapPull(ts);
+      const remapResult = remapPull(ts);
       log('pull complete');
+      emitSummary('pull', remapResult.unmapped);
     }
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the

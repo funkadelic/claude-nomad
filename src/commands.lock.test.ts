@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as childProcessModule from 'node:child_process';
 import type * as utilsModule from './utils.ts';
@@ -12,11 +12,13 @@ import type * as utilsModule from './utils.ts';
 // from die(), which skipped the try/finally and left a stale lock holding
 // the now-dead PID.
 describe('cmdPull / cmdPush lock release on fatal', () => {
+  type LogSpy = MockInstance<(...args: unknown[]) => void>;
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
   let lockPath: string;
+  let logSpy: LogSpy;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -34,10 +36,19 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       /* captured */
     });
     vi.spyOn(process.stderr, 'write').mockImplementation((_chunk) => true);
-    vi.spyOn(console, 'log').mockImplementation((..._args: unknown[]) => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation((..._args: unknown[]) => {
       /* captured */
     });
   });
+
+  /**
+   * Stitch every recorded `console.log` call into a single newline-joined
+   * string so assertions can match on substrings or the position of a
+   * particular line within the run's full output.
+   */
+  function logOutput(): string {
+    return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
+  }
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -273,5 +284,108 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // No backup-root dir exists for any timestamp. Walk the backup parent.
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup');
     expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('cmdPull emits the unmapped-on-pull summary line after pull complete when path-map has unmapped entries', async () => {
+    // Two path-map entries with no host mapping for this host (both `'TBD'`).
+    // remapPull skips them with `unmapped++` per entry, so the summary line
+    // reports `2 unmapped on pull`. The line MUST appear AFTER `pull complete`
+    // so users see a deterministic terminator.
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    mkdirSync(join(repoUnderHome, 'shared', 'projects', 'logical-a'), { recursive: true });
+    mkdirSync(join(repoUnderHome, 'shared', 'projects', 'logical-b'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          'logical-a': { 'test-host': 'TBD' },
+          'logical-b': { 'other-host': '/other/path' },
+        },
+      }) + '\n',
+    );
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull();
+    const out = logOutput();
+    expect(out).toContain('[nomad] summary: 2 unmapped on pull (run nomad doctor to list)');
+    // The summary line must come AFTER `pull complete`.
+    const completeIdx = out.indexOf('pull complete');
+    const summaryIdx = out.indexOf('summary:');
+    expect(completeIdx).toBeGreaterThanOrEqual(0);
+    expect(summaryIdx).toBeGreaterThan(completeIdx);
+  });
+
+  it('cmdPull emits the clean summary line when path-map has no unmapped entries', async () => {
+    // Empty path-map means remapPull's loop never runs; unmapped stays 0.
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull();
+    expect(logOutput()).toContain('[nomad] summary: clean');
+  });
+
+  it('cmdPull --dry-run emits the unmapped-on-pull summary line based on computePreview', async () => {
+    // Same fixture shape as the real-pull unmapped test, but invoked under
+    // dryRun. computePreview returns the same `unmapped` count as remapPull
+    // because they share remapPull's dry-run branch internally.
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    mkdirSync(join(repoUnderHome, 'shared', 'projects', 'logical-only'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          'logical-only': { 'test-host': 'TBD' },
+        },
+      }) + '\n',
+    );
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull({ dryRun: true });
+    const out = logOutput();
+    expect(out).toContain('[nomad] summary: 1 unmapped on pull (run nomad doctor to list)');
+    // The summary line must come AFTER `dry-run complete; no mutation`.
+    const completeIdx = out.indexOf('dry-run complete; no mutation');
+    const summaryIdx = out.indexOf('summary:');
+    expect(completeIdx).toBeGreaterThanOrEqual(0);
+    expect(summaryIdx).toBeGreaterThan(completeIdx);
+  });
+
+  it('cmdPull does NOT emit the summary line when a NomadFatal fires mid-flight', async () => {
+    // Force `git pull --rebase` to fail. The cmdPull catch block sets exitCode
+    // and the finally releases the lock, but the summary line lives INSIDE
+    // the try block after `pull complete`, so a fatal mid-flight must NOT
+    // reach it (otherwise users would see a misleading `summary: clean` on a
+    // FATAL exit).
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      const stderr = Buffer.from('synthetic rebase failure');
+      const err = Object.assign(new Error('git pull failed'), { stderr });
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          throw err;
+        }),
+      };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(process.exitCode).toBe(1);
+    expect(logOutput()).not.toContain('summary:');
   });
 });
