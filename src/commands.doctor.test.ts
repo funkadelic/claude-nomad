@@ -1114,7 +1114,10 @@ describe('cmdDoctor version check', () => {
       return {
         ...actual,
         execFileSync: vi.fn((bin: string, args: readonly string[], opts?: unknown) => {
-          if (bin === 'curl' && args.some((a) => a.includes('api.github.com'))) {
+          if (
+            bin === 'curl' &&
+            args.includes('https://api.github.com/repos/funkadelic/claude-nomad/releases/latest')
+          ) {
             if (response.kind === 'throw') {
               const err = new Error(
                 `curl mocked: ${response.code ?? 'ENOENT'}`,
@@ -1247,6 +1250,93 @@ describe('cmdDoctor version check', () => {
     const out = joinedLog(env.logSpy);
     expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
     expect(out).not.toContain('0.10.0');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO version line when package.json version is the empty string (Test H)', async () => {
+    // Drives the falsy branch of `readLocalVersion`'s
+    // `typeof parsed.version === 'string' && parsed.version.length > 0`
+    // check. With no local version to compare against, the helper must
+    // skip silently rather than emit PASS/WARN or set exitCode.
+    mockPackageJsonVersion('');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/PASS version|WARN version|version: \d/);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('treats cache with non-finite checked_at as a miss and refetches (Test I)', async () => {
+    // `loadCache` must reject entries whose `checked_at` is not a finite
+    // number and fall through to a fresh curl. The seeded `0.10.0` must
+    // NOT appear; the freshly-fetched `0.11.3` must drive the WARN.
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'version-check.json'),
+      JSON.stringify({ checked_at: 'not-a-number', latest: '0.10.0' }),
+    );
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).not.toContain('0.10.0');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('treats cache with non-semver latest as a miss and refetches (Test J)', async () => {
+    // `loadCache` must reject entries whose `latest` field is not strict
+    // MAJOR.MINOR.PATCH and fall through to a fresh curl.
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'version-check.json'),
+      JSON.stringify({ checked_at: Date.now(), latest: 'not-semver' }),
+    );
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).not.toContain('not-semver');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO version line when package.json itself is unreadable (Test L)', async () => {
+    // Drives the catch arm of `readLocalVersion` (readFileSync throws). The
+    // helper must swallow the error and skip silently rather than crash
+    // doctor or set exitCode.
+    mockPackageJsonVersion(null);
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/PASS version|WARN version|version: \d/);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('treats unparseable cache JSON as a miss and refetches (Test K)', async () => {
+    // `loadCache`'s catch block must swallow `JSON.parse` errors and
+    // return null, falling through to a fresh curl rather than crashing
+    // the whole doctor run on a single corrupted cache file.
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(join(cacheDir, 'version-check.json'), '{ this is not valid json');
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
     expect(process.exitCode === 1).toBe(false);
   });
 });
