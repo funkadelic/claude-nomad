@@ -338,3 +338,160 @@ describe('applySharedLinks auto-move', () => {
     expect(readFileSync(join(backupRoot, 'skills', 'bar.md'), 'utf8')).toBe('# local skills\n');
   });
 });
+
+describe('applySharedLinks dry-run', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('logs would-create-symlink and would-auto-move lines without writing anything under HOME', async () => {
+    // shared/CLAUDE.md exists in the repo; ~/.claude/CLAUDE.md is a real file
+    // (not a symlink). Real-mode would back up and replace it; dry-run logs the
+    // intent only.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000', { dryRun: true });
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('would auto-move non-symlink:');
+    expect(joined).toContain('would create symlink:');
+
+    const linkPath = join(claudeDir, 'CLAUDE.md');
+    // Content equality alone proves dry-run left the pre-existing file
+    // intact: an auto-move would have replaced it with a symlink whose
+    // target (shared/CLAUDE.md) holds different content. Avoiding a
+    // separate lstatSync check keeps the assertion off the
+    // check-then-use file system pattern CodeQL flags.
+    expect(readFileSync(linkPath, 'utf8')).toBe('# old\n');
+
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('default (no opts) and dryRun:false continue to mutate disk as before', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000');
+    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+  });
+
+  it('dryRun:false explicit also mutates (no regression vs default)', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000', { dryRun: false });
+    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+  });
+});
+
+describe('regenerateSettings dry-run', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let hostsDir: string;
+  let sharedDir: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    hostsDir = join(repoUnderHome, 'hosts');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(hostsDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('leaves settings.json byte-identical and creates no backup when dryRun:true', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
+    const priorContent = JSON.stringify({ model: 'opus', old: true }) + '\n';
+    writeFileSync(join(claudeDir, 'settings.json'), priorContent);
+
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000', { dryRun: true });
+
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(priorContent);
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('default (no opts), dryRun:false, and empty opts all still mutate settings.json', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
+
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(
+      JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n',
+    );
+
+    // Overwrite again with explicit dryRun:false and {}.
+    writeFileSync(join(claudeDir, 'settings.json'), '{}\n');
+    regenerateSettings('20260516-000001', { dryRun: false });
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(
+      JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n',
+    );
+
+    writeFileSync(join(claudeDir, 'settings.json'), '{}\n');
+    regenerateSettings('20260516-000002', {});
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(
+      JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n',
+    );
+  });
+});
