@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { type PathMap, REPO_HOME } from './config.ts';
+import { CLAUDE_HOME, type PathMap, REPO_HOME } from './config.ts';
+import { snapshotIntoShared } from './init.snapshot.ts';
 import { die, log, readJson, writeJsonAtomic } from './utils.ts';
 
 /**
@@ -43,19 +44,24 @@ function preflightConflict(repoHome: string): string | null {
 }
 
 /**
- * Scaffold an empty REPO_HOME with the minimal layout `cmdDoctor` expects:
- * `shared/CLAUDE.md` (HTML-comment placeholder), four `shared/<name>/.gitkeep`
- * markers, `shared/settings.base.json = {}`, `hosts/.gitkeep`, and a root
- * `path-map.json = {"projects":{}}`. Does NOT auto-commit (user reviews and
- * commits explicitly) and does NOT acquire the pull/push lock (init is a
- * one-shot against an empty target; no concurrent-mutator surface).
+ * Scaffold REPO_HOME with the minimal layout `cmdDoctor` expects: `shared/`
+ * with `CLAUDE.md`, four `<name>/.gitkeep` markers, and an empty
+ * `settings.base.json`; `hosts/.gitkeep`; root `path-map.json` =
+ * `{"projects":{}}`. No auto-commit; no lock (no concurrent-mutator surface
+ * on a fresh target).
  *
- * Aborts with NomadFatal containing `already initialized` and the offending
- * path if the target is already populated; the refuse-to-clobber guard
- * intentionally fires on a bare `shared/` dir too, since partial state is
- * unsafe to merge with.
+ * When `opts.snapshot` is true, the user's current `~/.claude/` SHARED_LINKS
+ * are overlaid onto `shared/` and `~/.claude/settings.json` (if present) is
+ * translated into `hosts/<HOST>.json`. The placeholder `shared/CLAUDE.md`
+ * write is skipped when `~/.claude/CLAUDE.md` exists so the snapshot captures
+ * verbatim content; originals are NOT removed. Aborts with NomadFatal
+ * (containing `already initialized`) when any scaffold path already exists,
+ * identical to plain init; a bare `shared/` dir is enough to refuse since
+ * partial state is unsafe to merge with.
  */
-export function cmdInit(): void {
+export function cmdInit(opts: { snapshot?: boolean } = {}): void {
+  const snapshot = opts.snapshot === true;
+
   const conflict = preflightConflict(REPO_HOME);
   if (conflict !== null) {
     die(`already initialized; refusing to clobber ${conflict}`);
@@ -71,11 +77,16 @@ export function cmdInit(): void {
   }
 
   // Per-artifact writes. Each emits a log line so the user sees the
-  // structure being built. Atomic writes for the JSON files so a power loss
-  // mid-init leaves either a clean fresh-clone state or the fully-written
-  // scaffold, never a half-written JSON the next pull would die on.
-  writeFileSync(join(REPO_HOME, 'shared', 'CLAUDE.md'), SHARED_CLAUDE_MD);
-  log('created shared/CLAUDE.md');
+  // structure being built. Atomic writes for JSON so a power loss mid-init
+  // leaves either a clean fresh-clone state or the fully-written scaffold,
+  // never a half-written JSON the next pull would die on. In snapshot mode,
+  // skip the CLAUDE.md placeholder when a real source exists so the overlay
+  // copies the user content verbatim instead of an overwrite-from-placeholder.
+  const userClaudeMd = join(CLAUDE_HOME, 'CLAUDE.md');
+  if (!snapshot || !existsSync(userClaudeMd)) {
+    writeFileSync(join(REPO_HOME, 'shared', 'CLAUDE.md'), SHARED_CLAUDE_MD);
+    log('created shared/CLAUDE.md');
+  }
   for (const name of SHARED_KEEP_DIRS) {
     writeFileSync(join(REPO_HOME, 'shared', name, '.gitkeep'), '');
     log(`created shared/${name}/.gitkeep`);
@@ -86,6 +97,12 @@ export function cmdInit(): void {
   log('created shared/settings.base.json');
   writeJsonAtomic(join(REPO_HOME, 'path-map.json'), { projects: {} } satisfies PathMap);
   log('created path-map.json');
+
+  if (snapshot) {
+    snapshotIntoShared();
+    log(`snapshot staged in shared/; review, then 'nomad push' to share with other hosts.`);
+    log('~/.claude/ originals were NOT removed.');
+  }
 
   log('init complete');
 }
