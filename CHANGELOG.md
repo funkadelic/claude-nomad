@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/funkadelic/claude-nomad/compare/v0.10.0...v0.11.0) (2026-05-19)
+
+
+### Added
+
+* **push:** add nomad push --dry-run flag ([#52](https://github.com/funkadelic/claude-nomad/issues/52)) ([560fa47](https://github.com/funkadelic/claude-nomad/commit/560fa4702e5bcf1f5c97314a9b7e66671c766a35))
+
 ## [0.10.0](https://github.com/funkadelic/claude-nomad/compare/v0.9.2...v0.10.0) (2026-05-19)
 
 
