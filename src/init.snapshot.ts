@@ -23,11 +23,14 @@ export function snapshotIntoShared(): void {
     if (!existsSync(src)) continue;
     const dst = join(REPO_HOME, 'shared', name);
     if (statSync(src).isDirectory()) {
-      // Remove the .gitkeep first so cpSync(force:false) starts against an
-      // empty dst; other pre-existing content surfaces as a cpSync error.
+      // Remove the .gitkeep first so cpSync starts against an empty dst.
+      // Force is false so existing files are not overwritten; errorOnExist
+      // is true because cpSync silently ignores destination collisions when
+      // it is omitted, defeating the intent of surfacing unexpected content
+      // (e.g. an out-of-band write between the preflight check and here).
       const gk = join(dst, '.gitkeep');
       if (existsSync(gk)) rmSync(gk);
-      cpSync(src, dst, { recursive: true, force: false });
+      cpSync(src, dst, { recursive: true, force: false, errorOnExist: true });
     } else {
       copyFileSync(src, dst);
     }
