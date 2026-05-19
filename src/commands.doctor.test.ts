@@ -423,12 +423,14 @@ describe('cmdDoctor gitleaks presence', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((bin: string, args: readonly string[], opts?: unknown) => {
-          if (bin === 'gitleaks' && args[0] === 'version') {
-            return Buffer.from('v8.18.2\n');
-          }
-          return actual.execFileSync(bin, args, opts as never);
-        }),
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'gitleaks' && args[0] === 'version') {
+              return Buffer.from('v8.18.2\n');
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
       };
     });
     vi.resetModules();
@@ -446,14 +448,16 @@ describe('cmdDoctor gitleaks presence', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((bin: string, args: readonly string[], opts?: unknown) => {
-          if (bin === 'gitleaks' && args[0] === 'version') {
-            const err = new Error('spawn gitleaks ENOENT') as NodeJS.ErrnoException;
-            err.code = 'ENOENT';
-            throw err;
-          }
-          return actual.execFileSync(bin, args, opts as never);
-        }),
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'gitleaks' && args[0] === 'version') {
+              const err = new Error('spawn gitleaks ENOENT') as NodeJS.ErrnoException;
+              err.code = 'ENOENT';
+              throw err;
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
       };
     });
     vi.resetModules();
@@ -472,14 +476,16 @@ describe('cmdDoctor gitleaks presence', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((bin: string, args: readonly string[], opts?: unknown) => {
-          if (bin === 'gitleaks' && args[0] === 'version') {
-            const err = new Error('permission denied') as NodeJS.ErrnoException;
-            err.code = 'EACCES';
-            throw err;
-          }
-          return actual.execFileSync(bin, args, opts as never);
-        }),
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'gitleaks' && args[0] === 'version') {
+              const err = new Error('permission denied') as NodeJS.ErrnoException;
+              err.code = 'EACCES';
+              throw err;
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
       };
     });
     vi.resetModules();
@@ -907,12 +913,14 @@ describe('cmdDoctor explicit PASS tokens', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((bin: string, args: readonly string[], opts?: unknown) => {
-          if (bin === 'gitleaks' && args[0] === 'version') {
-            return Buffer.from('v8.18.2\n');
-          }
-          return actual.execFileSync(bin, args, opts as never);
-        }),
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'gitleaks' && args[0] === 'version') {
+              return Buffer.from('v8.18.2\n');
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
       };
     });
     vi.resetModules();
@@ -1113,28 +1121,30 @@ describe('cmdDoctor version check', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((bin: string, args: readonly string[], opts?: unknown) => {
-          if (
-            bin === 'curl' &&
-            args.includes('https://api.github.com/repos/funkadelic/claude-nomad/releases/latest')
-          ) {
-            if (response.kind === 'throw') {
-              const err = new Error(
-                `curl mocked: ${response.code ?? 'ENOENT'}`,
-              ) as NodeJS.ErrnoException;
-              err.code = response.code ?? 'ENOENT';
-              throw err;
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (
+              bin === 'curl' &&
+              args.includes('https://api.github.com/repos/funkadelic/claude-nomad/releases/latest')
+            ) {
+              if (response.kind === 'throw') {
+                const err = new Error(
+                  `curl mocked: ${response.code ?? 'ENOENT'}`,
+                ) as NodeJS.ErrnoException;
+                err.code = response.code ?? 'ENOENT';
+                throw err;
+              }
+              if (response.kind === 'garbage') {
+                return Buffer.from('not-json-at-all');
+              }
+              return Buffer.from(JSON.stringify({ tag_name: response.tagName }));
             }
-            if (response.kind === 'garbage') {
-              return Buffer.from('not-json-at-all');
+            if (bin === 'gitleaks' && args[0] === 'version') {
+              return Buffer.from('v8.18.2\n');
             }
-            return Buffer.from(JSON.stringify({ tag_name: response.tagName }));
-          }
-          if (bin === 'gitleaks' && args[0] === 'version') {
-            return Buffer.from('v8.18.2\n');
-          }
-          return actual.execFileSync(bin, args, opts as never);
-        }),
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
       };
     });
   }
