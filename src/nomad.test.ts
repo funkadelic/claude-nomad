@@ -66,5 +66,9 @@ describe('nomad.ts push dispatcher', () => {
     await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
     expect(cmdPushMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(1);
+    // The user-visible side of the error must include the canonical usage
+    // line so a typo at the CLI prints actionable guidance instead of a
+    // silent exit. console.error is already spied in beforeEach.
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad push'));
   });
 });
