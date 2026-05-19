@@ -5,7 +5,6 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,7 +17,9 @@ import type * as childProcessModule from 'node:child_process';
 /**
  * Snapshot helper mirroring preview.test.ts. Captures the `{ relPath:
  * content }` map for every regular file under `root`. Used to assert
- * cmdDiff does not mutate `~/.claude/` or the cache dir.
+ * cmdDiff does not mutate `~/.claude/` or the cache dir. Reads directly
+ * via readFileSync and recurses on EISDIR instead of stat-then-read so
+ * the helper has no check-then-use pattern between sibling fs calls.
  */
 function snapshotTree(root: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -26,11 +27,11 @@ function snapshotTree(root: string): Record<string, string> {
   const walk = (dir: string): void => {
     for (const name of readdirSync(dir)) {
       const abs = join(dir, name);
-      const st = statSync(abs);
-      if (st.isDirectory()) {
-        walk(abs);
-      } else if (st.isFile()) {
+      try {
         out[relative(root, abs)] = readFileSync(abs, 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EISDIR') walk(abs);
+        else throw err;
       }
     }
   };

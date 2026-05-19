@@ -5,7 +5,6 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,7 +17,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * file under `root`. Used to assert that computePreview does NOT mutate any
  * file under `~/.claude/` or `~/.cache/claude-nomad/backup/` between calls.
  * Returns an empty object when `root` does not exist (the dry-run path may
- * intentionally not create the cache dir).
+ * intentionally not create the cache dir). Reads directly via readFileSync
+ * and recurses on EISDIR instead of stat-then-read so the helper has no
+ * check-then-use pattern between sibling fs calls.
  */
 function snapshotTree(root: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -26,11 +27,11 @@ function snapshotTree(root: string): Record<string, string> {
   const walk = (dir: string): void => {
     for (const name of readdirSync(dir)) {
       const abs = join(dir, name);
-      const st = statSync(abs);
-      if (st.isDirectory()) {
-        walk(abs);
-      } else if (st.isFile()) {
+      try {
         out[relative(root, abs)] = readFileSync(abs, 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EISDIR') walk(abs);
+        else throw err;
       }
     }
   };

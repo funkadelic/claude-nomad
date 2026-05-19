@@ -389,7 +389,9 @@ describe('applySharedLinks dry-run', () => {
     expect(joined).toContain('would create symlink:');
 
     const linkPath = join(claudeDir, 'CLAUDE.md');
-    expect(existsSync(linkPath)).toBe(true);
+    // The lstatSync and readFileSync calls both throw if the file is gone,
+    // so an explicit existsSync would be redundant and would create a
+    // check-then-use pattern that adds nothing to the assertion.
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
     expect(readFileSync(linkPath, 'utf8')).toBe('# old\n');
 
