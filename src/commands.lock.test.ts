@@ -213,4 +213,31 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     expect(() => cmdPush()).toThrow(TypeError);
     expect(existsSync(lockPath)).toBe(false);
   });
+
+  // ONBR-03 / D-03: the cmdPull early-precondition fires BEFORE acquireLock,
+  // so an unscaffolded REPO_HOME never leaves a lock file behind. Stronger
+  // than the post-run `!existsSync(lockPath)` assertion (which also passes
+  // when acquireLock + releaseLock both fired): we spy on acquireLock and
+  // assert it was NEVER invoked. The check is keyed off
+  // shared/settings.base.json (same signal regenerateSettings uses) and
+  // surfaces the canonical init-hint phrasing.
+  it('dies with init-hint and never invokes acquireLock when cmdPull runs against an unscaffolded repo', async () => {
+    expect(existsSync(join(repoUnderHome, 'shared', 'settings.base.json'))).toBe(false);
+    const errWrites: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errWrites.push(args.join(' '));
+    });
+    const acquireSpy = vi.fn(() => null);
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, acquireLock: acquireSpy };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(process.exitCode).toBe(1);
+    expect(existsSync(lockPath)).toBe(false);
+    expect(acquireSpy).not.toHaveBeenCalled();
+    // FATAL phrasing surfaced via console.error per cmdPull's NomadFatal catch.
+    expect(errWrites.join('\n')).toContain("repo not initialized; run 'nomad init'");
+  });
 });

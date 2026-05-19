@@ -156,6 +156,24 @@ describe('regenerateSettings (integration)', () => {
       model: 'sonnet',
     });
   });
+
+  // ONBR-03 / D-03: the first-run FATAL phrasing replaces the bare
+  // `missing <path>` die when shared/settings.base.json is absent. The
+  // canonical message text MUST contain the substring `repo not initialized`
+  // (and reference both `nomad init` and `nomad init --snapshot`) so users
+  // recover from a fresh-host pull without reading the README.
+  it('dies with the init-hint phrasing when shared/settings.base.json is missing', async () => {
+    // No settings.base.json written; sandbox HOME is otherwise normal.
+    const { regenerateSettings } = await import('./links.ts');
+    expect(() => regenerateSettings('20260516-000000')).toThrow(/repo not initialized/);
+    try {
+      regenerateSettings('20260516-000000');
+    } catch (err) {
+      const msg = (err as Error).message;
+      expect(msg).toContain("repo not initialized; run 'nomad init' to scaffold");
+      expect(msg).toContain("'nomad init --snapshot'");
+    }
+  });
 });
 
 describe('applySharedLinks auto-move', () => {
