@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import type * as cpModule from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -897,7 +897,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     // Real symlink so the SHARED_LINKS loop hits its success branch.
     const sharedClaude = join(env.testHome, 'claude-nomad', 'shared', 'CLAUDE.md');
     writeFileSync(sharedClaude, '# shared\n');
-    execFileSync('ln', ['-s', sharedClaude, join(env.testHome, '.claude', 'CLAUDE.md')]);
+    symlinkSync(sharedClaude, join(env.testHome, '.claude', 'CLAUDE.md'));
   }
 
   /** Mock gitleaks as present so its probe succeeds in the healthy-host tests. */
@@ -1002,6 +1002,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     expect(out).not.toMatch(/PASS repo:/);
     expect(out).not.toMatch(/PASS claude home:/);
     expect(out).not.toMatch(/PASS mapped projects for/);
+    expect(out).not.toMatch(/PASS host overrides:/);
     expect(out).not.toMatch(/PASS never-sync items:/);
     expect(out).not.toMatch(/PASS remote origin:/);
   });
