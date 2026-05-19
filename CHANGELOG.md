@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.2](https://github.com/funkadelic/claude-nomad/compare/v0.9.1...v0.9.2) (2026-05-19)
+
+
+### Changed
+
+* **commands:** split commands.ts into pull/push/doctor modules ([#42](https://github.com/funkadelic/claude-nomad/issues/42)) ([71e3259](https://github.com/funkadelic/claude-nomad/commit/71e3259a9f9777ffe813f16fda3fed3d4ec5c09b))
+
+
+### Documentation
+
+* **readme:** surface trade-offs section before Setup, add TOC ([#43](https://github.com/funkadelic/claude-nomad/issues/43)) ([9fdf79f](https://github.com/funkadelic/claude-nomad/commit/9fdf79ff19db37d6c23548e697c1d64b40605f11))
+
 ## [0.9.1](https://github.com/funkadelic/claude-nomad/compare/v0.9.0...v0.9.1) (2026-05-18)
 
 
