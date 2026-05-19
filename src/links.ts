@@ -52,9 +52,7 @@ export function regenerateSettings(ts: string): void {
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   const hostPath = join(REPO_HOME, 'hosts', `${HOST}.json`);
   if (!existsSync(basePath)) {
-    die(
-      "repo not initialized; run 'nomad init' to scaffold or 'nomad init --snapshot' to capture this host's current ~/.claude/",
-    );
+    die("repo not initialized; run 'nomad init' to scaffold");
   }
 
   const base = readJson<Record<string, unknown>>(basePath);

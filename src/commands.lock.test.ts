@@ -54,9 +54,9 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('never acquires the lockfile when cmdPull hits the D-03 early-precondition (settings.base.json missing)', async () => {
-    // shared/ dir exists but settings.base.json is absent. The D-03 early-
-    // precondition in cmdPull fires BEFORE acquireLock and throws NomadFatal,
+  it('never acquires the lockfile when cmdPull hits the unscaffolded-repo precondition (settings.base.json missing)', async () => {
+    // shared/ dir exists but settings.base.json is absent. The unscaffolded-
+    // repo precondition in cmdPull fires BEFORE acquireLock and throws NomadFatal,
     // which escapes to the top-level nomad.ts catch (NOT cmdPull's try/catch:
     // the early-precondition lives outside the try block by design so a
     // missing scaffold never creates a lock file). The lock therefore must
@@ -78,7 +78,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // creates the parent dir; freshBackupTs only reads. mkdirSync(backupRoot,
     // recursive: true) then fails with ENOTDIR because it tries to descend
     // into a file. cmdPull's catch turns it into a fatal exit + lock release.
-    // Pre-write settings.base.json so the D-03 early-precondition passes and
+    // Pre-write settings.base.json so the unscaffolded-repo precondition passes and
     // cmdPull reaches the lock+backup section; the test still exercises the
     // post-lock-acquired die path that the existing finally must release.
     mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
@@ -219,7 +219,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
-  // ONBR-03 / D-03: the cmdPull early-precondition fires BEFORE acquireLock,
+  // The cmdPull unscaffolded-repo precondition fires BEFORE acquireLock,
   // so an unscaffolded REPO_HOME never leaves a lock file behind. Stronger
   // than the post-run `!existsSync(lockPath)` assertion (which also passes
   // when acquireLock + releaseLock both fired): we spy on acquireLock and
@@ -239,14 +239,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     const { cmdPull } = await import('./commands.pull.ts');
     const { NomadFatal } = await import('./utils.ts');
     expect(() => cmdPull()).toThrow(NomadFatal);
+    expect(() => cmdPull()).toThrow("repo not initialized; run 'nomad init'");
     expect(existsSync(lockPath)).toBe(false);
     expect(acquireSpy).not.toHaveBeenCalled();
-    try {
-      cmdPull();
-    } catch (err) {
-      const msg = (err as Error).message;
-      expect(msg).toContain("repo not initialized; run 'nomad init'");
-      expect(msg).toContain("'nomad init --snapshot'");
-    }
   });
 });
