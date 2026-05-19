@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as childProcessModule from 'node:child_process';
 
@@ -40,6 +40,7 @@ function snapshotTree(root: string): Record<string, string> {
 }
 
 describe('cmdDiff (offline, lockless preview)', () => {
+  type LogSpy = MockInstance<(...args: unknown[]) => void>;
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let testHome: string;
@@ -48,6 +49,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
   let sharedDir: string;
   let hostsDir: string;
   let lockPath: string;
+  let logSpy: LogSpy;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -65,11 +67,20 @@ describe('cmdDiff (offline, lockless preview)', () => {
     mkdirSync(hostsDir, { recursive: true });
     mkdirSync(claudeDir, { recursive: true });
     vi.resetModules();
-    vi.spyOn(console, 'log').mockImplementation(() => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
     });
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   });
+
+  /**
+   * Stitch every recorded `console.log` call into a single newline-joined
+   * string so assertions can match on substrings or the position of a
+   * particular line within the run's full output.
+   */
+  function logOutput(): string {
+    return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
+  }
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -168,5 +179,52 @@ describe('cmdDiff (offline, lockless preview)', () => {
     // The catch arm should not have set the FATAL exitCode for non-NomadFatal.
     expect(process.exitCode === 1).toBe(false);
     vi.doUnmock('./preview.ts');
+  });
+
+  it('emits the unmapped-on-diff summary line when path-map has unmapped entries', async () => {
+    // Two path-map entries that have no host mapping for `test-host`.
+    // remapPull's dry-run branch (driven by computePreview) increments
+    // `unmapped` for each, so the summary line reports `2 unmapped on diff`.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedDir, 'projects', 'logical-a'), { recursive: true });
+    mkdirSync(join(sharedDir, 'projects', 'logical-b'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          'logical-a': { 'test-host': 'TBD' },
+          'logical-b': { 'other-host': '/other/path' },
+        },
+      }) + '\n',
+    );
+    const { cmdDiff } = await import('./diff.ts');
+    cmdDiff();
+    expect(logOutput()).toContain('[nomad] summary: 2 unmapped on diff (run nomad doctor to list)');
+  });
+
+  it('emits the clean summary line on a fully-mapped repo', async () => {
+    // Empty path-map -> remapPull's loop never increments unmapped.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    const { cmdDiff } = await import('./diff.ts');
+    cmdDiff();
+    expect(logOutput()).toContain('[nomad] summary: clean');
+  });
+
+  it('emits the summary line as the LAST log line of cmdDiff', async () => {
+    // The summary line is the terminator; nothing should follow it. Mirrors
+    // the "summary after pull complete" assertion on cmdPull but stronger:
+    // the diff verb has no `dry-run complete` log line, so the summary must
+    // be the literal last line in the output.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    const { cmdDiff } = await import('./diff.ts');
+    cmdDiff();
+    const lines = logOutput()
+      .split('\n')
+      .filter((s) => s.length > 0);
+    expect(lines.length).toBeGreaterThan(0);
+    const lastLine = lines[lines.length - 1];
+    expect(lastLine).toContain('summary:');
   });
 });

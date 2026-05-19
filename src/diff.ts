@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { HOME, REPO_HOME } from './config.ts';
 import { computePreview } from './preview.ts';
+import { emitSummary } from './summary.ts';
 import { die, freshBackupTs, NomadFatal } from './utils.ts';
 
 /**
@@ -35,7 +36,8 @@ export function cmdDiff(): void {
     const ts = freshBackupTs(backupBase);
     // Preview log lines reference `ts` so output stays consistent with
     // pull --dry-run; the backup root itself is intentionally NOT created.
-    computePreview(ts);
+    const result = computePreview(ts);
+    emitSummary('diff', result.unmapped);
   } catch (err) {
     if (err instanceof NomadFatal) {
       process.stderr.write(`[nomad] FATAL: ${err.message}\n`);

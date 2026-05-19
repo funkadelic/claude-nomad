@@ -5,6 +5,7 @@ import { join, relative } from 'node:path';
 import { HOME, HOST, NEVER_SYNC, PUSH_ALLOWED_STATIC, REPO_HOME, type PathMap } from './config.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush, runGitleaksScan } from './push-checks.ts';
 import { remapPush } from './remap.ts';
+import { emitSummary } from './summary.ts';
 // prettier-ignore
 import { acquireLock, die, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readJson, releaseLock } from './utils.ts';
 
@@ -136,7 +137,7 @@ export function cmdPush(): void {
     const ts = freshBackupTs(backupBase);
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
-    remapPush(ts);
+    const remapResult = remapPush(ts);
     // Gitlink walk of shared/ AFTER remapPush so it inspects the post-copy tree.
     // A nested .git copied in from a host's encoded session dir would slip past a
     // pre-remap scan and reach the remote via the shared/projects/<logical>/ prefix.
@@ -159,6 +160,7 @@ export function cmdPush(): void {
     const status = gitStatusPorcelainZ(REPO_HOME);
     if (!status) {
       log('nothing to commit');
+      emitSummary('push', remapResult.unmapped, remapResult.collisions);
       return;
     }
     const mapPath = join(REPO_HOME, 'path-map.json');
@@ -180,6 +182,7 @@ export function cmdPush(): void {
     gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
     gitOrFatal(['push'], 'git push', REPO_HOME);
     log('push complete');
+    emitSummary('push', remapResult.unmapped, remapResult.collisions);
   } catch (err) {
     if (err instanceof NomadFatal) {
       console.error(`[nomad] FATAL: ${err.message}`);

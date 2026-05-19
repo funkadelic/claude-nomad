@@ -249,4 +249,131 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(existsSync(lockPath)).toBe(false);
     expect(errOutput()).toMatch(/gitleaks detected secrets/);
   });
+
+  it('Test 6: cmdPush emits the unmapped-on-push summary line after push complete', async () => {
+    // remapPush stubbed to report 1 unmapped + 0 collisions. The summary line
+    // MUST appear AFTER `push complete` and reflect both counts.
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op success */
+        }),
+        findGitlinks: vi.fn(() => []),
+        runGitleaksScan: vi.fn(() => {
+          /* no-op success */
+        }),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 1, collisions: 0 })),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0'),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush()).not.toThrow();
+    const out = logOutput();
+    expect(out).toContain(
+      '[nomad] summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
+    );
+    const completeIdx = out.indexOf('push complete');
+    const summaryIdx = out.indexOf('summary:');
+    expect(completeIdx).toBeGreaterThanOrEqual(0);
+    expect(summaryIdx).toBeGreaterThan(completeIdx);
+    vi.doUnmock('./remap.ts');
+  });
+
+  it('Test 7: cmdPush emits the clean summary line on a successful push with zero unmapped and zero collisions', async () => {
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op success */
+        }),
+        findGitlinks: vi.fn(() => []),
+        runGitleaksScan: vi.fn(() => {
+          /* no-op success */
+        }),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0'),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush()).not.toThrow();
+    expect(logOutput()).toContain('[nomad] summary: clean');
+    vi.doUnmock('./remap.ts');
+  });
+
+  it('Test 8: cmdPush emits the summary line on the nothing-to-commit early-return path', async () => {
+    // gitStatusPorcelainZ returns empty, triggering the `log('nothing to
+    // commit'); return;` branch. remapPush has already run, so its counts
+    // are in scope. The summary line MUST still appear so users see a
+    // consistent terminator even on no-op pushes.
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op success */
+        }),
+        findGitlinks: vi.fn(() => []),
+        runGitleaksScan: vi.fn(() => {
+          /* no-op success */
+        }),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 3, collisions: 0 })),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => ''),
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush()).not.toThrow();
+    const out = logOutput();
+    expect(out).toContain('nothing to commit');
+    expect(out).toContain(
+      '[nomad] summary: 3 unmapped on push, 0 collisions (run nomad doctor to list)',
+    );
+    vi.doUnmock('./remap.ts');
+  });
 });
