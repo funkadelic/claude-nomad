@@ -58,11 +58,14 @@ export function cmdDoctor(): void {
   for (const name of SHARED_LINKS) {
     const p = join(CLAUDE_HOME, name);
     if (!existsSync(p)) {
-      log(`  ${name}: missing`);
+      // WARN, not FAIL: a missing SHARED_LINKS entry is recoverable by the
+      // next pull and a user may legitimately not have an entry populated yet.
+      // Matches the Phase 3 host-override-missing pattern.
+      log(`${yellow('WARN')} ${name}: missing`);
       continue;
     }
     log(
-      `  ${name}: ${lstatSync(p).isSymbolicLink() ? green('symlink OK') : red('NOT a symlink (blocks sync)')}`,
+      `  ${name}: ${lstatSync(p).isSymbolicLink() ? `${green('PASS')} symlink` : red('NOT a symlink (blocks sync)')}`,
     );
   }
 
@@ -91,7 +94,7 @@ export function cmdDoctor(): void {
           `${yellow('WARN')} settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`,
         );
       } else {
-        log('settings.json schema: known keys only');
+        log(`${green('PASS')} settings.json schema: known keys only`);
       }
     }
   }
@@ -121,7 +124,7 @@ export function cmdDoctor(): void {
     }
     process.exitCode = 1;
   } else {
-    log('host overrides: none (base-only is fine, no settings drift)');
+    log(`${green('PASS')} host overrides: none (base-only is fine, no settings drift)`);
   }
 
   const mapPath = join(REPO_HOME, 'path-map.json');
@@ -150,7 +153,11 @@ export function cmdDoctor(): void {
           }
         }
       }
-      if (collisionCount > 0) process.exitCode = 1;
+      if (collisionCount > 0) {
+        process.exitCode = 1;
+      } else {
+        log(`${green('PASS')} path-encoding: no collisions`);
+      }
     }
   } else {
     log(`${red('FAIL')} path-map.json missing at ${blue(mapPath)}`);
@@ -164,7 +171,7 @@ export function cmdDoctor(): void {
     const v = execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
       .toString()
       .trim();
-    log(`gitleaks: ${dim(v)}`);
+    log(`${green('PASS')} gitleaks: ${dim(v)}`);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       log(`${red('FAIL')} gitleaks: not on PATH (required for nomad push)`);
@@ -184,7 +191,11 @@ export function cmdDoctor(): void {
         `${red('FAIL')} gitlink: ${blue(rel)} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
       );
     }
-    if (gitlinks.length > 0) process.exitCode = 1;
+    if (gitlinks.length > 0) {
+      process.exitCode = 1;
+    } else {
+      log(`${green('PASS')} gitlink scan: no nested .git in shared/`);
+    }
   }
 
   // Remote URL informational (no PASS/FAIL prefix).
