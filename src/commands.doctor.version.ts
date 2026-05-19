@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { green, yellow } from './color.ts';
 import { HOME, UPSTREAM_REPO_SLUG } from './config.ts';
@@ -66,7 +67,7 @@ export function compareSemver(a: string, b: string): -1 | 0 | 1 {
  */
 function readLocalVersion(): string | null {
   try {
-    const pkgPath = new URL('../package.json', import.meta.url).pathname;
+    const pkgPath = fileURLToPath(new URL('../package.json', import.meta.url));
     const parsed = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: unknown };
     if (typeof parsed.version === 'string' && parsed.version.length > 0) {
       return parsed.version;
