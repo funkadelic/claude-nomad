@@ -41,7 +41,7 @@ export function cmdDoctor(): void {
     `claude home: ${blue(CLAUDE_HOME)} ${existsSync(CLAUDE_HOME) ? green('OK') : red('MISSING')}`,
   );
 
-  // D-04 repo-state header. Single line summarizing the three signals
+  // Repo-state header. Single line summarizing the three signals
   // classifyRepoState reads (settings.base.json, path-map.json entries,
   // hosts/<HOST>.json). FAIL empty sets exitCode=1 (matches existing FAIL
   // paths); WARN partial does not; PASS populated is informational.

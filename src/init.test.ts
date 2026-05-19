@@ -97,8 +97,8 @@ describe('cmdInit empty-scaffold mode', () => {
   });
 
   it('refuses to clobber when shared/ exists even with settings.base.json absent', async () => {
-    // Captures D-01 intent: partial state is unsafe; init writes only into a
-    // clean target. A bare `shared/` dir is enough to abort.
+    // Captures the refuse-to-clobber intent: partial state is unsafe; init
+    // writes only into a clean target. A bare `shared/` dir is enough to abort.
     const repo = join(env.testHome, 'claude-nomad');
     mkdirSync(join(repo, 'shared'), { recursive: true });
     const { cmdInit } = await import('./init.ts');
@@ -180,8 +180,8 @@ describe('classifyRepoState classifier', () => {
   });
 
   it('treats missing shared/CLAUDE.md as still populated (classifier signals are the three documented files only)', async () => {
-    // D-04: missing shared/CLAUDE.md alone does NOT downgrade from populated
-    // to partial. The classifier inspects three signals: settings.base.json,
+    // Missing shared/CLAUDE.md alone does NOT downgrade from populated to
+    // partial. The classifier inspects three signals: settings.base.json,
     // path-map.json entries, hosts/<host>.json.
     writeFileSync(join(repo, 'shared', 'settings.base.json'), '{}\n');
     writeFileSync(

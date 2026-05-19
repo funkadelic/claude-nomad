@@ -21,7 +21,7 @@ const SHARED_CLAUDE_MD =
 const SHARED_KEEP_DIRS = ['agents', 'skills', 'commands', 'rules'] as const;
 
 /**
- * Pre-flight refuse-to-clobber list (D-01). If ANY of these absolute paths
+ * Pre-flight refuse-to-clobber list. If ANY of these absolute paths
  * already exists at the target REPO_HOME, `cmdInit` aborts with a NomadFatal
  * naming the offender. Partial state is unsafe to merge with; init writes
  * only into a clean target. Note that REPO_HOME itself is allowed to exist
@@ -46,14 +46,14 @@ function preflightConflict(repoHome: string): string | null {
  * Scaffold an empty REPO_HOME with the minimal layout `cmdDoctor` expects:
  * `shared/CLAUDE.md` (HTML-comment placeholder), four `shared/<name>/.gitkeep`
  * markers, `shared/settings.base.json = {}`, `hosts/.gitkeep`, and a root
- * `path-map.json = {"projects":{}}`. Does NOT auto-commit (D-01: user reviews
- * and commits explicitly) and does NOT acquire the pull/push lock (D-08: init
- * is a one-shot against an empty target; no concurrent-mutator surface).
+ * `path-map.json = {"projects":{}}`. Does NOT auto-commit (user reviews and
+ * commits explicitly) and does NOT acquire the pull/push lock (init is a
+ * one-shot against an empty target; no concurrent-mutator surface).
  *
  * Aborts with NomadFatal containing `already initialized` and the offending
  * path if the target is already populated; the refuse-to-clobber guard
  * intentionally fires on a bare `shared/` dir too, since partial state is
- * unsafe to merge with (D-01).
+ * unsafe to merge with.
  */
 export function cmdInit(): void {
   const conflict = preflightConflict(REPO_HOME);
@@ -91,7 +91,7 @@ export function cmdInit(): void {
 }
 
 /**
- * Read-only health classifier for `cmdDoctor`'s `repo state:` header (D-04).
+ * Read-only health classifier for `cmdDoctor`'s `repo state:` header.
  * Inspects three signals at the given `repoHome`: `shared/settings.base.json`
  * presence, `path-map.json.projects` having at least one entry, and
  * `hosts/<host>.json` presence.
@@ -136,7 +136,7 @@ export function classifyRepoState(
 }
 
 /**
- * Suffix that follows `repo state: WARN partial` per D-04's FIXED priority
+ * Suffix that follows `repo state: WARN partial` per the fixed priority
  * order. First matching condition wins, exactly one suffix per line.
  * Inspects the same on-disk signals `classifyRepoState` reads (base file,
  * `path-map.json` + its `.projects` entry count, `hosts/<host>.json`), but
