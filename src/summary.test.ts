@@ -29,8 +29,8 @@ describe('emitSummary', () => {
    */
   function loggedLine(): string {
     expect(logSpy).toHaveBeenCalledTimes(1);
-    const args = logSpy.mock.calls[0];
-    return args !== undefined ? String(args[0]) : '';
+    const firstArg = logSpy.mock.calls[0]?.[0];
+    return typeof firstArg === 'string' ? firstArg : '';
   }
 
   it('pull with zero unmapped emits the clean line', () => {
