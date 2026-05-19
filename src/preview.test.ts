@@ -178,7 +178,14 @@ describe('computePreview orchestration', () => {
 
     const beforeClaude = snapshotTree(claudeDir);
     const cacheRoot = join(testHome, '.cache', 'claude-nomad');
+    const backupRoot = join(cacheRoot, 'backup');
     const beforeCache = snapshotTree(cacheRoot);
+    // snapshotTree captures file contents only, so an accidental empty-dir
+    // create would slip past it. Capture directory existence too so we
+    // catch any new ~/.cache/claude-nomad/ or backup/ directory the dry-run
+    // path creates as a side effect.
+    const cacheExistedBefore = existsSync(cacheRoot);
+    const backupExistedBefore = existsSync(backupRoot);
 
     const { computePreview } = await import('./preview.ts');
     computePreview('20260516-000000');
@@ -187,6 +194,8 @@ describe('computePreview orchestration', () => {
     const afterCache = snapshotTree(cacheRoot);
     expect(afterClaude).toEqual(beforeClaude);
     expect(afterCache).toEqual(beforeCache);
+    expect(existsSync(cacheRoot)).toBe(cacheExistedBefore);
+    expect(existsSync(backupRoot)).toBe(backupExistedBefore);
     // Specifically: the per-run backup dir must not exist.
     expect(existsSync(join(cacheRoot, 'backup', '20260516-000000'))).toBe(false);
   });
