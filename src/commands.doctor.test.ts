@@ -68,6 +68,126 @@ function joinedLog(logSpy: LogSpy): string {
   return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
 }
 
+/**
+ * True when `arg` parses as a URL whose host is exactly `api.github.com`.
+ * Used by the curl mock to identify the GitHub releases API call without
+ * a substring check on the URL (which CodeQL flags as
+ * `js/incomplete-url-substring-sanitization`).
+ */
+function isGithubApiUrl(arg: string): boolean {
+  try {
+    return new URL(arg).hostname === 'api.github.com';
+  } catch {
+    return false;
+  }
+}
+
+/** Restore each env var to its captured original (or delete when unset). */
+function restoreEnv(name: string, original: string | undefined): void {
+  if (original === undefined) delete process.env[name];
+  else process.env[name] = original;
+}
+
+/** Mock gitleaks as present so its probe succeeds in the healthy-host tests. */
+function mockGitleaksPresent(): void {
+  vi.doMock('node:child_process', async (importOriginal) => {
+    const actual = await importOriginal<typeof cpModule>();
+    return {
+      ...actual,
+      execFileSync: vi.fn(
+        (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+          if (bin === 'gitleaks' && args[0] === 'version') {
+            return Buffer.from('v8.18.2\n');
+          }
+          return actual.execFileSync(bin, args, opts);
+        },
+      ),
+    };
+  });
+  vi.resetModules();
+}
+
+/**
+ * Mock the local `package.json` read inside `commands.doctor.version.ts`.
+ * Production code resolves the path via `new URL('../package.json',
+ * import.meta.url).pathname`, which lands at the REAL repo root regardless
+ * of `$HOME`. We override `node:fs.readFileSync` to intercept any path that
+ * ends in `/package.json` and substitute the test version; all other reads
+ * (sandbox HOME, settings files, gitleaks probes, etc.) fall through to the
+ * real implementation so the rest of `cmdDoctor` behaves normally.
+ */
+function mockPackageJsonVersion(version: string | null): void {
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof fsModule>();
+    return {
+      ...actual,
+      readFileSync: vi.fn(
+        (path: fsModule.PathOrFileDescriptor, opts?: Parameters<typeof actual.readFileSync>[1]) => {
+          if (typeof path === 'string' && path.endsWith('/package.json')) {
+            if (version === null) throw new Error('ENOENT package.json');
+            return JSON.stringify({ name: 'claude-nomad', version });
+          }
+          return actual.readFileSync(path, opts);
+        },
+      ),
+    };
+  });
+}
+
+/**
+ * Mock `node:child_process` so the curl call to the GitHub releases API
+ * returns a deterministic response. Behaviors:
+ *   - `{ kind: 'json', tagName }`: return a buffer of `{"tag_name":"<tag>"}`
+ *   - `{ kind: 'rate_limited' }`: return a GitHub rate-limit JSON payload
+ *     (no `tag_name`), so `fetchLatestTag` parses cleanly but finds no tag
+ *     and falls through to the silent-skip path.
+ *   - `{ kind: 'garbage' }`: return a non-JSON buffer (forces parse failure)
+ *   - `{ kind: 'throw' }`: throw with the given error code (default ENOENT
+ *     so the offline-skip path looks like curl-missing).
+ * The gitleaks probe is always answered with a fake version so it does not
+ * pollute `process.exitCode` on dev hosts that lack the binary.
+ */
+function mockCurlReleases(
+  response:
+    | { kind: 'json'; tagName: string }
+    | { kind: 'rate_limited' }
+    | { kind: 'garbage' }
+    | { kind: 'throw'; code?: string },
+): void {
+  vi.doMock('node:child_process', async (importOriginal) => {
+    const actual = await importOriginal<typeof cpModule>();
+    return {
+      ...actual,
+      execFileSync: vi.fn(
+        (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+          if (bin === 'curl' && args.some(isGithubApiUrl)) {
+            if (response.kind === 'throw') {
+              const err = new Error(
+                `curl mocked: ${response.code ?? 'ENOENT'}`,
+              ) as NodeJS.ErrnoException;
+              err.code = response.code ?? 'ENOENT';
+              throw err;
+            }
+            if (response.kind === 'garbage') {
+              return Buffer.from('not-json-at-all');
+            }
+            if (response.kind === 'rate_limited') {
+              return Buffer.from(
+                JSON.stringify({ message: 'API rate limit exceeded for 127.0.0.1.' }),
+              );
+            }
+            return Buffer.from(JSON.stringify({ tag_name: response.tagName }));
+          }
+          if (bin === 'gitleaks' && args[0] === 'version') {
+            return Buffer.from('v8.18.2\n');
+          }
+          return actual.execFileSync(bin, args, opts);
+        },
+      ),
+    };
+  });
+}
+
 describe('cmdDoctor settings.json schema sanity', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -87,12 +207,9 @@ describe('cmdDoctor settings.json schema sanity', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -139,20 +256,17 @@ describe('cmdDoctor path-encoding collision detection', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
   it('stays silent on path-encoding collisions when none exist', async () => {
     const map: PathMap = {
       projects: {
-        foo: { 'test-host': '/tmp/foo' },
-        bar: { 'test-host': '/tmp/bar' },
+        foo: { 'test-host': '/srv/foo' },
+        bar: { 'test-host': '/srv/bar' },
       },
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
@@ -213,12 +327,9 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     // does not surface as a runner failure on a subsequent test.
     process.exitCode = 0;
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -294,12 +405,9 @@ describe('cmdDoctor malformed JSON tolerance', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -409,12 +517,9 @@ describe('cmdDoctor gitleaks presence', () => {
     process.exitCode = 0;
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -518,12 +623,9 @@ describe('cmdDoctor gitlink scan', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -588,12 +690,9 @@ describe('cmdDoctor remote URL', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -637,12 +736,9 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -705,12 +801,9 @@ describe('cmdDoctor repo-state header', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -746,7 +839,7 @@ describe('cmdDoctor repo-state header', () => {
     );
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'path-map.json'),
-      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+      JSON.stringify({ projects: { foo: { 'test-host': '/srv/foo' } } }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -778,7 +871,7 @@ describe('cmdDoctor repo-state header', () => {
     );
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'path-map.json'),
-      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+      JSON.stringify({ projects: { foo: { 'test-host': '/srv/foo' } } }) + '\n',
     );
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
@@ -824,12 +917,9 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -868,12 +958,9 @@ describe('cmdDoctor explicit PASS tokens', () => {
     process.exitCode = 0;
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -899,31 +986,12 @@ describe('cmdDoctor explicit PASS tokens', () => {
     );
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'path-map.json'),
-      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+      JSON.stringify({ projects: { foo: { 'test-host': '/srv/foo' } } }) + '\n',
     );
     // Real symlink so the SHARED_LINKS loop hits its success branch.
     const sharedClaude = join(env.testHome, 'claude-nomad', 'shared', 'CLAUDE.md');
     writeFileSync(sharedClaude, '# shared\n');
     symlinkSync(sharedClaude, join(env.testHome, '.claude', 'CLAUDE.md'));
-  }
-
-  /** Mock gitleaks as present so its probe succeeds in the healthy-host tests. */
-  function mockGitleaksPresent(): void {
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn(
-          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
-            if (bin === 'gitleaks' && args[0] === 'version') {
-              return Buffer.from('v8.18.2\n');
-            }
-            return actual.execFileSync(bin, args, opts);
-          },
-        ),
-      };
-    });
-    vi.resetModules();
   }
 
   it('emits at least 5 PASS tokens on a fully-healthy host', async () => {
@@ -1050,7 +1118,7 @@ describe('cmdDoctor version check', () => {
     );
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'path-map.json'),
-      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+      JSON.stringify({ projects: { foo: { 'test-host': '/srv/foo' } } }) + '\n',
     );
     const sharedClaude = join(env.testHome, 'claude-nomad', 'shared', 'CLAUDE.md');
     writeFileSync(sharedClaude, '# shared\n');
@@ -1062,92 +1130,11 @@ describe('cmdDoctor version check', () => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
     vi.doUnmock('node:fs');
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
-    else delete process.env.NOMAD_HOST;
-    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
-    else delete process.env.NO_COLOR;
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
-
-  /**
-   * Mock the local `package.json` read inside `commands.doctor.version.ts`.
-   * Production code resolves the path via `new URL('../package.json',
-   * import.meta.url).pathname`, which lands at the REAL repo root regardless
-   * of `$HOME`. We override `node:fs.readFileSync` to intercept any path that
-   * ends in `/package.json` and substitute the test version; all other reads
-   * (sandbox HOME, settings files, gitleaks probes, etc.) fall through to the
-   * real implementation so the rest of `cmdDoctor` behaves normally.
-   */
-  function mockPackageJsonVersion(version: string | null): void {
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      return {
-        ...actual,
-        readFileSync: vi.fn(
-          (
-            path: fsModule.PathOrFileDescriptor,
-            opts?: Parameters<typeof actual.readFileSync>[1],
-          ) => {
-            if (typeof path === 'string' && path.endsWith('/package.json')) {
-              if (version === null) throw new Error('ENOENT package.json');
-              return JSON.stringify({ name: 'claude-nomad', version });
-            }
-            return actual.readFileSync(path, opts);
-          },
-        ),
-      };
-    });
-  }
-
-  /**
-   * Mock `node:child_process` so the curl call to the GitHub releases API
-   * returns a deterministic response. Behaviors:
-   *   - `{ kind: 'json', tagName }`: return a buffer of `{"tag_name":"<tag>"}`
-   *   - `{ kind: 'garbage' }`: return a non-JSON buffer (forces parse failure)
-   *   - `{ kind: 'throw' }`: throw with the given error code (default ENOENT
-   *     so the offline-skip path looks like curl-missing).
-   * The gitleaks probe is always answered with a fake version so it does not
-   * pollute `process.exitCode` on dev hosts that lack the binary.
-   */
-  function mockCurlReleases(
-    response:
-      | { kind: 'json'; tagName: string }
-      | { kind: 'garbage' }
-      | { kind: 'throw'; code?: string },
-  ): void {
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn(
-          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
-            if (
-              bin === 'curl' &&
-              args.includes('https://api.github.com/repos/funkadelic/claude-nomad/releases/latest')
-            ) {
-              if (response.kind === 'throw') {
-                const err = new Error(
-                  `curl mocked: ${response.code ?? 'ENOENT'}`,
-                ) as NodeJS.ErrnoException;
-                err.code = response.code ?? 'ENOENT';
-                throw err;
-              }
-              if (response.kind === 'garbage') {
-                return Buffer.from('not-json-at-all');
-              }
-              return Buffer.from(JSON.stringify({ tag_name: response.tagName }));
-            }
-            if (bin === 'gitleaks' && args[0] === 'version') {
-              return Buffer.from('v8.18.2\n');
-            }
-            return actual.execFileSync(bin, args, opts);
-          },
-        ),
-      };
-    });
-  }
 
   it('emits PASS version line when local == latest (Test A)', async () => {
     mockPackageJsonVersion('0.11.2');
@@ -1238,6 +1225,20 @@ describe('cmdDoctor version check', () => {
     // emit no version-related line and must not flip exitCode.
     expect(out).not.toContain('version: 0.11.2');
     expect(out).not.toContain('ahead of latest release');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO version line when GitHub responds with a rate-limit payload (Test F2)', async () => {
+    // GitHub's anon API limit is 60 req/h; over the limit it returns a
+    // valid JSON body with `message` but no `tag_name`. `fetchLatestTag`
+    // must treat that as a silent skip rather than emit PASS/WARN.
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'rate_limited' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
     expect(process.exitCode === 1).toBe(false);
   });
 
