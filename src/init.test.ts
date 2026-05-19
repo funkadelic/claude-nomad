@@ -204,3 +204,223 @@ describe('classifyRepoState classifier', () => {
     expect(classifyRepoState(repo, 'test-host')).toBe('partial');
   });
 });
+
+describe('cmdInit snapshot mode', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let env: { testHome: string; logSpy: LogSpy };
+
+  /**
+   * Seed `~/.claude/` with the union of files referenced across the snapshot
+   * tests. Each test picks the subset it needs; keeps the fixture flat so
+   * test bodies stay focused on observable behavior.
+   */
+  function seedClaudeHome(
+    testHome: string,
+    parts: {
+      claudeMd?: string;
+      agents?: Record<string, string>;
+      skills?: Record<string, string>;
+      commands?: Record<string, string>;
+      rules?: Record<string, string>;
+      myStatusline?: string;
+      settings?: string;
+    },
+  ): void {
+    const claudeDir = join(testHome, '.claude');
+    mkdirSync(claudeDir, { recursive: true });
+    if (parts.claudeMd !== undefined) {
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), parts.claudeMd);
+    }
+    for (const [subdir, files] of [
+      ['agents', parts.agents],
+      ['skills', parts.skills],
+      ['commands', parts.commands],
+      ['rules', parts.rules],
+    ] as const) {
+      if (files === undefined) continue;
+      mkdirSync(join(claudeDir, subdir), { recursive: true });
+      for (const [name, content] of Object.entries(files)) {
+        writeFileSync(join(claudeDir, subdir, name), content);
+      }
+    }
+    if (parts.myStatusline !== undefined) {
+      writeFileSync(join(claudeDir, 'my-statusline.cjs'), parts.myStatusline);
+    }
+    if (parts.settings !== undefined) {
+      writeFileSync(join(claudeDir, 'settings.json'), parts.settings);
+    }
+  }
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    process.env.NOMAD_HOST = 'test-host';
+    env = makeInitEnv();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('copies present SHARED_LINKS into shared/ and keeps .gitkeep where source is absent', async () => {
+    seedClaudeHome(env.testHome, {
+      claudeMd: '# real claude md\n',
+      agents: { 'foo.md': 'foo body\n' },
+      skills: { 'bar.md': 'bar body\n' },
+      myStatusline: 'module.exports = () => "x";\n',
+    });
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ snapshot: true });
+    const repo = join(env.testHome, 'claude-nomad');
+    expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe('# real claude md\n');
+    expect(readFileSync(join(repo, 'shared', 'agents', 'foo.md'), 'utf8')).toBe('foo body\n');
+    expect(readFileSync(join(repo, 'shared', 'skills', 'bar.md'), 'utf8')).toBe('bar body\n');
+    expect(readFileSync(join(repo, 'shared', 'my-statusline.cjs'), 'utf8')).toBe(
+      'module.exports = () => "x";\n',
+    );
+    // No source for commands/ or rules/, so the .gitkeep placeholders survive.
+    expect(readFileSync(join(repo, 'shared', 'commands', '.gitkeep'), 'utf8')).toBe('');
+    expect(readFileSync(join(repo, 'shared', 'rules', '.gitkeep'), 'utf8')).toBe('');
+    // After a successful copy into agents/ and skills/, the .gitkeep marker
+    // was removed because the directory now carries real content.
+    expect(existsSync(join(repo, 'shared', 'agents', '.gitkeep'))).toBe(false);
+    expect(existsSync(join(repo, 'shared', 'skills', '.gitkeep'))).toBe(false);
+  });
+
+  it('writes the verbatim settings.json into hosts/<HOST>.json via writeJsonAtomic', async () => {
+    seedClaudeHome(env.testHome, {
+      settings: JSON.stringify({ model: 'opus', permissions: { allow: ['fs:read'] } }) + '\n',
+    });
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ snapshot: true });
+    const repo = join(env.testHome, 'claude-nomad');
+    const hostFile = readFileSync(join(repo, 'hosts', 'test-host.json'), 'utf8');
+    // writeJsonAtomic produces 2-space indent + trailing newline.
+    expect(hostFile).toBe(
+      JSON.stringify({ model: 'opus', permissions: { allow: ['fs:read'] } }, null, 2) + '\n',
+    );
+    // shared/settings.base.json still contains the empty base; user manually
+    // promotes shared keys later.
+    expect(readFileSync(join(repo, 'shared', 'settings.base.json'), 'utf8')).toBe('{}\n');
+  });
+
+  it('omits hosts/<HOST>.json when ~/.claude/settings.json is absent and keeps the .gitkeep marker', async () => {
+    seedClaudeHome(env.testHome, { claudeMd: '# x\n' });
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ snapshot: true });
+    const repo = join(env.testHome, 'claude-nomad');
+    expect(existsSync(join(repo, 'hosts', 'test-host.json'))).toBe(false);
+    expect(readFileSync(join(repo, 'hosts', '.gitkeep'), 'utf8')).toBe('');
+  });
+
+  it('does not modify any file under ~/.claude/', async () => {
+    const claudeMdContent = '# real claude md\n';
+    const agentContent = 'agent body\n';
+    const skillContent = 'skill body\n';
+    const statuslineContent = 'module.exports = () => "y";\n';
+    const settingsContent = JSON.stringify({ model: 'sonnet', env: { FOO: '1' } }, null, 2) + '\n';
+    seedClaudeHome(env.testHome, {
+      claudeMd: claudeMdContent,
+      agents: { 'a.md': agentContent },
+      skills: { 's.md': skillContent },
+      myStatusline: statuslineContent,
+      settings: settingsContent,
+    });
+    const claudeDir = join(env.testHome, '.claude');
+    // Snapshot the inputs before invocation, then re-read after.
+    const before = {
+      claudeMd: readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8'),
+      agent: readFileSync(join(claudeDir, 'agents', 'a.md'), 'utf8'),
+      skill: readFileSync(join(claudeDir, 'skills', 's.md'), 'utf8'),
+      statusline: readFileSync(join(claudeDir, 'my-statusline.cjs'), 'utf8'),
+      settings: readFileSync(join(claudeDir, 'settings.json'), 'utf8'),
+    };
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ snapshot: true });
+    const after = {
+      claudeMd: readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8'),
+      agent: readFileSync(join(claudeDir, 'agents', 'a.md'), 'utf8'),
+      skill: readFileSync(join(claudeDir, 'skills', 's.md'), 'utf8'),
+      statusline: readFileSync(join(claudeDir, 'my-statusline.cjs'), 'utf8'),
+      settings: readFileSync(join(claudeDir, 'settings.json'), 'utf8'),
+    };
+    expect(after).toEqual(before);
+  });
+
+  it('refuses to clobber when shared/settings.base.json already exists', async () => {
+    seedClaudeHome(env.testHome, { claudeMd: '# x\n' });
+    const repo = join(env.testHome, 'claude-nomad');
+    mkdirSync(join(repo, 'shared'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), '{"model":"opus"}\n');
+    const { cmdInit } = await import('./init.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: Error | undefined;
+    try {
+      cmdInit({ snapshot: true });
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect(caught?.message).toContain('already initialized');
+  });
+
+  it('emits the documented next-step hint and originals-not-removed log lines', async () => {
+    seedClaudeHome(env.testHome, { claudeMd: '# x\n' });
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ snapshot: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(
+      "snapshot staged in shared/; review, then 'nomad push' to share with other hosts.",
+    );
+    expect(out).toContain('~/.claude/ originals were NOT removed.');
+    // The Slice A termination line is still emitted last.
+    expect(out).toMatch(/init complete$/);
+  });
+
+  it('keeps the empty-scaffold behavior intact when cmdInit is called with no opts', async () => {
+    // Even with a populated ~/.claude/, plain cmdInit() writes the placeholder
+    // shared/CLAUDE.md from Slice A, not the user's real content. Regression
+    // guard against the snapshot branch leaking into plain init.
+    seedClaudeHome(env.testHome, { claudeMd: '# would-be-snapshotted\n' });
+    const { cmdInit } = await import('./init.ts');
+    cmdInit();
+    const repo = join(env.testHome, 'claude-nomad');
+    expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe(
+      '<!-- claude-nomad shared CLAUDE.md; symlinked into ~/.claude/CLAUDE.md by nomad pull -->\n',
+    );
+    expect(existsSync(join(repo, 'hosts', 'test-host.json'))).toBe(false);
+  });
+
+  it('writes the placeholder shared/CLAUDE.md when ~/.claude/CLAUDE.md is absent', async () => {
+    // Snapshot mode with no source CLAUDE.md falls back to the placeholder so
+    // the scaffold is still complete; matches the behavior plain init has.
+    seedClaudeHome(env.testHome, { agents: { 'x.md': 'x\n' } });
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ snapshot: true });
+    const repo = join(env.testHome, 'claude-nomad');
+    expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe(
+      '<!-- claude-nomad shared CLAUDE.md; symlinked into ~/.claude/CLAUDE.md by nomad pull -->\n',
+    );
+  });
+
+  it('throws NomadFatal naming the malformed settings file on parse failure', async () => {
+    seedClaudeHome(env.testHome, { settings: '{not valid json' });
+    const { cmdInit } = await import('./init.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: Error | undefined;
+    try {
+      cmdInit({ snapshot: true });
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    // Names the file path so the user can fix it.
+    expect(caught?.message).toContain('settings.json');
+  });
+});
