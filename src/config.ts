@@ -18,6 +18,14 @@ export const CLAUDE_HOME = resolve(HOME, '.claude');
 export const REPO_HOME = resolve(HOME, 'claude-nomad');
 
 /**
+ * Upstream GitHub repository slug for the release-version check in
+ * `nomad doctor`. Hardcoded for the same reason `REPO_HOME` is hardcoded:
+ * the deployed sync target is canonical for this CLI. Source of truth for
+ * the `GET /repos/<slug>/releases/latest` call in `reportVersionCheck`.
+ */
+export const UPSTREAM_REPO_SLUG = 'funkadelic/claude-nomad';
+
+/**
  * Resolved host identity used to pick `hosts/<HOST>.json` and key entries in
  * `path-map.json`. Reads `NOMAD_HOST` first, falls back to `hostname()`, then
  * lowercases. A set-but-empty `NOMAD_HOST` (e.g. `export NOMAD_HOST=` in a

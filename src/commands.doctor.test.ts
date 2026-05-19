@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import type * as cpModule from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1013,6 +1014,239 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     // PASS does not mutate exitCode; only FAIL does. undefined and 0 both pass.
+    expect(process.exitCode === 1).toBe(false);
+  });
+});
+
+describe('cmdDoctor version check', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+    // Populate the sandbox so the PRIOR checks (repo state, path-map,
+    // host-overrides, SHARED_LINKS, etc.) do not set exitCode=1 on their
+    // own. That lets the version-check tests assert "exitCode is not 1"
+    // and have the assertion actually mean "the version check did not
+    // flip it" rather than "some earlier diagnostic failed".
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const sharedClaude = join(env.testHome, 'claude-nomad', 'shared', 'CLAUDE.md');
+    writeFileSync(sharedClaude, '# shared\n');
+    symlinkSync(sharedClaude, join(env.testHome, '.claude', 'CLAUDE.md'));
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Mock the local `package.json` read inside `commands.doctor.version.ts`.
+   * Production code resolves the path via `new URL('../package.json',
+   * import.meta.url).pathname`, which lands at the REAL repo root regardless
+   * of `$HOME`. We override `node:fs.readFileSync` to intercept any path that
+   * ends in `/package.json` and substitute the test version; all other reads
+   * (sandbox HOME, settings files, gitleaks probes, etc.) fall through to the
+   * real implementation so the rest of `cmdDoctor` behaves normally.
+   */
+  function mockPackageJsonVersion(version: string | null): void {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        readFileSync: vi.fn(
+          (
+            path: fsModule.PathOrFileDescriptor,
+            opts?: Parameters<typeof actual.readFileSync>[1],
+          ) => {
+            if (typeof path === 'string' && path.endsWith('/package.json')) {
+              if (version === null) throw new Error('ENOENT package.json');
+              return JSON.stringify({ name: 'claude-nomad', version });
+            }
+            return actual.readFileSync(path, opts);
+          },
+        ),
+      };
+    });
+  }
+
+  /**
+   * Mock `node:child_process` so the curl call to the GitHub releases API
+   * returns a deterministic response. Behaviors:
+   *   - `{ kind: 'json', tagName }`: return a buffer of `{"tag_name":"<tag>"}`
+   *   - `{ kind: 'garbage' }`: return a non-JSON buffer (forces parse failure)
+   *   - `{ kind: 'throw' }`: throw with the given error code (default ENOENT
+   *     so the offline-skip path looks like curl-missing).
+   * The gitleaks probe is always answered with a fake version so it does not
+   * pollute `process.exitCode` on dev hosts that lack the binary.
+   */
+  function mockCurlReleases(
+    response:
+      | { kind: 'json'; tagName: string }
+      | { kind: 'garbage' }
+      | { kind: 'throw'; code?: string },
+  ): void {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args: readonly string[], opts?: unknown) => {
+          if (bin === 'curl' && args.some((a) => a.includes('api.github.com'))) {
+            if (response.kind === 'throw') {
+              const err = new Error(
+                `curl mocked: ${response.code ?? 'ENOENT'}`,
+              ) as NodeJS.ErrnoException;
+              err.code = response.code ?? 'ENOENT';
+              throw err;
+            }
+            if (response.kind === 'garbage') {
+              return Buffer.from('not-json-at-all');
+            }
+            return Buffer.from(JSON.stringify({ tag_name: response.tagName }));
+          }
+          if (bin === 'gitleaks' && args[0] === 'version') {
+            return Buffer.from('v8.18.2\n');
+          }
+          return actual.execFileSync(bin, args, opts as never);
+        }),
+      };
+    });
+  }
+
+  it('emits PASS version line when local == latest (Test A)', async () => {
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.2' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('PASS version: 0.11.2 (latest)');
+    // The version check NEVER mutates exitCode; verify alongside the PASS
+    // assertion so a future regression cannot silently flip the contract.
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits WARN version line when local < latest (Test B)', async () => {
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    // The hint must point at the upgrade path; substring is load-bearing
+    // because users grep for it in CI logs.
+    expect(out).toContain('nomad update');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits informational ahead-of-latest line with no PASS/WARN prefix when local > latest (Test C)', async () => {
+    mockPackageJsonVersion('0.12.0');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.2' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('version: 0.12.0 (ahead of latest release 0.11.2)');
+    // The ahead branch is informational; it must NOT carry a status token.
+    // A regression that prepends PASS/WARN/FAIL would flip the meaning of
+    // the line for any dev running a not-yet-released version.
+    expect(out).not.toMatch(/(PASS|WARN|FAIL) version: 0\.12\.0 \(ahead/);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO version line when curl is offline / throws (Test D)', async () => {
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'throw', code: 'ENOENT' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Silent-skip means zero `version:` output. We assert on the substring
+    // rather than the full line so a future addition (e.g. dim-blue debug
+    // hint) would still be caught by this test.
+    expect(out).not.toContain('version: 0.11.2');
+    expect(out).not.toContain('ahead of latest release');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('reuses fresh cache entry without calling curl (Test E)', async () => {
+    // Pre-seed a fresh cache (within the 6h TTL). Mock curl to THROW so the
+    // assertion "PASS line was emitted" can only be true if the cache hit
+    // short-circuited the fetch. If the cache were missed, the throwing
+    // curl mock would trigger the silent-skip path instead.
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'version-check.json'),
+      JSON.stringify({ checked_at: Date.now(), latest: '0.11.2' }),
+    );
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'throw', code: 'ENOENT' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('PASS version: 0.11.2 (latest)');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO version line when curl returns malformed JSON (Test F)', async () => {
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'garbage' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Malformed-response is one of the silent-skip paths; doctor must
+    // emit no version-related line and must not flip exitCode.
+    expect(out).not.toContain('version: 0.11.2');
+    expect(out).not.toContain('ahead of latest release');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('refetches when cache is stale beyond the 6h TTL (Test G)', async () => {
+    // Pre-seed a STALE cache (7h old). The TTL gate must reject it and the
+    // mock curl response must drive the diagnostic. If the gate were
+    // broken (e.g. > vs <), the WARN line below would carry the stale
+    // tag `0.10.0` instead of the fresh `0.11.3`.
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'version-check.json'),
+      JSON.stringify({ checked_at: Date.now() - 7 * 60 * 60 * 1000, latest: '0.10.0' }),
+    );
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).not.toContain('0.10.0');
     expect(process.exitCode === 1).toBe(false);
   });
 });
