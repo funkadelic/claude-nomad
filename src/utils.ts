@@ -136,7 +136,7 @@ export function deepMerge<T extends Record<string, unknown>>(target: T, source: 
 }
 
 /** Claude Code encodes absolute project paths by replacing `/` with `-`. */
-export const encodePath = (absPath: string): string => absPath.replace(/\//g, '-');
+export const encodePath = (absPath: string): string => absPath.replaceAll('/', '-');
 
 /** Local-time YYYYMMDD-HHMMSS timestamp; lexicographically sortable. Pure. */
 export function nowTimestamp(): string {
