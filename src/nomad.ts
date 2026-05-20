@@ -18,6 +18,7 @@
 import { cmdDoctor } from './commands.doctor.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
+import { cmdUpdate } from './commands.update.ts';
 import { HOME } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
@@ -52,6 +53,11 @@ const DEFAULT_HELP = [
   '                          gitleaks, gitlinks).',
   '       --resume-cmd <id>  Print `cd <abspath> && claude --resume <id>` for a session id',
   '                          from ~/.claude/projects/.',
+  '',
+  '  update              Topology-aware upgrade of ~/claude-nomad/ to the latest upstream.',
+  '       --dry-run      Detect topology + pre-flight, print would-be git commands only.',
+  '       --force        Proceed even when the working tree is not clean.',
+  '       --push-origin  Fork topology only: push the merge to origin/main without prompting.',
   '',
   'Run `nomad doctor` to validate your setup. Edit shared/ or hosts/<HOST>.json',
   'in the repo, never ~/.claude/settings.json directly (it is regenerated on',
@@ -122,6 +128,32 @@ try {
       }
       cmdDiff();
       break;
+    case 'update': {
+      // Set-based parse so flag order does not matter and duplicates are
+      // rejected (`--dry-run --dry-run` is a typo, not a no-op). Unknown
+      // flags hit the same usage-error pattern as other subcommands.
+      const known = new Set(['--dry-run', '--force', '--push-origin']);
+      const seen = new Set<string>();
+      let argvOk = true;
+      for (let i = 3; i < process.argv.length; i++) {
+        const flag = process.argv[i];
+        if (!known.has(flag) || seen.has(flag)) {
+          argvOk = false;
+          break;
+        }
+        seen.add(flag);
+      }
+      if (!argvOk) {
+        console.error('usage: nomad update [--dry-run] [--force] [--push-origin]');
+        process.exit(1);
+      }
+      cmdUpdate({
+        dryRun: seen.has('--dry-run'),
+        force: seen.has('--force'),
+        pushOrigin: seen.has('--push-origin'),
+      });
+      break;
+    }
     case 'doctor':
       // Sub-flag: `doctor --resume-cmd <session-id>` dispatches to the
       // read-only sidecar that prints `cd <abspath> && claude --resume <id>`.

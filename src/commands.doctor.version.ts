@@ -154,7 +154,7 @@ function fetchLatestTag(): string | null {
  * local `package.json.version`, looks up (or fetches) the upstream latest
  * release tag, and writes ONE of three lines via `log()`:
  *   - `PASS version: <local> (latest)` when equal
- *   - `WARN version: <local> -> <latest> (run \`nomad update\` ...)` when behind
+ *   - `WARN version: <local> -> <latest> (run \`nomad update\`)` when behind
  *   - `version: <local> (ahead of latest release <latest>)` when ahead (no prefix)
  * Any failure (missing package.json, cache miss + curl failure, malformed
  * response) results in zero output. NEVER sets `process.exitCode`.
@@ -183,9 +183,7 @@ export function reportVersionCheck(): void {
   if (cmp === 0) {
     log(`${green('PASS')} version: ${local} (latest)`);
   } else if (cmp === -1) {
-    log(
-      `${yellow('WARN')} version: ${local} -> ${latest} (run \`nomad update\` or merge upstream/main)`,
-    );
+    log(`${yellow('WARN')} version: ${local} -> ${latest} (run \`nomad update\`)`);
   } else {
     log(`version: ${local} (ahead of latest release ${latest})`);
   }

@@ -1,0 +1,186 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+
+import { cmdDoctor } from './commands.doctor.ts';
+import { REPO_HOME } from './config.ts';
+import { loadTopology } from './update.topology.ts';
+import { die, gitOrFatal, gitStatusPorcelainZ, log } from './utils.ts';
+
+/**
+ * Caller-supplied options for `cmdUpdate`. All flags optional; defaults are
+ * conservative (no dirty-tree override, prompt for fork push, mutate state).
+ */
+export type CmdUpdateOpts = {
+  /** When true, run topology detection + pre-flight only; print would-be git
+   * commands without mutating the repo. Skips the trailing `cmdDoctor` call. */
+  dryRun?: boolean;
+  /** When true, proceed even when `gitStatusPorcelainZ(REPO_HOME)` is
+   * non-empty. Emits a WARN log line before continuing. */
+  force?: boolean;
+  /** Fork topology only: when true, push the post-merge HEAD to `origin/main`
+   * without prompting. When false/unset, the user is prompted y/N. */
+  pushOrigin?: boolean;
+  /** Test injection point for the interactive y/N prompt. Production code
+   * uses a synchronous `readFileSync(0)` read so the prompt is testable
+   * without a real TTY; tests override this to return a deterministic answer. */
+  prompt?: (question: string) => string;
+};
+
+/** Read `git rev-parse --abbrev-ref HEAD` from REPO_HOME, trimmed. */
+function currentBranch(): string {
+  return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: REPO_HOME,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+    .toString()
+    .trim();
+}
+
+/**
+ * Default y/N prompt used when `opts.prompt` is not injected. Writes the
+ * question to stdout and reads one synchronous line from fd 0. Using
+ * `readFileSync(0)` rather than `readline` keeps the call site testable
+ * (one `vi.spyOn(fs, 'readFileSync')` is enough) and avoids a dangling
+ * `readline.Interface` that would block process exit if the test forgot to
+ * close it.
+ */
+function defaultPrompt(question: string): string {
+  process.stdout.write(question);
+  try {
+    return readFileSync(0, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Names of files changed between the pre-update HEAD (`HEAD@{1}`) and the
+ * post-update HEAD. Used to decide whether `npm install` needs to run.
+ */
+function changedFilesSinceUpdate(): string[] {
+  const out = execFileSync('git', ['diff', 'HEAD@{1}', 'HEAD', '--name-only'], {
+    cwd: REPO_HOME,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).toString();
+  return out.split('\n').filter((line) => line !== '');
+}
+
+/**
+ * Run `npm install` in `REPO_HOME` only when `package-lock.json` shifted in
+ * the just-applied update; otherwise log a skip line. Routing through
+ * `execFileSync` (no shell) keeps the call mockable in tests and prevents
+ * any chance of argv injection.
+ */
+function reinstallIfNeeded(): void {
+  const changed = changedFilesSinceUpdate();
+  if (!changed.includes('package-lock.json')) {
+    log('skipping npm install (lockfile unchanged)');
+    return;
+  }
+  log('package-lock.json changed, running npm install');
+  execFileSync('npm', ['install'], { cwd: REPO_HOME, stdio: 'inherit' });
+}
+
+/**
+ * Vanilla topology update: a single fast-forward pull from origin/main.
+ * Non-ff pulls (someone else pushed) surface as NomadFatal via gitOrFatal.
+ */
+function runVanilla(dryRun: boolean): void {
+  if (dryRun) {
+    log('DRY-RUN: would run `git pull --ff-only origin main`');
+    return;
+  }
+  gitOrFatal(['pull', '--ff-only', 'origin', 'main'], 'git pull', REPO_HOME);
+}
+
+/**
+ * Fork topology update: fetch upstream, merge upstream/main, optionally push
+ * the result to origin. The prompt step is gated by `pushOrigin` (no prompt
+ * when explicit) and by `dryRun` (no prompt, no push when previewing).
+ */
+function runFork(opts: CmdUpdateOpts): void {
+  const promptFn = opts.prompt ?? defaultPrompt;
+  if (opts.dryRun === true) {
+    log('DRY-RUN: would run `git fetch upstream`');
+    log('DRY-RUN: would run `git merge upstream/main`');
+    if (opts.pushOrigin === true) {
+      log('DRY-RUN: would run `git push origin main`');
+    } else {
+      log('DRY-RUN: would prompt before pushing to origin/main');
+    }
+    return;
+  }
+  gitOrFatal(['fetch', 'upstream'], 'git fetch upstream', REPO_HOME);
+  gitOrFatal(['merge', 'upstream/main'], 'git merge upstream/main', REPO_HOME);
+  if (opts.pushOrigin === true) {
+    gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
+    return;
+  }
+  const answer = promptFn('[nomad] push merge to origin/main? [y/N] ').toLowerCase();
+  if (answer === 'y' || answer === 'yes') {
+    gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
+  } else {
+    log('skipping push to origin (run `git push origin main` later)');
+  }
+}
+
+/**
+ * Topology-aware "pull the latest upstream and reinstall if needed" command.
+ * Detects vanilla (`origin` -> public) vs fork (`upstream` -> public,
+ * `origin` -> private mirror) layouts, runs the right git invocation, runs
+ * `npm install` only when `package-lock.json` changed in the update, and
+ * ends with `cmdDoctor()` so the version-check PASS line confirms the
+ * upgrade landed.
+ *
+ * Prompts (fork topology, no `--push-origin`) read a single synchronous line
+ * from fd 0; tests inject `opts.prompt` to bypass the TTY read.
+ *
+ * Pre-flight (each fatal unless overridden):
+ *   1. REPO_HOME exists.
+ *   2. Topology resolves to vanilla or fork.
+ *   3. Current branch is `main`.
+ *   4. Working tree clean per `gitStatusPorcelainZ` (override with `force`).
+ *
+ * Dry-run (`opts.dryRun`) runs pre-flight + logs the would-be git commands
+ * and returns without mutating the repo or invoking `cmdDoctor`.
+ */
+export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
+  if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
+
+  const topology = loadTopology();
+  if (topology === 'unknown') {
+    die(
+      `could not detect upstream remote in ${REPO_HOME}. Run \`git fetch <remote>\` and \`git merge <remote>/main\` manually.`,
+    );
+  }
+
+  const branch = currentBranch();
+  if (branch !== 'main') {
+    die(`current branch is \`${branch}\`, expected \`main\``);
+  }
+
+  const status = gitStatusPorcelainZ(REPO_HOME);
+  if (status.length > 0) {
+    if (opts.force !== true) {
+      die('working tree is not clean, use `--force` to override');
+    }
+    log('WARN working tree is not clean, proceeding because --force was passed');
+  }
+
+  log(`topology: ${topology}`);
+
+  if (topology === 'vanilla') {
+    runVanilla(opts.dryRun === true);
+  } else {
+    runFork(opts);
+  }
+
+  if (opts.dryRun === true) {
+    log('DRY-RUN: would run `npm install` only if `package-lock.json` changed');
+    log('DRY-RUN: would run `nomad doctor` to confirm the upgrade');
+    return;
+  }
+
+  reinstallIfNeeded();
+  cmdDoctor();
+}
