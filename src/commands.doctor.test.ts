@@ -1084,6 +1084,20 @@ describe('cmdDoctor explicit PASS tokens', () => {
     expect(out).not.toMatch(/PASS remote origin:/);
   });
 
+  it('annotates repo and claude-home paths with MISSING when their directories are absent', async () => {
+    // The healthy-host setup is already in place via makeDoctorEnv. Tear down
+    // both REPO_HOME (~/claude-nomad) and CLAUDE_HOME (~/.claude) to exercise
+    // the falsy branches of the existsSync ternaries inside reportHostAndPaths.
+    rmSync(join(env.testHome, 'claude-nomad'), { recursive: true, force: true });
+    rmSync(join(env.testHome, '.claude'), { recursive: true, force: true });
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toMatch(/repo: .*MISSING/);
+    expect(out).toMatch(/claude home: .*MISSING/);
+  });
+
   it('emits tree-style section headers and bullet prefixes (Claude /doctor style)', async () => {
     populateHealthy();
     mockGitleaksPresent();
