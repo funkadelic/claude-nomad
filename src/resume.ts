@@ -117,5 +117,6 @@ function lookupLocalPath(
  * shell when they pipe the output through `eval`.
  */
 function shQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
+  const escaped = s.replaceAll("'", String.raw`'\''`);
+  return `'${escaped}'`;
 }
