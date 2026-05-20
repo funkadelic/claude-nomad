@@ -26,10 +26,14 @@ export type CmdUpdateOpts = {
   prompt?: (question: string) => string;
 };
 
-/** Read `git rev-parse --abbrev-ref HEAD` from REPO_HOME, trimmed. Wraps
- * the failure path so a corrupt or missing `.git` directory surfaces as
- * `[nomad] FATAL: ...` via the dispatcher's `NomadFatal` catch rather than
- * a raw `ExecException` stack trace. */
+/**
+ * Get the current Git branch name for the repository at REPO_HOME.
+ *
+ * Executes a git read of the repository HEAD and returns the branch name trimmed of surrounding whitespace.
+ *
+ * @returns The current branch name (trimmed).
+ * @throws NomadFatal when the git command fails; if the command produced stderr, that stderr is written to process.stderr before the exception is thrown.
+ */
 function currentBranch(): string {
   try {
     return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -80,13 +84,12 @@ function defaultPrompt(question: string): string {
   }
 }
 
-/** Read the current `HEAD` SHA in REPO_HOME, trimmed. Used to pin the
- * pre-update commit so the post-update diff is exact regardless of whether
- * the pull was a fast-forward, a no-op, or a merge. `HEAD@{1}` is unreliable
- * here: no-op `git pull --ff-only` does not always write a reflog entry, and
- * a freshly cloned repo has no `HEAD@{1}` at all. Failures route through
- * `NomadFatal` so the dispatcher prints `[nomad] FATAL: ...` rather than a
- * raw stack trace. */
+/**
+ * Read and return the current `HEAD` commit SHA from the repository.
+ *
+ * @returns The `HEAD` commit SHA as a trimmed string.
+ * @throws NomadFatal if `git rev-parse HEAD` fails (stderr is written to stderr when present).
+ */
 function headSha(): string {
   try {
     return execFileSync('git', ['rev-parse', 'HEAD'], {
@@ -103,8 +106,10 @@ function headSha(): string {
 }
 
 /**
- * Names of files changed between `beforeSha` and the current `HEAD`. Empty
- * when the update was a no-op (same SHA).
+ * List files changed between the given commit and the current HEAD.
+ *
+ * @param beforeSha - Commit SHA to compare against HEAD
+ * @returns An array of file paths changed between `beforeSha` and `HEAD`; an empty array if there are no changes
  */
 function changedFilesSince(beforeSha: string): string[] {
   const out = execFileSync('git', ['diff', '--name-only', `${beforeSha}..HEAD`], {
@@ -115,10 +120,12 @@ function changedFilesSince(beforeSha: string): string[] {
 }
 
 /**
- * Run `npm install` in `REPO_HOME` only when `package-lock.json` shifted
- * between `beforeSha` and the current HEAD; otherwise log a skip line.
- * Routing through `execFileSync` (no shell) keeps the call mockable in tests
- * and prevents any chance of argv injection.
+ * Run `npm install` in the repository only if `package-lock.json` changed since a given commit.
+ *
+ * If `package-lock.json` did not change between `beforeSha` and `HEAD`, logs a skip message; otherwise
+ * runs `npm install` with working directory set to `REPO_HOME`.
+ *
+ * @param beforeSha - Commit SHA to compare against `HEAD` when determining whether the lockfile changed
  */
 function reinstallIfNeeded(beforeSha: string): void {
   const changed = changedFilesSince(beforeSha);
@@ -131,10 +138,11 @@ function reinstallIfNeeded(beforeSha: string): void {
 }
 
 /**
- * Vanilla topology update: a single fast-forward pull from origin/main.
- * Non-ff pulls (someone else pushed) surface as NomadFatal via gitOrFatal.
- * Takes the full opts so the signature stays symmetric with `runFork` even
- * though only `dryRun` is consulted today.
+ * Perform a vanilla update by fast-forward pulling `origin/main`.
+ *
+ * If `opts.dryRun` is true, logs the would-be pull command instead of executing it.
+ *
+ * @param opts - Update options; only `dryRun` is observed for this topology.
  */
 function runVanilla(opts: CmdUpdateOpts): void {
   if (opts.dryRun === true) {
@@ -145,9 +153,16 @@ function runVanilla(opts: CmdUpdateOpts): void {
 }
 
 /**
- * Fork topology update: fetch upstream, merge upstream/main, optionally push
- * the result to origin. The prompt step is gated by `pushOrigin` (no prompt
- * when explicit) and by `dryRun` (no prompt, no push when previewing).
+ * Perform a fork-style update by fetching from `upstream`, merging `upstream/main` into `main`, and optionally pushing the merge to `origin`.
+ *
+ * When `opts.dryRun === true` the function only logs the git actions it would perform and returns without running any commands.
+ *
+ * If `opts.pushOrigin === true` the function pushes to `origin/main` without prompting; otherwise it prompts (using `opts.prompt` if provided, or the default prompt) and only pushes when the answer is `y` or `yes` (case-insensitive). If the prompt answer is not affirmative the push is skipped and a message is logged.
+ *
+ * @param opts - Update options; respected fields are:
+ *   - `dryRun`: when true, log actions instead of executing them
+ *   - `pushOrigin`: when true, push to `origin/main` without prompting
+ *   - `prompt`: optional prompt function used for interactive confirmation
  */
 function runFork(opts: CmdUpdateOpts): void {
   const promptFn = opts.prompt ?? defaultPrompt;
@@ -176,24 +191,15 @@ function runFork(opts: CmdUpdateOpts): void {
 }
 
 /**
- * Topology-aware "pull the latest upstream and reinstall if needed" command.
- * Detects vanilla (`origin` -> public) vs fork (`upstream` -> public,
- * `origin` -> private mirror) layouts, runs the right git invocation, runs
- * `npm install` only when `package-lock.json` changed in the update, and
- * ends with `cmdDoctor()` so the version-check PASS line confirms the
- * upgrade landed.
+ * Perform a topology-aware repository update: pull or merge from the appropriate remote, run `npm install` only if `package-lock.json` changed, and run `cmdDoctor()` to verify the upgrade.
  *
- * Prompts (fork topology, no `--push-origin`) read a single synchronous line
- * from fd 0; tests inject `opts.prompt` to bypass the TTY read.
+ * Pre-flight checks (fatal unless overridden): repository exists at `REPO_HOME`, topology resolves to `vanilla` or `fork`, current branch is `main`, and working tree is clean (can be overridden with `force`).
  *
- * Pre-flight (each fatal unless overridden):
- *   1. REPO_HOME exists.
- *   2. Topology resolves to vanilla or fork.
- *   3. Current branch is `main`.
- *   4. Working tree clean per `gitStatusPorcelainZ` (override with `force`).
- *
- * Dry-run (`opts.dryRun`) runs pre-flight + logs the would-be git commands
- * and returns without mutating the repo or invoking `cmdDoctor`.
+ * Behavior notes:
+ * - In `vanilla` topology this performs a fast-forward pull from `origin/main`.
+ * - In `fork` topology this fetches `upstream` and merges `upstream/main`, and may push to `origin/main` when `pushOrigin` is set or the injected prompt approves.
+ * - `dryRun` performs pre-flight checks and logs the would-be git, install, and doctor actions without mutating the repository or invoking `cmdDoctor`.
+ * - A `prompt` function may be injected via options to supply interactive y/N answers (used for fork push confirmation); otherwise a TTY read is attempted.
  */
 export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
