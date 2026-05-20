@@ -372,6 +372,85 @@ describe('cmdUpdate', () => {
     vi.doUnmock('node:fs');
   });
 
+  it('defaultPrompt: readSync returns 0 on first call yields empty answer', async () => {
+    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    mockDoctor();
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        openSync: vi.fn(() => 999),
+        // Immediate EOF: the loop's `if (n === 0) break;` arm fires before
+        // any bytes are accumulated, so the prompt returns '' and runFork
+        // treats it as "no" (skipping the push).
+        readSync: vi.fn(() => 0),
+        closeSync: vi.fn(),
+      };
+    });
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate();
+    expect(git.calls.map((c) => c.args.join(' '))).not.toContain('push origin main');
+    expect(joinedLog(env.logSpy)).toContain('skipping push to origin');
+    vi.doUnmock('node:fs');
+  });
+
+  it('currentBranch failure without stderr buffer: still surfaces NomadFatal cleanly', async () => {
+    const branchErr = new Error('fatal: not a git repository');
+    mockGit({ remotes: { origin: PUBLIC_SSH }, branchThrows: branchErr });
+    mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('rev-parse --abbrev-ref HEAD');
+  });
+
+  it('headSha failure without stderr buffer: still surfaces NomadFatal cleanly', async () => {
+    const headErr = new Error('fatal: bad revision');
+    mockGit({ remotes: { origin: PUBLIC_SSH }, headShaThrows: headErr });
+    mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('rev-parse HEAD');
+  });
+
+  it('missing REPO_HOME: FATALs with `repo not cloned at ...` before any git call', async () => {
+    const git = mockGit({ remotes: { origin: PUBLIC_SSH } });
+    mockDoctor();
+    // Remove the REPO_HOME directory that makeUpdateEnv created so the
+    // existsSync(REPO_HOME) check at the top of cmdUpdate trips.
+    rmSync(`${env.testHome}/claude-nomad`, { recursive: true, force: true });
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('repo not cloned');
+    // No git invocation should have happened — the existsSync gate runs first.
+    expect(git.calls).toHaveLength(0);
+  });
+
   it('defaultPrompt: readSync throw is swallowed and returns empty string', async () => {
     const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
     mockDoctor();
@@ -424,6 +503,16 @@ describe('detectTopology', () => {
       'unknown',
     );
   });
+
+  it('returns unknown when the origin key is enumerable but its value is undefined', async () => {
+    // Defensive case: Object.keys returns `origin` because the property was
+    // explicitly set (even to undefined). The `origin ?? ''` fallback hands
+    // matchesUpstream an empty string, which fails, so the result is unknown.
+    const { detectTopology } = await import('./update.topology.ts');
+    const remotes: Record<string, string> = {};
+    Object.defineProperty(remotes, 'origin', { value: undefined, enumerable: true });
+    expect(detectTopology(remotes)).toBe('unknown');
+  });
 });
 
 describe('loadTopology', () => {
@@ -460,5 +549,21 @@ describe('loadTopology', () => {
     expect(caught).toBeInstanceOf(NomadFatal);
     expect((caught as Error).message).toContain('git remote -v failed');
     expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  it('`git remote -v` failure without stderr buffer: still surfaces NomadFatal cleanly', async () => {
+    const remoteErr = new Error('fatal: spawn ENOENT');
+    mockGit({ remoteThrows: remoteErr });
+    vi.resetModules();
+    const { loadTopology } = await import('./update.topology.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      loadTopology();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('git remote -v failed');
   });
 });
