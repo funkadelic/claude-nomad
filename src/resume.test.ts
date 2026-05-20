@@ -349,6 +349,42 @@ describe('resumeCmd', () => {
     );
   });
 
+  it('matches a session started in a subdirectory of a mapped project', async () => {
+    // Sessions can be started anywhere inside a project root. Equality-only
+    // lookup would miss /orig/host/foo/src and force the user to recreate the
+    // session at the root. The descendant-match resolves to the local root.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-orig-host-foo-src', 'sub-1', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo/src' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('sub-1');
+    expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'sub-1'`);
+  });
+
+  it('does not match a sibling path with a shared prefix', async () => {
+    // Without the trailing `/` in the descendant test, /orig/host/foo would
+    // match a session recorded at /orig/host/foo-other. The startsWith(`${p}/`)
+    // guard prevents that false positive.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-orig-host-foo-other', 'sib-1', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo-other' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('sib-1')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('not found in path-map.json'),
+    );
+  });
+
   it('reads cwd from the FIRST non-file-history-snapshot line, skipping line 1', async () => {
     env = makeEnv('test-host');
     // Line 1 is file-history-snapshot (no cwd); line 2 has the cwd; line 3 has

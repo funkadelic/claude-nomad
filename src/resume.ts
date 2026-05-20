@@ -129,13 +129,23 @@ function validatePathMap(raw: unknown): string | null {
   return null;
 }
 
-/** Reverse-lookups the logical project from `recordedCwd`; returns null when no logical contains it, else `{ logical, localPath }` (localPath undefined when host missing or 'TBD'). */
+/**
+ * Reverse-lookups the logical project from `recordedCwd`. Matches when
+ * `recordedCwd` equals a mapped abspath OR is a descendant of one (a session
+ * started inside a subdirectory of a mapped project still resolves). The
+ * descendant test uses `startsWith(${root}/)` so `/orig/foo` does not match
+ * the project mapped at `/orig/foo-other`. Returns `{ logical, localPath }`
+ * (localPath undefined when host missing or 'TBD') or null on no match.
+ */
 function lookupLocalPath(
   map: PathMap,
   recordedCwd: string,
 ): { logical: string; localPath: string | undefined } | null {
   for (const [logical, hosts] of Object.entries(map.projects)) {
-    if (Object.values(hosts).includes(recordedCwd)) {
+    const isUnderMappedPath = Object.values(hosts).some(
+      (p) => recordedCwd === p || recordedCwd.startsWith(`${p}/`),
+    );
+    if (isUnderMappedPath) {
       const localPath = hosts[HOST];
       return { logical, localPath: localPath === 'TBD' ? undefined : localPath };
     }
