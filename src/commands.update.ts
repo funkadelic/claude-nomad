@@ -4,7 +4,7 @@ import { closeSync, existsSync, openSync, readSync } from 'node:fs';
 import { cmdDoctor } from './commands.doctor.ts';
 import { REPO_HOME } from './config.ts';
 import { loadTopology } from './update.topology.ts';
-import { die, gitOrFatal, gitStatusPorcelainZ, log } from './utils.ts';
+import { die, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
 
 /**
  * Caller-supplied options for `cmdUpdate`. All flags optional; defaults are
@@ -26,14 +26,23 @@ export type CmdUpdateOpts = {
   prompt?: (question: string) => string;
 };
 
-/** Read `git rev-parse --abbrev-ref HEAD` from REPO_HOME, trimmed. */
+/** Read `git rev-parse --abbrev-ref HEAD` from REPO_HOME, trimmed. Wraps
+ * the failure path so a corrupt or missing `.git` directory surfaces as
+ * `[nomad] FATAL: ...` via the dispatcher's `NomadFatal` catch rather than
+ * a raw `ExecException` stack trace. */
 function currentBranch(): string {
-  return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-    cwd: REPO_HOME,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-    .toString()
-    .trim();
+  try {
+    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .trim();
+  } catch (err) {
+    const e = err as Error & { stderr?: Buffer };
+    if (e.stderr) process.stderr.write(e.stderr);
+    throw new NomadFatal('git rev-parse --abbrev-ref HEAD failed');
+  }
 }
 
 /**
@@ -75,14 +84,22 @@ function defaultPrompt(question: string): string {
  * pre-update commit so the post-update diff is exact regardless of whether
  * the pull was a fast-forward, a no-op, or a merge. `HEAD@{1}` is unreliable
  * here: no-op `git pull --ff-only` does not always write a reflog entry, and
- * a freshly cloned repo has no `HEAD@{1}` at all. */
+ * a freshly cloned repo has no `HEAD@{1}` at all. Failures route through
+ * `NomadFatal` so the dispatcher prints `[nomad] FATAL: ...` rather than a
+ * raw stack trace. */
 function headSha(): string {
-  return execFileSync('git', ['rev-parse', 'HEAD'], {
-    cwd: REPO_HOME,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-    .toString()
-    .trim();
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .trim();
+  } catch (err) {
+    const e = err as Error & { stderr?: Buffer };
+    if (e.stderr) process.stderr.write(e.stderr);
+    throw new NomadFatal('git rev-parse HEAD failed');
+  }
 }
 
 /**
