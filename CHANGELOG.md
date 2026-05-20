@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/funkadelic/claude-nomad/compare/v0.12.0...v0.13.0) (2026-05-20)
+
+
+### Added
+
+* **update:** add nomad update command for topology-aware upgrade ([#62](https://github.com/funkadelic/claude-nomad/issues/62)) ([689c10f](https://github.com/funkadelic/claude-nomad/commit/689c10f86496b8ea3bf25efed29d46d95c9f9dd1))
+
+
+### Documentation
+
+* **update:** add JSDoc to nomad update helpers ([#65](https://github.com/funkadelic/claude-nomad/issues/65)) ([e26fb7b](https://github.com/funkadelic/claude-nomad/commit/e26fb7b390790df2670b363a8e3dc7664322c7e9))
+
 ## [0.12.0](https://github.com/funkadelic/claude-nomad/compare/v0.11.2...v0.12.0) (2026-05-20)
 
 
