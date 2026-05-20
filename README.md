@@ -306,35 +306,34 @@ Your private repo is not a fork, so GitHub's "Sync fork" UI doesn't apply. The s
 
 ```bash
 cd ~/claude-nomad
-npm run update
+nomad update
 ```
 
-`npm run update` runs `scripts/update.sh`, which:
+`nomad update` (see `cmdUpdate` in `src/commands.update.ts`) detects which layout your `~/claude-nomad/` uses and does the right thing:
 
-1. Refuses to run on a dirty tree (tracked OR untracked changes) or off `main` (fail-fast, no half-merges).
-2. Detects layout: fork (origin + upstream) vs direct clone (origin only); fetches the remotes that apply.
-3. Fast-forwards local `main` to `origin/main` first if origin is ahead. On a fork this absorbs any externally-applied "Sync fork" merge so the next step doesn't create a duplicate merge commit.
-4. On a fork, if `upstream/main` is still ahead after the fast-forward, merges it and pushes the result to `origin/main`. On a direct clone, step 3 was sufficient.
-5. Bails cleanly if nothing changed.
-6. Re-runs `npm install` only if `package-lock.json` actually shifted.
+- **vanilla** (`origin` points at the public repo): `git pull --ff-only origin main`.
+- **fork** (`upstream` points at the public repo, `origin` points at your private mirror): `git fetch upstream`, `git merge upstream/main`, then prompt before pushing the merge to `origin/main`. Pass `--push-origin` to skip the prompt.
 
-One-time setup if you don't have the `upstream` remote yet:
+Pre-flight checks run before any mutation: `REPO_HOME` exists, topology resolves to `vanilla` or `fork`, current branch is `main`, working tree is clean per `git status --porcelain -z` (override with `--force`), and `--push-origin` is rejected on vanilla topology. After the merge or pull, `nomad update` re-runs `npm install` only when `package-lock.json` actually shifted, then invokes `nomad doctor` so the trailing version-check PASS line confirms the upgrade landed.
+
+Common cases:
+
+```bash
+nomad update                  # the usual path
+nomad update --dry-run        # detect topology + pre-flight, print would-be git commands only
+nomad update --push-origin    # fork topology: push merge to origin/main without prompting
+nomad update --force          # proceed past a dirty working tree
+```
+
+One-time setup if you're running a fork layout and don't have the `upstream` remote yet:
 
 ```bash
 git remote add upstream git@github.com:funkadelic/claude-nomad.git
 ```
 
-Or do it manually:
+`npm run update` still exists as a legacy shim that shells out to `scripts/update.sh`; prefer `nomad update` for new invocations.
 
-```bash
-cd ~/claude-nomad
-git fetch upstream
-git merge upstream/main          # or rebase
-git push origin main             # publish the merge to your fork
-npm install                      # only if package-lock.json changed
-```
-
-Upstream tags releases as `vX.Y.Z` (release-please). To track a specific release instead of `main`:
+Upstream tags releases as `vX.Y.Z` (release-please). To track a specific release instead of `main`, you can still run the merge by hand:
 
 ```bash
 git fetch upstream --tags
@@ -352,7 +351,8 @@ npm install
 - `nomad diff`: offline, lockless twin of `pull --dry-run`. Same preview output, but does NOT acquire the lock and does NOT run `git pull`, so it works against the current local repo state. Use this for "what would be applied right now" against a possibly-partially-scaffolded repo.
 - `nomad push`: export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.
 - `nomad push --dry-run`: runs all four pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan) and the allow-list classification, then skips `git add`, the gitleaks scan, `git commit`, and `git push`. Use this to answer "would my next push succeed?" without publishing anything.
-- `nomad doctor`: read-only health check. Every check-result line carries an explicit `PASS`, `WARN`, or `FAIL` token; informational headers (`host:`, `repo:`, `claude home:`, `repo state:`, `mapped projects for ...`, `never-sync items:`, `remote origin:`) stay unprefixed. `repo state:` reports `PASS populated`, `WARN partial <reason>`, or `FAIL empty - run 'nomad init' to scaffold`. Any `FAIL` sets `process.exitCode = 1` so CI can gate on it; `WARN` does not.
+- `nomad update`: topology-aware upgrade of `~/claude-nomad/` to the latest upstream. Detects vanilla (origin only) vs fork (`upstream` + `origin`) layout, runs pre-flight (clean tree, on `main`, valid topology), executes the right git incantation, re-runs `npm install` only when `package-lock.json` shifted, and ends by invoking `nomad doctor` so the version-check confirms the upgrade landed. Flags: `--dry-run` (detect topology + pre-flight, print would-be git commands only), `--force` (proceed even when the working tree is not clean), `--push-origin` (fork topology only: push the merge to `origin/main` without prompting).
+- `nomad doctor`: read-only health check. Every check-result line carries an explicit `PASS`, `WARN`, or `FAIL` token; informational headers (`host:`, `repo:`, `claude home:`, `repo state:`, `mapped projects for ...`, `never-sync items:`, `remote origin:`) stay unprefixed. `repo state:` reports `PASS populated`, `WARN partial <reason>`, or `FAIL empty - run 'nomad init' to scaffold`. Also runs an offline-tolerant release-version check that emits ``WARN version: <local> -> <latest> (run `nomad update`)`` when the local install is behind the latest upstream release and `PASS version: <local> (latest)` when current (non-fatal; silent skip when offline). Any `FAIL` sets `process.exitCode = 1` so CI can gate on it; `WARN` does not.
 - `nomad doctor --resume-cmd <session-id>` prints a host-local `cd ... && claude --resume <id>` line for the given session (see [Cross-OS resume](#cross-os-resume)).
 
 Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summary:` line:
