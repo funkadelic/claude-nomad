@@ -420,11 +420,19 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     process.env.NO_COLOR = '1';
     process.exitCode = 0;
     env = makeDoctorEnv({ host: 'test-host' });
+    // Force gitleaks PASS so `process.exitCode === 1` assertions in this
+    // block reflect only the malformed-JSON / schema branch under test. On a
+    // dev host without gitleaks the probe would set exitCode=1 independently
+    // and a regression in the JSON-handling branch could go unnoticed.
+    mockGitleaksPresent();
   });
 
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
+    // vi.restoreAllMocks does NOT clear vi.doMock module mocks; explicitly
+    // unmock so the gitleaks-PASS mock does not leak into later describes.
+    vi.doUnmock('node:child_process');
     restoreEnv('HOME', originalHome);
     restoreEnv('NOMAD_HOST', originalNomadHost);
     restoreEnv('NO_COLOR', originalNoColor);
