@@ -150,14 +150,14 @@ function fetchLatestTag(): string | null {
 }
 
 /**
- * Emit the trailing version-check diagnostic for `nomad doctor`. Reads the
- * local `package.json.version`, looks up (or fetches) the upstream latest
- * release tag, and writes ONE of three lines via `log()`:
- *   - `PASS version: <local> (latest)` when equal
- *   - `WARN version: <local> -> <latest> (run \`nomad update\`)` when behind
- *   - `version: <local> (ahead of latest release <latest>)` when ahead (no prefix)
- * Any failure (missing package.json, cache miss + curl failure, malformed
- * response) results in zero output. NEVER sets `process.exitCode`.
+ * Emit a single, non-fatal version diagnostic for `nomad doctor` by comparing the local package.json version to the latest upstream release.
+ *
+ * Logs one of:
+ * - `PASS version: <local> (latest)` when the versions match
+ * - `WARN version: <local> -> <latest> (run \`nomad update\`)` when the local version is behind
+ * - `version: <local> (ahead of latest release <latest>)` when the local version is ahead
+ *
+ * Any failure to read the local version, retrieve or parse the latest release, or use the cache results in no output and does not change `process.exitCode`.
  */
 export function reportVersionCheck(): void {
   const local = readLocalVersion();

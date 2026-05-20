@@ -30,16 +30,23 @@ const SLUG_RE = escapeRe(UPSTREAM_REPO_SLUG);
 const SSH_REGEX = new RegExp(`^git@github\\.com:${SLUG_RE}(\\.git)?$`);
 const HTTPS_REGEX = new RegExp(`^https://github\\.com/${SLUG_RE}(\\.git)?$`);
 
-/** True when `url` matches one of the canonical upstream URL forms. */
+/**
+ * Determines whether a remote URL matches the canonical upstream repository forms (SSH or HTTPS).
+ *
+ * @param url - The remote URL to test
+ * @returns `true` if `url` matches the canonical upstream SSH or HTTPS form, `false` otherwise.
+ */
 function matchesUpstream(url: string): boolean {
   return SSH_REGEX.test(url) || HTTPS_REGEX.test(url);
 }
 
 /**
- * Parse `git remote -v` output into a `{ name: fetchUrl }` map. Only the
- * `(fetch)` line per remote is retained; `(push)` URLs are ignored because
- * topology detection drives the `git pull/fetch/merge` invocations which all
- * use the fetch URL.
+ * Parse the output of `git remote -v` into a mapping of remote names to their fetch URLs.
+ *
+ * Ignores `(push)` entries and any lines that do not match the expected `<name> <url> (fetch)` format.
+ *
+ * @param out - Raw stdout from `git remote -v`
+ * @returns A record mapping each remote name to its fetch URL
  */
 export function parseRemotes(out: string): Record<string, string> {
   const remotes: Record<string, string> = {};
@@ -74,11 +81,11 @@ export function detectTopology(remotes: Record<string, string>): Topology {
 }
 
 /**
- * Read `git remote -v` from REPO_HOME and route the output through
- * `parseRemotes` + `detectTopology`. Returns the resolved topology label.
- * `git remote -v` is read-only so failures here are unexpected; we still
- * route through `NomadFatal` so the dispatcher prints `[nomad] FATAL: ...`
- * rather than dumping a stack trace.
+ * Detect the repository remote topology by running `git remote -v` in REPO_HOME
+ * and analyzing the parsed remotes.
+ *
+ * @returns The detected topology label: `'vanilla'`, `'fork'`, or `'unknown'`.
+ * @throws NomadFatal when `git remote -v` fails; any captured git stderr is written to stdout before the error is thrown.
  */
 export function loadTopology(): Topology {
   let out: string;
