@@ -22,9 +22,6 @@ type TranscriptLine = { type?: string; cwd?: string };
  * the prefix so `eval "$(...)"` works.
  */
 export function resumeCmd(sessionId: string): void {
-  // Reject anything that could escape the transcript scope when interpolated
-  // into a filesystem path below. Claude Code session ids are UUIDs (hex +
-  // dashes); 128 chars is generous headroom without becoming a DoS vector.
   if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || sessionId.length > 128) {
     console.error(`[nomad] FATAL: invalid session id: ${sessionId}`);
     process.exit(1);
@@ -36,68 +33,32 @@ export function resumeCmd(sessionId: string): void {
     process.exit(1);
   }
 
-  let jsonlPath: string | null = null;
-  for (const dir of readdirSync(projectsRoot)) {
-    const candidate = join(projectsRoot, dir, `${sessionId}.jsonl`);
-    if (existsSync(candidate)) {
-      jsonlPath = candidate;
-      break;
-    }
-  }
+  const jsonlPath = findTranscriptPath(projectsRoot, sessionId);
   if (jsonlPath === null) {
     console.error(
       `[nomad] FATAL: session ${sessionId} not found in any ~/.claude/projects/<encoded>/`,
     );
     process.exit(1);
   }
-
-  // Read the FIRST non-file-history-snapshot line that has a `cwd` field.
-  // Line 1 of a transcript is always `{"type":"file-history-snapshot",...}` and
-  // carries no cwd; the cwd lives on the next semantic event (attachment/user).
-  const content = readFileSync(jsonlPath, 'utf8');
-  let recordedCwd: string | null = null;
-  for (const line of content.split('\n')) {
-    if (!line.trim()) continue;
-    let obj: TranscriptLine;
-    try {
-      obj = JSON.parse(line) as TranscriptLine;
-    } catch {
-      continue;
-    }
-    if (obj.type === 'file-history-snapshot') continue;
-    if (typeof obj.cwd === 'string' && obj.cwd.length > 0) {
-      recordedCwd = obj.cwd;
-      break;
-    }
-  }
+  const recordedCwd = extractRecordedCwd(jsonlPath);
   if (recordedCwd === null) {
     console.error(`[nomad] FATAL: no cwd field found in ${jsonlPath}`);
     process.exit(1);
   }
-
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (!existsSync(mapPath)) {
     console.error('[nomad] FATAL: path-map.json missing');
     process.exit(1);
   }
   const map = readJson<PathMap>(mapPath);
-
-  let logical: string | null = null;
-  for (const [name, hosts] of Object.entries(map.projects)) {
-    if (Object.values(hosts).includes(recordedCwd)) {
-      logical = name;
-      break;
-    }
-  }
-  if (logical === null) {
+  const hit = lookupLocalPath(map, recordedCwd);
+  if (hit === null) {
     console.error(
       `[nomad] FATAL: cwd ${recordedCwd} from session ${sessionId} not found in path-map.json`,
     );
     process.exit(1);
   }
-
-  const localPath = map.projects[logical][HOST];
-  if (localPath === undefined || localPath === 'TBD') {
+  if (hit.localPath === undefined) {
     console.error(
       `[nomad] FATAL: session ${sessionId} not mapped on this host; add the logical to path-map.json`,
     );
@@ -108,7 +69,45 @@ export function resumeCmd(sessionId: string): void {
   // metachar in sessionId) survive `eval` and the cd ends up at the
   // intended directory rather than splitting on whitespace. Success line
   // has NO [nomad] prefix; meant to be `eval`'d by the user.
-  console.log(`cd ${shQuote(localPath)} && claude --resume ${shQuote(sessionId)}`);
+  console.log(`cd ${shQuote(hit.localPath)} && claude --resume ${shQuote(sessionId)}`);
+}
+
+/** Walks `<projectsRoot>/<dir>/<sessionId>.jsonl` and returns the first existing path, or null. */
+function findTranscriptPath(projectsRoot: string, sessionId: string): string | null {
+  for (const dir of readdirSync(projectsRoot)) {
+    const candidate = join(projectsRoot, dir, `${sessionId}.jsonl`);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** Returns the first non-file-history-snapshot line's `cwd` from the transcript, or null. */
+function extractRecordedCwd(jsonlPath: string): string | null {
+  for (const line of readFileSync(jsonlPath, 'utf8').split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line) as TranscriptLine;
+      if (obj.type === 'file-history-snapshot') continue;
+      if (typeof obj.cwd === 'string' && obj.cwd.length > 0) return obj.cwd;
+    } catch {
+      // Skip non-JSON or partial lines; transcripts can be appended mid-write.
+    }
+  }
+  return null;
+}
+
+/** Reverse-lookups the logical project from `recordedCwd`; returns null when no logical contains it, else `{ logical, localPath }` (localPath undefined when host missing or 'TBD'). */
+function lookupLocalPath(
+  map: PathMap,
+  recordedCwd: string,
+): { logical: string; localPath: string | undefined } | null {
+  for (const [logical, hosts] of Object.entries(map.projects)) {
+    if (Object.values(hosts).includes(recordedCwd)) {
+      const localPath = hosts[HOST];
+      return { logical, localPath: localPath === 'TBD' ? undefined : localPath };
+    }
+  }
+  return null;
 }
 
 /**

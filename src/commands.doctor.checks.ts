@@ -143,57 +143,56 @@ export function reportHostOverrides(
   }
 }
 
+/** Emits the mapped-projects header for the current host and one line per mapped project. */
+function reportMappedProjects(section: DoctorSection, map: PathMap): void {
+  const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
+  addItem(section, `mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`);
+  for (const [name, hosts] of mapped) addItem(section, `${name} -> ${blue(hosts[HOST])}`);
+}
+
+/** Scans every host of every project for encodePath collisions; FAILs per collision, PASSes when clean. */
+function reportPathCollisions(section: DoctorSection, map: PathMap): void {
+  const seen = new Map<string, string>();
+  let collisionCount = 0;
+  for (const hosts of Object.values(map.projects)) {
+    for (const abspath of Object.values(hosts)) {
+      if (!abspath || abspath === 'TBD') continue;
+      const encoded = encodePath(abspath);
+      const prior = seen.get(encoded);
+      if (prior !== undefined && prior !== abspath) {
+        addItem(
+          section,
+          `${red('FAIL')} path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`,
+        );
+        collisionCount++;
+      } else {
+        seen.set(encoded, abspath);
+      }
+    }
+  }
+  if (collisionCount > 0) process.exitCode = 1;
+  else addItem(section, `${green('PASS')} path-encoding: no collisions`);
+}
+
 /** Pushes mapped projects for the current host and FAILs on path-encoding collisions across hosts; FAILs when path-map.json is missing. */
 export function reportPathMap(section: DoctorSection): void {
   const mapPath = join(REPO_HOME, 'path-map.json');
-  if (existsSync(mapPath)) {
-    const map = readJsonSafe<PathMap>(mapPath, mapPath, section);
-    if (map !== null) {
-      // path-map.json parsed but may be schema-invalid (e.g. `{}` or
-      // `{ "projects": null }`). Object.entries() on a non-object throws
-      // mid-output and would lose every line below; guard explicitly so the
-      // tolerant-doctor contract holds.
-      const projects: unknown = (map as { projects?: unknown }).projects;
-      if (projects === null || typeof projects !== 'object') {
-        addItem(
-          section,
-          `${red('FAIL')} path-map.json invalid schema: "projects" must be an object`,
-        );
-        process.exitCode = 1;
-        return;
-      }
-      const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
-      addItem(section, `mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`);
-      for (const [name, hosts] of mapped) addItem(section, `${name} -> ${blue(hosts[HOST])}`);
-
-      const seen = new Map<string, string>();
-      let collisionCount = 0;
-      for (const hosts of Object.values(map.projects)) {
-        for (const abspath of Object.values(hosts)) {
-          if (!abspath || abspath === 'TBD') continue;
-          const encoded = encodePath(abspath);
-          const prior = seen.get(encoded);
-          if (prior !== undefined && prior !== abspath) {
-            addItem(
-              section,
-              `${red('FAIL')} path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`,
-            );
-            collisionCount++;
-          } else {
-            seen.set(encoded, abspath);
-          }
-        }
-      }
-      if (collisionCount > 0) {
-        process.exitCode = 1;
-      } else {
-        addItem(section, `${green('PASS')} path-encoding: no collisions`);
-      }
-    }
-  } else {
+  if (!existsSync(mapPath)) {
     addItem(section, `${red('FAIL')} path-map.json missing at ${blue(mapPath)}`);
     process.exitCode = 1;
+    return;
   }
+  const map = readJsonSafe<PathMap>(mapPath, mapPath, section);
+  if (map === null) return;
+  // Guard non-object `projects` so Object.entries does not throw mid-output and break the tolerant-doctor contract.
+  const projects: unknown = (map as { projects?: unknown }).projects;
+  if (projects === null || typeof projects !== 'object') {
+    addItem(section, `${red('FAIL')} path-map.json invalid schema: "projects" must be an object`);
+    process.exitCode = 1;
+    return;
+  }
+  reportMappedProjects(section, map);
+  reportPathCollisions(section, map);
 }
 
 /** Pushes the comma-joined NEVER_SYNC set for informational visibility. */

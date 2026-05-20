@@ -281,6 +281,26 @@ describe('cmdDoctor path-encoding collision detection', () => {
 
   // Collisions cause silent data loss in remap, so doctor emits FAIL (not
   // WARN) and sets exitCode=1 so downstream automation can gate on them.
+  it('skips TBD and empty abspaths during the collision scan', async () => {
+    // `reportPathCollisions` filters out `TBD` placeholders (used before a
+    // host is set up) and empty strings before encoding. Without the skip,
+    // an unmapped host's `TBD` could collide with another unmapped host's
+    // `TBD`, producing a spurious FAIL. The test feeds both `TBD` and `''`
+    // and asserts the scanner still PASSes.
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo', 'other-host': 'TBD' },
+        bar: { 'test-host': '/srv/bar', 'other-host': '' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toContain('FAIL path-encoding collision');
+    expect(out).toContain('PASS path-encoding: no collisions');
+  });
+
   it('emits FAIL with exit code 1 listing both abspaths and the encoded result on collision', async () => {
     // `/foo/bar-baz` and `/foo-bar/baz` both encode to `-foo-bar-baz`
     // because encodePath swaps `/` for `-` without escaping literal dashes.

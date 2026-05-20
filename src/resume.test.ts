@@ -145,6 +145,95 @@ describe('resumeCmd', () => {
     );
   });
 
+  it('FATALs with "no cwd field found" when transcript has only file-history-snapshot lines', async () => {
+    // extractRecordedCwd scans for the first line carrying a cwd; if every
+    // line is a snapshot (no cwd field), it returns null and resumeCmd hits
+    // the dedicated FATAL line for that case.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-no-cwd', 'cwdless-id', [
+      JSON.stringify({ type: 'file-history-snapshot', fileName: 'a' }),
+      JSON.stringify({ type: 'file-history-snapshot', fileName: 'b' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('cwdless-id')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(expect.stringContaining('FATAL: no cwd field found'));
+  });
+
+  it('FATALs when path-map.json is missing entirely', async () => {
+    // makeEnv scaffolds claude-nomad/ but writePathMap is the only way the
+    // file gets written. With the transcript present and the map missing,
+    // resumeCmd must hit the dedicated "path-map.json missing" FATAL.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-some-encoded', 'no-map-id', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('no-map-id')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('FATAL: path-map.json missing'),
+    );
+  });
+
+  it('scans past encoded dirs that do not contain the session before returning the match', async () => {
+    // findTranscriptPath iterates every encoded dir under projectsRoot until
+    // one contains `<sessionId>.jsonl`. The branch that skips a non-matching
+    // dir is only exercised when at least one decoy dir precedes the real one.
+    env = makeEnv('test-host');
+    mkdirSync(join(env.testHome, '.claude', 'projects', '-decoy-dir'), { recursive: true });
+    writeTranscript(env.testHome, '-real-encoded', 'multi-id', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('multi-id');
+    expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'multi-id'`);
+  });
+
+  it('skips non-snapshot lines that lack a cwd field and continues scanning', async () => {
+    // extractRecordedCwd's cwd check is `typeof obj.cwd === 'string' && length > 0`.
+    // A non-snapshot line without a cwd field must not return undefined-as-cwd;
+    // the loop continues to the next line. Without this case, the typeof !=='string'
+    // branch never fires (snapshot lines short-circuit higher up).
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-no-cwd-line', 'noflag-id', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', text: 'no cwd here' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('noflag-id');
+    expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'noflag-id'`);
+  });
+
+  it('skips non-JSON transcript lines and continues to the first valid cwd', async () => {
+    // Transcripts can be appended mid-write or contain garbage from a
+    // truncated write. extractRecordedCwd's try/catch swallows parse errors
+    // and scans onward; the test asserts a junk line in front of a valid one
+    // does not abort the scan.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-partial-encoded', 'partial-id', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      '{not valid json',
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('partial-id');
+    expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'partial-id'`);
+  });
+
   it('FATALs when recorded cwd is not present in path-map.json', async () => {
     env = makeEnv('test-host');
     writeTranscript(env.testHome, '-strange-encoded', 'orphan-1', [
