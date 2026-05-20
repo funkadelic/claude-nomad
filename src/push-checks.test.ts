@@ -289,9 +289,13 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     // The FATAL message itself does not go through process.stderr.write
     // (it lives on the thrown NomadFatal). No forwarding should have run.
     const stderrCallsAfter = stderrSpy.mock.calls.slice(stderrCallCountBefore);
-    const forwarded = stderrCallsAfter.some(
-      (c: unknown[]) => Buffer.isBuffer(c[0]) && c[0].toString().length > 0,
-    );
+    const forwarded = stderrCallsAfter.some((c: unknown[]) => {
+      const chunk = c[0];
+      return (
+        (Buffer.isBuffer(chunk) && chunk.toString().length > 0) ||
+        (typeof chunk === 'string' && chunk.length > 0)
+      );
+    });
     expect(forwarded).toBe(false);
   });
 
