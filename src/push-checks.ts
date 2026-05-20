@@ -52,8 +52,10 @@ export function gitleaksInstallHint(): string {
     const localBin = `${homedir()}/.local/bin`;
     const paths = (process.env.PATH ?? '').split(':');
     if (!paths.includes(localBin)) {
-      lines.push('  3. ~/.local/bin is not on PATH; add to your shell rc:');
-      lines.push('       export PATH="$HOME/.local/bin:$PATH"');
+      lines.push(
+        '  3. ~/.local/bin is not on PATH; add to your shell rc:',
+        '       export PATH="$HOME/.local/bin:$PATH"',
+      );
     }
     return lines.join('\n');
   }
