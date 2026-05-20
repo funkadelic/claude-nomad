@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.3](https://github.com/funkadelic/claude-nomad/compare/v0.14.2...v0.14.3) (2026-05-20)
+
+
+### Changed
+
+* bump Node engine floor to 22.22.1 (lint-staged@17 requirement) ([#78](https://github.com/funkadelic/claude-nomad/issues/78)) ([2724afe](https://github.com/funkadelic/claude-nomad/commit/2724afe8f545fd02374114852f40e18139d6d2e6))
+
 ## [0.14.2](https://github.com/funkadelic/claude-nomad/compare/v0.14.1...v0.14.2) (2026-05-20)
 
 
