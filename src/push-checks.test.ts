@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -68,6 +68,34 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     expect(hits).toContain(join(testDir, 'a', '.git'));
     expect(hits).toContain(join(testDir, 'b', 'nested', '.git'));
   });
+
+  it('silently skips a subdirectory whose readdirSync throws EACCES', async () => {
+    // Two real sibling subtrees: `accessible/foo/.git` (a real hit) plus
+    // `locked/` chmodded to 0o000 so readdirSync throws EACCES on entry. The
+    // walker's catch (line 90) returns from that subtree without rethrowing
+    // and keeps the hit from `accessible/`. Cleanup chmods locked back to
+    // 0o700 before rmSync, otherwise teardown fails on EACCES.
+    const { findGitlinks } = await import('./push-checks.ts');
+    const accessibleGit = join(testDir, 'accessible', 'foo', '.git');
+    mkdirSync(accessibleGit, { recursive: true });
+    writeFileSync(join(accessibleGit, 'HEAD'), 'ref: refs/heads/main');
+    const lockedDir = join(testDir, 'locked');
+    mkdirSync(lockedDir, { recursive: true });
+    writeFileSync(join(lockedDir, '.git'), 'gitdir: would-be-hit-but-unreadable-parent');
+    chmodSync(lockedDir, 0o000);
+    try {
+      const hits = findGitlinks(testDir);
+      // The accessible hit survives; the locked subtree contributes nothing
+      // because readdirSync threw before the loop could enumerate its entries.
+      expect(hits).toContain(accessibleGit);
+      // The locked dir's .git entry is NOT reported (subtree's readdir failed
+      // before it could enumerate the .git file).
+      expect(hits.some((p) => p.startsWith(lockedDir))).toBe(false);
+    } finally {
+      // Restore perms so rmSync in afterEach can descend.
+      chmodSync(lockedDir, 0o700);
+    }
+  });
 });
 
 describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_process)', () => {
@@ -134,6 +162,36 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     });
     const { probeGitleaks } = await import('./push-checks.ts');
     expect(probeGitleaks()).toBe('v8.18.2');
+  });
+
+  it('probeGitleaks throws NomadFatal with "gitleaks --version failed" on non-ENOENT errors', async () => {
+    // Distinguish line 119 from the ENOENT branch (line 118). EACCES means
+    // the binary exists but the spawn was denied; the message MUST be the
+    // explicit "gitleaks --version failed: <reason>" form, not the install
+    // hint. This guarantees diagnosability when a sandbox or policy denies
+    // execution rather than the binary being absent.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          const err = new Error('permission denied') as NodeJS.ErrnoException;
+          err.code = 'EACCES';
+          throw err;
+        }),
+      };
+    });
+    const { probeGitleaks } = await import('./push-checks.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => probeGitleaks()).toThrow(NomadFatal);
+    expect(() => probeGitleaks()).toThrow(/gitleaks --version failed/);
+    expect(() => probeGitleaks()).toThrow(/permission denied/);
+    // Negation: must NOT show the install hint (that branch is ENOENT only).
+    try {
+      probeGitleaks();
+    } catch (err) {
+      expect((err as Error).message).not.toMatch(/Install:/);
+    }
   });
 
   // runGitleaksScan
