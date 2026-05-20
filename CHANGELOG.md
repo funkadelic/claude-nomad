@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/funkadelic/claude-nomad/compare/v0.14.0...v0.14.1) (2026-05-20)
+
+
+### Testing
+
+* **doctor:** isolate schema-failure exit-code from gitleaks state ([#74](https://github.com/funkadelic/claude-nomad/issues/74)) ([0148640](https://github.com/funkadelic/claude-nomad/commit/014864095b16440aa598072c6824059b4135fd75))
+
 ## [0.14.0](https://github.com/funkadelic/claude-nomad/compare/v0.13.0...v0.14.0) (2026-05-20)
 
 
