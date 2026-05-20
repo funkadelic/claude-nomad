@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/funkadelic/claude-nomad/compare/v0.14.1...v0.14.2) (2026-05-20)
+
+
+### Testing
+
+* close coverage gaps in utils, color, commands, push-checks, remap ([#76](https://github.com/funkadelic/claude-nomad/issues/76)) ([e392106](https://github.com/funkadelic/claude-nomad/commit/e3921069dea3148d5aabfa1553785731954c334e))
+
 ## [0.14.1](https://github.com/funkadelic/claude-nomad/compare/v0.14.0...v0.14.1) (2026-05-20)
 
 
