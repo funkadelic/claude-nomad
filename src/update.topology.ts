@@ -18,7 +18,7 @@ export type Topology = 'vanilla' | 'fork' | 'unknown';
  * into a `new RegExp(...)` does not silently broaden the match. The current
  * slug has no metachars, but this keeps the call defensible if it changes. */
 function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return s.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 /**
@@ -27,8 +27,8 @@ function escapeRe(s: string): string {
  * (set-url ssh, gh-clone https) must round-trip through `detectTopology`.
  */
 const SLUG_RE = escapeRe(UPSTREAM_REPO_SLUG);
-const SSH_REGEX = new RegExp(`^git@github\\.com:${SLUG_RE}(\\.git)?$`);
-const HTTPS_REGEX = new RegExp(`^https://github\\.com/${SLUG_RE}(\\.git)?$`);
+const SSH_REGEX = new RegExp(String.raw`^git@github\.com:${SLUG_RE}(\.git)?$`);
+const HTTPS_REGEX = new RegExp(String.raw`^https://github\.com/${SLUG_RE}(\.git)?$`);
 
 /**
  * Determines whether a remote URL matches the canonical upstream repository forms (SSH or HTTPS).
