@@ -441,4 +441,34 @@ describe('resumeCmd', () => {
       `cd '/local/it'\\''s/foo' && claude --resume 'abc-123'`,
     );
   });
+
+  it('FATALs and exits 1 when ~/.claude/projects/ does not exist on disk', async () => {
+    // Build a sandbox where ~/.claude/ is ABSENT entirely so the
+    // projectsRoot existsSync check fails. Mirrors the same exit-via-spy
+    // pattern as the rest of the suite but skips makeEnv (which creates
+    // .claude/projects/). Covers resume.ts lines 32-33 (FATAL + exit(1)).
+    const testHome = mkdtempSync(join(tmpdir(), 'nomad-resume-no-projects-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    // NOTE: deliberately do NOT create .claude/projects/.
+    vi.resetModules();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((code?: string | number | null) => {
+        throw new Error(`exit:${String(code)}`);
+      });
+    try {
+      const { resumeCmd } = await import('./resume.ts');
+      expect(() => resumeCmd('abc-123')).toThrow('exit:1');
+      const expected = join(testHome, '.claude', 'projects');
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(`FATAL: ${expected}`));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('does not exist'));
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      rmSync(testHome, { recursive: true, force: true });
+    }
+  });
 });

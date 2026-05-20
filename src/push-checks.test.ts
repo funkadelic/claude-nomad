@@ -236,6 +236,65 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     expect(matched).toBe(true);
   });
 
+  it('runGitleaksScan forwards stdout (not stderr) and throws NomadFatal when the error carries only stdout', async () => {
+    // Cover the line-148 truthy branch (`if (e.stdout)`) AND the line-147
+    // falsey branch (`if (e.stderr)` false) together: gitleaks fails with
+    // a stdout payload only (no stderr). The forwarding code emits the
+    // stdout to process.stdout.write and the FATAL still fires.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          const err = new Error('Command failed') as NodeJS.ErrnoException & {
+            status?: number;
+            stdout?: Buffer;
+          };
+          err.status = 1;
+          err.stdout = Buffer.from('redacted-finding-on-stdout');
+          // No err.stderr - this is the load-bearing distinguishing condition.
+          throw err;
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-checks.ts');
+    expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
+    const stdoutCalls = stdoutSpy.mock.calls.map((c: unknown[]) => c[0]);
+    const matched = stdoutCalls.some(
+      (chunk: unknown) =>
+        (Buffer.isBuffer(chunk) && chunk.toString().includes('redacted-finding-on-stdout')) ||
+        (typeof chunk === 'string' && chunk.includes('redacted-finding-on-stdout')),
+    );
+    expect(matched).toBe(true);
+  });
+
+  it('rebaseBeforePush throws without forwarding stderr when the error carries no stderr buffer', async () => {
+    // Cover the line-180 falsey branch (`if (e.stderr)` false). git fails
+    // with no captured stderr (e.g., signal-killed before output). The
+    // FATAL fires with the standard rebase message and no spurious stderr
+    // forwarding lands.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          // Throw an error with NO .stderr property.
+          throw new Error('git terminated');
+        }),
+      };
+    });
+    const { rebaseBeforePush } = await import('./push-checks.ts');
+    const stderrCallCountBefore = stderrSpy.mock.calls.length;
+    expect(() => rebaseBeforePush()).toThrow(/rebase failed/);
+    // The FATAL message itself does not go through process.stderr.write
+    // (it lives on the thrown NomadFatal). No forwarding should have run.
+    const stderrCallsAfter = stderrSpy.mock.calls.slice(stderrCallCountBefore);
+    const forwarded = stderrCallsAfter.some(
+      (c: unknown[]) => Buffer.isBuffer(c[0]) && c[0].toString().length > 0,
+    );
+    expect(forwarded).toBe(false);
+  });
+
   it('runGitleaksScan throws NomadFatal with install hint on ENOENT (defense in depth)', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
@@ -381,6 +440,21 @@ describe('gitleaksInstallHint (platform-aware install scaffold)', () => {
     const { gitleaksInstallHint } = await import('./push-checks.ts');
     const out = gitleaksInstallHint();
     expect(out).not.toMatch(/~\/\.local\/bin is not on PATH/);
+  });
+
+  it('Linux + PATH unset entirely falls through the `?? ""` fallback and still emits the PATH-fix step', async () => {
+    // Cover the line-53 `??` fallback branch: when PATH is undefined the
+    // split runs on the empty string, paths.includes(localBin) returns
+    // false, and the PATH-fix step is appended. Mirrors the "missing from
+    // PATH" test but with PATH entirely absent rather than set to a value
+    // that lacks ~/.local/bin.
+    mockOs('linux', '/home/test');
+    setArch('x64');
+    delete process.env.PATH;
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).toMatch(/~\/\.local\/bin is not on PATH/);
+    expect(out).toContain('export PATH="$HOME/.local/bin:$PATH"');
   });
 
   it('Unsupported platform returns just the releases link', async () => {

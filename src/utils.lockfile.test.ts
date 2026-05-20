@@ -218,4 +218,78 @@ describe('acquireLock stale-lock recovery branches', () => {
     expect(openCount).toBe(1);
     expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
   });
+
+  it('rethrows when openSync fails with a non-EEXIST error (e.g. EACCES on parent dir)', async () => {
+    // acquireLock catches openSync errors and only converts EEXIST into the
+    // contention-recovery path. Any other code (EACCES, ENOSPC, etc.) must
+    // be rethrown unchanged so the caller sees the underlying I/O failure.
+    // Covers the line-233 truthy `code !== 'EEXIST'` rethrow branch.
+    mkdirSync(lockDir, { recursive: true });
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        openSync: vi.fn(
+          (
+            path: fsModule.PathLike,
+            flags: fsModule.OpenMode,
+            mode?: fsModule.Mode | null,
+          ): number => {
+            if (typeof path === 'string' && path === lockPath && flags === 'wx') {
+              const err = new Error('permission denied') as NodeJS.ErrnoException;
+              err.code = 'EACCES';
+              throw err;
+            }
+            return actual.openSync(path, flags, mode);
+          },
+        ),
+      };
+    });
+    const { acquireLock } = await import('./utils.ts');
+    expect(() => acquireLock('pull')).toThrow(/permission denied/);
+  });
+
+  it('returns null after ESRCH liveness probe when unlinkIfSamePid cannot remove the stale lock', async () => {
+    // Plant a dead PID so process.kill(pid, 0) throws ESRCH. Then mock
+    // unlinkSync to throw EACCES so unlinkIfSamePid (line 280) returns
+    // false. Control flow lands on the post-ESRCH fallthrough at lines
+    // 312-313 (stderr skip + null return) WITHOUT retrying. Distinct from
+    // the successful-ESRCH-recovery path covered by utils.test.ts.
+    const deadPid = 2147483647;
+    let guarded = false;
+    try {
+      process.kill(deadPid, 0);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ESRCH') guarded = true;
+    }
+    if (!guarded) {
+      throw new Error(`PID ${deadPid} unexpectedly live; pick a higher PID.`);
+    }
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(lockPath, String(deadPid));
+
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        // Allow openSync('wx') to throw EEXIST naturally (the planted file
+        // is on disk), then block unlinkSync so unlinkIfSamePid bails with
+        // false at line 280's catch.
+        unlinkSync: vi.fn((path: fsModule.PathLike) => {
+          if (typeof path === 'string' && path === lockPath) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.unlinkSync(path);
+        }),
+      };
+    });
+    const { acquireLock } = await import('./utils.ts');
+    const handle = acquireLock('pull');
+    expect(handle).toBeNull();
+    expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
+    // Lockfile remains because unlink was blocked.
+    expect(existsSync(lockPath)).toBe(true);
+  });
 });

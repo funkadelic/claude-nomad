@@ -339,4 +339,96 @@ describe('remapPush dry-run and unmapped count', () => {
     expect(result.unmapped).toBe(0);
     expect(result.collisions).toBe(0);
   });
+
+  it('reverse map filters TBD and empty-string host values (push line 103)', async () => {
+    // The reverse map in remapPush walks path-map.json's per-host entries
+    // and skips any that are empty-string or `'TBD'`. Without the skip, an
+    // unmapped host's `TBD` would be encoded to the literal string `'TBD'`
+    // and could match a local encoded dir. The test plants a mapped entry
+    // plus a TBD entry plus an empty-string entry; only the mapped one
+    // participates in the copy, the TBD/empty are filtered out of the
+    // reverse map AND therefore neither contribute to the unmapped count
+    // (their local encoded dir does not exist) nor to the copy.
+    mkdirSync(join(claudeProjects, '-srv-mapped'), { recursive: true });
+    writeFileSync(join(claudeProjects, '-srv-mapped', 'session.jsonl'), '{"x":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          mapped: { 'test-host': '/srv/mapped' },
+          placeholder: { 'test-host': 'TBD' },
+          blank: { 'test-host': '' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260516-000000');
+
+    expect(result.unmapped).toBe(0);
+    expect(result.collisions).toBe(0);
+    expect(existsSync(join(sharedProjects, 'mapped', 'session.jsonl'))).toBe(true);
+    // TBD/blank logicals must not appear in shared/projects/ because they
+    // were filtered from the reverse map and never matched any local dir.
+    expect(existsSync(join(sharedProjects, 'placeholder'))).toBe(false);
+    expect(existsSync(join(sharedProjects, 'blank'))).toBe(false);
+  });
+});
+
+// Covers remap.ts line 56: `if (!existsSync(src)) continue` in remapPull.
+// Lives outside the prior describe blocks because it needs a sandbox where
+// the path-map is mapped for this host but the repo's
+// shared/projects/<logical>/ source is intentionally missing. Easy to model
+// with a fresh fixture.
+describe('remapPull skips when repo source is missing for a mapped logical', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-no-src-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    // shared/projects/ exists but the per-logical dir does NOT.
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('returns unmapped:0 and does not create the encoded local dir when shared/projects/<logical>/ is absent', async () => {
+    // path-map maps `ghost` to `/srv/ghost` for this host, BUT there is no
+    // shared/projects/ghost/ dir in the repo. The `if (!existsSync(src))
+    // continue` branch fires (line 56), no copy happens, the encoded local
+    // dir is never created. unmapped stays 0 because the host has a mapping.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { ghost: { 'test-host': '/srv/ghost' } },
+      }) + '\n',
+    );
+    expect(existsSync(join(sharedProjects, 'ghost'))).toBe(false);
+
+    const { remapPull } = await import('./remap.ts');
+    const result = remapPull('20260516-000000');
+
+    expect(result.unmapped).toBe(0);
+    expect(existsSync(join(claudeProjects, '-srv-ghost'))).toBe(false);
+  });
 });
