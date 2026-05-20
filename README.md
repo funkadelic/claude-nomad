@@ -286,16 +286,20 @@ To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tra
 
 ## Commands
 
-- `nomad init`: scaffold an empty `shared/`, `hosts/`, `path-map.json` skeleton on a fresh clone. Refuses to clobber any pre-existing scaffold artifact.
-- `nomad init --snapshot`: overlay the current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals under `~/.claude/` are not modified.
-- `nomad pull`: `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths. Fails fast with `repo not initialized` if the scaffold is missing.
-- `nomad pull --dry-run`: acquires the lock and runs `git pull --rebase` so the network round-trip mirrors a real pull, then prints the planned changes (symlink moves, `settings.json` unified diff, session-transcript overwrites) without touching disk.
-- `nomad diff`: offline, lockless twin of `pull --dry-run`. Same preview output, but does NOT acquire the lock and does NOT run `git pull`, so it works against the current local repo state. Use this for "what would be applied right now" against a possibly-partially-scaffolded repo.
-- `nomad push`: export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.
-- `nomad push --dry-run`: runs all four pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan) and the allow-list classification, then skips `git add`, the gitleaks scan, `git commit`, and `git push`. Use this to answer "would my next push succeed?" without publishing anything.
-- `nomad update`: topology-aware upgrade of `~/claude-nomad/` to the latest upstream. Detects vanilla (origin only) vs fork (`upstream` + `origin`) layout, runs pre-flight (clean tree, on `main`, valid topology), executes the right git incantation, re-runs `npm install` only when `package-lock.json` shifted, and ends by invoking `nomad doctor` so the version-check confirms the upgrade landed. Flags: `--dry-run` (detect topology + pre-flight, print would-be git commands only), `--force` (proceed even when the working tree is not clean), `--push-origin` (fork topology only: push the merge to `origin/main` without prompting).
-- `nomad doctor`: read-only health check. Every check-result line carries an explicit `PASS`, `WARN`, or `FAIL` token; informational headers (`host:`, `repo:`, `claude home:`, `repo state:`, `mapped projects for ...`, `never-sync items:`, `remote origin:`) stay unprefixed. `repo state:` reports `PASS populated`, `WARN partial <reason>`, or `FAIL empty - run 'nomad init' to scaffold`. Also runs an offline-tolerant release-version check that emits ``WARN version: <local> -> <latest> (run `nomad update`)`` when the local install is behind the latest upstream release and `PASS version: <local> (latest)` when current (non-fatal; silent skip when offline). Any `FAIL` sets `process.exitCode = 1` so CI can gate on it; `WARN` does not.
-- `nomad doctor --resume-cmd <session-id>` prints a host-local `cd ... && claude --resume <id>` line for the given session (see [Cross-OS resume](#cross-os-resume)).
+| Command                          | Description                                                                                                                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nomad init`                     | Scaffold empty `shared/`, `hosts/`, `path-map.json` on a fresh clone. Refuses to clobber existing scaffold.                                                                           |
+| `nomad init --snapshot`          | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified.                               |
+| `nomad pull`                     | `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths. FATAL if scaffold missing.                                                          |
+| `nomad pull --dry-run`           | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), exit without writing.                  |
+| `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                          |
+| `nomad push`                     | Export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                               |
+| `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list); skip stage, scan, commit, and push.                                                     |
+| `nomad update`                   | Topology-aware upgrade to the latest upstream. Flags: `--dry-run`, `--force`, `--push-origin`. See [Upgrading the tool](#upgrading-the-tool).                                         |
+| `nomad doctor`                   | Read-only health check. Each line is `PASS`, `WARN`, or `FAIL`; any `FAIL` sets `process.exitCode = 1` (WARN does not). Includes an offline-tolerant release-version staleness check. |
+| `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                     |
+
+The version-check emits ``WARN version: <local> -> <latest> (run `nomad update`)`` when the local install is behind the latest upstream release, and `PASS version: <local> (latest)` when current. It silently skips on network failures.
 
 Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summary:` line:
 
