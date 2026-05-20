@@ -454,6 +454,19 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('reports FAIL invalid schema and continues when path-map.json parses to a non-object projects field', async () => {
+    // path-map.json is valid JSON but schema-invalid. Without the projects
+    // guard, Object.entries(map.projects) throws and aborts doctor output
+    // mid-stream, violating the tolerant-doctor contract.
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{}');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL path-map.json invalid schema');
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
+
   it('reports FAIL and sets exitCode=1 when path-map.json is missing', async () => {
     // makeDoctorEnv does not write path-map.json by default; assert the
     // missing-file FAIL path so doctor matches cmdPush's hard-stop behavior.

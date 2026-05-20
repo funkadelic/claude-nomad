@@ -149,6 +149,19 @@ export function reportPathMap(section: DoctorSection): void {
   if (existsSync(mapPath)) {
     const map = readJsonSafe<PathMap>(mapPath, mapPath, section);
     if (map !== null) {
+      // path-map.json parsed but may be schema-invalid (e.g. `{}` or
+      // `{ "projects": null }`). Object.entries() on a non-object throws
+      // mid-output and would lose every line below; guard explicitly so the
+      // tolerant-doctor contract holds.
+      const projects: unknown = (map as { projects?: unknown }).projects;
+      if (projects === null || typeof projects !== 'object') {
+        addItem(
+          section,
+          `${red('FAIL')} path-map.json invalid schema: "projects" must be an object`,
+        );
+        process.exitCode = 1;
+        return;
+      }
       const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
       addItem(section, `mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`);
       for (const [name, hosts] of mapped) addItem(section, `${name} -> ${blue(hosts[HOST])}`);
