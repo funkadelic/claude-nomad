@@ -145,6 +145,58 @@ describe('resumeCmd', () => {
     );
   });
 
+  it('FATALs with "no cwd field found" when transcript has only file-history-snapshot lines', async () => {
+    // extractRecordedCwd scans for the first line carrying a cwd; if every
+    // line is a snapshot (no cwd field), it returns null and resumeCmd hits
+    // the dedicated FATAL line for that case.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-no-cwd', 'cwdless-id', [
+      JSON.stringify({ type: 'file-history-snapshot', fileName: 'a' }),
+      JSON.stringify({ type: 'file-history-snapshot', fileName: 'b' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('cwdless-id')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(expect.stringContaining('FATAL: no cwd field found'));
+  });
+
+  it('FATALs when path-map.json is missing entirely', async () => {
+    // makeEnv scaffolds claude-nomad/ but writePathMap is the only way the
+    // file gets written. With the transcript present and the map missing,
+    // resumeCmd must hit the dedicated "path-map.json missing" FATAL.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-some-encoded', 'no-map-id', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('no-map-id')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('FATAL: path-map.json missing'),
+    );
+  });
+
+  it('skips non-JSON transcript lines and continues to the first valid cwd', async () => {
+    // Transcripts can be appended mid-write or contain garbage from a
+    // truncated write. extractRecordedCwd's try/catch swallows parse errors
+    // and scans onward; the test asserts a junk line in front of a valid one
+    // does not abort the scan.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-partial-encoded', 'partial-id', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      '{not valid json',
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('partial-id');
+    expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'partial-id'`);
+  });
+
   it('FATALs when recorded cwd is not present in path-map.json', async () => {
     env = makeEnv('test-host');
     writeTranscript(env.testHome, '-strange-encoded', 'orphan-1', [
