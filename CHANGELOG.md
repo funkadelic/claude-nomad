@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/funkadelic/claude-nomad/compare/v0.11.2...v0.12.0) (2026-05-20)
+
+
+### Added
+
+* **doctor:** warn when local install is behind the latest release ([#60](https://github.com/funkadelic/claude-nomad/issues/60)) ([cd017f7](https://github.com/funkadelic/claude-nomad/commit/cd017f744cc65f114d2c68783d7bb9a5d23844df))
+
 ## [0.11.2](https://github.com/funkadelic/claude-nomad/compare/v0.11.1...v0.11.2) (2026-05-19)
 
 
