@@ -348,7 +348,6 @@ describe('cmdUpdate', () => {
     const { cmdUpdate } = await import('./commands.update.ts');
     cmdUpdate();
     expect(git.calls.map((c) => c.args.join(' '))).toContain('push origin main');
-    vi.doUnmock('node:fs');
   });
 
   it('defaultPrompt: openSync failure returns empty string and skips push', async () => {
@@ -369,7 +368,6 @@ describe('cmdUpdate', () => {
     cmdUpdate();
     expect(git.calls.map((c) => c.args.join(' '))).not.toContain('push origin main');
     expect(joinedLog(env.logSpy)).toContain('skipping push to origin');
-    vi.doUnmock('node:fs');
   });
 
   it('defaultPrompt: readSync returns 0 on first call yields empty answer', async () => {
@@ -393,7 +391,6 @@ describe('cmdUpdate', () => {
     cmdUpdate();
     expect(git.calls.map((c) => c.args.join(' '))).not.toContain('push origin main');
     expect(joinedLog(env.logSpy)).toContain('skipping push to origin');
-    vi.doUnmock('node:fs');
   });
 
   it('currentBranch failure without stderr buffer: still surfaces NomadFatal cleanly', async () => {
@@ -473,7 +470,6 @@ describe('cmdUpdate', () => {
     expect(git.calls.map((c) => c.args.join(' '))).not.toContain('push origin main');
     // Finally arm must run even when readSync throws.
     expect(closeSpy).toHaveBeenCalledWith(999);
-    vi.doUnmock('node:fs');
   });
 });
 

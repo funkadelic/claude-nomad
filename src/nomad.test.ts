@@ -82,10 +82,12 @@ describe('nomad.ts push dispatcher', () => {
     const cmdDoctorMock = vi.fn();
     const cmdInitMock = vi.fn();
     const cmdDiffMock = vi.fn();
+    const cmdUpdateMock = vi.fn();
     const resumeCmdMock = vi.fn();
     vi.doMock('./commands.pull.ts', () => ({ cmdPull: cmdPullMock }));
     vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
     vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
     vi.doMock('./diff.ts', () => ({ cmdDiff: cmdDiffMock }));
     vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
@@ -97,6 +99,7 @@ describe('nomad.ts push dispatcher', () => {
     expect(cmdDoctorMock).not.toHaveBeenCalled();
     expect(cmdInitMock).not.toHaveBeenCalled();
     expect(cmdDiffMock).not.toHaveBeenCalled();
+    expect(cmdUpdateMock).not.toHaveBeenCalled();
     expect(resumeCmdMock).not.toHaveBeenCalled();
     // The expanded help text is one console.error call carrying a single
     // multi-line string. Assert on three structural anchors (header line,
