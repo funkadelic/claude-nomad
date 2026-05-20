@@ -75,6 +75,37 @@ describe('diffJsonStrings', () => {
     const out = diffJsonStrings(s, s);
     expect(out).toBe('');
   });
+
+  it('handles a longer "next" (more lines than current) without pushing undefined entries', async () => {
+    // Covers line 48's `if (bv !== undefined)` guard in the diff loop AND
+    // line 44's `if (av !== undefined)` guard in the equality branch when
+    // the parallel walk runs past current's end. Current is shorter, so
+    // the tail iterations have av=undefined; only the `+next` lines should
+    // appear for the extra entries (no `undefined` artifacts in output).
+    const current = '{}';
+    const next = '{\n  "a": 1,\n  "b": 2\n}';
+    const { diffJsonStrings } = await import('./preview.ts');
+    const out = diffJsonStrings(current, next);
+    expect(out).not.toContain('undefined');
+    expect(out).toContain('+');
+    // The added lines from `next` should appear in the output.
+    expect(out).toContain('"a": 1');
+    expect(out).toContain('"b": 2');
+  });
+
+  it('handles a longer "current" (more lines than next) without pushing undefined entries', async () => {
+    // Symmetric to the prior test: current longer than next means tail
+    // iterations have bv=undefined. The diff must emit `-` lines for the
+    // removed entries and skip the bv-side push (line 48 guard).
+    const current = '{\n  "a": 1,\n  "b": 2\n}';
+    const next = '{}';
+    const { diffJsonStrings } = await import('./preview.ts');
+    const out = diffJsonStrings(current, next);
+    expect(out).not.toContain('undefined');
+    expect(out).toContain('-');
+    expect(out).toContain('"a": 1');
+    expect(out).toContain('"b": 2');
+  });
 });
 
 describe('computePreview orchestration', () => {

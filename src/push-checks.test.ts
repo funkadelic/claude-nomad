@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -68,6 +68,34 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     expect(hits).toContain(join(testDir, 'a', '.git'));
     expect(hits).toContain(join(testDir, 'b', 'nested', '.git'));
   });
+
+  it('silently skips a subdirectory whose readdirSync throws EACCES', async () => {
+    // Two real sibling subtrees: `accessible/foo/.git` (a real hit) plus
+    // `locked/` chmodded to 0o000 so readdirSync throws EACCES on entry. The
+    // walker's catch (line 90) returns from that subtree without rethrowing
+    // and keeps the hit from `accessible/`. Cleanup chmods locked back to
+    // 0o700 before rmSync, otherwise teardown fails on EACCES.
+    const { findGitlinks } = await import('./push-checks.ts');
+    const accessibleGit = join(testDir, 'accessible', 'foo', '.git');
+    mkdirSync(accessibleGit, { recursive: true });
+    writeFileSync(join(accessibleGit, 'HEAD'), 'ref: refs/heads/main');
+    const lockedDir = join(testDir, 'locked');
+    mkdirSync(lockedDir, { recursive: true });
+    writeFileSync(join(lockedDir, '.git'), 'gitdir: would-be-hit-but-unreadable-parent');
+    chmodSync(lockedDir, 0o000);
+    try {
+      const hits = findGitlinks(testDir);
+      // The accessible hit survives; the locked subtree contributes nothing
+      // because readdirSync threw before the loop could enumerate its entries.
+      expect(hits).toContain(accessibleGit);
+      // The locked dir's .git entry is NOT reported (subtree's readdir failed
+      // before it could enumerate the .git file).
+      expect(hits.some((p) => p.startsWith(lockedDir))).toBe(false);
+    } finally {
+      // Restore perms so rmSync in afterEach can descend.
+      chmodSync(lockedDir, 0o700);
+    }
+  });
 });
 
 describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_process)', () => {
@@ -136,6 +164,36 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     expect(probeGitleaks()).toBe('v8.18.2');
   });
 
+  it('probeGitleaks throws NomadFatal with "gitleaks --version failed" on non-ENOENT errors', async () => {
+    // Distinguish line 119 from the ENOENT branch (line 118). EACCES means
+    // the binary exists but the spawn was denied; the message MUST be the
+    // explicit "gitleaks --version failed: <reason>" form, not the install
+    // hint. This guarantees diagnosability when a sandbox or policy denies
+    // execution rather than the binary being absent.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          const err = new Error('permission denied') as NodeJS.ErrnoException;
+          err.code = 'EACCES';
+          throw err;
+        }),
+      };
+    });
+    const { probeGitleaks } = await import('./push-checks.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => probeGitleaks()).toThrow(NomadFatal);
+    expect(() => probeGitleaks()).toThrow(/gitleaks --version failed/);
+    expect(() => probeGitleaks()).toThrow(/permission denied/);
+    // Negation: must NOT show the install hint (that branch is ENOENT only).
+    try {
+      probeGitleaks();
+    } catch (err) {
+      expect((err as Error).message).not.toMatch(/Install:/);
+    }
+  });
+
   // runGitleaksScan
   it('runGitleaksScan does not throw on clean scan', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
@@ -176,6 +234,69 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
         (typeof chunk === 'string' && chunk.includes('redacted-secret')),
     );
     expect(matched).toBe(true);
+  });
+
+  it('runGitleaksScan forwards stdout (not stderr) and throws NomadFatal when the error carries only stdout', async () => {
+    // Cover the line-148 truthy branch (`if (e.stdout)`) AND the line-147
+    // falsey branch (`if (e.stderr)` false) together: gitleaks fails with
+    // a stdout payload only (no stderr). The forwarding code emits the
+    // stdout to process.stdout.write and the FATAL still fires.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          const err = new Error('Command failed') as NodeJS.ErrnoException & {
+            status?: number;
+            stdout?: Buffer;
+          };
+          err.status = 1;
+          err.stdout = Buffer.from('redacted-finding-on-stdout');
+          // No err.stderr - this is the load-bearing distinguishing condition.
+          throw err;
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-checks.ts');
+    expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
+    const stdoutCalls = stdoutSpy.mock.calls.map((c: unknown[]) => c[0]);
+    const matched = stdoutCalls.some(
+      (chunk: unknown) =>
+        (Buffer.isBuffer(chunk) && chunk.toString().includes('redacted-finding-on-stdout')) ||
+        (typeof chunk === 'string' && chunk.includes('redacted-finding-on-stdout')),
+    );
+    expect(matched).toBe(true);
+  });
+
+  it('rebaseBeforePush throws without forwarding stderr when the error carries no stderr buffer', async () => {
+    // Cover the line-180 falsey branch (`if (e.stderr)` false). git fails
+    // with no captured stderr (e.g., signal-killed before output). The
+    // FATAL fires with the standard rebase message and no spurious stderr
+    // forwarding lands.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          // Throw an error with NO .stderr property.
+          throw new Error('git terminated');
+        }),
+      };
+    });
+    const { rebaseBeforePush } = await import('./push-checks.ts');
+    const stderrCallCountBefore = stderrSpy.mock.calls.length;
+    expect(() => rebaseBeforePush()).toThrow(/rebase failed/);
+    // The FATAL message itself does not go through process.stderr.write
+    // (it lives on the thrown NomadFatal). No forwarding should have run.
+    const stderrCallsAfter = stderrSpy.mock.calls.slice(stderrCallCountBefore);
+    const forwarded = stderrCallsAfter.some((c: unknown[]) => {
+      const chunk = c[0];
+      return (
+        (Buffer.isBuffer(chunk) && chunk.toString().length > 0) ||
+        (typeof chunk === 'string' && chunk.length > 0)
+      );
+    });
+    expect(forwarded).toBe(false);
   });
 
   it('runGitleaksScan throws NomadFatal with install hint on ENOENT (defense in depth)', async () => {
@@ -323,6 +444,21 @@ describe('gitleaksInstallHint (platform-aware install scaffold)', () => {
     const { gitleaksInstallHint } = await import('./push-checks.ts');
     const out = gitleaksInstallHint();
     expect(out).not.toMatch(/~\/\.local\/bin is not on PATH/);
+  });
+
+  it('Linux + PATH unset entirely falls through the `?? ""` fallback and still emits the PATH-fix step', async () => {
+    // Cover the line-53 `??` fallback branch: when PATH is undefined the
+    // split runs on the empty string, paths.includes(localBin) returns
+    // false, and the PATH-fix step is appended. Mirrors the "missing from
+    // PATH" test but with PATH entirely absent rather than set to a value
+    // that lacks ~/.local/bin.
+    mockOs('linux', '/home/test');
+    setArch('x64');
+    delete process.env.PATH;
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).toMatch(/~\/\.local\/bin is not on PATH/);
+    expect(out).toContain('export PATH="$HOME/.local/bin:$PATH"');
   });
 
   it('Unsupported platform returns just the releases link', async () => {
