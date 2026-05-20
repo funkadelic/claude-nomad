@@ -149,15 +149,14 @@ Result on that host: opus model, the local Ollama env var, plus the shared permi
 
 ## What does NOT sync (deliberate trade-offs)
 
-These are intentional design choices. Read them before adopting `claude-nomad` so you opt in with eyes open. Each item lists the user-visible behavior and the rationale. The [What gets synced vs. not](#what-gets-synced-vs-not) overview above is the quick reference; this section is the deep cut.
+Read these before adopting so you opt in with eyes open.
 
 - **Last-write-wins on conflicts.** Git surfaces them on merge; no field-level JSON merging.
 - **Manual push/pull.** No file watcher. Shell hooks recommended.
-- **OAuth doesn't sync.** You'll log in once per host. This is intentional.
-- **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone, which is what you want.
-- **Cross-OS `claude --resume` cwd binding.** Each `.jsonl` session embeds the cwd where it was created, and the picker prints a `cd <recorded-cwd> && claude --resume <id>` line that fails on the new host. Use `nomad doctor --resume-cmd <id>` to print a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach was chosen over rewriting `cwd` in the transcript so Phase 1's transcript byte-equality invariant stays intact.
-- **First pull on a populated host auto-moves conflicts to backup.** `applySharedLinks` is intentionally non-destructive: any pre-existing non-symlink under `~/.claude/` whose counterpart exists in `shared/` is renamed into `~/.cache/claude-nomad/backup/<ts>/` before the symlink is created. Originals are preserved, not deleted. See [Migrating an existing ~/.claude/](#migrating-an-existing-claude) for the recommended sequence.
-- **Empty directories don't survive sync.** Git doesn't track empty dirs, so if any `shared/<name>/` has no files (e.g., `shared/commands/` on a host with no commands), it won't materialize on the destination host. `nomad doctor` reports it as `missing`; behavior is benign. Drop a `.gitkeep` if you want the dir to materialize.
+- **OAuth doesn't sync.** You'll log in once per host. Intentional.
+- **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone.
+- **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so the picker's `cd ... && claude --resume <id>` line fails on a different host. Use `nomad doctor --resume-cmd <id>` for a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach preserves transcript byte-equality.
+- **Empty directories don't survive sync.** Git doesn't track empty dirs; `nomad doctor` reports them as `missing` (benign). Drop a `.gitkeep` to force materialization.
 
 ## Requirements
 
@@ -170,7 +169,7 @@ These are intentional design choices. Read them before adopting `claude-nomad` s
 
 **Why not just fork?** GitHub doesn't let you flip a public fork to private, and your config (especially session transcripts) must stay private. So the bootstrap is a one-time mirror-push into a fresh private repo, not a fork.
 
-**Keep the mirror private.** Every workflow in `.github/workflows/` is gated on `${{ !github.event.repository.private }}`. The gate keys on repo visibility, not on a specific name, so workflows skip on _any_ private repo (your mirror, every adopter's mirror) and run on _any_ public repo where they're present (the canonical upstream, contributor forks, your own public mirror if you flip it). If you flip your mirror to public, CI will start firing on every `nomad push` and will likely fail because your config commits land on `main`.
+**Keep the mirror private.** CI workflows under `.github/workflows/` are gated on `${{ !github.event.repository.private }}`, so they skip on any private repo and run only on public ones. Flipping your mirror to public will start firing CI on every `nomad push` against `main`.
 
 One-time, on your first host:
 
@@ -248,57 +247,7 @@ nomad pull              # materializes the symlinks
 
 If the remote has not been populated yet (you skipped `nomad init --snapshot` and `nomad push`), `nomad pull` is a no-op for SHARED_LINKS: there is nothing on the remote to symlink against, so your local `~/.claude/` files stay in place. The auto-move only triggers once the canonical state is published.
 
-If you want full manual control instead (e.g. you want a single tar.gz rollback artifact and explicit confirmation before deletion), this script does the same job:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-CLAUDE_HOME="${HOME}/.claude"
-REPO_HOME="${HOME}/claude-nomad"
-ITEMS=(CLAUDE.md agents skills commands rules my-statusline.cjs)
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP="${HOME}/.cache/claude-nomad/backup/${TS}/snapshot.tgz"
-
-# 1. Tar backup (rollback: tar -xzf "$BACKUP" -C "$CLAUDE_HOME").
-mkdir -p "$(dirname "$BACKUP")"
-present=()
-for i in "${ITEMS[@]}" settings.json; do
-  [ -e "$CLAUDE_HOME/$i" ] && present+=("$i")
-done
-[ ${#present[@]} -gt 0 ] && tar -C "$CLAUDE_HOME" -czf "$BACKUP" "${present[@]}"
-echo "Backup: $BACKUP"
-
-# 2. Copy items into shared/. rm -rf first so re-runs don't nest dirs (cp into
-#    an existing directory copies SRC *inside* DEST, producing shared/agents/agents).
-mkdir -p "$REPO_HOME/shared"
-for i in "${ITEMS[@]}"; do
-  [ -e "$CLAUDE_HOME/$i" ] || continue
-  rm -rf "$REPO_HOME/shared/$i"
-  if [ "$(uname -s)" = "Darwin" ]; then
-    cp -pR "$CLAUDE_HOME/$i" "$REPO_HOME/shared/$i"
-  else
-    cp -a "$CLAUDE_HOME/$i" "$REPO_HOME/shared/$i"
-  fi
-done
-
-# 3. Confirm and remove originals.
-read -r -p "Remove originals from $CLAUDE_HOME? (yes/N) " ans
-[ "$ans" = "yes" ] || { echo "Aborted; originals intact."; exit 1; }
-for i in "${ITEMS[@]}"; do
-  [ -e "$CLAUDE_HOME/$i" ] && [ ! -L "$CLAUDE_HOME/$i" ] && rm -rf "$CLAUDE_HOME/$i"
-done
-
-# 4. Pull to materialize symlinks + regenerate settings.json.
-( cd "$REPO_HOME" && npx tsx src/nomad.ts pull )
-
-# 5. Verify.
-for i in "${ITEMS[@]}"; do
-  test -L "$CLAUDE_HOME/$i" && echo "ok $i" || echo "MISSING $i"
-done
-```
-
-Adapt the `ITEMS` list to match your `SHARED_LINKS`. The tar backup is your rollback path if anything goes wrong after the `rm`. Run from `~/claude-nomad/` after writing the script under `scripts/`. The script is also safe to re-run: items already symlinked are skipped.
+Prefer an explicit tarball rollback and a confirmation prompt before any deletion? Write the equivalent under `scripts/`: tar the `SHARED_LINKS` entries under `~/.claude/` first, copy into `shared/`, prompt, then `nomad pull`. The auto-move path above is the recommended default.
 
 ## Upgrading the tool
 
@@ -333,14 +282,7 @@ git remote add upstream git@github.com:funkadelic/claude-nomad.git
 
 `npm run update` still exists as a legacy shim that shells out to `scripts/update.sh`; prefer `nomad update` for new invocations.
 
-Upstream tags releases as `vX.Y.Z` (release-please). To track a specific release instead of `main`, you can still run the merge by hand:
-
-```bash
-git fetch upstream --tags
-git merge v0.2.0
-git push origin main
-npm install
-```
+To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tracking `main`, check out the tag with regular git (`git fetch upstream --tags && git merge vX.Y.Z`).
 
 ## Commands
 
