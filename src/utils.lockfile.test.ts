@@ -1,5 +1,4 @@
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -45,12 +44,6 @@ describe('acquireLock stale-lock recovery branches', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
-    // Chmod back so rmSync can descend (Test 1 chmods lockDir to 0o500).
-    try {
-      chmodSync(lockDir, 0o700);
-    } catch {
-      /* directory may not exist; ignore */
-    }
     try {
       unlinkSync(lockPath);
     } catch {
@@ -63,12 +56,26 @@ describe('acquireLock stale-lock recovery branches', () => {
 
   it('returns null and writes stderr skip line when PID is non-numeric AND unlink fails', async () => {
     // Pre-write a non-numeric PID so parseInt fails (NaN, not finite).
-    // Chmod the parent dir 0o500 so unlinkIfSamePid's unlinkSync throws EACCES.
-    // The fallthrough from `unlinkIfSamePid -> false` lands on the stderr
-    // skip line, returning null without recovering.
+    // Mock unlinkSync to throw EACCES for the lock path so unlinkIfSamePid
+    // returns false. The fallthrough lands on the stderr skip line, returning
+    // null without recovering. Mock-based (vs chmod) for determinism across
+    // root-owned CI containers where POSIX bits do not bind.
     mkdirSync(lockDir, { recursive: true });
     writeFileSync(lockPath, 'not-a-pid');
-    chmodSync(lockDir, 0o500);
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        unlinkSync: vi.fn((path: fsModule.PathLike) => {
+          if (typeof path === 'string' && path === lockPath) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.unlinkSync(path);
+        }),
+      };
+    });
     const { acquireLock } = await import('./utils.ts');
     const handle = acquireLock('pull');
     expect(handle).toBeNull();
