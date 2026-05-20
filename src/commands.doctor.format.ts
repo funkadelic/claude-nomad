@@ -1,4 +1,4 @@
-import { red } from './color.ts';
+import { failGlyph, red } from './color.ts';
 
 /**
  * Tree-style output builder for `cmdDoctor`. Doctor builds an ordered list of
@@ -30,12 +30,12 @@ export function addItem(s: DoctorSection, text: string): void {
 }
 
 /**
- * True when any item in the section contains the literal `FAIL` token.
- * Color-wrapped FAIL (`[31mFAIL[39m`) still contains the
- * substring, so this works for both color-on and color-off output.
+ * True when any item in the section contains the FAIL glyph.
+ * Color-wrapped failGlyph (`[31m✗[39m`) still contains the
+ * glyph as a substring, so this works for both color-on and color-off output.
  */
 function sectionFailed(s: DoctorSection): boolean {
-  return s.items.some((line) => line.includes('FAIL'));
+  return s.items.some((line) => line.includes(failGlyph));
 }
 
 /**

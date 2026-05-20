@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { blue, cyan, dim, green, red, yellow } from './color.ts';
+import { blue, cyan, dim, failGlyph, green, okGlyph, red, warnGlyph, yellow } from './color.ts';
 // prettier-ignore
 import { CLAUDE_HOME, HOST, KNOWN_SETTINGS_KEYS, NEVER_SYNC, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
@@ -30,7 +30,7 @@ function readJsonSafe<T>(path: string, label: string, section: DoctorSection): T
   try {
     return readJson<T>(path);
   } catch (err) {
-    addItem(section, `${red('FAIL')} ${label} malformed JSON: ${(err as Error).message}`);
+    addItem(section, `${red(failGlyph)} ${label} malformed JSON: ${(err as Error).message}`);
     process.exitCode = 1;
     return null;
   }
@@ -53,11 +53,14 @@ export function reportHostAndPaths(section: DoctorSection): void {
 export function reportRepoState(section: DoctorSection): void {
   const state = classifyRepoState(REPO_HOME, HOST);
   if (state === 'populated') {
-    addItem(section, `repo state: ${green('PASS')} populated`);
+    addItem(section, `repo state: ${green(okGlyph)} populated`);
   } else if (state === 'partial') {
-    addItem(section, `repo state: ${yellow('WARN')} partial ${reasonForPartial(REPO_HOME, HOST)}`);
+    addItem(
+      section,
+      `repo state: ${yellow(warnGlyph)} partial ${reasonForPartial(REPO_HOME, HOST)}`,
+    );
   } else {
-    addItem(section, `repo state: ${red('FAIL')} empty - run 'nomad init' to scaffold`);
+    addItem(section, `repo state: ${red(failGlyph)} empty - run 'nomad init' to scaffold`);
     process.exitCode = 1;
   }
 }
@@ -67,13 +70,13 @@ export function reportSharedLinks(section: DoctorSection): void {
   for (const name of SHARED_LINKS) {
     const p = join(CLAUDE_HOME, name);
     if (!existsSync(p)) {
-      addItem(section, `${yellow('WARN')} ${name}: missing`);
+      addItem(section, `${yellow(warnGlyph)} ${name}: missing`);
       continue;
     }
     if (lstatSync(p).isSymbolicLink()) {
-      addItem(section, `${name}: ${green('PASS')} symlink`);
+      addItem(section, `${name}: ${green(okGlyph)} symlink`);
     } else {
-      addItem(section, `${name}: ${red('FAIL')} NOT a symlink (blocks sync)`);
+      addItem(section, `${name}: ${red(failGlyph)} NOT a symlink (blocks sync)`);
       process.exitCode = 1;
     }
   }
@@ -83,7 +86,7 @@ export function reportSharedLinks(section: DoctorSection): void {
 export function loadBaseSettings(section: DoctorSection): Record<string, unknown> | null {
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   if (!existsSync(basePath)) {
-    addItem(section, `${red('FAIL')} shared/settings.base.json missing at ${blue(basePath)}`);
+    addItem(section, `${red(failGlyph)} shared/settings.base.json missing at ${blue(basePath)}`);
     process.exitCode = 1;
     return null;
   }
@@ -100,10 +103,10 @@ export function loadAndReportSettings(section: DoctorSection): Record<string, un
   if (unknownKeys.length > 0) {
     addItem(
       section,
-      `${yellow('WARN')} settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`,
+      `${yellow(warnGlyph)} settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')}`,
     );
   } else {
-    addItem(section, `${green('PASS')} settings.json schema: known keys only`);
+    addItem(section, `${green(okGlyph)} settings.json schema: known keys only`);
   }
   return settings;
 }
@@ -127,7 +130,7 @@ export function reportHostOverrides(
   } else if (drift.length > 0) {
     addItem(
       section,
-      `${red('FAIL')} no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`,
+      `${red(failGlyph)} no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`,
     );
     const hostsDir = join(REPO_HOME, 'hosts');
     if (existsSync(hostsDir)) {
@@ -138,7 +141,7 @@ export function reportHostOverrides(
   } else {
     addItem(
       section,
-      `${green('PASS')} host overrides: none (base-only is fine, no settings drift)`,
+      `${green(okGlyph)} host overrides: none (base-only is fine, no settings drift)`,
     );
   }
 }
@@ -162,7 +165,7 @@ function reportPathCollisions(section: DoctorSection, map: PathMap): void {
       if (prior !== undefined && prior !== abspath) {
         addItem(
           section,
-          `${red('FAIL')} path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`,
+          `${red(failGlyph)} path-encoding collision: ${prior} and ${abspath} both encode to ${encoded}`,
         );
         collisionCount++;
       } else {
@@ -171,14 +174,14 @@ function reportPathCollisions(section: DoctorSection, map: PathMap): void {
     }
   }
   if (collisionCount > 0) process.exitCode = 1;
-  else addItem(section, `${green('PASS')} path-encoding: no collisions`);
+  else addItem(section, `${green(okGlyph)} path-encoding: no collisions`);
 }
 
 /** Pushes mapped projects for the current host and FAILs on path-encoding collisions across hosts; FAILs when path-map.json is missing. */
 export function reportPathMap(section: DoctorSection): void {
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (!existsSync(mapPath)) {
-    addItem(section, `${red('FAIL')} path-map.json missing at ${blue(mapPath)}`);
+    addItem(section, `${red(failGlyph)} path-map.json missing at ${blue(mapPath)}`);
     process.exitCode = 1;
     return;
   }
@@ -189,7 +192,10 @@ export function reportPathMap(section: DoctorSection): void {
   // and break the tolerant-doctor contract.
   const projects: unknown = (map as { projects?: unknown }).projects;
   if (projects === null || typeof projects !== 'object' || Array.isArray(projects)) {
-    addItem(section, `${red('FAIL')} path-map.json invalid schema: "projects" must be an object`);
+    addItem(
+      section,
+      `${red(failGlyph)} path-map.json invalid schema: "projects" must be an object`,
+    );
     process.exitCode = 1;
     return;
   }
@@ -197,7 +203,7 @@ export function reportPathMap(section: DoctorSection): void {
     if (hosts === null || typeof hosts !== 'object' || Array.isArray(hosts)) {
       addItem(
         section,
-        `${red('FAIL')} path-map.json invalid schema: project "${name}" hosts must be an object`,
+        `${red(failGlyph)} path-map.json invalid schema: project "${name}" hosts must be an object`,
       );
       process.exitCode = 1;
       return;
@@ -206,7 +212,7 @@ export function reportPathMap(section: DoctorSection): void {
       if (typeof mappedPath !== 'string') {
         addItem(
           section,
-          `${red('FAIL')} path-map.json invalid schema: project "${name}" host "${hostName}" path must be a string`,
+          `${red(failGlyph)} path-map.json invalid schema: project "${name}" host "${hostName}" path must be a string`,
         );
         process.exitCode = 1;
         return;
@@ -228,12 +234,12 @@ export function reportGitleaksProbe(section: DoctorSection): void {
     const v = execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
       .toString()
       .trim();
-    addItem(section, `${green('PASS')} gitleaks: ${dim(v)}`);
+    addItem(section, `${green(okGlyph)} gitleaks: ${dim(v)}`);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      addItem(section, `${red('FAIL')} gitleaks: not on PATH (required for nomad push)`);
+      addItem(section, `${red(failGlyph)} gitleaks: not on PATH (required for nomad push)`);
     } else {
-      addItem(section, `${red('FAIL')} gitleaks: probe failed: ${(err as Error).message}`);
+      addItem(section, `${red(failGlyph)} gitleaks: probe failed: ${(err as Error).message}`);
     }
     process.exitCode = 1;
   }
@@ -248,13 +254,13 @@ export function reportGitlinks(section: DoctorSection): void {
       const rel = relative(REPO_HOME, p);
       addItem(
         section,
-        `${red('FAIL')} gitlink: ${blue(rel)} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
+        `${red(failGlyph)} gitlink: ${blue(rel)} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
       );
     }
     if (gitlinks.length > 0) {
       process.exitCode = 1;
     } else {
-      addItem(section, `${green('PASS')} gitlink scan: no nested .git in shared/`);
+      addItem(section, `${green(okGlyph)} gitlink scan: no nested .git in shared/`);
     }
   }
 }
@@ -281,7 +287,7 @@ export function reportRebaseClean(section: DoctorSection): void {
     if (status.length > 0) {
       addItem(
         section,
-        `${yellow('WARN')} ${blue('~/claude-nomad/')} has uncommitted changes (nomad push will --autostash these)`,
+        `${yellow(warnGlyph)} ${blue('~/claude-nomad/')} has uncommitted changes (nomad push will --autostash these)`,
       );
     }
   } catch {

@@ -52,5 +52,5 @@ export function cmdDoctor(): void {
   const version = section('Version');
   reportVersionCheck(version);
 
-  renderDoctor([host, links, settings, pathMap, neverSync, repository, version]);
+  renderDoctor([version, host, links, settings, pathMap, neverSync, repository]);
 }

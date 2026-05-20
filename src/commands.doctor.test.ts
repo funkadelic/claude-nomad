@@ -7,6 +7,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { failGlyph, okGlyph, warnGlyph } from './color.ts';
 import { type PathMap } from './config.ts';
 
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
@@ -222,7 +223,7 @@ describe('cmdDoctor settings.json schema sanity', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain('settings.json schema: known keys only');
-    expect(out).not.toContain('WARN settings.json has unknown keys');
+    expect(out).not.toContain(`${warnGlyph} settings.json has unknown keys`);
   });
 
   it('emits WARN listing the drift key when settings.json contains an unknown key', async () => {
@@ -233,7 +234,7 @@ describe('cmdDoctor settings.json schema sanity', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN settings.json has unknown keys');
+    expect(out).toContain(`${warnGlyph} settings.json has unknown keys`);
     expect(out).toContain('newAnthropicFeature');
   });
 });
@@ -297,8 +298,8 @@ describe('cmdDoctor path-encoding collision detection', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toContain('FAIL path-encoding collision');
-    expect(out).toContain('PASS path-encoding: no collisions');
+    expect(out).not.toContain(`${failGlyph} path-encoding collision`);
+    expect(out).toContain(`${okGlyph} path-encoding: no collisions`);
   });
 
   it('emits FAIL with exit code 1 listing both abspaths and the encoded result on collision', async () => {
@@ -316,7 +317,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL path-encoding collision:');
+    expect(out).toContain(`${failGlyph} path-encoding collision:`);
     expect(out).toContain('/foo/bar-baz');
     expect(out).toContain('/foo-bar/baz');
     expect(out).toContain('-foo-bar-baz');
@@ -368,7 +369,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     // The gitleaks-presence diagnostic may set exitCode=1 on dev hosts
     // without gitleaks; this test only asserts the host-override-missing
     // diagnostic itself does not FAIL.
-    expect(out).not.toContain('FAIL no hosts/');
+    expect(out).not.toContain(`${failGlyph} no hosts/`);
   });
 
   it('FAILs with exit code 1 and lists candidates when hostFile missing AND settings has drift', async () => {
@@ -382,7 +383,9 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL no hosts/nonexistent-host.json AND settings.json has unbased keys');
+    expect(out).toContain(
+      `${failGlyph} no hosts/nonexistent-host.json AND settings.json has unbased keys`,
+    );
     expect(out).toContain('statusLine');
     expect(out).toMatch(/candidates:/);
     expect(out).toContain('dell-wsl.json');
@@ -403,7 +406,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     // The gitleaks-presence diagnostic may log "FAIL gitleaks" on dev hosts
     // without gitleaks; this test only asserts the host-override-missing
     // diagnostic itself does not FAIL.
-    expect(out).not.toContain('FAIL no hosts/');
+    expect(out).not.toContain(`${failGlyph} no hosts/`);
   });
 });
 
@@ -450,7 +453,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL');
+    expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
     expect(out).toContain('settings.json');
     // Sentinel: the never-sync log line lives at the very end of doctor and
@@ -464,7 +467,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL');
+    expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
     expect(out).toContain('path-map.json');
     expect(out).toContain('never-sync items:');
@@ -478,7 +481,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL shared/settings.base.json missing');
+    expect(out).toContain(`${failGlyph} shared/settings.base.json missing`);
     expect(process.exitCode).toBe(1);
   });
 
@@ -490,7 +493,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL path-map.json invalid schema');
+    expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
     expect(out).toContain('never-sync items:');
     expect(process.exitCode).toBe(1);
   });
@@ -503,7 +506,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL path-map.json invalid schema');
+    expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
     expect(out).toContain('never-sync items:');
     expect(process.exitCode).toBe(1);
   });
@@ -517,7 +520,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
-      'FAIL path-map.json invalid schema: project "foo" hosts must be an object',
+      `${failGlyph} path-map.json invalid schema: project "foo" hosts must be an object`,
     );
     expect(out).toContain('never-sync items:');
     expect(process.exitCode).toBe(1);
@@ -533,7 +536,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
-      'FAIL path-map.json invalid schema: project "foo" hosts must be an object',
+      `${failGlyph} path-map.json invalid schema: project "foo" hosts must be an object`,
     );
     expect(process.exitCode).toBe(1);
   });
@@ -550,7 +553,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
-      'FAIL path-map.json invalid schema: project "foo" host "test-host" path must be a string',
+      `${failGlyph} path-map.json invalid schema: project "foo" host "test-host" path must be a string`,
     );
     expect(out).toContain('never-sync items:');
     expect(process.exitCode).toBe(1);
@@ -562,7 +565,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL path-map.json missing');
+    expect(out).toContain(`${failGlyph} path-map.json missing`);
     expect(out).toContain('never-sync items:');
     expect(process.exitCode).toBe(1);
   });
@@ -578,7 +581,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL');
+    expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
     expect(out).toContain('settings.base.json');
     expect(out).toContain('never-sync items:');
@@ -592,7 +595,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     expect(() => cmdDoctor()).not.toThrow();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL');
+    expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
     expect(out).toContain('test-host.json');
     expect(out).toContain('never-sync items:');
@@ -646,7 +649,7 @@ describe('cmdDoctor gitleaks presence', () => {
     const out = joinedLog(env.logSpy);
     expect(out).toContain('gitleaks:');
     expect(out).toMatch(/v\d+\.\d+/);
-    expect(out).not.toContain('FAIL gitleaks');
+    expect(out).not.toContain(`${failGlyph} gitleaks`);
     expect(out).toContain('never-sync items:');
   });
 
@@ -671,7 +674,7 @@ describe('cmdDoctor gitleaks presence', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL');
+    expect(out).toContain(failGlyph);
     expect(out).toContain('gitleaks');
     expect(out).toContain('not on PATH');
     expect(out).toContain('never-sync items:');
@@ -699,7 +702,7 @@ describe('cmdDoctor gitleaks presence', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL');
+    expect(out).toContain(failGlyph);
     expect(out).toContain('gitleaks');
     expect(out).toContain('probe failed');
     expect(out).toContain('never-sync items:');
@@ -735,7 +738,7 @@ describe('cmdDoctor gitlink scan', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toContain('FAIL gitlink');
+    expect(out).not.toContain(`${failGlyph} gitlink`);
     expect(out).toContain('never-sync items:');
   });
 
@@ -748,7 +751,7 @@ describe('cmdDoctor gitlink scan', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL');
+    expect(out).toContain(failGlyph);
     expect(out).toContain('gitlink:');
     expect(out).toContain('shared/foo/.git');
     expect(out).toContain('would push as submodule');
@@ -765,7 +768,7 @@ describe('cmdDoctor gitlink scan', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('FAIL');
+    expect(out).toContain(failGlyph);
     expect(out).toContain('gitlink:');
     expect(out).toContain('shared/sub/.git');
     expect(out).toContain('would push as submodule');
@@ -874,7 +877,7 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN');
+    expect(out).toContain(warnGlyph);
     expect(out).toContain('~/claude-nomad/');
     expect(out).toContain('has uncommitted changes');
     expect(out).toContain('--autostash');
@@ -915,7 +918,7 @@ describe('cmdDoctor repo-state header', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('repo state: FAIL empty');
+    expect(out).toContain(`repo state: ${failGlyph} empty`);
     expect(out).toContain("run 'nomad init' to scaffold");
     expect(process.exitCode).toBe(1);
   });
@@ -931,7 +934,7 @@ describe('cmdDoctor repo-state header', () => {
     // base present, path-map.json missing -> partial with the second priority
     // suffix (settings.base.json missing is suffix #1; path-map.json missing
     // is suffix #2 and fires next).
-    expect(out).toContain('repo state: WARN partial - path-map.json missing');
+    expect(out).toContain(`repo state: ${warnGlyph} partial - path-map.json missing`);
   });
 
   it('emits WARN partial with hosts/<HOST>.json missing suffix when base + path-map populated', async () => {
@@ -948,7 +951,7 @@ describe('cmdDoctor repo-state header', () => {
     const out = joinedLog(env.logSpy);
     // base + populated path-map.projects, host file missing -> partial with
     // the hosts/<HOST>.json suffix (priority order #4).
-    expect(out).toContain('repo state: WARN partial - hosts/test-host.json missing');
+    expect(out).toContain(`repo state: ${warnGlyph} partial - hosts/test-host.json missing`);
   });
 
   it('emits WARN partial with empty-projects suffix when path-map.json exists but has zero entries', async () => {
@@ -963,7 +966,9 @@ describe('cmdDoctor repo-state header', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('repo state: WARN partial - path-map.json.projects has no entries');
+    expect(out).toContain(
+      `repo state: ${warnGlyph} partial - path-map.json.projects has no entries`,
+    );
   });
 
   it('emits PASS populated when settings.base.json + populated path-map + hosts/<host>.json all present', async () => {
@@ -982,7 +987,7 @@ describe('cmdDoctor repo-state header', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('repo state: PASS populated');
+    expect(out).toContain(`repo state: ${okGlyph} populated`);
   });
 
   it('logs the repo state line above the SHARED_LINKS / symlink section', async () => {
@@ -1034,7 +1039,7 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('CLAUDE.md: FAIL NOT a symlink (blocks sync)');
+    expect(out).toContain(`CLAUDE.md: ${failGlyph} NOT a symlink (blocks sync)`);
     expect(process.exitCode).toBe(1);
   });
 });
@@ -1102,7 +1107,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    const passCount = out.match(/PASS/g)?.length ?? 0;
+    const passCount = out.split(okGlyph).length - 1;
     // One per check: repo state, SHARED_LINKS (1 real symlink), settings
     // schema, host overrides, path-encoding, gitleaks, gitlink scan.
     expect(passCount).toBeGreaterThanOrEqual(5);
@@ -1114,7 +1119,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('PASS settings.json schema: known keys only');
+    expect(out).toContain(`${okGlyph} settings.json schema: known keys only`);
   });
 
   it('emits PASS path-encoding when no encoded-dir collisions exist', async () => {
@@ -1123,7 +1128,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('PASS path-encoding: no collisions');
+    expect(out).toContain(`${okGlyph} path-encoding: no collisions`);
   });
 
   it('prepends PASS to the gitleaks version line when gitleaks is present', async () => {
@@ -1132,7 +1137,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('PASS gitleaks:');
+    expect(out).toContain(`${okGlyph} gitleaks:`);
     expect(out).toMatch(/v\d+\.\d+/);
   });
 
@@ -1142,7 +1147,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('PASS gitlink scan:');
+    expect(out).toContain(`${okGlyph} gitlink scan:`);
   });
 
   it('replaces "symlink OK" with "PASS symlink" on a valid SHARED_LINKS entry', async () => {
@@ -1152,7 +1157,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     // Positive: new PASS-prefixed phrasing for the symlink success branch.
-    expect(out).toContain('PASS symlink');
+    expect(out).toContain(`${okGlyph} symlink`);
     // Negative: the legacy literal must be gone (load-bearing per plan W-1).
     expect(out).not.toContain('symlink OK');
   });
@@ -1167,7 +1172,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN CLAUDE.md: missing');
+    expect(out).toContain(`${warnGlyph} CLAUDE.md: missing`);
   });
 
   it('does not prefix informational header lines with PASS', async () => {
@@ -1177,13 +1182,13 @@ describe('cmdDoctor explicit PASS tokens', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     // Header lines stay unprefixed; only check-result lines carry the token.
-    expect(out).not.toMatch(/PASS host:/);
-    expect(out).not.toMatch(/PASS repo:/);
-    expect(out).not.toMatch(/PASS claude home:/);
-    expect(out).not.toMatch(/PASS mapped projects for/);
-    expect(out).not.toMatch(/PASS host overrides:/);
-    expect(out).not.toMatch(/PASS never-sync items:/);
-    expect(out).not.toMatch(/PASS remote origin:/);
+    expect(out).not.toContain(`${okGlyph} host:`);
+    expect(out).not.toContain(`${okGlyph} repo:`);
+    expect(out).not.toContain(`${okGlyph} claude home:`);
+    expect(out).not.toContain(`${okGlyph} mapped projects for`);
+    expect(out).not.toContain(`${okGlyph} host overrides:`);
+    expect(out).not.toContain(`${okGlyph} never-sync items:`);
+    expect(out).not.toContain(`${okGlyph} remote origin:`);
   });
 
   it('annotates repo and claude-home paths with MISSING when their directories are absent', async () => {
@@ -1276,7 +1281,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('PASS version: 0.11.2 (latest)');
+    expect(out).toContain(`${okGlyph} version: 0.11.2 (latest)`);
     // The version check NEVER mutates exitCode; verify alongside the PASS
     // assertion so a future regression cannot silently flip the contract.
     expect(process.exitCode === 1).toBe(false);
@@ -1289,7 +1294,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
     // The hint must point at the upgrade path; substring is load-bearing
     // because users grep for it in CI logs.
     expect(out).toContain('nomad update');
@@ -1307,7 +1312,9 @@ describe('cmdDoctor version check', () => {
     // The ahead branch is informational; it must NOT carry a status token.
     // A regression that prepends PASS/WARN/FAIL would flip the meaning of
     // the line for any dev running a not-yet-released version.
-    expect(out).not.toMatch(/(PASS|WARN|FAIL) version: 0\.12\.0 \(ahead/);
+    expect(out).not.toContain(`${okGlyph} version: 0.12.0 (ahead`);
+    expect(out).not.toContain(`${warnGlyph} version: 0.12.0 (ahead`);
+    expect(out).not.toContain(`${failGlyph} version: 0.12.0 (ahead`);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1343,7 +1350,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('PASS version: 0.11.2 (latest)');
+    expect(out).toContain(`${okGlyph} version: 0.11.2 (latest)`);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1371,7 +1378,9 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
+    expect(out).not.toContain(`${okGlyph} version`);
+    expect(out).not.toContain(`${warnGlyph} version`);
+    expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1392,7 +1401,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
     expect(out).not.toContain('0.10.0');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -1408,7 +1417,9 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toMatch(/PASS version|WARN version|version: \d/);
+    expect(out).not.toContain(`${okGlyph} version`);
+    expect(out).not.toContain(`${warnGlyph} version`);
+    expect(out).not.toMatch(/version: \d/);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1428,7 +1439,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
     expect(out).not.toContain('0.10.0');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -1448,7 +1459,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
     expect(out).not.toContain('not-semver');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -1463,7 +1474,9 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toMatch(/PASS version|WARN version|version: \d/);
+    expect(out).not.toContain(`${okGlyph} version`);
+    expect(out).not.toContain(`${warnGlyph} version`);
+    expect(out).not.toMatch(/version: \d/);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1480,7 +1493,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1493,7 +1506,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('WARN version: 0.11.2 -> 0.11.3');
+    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1506,7 +1519,9 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
+    expect(out).not.toContain(`${okGlyph} version`);
+    expect(out).not.toContain(`${warnGlyph} version`);
+    expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1520,7 +1535,9 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
+    expect(out).not.toContain(`${okGlyph} version`);
+    expect(out).not.toContain(`${warnGlyph} version`);
+    expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -1535,7 +1552,9 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toMatch(/PASS version|WARN version|ahead of latest release/);
+    expect(out).not.toContain(`${okGlyph} version`);
+    expect(out).not.toContain(`${warnGlyph} version`);
+    expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
 });
