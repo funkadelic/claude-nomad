@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # claude-nomad install helper.
 #
-# Verifies Node >= 22.6, installs tsx globally if missing, prints the alias
+# Verifies Node >= 22.22.1, installs tsx globally if missing, prints the alias
 # snippet to add to your shell rc. Run from the repo root after cloning:
 #
 #   ./install.sh
@@ -12,7 +12,8 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 MIN_NODE_MAJOR=22
-MIN_NODE_MINOR=6
+MIN_NODE_MINOR=22
+MIN_NODE_PATCH=1
 
 log() { printf '[install] %s\n' "$*"; }
 die() { printf '[install] FATAL: %s\n' "$*" >&2; exit 1; }
@@ -26,17 +27,20 @@ case "${SHELL:-}" in
 esac
 
 # 1. Node present?
-command -v node >/dev/null 2>&1 || die "Node.js not found. Install Node 22.6+ from https://nodejs.org (or via nvm/fnm/asdf), then re-run."
+command -v node >/dev/null 2>&1 || die "Node.js not found. Install Node 22.22.1+ from https://nodejs.org (or via nvm/fnm/asdf), then re-run."
 
-# 2. Node version >= 22.6?
+# 2. Node version >= 22.22.1?
 NODE_VERSION="$(node --version | sed 's/^v//')"
 NODE_MAJOR="${NODE_VERSION%%.*}"
 NODE_REST="${NODE_VERSION#*.}"
 NODE_MINOR="${NODE_REST%%.*}"
+NODE_PATCH="${NODE_REST#*.}"
+NODE_PATCH="${NODE_PATCH%%-*}"
 
 if [ "$NODE_MAJOR" -lt "$MIN_NODE_MAJOR" ] \
-   || { [ "$NODE_MAJOR" -eq "$MIN_NODE_MAJOR" ] && [ "$NODE_MINOR" -lt "$MIN_NODE_MINOR" ]; }; then
-  die "Node $NODE_VERSION is too old. Need >= ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR} (24 LTS recommended)."
+   || { [ "$NODE_MAJOR" -eq "$MIN_NODE_MAJOR" ] && [ "$NODE_MINOR" -lt "$MIN_NODE_MINOR" ]; } \
+   || { [ "$NODE_MAJOR" -eq "$MIN_NODE_MAJOR" ] && [ "$NODE_MINOR" -eq "$MIN_NODE_MINOR" ] && [ "$NODE_PATCH" -lt "$MIN_NODE_PATCH" ]; }; then
+  die "Node $NODE_VERSION is too old. Need >= ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.${MIN_NODE_PATCH} (24 LTS recommended)."
 fi
 log "Node $NODE_VERSION OK"
 

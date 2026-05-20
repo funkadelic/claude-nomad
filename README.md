@@ -182,7 +182,7 @@ Read these before adopting so you opt in with eyes open.
 
 ## Requirements
 
-- Node.js 22.6 or newer (24 LTS recommended; `install.sh` enforces the 22.6 floor)
+- Node.js 22.22.1 or newer (24 LTS recommended; `install.sh` enforces the 22.22.1 floor)
 - `tsx` (installed automatically by `install.sh`, or `npm install -g tsx` manually)
 - Git
 - A **private** GitHub repo (or any Git remote you control)
@@ -213,7 +213,7 @@ cd ~/claude-nomad
 ./install.sh
 ```
 
-`install.sh` verifies Node >= 22.6, installs `tsx` globally if missing, runs `npm install`, and prints the shell alias to add. It's idempotent, so re-running on the same or a new host is safe.
+`install.sh` verifies Node >= 22.22.1, installs `tsx` globally if missing, runs `npm install`, and prints the shell alias to add. It's idempotent, so re-running on the same or a new host is safe.
 
 On every additional host, only step 3 is needed (your private repo already exists).
 

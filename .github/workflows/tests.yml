@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         # Bracket the supported range: 22.x covers the install.sh minimum
-        # (22.6+), 24.x is current LTS. If the floor moves, bump both.
+        # (22.22.1+), 24.x is current LTS. If the floor moves, bump both.
         node-version: ['22', '24']
     env:
       # Surfaced at job level so the SonarCloud step's `if:` can detect
