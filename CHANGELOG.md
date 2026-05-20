@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.14.0](https://github.com/funkadelic/claude-nomad/compare/v0.13.0...v0.14.0) (2026-05-20)
+
+
+### Added
+
+* **resume:** resolve sessions started in subdirectories of mapped projects ([#73](https://github.com/funkadelic/claude-nomad/issues/73)) ([91ca332](https://github.com/funkadelic/claude-nomad/commit/91ca332e438829ea5a421f4eb9d9803c76557b2d))
+
+
+### Fixed
+
+* validate path-map schema before iteration ([#72](https://github.com/funkadelic/claude-nomad/issues/72)) ([9459fc3](https://github.com/funkadelic/claude-nomad/commit/9459fc370b68361a451f454883e3db28b0ebc7d2))
+
+
+### Changed
+
+* apply SonarQube minor cleanups ([#71](https://github.com/funkadelic/claude-nomad/issues/71)) ([aa36999](https://github.com/funkadelic/claude-nomad/commit/aa36999261d200881c043a331c78f60aeb30017c))
+* **doctor:** tree-style output, drop [nomad] prefix ([#69](https://github.com/funkadelic/claude-nomad/issues/69)) ([329858e](https://github.com/funkadelic/claude-nomad/commit/329858e3510731b6e18c012755963d63f3f672b5))
+* reduce cognitive complexity in doctor and resume ([#70](https://github.com/funkadelic/claude-nomad/issues/70)) ([e060fff](https://github.com/funkadelic/claude-nomad/commit/e060ffffcce247a0166fb2bdf71d5e15062aaece))
+
+
+### Documentation
+
+* **readme:** document nomad update and doctor version-check ([#67](https://github.com/funkadelic/claude-nomad/issues/67)) ([ce20fdd](https://github.com/funkadelic/claude-nomad/commit/ce20fdd8a14a45954f1d1c133a0a0d01c649fcc9))
+
 ## [0.13.0](https://github.com/funkadelic/claude-nomad/compare/v0.12.0...v0.13.0) (2026-05-20)
 
 
