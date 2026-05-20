@@ -30,16 +30,26 @@ const SLUG_RE = escapeRe(UPSTREAM_REPO_SLUG);
 const SSH_REGEX = new RegExp(`^git@github\\.com:${SLUG_RE}(\\.git)?$`);
 const HTTPS_REGEX = new RegExp(`^https://github\\.com/${SLUG_RE}(\\.git)?$`);
 
-/** True when `url` matches one of the canonical upstream URL forms. */
+/**
+ * Determines whether a remote URL matches the canonical upstream repository forms (SSH or HTTPS).
+ *
+ * @param url - The remote URL to test
+ * @returns `true` if `url` matches the canonical upstream SSH or HTTPS form, `false` otherwise.
+ */
 function matchesUpstream(url: string): boolean {
   return SSH_REGEX.test(url) || HTTPS_REGEX.test(url);
 }
 
 /**
- * Parse `git remote -v` output into a `{ name: fetchUrl }` map. Only the
- * `(fetch)` line per remote is retained; `(push)` URLs are ignored because
- * topology detection drives the `git pull/fetch/merge` invocations which all
- * use the fetch URL.
+ * Parse the output of `git remote -v` into a mapping of remote names to their fetch URLs.
+ *
+ * Ignores `(push)` entries because topology detection drives the
+ * `git pull`/`fetch`/`merge` invocations, which all use the fetch URL.
+ * Lines that do not match the expected `<name> <url> (fetch)` format are
+ * skipped.
+ *
+ * @param out - Raw stdout from `git remote -v`
+ * @returns A record mapping each remote name to its fetch URL
  */
 export function parseRemotes(out: string): Record<string, string> {
   const remotes: Record<string, string> = {};
@@ -54,11 +64,19 @@ export function parseRemotes(out: string): Record<string, string> {
 }
 
 /**
- * Classify a parsed `{ name: fetchUrl }` remote map. Vanilla = exactly one
- * remote named `origin` matching the public repo. Fork = an `upstream`
- * matching the public repo and a separate `origin` (any URL). Anything else
- * is `unknown`. Pure, side-effect-free; tests drive it directly with
- * hand-built maps.
+ * Classify a parsed `{ name: fetchUrl }` remote map into a topology label.
+ *
+ * Classification rules:
+ * - `vanilla` — exactly one remote named `origin` matching the public repo.
+ * - `fork` — an `upstream` matching the public repo and a separate `origin`
+ *   (any URL).
+ * - `unknown` — anything else (no `upstream`, an `origin` that does not
+ *   match the public repo, etc.).
+ *
+ * Pure and side-effect-free; tests drive it directly with hand-built maps.
+ *
+ * @param remotes - Map of remote name -> fetch URL produced by `parseRemotes`.
+ * @returns The resolved `Topology` label.
  */
 export function detectTopology(remotes: Record<string, string>): Topology {
   const origin = remotes.origin;
@@ -74,11 +92,15 @@ export function detectTopology(remotes: Record<string, string>): Topology {
 }
 
 /**
- * Read `git remote -v` from REPO_HOME and route the output through
- * `parseRemotes` + `detectTopology`. Returns the resolved topology label.
+ * Detect the repository remote topology by running `git remote -v` in REPO_HOME
+ * and routing the output through `parseRemotes` + `detectTopology`.
+ *
  * `git remote -v` is read-only so failures here are unexpected; we still
  * route through `NomadFatal` so the dispatcher prints `[nomad] FATAL: ...`
  * rather than dumping a stack trace.
+ *
+ * @returns The detected topology label: `'vanilla'`, `'fork'`, or `'unknown'`.
+ * @throws NomadFatal when `git remote -v` fails; any captured git stderr is written to `process.stderr` before the error is thrown.
  */
 export function loadTopology(): Topology {
   let out: string;
