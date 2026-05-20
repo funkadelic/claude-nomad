@@ -111,14 +111,14 @@ export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}):
     }
   }
 
+  const overrideLabel = hasOverrides ? `${HOST}.json` : 'no host overrides';
+
   if (dryRun) {
-    log(
-      `would write settings.json (base + ${hasOverrides ? `${HOST}.json` : 'no host overrides'})`,
-    );
+    log(`would write settings.json (base + ${overrideLabel})`);
     return;
   }
 
   backupBeforeWrite(settingsPath, ts);
   writeJsonAtomic(settingsPath, merged);
-  log(`wrote settings.json (base + ${hasOverrides ? `${HOST}.json` : 'no host overrides'})`);
+  log(`wrote settings.json (base + ${overrideLabel})`);
 }

@@ -1,4 +1,3 @@
-import type { execFileSync } from 'node:child_process';
 import type * as cpModule from 'node:child_process';
 import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -75,8 +74,7 @@ export function restoreEnv(name: string, original: string | undefined): void {
 export function formatRemoteV(remotes: Record<string, string>): string {
   const lines: string[] = [];
   for (const [name, url] of Object.entries(remotes)) {
-    lines.push(`${name}\t${url} (fetch)`);
-    lines.push(`${name}\t${url} (push)`);
+    lines.push(`${name}\t${url} (fetch)`, `${name}\t${url} (push)`);
   }
   return lines.join('\n') + (lines.length > 0 ? '\n' : '');
 }
@@ -164,7 +162,11 @@ export function mockGit(behavior: GitBehavior): { calls: RecordedCall[] } {
     return {
       ...actual,
       execFileSync: vi.fn(
-        (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+        (
+          bin: string,
+          args: readonly string[],
+          opts?: Parameters<typeof cpModule.execFileSync>[2],
+        ) => {
           calls.push({ bin, args });
           const handler = HANDLERS[`${bin} ${args[0]}`];
           if (handler !== undefined) return handler(behavior, args);
