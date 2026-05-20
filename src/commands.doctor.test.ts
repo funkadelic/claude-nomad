@@ -454,6 +454,19 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('reports FAIL invalid schema and continues when path-map.json parses to a non-object projects field', async () => {
+    // path-map.json is valid JSON but schema-invalid. Without the projects
+    // guard, Object.entries(map.projects) throws and aborts doctor output
+    // mid-stream, violating the tolerant-doctor contract.
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{}');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL path-map.json invalid schema');
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
+
   it('reports FAIL and sets exitCode=1 when path-map.json is missing', async () => {
     // makeDoctorEnv does not write path-map.json by default; assert the
     // missing-file FAIL path so doctor matches cmdPush's hard-stop behavior.
@@ -1082,6 +1095,37 @@ describe('cmdDoctor explicit PASS tokens', () => {
     expect(out).not.toMatch(/PASS host overrides:/);
     expect(out).not.toMatch(/PASS never-sync items:/);
     expect(out).not.toMatch(/PASS remote origin:/);
+  });
+
+  it('annotates repo and claude-home paths with MISSING when their directories are absent', async () => {
+    // The healthy-host setup is already in place via makeDoctorEnv. Tear down
+    // both REPO_HOME (~/claude-nomad) and CLAUDE_HOME (~/.claude) to exercise
+    // the falsy branches of the existsSync ternaries inside reportHostAndPaths.
+    rmSync(join(env.testHome, 'claude-nomad'), { recursive: true, force: true });
+    rmSync(join(env.testHome, '.claude'), { recursive: true, force: true });
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toMatch(/repo: .*MISSING/);
+    expect(out).toMatch(/claude home: .*MISSING/);
+  });
+
+  it('emits tree-style section headers and bullet prefixes (Claude /doctor style)', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Section headers print without prefix or indent.
+    expect(out).toMatch(/^Host$/m);
+    expect(out).toMatch(/^Shared links$/m);
+    expect(out).toMatch(/^Settings$/m);
+    expect(out).toMatch(/^Path map$/m);
+    expect(out).toMatch(/^Repository$/m);
+    // Items use the tree-branch glyphs and never carry the legacy `[nomad]` prefix.
+    expect(out).toMatch(/^ {2}[├└] /m);
+    expect(out).not.toContain('[nomad]');
   });
 
   it('preserves the exit-code contract: a fully-healthy host does not set exitCode=1', async () => {
