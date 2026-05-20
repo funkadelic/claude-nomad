@@ -487,6 +487,49 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('reports FAIL when projects field is an array instead of an object', async () => {
+    // Arrays are typeof === 'object', so a bare `typeof !== 'object'` check
+    // misses them. Without the Array.isArray guard, the helpers would iterate
+    // a non-map shape and emit garbage rows.
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{"projects":[]}');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('FAIL path-map.json invalid schema');
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports FAIL when a project entry maps to null instead of a hosts object', async () => {
+    // Per-project guard: `hosts[HOST]` and `Object.values(hosts)` would throw
+    // if `hosts` is null. Without the per-entry validation, helpers crash
+    // mid-output and break the tolerant-doctor contract.
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{"projects":{"foo":null}}');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(
+      'FAIL path-map.json invalid schema: project "foo" hosts must be an object',
+    );
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports FAIL when a project entry maps to a primitive instead of a hosts object', async () => {
+    // Same guard as the null case, but covering the typeof !== 'object' branch.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      '{"projects":{"foo":"bar"}}',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(
+      'FAIL path-map.json invalid schema: project "foo" hosts must be an object',
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
   it('reports FAIL and sets exitCode=1 when path-map.json is missing', async () => {
     // makeDoctorEnv does not write path-map.json by default; assert the
     // missing-file FAIL path so doctor matches cmdPush's hard-stop behavior.

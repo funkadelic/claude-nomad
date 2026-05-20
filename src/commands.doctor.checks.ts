@@ -184,12 +184,24 @@ export function reportPathMap(section: DoctorSection): void {
   }
   const map = readJsonSafe<PathMap>(mapPath, mapPath, section);
   if (map === null) return;
-  // Guard non-object `projects` so Object.entries does not throw mid-output and break the tolerant-doctor contract.
+  // Guard non-object `projects` and per-project non-object `hosts` so the
+  // helpers' `hosts[HOST]` / `Object.values(hosts)` cannot throw mid-output
+  // and break the tolerant-doctor contract.
   const projects: unknown = (map as { projects?: unknown }).projects;
-  if (projects === null || typeof projects !== 'object') {
+  if (projects === null || typeof projects !== 'object' || Array.isArray(projects)) {
     addItem(section, `${red('FAIL')} path-map.json invalid schema: "projects" must be an object`);
     process.exitCode = 1;
     return;
+  }
+  for (const [name, hosts] of Object.entries(projects as Record<string, unknown>)) {
+    if (hosts === null || typeof hosts !== 'object' || Array.isArray(hosts)) {
+      addItem(
+        section,
+        `${red('FAIL')} path-map.json invalid schema: project "${name}" hosts must be an object`,
+      );
+      process.exitCode = 1;
+      return;
+    }
   }
   reportMappedProjects(section, map);
   reportPathCollisions(section, map);
