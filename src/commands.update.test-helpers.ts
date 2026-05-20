@@ -70,18 +70,68 @@ export type GitBehavior = {
   pullThrows?: Error;
   fetchThrows?: Error;
   mergeThrows?: Error;
+  /** When set, `git rev-parse --abbrev-ref HEAD` throws this error. Used to
+   * exercise `currentBranch`'s NomadFatal-wrapping catch arm. */
+  branchThrows?: Error;
+  /** When set, `git rev-parse HEAD` throws this error. Used to exercise
+   * `headSha`'s NomadFatal-wrapping catch arm. */
+  headShaThrows?: Error;
+  /** When set, `git remote -v` throws this error. Used to exercise
+   * `loadTopology`'s NomadFatal-wrapping catch arm. */
+  remoteThrows?: Error;
 };
 
 /** Single recorded execFileSync invocation; used by tests to assert on the
  * exact argv shape and ordering of git/npm calls. */
 export type RecordedCall = { bin: string; args: readonly string[] };
 
+/** Per-command handler: returns the canned output (or throws the configured
+ * error). Each handler is keyed by `git ${args[0]}` or `npm ${args[0]}` for
+ * dispatch via a table, which keeps `mockGit`'s `execFileSync` body flat. */
+type Handler = (behavior: GitBehavior, args: readonly string[]) => Buffer;
+
+const HANDLERS: Record<string, Handler> = {
+  'git remote': (b, args) => {
+    if (args[1] !== '-v') throw new Error(`unhandled: git remote ${args.join(' ')}`);
+    if (b.remoteThrows !== undefined) throw b.remoteThrows;
+    return Buffer.from(formatRemoteV(b.remotes ?? {}));
+  },
+  'git rev-parse': (b, args) => {
+    if (args[1] === '--abbrev-ref') {
+      if (b.branchThrows !== undefined) throw b.branchThrows;
+      return Buffer.from((b.branch ?? 'main') + '\n');
+    }
+    if (args[1] === 'HEAD') {
+      if (b.headShaThrows !== undefined) throw b.headShaThrows;
+      return Buffer.from('0123456789abcdef0123456789abcdef01234567\n');
+    }
+    throw new Error(`unhandled: git rev-parse ${args.join(' ')}`);
+  },
+  'git status': (b) => Buffer.from(b.status ?? ''),
+  'git pull': (b) => {
+    if (b.pullThrows !== undefined) throw b.pullThrows;
+    return Buffer.from('');
+  },
+  'git fetch': (b) => {
+    if (b.fetchThrows !== undefined) throw b.fetchThrows;
+    return Buffer.from('');
+  },
+  'git merge': (b) => {
+    if (b.mergeThrows !== undefined) throw b.mergeThrows;
+    return Buffer.from('');
+  },
+  'git push': () => Buffer.from(''),
+  'git diff': (b) => Buffer.from(b.diffNames ?? ''),
+  'npm install': () => Buffer.from(''),
+};
+
 /**
  * Mock `node:child_process` so the `git`/`npm` invocations cmdUpdate makes
- * become deterministic. Routes by `bin` + `args[0]`. Tracks every call on
- * the returned `calls` array so tests can assert on argv shape and order.
- * `cmdDoctor` is mocked separately (see `mockDoctor`) so this mock only
- * needs to cover the direct git/npm shell-outs.
+ * become deterministic. Routes by `bin` + `args[0]` through the `HANDLERS`
+ * dispatch table. Tracks every call on the returned `calls` array so tests
+ * can assert on argv shape and order. `cmdDoctor` is mocked separately (see
+ * `mockDoctor`) so this mock only needs to cover the direct git/npm
+ * shell-outs.
  */
 export function mockGit(behavior: GitBehavior): { calls: RecordedCall[] } {
   const calls: RecordedCall[] = [];
@@ -92,39 +142,8 @@ export function mockGit(behavior: GitBehavior): { calls: RecordedCall[] } {
       execFileSync: vi.fn(
         (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
           calls.push({ bin, args });
-          if (bin === 'git' && args[0] === 'remote' && args[1] === '-v') {
-            return Buffer.from(formatRemoteV(behavior.remotes ?? {}));
-          }
-          if (bin === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
-            return Buffer.from((behavior.branch ?? 'main') + '\n');
-          }
-          if (bin === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') {
-            return Buffer.from('0123456789abcdef0123456789abcdef01234567\n');
-          }
-          if (bin === 'git' && args[0] === 'status') {
-            return Buffer.from(behavior.status ?? '');
-          }
-          if (bin === 'git' && args[0] === 'pull') {
-            if (behavior.pullThrows !== undefined) throw behavior.pullThrows;
-            return Buffer.from('');
-          }
-          if (bin === 'git' && args[0] === 'fetch') {
-            if (behavior.fetchThrows !== undefined) throw behavior.fetchThrows;
-            return Buffer.from('');
-          }
-          if (bin === 'git' && args[0] === 'merge') {
-            if (behavior.mergeThrows !== undefined) throw behavior.mergeThrows;
-            return Buffer.from('');
-          }
-          if (bin === 'git' && args[0] === 'push') {
-            return Buffer.from('');
-          }
-          if (bin === 'git' && args[0] === 'diff') {
-            return Buffer.from(behavior.diffNames ?? '');
-          }
-          if (bin === 'npm' && args[0] === 'install') {
-            return Buffer.from('');
-          }
+          const handler = HANDLERS[`${bin} ${args[0]}`];
+          if (handler !== undefined) return handler(behavior, args);
           return actual.execFileSync(bin, args, opts);
         },
       ),

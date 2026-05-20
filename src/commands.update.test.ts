@@ -1,4 +1,5 @@
 import { rmSync } from 'node:fs';
+import type * as fsModule from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -250,6 +251,151 @@ describe('cmdUpdate', () => {
     expect((caught as Error).message).toContain('feat/foo');
     expect((caught as Error).message).toContain('main');
   });
+
+  it('vanilla topology dry-run: logs would-be pull, skips mutation, skips doctor', async () => {
+    const git = mockGit({ remotes: { origin: PUBLIC_SSH } });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ dryRun: true });
+    const argvs = git.calls.map((c) => c.args.join(' '));
+    expect(argvs).not.toContain('pull --ff-only origin main');
+    expect(git.calls.find((c) => c.bin === 'npm')).toBeUndefined();
+    expect(doctor.spy).not.toHaveBeenCalled();
+    expect(joinedLog(env.logSpy)).toContain('DRY-RUN: would run `git pull --ff-only origin main`');
+  });
+
+  it('fork dry-run with --push-origin: logs the push command alongside fetch/merge', async () => {
+    mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ dryRun: true, pushOrigin: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('DRY-RUN: would run `git fetch upstream`');
+    expect(out).toContain('DRY-RUN: would run `git merge upstream/main`');
+    expect(out).toContain('DRY-RUN: would run `git push origin main`');
+    expect(out).not.toContain('would prompt before pushing');
+  });
+
+  it('currentBranch failure: surfaces NomadFatal with the helper-specific message', async () => {
+    const branchErr = Object.assign(new Error('fatal: not a git repository'), {
+      stderr: Buffer.from('fatal: not a git repository'),
+    });
+    mockGit({ remotes: { origin: PUBLIC_SSH }, branchThrows: branchErr });
+    mockDoctor();
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('rev-parse --abbrev-ref HEAD');
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  it('headSha failure: surfaces NomadFatal with the helper-specific message', async () => {
+    const headErr = Object.assign(new Error('fatal: bad revision'), {
+      stderr: Buffer.from('fatal: bad revision'),
+    });
+    mockGit({ remotes: { origin: PUBLIC_SSH }, headShaThrows: headErr });
+    mockDoctor();
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('rev-parse HEAD');
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  it('defaultPrompt: /dev/tty `y\\n` triggers push to origin', async () => {
+    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    mockDoctor();
+    // Silence the prompt's `process.stdout.write(question)` so the y/N
+    // marker does not leak into the test runner's output.
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    // Mock node:fs to fake a TTY that yields the bytes "y\n". The mock
+    // spreads the original module so existsSync/mkdir* etc. used elsewhere
+    // in cmdUpdate (and by makeUpdateEnv) keep their real behavior.
+    let bytePos = 0;
+    const bytes = Buffer.from('y\n');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        openSync: vi.fn(() => 999),
+        readSync: vi.fn((_fd: number, buf: Buffer) => {
+          if (bytePos >= bytes.length) return 0;
+          buf[0] = bytes[bytePos++];
+          return 1;
+        }),
+        closeSync: vi.fn(),
+      };
+    });
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate();
+    expect(git.calls.map((c) => c.args.join(' '))).toContain('push origin main');
+    vi.doUnmock('node:fs');
+  });
+
+  it('defaultPrompt: openSync failure returns empty string and skips push', async () => {
+    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    mockDoctor();
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        openSync: vi.fn(() => {
+          throw new Error('ENXIO: no /dev/tty');
+        }),
+      };
+    });
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate();
+    expect(git.calls.map((c) => c.args.join(' '))).not.toContain('push origin main');
+    expect(joinedLog(env.logSpy)).toContain('skipping push to origin');
+    vi.doUnmock('node:fs');
+  });
+
+  it('defaultPrompt: readSync throw is swallowed and returns empty string', async () => {
+    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    mockDoctor();
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const closeSpy = vi.fn();
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        openSync: vi.fn(() => 999),
+        readSync: vi.fn(() => {
+          throw new Error('EIO');
+        }),
+        closeSync: closeSpy,
+      };
+    });
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate();
+    expect(git.calls.map((c) => c.args.join(' '))).not.toContain('push origin main');
+    // Finally arm must run even when readSync throws.
+    expect(closeSpy).toHaveBeenCalledWith(999);
+    vi.doUnmock('node:fs');
+  });
 });
 
 describe('detectTopology', () => {
@@ -277,5 +423,42 @@ describe('detectTopology', () => {
     expect(detectTopology({ origin: PRIVATE_SSH, upstream: 'git@github.com:other/repo.git' })).toBe(
       'unknown',
     );
+  });
+});
+
+describe('loadTopology', () => {
+  let originalHome: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    env = makeUpdateEnv();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    restoreEnv('HOME', originalHome);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('wraps `git remote -v` failure in NomadFatal and forwards stderr', async () => {
+    const remoteErr = Object.assign(new Error('fatal: not a git repository'), {
+      stderr: Buffer.from('fatal: not a git repository'),
+    });
+    mockGit({ remoteThrows: remoteErr });
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.resetModules();
+    const { loadTopology } = await import('./update.topology.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      loadTopology();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('git remote -v failed');
+    expect(stderrSpy).toHaveBeenCalled();
   });
 });

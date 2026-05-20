@@ -31,6 +31,7 @@ describe('nomad.ts push dispatcher', () => {
     vi.doUnmock('./commands.push.ts');
     vi.doUnmock('./commands.pull.ts');
     vi.doUnmock('./commands.doctor.ts');
+    vi.doUnmock('./commands.update.ts');
     vi.doUnmock('./diff.ts');
     vi.doUnmock('./init.ts');
     vi.doUnmock('./resume.ts');
@@ -107,5 +108,66 @@ describe('nomad.ts push dispatcher', () => {
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--dry-run'));
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--snapshot'));
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--resume-cmd'));
+    // The update subcommand and its flags must appear in the default help so
+    // a cold `nomad` invocation surfaces the new command without docs.
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('update'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--push-origin'));
+  });
+
+  it('routes `nomad update` to cmdUpdate({}) with all flags false', async () => {
+    const cmdUpdateMock = vi.fn();
+    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    process.argv = ['node', 'nomad.ts', 'update'];
+    await import('./nomad.ts');
+    expect(cmdUpdateMock).toHaveBeenCalledTimes(1);
+    expect(cmdUpdateMock).toHaveBeenCalledWith({
+      dryRun: false,
+      force: false,
+      pushOrigin: false,
+    });
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('routes `nomad update --dry-run --force --push-origin` to cmdUpdate with all flags set', async () => {
+    const cmdUpdateMock = vi.fn();
+    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    process.argv = ['node', 'nomad.ts', 'update', '--dry-run', '--force', '--push-origin'];
+    await import('./nomad.ts');
+    expect(cmdUpdateMock).toHaveBeenCalledWith({
+      dryRun: true,
+      force: true,
+      pushOrigin: true,
+    });
+  });
+
+  it('routes `nomad update --force` to cmdUpdate({ force: true, ... })', async () => {
+    const cmdUpdateMock = vi.fn();
+    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    process.argv = ['node', 'nomad.ts', 'update', '--force'];
+    await import('./nomad.ts');
+    expect(cmdUpdateMock).toHaveBeenCalledWith({
+      dryRun: false,
+      force: true,
+      pushOrigin: false,
+    });
+  });
+
+  it('rejects `nomad update --bogus` with the canonical usage line and exitCode=1', async () => {
+    const cmdUpdateMock = vi.fn();
+    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    process.argv = ['node', 'nomad.ts', 'update', '--bogus'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdUpdateMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
+  });
+
+  it('rejects `nomad update --dry-run --dry-run` (duplicate flag) with exitCode=1', async () => {
+    const cmdUpdateMock = vi.fn();
+    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    process.argv = ['node', 'nomad.ts', 'update', '--dry-run', '--dry-run'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdUpdateMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });
