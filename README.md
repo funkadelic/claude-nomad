@@ -282,7 +282,7 @@ git remote add upstream git@github.com:funkadelic/claude-nomad.git
 
 `npm run update` still exists as a legacy shim that shells out to `scripts/update.sh`; prefer `nomad update` for new invocations.
 
-To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tracking `main`, check out the tag with regular git (`git fetch upstream --tags && git merge vX.Y.Z`).
+To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tracking `main`, fetch tags and check out the tag directly (detached HEAD): `git fetch --tags && git switch --detach vX.Y.Z` (or `git checkout vX.Y.Z` on older Git).
 
 ## Commands
 
