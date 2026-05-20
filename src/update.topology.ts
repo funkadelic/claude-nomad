@@ -14,13 +14,21 @@ import { NomadFatal } from './utils.ts';
  */
 export type Topology = 'vanilla' | 'fork' | 'unknown';
 
+/** Escape regex metacharacters so a config value with `.` or `+` interpolated
+ * into a `new RegExp(...)` does not silently broaden the match. The current
+ * slug has no metachars, but this keeps the call defensible if it changes. */
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Strict patterns matching the public repo's SSH and HTTPS remote URL forms,
  * with and without a `.git` suffix. Both `git remote add upstream ...` styles
  * (set-url ssh, gh-clone https) must round-trip through `detectTopology`.
  */
-const SSH_REGEX = new RegExp(`^git@github\\.com:${UPSTREAM_REPO_SLUG}(\\.git)?$`);
-const HTTPS_REGEX = new RegExp(`^https://github\\.com/${UPSTREAM_REPO_SLUG}(\\.git)?$`);
+const SLUG_RE = escapeRe(UPSTREAM_REPO_SLUG);
+const SSH_REGEX = new RegExp(`^git@github\\.com:${SLUG_RE}(\\.git)?$`);
+const HTTPS_REGEX = new RegExp(`^https://github\\.com/${SLUG_RE}(\\.git)?$`);
 
 /** True when `url` matches one of the canonical upstream URL forms. */
 function matchesUpstream(url: string): boolean {

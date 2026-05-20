@@ -91,6 +91,23 @@ describe('cmdUpdate', () => {
     expect(git.calls.map((c) => c.args.join(' '))).toContain('push origin main');
   });
 
+  it('vanilla topology with --push-origin: FATALs (flag is fork-only)', async () => {
+    mockGit({ remotes: { origin: PUBLIC_SSH } });
+    mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate({ pushOrigin: true });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('--push-origin');
+    expect((caught as Error).message).toContain('fork');
+  });
+
   it('unknown topology bails with FATAL referencing the two-command manual fallback', async () => {
     mockGit({ remotes: {} });
     mockDoctor();

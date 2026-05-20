@@ -21,8 +21,8 @@ export type CmdUpdateOpts = {
    * without prompting. When false/unset, the user is prompted y/N. */
   pushOrigin?: boolean;
   /** Test injection point for the interactive y/N prompt. Production code
-   * uses a synchronous `readFileSync(0)` read so the prompt is testable
-   * without a real TTY; tests override this to return a deterministic answer. */
+   * reads one line from `/dev/tty`; tests override this to return a
+   * deterministic answer without a real controlling terminal. */
   prompt?: (question: string) => string;
 };
 
@@ -74,8 +74,8 @@ function defaultPrompt(question: string): string {
 /** Read the current `HEAD` SHA in REPO_HOME, trimmed. Used to pin the
  * pre-update commit so the post-update diff is exact regardless of whether
  * the pull was a fast-forward, a no-op, or a merge. `HEAD@{1}` is unreliable
- * here: a no-op `git pull --ff-only` does not always write a reflog entry,
- * and a freshly cloned repo has no `HEAD@{1}` at all. */
+ * here: no-op `git pull --ff-only` does not always write a reflog entry, and
+ * a freshly cloned repo has no `HEAD@{1}` at all. */
 function headSha(): string {
   return execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: REPO_HOME,
@@ -116,9 +116,11 @@ function reinstallIfNeeded(beforeSha: string): void {
 /**
  * Vanilla topology update: a single fast-forward pull from origin/main.
  * Non-ff pulls (someone else pushed) surface as NomadFatal via gitOrFatal.
+ * Takes the full opts so the signature stays symmetric with `runFork` even
+ * though only `dryRun` is consulted today.
  */
-function runVanilla(dryRun: boolean): void {
-  if (dryRun) {
+function runVanilla(opts: CmdUpdateOpts): void {
+  if (opts.dryRun === true) {
     log('DRY-RUN: would run `git pull --ff-only origin main`');
     return;
   }
@@ -186,6 +188,10 @@ export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
     );
   }
 
+  if (topology === 'vanilla' && opts.pushOrigin === true) {
+    die('`--push-origin` is only valid for fork topology');
+  }
+
   const branch = currentBranch();
   if (branch !== 'main') {
     die(`current branch is \`${branch}\`, expected \`main\``);
@@ -201,22 +207,17 @@ export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
 
   log(`topology: ${topology}`);
 
-  // Capture HEAD before any mutation so the post-update lockfile diff is
-  // exact even when the pull was a no-op (which does not always advance the
-  // reflog) or when this is the first invocation in a fresh clone.
-  const beforeSha = opts.dryRun === true ? '' : headSha();
-
-  if (topology === 'vanilla') {
-    runVanilla(opts.dryRun === true);
-  } else {
-    runFork(opts);
-  }
-
   if (opts.dryRun === true) {
+    if (topology === 'vanilla') runVanilla(opts);
+    else runFork(opts);
     log('DRY-RUN: would run `npm install` only if `package-lock.json` changed');
     log('DRY-RUN: would run `nomad doctor` to confirm the upgrade');
     return;
   }
+
+  const beforeSha = headSha();
+  if (topology === 'vanilla') runVanilla(opts);
+  else runFork(opts);
 
   reinstallIfNeeded(beforeSha);
   cmdDoctor();
