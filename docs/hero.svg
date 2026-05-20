@@ -1,0 +1,116 @@
+<svg width="100%" viewBox="0 0 680 440" role="img" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>claude-nomad</title>
+<desc>A dark terminal-themed hero banner with the nomad wordmark, tagline, a mocked nomad doctor terminal window, and three feature blocks below.</desc>
+
+<defs>
+<clipPath id="termClip">
+  <rect x="370" y="70" width="280" height="220" rx="10"/>
+</clipPath>
+<style>
+.bg          { fill: #0a0d0c; }
+.term-bg     { fill: #0f1311; }
+.term-stroke { stroke: #2a2e2c; fill: none; }
+.divider     { stroke: #2a2e2c; stroke-width: 0.5; }
+.brand-stroke{ stroke: #7CC34F; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.icon-stroke { stroke: #7CC34F; fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
+
+.wordmark    { font-size: 56px; font-weight: 500; fill: #f4f4f2; letter-spacing: -1px; }
+.tag-white   { font-size: 17px; font-weight: 500; fill: #f4f4f2; }
+.tag-green   { font-size: 17px; font-weight: 500; fill: #7CC34F; }
+.sub         { font-size: 12px; font-weight: 400; fill: #b8bdb8; }
+.sub-green   { font-size: 12px; font-weight: 400; fill: #7CC34F; }
+.mono        { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; fill: #f4f4f2; }
+.mono-green  { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; fill: #7CC34F; }
+.mono-muted  { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; fill: #8a8f8a; }
+.feat-title  { font-size: 13px; font-weight: 500; fill: #f4f4f2; }
+.feat-sub    { font-size: 11px; font-weight: 400; fill: #8a8f8a; }
+.footer-text { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; fill: #7CC34F; }
+</style>
+</defs>
+
+<rect x="0" y="0" width="680" height="440" fill="#0a0d0c"/>
+
+<g transform="translate(40, 56)">
+  <path d="M 0 0 L 14 11 L 0 22" class="brand-stroke" stroke-width="3.5"/>
+  <line x1="20" y1="22" x2="36" y2="22" class="brand-stroke" stroke-width="3.5"/>
+</g>
+
+<text x="92" y="85" class="wordmark">nomad</text>
+
+<text x="40" y="135" class="tag-white">Sync your Claude Code setup.</text>
+<text x="40" y="158" class="tag-green">Same environment. Any machine.</text>
+
+<text x="40" y="195" class="sub">Keep your agents, skills, settings, and</text>
+<text x="40" y="212" class="sub">session history <tspan class="sub-green">in sync across machines.</tspan></text>
+
+<g>
+  <rect x="370" y="70" width="280" height="220" rx="10" class="term-bg term-stroke" stroke-width="0.8"/>
+  <rect x="370" y="70" width="280" height="26" rx="10" class="term-bg term-stroke" stroke-width="0.8" clip-path="url(#termClip)"/>
+  <line x1="370" y1="96" x2="650" y2="96" class="divider"/>
+
+  <circle cx="386" cy="83" r="4.5" fill="#ed6a5e"/>
+  <circle cx="401" cy="83" r="4.5" fill="#f5bf4f"/>
+  <circle cx="416" cy="83" r="4.5" fill="#61c554"/>
+
+  <text x="386" y="121" class="mono-green">$<tspan class="mono"> nomad doctor</tspan></text>
+
+  <text x="386" y="144" class="mono-muted">host: <tspan class="mono">macbook</tspan></text>
+
+  <text x="386" y="170" class="mono-green">✓<tspan class="mono">  CLAUDE.md</tspan><tspan class="mono-muted" x="510" y="170">symlink OK</tspan></text>
+  <text x="386" y="188" class="mono-green">✓<tspan class="mono">  agents/</tspan><tspan class="mono-muted" x="510" y="188">symlink OK</tspan></text>
+  <text x="386" y="206" class="mono-green">✓<tspan class="mono">  skills/</tspan><tspan class="mono-muted" x="510" y="206">symlink OK</tspan></text>
+  <text x="386" y="224" class="mono-green">✓<tspan class="mono">  commands/</tspan><tspan class="mono-muted" x="510" y="224">symlink OK</tspan></text>
+  <text x="386" y="242" class="mono-green">✓<tspan class="mono">  settings.json</tspan><tspan class="mono-muted" x="510" y="242">regenerated</tspan></text>
+
+  <text x="386" y="265" class="mono-muted">projects: <tspan class="mono">4 mapped</tspan></text>
+
+  <text x="386" y="284" class="mono-green">$</text>
+  <rect x="399" y="274" width="8" height="13" fill="#8a8f8a"/>
+</g>
+
+<line x1="40" y1="320" x2="640" y2="320" class="divider"/>
+
+<line x1="240" y1="335" x2="240" y2="395" class="divider"/>
+<line x1="440" y1="335" x2="440" y2="395" class="divider"/>
+
+<g transform="translate(56, 343)">
+  <rect x="0" y="0" width="40" height="30" rx="5" class="icon-stroke"/>
+  <path d="M 9 11 L 16 15 L 9 19" class="icon-stroke"/>
+  <line x1="20" y1="20" x2="31" y2="20" class="icon-stroke"/>
+
+  <text x="54" y="13" class="feat-title">Terminal first</text>
+  <text x="54" y="29" class="feat-sub">Built for CLI</text>
+  <text x="54" y="43" class="feat-sub">developers</text>
+</g>
+
+<g transform="translate(256, 343)">
+  <rect x="0" y="4" width="20" height="13" rx="1.5" class="icon-stroke"/>
+  <line x1="-2" y1="20" x2="22" y2="20" class="icon-stroke"/>
+
+  <line x1="25" y1="11" x2="35" y2="11" class="icon-stroke"/>
+  <path d="M 28 7 L 24 11 L 28 15" class="icon-stroke"/>
+  <path d="M 32 7 L 36 11 L 32 15" class="icon-stroke"/>
+
+  <rect x="40" y="4" width="20" height="13" rx="1.5" class="icon-stroke"/>
+  <line x1="38" y1="20" x2="62" y2="20" class="icon-stroke"/>
+
+  <text x="74" y="13" class="feat-title">Migrate or sync</text>
+  <text x="74" y="29" class="feat-sub">Bootstrap new</text>
+  <text x="74" y="43" class="feat-sub">machines or sync</text>
+</g>
+
+<g transform="translate(456, 343)">
+  <rect x="2" y="13" width="22" height="18" rx="3" class="icon-stroke"/>
+  <path d="M 7 13 L 7 8 Q 7 1 13 1 Q 19 1 19 8 L 19 13" class="icon-stroke"/>
+  <line x1="13" y1="20" x2="13" y2="25" class="icon-stroke"/>
+
+  <text x="38" y="13" class="feat-title">Private by design</text>
+  <text x="38" y="29" class="feat-sub">Your data stays in</text>
+  <text x="38" y="43" class="feat-sub">your control</text>
+</g>
+
+<line x1="40" y1="420" x2="180" y2="420" class="divider"/>
+<text x="340" y="425" text-anchor="middle" class="footer-text">Bootstrap new machines. Stay in sync.</text>
+<line x1="500" y1="420" x2="640" y2="420" class="divider"/>
+
+</svg>
