@@ -4,10 +4,18 @@
 [![release](https://img.shields.io/github/v/release/funkadelic/claude-nomad?label=release&sort=semver)](https://github.com/funkadelic/claude-nomad/releases)
 [![coverage](https://img.shields.io/codecov/c/github/funkadelic/claude-nomad/main?label=coverage)](https://codecov.io/gh/funkadelic/claude-nomad)
 
-A thin wrapper around the "private Git repo" approach to syncing Claude Code config, adding two features the existing community tools don't handle:
+![claude-nomad - Sync your Claude Code setup. Same environment. Any machine.](docs/hero.svg)
 
-1. **Path remapping** so session history follows you across machines even when the same repo lives at `/Users/norm/code/foo` on one host and `/home/norm/foo` on another.
-2. **Per-host overrides** for `settings.json` via deep merge, so machine-specific keys (MCP server URLs, hooks, model preferences) don't fight you.
+Claude Code is per-machine. Your `CLAUDE.md`, custom agents, skills, slash commands, settings, and session history live in `~/.claude/` and don't follow you to your laptop, your work machine, or your homelab box.
+
+claude-nomad keeps all of it in sync through a private Git repo you control. `nomad push` on one machine, `nomad pull` on another, and your full setup is there, including past sessions you can resume.
+
+**Who this is for:** anyone running Claude Code on more than one machine. A laptop and a desktop, a Mac and a WSL box, a personal rig and a work machine, or any combination. If you've ever felt the friction of starting fresh on a second machine or copying files around by hand, this is for you.
+
+Two things it does that ad-hoc dotfiles syncing can't:
+
+- **Session history survives path differences.** The same project at `/Users/norm/code/foo` on your Mac and `/home/norm/foo` on Linux gets remapped automatically, so `claude --resume` finds your past conversations on whichever machine you're on.
+- **Per-host settings via deep merge.** Shared defaults live in one file; machine-specific overrides (model choice, MCP server URLs, env vars, hooks) live in a per-host file. They're merged on every pull instead of overwriting each other.
 
 ## Table of contents
 
@@ -182,7 +190,7 @@ Read these before adopting so you opt in with eyes open.
 
 ## Requirements
 
-- Node.js 22.6 or newer (24 LTS recommended; `install.sh` enforces the 22.6 floor)
+- Node.js 22.22.1 or newer (24 LTS recommended; `install.sh` enforces the 22.22.1 floor)
 - `tsx` (installed automatically by `install.sh`, or `npm install -g tsx` manually)
 - Git
 - A **private** GitHub repo (or any Git remote you control)
@@ -213,7 +221,7 @@ cd ~/claude-nomad
 ./install.sh
 ```
 
-`install.sh` verifies Node >= 22.6, installs `tsx` globally if missing, runs `npm install`, and prints the shell alias to add. It's idempotent, so re-running on the same or a new host is safe.
+`install.sh` verifies Node >= 22.22.1, installs `tsx` globally if missing, runs `npm install`, and prints the shell alias to add. It's idempotent, so re-running on the same or a new host is safe.
 
 On every additional host, only step 3 is needed (your private repo already exists).
 
