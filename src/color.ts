@@ -39,3 +39,17 @@ export const dim = (s: string): string => (enabled ? pc.dim(s) : s);
 
 /** Combined-bold variant (e.g., `red(bold(...))` for FATAL). */
 export const bold = (s: string): string => (enabled ? pc.bold(s) : s);
+
+/** PASS indicator glyph (U+2713 CHECK MARK). Wrap in `green()` at call sites. */
+export const okGlyph = '✓';
+
+/** FAIL indicator glyph (U+2717 BALLOT X). Wrap in `red()` at call sites. */
+export const failGlyph = '✗';
+
+/**
+ * WARN indicator glyph (U+26A0 WARNING SIGN + U+FE0E VARIATION SELECTOR-15
+ * for text-presentation; the VS15 forces monochrome rendering so the symbol
+ * does not flash as a colored emoji on terminals with emoji-presentation
+ * defaults). Wrap in `yellow()` at call sites.
+ */
+export const warnGlyph = '⚠︎';
