@@ -150,6 +150,26 @@ describe('resumeCmd', () => {
     );
   });
 
+  it('FATALs when path-map.json is a top-level array instead of an object', async () => {
+    // validatePathMap's first guard rejects arrays via Array.isArray(raw).
+    // Without exercising this branch, a `path-map.json` containing `[]` would
+    // bypass schema validation and the bare PathMap cast would later flow
+    // into Object.entries on a non-object shape.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '[]');
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('abc-123')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'FATAL: path-map.json invalid schema: top-level value must be an object',
+      ),
+    );
+  });
+
   it('FATALs with a schema error when a host path is not a string', async () => {
     // validatePathMap accepts any object as hosts; without the per-host
     // string check, a non-string value reaches shQuote(...) and throws an
