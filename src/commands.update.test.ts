@@ -214,6 +214,11 @@ describe('cmdUpdate', () => {
       fetchThrows: networkErr,
     });
     const doctor = mockDoctor();
+    // gitOrFatal forwards the captured stderr buffer to process.stderr before
+    // throwing NomadFatal. Without this spy the "fatal: unable to access ..."
+    // line leaks into vitest's terminal output on every run and could mask
+    // real warnings from other tests.
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     vi.resetModules();
     const { cmdUpdate } = await import('./commands.update.ts');
     const { NomadFatal } = await import('./utils.ts');
@@ -226,6 +231,7 @@ describe('cmdUpdate', () => {
     expect(caught).toBeInstanceOf(NomadFatal);
     expect(git.calls.map((c) => c.args.join(' '))).not.toContain('merge upstream/main');
     expect(doctor.spy).not.toHaveBeenCalled();
+    expect(stderrSpy).toHaveBeenCalled();
   });
 
   it('branch != main: FATALs with a message naming the actual branch', async () => {
