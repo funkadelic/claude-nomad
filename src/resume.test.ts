@@ -133,6 +133,44 @@ describe('resumeCmd', () => {
     );
   });
 
+  it('FATALs with a schema error when path-map.json is missing the projects field', async () => {
+    // path-map.json parses but has no `projects` key. Without the explicit
+    // schema check the bare PathMap cast would let Object.entries(undefined)
+    // throw and bypass the controlled [nomad] FATAL: contract.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{}');
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('abc-123')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('FATAL: path-map.json invalid schema: "projects" must be an object'),
+    );
+  });
+
+  it('FATALs with a schema error when a project entry maps to null instead of a hosts object', async () => {
+    // Per-entry guard so the downstream Object.values(hosts).includes(...)
+    // call cannot throw mid-flow on a malformed map.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      '{"projects":{"broken":null}}',
+    );
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('abc-123')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'FATAL: path-map.json invalid schema: project "broken" hosts must be an object',
+      ),
+    );
+  });
+
   it('FATALs and exits 1 when session is not found in any encoded dir', async () => {
     env = makeEnv('test-host');
     writePathMap(env.testHome, {});
