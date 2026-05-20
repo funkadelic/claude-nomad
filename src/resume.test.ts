@@ -178,6 +178,43 @@ describe('resumeCmd', () => {
     );
   });
 
+  it('scans past encoded dirs that do not contain the session before returning the match', async () => {
+    // findTranscriptPath iterates every encoded dir under projectsRoot until
+    // one contains `<sessionId>.jsonl`. The branch that skips a non-matching
+    // dir is only exercised when at least one decoy dir precedes the real one.
+    env = makeEnv('test-host');
+    mkdirSync(join(env.testHome, '.claude', 'projects', '-decoy-dir'), { recursive: true });
+    writeTranscript(env.testHome, '-real-encoded', 'multi-id', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('multi-id');
+    expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'multi-id'`);
+  });
+
+  it('skips non-snapshot lines that lack a cwd field and continues scanning', async () => {
+    // extractRecordedCwd's cwd check is `typeof obj.cwd === 'string' && length > 0`.
+    // A non-snapshot line without a cwd field must not return undefined-as-cwd;
+    // the loop continues to the next line. Without this case, the typeof !=='string'
+    // branch never fires (snapshot lines short-circuit higher up).
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-no-cwd-line', 'noflag-id', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', text: 'no cwd here' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writePathMap(env.testHome, {
+      foo: { 'orig-host': '/orig/host/foo', 'test-host': '/tmp/foo' },
+    });
+    const { resumeCmd } = await import('./resume.ts');
+    resumeCmd('noflag-id');
+    expect(env.logSpy).toHaveBeenCalledWith(`cd '/tmp/foo' && claude --resume 'noflag-id'`);
+  });
+
   it('skips non-JSON transcript lines and continues to the first valid cwd', async () => {
     // Transcripts can be appended mid-write or contain garbage from a
     // truncated write. extractRecordedCwd's try/catch swallows parse errors
