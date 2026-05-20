@@ -11,19 +11,46 @@ A thin wrapper around the "private Git repo" approach to syncing Claude Code con
 
 ## Table of contents
 
-- [How it works (two-repo model)](#how-it-works-two-repo-model)
-- [Repo layout (what `~/claude-nomad/` looks like on a configured host)](#repo-layout-what-claude-nomad-looks-like-on-a-configured-host)
-- [What gets synced vs. not](#what-gets-synced-vs-not)
-- [Path remapping](#path-remapping)
-- [Per-host overrides](#per-host-overrides)
-- [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs)
-- [Requirements](#requirements)
-- [Setup](#setup)
-- [Migrating an existing ~/.claude/](#migrating-an-existing-claude)
-- [Upgrading the tool](#upgrading-the-tool)
-- [Commands](#commands)
-- [Cross-OS resume](#cross-os-resume)
-- [Run tests](#run-tests)
+- [Quickstart](#quickstart)
+- **Concepts**
+  - [How it works (two-repo model)](#how-it-works-two-repo-model)
+  - [Repo layout](#repo-layout-what-claude-nomad-looks-like-on-a-configured-host)
+  - [What gets synced vs. not](#what-gets-synced-vs-not)
+  - [Path remapping](#path-remapping)
+  - [Per-host overrides](#per-host-overrides)
+  - [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs)
+- **Getting started**
+  - [Requirements](#requirements)
+  - [Setup](#setup)
+  - [Migrating an existing ~/.claude/](#migrating-an-existing-claude)
+  - [Upgrading the tool](#upgrading-the-tool)
+- **Reference**
+  - [Commands](#commands)
+  - [Cross-OS resume](#cross-os-resume)
+  - [Run tests](#run-tests)
+
+## Quickstart
+
+If you already have a private claude-nomad mirror (see [Setup](#setup) for the one-time bootstrap), adding a new host is three steps:
+
+```bash
+git clone git@github.com:you/claude-nomad.git ~/claude-nomad
+cd ~/claude-nomad && ./install.sh
+
+# Add to ~/.zshrc or ~/.bashrc (install.sh prints the alias line):
+export NOMAD_HOST=<your-host-label>
+alias nomad='tsx ~/claude-nomad/src/nomad.ts'
+```
+
+Then the everyday loop:
+
+```bash
+nomad doctor   # confirm setup
+nomad pull     # apply config to ~/.claude/
+nomad push     # publish local changes (sessions, settings)
+```
+
+First-host bootstrap and the safe-migration sequence for a populated `~/.claude/` are in [Setup](#setup) and [Migrating an existing ~/.claude/](#migrating-an-existing-claude).
 
 ## How it works (two-repo model)
 
@@ -77,27 +104,18 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 
 ## What gets synced vs. not
 
-**Synced** (symlinked into `~/.claude/` from `shared/`, see `SHARED_LINKS` in `src/config.ts`):
+| Category            | Items                                                                                                                                                                                         | Behavior                                                                                                                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Synced**          | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs`                                                                                                                 | Symlinked into `~/.claude/` from `shared/` (see `SHARED_LINKS` in `src/config.ts`).                                                                                                        |
+| **Generated**       | `settings.json`                                                                                                                                                                               | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`. Rewritten on every pull.                                                                                                  |
+| **Remapped**        | `projects/` session transcripts                                                                                                                                                               | Copied with path translation per `path-map.json`.                                                                                                                                          |
+| **Never synced**    | `~/.claude.json` (OAuth, MCP state), `history.jsonl`, `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/` | Per-host ephemeral state.                                                                                                                                                                  |
+| **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...`                                                                                                                                                        | Plugin payloads not synced. Claude Code re-downloads them on first use from the `enabledPlugins` list in the regenerated `settings.json`; no manual `claude plugins install ...` per host. |
 
-- `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs`
+> [!NOTE]
+> Plugins that depend on host-specific state (external binaries, API keys in env, MCP server URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the plugin's own per-host config.
 
-**Generated** (written fresh on every pull):
-
-- `settings.json` = `settings.base.json` deep-merged with `hosts/<hostname>.json`
-
-**Remapped** (copied with path translation):
-
-- `projects/` session transcripts
-
-**Never synced** (per-host ephemeral state):
-
-- `~/.claude.json` (OAuth tokens, MCP state), `history.jsonl`, `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/`
-
-**Auto-rehydrated by Claude Code** (not synced as files, but reconstructed from the enable list):
-
-- `~/.claude/plugins/cache/<plugin>/...`: plugin binaries and manifests. The enable list (`enabledPlugins` in `settings.base.json`) syncs via the regenerated `settings.json`; the plugin payloads do not. On a new host, Claude Code reads the enable list and downloads the corresponding plugin payloads on first use. You do not need to manually `claude plugins install ...` per host. Caveat: plugins that depend on host-specific state (external binaries, API keys in env, MCP server URLs) still need that side set up; put those in `hosts/<host>.json` or the plugin's own per-host config.
-
-For the deliberate trade-offs (what does NOT sync and why), see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs).
+For the rationale behind these choices, see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs).
 
 ## Path remapping
 
@@ -117,7 +135,10 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 }
 ```
 
-The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
+> [!IMPORTANT]
+> The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see [Setup](#setup)). Mismatched labels silently skip remap, so sessions land in the wrong host's encoded dir.
+
+Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
 
 On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the cross-OS cwd-binding gotcha).
 
@@ -145,7 +166,8 @@ On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied 
 
 Result on that host: opus model, the local Ollama env var, plus the shared permissions array.
 
-**Never hand-edit `~/.claude/settings.json` on a synced host.** It's regenerated on every `nomad pull` from base + host. Edit the base or host file in the repo instead.
+> [!CAUTION]
+> Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every `nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file in the repo instead.
 
 ## What does NOT sync (deliberate trade-offs)
 
@@ -169,7 +191,8 @@ Read these before adopting so you opt in with eyes open.
 
 **Why not just fork?** GitHub doesn't let you flip a public fork to private, and your config (especially session transcripts) must stay private. So the bootstrap is a one-time mirror-push into a fresh private repo, not a fork.
 
-**Keep the mirror private.** CI workflows under `.github/workflows/` are gated on `${{ !github.event.repository.private }}`, so they skip on any private repo and run only on public ones. Flipping your mirror to public will start firing CI on every `nomad push` against `main`.
+> [!WARNING]
+> Keep the mirror private. CI workflows under `.github/workflows/` are gated on `${{ !github.event.repository.private }}`, so they skip on any private repo and run only on public ones. Flipping your mirror to public will start firing CI on every `nomad push` against `main`, and your session transcripts (which include conversation content) become world-readable.
 
 One-time, on your first host:
 
