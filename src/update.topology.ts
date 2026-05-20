@@ -43,7 +43,10 @@ function matchesUpstream(url: string): boolean {
 /**
  * Parse the output of `git remote -v` into a mapping of remote names to their fetch URLs.
  *
- * Ignores `(push)` entries and any lines that do not match the expected `<name> <url> (fetch)` format.
+ * Ignores `(push)` entries because topology detection drives the
+ * `git pull`/`fetch`/`merge` invocations, which all use the fetch URL.
+ * Lines that do not match the expected `<name> <url> (fetch)` format are
+ * skipped.
  *
  * @param out - Raw stdout from `git remote -v`
  * @returns A record mapping each remote name to its fetch URL
@@ -61,11 +64,19 @@ export function parseRemotes(out: string): Record<string, string> {
 }
 
 /**
- * Classify a parsed `{ name: fetchUrl }` remote map. Vanilla = exactly one
- * remote named `origin` matching the public repo. Fork = an `upstream`
- * matching the public repo and a separate `origin` (any URL). Anything else
- * is `unknown`. Pure, side-effect-free; tests drive it directly with
- * hand-built maps.
+ * Classify a parsed `{ name: fetchUrl }` remote map into a topology label.
+ *
+ * Classification rules:
+ * - `vanilla` — exactly one remote named `origin` matching the public repo.
+ * - `fork` — an `upstream` matching the public repo and a separate `origin`
+ *   (any URL).
+ * - `unknown` — anything else (no `upstream`, an `origin` that does not
+ *   match the public repo, etc.).
+ *
+ * Pure and side-effect-free; tests drive it directly with hand-built maps.
+ *
+ * @param remotes - Map of remote name -> fetch URL produced by `parseRemotes`.
+ * @returns The resolved `Topology` label.
  */
 export function detectTopology(remotes: Record<string, string>): Topology {
   const origin = remotes.origin;
@@ -82,10 +93,14 @@ export function detectTopology(remotes: Record<string, string>): Topology {
 
 /**
  * Detect the repository remote topology by running `git remote -v` in REPO_HOME
- * and analyzing the parsed remotes.
+ * and routing the output through `parseRemotes` + `detectTopology`.
+ *
+ * `git remote -v` is read-only so failures here are unexpected; we still
+ * route through `NomadFatal` so the dispatcher prints `[nomad] FATAL: ...`
+ * rather than dumping a stack trace.
  *
  * @returns The detected topology label: `'vanilla'`, `'fork'`, or `'unknown'`.
- * @throws NomadFatal when `git remote -v` fails; any captured git stderr is written to stdout before the error is thrown.
+ * @throws NomadFatal when `git remote -v` fails; any captured git stderr is written to `process.stderr` before the error is thrown.
  */
 export function loadTopology(): Topology {
   let out: string;

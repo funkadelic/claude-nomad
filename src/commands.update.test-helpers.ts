@@ -16,7 +16,10 @@ export type Env = { testHome: string; logSpy: LogSpy; errSpy: LogSpy };
 /**
  * Create an isolated HOME sandbox for `cmdUpdate` tests.
  *
- * Sets `process.env.HOME` to the created directory and resets the module cache so tests load fresh modules.
+ * Sets `process.env.HOME` to the created directory and pre-creates a
+ * `claude-nomad/` subdirectory so `existsSync(REPO_HOME)` is true during the
+ * test (tests that want to exercise the missing-repo path remove it
+ * explicitly). Resets the module cache so tests load fresh modules.
  *
  * @returns An `Env` containing `testHome` (the sandbox HOME path) and spies for `console.log` and `console.error`.
  */
@@ -37,7 +40,9 @@ export function makeUpdateEnv(): Env {
 /**
  * Concatenates captured console calls into a single newline-separated string.
  *
- * Each recorded call's arguments are joined with a space, and calls are joined with `\n`.
+ * Each recorded call's arguments are joined with a space, and calls are
+ * joined with `\n`. Lets tests assert on substrings without iterating
+ * `spy.mock.calls` directly.
  *
  * @param spy - The log spy produced by spying on `console.log` or `console.error`
  * @returns A string where each captured call's arguments are joined by a space and calls are separated by `\n`
@@ -61,6 +66,8 @@ export function restoreEnv(name: string, original: string | undefined): void {
  * Produce git `remote -v` formatted output from a map of remote names to URLs.
  *
  * Each entry produces two lines: one with `(fetch)` and one with `(push)`.
+ * `parseRemotes` only consumes `(fetch)`, but emitting production-shaped
+ * output keeps the test honest against the real git CLI format.
  *
  * @param remotes - Mapping of remote name to its URL
  * @returns A `git remote -v`-style string where each remote has `(fetch)` and `(push)` lines; includes a trailing newline when there is at least one line
@@ -142,7 +149,10 @@ const HANDLERS: Record<string, Handler> = {
 /**
  * Provide a mocked child_process that yields deterministic git/npm outputs and records every invocation for test assertions.
  *
- * The `behavior` object configures the mock's outputs and errors for specific git/npm commands used by the code under test.
+ * Routes by `bin` + `args[0]` through the `HANDLERS` dispatch table. Tracks
+ * every call on the returned `calls` array so tests can assert on argv shape
+ * and order. `cmdDoctor` is mocked separately (see `mockDoctor`) so this
+ * mock only needs to cover the direct git/npm shell-outs.
  *
  * @param behavior - Configuration controlling returned output and thrown errors for specific git/npm invocations
  * @returns An object with `calls`, an array of recorded `{ bin, args }` invocations in the order they occurred
@@ -169,7 +179,10 @@ export function mockGit(behavior: GitBehavior): { calls: RecordedCall[] } {
 /**
  * Replace the doctor command with a spy so the real diagnostic does not run during tests.
  *
- * Installs a mock for './commands.doctor.ts' that exposes `cmdDoctor` as a Vitest spy.
+ * `cmdDoctor` would otherwise touch `~/.claude/`, gitleaks, the version-check
+ * cache, etc., which the unit tests for `cmdUpdate` have no business
+ * exercising. Installs a mock for `./commands.doctor.ts` that exposes
+ * `cmdDoctor` as a Vitest spy callers can assert on.
  *
  * @returns An object containing `spy`, the Vitest spy function that replaced `cmdDoctor`
  */
