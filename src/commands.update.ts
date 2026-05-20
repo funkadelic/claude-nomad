@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync } from 'node:fs';
 
 import { cmdDoctor } from './commands.doctor.ts';
 import { REPO_HOME } from './config.ts';
@@ -37,28 +37,60 @@ function currentBranch(): string {
 }
 
 /**
- * Default y/N prompt used when `opts.prompt` is not injected. Writes the
- * question to stdout and reads one synchronous line from fd 0. Using
- * `readFileSync(0)` rather than `readline` keeps the call site testable
- * (one `vi.spyOn(fs, 'readFileSync')` is enough) and avoids a dangling
- * `readline.Interface` that would block process exit if the test forgot to
- * close it.
+ * Default y/N prompt used when `opts.prompt` is not injected. Reads from
+ * `/dev/tty` byte-by-byte until newline so the call returns after the user
+ * presses Enter (cooked-mode TTY line buffering). The naive `readFileSync(0)`
+ * approach reads until EOF, which hangs interactive use until Ctrl-D. Opens
+ * `/dev/tty` directly so the prompt still works when stdin is piped or
+ * redirected. Any failure (no controlling TTY, read error) returns `''`,
+ * which `runFork` treats as "no" and skips the push.
  */
 function defaultPrompt(question: string): string {
   process.stdout.write(question);
+  let fd: number;
   try {
-    return readFileSync(0, 'utf8').trim();
+    fd = openSync('/dev/tty', 'r');
   } catch {
     return '';
   }
+  try {
+    const buf = Buffer.alloc(1);
+    let answer = '';
+    while (true) {
+      const n = readSync(fd, buf, 0, 1, null);
+      if (n === 0) break;
+      const ch = buf.toString('utf8', 0, 1);
+      if (ch === '\n' || ch === '\r') break;
+      answer += ch;
+    }
+    return answer.trim();
+  } catch {
+    return '';
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Read the current `HEAD` SHA in REPO_HOME, trimmed. Used to pin the
+ * pre-update commit so the post-update diff is exact regardless of whether
+ * the pull was a fast-forward, a no-op, or a merge. `HEAD@{1}` is unreliable
+ * here: a no-op `git pull --ff-only` does not always write a reflog entry,
+ * and a freshly cloned repo has no `HEAD@{1}` at all. */
+function headSha(): string {
+  return execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: REPO_HOME,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+    .toString()
+    .trim();
 }
 
 /**
- * Names of files changed between the pre-update HEAD (`HEAD@{1}`) and the
- * post-update HEAD. Used to decide whether `npm install` needs to run.
+ * Names of files changed between `beforeSha` and the current `HEAD`. Empty
+ * when the update was a no-op (same SHA).
  */
-function changedFilesSinceUpdate(): string[] {
-  const out = execFileSync('git', ['diff', 'HEAD@{1}', 'HEAD', '--name-only'], {
+function changedFilesSince(beforeSha: string): string[] {
+  const out = execFileSync('git', ['diff', '--name-only', `${beforeSha}..HEAD`], {
     cwd: REPO_HOME,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).toString();
@@ -66,13 +98,13 @@ function changedFilesSinceUpdate(): string[] {
 }
 
 /**
- * Run `npm install` in `REPO_HOME` only when `package-lock.json` shifted in
- * the just-applied update; otherwise log a skip line. Routing through
- * `execFileSync` (no shell) keeps the call mockable in tests and prevents
- * any chance of argv injection.
+ * Run `npm install` in `REPO_HOME` only when `package-lock.json` shifted
+ * between `beforeSha` and the current HEAD; otherwise log a skip line.
+ * Routing through `execFileSync` (no shell) keeps the call mockable in tests
+ * and prevents any chance of argv injection.
  */
-function reinstallIfNeeded(): void {
-  const changed = changedFilesSinceUpdate();
+function reinstallIfNeeded(beforeSha: string): void {
+  const changed = changedFilesSince(beforeSha);
   if (!changed.includes('package-lock.json')) {
     log('skipping npm install (lockfile unchanged)');
     return;
@@ -169,6 +201,11 @@ export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
 
   log(`topology: ${topology}`);
 
+  // Capture HEAD before any mutation so the post-update lockfile diff is
+  // exact even when the pull was a no-op (which does not always advance the
+  // reflog) or when this is the first invocation in a fresh clone.
+  const beforeSha = opts.dryRun === true ? '' : headSha();
+
   if (topology === 'vanilla') {
     runVanilla(opts.dryRun === true);
   } else {
@@ -181,6 +218,6 @@ export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
     return;
   }
 
-  reinstallIfNeeded();
+  reinstallIfNeeded(beforeSha);
   cmdDoctor();
 }

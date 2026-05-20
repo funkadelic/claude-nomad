@@ -98,6 +98,9 @@ export function mockGit(behavior: GitBehavior): { calls: RecordedCall[] } {
           if (bin === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
             return Buffer.from((behavior.branch ?? 'main') + '\n');
           }
+          if (bin === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+            return Buffer.from('0123456789abcdef0123456789abcdef01234567\n');
+          }
           if (bin === 'git' && args[0] === 'status') {
             return Buffer.from(behavior.status ?? '');
           }
