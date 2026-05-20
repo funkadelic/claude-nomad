@@ -4,8 +4,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { green, yellow } from './color.ts';
+import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { HOME, UPSTREAM_REPO_SLUG } from './config.ts';
-import { log } from './utils.ts';
 
 /**
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads
@@ -159,7 +159,7 @@ function fetchLatestTag(): string | null {
  *
  * Any failure to read the local version, retrieve or parse the latest release, or use the cache results in no output and does not change `process.exitCode`.
  */
-export function reportVersionCheck(): void {
+export function reportVersionCheck(section: DoctorSection): void {
   const local = readLocalVersion();
   if (local === null) return;
   // Strip pre-release suffix for the COMPARISON. The display value keeps the
@@ -181,10 +181,10 @@ export function reportVersionCheck(): void {
 
   const cmp = compareSemver(localPure, latest);
   if (cmp === 0) {
-    log(`${green('PASS')} version: ${local} (latest)`);
+    addItem(section, `${green('PASS')} version: ${local} (latest)`);
   } else if (cmp === -1) {
-    log(`${yellow('WARN')} version: ${local} -> ${latest} (run \`nomad update\`)`);
+    addItem(section, `${yellow('WARN')} version: ${local} -> ${latest} (run \`nomad update\`)`);
   } else {
-    log(`version: ${local} (ahead of latest release ${latest})`);
+    addItem(section, `version: ${local} (ahead of latest release ${latest})`);
   }
 }

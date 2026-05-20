@@ -1084,6 +1084,23 @@ describe('cmdDoctor explicit PASS tokens', () => {
     expect(out).not.toMatch(/PASS remote origin:/);
   });
 
+  it('emits tree-style section headers and bullet prefixes (Claude /doctor style)', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Section headers print without prefix or indent.
+    expect(out).toMatch(/^Host$/m);
+    expect(out).toMatch(/^Shared links$/m);
+    expect(out).toMatch(/^Settings$/m);
+    expect(out).toMatch(/^Path map$/m);
+    expect(out).toMatch(/^Repository$/m);
+    // Items use the tree-branch glyphs and never carry the legacy `[nomad]` prefix.
+    expect(out).toMatch(/^ {2}[├└] /m);
+    expect(out).not.toContain('[nomad]');
+  });
+
   it('preserves the exit-code contract: a fully-healthy host does not set exitCode=1', async () => {
     populateHealthy();
     mockGitleaksPresent();
