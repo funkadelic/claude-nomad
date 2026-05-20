@@ -150,6 +150,28 @@ describe('resumeCmd', () => {
     );
   });
 
+  it('FATALs with a schema error when a host path is not a string', async () => {
+    // validatePathMap accepts any object as hosts; without the per-host
+    // string check, a non-string value reaches shQuote(...) and throws an
+    // uncaught TypeError, bypassing the [nomad] FATAL: contract.
+    env = makeEnv('test-host');
+    writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
+      JSON.stringify({ type: 'file-history-snapshot' }),
+      JSON.stringify({ type: 'user', cwd: '/orig/host/foo' }),
+    ]);
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      '{"projects":{"foo":{"test-host":123}}}',
+    );
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd('abc-123')).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'FATAL: path-map.json invalid schema: project "foo" host "test-host" path must be a string',
+      ),
+    );
+  });
+
   it('FATALs with a schema error when a project entry maps to null instead of a hosts object', async () => {
     // Per-entry guard so the downstream Object.values(hosts).includes(...)
     // call cannot throw mid-flow on a malformed map.

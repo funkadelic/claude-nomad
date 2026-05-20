@@ -120,6 +120,11 @@ function validatePathMap(raw: unknown): string | null {
     if (hosts === null || typeof hosts !== 'object' || Array.isArray(hosts)) {
       return `path-map.json invalid schema: project "${name}" hosts must be an object`;
     }
+    for (const [host, value] of Object.entries(hosts as Record<string, unknown>)) {
+      if (typeof value !== 'string') {
+        return `path-map.json invalid schema: project "${name}" host "${host}" path must be a string`;
+      }
+    }
   }
   return null;
 }

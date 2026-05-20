@@ -530,6 +530,24 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('reports FAIL when a host value is a non-string primitive', async () => {
+    // The hosts-shape check accepts `{ host: <anything> }` as long as it is an
+    // object. Without the per-host string check, a number value flows into
+    // encodePath() and throws mid-output, breaking the tolerant-doctor contract.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      '{"projects":{"foo":{"test-host":123}}}',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    expect(() => cmdDoctor()).not.toThrow();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(
+      'FAIL path-map.json invalid schema: project "foo" host "test-host" path must be a string',
+    );
+    expect(out).toContain('never-sync items:');
+    expect(process.exitCode).toBe(1);
+  });
+
   it('reports FAIL and sets exitCode=1 when path-map.json is missing', async () => {
     // makeDoctorEnv does not write path-map.json by default; assert the
     // missing-file FAIL path so doctor matches cmdPush's hard-stop behavior.

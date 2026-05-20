@@ -202,6 +202,16 @@ export function reportPathMap(section: DoctorSection): void {
       process.exitCode = 1;
       return;
     }
+    for (const [hostName, mappedPath] of Object.entries(hosts as Record<string, unknown>)) {
+      if (typeof mappedPath !== 'string') {
+        addItem(
+          section,
+          `${red('FAIL')} path-map.json invalid schema: project "${name}" host "${hostName}" path must be a string`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
   }
   reportMappedProjects(section, map);
   reportPathCollisions(section, map);
