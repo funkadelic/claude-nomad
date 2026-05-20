@@ -12,6 +12,7 @@ import {
   reportRepoState,
   reportSharedLinks,
 } from './commands.doctor.checks.ts';
+import { reportVersionCheck } from './commands.doctor.version.ts';
 
 /**
  * Read-only health check for the nomad install on the current host. Emits
@@ -33,4 +34,5 @@ export function cmdDoctor(): void {
   reportGitlinks();
   reportRemote();
   reportRebaseClean();
+  reportVersionCheck();
 }
