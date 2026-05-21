@@ -3,8 +3,9 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches: [main]
+  # No `push: branches: [main]` trigger: PR runs cover all merged content,
+  # and the weekly schedule provides drift coverage. A post-merge re-scan of
+  # the same code is duplicate work.
   pull_request:
     branches: [main]
   schedule:
