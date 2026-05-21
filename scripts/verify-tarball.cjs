@@ -67,14 +67,19 @@ try {
   process.exit(1);
 }
 
-if (!Array.isArray(reports) || reports.length === 0 || !Array.isArray(reports[0].files)) {
+if (
+  !Array.isArray(reports) ||
+  reports.length === 0 ||
+  !reports[0] ||
+  !Array.isArray(reports[0].files)
+) {
   process.stderr.write(
     'verify-tarball: FAIL\n  npm pack JSON shape unexpected (expected reports[0].files array)\n',
   );
   process.exit(1);
 }
 
-const paths = reports[0].files.map((f) => f.path);
+const paths = reports[0].files.filter((f) => f && typeof f.path === 'string').map((f) => f.path);
 
 const requiredMissing = REQUIRED_EXACT.filter((p) => !paths.includes(p));
 if (!paths.some((p) => REQUIRED_PATTERN.test(p))) {
