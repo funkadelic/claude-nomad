@@ -209,7 +209,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(existsSync(lockPath)).toBe(false);
     const out = errOutput();
     // Per-hit line uses the rel-from-REPO_HOME path.
-    expect(out).toMatch(/FATAL: gitlink: shared\/evil\/\.git/);
+    expect(out).toMatch(/gitlink: shared\/evil\/\.git/);
     // Summary throw counts hits with singular "entry" for count === 1.
     expect(out).toMatch(/gitlink trap: 1 nested \.git entry in shared\//);
   });
@@ -302,14 +302,12 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    const out = logOutput();
-    expect(out).toContain(
-      '[nomad] summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
+    // `push complete` goes to log (stdout); the unmapped-style summary now
+    // goes through warn() (stderr / console.error).
+    expect(errOutput()).toContain(
+      '⚠︎ summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
     );
-    const completeIdx = out.indexOf('push complete');
-    const summaryIdx = out.indexOf('summary:');
-    expect(completeIdx).toBeGreaterThanOrEqual(0);
-    expect(summaryIdx).toBeGreaterThan(completeIdx);
+    expect(logOutput()).toContain('push complete');
     vi.doUnmock('./remap.ts');
   });
 
@@ -350,7 +348,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    expect(logOutput()).toContain('[nomad] summary: clean');
+    expect(logOutput()).toMatch(/✓ +summary: clean/);
     vi.doUnmock('./remap.ts');
   });
 
@@ -407,8 +405,9 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     const out = logOutput();
     expect(out).toContain('pushing on host=test-host (dry-run)');
     expect(out).toContain('push: dry-run; skipping git add, gitleaks scan, commit, and push');
-    expect(out).toContain(
-      '[nomad] summary: 2 unmapped on push, 0 collisions (run nomad doctor to list)',
+    // unmapped-style summary now goes to warn() (console.error).
+    expect(errOutput()).toContain(
+      '⚠︎ summary: 2 unmapped on push, 0 collisions (run nomad doctor to list)',
     );
     expect(out).not.toContain('push complete');
     vi.doUnmock('./remap.ts');
@@ -448,10 +447,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    const out = logOutput();
-    expect(out).toContain('nothing to commit');
-    expect(out).toContain(
-      '[nomad] summary: 3 unmapped on push, 0 collisions (run nomad doctor to list)',
+    expect(logOutput()).toContain('nothing to commit');
+    // unmapped-style summary now goes to warn() (console.error).
+    expect(errOutput()).toContain(
+      '⚠︎ summary: 3 unmapped on push, 0 collisions (run nomad doctor to list)',
     );
     vi.doUnmock('./remap.ts');
   });
@@ -500,8 +499,8 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(existsSync(lockPath)).toBe(false);
     const out = errOutput();
     // Per-hit lines for both, plus the plural summary FATAL.
-    expect(out).toMatch(/FATAL: gitlink: shared\/a\/\.git/);
-    expect(out).toMatch(/FATAL: gitlink: shared\/b\/\.git/);
+    expect(out).toMatch(/gitlink: shared\/a\/\.git/);
+    expect(out).toMatch(/gitlink: shared\/b\/\.git/);
     expect(out).toMatch(/gitlink trap: 2 nested \.git entries in shared\//);
   });
 
@@ -509,7 +508,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // Session-aware end-to-end: runGitleaksScan throws a session-aware
     // NomadFatal naming a synthetic session id + drop-session hint;
     // cmdPush's catch block routes the message through console.error with
-    // the [nomad] FATAL: prefix, sets exitCode=1, and the finally block
+    // the ✗ prefix, sets exitCode=1, and the finally block
     // releases the lock. The unit tests in push-gitleaks.test.ts cover the
     // builder shape; this test asserts the message propagates through the
     // command boundary intact.
@@ -571,7 +570,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
     const out = errOutput();
-    expect(out).toContain('[nomad] FATAL: ');
+    expect(out).toContain('✗ ');
     expect(out).toContain('abc12345-test-fixture');
     expect(out).toContain('nomad drop-session');
   });

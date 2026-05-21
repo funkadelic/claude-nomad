@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { HOME, REPO_HOME } from './config.ts';
 import { computePreview } from './preview.ts';
 import { emitSummary } from './summary.ts';
-import { die, freshBackupTs, NomadFatal } from './utils.ts';
+import { die, fail, freshBackupTs, NomadFatal } from './utils.ts';
 
 /**
  * `nomad diff` command. Offline-safe, read-only preview surface that runs
@@ -40,7 +40,7 @@ export function cmdDiff(): void {
     emitSummary('diff', result.unmapped);
   } catch (err) {
     if (err instanceof NomadFatal) {
-      process.stderr.write(`[nomad] FATAL: ${err.message}\n`);
+      fail(err.message);
       process.exitCode = 1;
       return;
     }

@@ -9,6 +9,7 @@ import {
   ensureSymlink,
   log,
   readJson,
+  warn,
   writeJsonAtomic,
 } from './utils.ts';
 
@@ -99,15 +100,13 @@ export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}):
       const baseKeys = new Set(Object.keys(base));
       const drift = Object.keys(existing).filter((k) => !baseKeys.has(k));
       if (drift.length > 0) {
-        process.stderr.write(
-          `[nomad] WARN: no hosts/${HOST}.json found; existing settings has unbased keys ${JSON.stringify(drift)}. ` +
-            `Set NOMAD_HOST to match a hosts/*.json or rerun 'nomad doctor' for candidates.\n`,
+        warn(
+          `no hosts/${HOST}.json found; existing settings has unbased keys ${JSON.stringify(drift)}. ` +
+            `Set NOMAD_HOST to match a hosts/*.json or rerun 'nomad doctor' for candidates.`,
         );
       }
     } catch {
-      process.stderr.write(
-        `[nomad] WARN: existing settings.json is malformed; skipping drift-check and regenerating.\n`,
-      );
+      warn('existing settings.json is malformed; skipping drift-check and regenerating.');
     }
   }
 

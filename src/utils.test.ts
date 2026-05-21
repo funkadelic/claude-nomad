@@ -340,6 +340,12 @@ describe('acquireLock / releaseLock', () => {
     process.env.HOME = testHome;
     lockPath = join(testHome, '.cache', 'claude-nomad', 'nomad.lock');
     stderrWrites = [];
+    // warn() routes through console.error; capture both stdio paths so the
+    // lock-contention assertions remain stream-agnostic across the helper
+    // refactor (process.stderr.write is still spied for defense in depth).
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      stderrWrites.push(args.map(String).join(' ') + '\n');
+    });
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       stderrWrites.push(String(chunk));
       return true;

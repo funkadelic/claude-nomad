@@ -96,7 +96,7 @@ export function detectTopology(remotes: Record<string, string>): Topology {
  * and routing the output through `parseRemotes` + `detectTopology`.
  *
  * `git remote -v` is read-only so failures here are unexpected; we still
- * route through `NomadFatal` so the dispatcher prints `[nomad] FATAL: ...`
+ * route through `NomadFatal` so the dispatcher prints ``✗ ...``
  * rather than dumping a stack trace.
  *
  * @returns The detected topology label: `'vanilla'`, `'fork'`, or `'unknown'`.

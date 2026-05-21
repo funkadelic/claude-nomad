@@ -1,4 +1,4 @@
-import { log } from './utils.ts';
+import { ok, warn } from './utils.ts';
 
 /**
  * Emit the single end-of-run summary line shared by cmdPull, cmdPush, and
@@ -10,12 +10,15 @@ import { log } from './utils.ts';
  *   - `summary: <N> unmapped on diff (run nomad doctor to list)`
  *   - `summary: <N> unmapped on push, <M> collisions (run nomad doctor to list)`
  *
- * `log()` already prepends `[nomad] `, so users see `[nomad] summary: ...`.
- * Goes to stdout (not stderr) so it survives backgrounded shell-rc
- * invocations like `nomad pull 2>/dev/null &`. `collisions` is meaningful
- * only for `'push'`; for `'pull'` / `'diff'` it is ignored and defaults to 0.
- * This module is the SINGLE source of truth for the phrasing, eliminating
- * drift risk across the three callers by construction.
+ * Clean outcomes go through `ok()` (green `✓` glyph, stdout) and unmapped /
+ * collision outcomes go through `warn()` (yellow `⚠︎` glyph, stderr). The
+ * status glyph carries the success/warn semantics; users see e.g.
+ * `✓ summary: clean` or `⚠︎ summary: 3 unmapped on pull (...)`. Note: clean
+ * still goes to stdout so it survives backgrounded shell-rc invocations
+ * like `nomad pull 2>/dev/null &`. `collisions` is meaningful only for
+ * `'push'`; for `'pull'` / `'diff'` it is ignored and defaults to 0. This
+ * module is the SINGLE source of truth for the phrasing, eliminating drift
+ * risk across the three callers by construction.
  */
 export function emitSummary(
   verb: 'pull' | 'push' | 'diff',
@@ -24,17 +27,17 @@ export function emitSummary(
 ): void {
   if (verb === 'push') {
     if (unmapped === 0 && collisions === 0) {
-      log('summary: clean');
+      ok('summary: clean');
       return;
     }
-    log(
+    warn(
       `summary: ${unmapped} unmapped on push, ${collisions} collisions (run nomad doctor to list)`,
     );
     return;
   }
   if (unmapped === 0) {
-    log('summary: clean');
+    ok('summary: clean');
     return;
   }
-  log(`summary: ${unmapped} unmapped on ${verb} (run nomad doctor to list)`);
+  warn(`summary: ${unmapped} unmapped on ${verb} (run nomad doctor to list)`);
 }

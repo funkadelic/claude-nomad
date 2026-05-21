@@ -3,7 +3,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
-import { acquireLock, die, log, NomadFatal, releaseLock } from './utils.ts';
+import { acquireLock, die, fail, log, NomadFatal, releaseLock } from './utils.ts';
 
 /**
  * Surgical removal of a contaminated session from the staged tree of
@@ -17,7 +17,7 @@ import { acquireLock, die, log, NomadFatal, releaseLock } from './utils.ts';
  * Idempotent: files that are not in the index at all are skipped silently
  * rather than treated as errors. Exits 0 on any drop, including an
  * idempotent re-run that finds the matches already absent. Exits 1 with
- * `[nomad] no staged session matches <id>` only when no
+ * `✗ no staged session matches <id>` (red `✗` fail glyph) only when no
  * `shared/projects/<logical>/<id>.jsonl` exists at all in the shared tree.
  *
  * Defense-in-depth: the id is validated against the same allowlist regex
@@ -37,7 +37,7 @@ import { acquireLock, die, log, NomadFatal, releaseLock } from './utils.ts';
  */
 export function cmdDropSession(id: string): void {
   if (id.length === 0 || id.length > 128 || !/^[A-Za-z0-9_-]+$/.test(id)) {
-    console.error(`[nomad] FATAL: invalid session id: ${id}`);
+    fail(`invalid session id: ${id}`);
     process.exit(1);
   }
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
@@ -87,8 +87,8 @@ export function cmdDropSession(id: string): void {
       } catch (err) {
         // Convert raw execFileSync failures (non-zero git exit, EACCES on
         // .git/index, EPERM, etc.) into NomadFatal so the outer catch can
-        // emit a clean `[nomad] FATAL: ...` line instead of letting the
-        // ExecException bubble past nomad.ts's NomadFatal-only dispatcher.
+        // emit a clean `✗ ...` line instead of letting the ExecException
+        // bubble past nomad.ts's NomadFatal-only dispatcher.
         // The `?? err.message` fallback only fires when git fails without
         // producing stderr (spawn-level error before the process emits
         // anything), which `cmdPush`'s gitleaks probe already rules out
@@ -110,15 +110,10 @@ export function cmdDropSession(id: string): void {
     if (!(err instanceof NomadFatal)) {
       throw err;
     }
-    // The `no staged session matches <id>` path is a routine not-found
-    // result, so it omits the FATAL: prefix to keep the user-facing
-    // wording stable (matches README "Exit codes" copy). All other
-    // NomadFatal throws here (e.g., `git failed to unstage ...`) are
-    // internal failures and carry the [nomad] FATAL: prefix.
-    const prefix = err.message.startsWith('no staged session matches ')
-      ? '[nomad] '
-      : '[nomad] FATAL: ';
-    console.error(`${prefix}${err.message}`);
+    // All NomadFatal paths surfaced here are exit-1 conditions (no staged
+    // session matches the id, git mutation failed, etc.); the red `✗`
+    // glyph carries the severity uniformly.
+    fail(err.message);
     process.exitCode = 1;
   } finally {
     releaseLock(handle);

@@ -8,7 +8,7 @@ import { runGitleaksScan } from './push-gitleaks.ts';
 import { remapPush } from './remap.ts';
 import { emitSummary } from './summary.ts';
 // prettier-ignore
-import { acquireLock, die, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readJson, releaseLock } from './utils.ts';
+import { acquireLock, die, fail, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readJson, releaseLock } from './utils.ts';
 
 /**
  * Match `path` against an entry in the push allow-list. Exact match for
@@ -96,10 +96,10 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   }
   if (neverSyncHits.length === 0 && violations.length === 0) return;
   for (const p of neverSyncHits) {
-    console.error(`[nomad] FATAL: ${p} is in NEVER_SYNC and must never be pushed`);
+    fail(`${p} is in NEVER_SYNC and must never be pushed`);
   }
   for (const p of violations) {
-    console.error(`[nomad] FATAL: to sync ${p}, add to PUSH_ALLOWED in src/config.ts`);
+    fail(`to sync ${p}, add to PUSH_ALLOWED in src/config.ts`);
   }
   throw new NomadFatal('push allow-list violations');
 }
@@ -158,8 +158,8 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     if (gitlinks.length > 0) {
       for (const p of gitlinks) {
         const rel = relative(REPO_HOME, p);
-        console.error(
-          `[nomad] FATAL: gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
+        fail(
+          `gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
         );
       }
       throw new NomadFatal(
@@ -204,7 +204,7 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     emitSummary('push', remapResult.unmapped, remapResult.collisions);
   } catch (err) {
     if (err instanceof NomadFatal) {
-      console.error(`[nomad] FATAL: ${err.message}`);
+      fail(err.message);
       process.exitCode = 1;
     } else {
       throw err;

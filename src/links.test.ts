@@ -109,7 +109,12 @@ describe('regenerateSettings (integration)', () => {
       join(claudeDir, 'settings.json'),
       JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
     );
+    // warn() routes through console.error; capture both stdio paths so the
+    // assertion remains stream-agnostic.
     const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       writes.push(String(chunk));
       return true;
@@ -117,7 +122,7 @@ describe('regenerateSettings (integration)', () => {
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
     const captured = writes.join('');
-    expect(captured).toContain('WARN: no hosts/');
+    expect(captured).toContain('⚠︎ no hosts/');
     expect(captured).toContain('unbased keys ["statusLine"]');
     expect(existsSync(join(claudeDir, 'settings.json'))).toBe(true);
   });
@@ -129,13 +134,16 @@ describe('regenerateSettings (integration)', () => {
     );
     writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ model: 'opus' }) + '\n');
     const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       writes.push(String(chunk));
       return true;
     });
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
-    expect(writes.join('')).not.toContain('WARN');
+    expect(writes.join('')).not.toContain('⚠︎');
   });
 
   it('regenerates settings even when prior settings.json is malformed JSON', async () => {
@@ -145,13 +153,16 @@ describe('regenerateSettings (integration)', () => {
     );
     writeFileSync(join(claudeDir, 'settings.json'), '{ this is not, valid json');
     const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       writes.push(String(chunk));
       return true;
     });
     const { regenerateSettings } = await import('./links.ts');
     expect(() => regenerateSettings('20260516-000000')).not.toThrow();
-    expect(writes.join('')).toContain('WARN: existing settings.json is malformed');
+    expect(writes.join('')).toContain('⚠︎ existing settings.json is malformed');
     expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toEqual({
       model: 'sonnet',
     });

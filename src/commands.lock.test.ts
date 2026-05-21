@@ -19,6 +19,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   let repoUnderHome: string;
   let lockPath: string;
   let logSpy: LogSpy;
+  let errSpy: LogSpy;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -32,7 +33,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     mkdirSync(join(testHome, '.claude'), { recursive: true });
     vi.resetModules();
     // Suppress noisy fatal output during the test.
-    vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+    errSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */
     });
     vi.spyOn(process.stderr, 'write').mockImplementation((_chunk) => true);
@@ -48,6 +49,11 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
    */
   function logOutput(): string {
     return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
+  }
+
+  /** Sibling of `logOutput` for `console.error` (warn/fail glyph output). */
+  function errOutput(): string {
+    return errSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
   }
 
   afterEach(() => {
@@ -317,13 +323,11 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
-    const out = logOutput();
-    expect(out).toContain('[nomad] summary: 2 unmapped on pull (run nomad doctor to list)');
-    // The summary line must come AFTER `pull complete`.
-    const completeIdx = out.indexOf('pull complete');
-    const summaryIdx = out.indexOf('summary:');
-    expect(completeIdx).toBeGreaterThanOrEqual(0);
-    expect(summaryIdx).toBeGreaterThan(completeIdx);
+    // `pull complete` goes through log() (stdout); the summary is now an
+    // unmapped-style warn() (stderr), so check each stream independently.
+    // The `summary:` text appears in err only; the body completed marker in log.
+    expect(errOutput()).toContain('⚠︎ summary: 2 unmapped on pull (run nomad doctor to list)');
+    expect(logOutput()).toContain('pull complete');
   });
 
   it('cmdPull emits the clean summary line when path-map has no unmapped entries', async () => {
@@ -337,7 +341,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
-    expect(logOutput()).toContain('[nomad] summary: clean');
+    expect(logOutput()).toMatch(/✓ +summary: clean/);
   });
 
   it('cmdPull --dry-run emits the unmapped-on-pull summary line based on computePreview', async () => {
@@ -361,13 +365,11 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull({ dryRun: true });
-    const out = logOutput();
-    expect(out).toContain('[nomad] summary: 1 unmapped on pull (run nomad doctor to list)');
-    // The summary line must come AFTER `dry-run complete; no mutation`.
-    const completeIdx = out.indexOf('dry-run complete; no mutation');
-    const summaryIdx = out.indexOf('summary:');
-    expect(completeIdx).toBeGreaterThanOrEqual(0);
-    expect(summaryIdx).toBeGreaterThan(completeIdx);
+    // `dry-run complete; no mutation` goes through log() (stdout); the
+    // summary is now an unmapped-style warn() (stderr), so check each
+    // stream independently.
+    expect(errOutput()).toContain('⚠︎ summary: 1 unmapped on pull (run nomad doctor to list)');
+    expect(logOutput()).toContain('dry-run complete; no mutation');
   });
 
   it('cmdPull does NOT emit the summary line when a NomadFatal fires mid-flight', async () => {
