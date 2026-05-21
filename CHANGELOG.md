@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/funkadelic/claude-nomad/compare/v0.16.0...v0.16.1) (2026-05-21)
+
+
+### Changed
+
+* **output:** unify CLI output with doctor-style status glyphs ([#85](https://github.com/funkadelic/claude-nomad/issues/85)) ([98d6f6e](https://github.com/funkadelic/claude-nomad/commit/98d6f6edfc44bc9bc5f53e6ad8c1b3d04867d880))
+
 ## [0.16.0](https://github.com/funkadelic/claude-nomad/compare/v0.15.0...v0.16.0) (2026-05-21)
 
 
