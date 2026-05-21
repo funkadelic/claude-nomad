@@ -132,6 +132,19 @@ export function cmdDropSession(id: string): void {
  * only in the index (newly-staged-not-in-HEAD). `git ls-files
  * --error-unmatch` is NOT a HEAD-presence check; it matches anything in
  * the index too, which would misclassify newly-staged paths.
+ *
+ * The catch deliberately collapses three cases to `false`: (a) HEAD has
+ * no commit yet (fresh `git init`), (b) HEAD is unresolvable / corrupt
+ * (e.g., `.git/refs/heads/main` was deleted manually), and (c) the
+ * specific path simply does not exist in a valid HEAD. Git produces the
+ * same exit 128 and the same stderr (`fatal: invalid object name 'HEAD'`)
+ * for (a) and (b), so a probe-based distinction would require additional
+ * git-plumbing reads (`rev-parse --verify HEAD`, `.git/refs/heads/`
+ * inspection) that are brittle and break the empty-repo path every
+ * existing test runs through. The downstream `git rm --cached -f` is
+ * idempotent and produces the user-intended unstage outcome regardless
+ * of which case fired, so the collapsed return is intentional. Repo
+ * health belongs to `nomad doctor`, not drop-session.
  */
 function isTrackedInHead(rel: string): boolean {
   try {
