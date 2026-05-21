@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/funkadelic/claude-nomad/compare/v0.15.0...v0.16.0) (2026-05-21)
+
+
+### Added
+
+* **gitleaks:** recoverable UX for session JSONLs ([#83](https://github.com/funkadelic/claude-nomad/issues/83)) ([ef30db8](https://github.com/funkadelic/claude-nomad/commit/ef30db8ba4c599643769f3554b16e5cf6579c457))
+
 ## [0.15.0](https://github.com/funkadelic/claude-nomad/compare/v0.14.3...v0.15.0) (2026-05-21)
 
 
