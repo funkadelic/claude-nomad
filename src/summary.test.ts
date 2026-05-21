@@ -45,7 +45,7 @@ describe('emitSummary', () => {
 
   it('pull with zero unmapped emits the clean line via ok()', () => {
     emitSummary('pull', 0);
-    expect(loggedLine()).toBe('✓ summary: clean');
+    expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
@@ -57,7 +57,7 @@ describe('emitSummary', () => {
 
   it('diff with zero unmapped emits the clean line via ok()', () => {
     emitSummary('diff', 0);
-    expect(loggedLine()).toBe('✓ summary: clean');
+    expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
   });
 
   it('diff with two unmapped emits the unmapped-on-diff line via warn()', () => {
@@ -67,7 +67,7 @@ describe('emitSummary', () => {
 
   it('push with zero unmapped and zero collisions emits the clean line via ok()', () => {
     emitSummary('push', 0, 0);
-    expect(loggedLine()).toBe('✓ summary: clean');
+    expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
   });
 
   it('push with one unmapped and zero collisions emits the unmapped-on-push line via warn()', () => {

@@ -348,7 +348,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    expect(logOutput()).toContain('✓ summary: clean');
+    expect(logOutput()).toMatch(/✓\s+summary: clean/);
     vi.doUnmock('./remap.ts');
   });
 

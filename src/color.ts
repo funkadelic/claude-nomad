@@ -40,11 +40,28 @@ export const dim = (s: string): string => (enabled ? pc.dim(s) : s);
 /** Combined-bold variant (e.g., `red(bold(...))` for FATAL). */
 export const bold = (s: string): string => (enabled ? pc.bold(s) : s);
 
+/**
+ * WSL / Windows-Terminal width hack. On WSL the VS15-suffixed glyphs below
+ * (`⚠︎`, `ℹ︎`) render at 2 terminal columns even though VS15 nominally forces
+ * 1-column text presentation, while `✓`/`✗` (East-Asian-Width=Narrow) stay at
+ * 1 column. The call-site format `${glyph} ${msg}` then puts `msg` one column
+ * to the right after a warn/info glyph than after an ok/fail glyph, breaking
+ * the gutter alignment (`ℹ︎ host:` shifts one cell right of `✓ repo:`). The
+ * fix is to append an extra space to the NARROW `okGlyph`/`failGlyph` so all
+ * four glyphs occupy a 2-column rendered footprint on WSL. Native Linux and
+ * macOS terminals render every glyph at 1 column and need no compensation.
+ *
+ * Detection uses the `WSL_DISTRO_NAME` env var (always set by WSL2's init,
+ * present in interactive shells and propagated to subprocesses). The check
+ * runs at module load and is constant for the rest of the invocation.
+ */
+const wslNarrowPad = process.env.WSL_DISTRO_NAME ? ' ' : '';
+
 /** PASS indicator glyph (U+2713 CHECK MARK). Wrap in `green()` at call sites. */
-export const okGlyph = '✓';
+export const okGlyph = `✓${wslNarrowPad}`;
 
 /** FAIL indicator glyph (U+2717 BALLOT X). Wrap in `red()` at call sites. */
-export const failGlyph = '✗';
+export const failGlyph = `✗${wslNarrowPad}`;
 
 /**
  * WARN indicator glyph (U+26A0 WARNING SIGN + U+FE0E VARIATION SELECTOR-15

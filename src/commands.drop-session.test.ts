@@ -202,7 +202,7 @@ describe('cmdDropSession (real git temp repo)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     cmdDropSession('sid-X');
     expect(process.exitCode).toBe(1);
-    expect(errOutput()).toContain('✗ no staged session matches sid-X');
+    expect(errOutput()).toMatch(/✗\s+no staged session matches sid-X/);
     expect(errOutput()).not.toContain('FATAL');
     // Lock release on the throw path. The lockfile must NOT exist after the
     // call: this is the load-bearing assertion that distinguishes the
@@ -219,7 +219,7 @@ describe('cmdDropSession (real git temp repo)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     cmdDropSession('sid-Y');
     expect(process.exitCode).toBe(1);
-    expect(errOutput()).toContain('✗ no staged session matches sid-Y');
+    expect(errOutput()).toMatch(/✗\s+no staged session matches sid-Y/);
     expect(existsSync(lockPath)).toBe(false);
   });
 
@@ -278,7 +278,7 @@ describe('cmdDropSession (real git temp repo)', () => {
       expect(() => cmdDropSession('sid-A')).not.toThrow();
       expect(process.exitCode).toBe(1);
       const out = errOutput();
-      expect(out).toMatch(/✗ git failed to unstage/);
+      expect(out).toMatch(/✗\s+git failed to unstage/);
       expect(out).toContain('shared/projects/foo/sid-A.jsonl');
       // Lock must still be released even on the failure path.
       expect(existsSync(lockPath)).toBe(false);
@@ -328,13 +328,13 @@ describe('cmdDropSession (real git temp repo)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
 
     expect(() => cmdDropSession('../etc/passwd')).toThrow('exit:1');
-    expect(errOutput()).toContain('✗ invalid session id: ../etc/passwd');
+    expect(errOutput()).toMatch(/✗\s+invalid session id: \.\.\/etc\/passwd/);
 
     expect(() => cmdDropSession('foo/bar')).toThrow('exit:1');
-    expect(errOutput()).toContain('✗ invalid session id: foo/bar');
+    expect(errOutput()).toMatch(/✗\s+invalid session id: foo\/bar/);
 
     expect(() => cmdDropSession('')).toThrow('exit:1');
-    expect(errOutput()).toContain('✗ invalid session id:');
+    expect(errOutput()).toMatch(/✗\s+invalid session id:/);
 
     // Stage a session whose id contains underscores+hyphens so we can prove
     // the allowlist permits them (no FATAL fires on the entry validator).

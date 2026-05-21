@@ -341,7 +341,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
-    expect(logOutput()).toContain('✓ summary: clean');
+    expect(logOutput()).toMatch(/✓\s+summary: clean/);
   });
 
   it('cmdPull --dry-run emits the unmapped-on-pull summary line based on computePreview', async () => {

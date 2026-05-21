@@ -217,7 +217,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     const { cmdDiff } = await import('./diff.ts');
     cmdDiff();
-    expect(logOutput()).toContain('✓ summary: clean');
+    expect(logOutput()).toMatch(/✓\s+summary: clean/);
   });
 
   it('emits the summary line as the LAST log line of cmdDiff', async () => {
