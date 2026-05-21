@@ -30,7 +30,7 @@ export type CmdUpdateOpts = {
  * Get the current Git branch name for the repository at REPO_HOME.
  *
  * Wraps the failure path so a corrupt or missing `.git` directory surfaces as
- * `[nomad] FATAL: ...` via the top-level dispatcher's `NomadFatal` catch
+ * ``✗ ...`` via the top-level dispatcher's `NomadFatal` catch
  * rather than a raw `ExecException` stack trace.
  *
  * @returns The current branch name (trimmed).
@@ -204,7 +204,7 @@ function runFork(opts: CmdUpdateOpts): void {
     gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
     return;
   }
-  const answer = promptFn('[nomad] push merge to origin/main? [y/N] ').toLowerCase();
+  const answer = promptFn('push merge to origin/main? [y/N] ').toLowerCase();
   if (answer === 'y' || answer === 'yes') {
     gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
   } else {

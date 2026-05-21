@@ -50,6 +50,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
   let hostsDir: string;
   let lockPath: string;
   let logSpy: LogSpy;
+  let errSpy: LogSpy;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -70,6 +71,9 @@ describe('cmdDiff (offline, lockless preview)', () => {
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
     });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   });
 
@@ -80,6 +84,11 @@ describe('cmdDiff (offline, lockless preview)', () => {
    */
   function logOutput(): string {
     return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
+  }
+
+  /** Sibling of `logOutput` for `console.error` (warn/fail glyph output). */
+  function errOutput(): string {
+    return errSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
   }
 
   afterEach(() => {
@@ -199,7 +208,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     );
     const { cmdDiff } = await import('./diff.ts');
     cmdDiff();
-    expect(logOutput()).toContain('[nomad] summary: 2 unmapped on diff (run nomad doctor to list)');
+    expect(errOutput()).toContain('⚠︎ summary: 2 unmapped on diff (run nomad doctor to list)');
   });
 
   it('emits the clean summary line on a fully-mapped repo', async () => {
@@ -208,7 +217,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     const { cmdDiff } = await import('./diff.ts');
     cmdDiff();
-    expect(logOutput()).toContain('[nomad] summary: clean');
+    expect(logOutput()).toContain('✓ summary: clean');
   });
 
   it('emits the summary line as the LAST log line of cmdDiff', async () => {

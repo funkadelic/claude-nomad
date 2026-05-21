@@ -20,7 +20,7 @@ function copyDir(src: string, dst: string): void {
  * filter restricts to *.jsonl files only. Subdirectory contents (subagents,
  * memory, tool-results, etc.) copy recursively with no further filtering.
  * Stray .bak / .tmp / .swp / editor backups at the source root are skipped
- * and produce one `[nomad] skip <rel>: extension not in allowlist` log
+ * and produce one `ℹ︎ skip <rel>: extension not in allowlist` log
  * line each. The filter must allow the source root explicitly (Pitfall 1:
  * cpSync invokes the filter on src === src first, and a false return
  * there would abort the whole copy). Used by remapPush only; remapPull

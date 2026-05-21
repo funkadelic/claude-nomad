@@ -18,7 +18,7 @@ import { reportVersionCheck } from './commands.doctor.version.ts';
 /**
  * Read-only health check for the nomad install on the current host. Each
  * reporter pushes items into a named section; `renderDoctor` emits the final
- * Claude Code `/doctor`-style tree on stdout via `console.log` (no `[nomad]`
+ * Claude Code `/doctor`-style tree on stdout via `console.log` (no `ℹ︎`
  * prefix). FAILs in any section bubble up via `process.exitCode = 1` set
  * inside the individual reporters, so a piped
  * `nomad doctor 2>/dev/null` still exposes failures to scripts. Differs from

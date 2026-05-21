@@ -7,7 +7,7 @@ import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
 import { emitSummary } from './summary.ts';
 // prettier-ignore
-import { acquireLock, die, freshBackupTs, gitOrFatal, log, NomadFatal, releaseLock } from './utils.ts';
+import { acquireLock, die, fail, freshBackupTs, gitOrFatal, log, NomadFatal, releaseLock } from './utils.ts';
 
 /**
  * `nomad pull` command. Acquires the push/pull lock, takes a backup
@@ -77,7 +77,7 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
     // Catch fatal errors here so the finally block runs and releases the
     // lock. Throwing through process.exit() would skip finally.
     if (err instanceof NomadFatal) {
-      console.error(`[nomad] FATAL: ${err.message}`);
+      fail(err.message);
       process.exitCode = 1;
     } else {
       throw err;

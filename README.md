@@ -337,15 +337,15 @@ To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tra
 
 The version-check emits ``⚠︎ version: <local> -> <latest> (run `nomad update`)`` when the local install is behind the latest upstream release, and `✓ version: <local> (latest)` when current. It silently skips on network failures.
 
-Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summary:` line:
+Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summary:` line. The status glyph (`✓` green / `⚠︎` yellow / `✗` red / `ℹ︎` dim) carries the severity, mirroring `nomad doctor`'s left-gutter format:
 
 ```text
-[nomad] summary: clean
-[nomad] summary: 3 unmapped on pull (run nomad doctor to list)
-[nomad] summary: 2 unmapped on push, 1 collisions (run nomad doctor to list)
+✓ summary: clean
+⚠︎ summary: 3 unmapped on pull (run nomad doctor to list)
+⚠︎ summary: 2 unmapped on push, 1 collisions (run nomad doctor to list)
 ```
 
-The summary is suppressed when a `FATAL` fires mid-run so you do not see "summary: clean" stacked under an error. Drive-by projects that have no entry in `path-map.json` for this host count as unmapped; the hint points at `nomad doctor`, which lists them by logical name.
+`✓` lines go to stdout; `⚠︎` and `✗` lines go to stderr. The summary is suppressed when a fatal (`✗`) fires mid-run so you do not see "summary: clean" stacked under an error. Drive-by projects that have no entry in `path-map.json` for this host count as unmapped; the hint points at `nomad doctor`, which lists them by logical name.
 
 ## Recovery flows
 
@@ -364,7 +364,7 @@ For each match in the staged tree, `cmdDropSession` (in `src/commands.drop-sessi
 Exit codes:
 
 - `0` on any drop, including an idempotent re-run.
-- `1` with `[nomad] no staged session matches <id>` on stderr when no `shared/projects/*/<id>.jsonl` matches.
+- `1` with `✗ no staged session matches <id>` on stderr when no `shared/projects/*/<id>.jsonl` matches.
 
 What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` file. The local copy is preserved for `claude --resume`, grep recovery, or whatever the user wants. If the underlying secret is real, scrub the local file separately.
 
@@ -373,7 +373,7 @@ What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` f
 `nomad push` runs `gitleaks protect --staged` before commit. When findings live in a session transcript, the FATAL names every affected session id and the recovery command:
 
 ```text
-[nomad] FATAL: gitleaks detected secrets in 1 session transcript(s).
+✗ gitleaks detected secrets in 1 session transcript(s).
 
 Session <sid-aaaa>:
   generic-api-key (14), aws-access-token (1)
@@ -439,10 +439,10 @@ nomad doctor --resume-cmd <session-id> | bash
 If the session isn't mapped on this host, you'll see:
 
 ```text
-[nomad] FATAL: session <id> not mapped on this host; add the logical to path-map.json
+✗ session <id> not mapped on this host; add the logical to path-map.json
 ```
 
-Other FATAL surfaces: missing `~/.claude/projects/`, session id absent from every encoded dir, no `cwd` field anywhere in the transcript, missing `path-map.json`, recorded cwd not present in any logical's host map. All errors go to stderr with the `[nomad]` prefix; success goes to stdout WITHOUT the prefix so `eval` works.
+Other fatal surfaces: missing `~/.claude/projects/`, session id absent from every encoded dir, no `cwd` field anywhere in the transcript, missing `path-map.json`, recorded cwd not present in any logical's host map. All errors go to stderr prefixed with the red `✗` fail glyph; the success line goes to stdout as a bare shell command (no glyph) so `eval` works.
 
 ## Run tests
 

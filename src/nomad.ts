@@ -24,7 +24,7 @@ import { HOME } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
 import { resumeCmd } from './resume.ts';
-import { NomadFatal } from './utils.ts';
+import { fail, NomadFatal } from './utils.ts';
 
 /**
  * Multi-line help block printed on the `default:` arm of the dispatcher
@@ -68,8 +68,8 @@ const DEFAULT_HELP = [
 ].join('\n');
 
 if (!HOME) {
-  console.error(
-    '[nomad] FATAL: could not determine home directory (HOME env unset and no uid mapping). Set HOME and retry.',
+  fail(
+    'could not determine home directory (HOME env unset and no uid mapping). Set HOME and retry.',
   );
   process.exit(1);
 }
@@ -199,7 +199,7 @@ try {
   // their own try/catch (e.g., cmdDoctor's readJson path). cmdPull / cmdPush
   // have their own catches so their finally blocks release the lock first.
   if (err instanceof NomadFatal) {
-    console.error(`[nomad] FATAL: ${err.message}`);
+    fail(err.message);
     process.exit(1);
   }
   throw err;

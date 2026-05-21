@@ -119,7 +119,7 @@ describe('resumeCmd', () => {
     const { resumeCmd } = await import('./resume.ts');
     expect(() => resumeCmd('../../etc/passwd')).toThrow('exit:1');
     expect(env.errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('FATAL: invalid session id: ../../etc/passwd'),
+      expect.stringContaining('invalid session id: ../../etc/passwd'),
     );
   });
 
@@ -129,14 +129,14 @@ describe('resumeCmd', () => {
     const { resumeCmd } = await import('./resume.ts');
     expect(() => resumeCmd('abc/def')).toThrow('exit:1');
     expect(env.errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('FATAL: invalid session id: abc/def'),
+      expect.stringContaining('invalid session id: abc/def'),
     );
   });
 
   it('FATALs with a schema error when path-map.json is missing the projects field', async () => {
     // path-map.json parses but has no `projects` key. Without the explicit
     // schema check the bare PathMap cast would let Object.entries(undefined)
-    // throw and bypass the controlled [nomad] FATAL: contract.
+    // throw and bypass the controlled ✗ contract.
     env = makeEnv('test-host');
     writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
       JSON.stringify({ type: 'file-history-snapshot' }),
@@ -146,7 +146,7 @@ describe('resumeCmd', () => {
     const { resumeCmd } = await import('./resume.ts');
     expect(() => resumeCmd('abc-123')).toThrow('exit:1');
     expect(env.errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('FATAL: path-map.json invalid schema: "projects" must be an object'),
+      expect.stringContaining('path-map.json invalid schema: "projects" must be an object'),
     );
   });
 
@@ -164,16 +164,14 @@ describe('resumeCmd', () => {
     const { resumeCmd } = await import('./resume.ts');
     expect(() => resumeCmd('abc-123')).toThrow('exit:1');
     expect(env.errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'FATAL: path-map.json invalid schema: top-level value must be an object',
-      ),
+      expect.stringContaining('path-map.json invalid schema: top-level value must be an object'),
     );
   });
 
   it('FATALs with a schema error when a host path is not a string', async () => {
     // validatePathMap accepts any object as hosts; without the per-host
     // string check, a non-string value reaches shQuote(...) and throws an
-    // uncaught TypeError, bypassing the [nomad] FATAL: contract.
+    // uncaught TypeError, bypassing the ✗ contract.
     env = makeEnv('test-host');
     writeTranscript(env.testHome, '-orig-host-foo', 'abc-123', [
       JSON.stringify({ type: 'file-history-snapshot' }),
@@ -187,7 +185,7 @@ describe('resumeCmd', () => {
     expect(() => resumeCmd('abc-123')).toThrow('exit:1');
     expect(env.errorSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'FATAL: path-map.json invalid schema: project "foo" host "test-host" path must be a string',
+        'path-map.json invalid schema: project "foo" host "test-host" path must be a string',
       ),
     );
   });
@@ -208,7 +206,7 @@ describe('resumeCmd', () => {
     expect(() => resumeCmd('abc-123')).toThrow('exit:1');
     expect(env.errorSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'FATAL: path-map.json invalid schema: project "broken" hosts must be an object',
+        'path-map.json invalid schema: project "broken" hosts must be an object',
       ),
     );
   });
@@ -220,7 +218,7 @@ describe('resumeCmd', () => {
     expect(() => resumeCmd('nonexistent-id')).toThrow('exit:1');
     expect(env.errorSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'FATAL: session nonexistent-id not found in any ~/.claude/projects/<encoded>/',
+        'session nonexistent-id not found in any ~/.claude/projects/<encoded>/',
       ),
     );
   });
@@ -239,7 +237,7 @@ describe('resumeCmd', () => {
     });
     const { resumeCmd } = await import('./resume.ts');
     expect(() => resumeCmd('cwdless-id')).toThrow('exit:1');
-    expect(env.errorSpy).toHaveBeenCalledWith(expect.stringContaining('FATAL: no cwd field found'));
+    expect(env.errorSpy).toHaveBeenCalledWith(expect.stringContaining('no cwd field found'));
   });
 
   it('FATALs when path-map.json is missing entirely', async () => {
@@ -253,9 +251,7 @@ describe('resumeCmd', () => {
     ]);
     const { resumeCmd } = await import('./resume.ts');
     expect(() => resumeCmd('no-map-id')).toThrow('exit:1');
-    expect(env.errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('FATAL: path-map.json missing'),
-    );
+    expect(env.errorSpy).toHaveBeenCalledWith(expect.stringContaining('path-map.json missing'));
   });
 
   it('scans past encoded dirs that do not contain the session before returning the match', async () => {
@@ -464,7 +460,7 @@ describe('resumeCmd', () => {
       const { resumeCmd } = await import('./resume.ts');
       expect(() => resumeCmd('abc-123')).toThrow('exit:1');
       const expected = join(testHome, '.claude', 'projects');
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(`FATAL: ${expected}`));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(expected));
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('does not exist'));
       expect(exitSpy).toHaveBeenCalledWith(1);
     } finally {

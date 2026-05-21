@@ -82,7 +82,7 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * preview may run against a partially-scaffolded repo (e.g. right after a
  * fresh clone before `nomad init`).
  *
- * Settings diff output goes through `log()` so each line gets the `[nomad]`
+ * Settings diff output goes through `log()` so each line gets the ℹ︎-prefixed
  * prefix, keeping output channels consistent across the three sections.
  */
 export function computePreview(ts: string): { unmapped: number; collisions: number } {

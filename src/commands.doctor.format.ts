@@ -11,8 +11,9 @@ import { failGlyph, red } from './color.ts';
  * Sections with zero items are skipped at render time (no empty headers).
  *
  * Output goes directly through `console.log` rather than `utils.log` so the
- * `[nomad]` prefix used by `pull` / `push` / `init` does NOT appear in doctor
- * output. Test assertions continue to spy on `console.log`.
+ * dim `ℹ︎` info glyph used by `pull` / `push` / `init` does NOT appear in
+ * doctor output (doctor has its own glyphs per row). Test assertions continue
+ * to spy on `console.log`.
  */
 export type DoctorSection = {
   header: string;

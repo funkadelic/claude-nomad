@@ -16,6 +16,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
+import { dim, failGlyph, green, infoGlyph, okGlyph, red, warnGlyph, yellow } from './color.ts';
 import { CLAUDE_HOME, HOME } from './config.ts';
 
 const LOCK_PATH = join(HOME, '.cache', 'claude-nomad', 'nomad.lock');
@@ -23,8 +24,41 @@ const LOCK_PATH = join(HOME, '.cache', 'claude-nomad', 'nomad.lock');
 /** Opaque handle for an acquired lockfile. Pass to `releaseLock` in a `finally`. */
 export type LockHandle = { fd: number };
 
-/** Print a `[nomad]`-prefixed informational line to stdout. */
-export const log = (msg: string): void => console.log(`[nomad] ${msg}`);
+/**
+ * Print an informational line prefixed with the dim `ℹ︎` glyph (U+2139+VS15)
+ * to stdout. Matches the doctor-style left-gutter glyph format so the whole
+ * CLI shares one visual vocabulary instead of the prior `[nomad]` text prefix
+ * coexisting with doctor's status glyphs.
+ */
+export const log = (msg: string): void => console.log(`${dim(infoGlyph)} ${msg}`);
+
+/**
+ * Print a success line prefixed with the green `✓` glyph to stdout. Use for
+ * positive terminators (e.g., `summary: clean`) where a status confirmation is
+ * load-bearing.
+ */
+export const ok = (msg: string): void => console.log(`${green(okGlyph)} ${msg}`);
+
+/**
+ * Print a warning line prefixed with the yellow `⚠︎` glyph to stderr. Use for
+ * non-fatal conditions the operator should notice (lock contention, partial
+ * sync outcomes, schema drift). Routes through `console.error` so both
+ * `console.error` spies and `process.stderr.write` spies in tests catch it.
+ */
+export const warn = (msg: string): void => {
+  console.error(`${yellow(warnGlyph)} ${msg}`);
+};
+
+/**
+ * Print a fatal-error line prefixed with the red `✗` glyph to stderr. Use for
+ * NomadFatal-equivalent failures surfaced to the user; the glyph carries the
+ * severity so callers do not need a redundant `FATAL:` text token. Routes
+ * through `console.error` so both `console.error` spies and
+ * `process.stderr.write` spies in tests catch it.
+ */
+export const fail = (msg: string): void => {
+  console.error(`${red(failGlyph)} ${msg}`);
+};
 
 /**
  * Sentinel error class for fatal nomad failures. Thrown by `die()` and caught
@@ -298,21 +332,21 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
   const pid = Number.parseInt(pidStr, 10);
   if (!Number.isFinite(pid) || pid <= 0) {
     if (unlinkIfSamePid(pidStr)) return retryOnce(verb);
-    process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+    warn(`another nomad ${verb} running, skipping`);
     return null;
   }
   try {
     process.kill(pid, 0);
-    process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+    warn(`another nomad ${verb} running, skipping`);
     return null;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ESRCH') {
       if (unlinkIfSamePid(pidStr)) return retryOnce(verb);
-      process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+      warn(`another nomad ${verb} running, skipping`);
       return null;
     }
-    process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+    warn(`another nomad ${verb} running, skipping`);
     return null;
   }
 }
@@ -328,7 +362,7 @@ function retryOnce(verb: string): LockHandle | null {
     writeFileSync(fd, String(process.pid));
     return { fd };
   } catch {
-    process.stderr.write(`[nomad] another nomad ${verb} running, skipping\n`);
+    warn(`another nomad ${verb} running, skipping`);
     return null;
   }
 }

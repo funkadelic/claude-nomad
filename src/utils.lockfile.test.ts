@@ -34,6 +34,11 @@ describe('acquireLock stale-lock recovery branches', () => {
     lockDir = join(testHome, '.cache', 'claude-nomad');
     lockPath = join(lockDir, 'nomad.lock');
     stderrWrites = [];
+    // warn() routes through console.error; capture both stdio paths so the
+    // lock-contention assertions remain stream-agnostic.
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      stderrWrites.push(args.map(String).join(' ') + '\n');
+    });
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       stderrWrites.push(String(chunk));
       return true;

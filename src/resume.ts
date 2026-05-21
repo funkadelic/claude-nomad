@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { readJson } from './utils.ts';
+import { fail, readJson } from './utils.ts';
 
 type TranscriptLine = { type?: string; cwd?: string };
 
@@ -17,63 +17,57 @@ type TranscriptLine = { type?: string; cwd?: string };
  *
  * Does NOT acquire the nomad lock (read-only paths stay race-tolerant) and
  * does NOT mutate any `.jsonl` byte (preserves the transcript byte-equality
- * invariant validated in the end-to-end sync phase). All errors go to
- * stderr with the `[nomad] FATAL:` prefix; success goes to stdout WITHOUT
- * the prefix so `eval "$(...)"` works.
+ * invariant validated in the end-to-end sync phase). All errors go to stderr
+ * prefixed with the red `✗` fail glyph; success goes to stdout as a bare
+ * shell line (no glyph) so `eval "$(...)"` works.
  */
 export function resumeCmd(sessionId: string): void {
   if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || sessionId.length > 128) {
-    console.error(`[nomad] FATAL: invalid session id: ${sessionId}`);
+    fail(`invalid session id: ${sessionId}`);
     process.exit(1);
   }
 
   const projectsRoot = join(CLAUDE_HOME, 'projects');
   if (!existsSync(projectsRoot)) {
-    console.error(`[nomad] FATAL: ${projectsRoot} does not exist`);
+    fail(`${projectsRoot} does not exist`);
     process.exit(1);
   }
 
   const jsonlPath = findTranscriptPath(projectsRoot, sessionId);
   if (jsonlPath === null) {
-    console.error(
-      `[nomad] FATAL: session ${sessionId} not found in any ~/.claude/projects/<encoded>/`,
-    );
+    fail(`session ${sessionId} not found in any ~/.claude/projects/<encoded>/`);
     process.exit(1);
   }
   const recordedCwd = extractRecordedCwd(jsonlPath);
   if (recordedCwd === null) {
-    console.error(`[nomad] FATAL: no cwd field found in ${jsonlPath}`);
+    fail(`no cwd field found in ${jsonlPath}`);
     process.exit(1);
   }
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (!existsSync(mapPath)) {
-    console.error('[nomad] FATAL: path-map.json missing');
+    fail('path-map.json missing');
     process.exit(1);
   }
   const map = readJson<unknown>(mapPath);
   const schemaError = validatePathMap(map);
   if (schemaError !== null) {
-    console.error(`[nomad] FATAL: ${schemaError}`);
+    fail(schemaError);
     process.exit(1);
   }
   const hit = lookupLocalPath(map as PathMap, recordedCwd);
   if (hit === null) {
-    console.error(
-      `[nomad] FATAL: cwd ${recordedCwd} from session ${sessionId} not found in path-map.json`,
-    );
+    fail(`cwd ${recordedCwd} from session ${sessionId} not found in path-map.json`);
     process.exit(1);
   }
   if (hit.localPath === undefined) {
-    console.error(
-      `[nomad] FATAL: session ${sessionId} not mapped on this host; add the logical to path-map.json`,
-    );
+    fail(`session ${sessionId} not mapped on this host; add the logical to path-map.json`);
     process.exit(1);
   }
 
   // Single-quote both interpolations so paths with spaces (or any shell
   // metachar in sessionId) survive `eval` and the cd ends up at the
   // intended directory rather than splitting on whitespace. Success line
-  // has NO [nomad] prefix; meant to be `eval`'d by the user.
+  // has NO glyph prefix; meant to be `eval`'d by the user.
   console.log(`cd ${shQuote(hit.localPath)} && claude --resume ${shQuote(sessionId)}`);
 }
 

@@ -25,7 +25,6 @@ describe('cmdDropSession (real git temp repo)', () => {
   type ExitSpy = MockInstance<(code?: string | number | null) => never>;
   type ErrorSpy = MockInstance<(...args: unknown[]) => void>;
   type LogSpy = MockInstance<(...args: unknown[]) => void>;
-  type StderrWriteSpy = MockInstance<(chunk: string | Uint8Array) => boolean>;
 
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -37,7 +36,6 @@ describe('cmdDropSession (real git temp repo)', () => {
   let exitSpy: ExitSpy;
   let errorSpy: ErrorSpy;
   let logSpy: LogSpy;
-  let stderrWriteSpy: StderrWriteSpy;
 
   /**
    * Initialize a real git repo at `repoUnderHome` so the unstage primitives
@@ -88,22 +86,6 @@ describe('cmdDropSession (real git temp repo)', () => {
     return errorSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
   }
 
-  /**
-   * Stitch recorded `process.stderr.write` chunks into a single string so
-   * the lock-contention message (which goes through `process.stderr.write`,
-   * not `console.error`) can be asserted on.
-   */
-  function stderrOutput(): string {
-    return stderrWriteSpy.mock.calls
-      .map((args: unknown[]) => {
-        const chunk = args[0];
-        if (typeof chunk === 'string') return chunk;
-        if (chunk instanceof Uint8Array) return Buffer.from(chunk).toString();
-        return String(chunk);
-      })
-      .join('');
-  }
-
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
@@ -127,9 +109,9 @@ describe('cmdDropSession (real git temp repo)', () => {
     logSpy = vi.spyOn(console, 'log').mockImplementation((..._args: unknown[]) => {
       /* captured */
     });
-    stderrWriteSpy = vi
-      .spyOn(process.stderr, 'write')
-      .mockImplementation((_chunk: string | Uint8Array) => true);
+    // Suppress `process.stderr.write` output during the test (warn/fail
+    // glyph output goes through console.error and is captured by errorSpy).
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   });
 
   afterEach(() => {
@@ -209,18 +191,18 @@ describe('cmdDropSession (real git temp repo)', () => {
     // Second invocation must NOT throw and must NOT set exitCode=1.
     expect(() => mod.cmdDropSession('sid-A')).not.toThrow();
     expect(process.exitCode === 1).toBe(false);
-    // And no `[nomad] FATAL:` was emitted on the second call.
-    expect(errOutput()).not.toMatch(/FATAL/);
+    // And no `✗` fail glyph was emitted on the second call.
+    expect(errOutput()).not.toMatch(/✗/);
   });
 
-  it('exits 1 with `[nomad] no staged session matches <id>` when no match exists and releases the lock', async () => {
+  it('exits 1 with `✗ no staged session matches <id>` when no match exists and releases the lock', async () => {
     // SPEC acceptance (d): non-existent id. The no-match arm must throw
     // NomadFatal so the `finally { releaseLock }` runs; process.exit(1) on
     // that arm would terminate synchronously and leak the lockfile.
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     cmdDropSession('sid-X');
     expect(process.exitCode).toBe(1);
-    expect(errOutput()).toContain('[nomad] no staged session matches sid-X');
+    expect(errOutput()).toContain('✗ no staged session matches sid-X');
     expect(errOutput()).not.toContain('FATAL');
     // Lock release on the throw path. The lockfile must NOT exist after the
     // call: this is the load-bearing assertion that distinguishes the
@@ -237,7 +219,7 @@ describe('cmdDropSession (real git temp repo)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     cmdDropSession('sid-Y');
     expect(process.exitCode).toBe(1);
-    expect(errOutput()).toContain('[nomad] no staged session matches sid-Y');
+    expect(errOutput()).toContain('✗ no staged session matches sid-Y');
     expect(existsSync(lockPath)).toBe(false);
   });
 
@@ -253,7 +235,7 @@ describe('cmdDropSession (real git temp repo)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     expect(() => cmdDropSession('sid-A')).toThrow('exit:0');
     expect(exitSpy).toHaveBeenCalledWith(0);
-    expect(stderrOutput()).toContain('[nomad] another nomad drop-session running, skipping');
+    expect(errOutput()).toContain('⚠︎ another nomad drop-session running, skipping');
     // The index was NOT mutated: the staged file is still there.
     expect(diffCached()).toContain('shared/projects/foo/sid-A.jsonl');
     // Used to verify no spurious unrelated log line fired before the skip.
@@ -278,13 +260,13 @@ describe('cmdDropSession (real git temp repo)', () => {
     expect(cached).toContain('not-matching/other-id.jsonl');
   });
 
-  it('wraps `git rm --cached` failures as `[nomad] FATAL: git failed to unstage`', async () => {
+  it('wraps `git rm --cached` failures as `✗ git failed to unstage`', async () => {
     // When git itself returns non-zero on the mutation step (e.g., EACCES on
     // .git/index from a read-only filesystem, a locked index, or a corrupt
     // tree), the failure must surface as a NomadFatal with the git stderr
     // included. Without the wrap added by this fix, the ExecException
     // bubbles past nomad.ts's NomadFatal-only dispatcher and the operator
-    // sees a stack trace instead of `[nomad] FATAL: ...`. Simulate the
+    // sees a stack trace instead of `✗ ...`. Simulate the
     // EACCES path by chmod-ing .git to read-only after staging.
     stageSession('foo', 'sid-A', '{"role":"user","content":"hi"}\n');
     // Read-only the entire .git directory so git rm --cached fails when it
@@ -296,7 +278,7 @@ describe('cmdDropSession (real git temp repo)', () => {
       expect(() => cmdDropSession('sid-A')).not.toThrow();
       expect(process.exitCode).toBe(1);
       const out = errOutput();
-      expect(out).toMatch(/\[nomad\] FATAL: git failed to unstage/);
+      expect(out).toMatch(/✗ git failed to unstage/);
       expect(out).toContain('shared/projects/foo/sid-A.jsonl');
       // Lock must still be released even on the failure path.
       expect(existsSync(lockPath)).toBe(false);
@@ -339,20 +321,20 @@ describe('cmdDropSession (real git temp repo)', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('rejects invalid session ids at function entry with `[nomad] FATAL: invalid session id`', async () => {
+  it('rejects invalid session ids at function entry with `✗ invalid session id`', async () => {
     // Defense-in-depth: nomad.ts already validates argv, but cmdDropSession
     // also rejects ids that contain `/`, `..`, empty string, or other
     // non-allowlist chars. Mirrors src/resume.ts.
     const { cmdDropSession } = await import('./commands.drop-session.ts');
 
     expect(() => cmdDropSession('../etc/passwd')).toThrow('exit:1');
-    expect(errOutput()).toContain('[nomad] FATAL: invalid session id: ../etc/passwd');
+    expect(errOutput()).toContain('✗ invalid session id: ../etc/passwd');
 
     expect(() => cmdDropSession('foo/bar')).toThrow('exit:1');
-    expect(errOutput()).toContain('[nomad] FATAL: invalid session id: foo/bar');
+    expect(errOutput()).toContain('✗ invalid session id: foo/bar');
 
     expect(() => cmdDropSession('')).toThrow('exit:1');
-    expect(errOutput()).toContain('[nomad] FATAL: invalid session id:');
+    expect(errOutput()).toContain('✗ invalid session id:');
 
     // Stage a session whose id contains underscores+hyphens so we can prove
     // the allowlist permits them (no FATAL fires on the entry validator).

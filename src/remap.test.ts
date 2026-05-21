@@ -432,7 +432,7 @@ describe('remapPush source-side filter', () => {
   it('skips top-level non-jsonl files (.bak, .tmp) with one log line each', async () => {
     // Stray local clutter (.bak from a manual scrub, .tmp from editor
     // crash) must never enter the staged tree. Each skip emits one
-    // `[nomad] skip <rel>: extension not in allowlist` log line.
+    // `ℹ︎ skip <rel>: extension not in allowlist` log line.
     const encodedLocal = join(claudeProjects, '-tmp-foo');
     mkdirSync(encodedLocal, { recursive: true });
     writeFileSync(join(encodedLocal, 'sid-A.jsonl'), '{"role":"user"}\n');
@@ -502,7 +502,7 @@ describe('remapPush source-side filter', () => {
     // The callback must return true unconditionally for that case (relative
     // path is the empty string). A naive implementation that splits the
     // empty rel into [''] and applies the depth-0 jsonl-only check would
-    // log a bogus `[nomad] skip : extension not in allowlist` line and
+    // log a bogus `ℹ︎ skip : extension not in allowlist` line and
     // abort the entire copy.
     const encodedLocal = join(claudeProjects, '-tmp-foo');
     mkdirSync(encodedLocal, { recursive: true });
@@ -524,7 +524,7 @@ describe('remapPush source-side filter', () => {
     // empty-rel callback would emit.
     const badSkip = logSpy.mock.calls
       .map((c) => String(c[0]))
-      .filter((line) => line.includes('[nomad] skip : extension not in allowlist'));
+      .filter((line) => line.includes('ℹ︎ skip : extension not in allowlist'));
     expect(badSkip.length).toBe(0);
 
     // Dst dir exists and is non-empty (the copy completed).
