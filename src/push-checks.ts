@@ -1,6 +1,12 @@
 /**
  * Reusable helpers for push-boundary safety: gitlink walker, gitleaks
- * presence probe, gitleaks staged scan, and rebase-before-push.
+ * presence probe, and rebase-before-push.
+ *
+ * The staged gitleaks scan lives in `./push-gitleaks.ts` (Phase 5 D-04
+ * split) so the upcoming session-aware FATAL builder has its own module
+ * under the 200-line cap. `gitleaksInstallHint` stays here because both
+ * `probeGitleaks` (top-of-flow) and `runGitleaksScan` (mid-flow) need the
+ * platform-aware install scaffold on ENOENT.
  *
  * All execFileSync-backed helpers use argv-array form with
  * `stdio: ['ignore', 'pipe', 'pipe']` (no shell). Same shape as
@@ -117,38 +123,6 @@ export function probeGitleaks(): string {
     const e = err as NodeJS.ErrnoException;
     if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
     throw new NomadFatal(`gitleaks --version failed: ${e.message}`);
-  }
-}
-
-/**
- * Run gitleaks against the staged index. On non-zero exit (detection),
- * forwards gitleaks' own redacted stderr/stdout so the user sees which file
- * is dirty, then throws NomadFatal. Does NOT auto-rollback staging; the
- * user runs `git diff --cached` to identify the offending file.
- *
- * ENOENT branch is defense-in-depth: the presence probe at the top of
- * `cmdPush` should have caught a missing binary, but if `cmdPush` ever
- * bypasses the probe (or the user uninstalls gitleaks mid-flow) the same
- * install-hint FATAL fires here.
- */
-export function runGitleaksScan(): void {
-  try {
-    execFileSync('gitleaks', ['protect', '--staged', '--redact', '-v'], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & {
-      status?: number;
-      stderr?: Buffer;
-      stdout?: Buffer;
-    };
-    if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
-    if (e.stderr) process.stderr.write(e.stderr);
-    if (e.stdout) process.stdout.write(e.stdout);
-    throw new NomadFatal(
-      'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry',
-    );
   }
 }
 
