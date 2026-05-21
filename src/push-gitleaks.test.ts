@@ -203,6 +203,70 @@ describe('runGitleaksScan (mocked child_process)', () => {
     expect(() => runGitleaksScan()).not.toThrow(/drop-session/);
   });
 
+  it('runGitleaksScan throws scan-failed FATAL when the JSON report parses to a non-array shape', async () => {
+    // readGitleaksReport returns null for both "JSON.parse throws" and
+    // "JSON.parse succeeded but the result is not an array". This covers the
+    // !Array.isArray branch by writing a valid JSON object (not array) to
+    // the report path. The catch-path FATAL must still fire.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            const reportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(reportPath), { recursive: true });
+            // Valid JSON, but an object — not the expected Finding[] array.
+            writeFileSync(reportPath, '{"error": "scanner produced no findings list"}');
+          }
+          const err = new Error('non-array shape') as NodeJS.ErrnoException & {
+            status?: number;
+            stderr?: Buffer;
+          };
+          err.status = 1;
+          err.stderr = Buffer.from('error: malformed report');
+          throw err;
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).toThrow(/gitleaks scan failed/);
+    expect(() => runGitleaksScan()).toThrow(/no parseable JSON report/);
+  });
+
+  it('runGitleaksScan throws scan-failed FATAL when the JSON report exists but is malformed', async () => {
+    // Distinct from the missing-report branch above: gitleaks wrote
+    // something at --report-path but the bytes are not valid JSON (truncated
+    // write, partial flush, etc.). readGitleaksReport's JSON.parse throws,
+    // the inner catch returns null, and runGitleaksScan must still throw the
+    // scan-failed FATAL rather than misclassify the failure as a detection.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            const reportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(reportPath), { recursive: true });
+            writeFileSync(reportPath, '{this is not valid json');
+          }
+          const err = new Error('truncated') as NodeJS.ErrnoException & {
+            status?: number;
+            stderr?: Buffer;
+          };
+          err.status = 1;
+          err.stderr = Buffer.from('write error');
+          throw err;
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).toThrow(/gitleaks scan failed/);
+    expect(() => runGitleaksScan()).toThrow(/no parseable JSON report/);
+  });
+
   it('runGitleaksScan throws NomadFatal with install hint on ENOENT (defense in depth)', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();

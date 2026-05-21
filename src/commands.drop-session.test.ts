@@ -252,6 +252,23 @@ describe('cmdDropSession (real git temp repo)', () => {
     expect(logSpy.mock.calls).toHaveLength(0);
   });
 
+  it('treats `git ls-files` failures as "not in index" and logs "already absent" without throwing', async () => {
+    // Cover isInIndex's catch branch (line 140): when `git ls-files` itself
+    // fails (corrupt index, missing .git, EACCES on the index file), the
+    // helper conservatively reports "not in index" so the idempotency guard
+    // proceeds to the "already absent" log path instead of escalating to a
+    // FATAL. Stage a session normally, then nuke .git so the index lookup
+    // fails on the subsequent cmdDropSession call.
+    stageSession('foo', 'sid-A', '{"role":"user","content":"hi"}\n');
+    rmSync(join(repoUnderHome, '.git'), { recursive: true, force: true });
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    expect(() => cmdDropSession('sid-A')).not.toThrow();
+    const logged = logSpy.mock.calls.map((c: unknown[]) => c.join(' ')).join('\n');
+    expect(logged).toContain('already absent from index');
+    expect(process.exitCode).toBe(0);
+  });
+
   it('rejects invalid session ids at function entry with `[nomad] FATAL: invalid session id`', async () => {
     // Defense-in-depth: nomad.ts already validates argv, but cmdDropSession
     // also rejects ids that contain `/`, `..`, empty string, or other

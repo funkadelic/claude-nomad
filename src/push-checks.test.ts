@@ -164,6 +164,32 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     expect(probeGitleaks()).toBe('v8.18.2');
   });
 
+  it('probeGitleaks passes --config when REPO_HOME/.gitleaks.toml exists', async () => {
+    // Cover the truthy branch of `if (existsSync(tomlPath))` in probeGitleaks.
+    // Place a minimal .gitleaks.toml at REPO_HOME (resolves to
+    // <testHome>/claude-nomad via process.env.HOME and config.ts) and capture
+    // the args passed to gitleaks; the --config flag plus the toml path must
+    // be present alongside the `version` subcommand.
+    const repoHome = join(testHome, 'claude-nomad');
+    mkdirSync(repoHome, { recursive: true });
+    writeFileSync(join(repoHome, '.gitleaks.toml'), '[extend]\nuseDefault = true\n');
+    let capturedArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          capturedArgs = args ?? [];
+          return Buffer.from('v8.30.1\n');
+        }),
+      };
+    });
+    const { probeGitleaks } = await import('./push-checks.ts');
+    expect(probeGitleaks()).toBe('v8.30.1');
+    expect(capturedArgs).toContain('--config');
+    expect(capturedArgs).toContain(join(repoHome, '.gitleaks.toml'));
+  });
+
   it('probeGitleaks throws NomadFatal with "gitleaks --version failed" on non-ENOENT errors', async () => {
     // Distinguish line 119 from the ENOENT branch (line 118). EACCES means
     // the binary exists but the spawn was denied; the message MUST be the
