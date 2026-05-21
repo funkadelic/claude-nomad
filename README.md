@@ -34,6 +34,10 @@ Two things it does that ad-hoc dotfiles syncing can't:
   - [Upgrading the tool](#upgrading-the-tool)
 - **Reference**
   - [Commands](#commands)
+  - [Recovery flows](#recovery-flows)
+    - [`nomad drop-session <id>`](#nomad-drop-session-id)
+    - [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)
+    - [`.gitleaks.toml` allowlist policy](#gitleakstoml-allowlist-policy)
   - [Cross-OS resume](#cross-os-resume)
   - [Run tests](#run-tests)
 
@@ -341,6 +345,77 @@ Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summa
 ```
 
 The summary is suppressed when a `FATAL` fires mid-run so you do not see "summary: clean" stacked under an error. Drive-by projects that have no entry in `path-map.json` for this host count as unmapped; the hint points at `nomad doctor`, which lists them by logical name.
+
+## Recovery flows
+
+### `nomad drop-session <id>`
+
+Surgically unstages every `shared/projects/*/<id>.jsonl` from the staged tree of `~/claude-nomad/`. The local `~/.claude/projects/<encoded>/<id>.jsonl` is never touched.
+
+```bash
+nomad drop-session <id>
+```
+
+Single positional id (the session filename minus `.jsonl`). Anything else (missing id, leading dash, extra arg) exits 1 with a `usage:` line.
+
+For each match in the staged tree, `cmdDropSession` (in `src/commands.drop-session.ts`) classifies the entry as tracked-in-HEAD vs newly-staged and unstages it via `git restore --staged --worktree --` or `git rm --cached -f --` respectively. Idempotent: a second run on the same id sees no matching staged file and exits 0.
+
+Exit codes:
+
+- `0` on any drop, including an idempotent re-run.
+- `1` with `[nomad] no staged session matches <id>` on stderr when no `shared/projects/*/<id>.jsonl` matches.
+
+What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` file. The local copy is preserved for `claude --resume`, grep recovery, or whatever the user wants. If the underlying secret is real, scrub the local file separately.
+
+### Recovery flow: gitleaks FATAL on a session JSONL
+
+`nomad push` runs `gitleaks protect --staged` before commit. When findings live in a session transcript, the FATAL names every affected session id and the recovery command:
+
+```text
+[nomad] FATAL: gitleaks detected secrets in 1 session transcript(s).
+
+Session <sid-aaaa>:
+  generic-api-key (14), aws-access-token (1)
+  Recover with: nomad drop-session <sid-aaaa>
+
+After recovery, re-run nomad push.
+```
+
+Two branches from here:
+
+1. **Real secret.** Rotate the credential at its provider (revoke in dashboard, issue replacement), then run `nomad drop-session <sid-aaaa>` to remove the contaminated staged copy, then re-run `nomad push`. To clear the secret from the local transcript as well, edit `~/.claude/projects/<encoded>/<sid-aaaa>.jsonl` to scrub the offending lines; the next `remapPush` copies the cleaned version forward. If the local file is not important to you, leave it alone, the staged-tree drop is enough to publish the push.
+
+2. **False positive.** Add an allowlist regex to `.gitleaks.toml` at the repo root that matches the noise pattern but not real-secret formats, commit it, then re-run `nomad push`. The new allowlist propagates to deploy hosts via `nomad update`.
+
+`nomad drop-session` only acts on the staged tree of `~/claude-nomad/`. Active Claude Code sessions writing to the local file are not disturbed.
+
+### `.gitleaks.toml` allowlist policy
+
+`gitleaks protect` runs against the staged tree on every `nomad push` and can flag structurally-distinguishable tool-output noise as `generic-api-key`. The repo-root `.gitleaks.toml` pre-allows four such patterns so routine pushes are not blocked:
+
+- Sonar issue keys (`AY` prefix + 20+ url-safe chars).
+- gitleaks fingerprint format (`<context>:<rule>:<line>` emitted by gitleaks's own reports).
+- npm audit advisory hashes (anchored on the JSON shape `"id":"<40..64 hex>"`).
+- Coverage-report line-keys (`key=<hex> <path>:<line>`).
+
+The file extends the default gitleaks ruleset, so real high-entropy secrets like `ghp_*`, `sk_live_*`, `xoxb-*`, and `AKIA*` still fire. The allowlist patterns are structurally distinguishable from real-secret formats: a malformed credential cannot match an allowlist regex by accident.
+
+```toml
+[extend]
+useDefault = true
+
+[allowlist]
+description = "claude-nomad: structurally-distinguishable tool-output noise"
+regexes = [
+    '''AY[A-Za-z0-9_-]{20,}''',
+    '''[\w-]+:[\w-]+:\d+''',
+    # ...see .gitleaks.toml at the repo root for the full list
+]
+```
+
+File location: `.gitleaks.toml` at the public repo root (alongside `package.json`). At runtime both `probeGitleaks` (in `src/push-checks.ts`) and `runGitleaksScan` (in `src/push-gitleaks.ts`) conditionally pass `--config <REPO_HOME>/.gitleaks.toml` when the file exists. Hosts that have not yet run `nomad update` (or fresh clones predating the allowlist) fall back silently to the default gitleaks ruleset; there is no warning. Run `nomad update` to receive the latest allowlist.
+
+Editing: amend `.gitleaks.toml` in this repo, open a PR, and merge to `main`. Use TOML literal strings (triple single quotes, `'''regex'''`) for new regex entries so backslashes do not need escaping. Verify the new pattern does not match real-secret formats (`ghp_<36>`, `sk_live_*`, `xoxb-*`, `AKIA[A-Z0-9]{16}`, etc.) before merging. The propagation path is the same as any other repo update: `nomad update` on each host pulls the new file in.
 
 ## Cross-OS resume
 
