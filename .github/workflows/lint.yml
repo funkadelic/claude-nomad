@@ -3,8 +3,10 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches: [main]
+  # No `push: branches: [main]` trigger: pre-commit hook (lint-staged) +
+  # PR-time lint already cover every change. A post-merge re-lint of the
+  # same code is duplicate work. `workflow_dispatch` lets us re-run manually
+  # if branch-protection bypass ever lands something on main unscanned.
   pull_request:
     branches: [main]
   workflow_dispatch:
