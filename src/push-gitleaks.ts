@@ -194,7 +194,16 @@ export function runGitleaksScan(): void {
     if (e.stdout) process.stdout.write(e.stdout);
     const findings = readGitleaksReport(reportPath);
     if (findings === null) {
-      throw new NomadFatal(LEGACY_FATAL);
+      // gitleaks exited non-zero but no parseable JSON report exists at the
+      // expected path. Could be a scanner crash, a malformed report, a
+      // missing/locked file, or a non-finding runtime failure (gitleaks v8.x
+      // returns exit 1 for both "leaks found" and runtime errors). Tell the
+      // operator the scan itself failed so they do not chase a phantom
+      // `nomad drop-session` rabbit hole. The stderr/stdout already
+      // forwarded above carries the underlying gitleaks output.
+      throw new NomadFatal(
+        `gitleaks scan failed: no parseable JSON report at ${reportPath} (${e.message}). Review the gitleaks output above.`,
+      );
     }
     const { bySession, other } = partitionFindings(findings);
     throw new NomadFatal(buildSessionAwareFatal(bySession, other));

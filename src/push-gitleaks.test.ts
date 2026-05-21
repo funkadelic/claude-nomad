@@ -85,11 +85,32 @@ describe('runGitleaksScan (mocked child_process)', () => {
   });
 
   it('runGitleaksScan throws NomadFatal and forwards stderr on detection (status 1)', async () => {
+    // Synthesize the JSON report at the production-chosen path so the catch
+    // block reaches the legacy detection FATAL via partitionFindings +
+    // buildSessionAwareFatal (non-session path returns LEGACY_FATAL). Mirrors
+    // how real gitleaks v8.x writes the report alongside the exit-1.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            const reportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(reportPath), { recursive: true });
+            writeFileSync(
+              reportPath,
+              JSON.stringify([
+                {
+                  RuleID: 'generic-api-key',
+                  File: 'src/foo.ts',
+                  StartLine: 42,
+                  Match: 'REDACTED',
+                  Fingerprint: 'fp1',
+                },
+              ]),
+            );
+          }
           const err = new Error('Command failed') as NodeJS.ErrnoException & {
             status?: number;
             stderr?: Buffer;
@@ -117,12 +138,30 @@ describe('runGitleaksScan (mocked child_process)', () => {
     // Cover the stdout-truthy branch AND the stderr-falsey branch together:
     // gitleaks fails with a stdout payload only (no stderr). The forwarding
     // code emits the stdout to process.stdout.write and the FATAL still
-    // fires.
+    // fires. Synthesize the JSON report so the catch block reaches the
+    // detection FATAL rather than the new scanner-error FATAL.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            const reportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(reportPath), { recursive: true });
+            writeFileSync(
+              reportPath,
+              JSON.stringify([
+                {
+                  RuleID: 'generic-api-key',
+                  File: 'src/foo.ts',
+                  StartLine: 42,
+                  Match: 'REDACTED',
+                  Fingerprint: 'fp1',
+                },
+              ]),
+            );
+          }
           const err = new Error('Command failed') as NodeJS.ErrnoException & {
             status?: number;
             stdout?: Buffer;
@@ -143,6 +182,33 @@ describe('runGitleaksScan (mocked child_process)', () => {
         (typeof chunk === 'string' && chunk.includes('redacted-finding-on-stdout')),
     );
     expect(matched).toBe(true);
+  });
+
+  it('runGitleaksScan throws scan-failed FATAL when the JSON report is missing or unparseable', async () => {
+    // gitleaks v8.x returns exit 1 for both "leaks found" and runtime errors.
+    // When the report cannot be parsed (scanner crash, malformed JSON,
+    // missing file), the catch must throw a distinct "scan failed" FATAL so
+    // operators do not chase a phantom `nomad drop-session` recovery.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        // No --report-path file is written, so readGitleaksReport returns null.
+        execFileSync: vi.fn(() => {
+          const err = new Error('config parse error') as NodeJS.ErrnoException & {
+            status?: number;
+            stderr?: Buffer;
+          };
+          err.status = 1;
+          err.stderr = Buffer.from('Error: invalid config at .gitleaks.toml');
+          throw err;
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).toThrow(/gitleaks scan failed/);
+    expect(() => runGitleaksScan()).toThrow(/no parseable JSON report/);
+    expect(() => runGitleaksScan()).not.toThrow(/drop-session/);
   });
 
   it('runGitleaksScan throws NomadFatal with install hint on ENOENT (defense in depth)', async () => {
