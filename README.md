@@ -6,7 +6,7 @@
 
 ![claude-nomad - Sync your Claude Code setup. Same environment. Any machine.](docs/hero.svg)
 
-Claude Code is per-machine. Your `CLAUDE.md`, custom agents, skills, slash commands, settings, and session history live in `~/.claude/` and don't follow you to your laptop, your work machine, or your homelab box.
+Claude Code's state is per-machine. Your `CLAUDE.md`, custom agents, skills, slash commands, settings, and session history live in `~/.claude/` and don't follow you to your laptop, your work machine, or your homelab box.
 
 claude-nomad keeps all of it in sync through a private Git repo you control. `nomad push` on one machine, `nomad pull` on another, and your full setup is there, including past sessions you can resume.
 
