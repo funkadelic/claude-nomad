@@ -1,0 +1,95 @@
+# Publishes claude-nomad to npm via OIDC trusted publishing on every GitHub
+# Release event. Bootstrap procedure (one-time, maintainer-only) lives at
+# .planning/phases/08-npm-publish-bin-distribution/08-02-BOOTSTRAP.md.
+# This workflow is INERT until the maintainer (a) does a first manual publish
+# to reserve the package name and (b) configures trusted-publisher rules at
+# https://www.npmjs.com/package/claude-nomad/access.
+
+name: npm-publish
+
+on:
+  release:
+    types: [published]
+
+# id-token: write enables OIDC trusted publishing (npm validates the GitHub
+# OIDC claim against the trusted-publisher rule on the package's /access page,
+# no long-lived registry credentials required). contents: read is the minimum
+# needed for actions/checkout to read the tag's tree.
+permissions:
+  contents: read
+  id-token: write
+
+# Two simultaneous publishes for the same tag would race against the npm
+# registry; cancel-in-progress: false ensures the first wins and the second
+# errors cleanly rather than half-publishing both.
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node 24
+        # registry-url writes the .npmrc that OIDC token resolution depends on.
+        # Without it, the publish step authenticates against the default
+        # registry without the OIDC audience and fails.
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install deps
+        # prepublishOnly fires inside `npm publish` and runs lint + typecheck +
+        # test + verify-tarball, all of which need devDependencies. The runner
+        # is blank after checkout, so npm ci is mandatory.
+        run: npm ci
+
+      - name: Publish to npm
+        # --provenance is belt-and-suspenders: docs say trusted publishing
+        # auto-enables provenance, but community reports say the explicit flag
+        # is still needed in practice. --access public is required for the
+        # first publish of an unscoped package and is harmless on later
+        # publishes.
+        run: npm publish --provenance --access public
+
+  smoke-test:
+    needs: publish
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set up Node 24
+        # No registry-url needed: smoke-test installs from the default npm
+        # registry. Only publishing requires the OIDC-aware .npmrc.
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install just-published version
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        # release-please creates tag_name as `v0.16.2`; package.json version
+        # is bare semver `0.16.2`. Strip the leading `v` via shell parameter
+        # expansion so the global install resolves the just-published version.
+        run: npm i -g "claude-nomad@${VERSION#v}"
+
+      - name: Verify --version output matches published tag
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        # Strict-equality assertion: nomad --version prints bare semver to
+        # stdout; if it ever drifts (returns `v0.16.2`, or adds a prefix), the
+        # workflow fails loudly rather than silently passing.
+        run: |
+          set -euo pipefail
+          expected="${VERSION#v}"
+          actual="$(nomad --version)"
+          if [ "$actual" != "$expected" ]; then
+            echo "FAIL: nomad --version returned '$actual', expected '$expected'" >&2
+            exit 1
+          fi
+          echo "OK: nomad --version = $actual"
