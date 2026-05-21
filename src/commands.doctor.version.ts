@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { green, yellow } from './color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { HOME, UPSTREAM_REPO_SLUG } from './config.ts';
 
@@ -11,9 +11,9 @@ import { HOME, UPSTREAM_REPO_SLUG } from './config.ts';
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads
  * the local `package.json.version`, compares it to the latest release tag on
  * the upstream GitHub repo (cached 1h, 3s curl timeout), and emits one of:
- *   - PASS line when local == latest
- *   - WARN line when local < latest
- *   - informational (no prefix) line when local > latest
+ *   - `✓ version: <local> (latest)` when local == latest
+ *   - `⚠︎ version: <local> -> <latest>` when local < latest
+ *   - `ℹ︎ version: <local> (ahead of latest release <latest>)` when local > latest
  * Every failure path (offline, curl missing, non-2xx, malformed JSON, missing
  * `tag_name`, missing/unreadable package.json) is a SILENT skip; this module
  * never sets `process.exitCode` and never writes to stderr.
@@ -153,9 +153,9 @@ function fetchLatestTag(): string | null {
  * Emit a single, non-fatal version diagnostic for `nomad doctor` by comparing the local package.json version to the latest upstream release.
  *
  * Logs one of:
- * - `PASS version: <local> (latest)` when the versions match
- * - `WARN version: <local> -> <latest> (run \`nomad update\`)` when the local version is behind
- * - `version: <local> (ahead of latest release <latest>)` when the local version is ahead
+ * - `✓ version: <local> (latest)` when the versions match
+ * - `⚠︎ version: <local> -> <latest> (run \`nomad update\`)` when the local version is behind
+ * - `ℹ︎ version: <local> (ahead of latest release <latest>)` when the local version is ahead
  *
  * Any failure to read the local version, retrieve or parse the latest release, or use the cache results in no output and does not change `process.exitCode`.
  */
@@ -181,10 +181,10 @@ export function reportVersionCheck(section: DoctorSection): void {
 
   const cmp = compareSemver(localPure, latest);
   if (cmp === 0) {
-    addItem(section, `${green('PASS')} version: ${local} (latest)`);
+    addItem(section, `${green(okGlyph)} version: ${local} (latest)`);
   } else if (cmp === -1) {
-    addItem(section, `${yellow('WARN')} version: ${local} -> ${latest} (run \`nomad update\`)`);
+    addItem(section, `${yellow(warnGlyph)} version: ${local} -> ${latest} (run \`nomad update\`)`);
   } else {
-    addItem(section, `version: ${local} (ahead of latest release ${latest})`);
+    addItem(section, `${dim(infoGlyph)} version: ${local} (ahead of latest release ${latest})`);
   }
 }

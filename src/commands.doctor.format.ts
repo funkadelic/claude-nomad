@@ -1,4 +1,4 @@
-import { red } from './color.ts';
+import { failGlyph, red } from './color.ts';
 
 /**
  * Tree-style output builder for `cmdDoctor`. Doctor builds an ordered list of
@@ -6,9 +6,9 @@ import { red } from './color.ts';
  * section, then the orchestrator calls `renderDoctor` to emit a Claude Code
  * `/doctor`-style tree (`Header` / `  ├ item` / `  └ last`) on stdout.
  *
- * Color and PASS/WARN/FAIL tokens already live inside the item text; this
- * module never re-colors or re-tokenizes. Sections with zero items are
- * skipped at render time (no empty headers).
+ * Color and status glyphs (okGlyph/warnGlyph/failGlyph/infoGlyph) already
+ * live inside the item text; this module never re-colors or re-tokenizes.
+ * Sections with zero items are skipped at render time (no empty headers).
  *
  * Output goes directly through `console.log` rather than `utils.log` so the
  * `[nomad]` prefix used by `pull` / `push` / `init` does NOT appear in doctor
@@ -30,12 +30,12 @@ export function addItem(s: DoctorSection, text: string): void {
 }
 
 /**
- * True when any item in the section contains the literal `FAIL` token.
- * Color-wrapped FAIL (`[31mFAIL[39m`) still contains the
- * substring, so this works for both color-on and color-off output.
+ * True when any item in the section contains the FAIL glyph.
+ * Color-wrapped failGlyph (`[31m✗[39m`) still contains the
+ * glyph as a substring, so this works for both color-on and color-off output.
  */
 function sectionFailed(s: DoctorSection): boolean {
-  return s.items.some((line) => line.includes('FAIL'));
+  return s.items.some((line) => line.includes(failGlyph));
 }
 
 /**
