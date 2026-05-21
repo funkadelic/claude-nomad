@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -132,6 +133,77 @@ describe('runGitleaksScan (mocked child_process)', () => {
     const { runGitleaksScan } = await import('./push-gitleaks.ts');
     expect(() => runGitleaksScan()).toThrow(/gitleaks not on PATH/);
     expect(() => runGitleaksScan()).toThrow(/Install:/);
+  });
+
+  it('removes the temp gitleaks JSON report after a successful (no-findings) scan', async () => {
+    // Capture the report path the production code chose via the --report-path
+    // arg, write a synthetic empty findings array there (mirroring what
+    // gitleaks does on a clean scan), then return success. After
+    // runGitleaksScan returns, the finally-block rmSync must have removed
+    // the file.
+    let capturedReportPath = '';
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const argList = args ?? [];
+          const flag = argList.find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            capturedReportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(capturedReportPath), { recursive: true });
+            writeFileSync(capturedReportPath, '[]');
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).not.toThrow();
+    expect(capturedReportPath).not.toBe('');
+    expect(existsSync(capturedReportPath)).toBe(false);
+  });
+
+  it('removes the temp gitleaks JSON report after a failed (findings detected) scan', async () => {
+    // The mock writes a synthetic non-empty findings array to the
+    // --report-path before throwing. After runGitleaksScan throws, the
+    // finally-block rmSync must have removed the file.
+    let capturedReportPath = '';
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const argList = args ?? [];
+          const flag = argList.find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            capturedReportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(capturedReportPath), { recursive: true });
+            const findings = [
+              {
+                RuleID: 'generic-api-key',
+                File: 'shared/CLAUDE.md',
+                StartLine: 1,
+                Match: 'REDACTED',
+                Fingerprint: 'fp1',
+              },
+            ];
+            writeFileSync(capturedReportPath, JSON.stringify(findings));
+          }
+          const err = new Error('Command failed') as NodeJS.ErrnoException & {
+            status?: number;
+            stderr?: Buffer;
+          };
+          err.status = 1;
+          err.stderr = Buffer.from('finding');
+          throw err;
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
+    expect(capturedReportPath).not.toBe('');
+    expect(existsSync(capturedReportPath)).toBe(false);
   });
 });
 
