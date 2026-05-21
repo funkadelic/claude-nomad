@@ -148,7 +148,9 @@ describe('cmdUpdate', () => {
     vi.resetModules();
     const { cmdUpdate } = await import('./commands.update.ts');
     cmdUpdate({ force: true });
-    expect(joinedLog(env.logSpy)).toContain('WARN working tree is not clean');
+    // warn() routes through console.error (yellow `⚠︎` glyph prefix); allow
+    // 1+ spaces between glyph and message to tolerate the WSL alignment pad.
+    expect(joinedLog(env.errSpy)).toMatch(/⚠︎ +working tree is not clean/);
     expect(git.calls.find((c) => c.bin === 'git' && c.args[0] === 'pull')).toBeDefined();
   });
 

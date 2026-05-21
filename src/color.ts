@@ -37,7 +37,7 @@ export const blue = (s: string): string => (enabled ? pc.blue(s) : s);
 /** Version strings and counts. */
 export const dim = (s: string): string => (enabled ? pc.dim(s) : s);
 
-/** Combined-bold variant (e.g., `red(bold(...))` for FATAL). */
+/** Combined-bold variant (e.g., `red(bold(...))` for emphasized error headers). */
 export const bold = (s: string): string => (enabled ? pc.bold(s) : s);
 
 /**

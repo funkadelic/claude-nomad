@@ -4,7 +4,7 @@ import { closeSync, existsSync, openSync, readSync } from 'node:fs';
 import { cmdDoctor } from './commands.doctor.ts';
 import { REPO_HOME } from './config.ts';
 import { loadTopology } from './update.topology.ts';
-import { die, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
+import { die, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, warn } from './utils.ts';
 
 /**
  * Caller-supplied options for `cmdUpdate`. All flags optional; defaults are
@@ -257,7 +257,7 @@ export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
     if (opts.force !== true) {
       die('working tree is not clean, use `--force` to override');
     }
-    log('WARN working tree is not clean, proceeding because --force was passed');
+    warn('working tree is not clean, proceeding because --force was passed');
   }
 
   log(`topology: ${topology}`);

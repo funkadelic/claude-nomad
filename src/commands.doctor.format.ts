@@ -1,6 +1,14 @@
 import { failGlyph, red } from './color.ts';
 
 /**
+ * Bare `failGlyph` codepoint (`✗`, U+2717) without any WSL padding the
+ * `failGlyph` constant may carry. Header rendering composes its own
+ * spacing (`${red(failGlyph)} ${header}`), so the section-header path
+ * must use the unpadded codepoint to avoid a double space on WSL.
+ */
+const FAIL_GLYPH_BARE = '✗';
+
+/**
  * Tree-style output builder for `cmdDoctor`. Doctor builds an ordered list of
  * `DoctorSection`s, each reporter pushes plain-text items into the relevant
  * section, then the orchestrator calls `renderDoctor` to emit a Claude Code
@@ -41,15 +49,16 @@ function sectionFailed(s: DoctorSection): boolean {
 
 /**
  * Emit the full doctor report. Skips empty sections, prefixes failed-section
- * headers with a red `✘ `, and writes one blank line between rendered
- * sections (no leading or trailing blank).
+ * headers with a red `✗ ` glyph (U+2717, same as the per-item FAIL glyph so
+ * `grep -F '✗'` catches both row and header failures), and writes one blank
+ * line between rendered sections (no leading or trailing blank).
  */
 export function renderDoctor(sections: DoctorSection[]): void {
   const visible = sections.filter((s) => s.items.length > 0);
   for (let i = 0; i < visible.length; i++) {
     if (i > 0) console.log('');
     const s = visible[i];
-    const header = sectionFailed(s) ? `${red('✘')} ${s.header}` : s.header;
+    const header = sectionFailed(s) ? `${red(FAIL_GLYPH_BARE)} ${s.header}` : s.header;
     console.log(header);
     for (let j = 0; j < s.items.length; j++) {
       const isLast = j === s.items.length - 1;
