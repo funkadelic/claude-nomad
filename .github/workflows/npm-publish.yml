@@ -42,6 +42,10 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        # No git operations after checkout; drop the credential so a
+        # downstream step or dep cannot read it.
+        with:
+          persist-credentials: false
 
       - name: Set up Node 24
         # registry-url writes the .npmrc that OIDC token resolution depends on.
