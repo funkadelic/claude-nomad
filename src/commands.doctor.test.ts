@@ -918,7 +918,7 @@ describe('cmdDoctor repo-state header', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`repo state: ${failGlyph} empty`);
+    expect(out).toContain(`${failGlyph} repo state: empty`);
     expect(out).toContain("run 'nomad init' to scaffold");
     expect(process.exitCode).toBe(1);
   });
@@ -934,7 +934,7 @@ describe('cmdDoctor repo-state header', () => {
     // base present, path-map.json missing -> partial with the second priority
     // suffix (settings.base.json missing is suffix #1; path-map.json missing
     // is suffix #2 and fires next).
-    expect(out).toContain(`repo state: ${warnGlyph} partial - path-map.json missing`);
+    expect(out).toContain(`${warnGlyph} repo state: partial - path-map.json missing`);
   });
 
   it('emits WARN partial with hosts/<HOST>.json missing suffix when base + path-map populated', async () => {
@@ -951,7 +951,7 @@ describe('cmdDoctor repo-state header', () => {
     const out = joinedLog(env.logSpy);
     // base + populated path-map.projects, host file missing -> partial with
     // the hosts/<HOST>.json suffix (priority order #4).
-    expect(out).toContain(`repo state: ${warnGlyph} partial - hosts/test-host.json missing`);
+    expect(out).toContain(`${warnGlyph} repo state: partial - hosts/test-host.json missing`);
   });
 
   it('emits WARN partial with empty-projects suffix when path-map.json exists but has zero entries', async () => {
@@ -967,7 +967,7 @@ describe('cmdDoctor repo-state header', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
-      `repo state: ${warnGlyph} partial - path-map.json.projects has no entries`,
+      `${warnGlyph} repo state: partial - path-map.json.projects has no entries`,
     );
   });
 
@@ -987,7 +987,7 @@ describe('cmdDoctor repo-state header', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`repo state: ${okGlyph} populated`);
+    expect(out).toContain(`${okGlyph} repo state: populated`);
   });
 
   it('logs the repo state line above the SHARED_LINKS / symlink section', async () => {
@@ -1039,7 +1039,7 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`CLAUDE.md: ${failGlyph} NOT a symlink (blocks sync)`);
+    expect(out).toContain(`${failGlyph} CLAUDE.md: NOT a symlink (blocks sync)`);
     expect(process.exitCode).toBe(1);
   });
 });
@@ -1156,8 +1156,9 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    // Positive: new PASS-prefixed phrasing for the symlink success branch.
-    expect(out).toContain(`${okGlyph} symlink`);
+    // Positive: PASS-prefixed phrasing for the symlink success branch
+    // (e.g., `${okGlyph} CLAUDE.md: symlink`).
+    expect(out).toContain(`${okGlyph} CLAUDE.md: symlink`);
     // Negative: the legacy literal must be gone (load-bearing per plan W-1).
     expect(out).not.toContain('symlink OK');
   });
@@ -1175,18 +1176,19 @@ describe('cmdDoctor explicit PASS tokens', () => {
     expect(out).toContain(`${warnGlyph} CLAUDE.md: missing`);
   });
 
-  it('does not prefix informational header lines with PASS', async () => {
+  it('does not prefix purely informational lines with the PASS glyph', async () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    // Header lines stay unprefixed; only check-result lines carry the token.
+    // Purely-info lines (host, mapped projects, never-sync items, remote
+    // origin) wear the dim info marker, never a PASS glyph. The repo/claude
+    // home/host-overrides lines DO carry status now (presence/parse-success
+    // is conveyed via the gutter glyph), so they are intentionally absent
+    // from this list.
     expect(out).not.toContain(`${okGlyph} host:`);
-    expect(out).not.toContain(`${okGlyph} repo:`);
-    expect(out).not.toContain(`${okGlyph} claude home:`);
     expect(out).not.toContain(`${okGlyph} mapped projects for`);
-    expect(out).not.toContain(`${okGlyph} host overrides:`);
     expect(out).not.toContain(`${okGlyph} never-sync items:`);
     expect(out).not.toContain(`${okGlyph} remote origin:`);
   });
@@ -1201,8 +1203,8 @@ describe('cmdDoctor explicit PASS tokens', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toMatch(/repo: .*MISSING/);
-    expect(out).toMatch(/claude home: .*MISSING/);
+    expect(out).toContain(`${failGlyph} repo:`);
+    expect(out).toContain(`${failGlyph} claude home:`);
   });
 
   it('emits tree-style section headers and bullet prefixes (Claude /doctor style)', async () => {

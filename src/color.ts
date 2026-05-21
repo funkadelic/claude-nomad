@@ -53,3 +53,12 @@ export const failGlyph = '✗';
  * defaults). Wrap in `yellow()` at call sites.
  */
 export const warnGlyph = '⚠︎';
+
+/**
+ * Informational marker (U+2139 INFORMATION SOURCE + U+FE0E VARIATION
+ * SELECTOR-15 for text-presentation; the VS15 forces monochrome rendering
+ * so the symbol does not flash as a colored emoji on terminals with
+ * emoji-presentation defaults). Wrap in `dim()` at call sites so info rows
+ * do not compete visually with PASS/FAIL/WARN status glyphs.
+ */
+export const infoGlyph = 'ℹ︎';

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { green, okGlyph, warnGlyph, yellow } from './color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { HOME, UPSTREAM_REPO_SLUG } from './config.ts';
 
@@ -155,7 +155,7 @@ function fetchLatestTag(): string | null {
  * Logs one of:
  * - `✓ version: <local> (latest)` when the versions match
  * - `⚠︎ version: <local> -> <latest> (run \`nomad update\`)` when the local version is behind
- * - `version: <local> (ahead of latest release <latest>)` when the local version is ahead
+ * - `ℹ︎ version: <local> (ahead of latest release <latest>)` when the local version is ahead
  *
  * Any failure to read the local version, retrieve or parse the latest release, or use the cache results in no output and does not change `process.exitCode`.
  */
@@ -185,6 +185,6 @@ export function reportVersionCheck(section: DoctorSection): void {
   } else if (cmp === -1) {
     addItem(section, `${yellow(warnGlyph)} version: ${local} -> ${latest} (run \`nomad update\`)`);
   } else {
-    addItem(section, `version: ${local} (ahead of latest release ${latest})`);
+    addItem(section, `${dim(infoGlyph)} version: ${local} (ahead of latest release ${latest})`);
   }
 }

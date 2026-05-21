@@ -2,7 +2,18 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { blue, cyan, dim, failGlyph, green, okGlyph, red, warnGlyph, yellow } from './color.ts';
+import {
+  blue,
+  cyan,
+  dim,
+  failGlyph,
+  green,
+  infoGlyph,
+  okGlyph,
+  red,
+  warnGlyph,
+  yellow,
+} from './color.ts';
 // prettier-ignore
 import { CLAUDE_HOME, HOST, KNOWN_SETTINGS_KEYS, NEVER_SYNC, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
@@ -36,16 +47,16 @@ function readJsonSafe<T>(path: string, label: string, section: DoctorSection): T
   }
 }
 
-/** Pushes the host identity and the two key path lines (repo and claude-home) with OK/MISSING annotations. */
+/** Pushes the host identity and the two key path lines (repo and claude-home) with gutter glyphs (info marker for host; presence/absence for paths). */
 export function reportHostAndPaths(section: DoctorSection): void {
-  addItem(section, `host: ${cyan(HOST)}`);
+  addItem(section, `${dim(infoGlyph)} host: ${cyan(HOST)}`);
   addItem(
     section,
-    `repo: ${blue(REPO_HOME)} ${existsSync(REPO_HOME) ? green('OK') : red('MISSING')}`,
+    `${existsSync(REPO_HOME) ? green(okGlyph) : red(failGlyph)} repo: ${blue(REPO_HOME)}`,
   );
   addItem(
     section,
-    `claude home: ${blue(CLAUDE_HOME)} ${existsSync(CLAUDE_HOME) ? green('OK') : red('MISSING')}`,
+    `${existsSync(CLAUDE_HOME) ? green(okGlyph) : red(failGlyph)} claude home: ${blue(CLAUDE_HOME)}`,
   );
 }
 
@@ -53,14 +64,14 @@ export function reportHostAndPaths(section: DoctorSection): void {
 export function reportRepoState(section: DoctorSection): void {
   const state = classifyRepoState(REPO_HOME, HOST);
   if (state === 'populated') {
-    addItem(section, `repo state: ${green(okGlyph)} populated`);
+    addItem(section, `${green(okGlyph)} repo state: populated`);
   } else if (state === 'partial') {
     addItem(
       section,
-      `repo state: ${yellow(warnGlyph)} partial ${reasonForPartial(REPO_HOME, HOST)}`,
+      `${yellow(warnGlyph)} repo state: partial ${reasonForPartial(REPO_HOME, HOST)}`,
     );
   } else {
-    addItem(section, `repo state: ${red(failGlyph)} empty - run 'nomad init' to scaffold`);
+    addItem(section, `${red(failGlyph)} repo state: empty - run 'nomad init' to scaffold`);
     process.exitCode = 1;
   }
 }
@@ -74,9 +85,9 @@ export function reportSharedLinks(section: DoctorSection): void {
       continue;
     }
     if (lstatSync(p).isSymbolicLink()) {
-      addItem(section, `${name}: ${green(okGlyph)} symlink`);
+      addItem(section, `${green(okGlyph)} ${name}: symlink`);
     } else {
-      addItem(section, `${name}: ${red(failGlyph)} NOT a symlink (blocks sync)`);
+      addItem(section, `${red(failGlyph)} ${name}: NOT a symlink (blocks sync)`);
       process.exitCode = 1;
     }
   }
@@ -125,7 +136,7 @@ export function reportHostOverrides(
   }
   if (existsSync(hostFile)) {
     if (readJsonSafe<Record<string, unknown>>(hostFile, hostFile, section) !== null) {
-      addItem(section, `host overrides: ${blue(hostFile)}`);
+      addItem(section, `${green(okGlyph)} host overrides: ${blue(hostFile)}`);
     }
   } else if (drift.length > 0) {
     addItem(
@@ -135,7 +146,7 @@ export function reportHostOverrides(
     const hostsDir = join(REPO_HOME, 'hosts');
     if (existsSync(hostsDir)) {
       const cands = readdirSync(hostsDir).filter((f) => f.endsWith('.json'));
-      if (cands.length > 0) addItem(section, `candidates: ${cands.join(', ')}`);
+      if (cands.length > 0) addItem(section, `${dim(infoGlyph)} candidates: ${cands.join(', ')}`);
     }
     process.exitCode = 1;
   } else {
@@ -149,8 +160,13 @@ export function reportHostOverrides(
 /** Emits the mapped-projects header for the current host and one line per mapped project. */
 function reportMappedProjects(section: DoctorSection, map: PathMap): void {
   const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
-  addItem(section, `mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`);
-  for (const [name, hosts] of mapped) addItem(section, `${name} -> ${blue(hosts[HOST])}`);
+  addItem(
+    section,
+    `${dim(infoGlyph)} mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`,
+  );
+  for (const [name, hosts] of mapped) {
+    addItem(section, `${dim(infoGlyph)} ${name} -> ${blue(hosts[HOST])}`);
+  }
 }
 
 /** Scans every host of every project for encodePath collisions; FAILs per collision, PASSes when clean. */
@@ -225,7 +241,7 @@ export function reportPathMap(section: DoctorSection): void {
 
 /** Pushes the comma-joined NEVER_SYNC set for informational visibility. */
 export function reportNeverSync(section: DoctorSection): void {
-  addItem(section, `never-sync items: ${[...NEVER_SYNC].join(', ')}`);
+  addItem(section, `${dim(infoGlyph)} never-sync items: ${[...NEVER_SYNC].join(', ')}`);
 }
 
 /** Probes for gitleaks on PATH; PASS with version or FAIL with ENOENT vs other error distinction. */
@@ -274,9 +290,9 @@ export function reportRemote(section: DoctorSection): void {
     })
       .toString()
       .trim();
-    addItem(section, `remote origin: ${cyan(url)}`);
+    addItem(section, `${dim(infoGlyph)} remote origin: ${cyan(url)}`);
   } catch {
-    addItem(section, 'remote origin: not configured');
+    addItem(section, `${dim(infoGlyph)} remote origin: not configured`);
   }
 }
 
