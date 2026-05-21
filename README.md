@@ -34,6 +34,9 @@ Two things it does that ad-hoc dotfiles syncing can't:
   - [Upgrading the tool](#upgrading-the-tool)
 - **Reference**
   - [Commands](#commands)
+  - [Recovery flows](#recovery-flows)
+    - [`nomad drop-session <id>`](#nomad-drop-session-id)
+    - [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)
   - [Cross-OS resume](#cross-os-resume)
   - [Run tests](#run-tests)
 
@@ -341,6 +344,49 @@ Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summa
 ```
 
 The summary is suppressed when a `FATAL` fires mid-run so you do not see "summary: clean" stacked under an error. Drive-by projects that have no entry in `path-map.json` for this host count as unmapped; the hint points at `nomad doctor`, which lists them by logical name.
+
+## Recovery flows
+
+### `nomad drop-session <id>`
+
+Surgically unstages every `shared/projects/*/<id>.jsonl` from the staged tree of `~/claude-nomad/`. The local `~/.claude/projects/<encoded>/<id>.jsonl` is never touched.
+
+```bash
+nomad drop-session <id>
+```
+
+Single positional id (the session filename minus `.jsonl`). Anything else (missing id, leading dash, extra arg) exits 1 with a `usage:` line.
+
+For each match in the staged tree, `cmdDropSession` (in `src/commands.drop-session.ts`) classifies the entry as tracked-in-HEAD vs newly-staged and unstages it via `git restore --staged --worktree --` or `git rm --cached -f --` respectively. Idempotent: a second run on the same id sees no matching staged file and exits 0.
+
+Exit codes:
+
+- `0` on any drop, including an idempotent re-run.
+- `1` with `[nomad] no staged session matches <id>` on stderr when no `shared/projects/*/<id>.jsonl` matches.
+
+What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` file. The local copy is preserved for `claude --resume`, grep recovery, or whatever the user wants. If the underlying secret is real, scrub the local file separately.
+
+### Recovery flow: gitleaks FATAL on a session JSONL
+
+`nomad push` runs `gitleaks protect --staged` before commit. When findings live in a session transcript, the FATAL names every affected session id and the recovery command:
+
+```text
+[nomad] FATAL: gitleaks detected secrets in 1 session transcript(s).
+
+Session <sid-aaaa>:
+  generic-api-key (14), aws-access-token (1)
+  Recover with: nomad drop-session <sid-aaaa>
+
+After recovery, re-run nomad push.
+```
+
+Two branches from here:
+
+1. **Real secret.** Rotate the credential at its provider (revoke in dashboard, issue replacement), then run `nomad drop-session <sid-aaaa>` to remove the contaminated staged copy, then re-run `nomad push`. To clear the secret from the local transcript as well, edit `~/.claude/projects/<encoded>/<sid-aaaa>.jsonl` to scrub the offending lines; the next `remapPush` copies the cleaned version forward. If the local file is not important to you, leave it alone, the staged-tree drop is enough to publish the push.
+
+2. **False positive.** Add an allowlist regex to `.gitleaks.toml` at the repo root that matches the noise pattern but not real-secret formats, commit it, then re-run `nomad push`. The new allowlist propagates to deploy hosts via `nomad update`.
+
+`nomad drop-session` only acts on the staged tree of `~/claude-nomad/`. Active Claude Code sessions writing to the local file are not disturbed.
 
 ## Cross-OS resume
 
