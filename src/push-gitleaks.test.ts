@@ -1,11 +1,38 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from 'vitest';
 
 import type * as cpModule from 'node:child_process';
+
+// Phase 3 D-02 baseline: gitleaks is a required dependency for this project's
+// safety pipeline (`cmdPush` probes for it at top-of-flow). The D-13
+// regression fixture (allowlist behavior) is an integration test against the
+// real binary because the allowlist semantics are enforced inside the
+// gitleaks process, not in nomad code. Hard-fail the whole test file when
+// gitleaks is absent rather than silently skip — the ALLOWLIST acceptance
+// criterion must always run on CI.
+beforeAll(() => {
+  try {
+    execFileSync('gitleaks', ['version'], { stdio: 'ignore' });
+  } catch {
+    throw new Error(
+      'gitleaks binary required for src/push-gitleaks.test.ts; install per Phase 3 D-02 install-hint or run the install.sh equivalent on this host.',
+    );
+  }
+});
 
 // Mock-based execFileSync coverage for runGitleaksScan after its Phase 5
 // D-04 split out of push-checks.ts. The four cases here (clean scan,
@@ -420,5 +447,211 @@ describe('buildSessionAwareFatal (pure)', () => {
     expect(msg).toBe(
       'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry',
     );
+  });
+});
+
+// --config wiring verifies the D-12 conditional flag: pass
+// --config <REPO_HOME>/.gitleaks.toml when the file exists; omit silently
+// when missing (graceful fallback for fresh clones or hosts that have not
+// yet run `nomad update`). Captures the argv passed to mocked execFileSync
+// so the wiring is observable without invoking real gitleaks.
+describe('--config wiring (mocked child_process)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let capturedArgs: string[] = [];
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-push-gitleaks-config-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    mkdirSync(repoUnderHome, { recursive: true });
+    capturedArgs = [];
+    vi.resetModules();
+    // Silence the stderr/stdout-forwarding writes on the failure path so the
+    // test output stays clean.
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('passes --config <REPO_HOME>/.gitleaks.toml when the toml exists', async () => {
+    // Pre-create the toml inside the temp REPO_HOME so existsSync returns
+    // true at runGitleaksScan call time.
+    writeFileSync(join(repoUnderHome, '.gitleaks.toml'), '[allowlist]\nregexes = []\n');
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          capturedArgs = [...(args ?? [])];
+          // Simulate a clean scan so the function returns without throwing.
+          const flag = capturedArgs.find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            const reportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(reportPath), { recursive: true });
+            writeFileSync(reportPath, '[]');
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).not.toThrow();
+    expect(capturedArgs.includes('--config')).toBe(true);
+    const idx = capturedArgs.indexOf('--config');
+    const value = capturedArgs[idx + 1];
+    expect(value).toBeDefined();
+    expect(value?.endsWith('.gitleaks.toml')).toBe(true);
+  });
+
+  it('omits --config when the toml is missing (D-12 graceful skip)', async () => {
+    // Do NOT create the toml. existsSync at the temp REPO_HOME returns false
+    // → runGitleaksScan must invoke gitleaks WITHOUT the --config flag.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          capturedArgs = [...(args ?? [])];
+          const flag = capturedArgs.find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            const reportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(reportPath), { recursive: true });
+            writeFileSync(reportPath, '[]');
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).not.toThrow();
+    expect(capturedArgs.includes('--config')).toBe(false);
+  });
+});
+
+// D-13 regression fixture: real-gitleaks integration test. Builds a temp
+// git repo containing one synthetic file per allowlist pattern plus one
+// real-looking ghp_<36> PAT, runs the real gitleaks binary (no mock) against
+// it, and asserts only the PAT fires. The toml comes from the worktree's
+// committed .gitleaks.toml (read at test setup time) so the test exercises
+// the actual production allowlist. This is the SPEC-binding ALLOWLIST test:
+// future PRs that widen the allowlist to match real-secret formats would
+// regress it. Hard-fails the file when gitleaks is missing (beforeAll above)
+// rather than silently skipping.
+describe('allowlist regression fixture (D-13)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-push-gitleaks-allowlist-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    mkdirSync(repoUnderHome, { recursive: true });
+    vi.resetModules();
+    // Silence the stderr/stdout-forwarding noise from the failure path.
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('suppresses the four allowlist patterns while still firing on a real ghp_<36> PAT', async () => {
+    // Copy the worktree's .gitleaks.toml into the temp REPO_HOME so the real
+    // gitleaks subprocess loads the production allowlist via --config.
+    // The worktree root is one directory up from this test file:
+    // <worktree>/src/push-gitleaks.test.ts → <worktree>/.gitleaks.toml.
+    // ESM has no __dirname; derive it from import.meta.url instead.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const worktreeToml = join(here, '..', '.gitleaks.toml');
+    copyFileSync(worktreeToml, join(repoUnderHome, '.gitleaks.toml'));
+
+    // Initialize a real git repo so `gitleaks protect --staged` has staged
+    // content. Identity is required by some git versions even for `git add`.
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repoUnderHome });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
+      cwd: repoUnderHome,
+    });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: repoUnderHome });
+
+    // Place the real PAT inside a session JSONL so the session-aware FATAL
+    // surfaces the session id. The four allowlist-pattern files live at
+    // unrelated top-level paths.
+    const sessionDir = join(repoUnderHome, 'shared', 'projects', 'foo');
+    mkdirSync(sessionDir, { recursive: true });
+    const sid = 'sid-allowlist-regression';
+    writeFileSync(
+      join(sessionDir, `${sid}.jsonl`),
+      `{"role":"user","text":"ghp_xJZbT3qfV2nLpKR8mYwH4dGtCsW9aE1uF6oA"}\n`,
+    );
+
+    // One staged file per allowlist pattern. Each MUST be suppressed.
+    // Sonar issue key: AY + >=20 base64-like chars.
+    writeFileSync(join(repoUnderHome, 'sonar.txt'), 'AYabcdefghijklmnopqrst_xyz\n');
+    // gitleaks fingerprint format: word:word:digit.
+    writeFileSync(
+      join(repoUnderHome, 'gl-fingerprint.txt'),
+      'shared/projects/foo:generic-api-key:42\n',
+    );
+    // npm audit advisory hash anchored on JSON id field.
+    writeFileSync(
+      join(repoUnderHome, 'audit.json'),
+      '{"id": "abcdef0123456789abcdef0123456789abcdef01"}\n',
+    );
+    // Coverage line-key: key=<hash> <path>:<line>.
+    writeFileSync(join(repoUnderHome, 'coverage.txt'), 'key=deadbeef12 src/foo.ts:99\n');
+
+    execFileSync('git', ['add', '-A'], { cwd: repoUnderHome });
+
+    // Import runGitleaksScan AFTER process.env.HOME is set so REPO_HOME
+    // resolves to repoUnderHome via os.homedir().
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    let caught: Error | null = null;
+    try {
+      runGitleaksScan();
+    } catch (err) {
+      caught = err as Error;
+    }
+    // Real gitleaks must have fired on the PAT, throwing NomadFatal.
+    expect(caught).not.toBeNull();
+    const msg = caught?.message ?? '';
+
+    // Session-aware FATAL surfaces: names the session id, references the
+    // drop-session recovery command, and ends with the standard trailer.
+    expect(msg).toContain(sid);
+    expect(msg).toContain(`nomad drop-session ${sid}`);
+
+    // The four allowlist patterns must NOT appear in the FATAL message —
+    // they were suppressed inside the gitleaks process before reaching the
+    // findings array. No `Also found:` section should be populated by them.
+    expect(msg).not.toContain('sonar.txt');
+    expect(msg).not.toContain('gl-fingerprint.txt');
+    expect(msg).not.toContain('audit.json');
+    expect(msg).not.toContain('coverage.txt');
   });
 });

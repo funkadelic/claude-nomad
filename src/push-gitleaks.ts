@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -147,6 +147,13 @@ function readGitleaksReport(reportPath: string): Finding[] | null {
  * string. The temp report file is removed via `finally` on both success
  * and failure paths.
  *
+ * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
+ * exists at call time (Phase 5 D-12). The allowlist suppresses
+ * structurally-distinguishable tool-output noise (Sonar issue keys,
+ * gitleaks fingerprints, npm audit JSON id-field hashes, coverage line-keys)
+ * without weakening real-secret detection. Missing toml = silent fallback
+ * to the default gitleaks ruleset (e.g., fresh clones pre-allowlist).
+ *
  * ENOENT branch is defense-in-depth: the presence probe at the top of
  * `cmdPush` should have caught a missing binary, but if `cmdPush` ever
  * bypasses the probe (or the user uninstalls gitleaks mid-flow) the same
@@ -156,22 +163,21 @@ export function runGitleaksScan(): void {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   const reportPath = join(cacheDir, `gitleaks-${freshBackupTs(cacheDir)}.json`);
+  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
+  const args: string[] = [
+    'protect',
+    '--staged',
+    '--redact',
+    '-v',
+    '--report-format=json',
+    `--report-path=${reportPath}`,
+  ];
+  if (existsSync(tomlPath)) args.push('--config', tomlPath);
   try {
-    execFileSync(
-      'gitleaks',
-      [
-        'protect',
-        '--staged',
-        '--redact',
-        '-v',
-        '--report-format=json',
-        `--report-path=${reportPath}`,
-      ],
-      {
-        cwd: REPO_HOME,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
+    execFileSync('gitleaks', args, {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   } catch (err) {
     const e = err as NodeJS.ErrnoException & {
       status?: number;
