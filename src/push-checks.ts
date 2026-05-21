@@ -18,7 +18,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, type Dirent } from 'node:fs';
+import { existsSync, readdirSync, type Dirent } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
@@ -113,10 +113,21 @@ export function findGitlinks(dir: string): string[] {
  * version` stdout on success. Throws NomadFatal with the install hint on
  * ENOENT; throws NomadFatal with the error message on any other failure.
  * Used by `cmdPush` (top-of-flow probe) and `cmdDoctor` (read-only).
+ *
+ * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
+ * exists at call time (Phase 5 D-12). `gitleaks version` ignores the flag
+ * empirically on 8.30.1, so the wiring here is conservative: symmetric with
+ * `runGitleaksScan` and surfaces a malformed toml early if a future gitleaks
+ * version starts parsing the config on the `version` subcommand. When the
+ * toml is missing (e.g., fresh clone predating the allowlist) the flag is
+ * omitted entirely; behavior reverts silently to the default gitleaks ruleset.
  */
 export function probeGitleaks(): string {
+  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
+  const args: string[] = ['version'];
+  if (existsSync(tomlPath)) args.push('--config', tomlPath);
   try {
-    return execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    return execFileSync('gitleaks', args, { stdio: ['ignore', 'pipe', 'pipe'] })
       .toString()
       .trim();
   } catch (err) {
