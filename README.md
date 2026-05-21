@@ -328,6 +328,8 @@ git remote add upstream git@github.com:funkadelic/claude-nomad.git
 
 To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tracking `main`, fetch tags from the public repo and check out the tag (detached HEAD). On vanilla topology that's `origin`; on fork topology that's `upstream` (the private mirror at `origin` does not accumulate upstream release tags). Example: `git fetch upstream --tags && git switch --detach vX.Y.Z` (substitute `origin` for vanilla; use `git checkout vX.Y.Z` on older Git).
 
+If you installed an earlier version via `./install.sh` and a shell alias (the pre-npm path), your existing alias keeps working unchanged. Run `npm i -g claude-nomad` whenever you're ready to switch to the global binary, confirm `nomad --version` resolves to the npm install (`which nomad` should point under your npm prefix's `bin/`), then delete the alias line from your shell rc.
+
 ## Commands
 
 | Command                          | Description                                                                                                                                                                                                             |
