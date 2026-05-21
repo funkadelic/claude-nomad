@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/funkadelic/claude-nomad/compare/v0.14.3...v0.15.0) (2026-05-21)
+
+
+### Added
+
+* **doctor:** version-first ordering and unified glyph gutter ([#80](https://github.com/funkadelic/claude-nomad/issues/80)) ([8b546a8](https://github.com/funkadelic/claude-nomad/commit/8b546a8a2812be5987628d6349b3757717c87d1b))
+
+
+### Changed
+
+* drop push: main triggers from codeql and lint workflows ([#82](https://github.com/funkadelic/claude-nomad/issues/82)) ([7386735](https://github.com/funkadelic/claude-nomad/commit/738673578758a63011ee7e4db332eafb9e348a4a))
+
 ## [0.14.3](https://github.com/funkadelic/claude-nomad/compare/v0.14.2...v0.14.3) (2026-05-20)
 
 
