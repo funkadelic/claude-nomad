@@ -204,7 +204,9 @@ function runFork(opts: CmdUpdateOpts): void {
     gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
     return;
   }
-  const answer = promptFn('push merge to origin/main? [y/N] ').toLowerCase();
+  const answer = promptFn(
+    'Push merge to origin/main? (y publishes to your private mirror so other hosts see it; N keeps it local) [y/N] ',
+  ).toLowerCase();
   if (answer === 'y' || answer === 'yes') {
     gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
   } else {
