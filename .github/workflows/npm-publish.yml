@@ -28,7 +28,11 @@ concurrency:
 
 jobs:
   publish:
-    if: ${{ !github.event.repository.private }}
+    # Skip prereleases: release-please cuts full releases only, and the smoke
+    # test asserts `nomad --version` matches the tag's bare semver. A manually
+    # cut prerelease (e.g. v0.16.3-rc.1) would publish a tag whose suffix is
+    # not reflected in package.json, breaking the smoke test by design.
+    if: ${{ !github.event.repository.private && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -66,7 +70,9 @@ jobs:
 
   smoke-test:
     needs: publish
-    if: ${{ !github.event.repository.private }}
+    # Mirror the publish gate: prereleases are out of contract, so no install
+    # attempt should fire against them.
+    if: ${{ !github.event.repository.private && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
