@@ -72,36 +72,53 @@ export function cmdDropSession(id: string): void {
         log(`dropped ${rel} (already absent from index)`);
         continue;
       }
-      if (isTrackedInHead(rel)) {
-        execFileSync('git', ['restore', '--staged', '--worktree', '--', rel], {
-          cwd: REPO_HOME,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-      } else {
-        execFileSync('git', ['rm', '--cached', '-f', '--', rel], {
-          cwd: REPO_HOME,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
+      try {
+        if (isTrackedInHead(rel)) {
+          execFileSync('git', ['restore', '--staged', '--worktree', '--', rel], {
+            cwd: REPO_HOME,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+        } else {
+          execFileSync('git', ['rm', '--cached', '-f', '--', rel], {
+            cwd: REPO_HOME,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+        }
+      } catch (err) {
+        // Convert raw execFileSync failures (non-zero git exit, EACCES on
+        // .git/index, EPERM, etc.) into NomadFatal so the outer catch can
+        // emit a clean `[nomad] FATAL: ...` line instead of letting the
+        // ExecException bubble past nomad.ts's NomadFatal-only dispatcher.
+        // The `?? err.message` fallback only fires when git fails without
+        // producing stderr (spawn-level error before the process emits
+        // anything), which `cmdPush`'s gitleaks probe already rules out
+        // for the typical install path. Excluded from coverage.
+        const e = err as NodeJS.ErrnoException & { stderr?: Buffer };
+        /* c8 ignore next */
+        const detail = e.stderr?.toString().trim() ?? e.message;
+        throw new NomadFatal(`git failed to unstage ${rel}: ${detail}`);
       }
       log(`dropped ${rel}`);
     }
   } catch (err) {
     // Defensive escape hatch: only fires if a non-NomadFatal error escapes
-    // the try block. No production code path inside the block throws a
-    // non-NomadFatal (file-system helpers wrap in NomadFatal, execFileSync
-    // failures are recoverable via the helpers' own catches), so this
-    // rethrow is unreachable at runtime. Excluded from coverage rather
-    // than contorting tests to fake an impossible state.
+    // the try block. All execFileSync mutation failures are wrapped in
+    // NomadFatal above, file-system helpers swallow their own errors, and
+    // readdirSync only throws under a race we do not handle. Excluded from
+    // coverage rather than contorting tests to fake an impossible state.
     /* c8 ignore next 3 */
     if (!(err instanceof NomadFatal)) {
       throw err;
     }
-    // The only NomadFatal thrown inside the try block is `no staged session
-    // matches <id>`, a routine not-found result rather than an internal
-    // failure, so the bare `[nomad] ` prefix is used (matches README
-    // "Exit codes" copy). Future NomadFatal throws here would need to
-    // revisit this prefix logic.
-    console.error(`[nomad] ${err.message}`);
+    // The `no staged session matches <id>` path is a routine not-found
+    // result, so it omits the FATAL: prefix to keep the user-facing
+    // wording stable (matches README "Exit codes" copy). All other
+    // NomadFatal throws here (e.g., `git failed to unstage ...`) are
+    // internal failures and carry the [nomad] FATAL: prefix.
+    const prefix = err.message.startsWith('no staged session matches ')
+      ? '[nomad] '
+      : '[nomad] FATAL: ';
+    console.error(`${prefix}${err.message}`);
     process.exitCode = 1;
   } finally {
     releaseLock(handle);

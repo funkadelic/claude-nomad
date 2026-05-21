@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -268,6 +276,34 @@ describe('cmdDropSession (real git temp repo)', () => {
     const cached = diffCached();
     expect(cached).not.toContain('matching/sid-A.jsonl');
     expect(cached).toContain('not-matching/other-id.jsonl');
+  });
+
+  it('wraps `git rm --cached` failures as `[nomad] FATAL: git failed to unstage`', async () => {
+    // When git itself returns non-zero on the mutation step (e.g., EACCES on
+    // .git/index from a read-only filesystem, a locked index, or a corrupt
+    // tree), the failure must surface as a NomadFatal with the git stderr
+    // included. Without the wrap added by this fix, the ExecException
+    // bubbles past nomad.ts's NomadFatal-only dispatcher and the operator
+    // sees a stack trace instead of `[nomad] FATAL: ...`. Simulate the
+    // EACCES path by chmod-ing .git to read-only after staging.
+    stageSession('foo', 'sid-A', '{"role":"user","content":"hi"}\n');
+    // Read-only the entire .git directory so git rm --cached fails when it
+    // tries to rewrite the index. The chmod is reverted in afterEach via
+    // the testHome cleanup (rmSync recursive).
+    chmodSync(join(repoUnderHome, '.git'), 0o555);
+    try {
+      const { cmdDropSession } = await import('./commands.drop-session.ts');
+      expect(() => cmdDropSession('sid-A')).not.toThrow();
+      expect(process.exitCode).toBe(1);
+      const out = errOutput();
+      expect(out).toMatch(/\[nomad\] FATAL: git failed to unstage/);
+      expect(out).toContain('shared/projects/foo/sid-A.jsonl');
+      // Lock must still be released even on the failure path.
+      expect(existsSync(lockPath)).toBe(false);
+    } finally {
+      // Restore write perm so afterEach can rmSync the tree cleanly.
+      chmodSync(join(repoUnderHome, '.git'), 0o755);
+    }
   });
 
   it('throws NomadFatal `repo not cloned` when REPO_HOME is missing entirely', async () => {
