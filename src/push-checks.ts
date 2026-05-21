@@ -1,6 +1,12 @@
 /**
  * Reusable helpers for push-boundary safety: gitlink walker, gitleaks
- * presence probe, gitleaks staged scan, and rebase-before-push.
+ * presence probe, and rebase-before-push.
+ *
+ * The staged gitleaks scan lives in `./push-gitleaks.ts` so the
+ * session-aware FATAL builder has its own module under the 200-line cap.
+ * `gitleaksInstallHint` stays here because both `probeGitleaks`
+ * (top-of-flow) and `runGitleaksScan` (mid-flow) need the platform-aware
+ * install scaffold on ENOENT.
  *
  * All execFileSync-backed helpers use argv-array form with
  * `stdio: ['ignore', 'pipe', 'pipe']` (no shell). Same shape as
@@ -12,7 +18,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, type Dirent } from 'node:fs';
+import { existsSync, readdirSync, type Dirent } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
@@ -107,48 +113,27 @@ export function findGitlinks(dir: string): string[] {
  * version` stdout on success. Throws NomadFatal with the install hint on
  * ENOENT; throws NomadFatal with the error message on any other failure.
  * Used by `cmdPush` (top-of-flow probe) and `cmdDoctor` (read-only).
+ *
+ * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
+ * exists at call time. `gitleaks version` ignores the flag empirically on
+ * 8.30.1, so the wiring here is conservative: symmetric with
+ * `runGitleaksScan` and surfaces a malformed toml early if a future gitleaks
+ * version starts parsing the config on the `version` subcommand. When the
+ * toml is missing (e.g., fresh clone predating the allowlist) the flag is
+ * omitted entirely; behavior reverts silently to the default gitleaks ruleset.
  */
 export function probeGitleaks(): string {
+  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
+  const args: string[] = ['version'];
+  if (existsSync(tomlPath)) args.push('--config', tomlPath);
   try {
-    return execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    return execFileSync('gitleaks', args, { stdio: ['ignore', 'pipe', 'pipe'] })
       .toString()
       .trim();
   } catch (err) {
     const e = err as NodeJS.ErrnoException;
     if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
     throw new NomadFatal(`gitleaks --version failed: ${e.message}`);
-  }
-}
-
-/**
- * Run gitleaks against the staged index. On non-zero exit (detection),
- * forwards gitleaks' own redacted stderr/stdout so the user sees which file
- * is dirty, then throws NomadFatal. Does NOT auto-rollback staging; the
- * user runs `git diff --cached` to identify the offending file.
- *
- * ENOENT branch is defense-in-depth: the presence probe at the top of
- * `cmdPush` should have caught a missing binary, but if `cmdPush` ever
- * bypasses the probe (or the user uninstalls gitleaks mid-flow) the same
- * install-hint FATAL fires here.
- */
-export function runGitleaksScan(): void {
-  try {
-    execFileSync('gitleaks', ['protect', '--staged', '--redact', '-v'], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & {
-      status?: number;
-      stderr?: Buffer;
-      stdout?: Buffer;
-    };
-    if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
-    if (e.stderr) process.stderr.write(e.stderr);
-    if (e.stdout) process.stdout.write(e.stdout);
-    throw new NomadFatal(
-      'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry',
-    );
   }
 }
 

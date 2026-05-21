@@ -98,7 +98,7 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
   });
 });
 
-describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_process)', () => {
+describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let testHome: string;
@@ -113,7 +113,7 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     process.env.NOMAD_HOST = 'test-host';
     vi.resetModules();
     // Spy on process.stderr.write so the stderr-forwarding behavior in
-    // runGitleaksScan and rebaseBeforePush can be asserted via call history.
+    // rebaseBeforePush can be asserted via call history.
     stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   });
@@ -164,6 +164,32 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     expect(probeGitleaks()).toBe('v8.18.2');
   });
 
+  it('probeGitleaks passes --config when REPO_HOME/.gitleaks.toml exists', async () => {
+    // Cover the truthy branch of `if (existsSync(tomlPath))` in probeGitleaks.
+    // Place a minimal .gitleaks.toml at REPO_HOME (resolves to
+    // <testHome>/claude-nomad via process.env.HOME and config.ts) and capture
+    // the args passed to gitleaks; the --config flag plus the toml path must
+    // be present alongside the `version` subcommand.
+    const repoHome = join(testHome, 'claude-nomad');
+    mkdirSync(repoHome, { recursive: true });
+    writeFileSync(join(repoHome, '.gitleaks.toml'), '[extend]\nuseDefault = true\n');
+    let capturedArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          capturedArgs = args ?? [];
+          return Buffer.from('v8.30.1\n');
+        }),
+      };
+    });
+    const { probeGitleaks } = await import('./push-checks.ts');
+    expect(probeGitleaks()).toBe('v8.30.1');
+    expect(capturedArgs).toContain('--config');
+    expect(capturedArgs).toContain(join(repoHome, '.gitleaks.toml'));
+  });
+
   it('probeGitleaks throws NomadFatal with "gitleaks --version failed" on non-ENOENT errors', async () => {
     // Distinguish line 119 from the ENOENT branch (line 118). EACCES means
     // the binary exists but the spawn was denied; the message MUST be the
@@ -192,80 +218,6 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
     } catch (err) {
       expect((err as Error).message).not.toMatch(/Install:/);
     }
-  });
-
-  // runGitleaksScan
-  it('runGitleaksScan does not throw on clean scan', async () => {
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn(() => Buffer.from('')),
-      };
-    });
-    const { runGitleaksScan } = await import('./push-checks.ts');
-    expect(() => runGitleaksScan()).not.toThrow();
-  });
-
-  it('runGitleaksScan throws NomadFatal and forwards stderr on detection (status 1)', async () => {
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn(() => {
-          const err = new Error('Command failed') as NodeJS.ErrnoException & {
-            status?: number;
-            stderr?: Buffer;
-          };
-          err.status = 1;
-          err.stderr = Buffer.from('finding: redacted-secret in foo.ts');
-          throw err;
-        }),
-      };
-    });
-    const { runGitleaksScan } = await import('./push-checks.ts');
-    expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
-    expect(() => runGitleaksScan()).toThrow(/git diff --cached/);
-    // stderrSpy should have received the forwarded buffer at least once.
-    const calls = stderrSpy.mock.calls.map((c: unknown[]) => c[0]);
-    const matched = calls.some(
-      (chunk: unknown) =>
-        (Buffer.isBuffer(chunk) && chunk.toString().includes('redacted-secret')) ||
-        (typeof chunk === 'string' && chunk.includes('redacted-secret')),
-    );
-    expect(matched).toBe(true);
-  });
-
-  it('runGitleaksScan forwards stdout (not stderr) and throws NomadFatal when the error carries only stdout', async () => {
-    // Cover the line-148 truthy branch (`if (e.stdout)`) AND the line-147
-    // falsey branch (`if (e.stderr)` false) together: gitleaks fails with
-    // a stdout payload only (no stderr). The forwarding code emits the
-    // stdout to process.stdout.write and the FATAL still fires.
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn(() => {
-          const err = new Error('Command failed') as NodeJS.ErrnoException & {
-            status?: number;
-            stdout?: Buffer;
-          };
-          err.status = 1;
-          err.stdout = Buffer.from('redacted-finding-on-stdout');
-          // No err.stderr - this is the load-bearing distinguishing condition.
-          throw err;
-        }),
-      };
-    });
-    const { runGitleaksScan } = await import('./push-checks.ts');
-    expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
-    const stdoutCalls = stdoutSpy.mock.calls.map((c: unknown[]) => c[0]);
-    const matched = stdoutCalls.some(
-      (chunk: unknown) =>
-        (Buffer.isBuffer(chunk) && chunk.toString().includes('redacted-finding-on-stdout')) ||
-        (typeof chunk === 'string' && chunk.includes('redacted-finding-on-stdout')),
-    );
-    expect(matched).toBe(true);
   });
 
   it('rebaseBeforePush throws without forwarding stderr when the error carries no stderr buffer', async () => {
@@ -297,23 +249,6 @@ describe('probeGitleaks / runGitleaksScan / rebaseBeforePush (mocked child_proce
       );
     });
     expect(forwarded).toBe(false);
-  });
-
-  it('runGitleaksScan throws NomadFatal with install hint on ENOENT (defense in depth)', async () => {
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn(() => {
-          const err = new Error('spawn gitleaks ENOENT') as NodeJS.ErrnoException;
-          err.code = 'ENOENT';
-          throw err;
-        }),
-      };
-    });
-    const { runGitleaksScan } = await import('./push-checks.ts');
-    expect(() => runGitleaksScan()).toThrow(/gitleaks not on PATH/);
-    expect(() => runGitleaksScan()).toThrow(/Install:/);
   });
 
   // rebaseBeforePush

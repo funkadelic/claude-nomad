@@ -32,6 +32,7 @@ describe('nomad.ts push dispatcher', () => {
     vi.doUnmock('./commands.pull.ts');
     vi.doUnmock('./commands.doctor.ts');
     vi.doUnmock('./commands.update.ts');
+    vi.doUnmock('./commands.drop-session.ts');
     vi.doUnmock('./diff.ts');
     vi.doUnmock('./init.ts');
     vi.doUnmock('./resume.ts');
@@ -74,7 +75,7 @@ describe('nomad.ts push dispatcher', () => {
   });
 
   it('prints the multi-line default help on bare `nomad` invocation with exitCode=1', async () => {
-    // All six command modules are mocked so a misdispatch (any case arm
+    // All seven command modules are mocked so a misdispatch (any case arm
     // accidentally firing on an empty argv) would surface as a non-zero
     // call count, not a silent pass.
     const cmdPullMock = vi.fn();
@@ -83,11 +84,13 @@ describe('nomad.ts push dispatcher', () => {
     const cmdInitMock = vi.fn();
     const cmdDiffMock = vi.fn();
     const cmdUpdateMock = vi.fn();
+    const cmdDropSessionMock = vi.fn();
     const resumeCmdMock = vi.fn();
     vi.doMock('./commands.pull.ts', () => ({ cmdPull: cmdPullMock }));
     vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
     vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
     vi.doMock('./diff.ts', () => ({ cmdDiff: cmdDiffMock }));
     vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
@@ -100,6 +103,7 @@ describe('nomad.ts push dispatcher', () => {
     expect(cmdInitMock).not.toHaveBeenCalled();
     expect(cmdDiffMock).not.toHaveBeenCalled();
     expect(cmdUpdateMock).not.toHaveBeenCalled();
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
     expect(resumeCmdMock).not.toHaveBeenCalled();
     // The expanded help text is one console.error call carrying a single
     // multi-line string. Assert on three structural anchors (header line,
@@ -115,6 +119,10 @@ describe('nomad.ts push dispatcher', () => {
     // a cold `nomad` invocation surfaces the new command without docs.
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('update'));
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--push-origin'));
+    // drop-session is the operator-side recovery half of the gitleaks-on-
+    // session-JSONL flow; surface it in DEFAULT_HELP alongside the other
+    // subcommands so a cold `nomad` invocation discovers it.
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('drop-session'));
   });
 
   it('routes `nomad update` to cmdUpdate({}) with all flags false', async () => {
@@ -172,5 +180,96 @@ describe('nomad.ts push dispatcher', () => {
     await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('routes `nomad drop-session sid-A` to cmdDropSession(`sid-A`)', async () => {
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session', 'sid-A'];
+    await import('./nomad.ts');
+    expect(cmdDropSessionMock).toHaveBeenCalledTimes(1);
+    expect(cmdDropSessionMock).toHaveBeenCalledWith('sid-A');
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects bare `nomad drop-session` (no id) with the canonical usage line and exitCode=1', async () => {
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad drop-session'),
+    );
+  });
+
+  it('rejects `nomad drop-session --bogus` (leading dash where id expected) with exitCode=1', async () => {
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session', '--bogus'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad drop-session'),
+    );
+  });
+
+  it('rejects `nomad drop-session sid-A extra-arg` (two positionals) with exitCode=1', async () => {
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session', 'sid-A', 'extra-arg'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad drop-session'),
+    );
+  });
+
+  it("rejects `nomad drop-session ''` (empty-string id) with exitCode=1", async () => {
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session', ''];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad drop-session'),
+    );
+  });
+
+  it('rejects `nomad drop-session foo/bar` (slash in id) at argv with the usage line', async () => {
+    // The earlier argv guard `/^[^-].*/` accepted any non-empty string
+    // that did not start with a dash, so `foo/bar` passed argv parsing
+    // and only the deeper cmdDropSession validator caught it (with a
+    // `FATAL: invalid session id:` message). The tightened argv regex
+    // mirrors the function-entry allowlist so the user sees the cleaner
+    // `usage: nomad drop-session` line at parse time.
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session', 'foo/bar'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad drop-session'),
+    );
+  });
+
+  it('rejects `nomad drop-session ..` (path traversal in id) at argv with the usage line', async () => {
+    // Path traversal was already blocked by the function-entry validator,
+    // but the argv guard let it through, muddying the UX (FATAL vs
+    // usage:). The tightened argv regex catches it at parse time.
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session', '..'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad drop-session'),
+    );
   });
 });

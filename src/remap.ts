@@ -1,5 +1,5 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { backupBeforeWrite, backupRepoWrite, encodePath, log, readJson } from './utils.ts';
@@ -13,6 +13,35 @@ import { backupBeforeWrite, backupRepoWrite, encodePath, log, readJson } from '.
 function copyDir(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, { recursive: true, force: true });
+}
+
+/**
+ * Push-side mirror copy: identical to copyDir except a depth-0 extension
+ * filter restricts to *.jsonl files only. Subdirectory contents (subagents,
+ * memory, tool-results, etc.) copy recursively with no further filtering.
+ * Stray .bak / .tmp / .swp / editor backups at the source root are skipped
+ * and produce one `[nomad] skip <rel>: extension not in allowlist` log
+ * line each. The filter must allow the source root explicitly (Pitfall 1:
+ * cpSync invokes the filter on src === src first, and a false return
+ * there would abort the whole copy). Used by remapPush only; remapPull
+ * keeps the unfiltered copyDir because the repo side is already curated
+ * by the push gate.
+ */
+function copyDirJsonlOnly(src: string, dst: string): void {
+  rmSync(dst, { recursive: true, force: true });
+  cpSync(src, dst, {
+    recursive: true,
+    force: true,
+    filter: (srcPath) => {
+      const rel = relative(src, srcPath);
+      if (rel === '') return true;
+      if (rel.split(sep).length > 1) return true;
+      if (statSync(srcPath).isDirectory()) return true;
+      if (srcPath.endsWith('.jsonl')) return true;
+      log(`skip ${rel}: extension not in allowlist`);
+      return false;
+    },
+  });
 }
 
 /**
@@ -122,7 +151,7 @@ export function remapPush(
     // path-encoding-collided local dir would otherwise have no rollback
     // path. Symmetric with remapPull's backupBeforeWrite on the local dst.
     backupRepoWrite(repoDst, ts, REPO_HOME);
-    copyDir(join(localProjects, dir), repoDst);
+    copyDirJsonlOnly(join(localProjects, dir), repoDst);
     log(`pushed ${dir} -> ${logical}`);
   }
   return { unmapped, collisions };
