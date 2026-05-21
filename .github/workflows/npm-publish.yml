@@ -11,13 +11,11 @@ on:
   release:
     types: [published]
 
-# id-token: write enables OIDC trusted publishing (npm validates the GitHub
-# OIDC claim against the trusted-publisher rule on the package's /access page,
-# no long-lived registry credentials required). contents: read is the minimum
-# needed for actions/checkout to read the tag's tree.
+# contents: read is the minimum needed for actions/checkout to read the tag's
+# tree. id-token: write is scoped to the publish job only (smoke-test reads
+# from the public registry and does not need to mint an OIDC token).
 permissions:
   contents: read
-  id-token: write
 
 # Two simultaneous publishes for the same tag would race against the npm
 # registry; cancel-in-progress: false ensures the first wins and the second
@@ -35,6 +33,13 @@ jobs:
     if: ${{ !github.event.repository.private && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # id-token: write enables OIDC trusted publishing (npm validates the GitHub
+    # OIDC claim against the trusted-publisher rule on the package's /access
+    # page, no long-lived registry credentials required). Scoped to this job
+    # only so smoke-test cannot mint an OIDC token.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
