@@ -230,7 +230,7 @@ npm i -g claude-nomad
 git clone git@github.com:you/claude-nomad.git ~/claude-nomad
 ```
 
-`npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. The npm `engines` field rejects the install on Node < 22.22.1.
+`npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. The npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes; npm only blocks the install when `engine-strict=true` is configured.
 
 On every additional host, both steps from step 3 are needed (the global install is per-host; your private repo already exists on the remote).
 
