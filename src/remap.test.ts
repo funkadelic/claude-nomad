@@ -375,6 +375,184 @@ describe('remapPush dry-run and unmapped count', () => {
   });
 });
 
+// Covers SRCFILTER (D-14..D-17): remapPush copies only top-level *.jsonl
+// files at depth 0; non-jsonl files at depth 0 are skipped with a log line;
+// subdirectory contents traverse unfiltered; the cpSync source-root case is
+// allowed explicitly; remapPull stays unfiltered (no regression).
+describe('remapPush source-side filter (SRCFILTER)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-srcfilter-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('copies top-level *.jsonl files through remapPush', async () => {
+    // Baseline contract: the happy path keeps working. A session JSONL at
+    // depth 0 must reach the staged tree byte-for-byte.
+    const encodedLocal = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'sid-A.jsonl'), '{"role":"user"}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    remapPush('20260520-000000');
+
+    const dst = join(sharedProjects, 'foo', 'sid-A.jsonl');
+    expect(existsSync(dst)).toBe(true);
+    expect(readFileSync(dst, 'utf8')).toBe('{"role":"user"}\n');
+  });
+
+  it('skips top-level non-jsonl files (.bak, .tmp) with one log line each', async () => {
+    // Stray local clutter (.bak from a manual scrub, .tmp from editor
+    // crash) must never enter the staged tree. Each skip emits one
+    // `[nomad] skip <rel>: extension not in allowlist` log line.
+    const encodedLocal = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'sid-A.jsonl'), '{"role":"user"}\n');
+    writeFileSync(join(encodedLocal, 'sid-A.bak'), 'leaked-secret\n');
+    writeFileSync(join(encodedLocal, 'tmp.txt'), 'crash-artifact\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { remapPush } = await import('./remap.ts');
+    remapPush('20260520-000000');
+
+    // The jsonl copies through; the .bak and tmp.txt do not.
+    expect(existsSync(join(sharedProjects, 'foo', 'sid-A.jsonl'))).toBe(true);
+    expect(existsSync(join(sharedProjects, 'foo', 'sid-A.bak'))).toBe(false);
+    expect(existsSync(join(sharedProjects, 'foo', 'tmp.txt'))).toBe(false);
+
+    const skipLines = logSpy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((line) => line.includes('skip') && line.includes('extension not in allowlist'));
+    expect(skipLines.length).toBe(2);
+    expect(skipLines.some((l) => l.includes('sid-A.bak'))).toBe(true);
+    expect(skipLines.some((l) => l.includes('tmp.txt'))).toBe(true);
+  });
+
+  it('copies subdirectory contents recursively with no filter at depth >=1', async () => {
+    // Sub-trees (subagents/, memory/, tool-results/, future names) keep
+    // their existing recursive copyDir behavior. A subagent meta-json or a
+    // memory markdown file must flow through; the depth-0 filter must NOT
+    // fire on depth >=1 entries.
+    const encodedLocal = join(claudeProjects, '-tmp-foo');
+    mkdirSync(join(encodedLocal, 'subagents'), { recursive: true });
+    mkdirSync(join(encodedLocal, 'memory'), { recursive: true });
+    writeFileSync(join(encodedLocal, 'subagents', 'agent-1.jsonl'), '{"a":1}\n');
+    writeFileSync(join(encodedLocal, 'subagents', 'agent-1.meta.json'), '{"meta":true}\n');
+    writeFileSync(join(encodedLocal, 'memory', 'notes.md'), '# notes\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { remapPush } = await import('./remap.ts');
+    remapPush('20260520-000000');
+
+    expect(existsSync(join(sharedProjects, 'foo', 'subagents', 'agent-1.jsonl'))).toBe(true);
+    expect(existsSync(join(sharedProjects, 'foo', 'subagents', 'agent-1.meta.json'))).toBe(true);
+    expect(existsSync(join(sharedProjects, 'foo', 'memory', 'notes.md'))).toBe(true);
+
+    // No skip log lines for depth >=1 entries.
+    const skipLines = logSpy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((line) => line.includes('extension not in allowlist'));
+    expect(skipLines.length).toBe(0);
+  });
+
+  it('does not log a spurious skip line for the cpSync source-root case', async () => {
+    // D-17 / Pitfall 1: cpSync invokes the filter on srcPath === src first.
+    // The callback must return true unconditionally for that case (relative
+    // path is the empty string). A naive implementation that splits the
+    // empty rel into [''] and applies the depth-0 jsonl-only check would
+    // log a bogus `[nomad] skip : extension not in allowlist` line and
+    // abort the entire copy.
+    const encodedLocal = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'sid-A.jsonl'), '{"ok":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { remapPush } = await import('./remap.ts');
+    remapPush('20260520-000000');
+
+    // No skip log line with an empty <rel> field. Match the structural
+    // shape "skip : " (skip + space + colon + space) that a buggy
+    // empty-rel callback would emit.
+    const badSkip = logSpy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((line) => line.includes('[nomad] skip : extension not in allowlist'));
+    expect(badSkip.length).toBe(0);
+
+    // Dst dir exists and is non-empty (the copy completed).
+    expect(existsSync(join(sharedProjects, 'foo'))).toBe(true);
+    expect(readdirSync(join(sharedProjects, 'foo')).length).toBeGreaterThan(0);
+  });
+
+  it('remapPull stays unfiltered: non-jsonl files in shared/projects/<logical>/ copy to local', async () => {
+    // Regression guard for D-14: only remapPush gains the source-side
+    // filter. remapPull keeps the unfiltered copyDir because the repo
+    // side is already curated by the push gate. A future PR that
+    // applies copyDirJsonlOnly symmetrically would break this test.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'sid-A.txt'), 'curated\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPull } = await import('./remap.ts');
+    remapPull('20260520-000000');
+
+    const dst = join(claudeProjects, '-tmp-foo', 'sid-A.txt');
+    expect(existsSync(dst)).toBe(true);
+    expect(readFileSync(dst, 'utf8')).toBe('curated\n');
+  });
+});
+
 // Covers remap.ts line 56: `if (!existsSync(src)) continue` in remapPull.
 // Lives outside the prior describe blocks because it needs a sandbox where
 // the path-map is mapped for this host but the repo's
