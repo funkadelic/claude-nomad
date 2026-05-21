@@ -37,5 +37,32 @@ export default tseslint.config(
     files: ['eslint.config.js', '*.config.js', '*.config.mjs'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // CommonJS scripts (e.g. scripts/verify-tarball.cjs) live outside the
+    // tsconfig project graph; disable the typescript-eslint project service
+    // for them, and opt them into the CommonJS globals (require, module,
+    // __dirname, exports). Without projectService:false the parser rejects
+    // any .cjs file the tsconfig does not enumerate.
+    files: ['**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+      parserOptions: {
+        projectService: false,
+      },
+    },
+  },
+  // Type-aware rules require the project service; .cjs files have it
+  // turned off above, so disable the type-checked rule sets for them.
+  // The require() ban from the stylistic type-checked preset is the whole
+  // point a .cjs file is here, so it is turned off explicitly.
+  {
+    files: ['**/*.cjs'],
+    ...tseslint.configs.disableTypeChecked,
+    rules: {
+      ...tseslint.configs.disableTypeChecked.rules,
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
   eslintConfigPrettier,
 );
