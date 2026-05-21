@@ -92,7 +92,7 @@ public funkadelic/claude-nomad          your private you/claude-nomad
                                           └── path-map.json
 ```
 
-You bootstrap once by mirror-pushing this public tool repo into a fresh private repo of your own (see [Setup](#setup)), then layer your config on top. Every host afterward clones your private repo to `~/claude-nomad/` and runs `nomad pull` to sync.
+You bootstrap once by mirror-pushing this public tool repo into a fresh private repo of your own (see [Setup](#setup)), then layer your config on top. Every host afterward installs the CLI (`npm i -g claude-nomad`), clones your private repo to `~/claude-nomad/`, and runs `nomad pull` to sync.
 
 By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config.ts`). Developers working from an alternate checkout can `export NOMAD_REPO=/path/to/repo` to point the CLI at their working tree without symlink gymnastics; `nomad doctor` surfaces an active override via a trailing `(NOMAD_REPO)` annotation on the repo-state line. Empty `NOMAD_REPO` falls through to the default, so a clobbered dotfile variable does not break the CLI.
 
@@ -212,27 +212,27 @@ Read these before adopting so you opt in with eyes open.
 > [!WARNING]
 > Keep the mirror private. CI workflows under `.github/workflows/` are gated on `${{ !github.event.repository.private }}`, so they skip on any private repo and run only on public ones. Flipping your mirror to public will start firing CI on every `nomad push` against `main`, and your session transcripts (which include conversation content) become world-readable.
 
-One-time, on your first host:
+Bootstrap (steps 1-2 are once-ever across all hosts; step 3 repeats per host):
 
 ```bash
-# 1. Create the private repo (or use the GitHub UI).
+# 1. Create the private repo (or use the GitHub UI). Once, ever.
 gh repo create you/claude-nomad --private
 
 # 2. Mirror the public tool into it. This severs the fork relationship,
-#    so your repo is independent of upstream.
+#    so your repo is independent of upstream. Once, ever.
 git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git
 cd /tmp/cn.git
 git push --mirror git@github.com:you/claude-nomad.git
 cd .. && rm -rf /tmp/cn.git
 
-# 3. Install the CLI globally and clone your private copy to the canonical location.
+# 3. Install the CLI globally and clone your private copy. Repeat on every host.
 npm i -g claude-nomad
 git clone git@github.com:you/claude-nomad.git ~/claude-nomad
 ```
 
 `npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. The npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes; npm only blocks the install when `engine-strict=true` is configured.
 
-On every additional host, both steps from step 3 are needed (the global install is per-host; your private repo already exists on the remote).
+On every additional host you only repeat step 3 (the global install is per-host; your private repo already exists on the remote from step 2).
 
 Add to `~/.zshrc` or `~/.bashrc`:
 
@@ -242,7 +242,7 @@ export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads 
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
 
-Initialize the repo layout. Pick one:
+Initialize the repo layout (first host only; subsequent hosts just clone and `nomad pull`). Pick one:
 
 ```bash
 # Fresh start: scaffold an empty shared/, hosts/, path-map.json skeleton.
