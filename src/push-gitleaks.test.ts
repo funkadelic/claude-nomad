@@ -22,7 +22,7 @@ import type * as cpModule from 'node:child_process';
 // regression fixture (allowlist behavior) is an integration test against the
 // real binary because the allowlist semantics are enforced inside the
 // gitleaks process, not in nomad code. Hard-fail the whole test file when
-// gitleaks is absent rather than silently skip — the ALLOWLIST acceptance
+// gitleaks is absent rather than silently skip. The allowlist acceptance
 // criterion must always run on CI.
 beforeAll(() => {
   try {

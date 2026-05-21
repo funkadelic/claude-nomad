@@ -108,7 +108,7 @@ export function cmdDropSession(id: string): void {
  * `git cat-file -e HEAD:<rel>`: exit 0 means tracked in HEAD,
  * non-zero means either no HEAD exists yet (empty repo) or the path is
  * only in the index (newly-staged-not-in-HEAD). `git ls-files
- * --error-unmatch` is NOT a HEAD-presence check — it matches anything in
+ * --error-unmatch` is NOT a HEAD-presence check; it matches anything in
  * the index too, which would misclassify newly-staged paths.
  */
 function isTrackedInHead(rel: string): boolean {
