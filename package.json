@@ -2,6 +2,33 @@
   "name": "claude-nomad",
   "version": "0.16.1",
   "type": "module",
+  "description": "Sync Claude Code config (~/.claude/) across machines via a private Git repo, with path remapping and per-host settings overrides.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "sync",
+    "dotfiles"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/funkadelic/claude-nomad.git"
+  },
+  "homepage": "https://github.com/funkadelic/claude-nomad#readme",
+  "bugs": {
+    "url": "https://github.com/funkadelic/claude-nomad/issues"
+  },
+  "license": "MIT",
+  "bin": {
+    "nomad": "./src/nomad.ts"
+  },
+  "files": [
+    "src/",
+    "shared/.gitignore",
+    ".gitleaks.toml",
+    "README.md",
+    "CHANGELOG.md",
+    "hosts/"
+  ],
   "engines": {
     "node": ">=22.22.1"
   },
@@ -17,6 +44,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && node scripts/verify-tarball.cjs",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -40,12 +68,12 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.5",
     "prettier": "^3.8.3",
-    "tsx": "^4.22.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4",
     "vitest": "^4.1.6"
   },
   "dependencies": {
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "tsx": "^4.22.2"
   }
 }

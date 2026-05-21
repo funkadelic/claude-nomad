@@ -14,8 +14,19 @@ export const HOME = homedir();
 /** Absolute path to the user's Claude Code config directory (`~/.claude`). */
 export const CLAUDE_HOME = resolve(HOME, '.claude');
 
-/** Absolute path to the local checkout of the private sync repo (`~/claude-nomad`). */
-export const REPO_HOME = resolve(HOME, 'claude-nomad');
+/**
+ * Absolute path to the local checkout of the private sync repo. Reads
+ * `NOMAD_REPO` first, falls back to `~/claude-nomad`. A set-but-empty
+ * `NOMAD_REPO` (e.g. `export NOMAD_REPO=` in a dotfile that clobbers the
+ * variable) must also fall through to the default. `??` only triggers on
+ * null/undefined, so `||` is used here to fall through on empty strings too.
+ * Relative paths in `NOMAD_REPO` are resolved against the current working
+ * directory at first use (downstream `existsSync` / `cpSync` / git invocations
+ * accept either absolute or relative paths); we intentionally do NOT
+ * `resolve()` here so developers can point the override at relative checkouts.
+ */
+// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+export const REPO_HOME = process.env.NOMAD_REPO || resolve(HOME, 'claude-nomad');
 
 /**
  * Upstream GitHub repository slug for the release-version check in
