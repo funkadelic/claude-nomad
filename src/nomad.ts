@@ -93,7 +93,7 @@ try {
       // .github/workflows/npm-publish.yml (`nomad --version` strict-equal
       // to the published tag minus the leading `v`).
       if (process.argv.length !== 3) {
-        console.error('usage: nomad --version');
+        console.error('usage: nomad --version (no extra arguments)');
         process.exit(1);
       }
       console.log(pkg.version);
