@@ -3,7 +3,8 @@ import { join, relative } from 'node:path';
 
 // prettier-ignore
 import { HOME, HOST, NEVER_SYNC, PUSH_ALLOWED_STATIC, REPO_HOME, type PathMap } from './config.ts';
-import { findGitlinks, probeGitleaks, rebaseBeforePush, runGitleaksScan } from './push-checks.ts';
+import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
+import { runGitleaksScan } from './push-gitleaks.ts';
 import { remapPush } from './remap.ts';
 import { emitSummary } from './summary.ts';
 // prettier-ignore
