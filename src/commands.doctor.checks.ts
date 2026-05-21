@@ -48,6 +48,19 @@ function readJsonSafe<T>(path: string, label: string, section: DoctorSection): T
 }
 
 /**
+ * True when the `NOMAD_REPO` env override is set to a non-empty value.
+ * Mirrors the `||` empty-string-fallthrough semantics of `REPO_HOME` itself
+ * (see `src/config.ts`): an unset env, or `export NOMAD_REPO=`, both return
+ * false because the default fallback fires. Reads `process.env.NOMAD_REPO`
+ * directly so a set-but-empty value is distinguishable from "set to the
+ * default path"; reading via the imported `REPO_HOME` constant cannot make
+ * that distinction. Exposed for `reportRepoState`; not for general use.
+ */
+export function isOverrideActive(): boolean {
+  return Boolean(process.env.NOMAD_REPO);
+}
+
+/**
  * Pushes the host identity (info) and the two key path lines (repo and
  * claude-home) with gutter glyphs. Path presence is reported via warnGlyph
  * (not failGlyph) so an absent CLAUDE_HOME does not flip sectionFailed to
@@ -67,18 +80,26 @@ export function reportHostAndPaths(section: DoctorSection): void {
   );
 }
 
-/** Emits the repo-state status line derived from classifyRepoState (okGlyph/warnGlyph/failGlyph). FAIL signals via process.exitCode. */
+/** Emits the repo-state status line derived from classifyRepoState (okGlyph/warnGlyph/failGlyph). When `NOMAD_REPO` is active, all three branches receive a ` (NOMAD_REPO)` suffix so the env override is visible whatever the repo state. FAIL signals via process.exitCode. */
 export function reportRepoState(section: DoctorSection): void {
   const state = classifyRepoState(REPO_HOME, HOST);
+  // Computed once so populated/partial/empty branches share the same
+  // annotation. Leading space before `(` keeps the line readable on every
+  // branch; empty string produces zero visual change when the override is
+  // not in play, matching SPEC §5 (acceptance: unset env -> no annotation).
+  const overrideLabel = isOverrideActive() ? ' (NOMAD_REPO)' : '';
   if (state === 'populated') {
-    addItem(section, `${green(okGlyph)} repo state: populated`);
+    addItem(section, `${green(okGlyph)} repo state: populated${overrideLabel}`);
   } else if (state === 'partial') {
     addItem(
       section,
-      `${yellow(warnGlyph)} repo state: partial ${reasonForPartial(REPO_HOME, HOST)}`,
+      `${yellow(warnGlyph)} repo state: partial ${reasonForPartial(REPO_HOME, HOST)}${overrideLabel}`,
     );
   } else {
-    addItem(section, `${red(failGlyph)} repo state: empty - run 'nomad init' to scaffold`);
+    addItem(
+      section,
+      `${red(failGlyph)} repo state: empty - run 'nomad init' to scaffold${overrideLabel}`,
+    );
     process.exitCode = 1;
   }
 }

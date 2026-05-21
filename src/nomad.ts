@@ -27,6 +27,15 @@ import { resumeCmd } from './resume.ts';
 import { fail, NomadFatal } from './utils.ts';
 
 /**
+ * Static JSON import for the `--version` arm. Uses `with { type: 'json' }`
+ * per Node 22+ import-attribute syntax (the older `assert { type: 'json' }`
+ * was removed). Reading synchronously at module load avoids a runtime fs
+ * walk on every `nomad --version` invocation and keeps the smoke-test
+ * contract (in npm-publish.yml) deterministic.
+ */
+import pkg from '../package.json' with { type: 'json' };
+
+/**
  * Multi-line help block printed on the `default:` arm of the dispatcher
  * (bare `nomad` and any unknown subcommand). Per-subcommand `usage:` lines
  * stay terse and live inside their own `case` arms; this block exists so a
@@ -77,6 +86,18 @@ if (!HOME) {
 try {
   const cmd = process.argv[2];
   switch (cmd) {
+    case '--version':
+      // Early-arm placement so a broken --version invocation never falls
+      // through to full command dispatch. Bare semver output (no prefix)
+      // matches the contract asserted by the smoke-test step in
+      // .github/workflows/npm-publish.yml (`nomad --version` strict-equal
+      // to the published tag minus the leading `v`).
+      if (process.argv.length !== 3) {
+        console.error('usage: nomad --version');
+        process.exit(1);
+      }
+      console.log(pkg.version);
+      break;
     case 'pull': {
       // Sub-flag: `pull --dry-run` runs the full pull flow (lock + git pull)
       // in preview mode without mutating ~/.claude/. Any other argv after
