@@ -200,7 +200,7 @@ Read these before adopting so you opt in with eyes open.
 
 ## Requirements
 
-- Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field enforces the 22.22.1 floor at install time)
+- Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes — npm only blocks the install when `engine-strict=true` is configured)
 - `tsx` (ships as a runtime dependency of the published package; no separate global install required)
 - Git
 - A **private** GitHub repo (or any Git remote you control)
