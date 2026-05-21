@@ -239,4 +239,37 @@ describe('nomad.ts push dispatcher', () => {
       expect.stringContaining('usage: nomad drop-session'),
     );
   });
+
+  it('rejects `nomad drop-session foo/bar` (slash in id) at argv with the usage line', async () => {
+    // The earlier argv guard `/^[^-].*/` accepted any non-empty string
+    // that did not start with a dash, so `foo/bar` passed argv parsing
+    // and only the deeper cmdDropSession validator caught it (with a
+    // `FATAL: invalid session id:` message). The tightened argv regex
+    // mirrors the function-entry allowlist so the user sees the cleaner
+    // `usage: nomad drop-session` line at parse time.
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session', 'foo/bar'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad drop-session'),
+    );
+  });
+
+  it('rejects `nomad drop-session ..` (path traversal in id) at argv with the usage line', async () => {
+    // Path traversal was already blocked by the function-entry validator,
+    // but the argv guard let it through, muddying the UX (FATAL vs
+    // usage:). The tightened argv regex catches it at parse time.
+    const cmdDropSessionMock = vi.fn();
+    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    process.argv = ['node', 'nomad.ts', 'drop-session', '..'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDropSessionMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad drop-session'),
+    );
+  });
 });
