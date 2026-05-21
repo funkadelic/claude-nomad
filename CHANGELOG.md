@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/funkadelic/claude-nomad/compare/v0.17.0...v0.17.1) (2026-05-21)
+
+
+### Fixed
+
+* **update:** explain y/N in push-merge prompt ([#90](https://github.com/funkadelic/claude-nomad/issues/90)) ([ab53960](https://github.com/funkadelic/claude-nomad/commit/ab5396041210f3770b34121c9875b38580ffc903))
+
 ## [0.17.0](https://github.com/funkadelic/claude-nomad/compare/v0.16.1...v0.17.0) (2026-05-21)
 
 
