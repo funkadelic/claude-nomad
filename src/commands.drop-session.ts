@@ -55,7 +55,9 @@ export function cmdDropSession(id: string): void {
     const matches: string[] = [];
     for (const logical of readdirSync(repoProjects)) {
       const candidate = join(repoProjects, logical, `${id}.jsonl`);
-      if (existsSync(candidate)) matches.push(candidate);
+      if (existsSync(candidate)) {
+        matches.push(candidate);
+      }
     }
     if (matches.length === 0) {
       throw new NomadFatal(`no staged session matches ${id}`);
@@ -84,27 +86,23 @@ export function cmdDropSession(id: string): void {
       log(`dropped ${rel}`);
     }
   } catch (err) {
-    if (err instanceof NomadFatal) {
-      // The "no staged session matches <id>" path is a routine
-      // not-found result, not an internal failure, so it omits the
-      // FATAL: prefix to keep the user-facing wording stable
-      // (matches README "Exit codes" copy and the existing test).
-      const prefix = err.message.startsWith('no staged session matches ')
-        ? '[nomad] '
-        : '[nomad] FATAL: ';
-      console.error(`${prefix}${err.message}`);
-      process.exitCode = 1;
-    } else {
-      // Defensive escape hatch: only fires if a non-NomadFatal error
-      // escapes the try block. No production code path inside the block
-      // throws a non-NomadFatal (file-system helpers wrap in NomadFatal,
-      // execFileSync failures are recoverable via the helpers' own
-      // catches), so this rethrow is unreachable at runtime. Excluded
-      // from coverage rather than contorting tests to fake an impossible
-      // state.
-      /* c8 ignore next */
+    // Defensive escape hatch: only fires if a non-NomadFatal error escapes
+    // the try block. No production code path inside the block throws a
+    // non-NomadFatal (file-system helpers wrap in NomadFatal, execFileSync
+    // failures are recoverable via the helpers' own catches), so this
+    // rethrow is unreachable at runtime. Excluded from coverage rather
+    // than contorting tests to fake an impossible state.
+    /* c8 ignore next 3 */
+    if (!(err instanceof NomadFatal)) {
       throw err;
     }
+    // The only NomadFatal thrown inside the try block is `no staged session
+    // matches <id>`, a routine not-found result rather than an internal
+    // failure, so the bare `[nomad] ` prefix is used (matches README
+    // "Exit codes" copy). Future NomadFatal throws here would need to
+    // revisit this prefix logic.
+    console.error(`[nomad] ${err.message}`);
+    process.exitCode = 1;
   } finally {
     releaseLock(handle);
   }

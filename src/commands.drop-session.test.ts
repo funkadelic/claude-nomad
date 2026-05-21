@@ -252,6 +252,40 @@ describe('cmdDropSession (real git temp repo)', () => {
     expect(logSpy.mock.calls).toHaveLength(0);
   });
 
+  it('walks multiple logical dirs and only matches files that exist in each', async () => {
+    // Exercise both directions of the per-logical existsSync check inside a
+    // single cmdDropSession call: one logical contains <id>.jsonl, another
+    // contains a different file. The loop iterates over both and only the
+    // matching path is unstaged. Closes the line-58 branch-coverage gap.
+    stageSession('matching', 'sid-A', '{"role":"user","content":"a"}\n');
+    const otherDir = join(sharedProjects, 'not-matching');
+    mkdirSync(otherDir, { recursive: true });
+    writeFileSync(join(otherDir, 'other-id.jsonl'), '{"role":"user","content":"other"}\n');
+    execFileSync('git', ['add', '-A'], { cwd: repoUnderHome });
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    expect(() => cmdDropSession('sid-A')).not.toThrow();
+    const cached = diffCached();
+    expect(cached).not.toContain('matching/sid-A.jsonl');
+    expect(cached).toContain('not-matching/other-id.jsonl');
+  });
+
+  it('throws NomadFatal `repo not cloned` when REPO_HOME is missing entirely', async () => {
+    // Pre-flight guard at function entry: before lock acquisition, before
+    // any walk, cmdDropSession checks that ~/claude-nomad/ exists. When the
+    // user has installed the CLI elsewhere but never cloned to the canonical
+    // REPO_HOME path, this surfaces a clear NomadFatal rather than letting
+    // downstream readdirSync fail with a confusing ENOENT.
+    rmSync(repoUnderHome, { recursive: true, force: true });
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => cmdDropSession('sid-A')).toThrow(NomadFatal);
+    expect(() => cmdDropSession('sid-A')).toThrow(/repo not cloned/);
+    // No lock should have been acquired (die fires before acquireLock).
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
   it('treats `git ls-files` failures as "not in index" and logs "already absent" without throwing', async () => {
     // Cover isInIndex's catch branch (line 140): when `git ls-files` itself
     // fails (corrupt index, missing .git, EACCES on the index file), the
