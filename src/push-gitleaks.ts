@@ -20,7 +20,7 @@ import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
 import { gitleaksInstallHint } from './push-checks.ts';
-import { freshBackupTs, NomadFatal } from './utils.ts';
+import { NomadFatal, nowTimestamp } from './utils.ts';
 
 /**
  * Subset of gitleaks 8.x JSON report fields the parser consumes. The
@@ -162,7 +162,12 @@ function readGitleaksReport(reportPath: string): Finding[] | null {
 export function runGitleaksScan(): void {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
-  const reportPath = join(cacheDir, `gitleaks-${freshBackupTs(cacheDir)}.json`);
+  // Disambiguate with pid so the lockfile invariant (one concurrent push
+  // per host) is enough to keep the report path unique. The prior
+  // freshBackupTs() call checked for a sibling directory named exactly
+  // <ts>, which never collides with the file `gitleaks-<ts>.json` being
+  // written.
+  const reportPath = join(cacheDir, `gitleaks-${nowTimestamp()}-${process.pid}.json`);
   const tomlPath = join(REPO_HOME, '.gitleaks.toml');
   const args: string[] = [
     'protect',
