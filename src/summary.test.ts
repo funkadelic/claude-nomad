@@ -58,16 +58,19 @@ describe('emitSummary', () => {
   it('diff with zero unmapped emits the clean line via ok()', () => {
     emitSummary('diff', 0);
     expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it('diff with two unmapped emits the unmapped-on-diff line via warn()', () => {
     emitSummary('diff', 2);
     expect(erroredLine()).toBe('⚠︎ summary: 2 unmapped on diff (run nomad doctor to list)');
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   it('push with zero unmapped and zero collisions emits the clean line via ok()', () => {
     emitSummary('push', 0, 0);
     expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it('push with one unmapped and zero collisions emits the unmapped-on-push line via warn()', () => {
@@ -75,6 +78,7 @@ describe('emitSummary', () => {
     expect(erroredLine()).toBe(
       '⚠︎ summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
     );
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   it('push with zero unmapped and two collisions emits the line with the collision count', () => {
@@ -82,6 +86,7 @@ describe('emitSummary', () => {
     expect(erroredLine()).toBe(
       '⚠︎ summary: 0 unmapped on push, 2 collisions (run nomad doctor to list)',
     );
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   it('push with collisions parameter omitted defaults to zero', () => {
@@ -89,6 +94,7 @@ describe('emitSummary', () => {
     expect(erroredLine()).toBe(
       '⚠︎ summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
     );
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   it('emits exactly one output per invocation (no duplicate lines)', () => {
