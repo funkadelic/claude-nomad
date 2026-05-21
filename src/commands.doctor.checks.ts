@@ -47,20 +47,27 @@ function readJsonSafe<T>(path: string, label: string, section: DoctorSection): T
   }
 }
 
-/** Pushes the host identity and the two key path lines (repo and claude-home) with gutter glyphs (info marker for host; presence/absence for paths). */
+/**
+ * Pushes the host identity (info) and the two key path lines (repo and
+ * claude-home) with gutter glyphs. Path presence is reported via warnGlyph
+ * (not failGlyph) so an absent CLAUDE_HOME does not flip sectionFailed to
+ * decorate the Host header with `✘`. The authoritative empty-repo FAIL is
+ * owned by reportRepoState; these two lines remain informational and do
+ * NOT mutate process.exitCode.
+ */
 export function reportHostAndPaths(section: DoctorSection): void {
   addItem(section, `${dim(infoGlyph)} host: ${cyan(HOST)}`);
   addItem(
     section,
-    `${existsSync(REPO_HOME) ? green(okGlyph) : red(failGlyph)} repo: ${blue(REPO_HOME)}`,
+    `${existsSync(REPO_HOME) ? green(okGlyph) : yellow(warnGlyph)} repo: ${blue(REPO_HOME)}`,
   );
   addItem(
     section,
-    `${existsSync(CLAUDE_HOME) ? green(okGlyph) : red(failGlyph)} claude home: ${blue(CLAUDE_HOME)}`,
+    `${existsSync(CLAUDE_HOME) ? green(okGlyph) : yellow(warnGlyph)} claude home: ${blue(CLAUDE_HOME)}`,
   );
 }
 
-/** Pushes the repo-state PASS/WARN/FAIL header derived from classifyRepoState; FAIL signals via process.exitCode. */
+/** Emits the repo-state status line derived from classifyRepoState (okGlyph/warnGlyph/failGlyph). FAIL signals via process.exitCode. */
 export function reportRepoState(section: DoctorSection): void {
   const state = classifyRepoState(REPO_HOME, HOST);
   if (state === 'populated') {
@@ -76,7 +83,7 @@ export function reportRepoState(section: DoctorSection): void {
   }
 }
 
-/** Pushes per-entry PASS/WARN/FAIL for each name in SHARED_LINKS; non-symlink blocks sync and FAILs. */
+/** Emits a per-entry status line for each name in SHARED_LINKS (okGlyph/warnGlyph/failGlyph). A non-symlink blocks sync and FAILs via process.exitCode. */
 export function reportSharedLinks(section: DoctorSection): void {
   for (const name of SHARED_LINKS) {
     const p = join(CLAUDE_HOME, name);
@@ -104,7 +111,7 @@ export function loadBaseSettings(section: DoctorSection): Record<string, unknown
   return readJsonSafe<Record<string, unknown>>(basePath, basePath, section);
 }
 
-/** Loads ~/.claude/settings.json when present and pushes the schema PASS or unknown-keys WARN; returns the parsed object or null. */
+/** Loads ~/.claude/settings.json when present and emits the schema status (okGlyph for known-keys-only, warnGlyph when unknown keys are present); returns the parsed object or null. */
 export function loadAndReportSettings(section: DoctorSection): Record<string, unknown> | null {
   const settingsPath = join(CLAUDE_HOME, 'settings.json');
   if (!existsSync(settingsPath)) return null;
@@ -122,7 +129,7 @@ export function loadAndReportSettings(section: DoctorSection): Record<string, un
   return settings;
 }
 
-/** Pushes the host-override status: PASS, FAIL on drift without a host file (with candidate list), or PASS path when the host file parses. */
+/** Emits the host-override status: okGlyph when no host file is needed (base-only matches settings), failGlyph on drift without a host file (with candidate list), or okGlyph path when the host file parses. */
 export function reportHostOverrides(
   section: DoctorSection,
   base: Record<string, unknown> | null,
@@ -169,7 +176,7 @@ function reportMappedProjects(section: DoctorSection, map: PathMap): void {
   }
 }
 
-/** Scans every host of every project for encodePath collisions; FAILs per collision, PASSes when clean. */
+/** Scans every host of every project for encodePath collisions; emits failGlyph per collision (sets exitCode=1), okGlyph when clean. */
 function reportPathCollisions(section: DoctorSection, map: PathMap): void {
   const seen = new Map<string, string>();
   let collisionCount = 0;
@@ -244,7 +251,7 @@ export function reportNeverSync(section: DoctorSection): void {
   addItem(section, `${dim(infoGlyph)} never-sync items: ${[...NEVER_SYNC].join(', ')}`);
 }
 
-/** Probes for gitleaks on PATH; PASS with version or FAIL with ENOENT vs other error distinction. */
+/** Probes for gitleaks on PATH; emits okGlyph with version, or failGlyph with ENOENT vs other-error distinction (sets exitCode=1). */
 export function reportGitleaksProbe(section: DoctorSection): void {
   try {
     const v = execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -261,7 +268,7 @@ export function reportGitleaksProbe(section: DoctorSection): void {
   }
 }
 
-/** Walks shared/ for nested .git gitlinks; FAIL per gitlink found, PASS when none. */
+/** Walks shared/ for nested .git gitlinks; emits failGlyph per gitlink found (sets exitCode=1), okGlyph when none. */
 export function reportGitlinks(section: DoctorSection): void {
   const sharedDir = join(REPO_HOME, 'shared');
   if (existsSync(sharedDir)) {
@@ -307,6 +314,9 @@ export function reportRebaseClean(section: DoctorSection): void {
       );
     }
   } catch {
-    // Repo missing .git is already surfaced by the repo: MISSING line above.
+    // gitStatusPorcelainZ failure on a missing or non-repo REPO_HOME is
+    // already surfaced by reportHostAndPaths (warnGlyph on the `repo:` line
+    // when the directory is absent) and reportRepoState ('empty' FAIL when
+    // the scaffold is absent). Swallowing here avoids double-reporting.
   }
 }

@@ -11,9 +11,9 @@ import { HOME, UPSTREAM_REPO_SLUG } from './config.ts';
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads
  * the local `package.json.version`, compares it to the latest release tag on
  * the upstream GitHub repo (cached 1h, 3s curl timeout), and emits one of:
- *   - PASS line when local == latest
- *   - WARN line when local < latest
- *   - informational (no prefix) line when local > latest
+ *   - `✓ version: <local> (latest)` when local == latest
+ *   - `⚠︎ version: <local> -> <latest>` when local < latest
+ *   - `ℹ︎ version: <local> (ahead of latest release <latest>)` when local > latest
  * Every failure path (offline, curl missing, non-2xx, malformed JSON, missing
  * `tag_name`, missing/unreadable package.json) is a SILENT skip; this module
  * never sets `process.exitCode` and never writes to stderr.

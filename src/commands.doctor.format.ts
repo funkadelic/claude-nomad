@@ -6,9 +6,9 @@ import { failGlyph, red } from './color.ts';
  * section, then the orchestrator calls `renderDoctor` to emit a Claude Code
  * `/doctor`-style tree (`Header` / `  ├ item` / `  └ last`) on stdout.
  *
- * Color and PASS/WARN/FAIL tokens already live inside the item text; this
- * module never re-colors or re-tokenizes. Sections with zero items are
- * skipped at render time (no empty headers).
+ * Color and status glyphs (okGlyph/warnGlyph/failGlyph/infoGlyph) already
+ * live inside the item text; this module never re-colors or re-tokenizes.
+ * Sections with zero items are skipped at render time (no empty headers).
  *
  * Output goes directly through `console.log` rather than `utils.log` so the
  * `[nomad]` prefix used by `pull` / `push` / `init` does NOT appear in doctor

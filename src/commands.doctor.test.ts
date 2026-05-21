@@ -1193,18 +1193,41 @@ describe('cmdDoctor explicit PASS tokens', () => {
     expect(out).not.toContain(`${okGlyph} remote origin:`);
   });
 
-  it('annotates repo and claude-home paths with MISSING when their directories are absent', async () => {
+  it('annotates absent repo and claude-home paths with the WARN glyph (informational, no exitCode mutation)', async () => {
     // The healthy-host setup is already in place via makeDoctorEnv. Tear down
     // both REPO_HOME (~/claude-nomad) and CLAUDE_HOME (~/.claude) to exercise
     // the falsy branches of the existsSync ternaries inside reportHostAndPaths.
+    // The authoritative empty-repo FAIL (exitCode=1) is reported by
+    // reportRepoState, not by these existsSync lines — those carry only
+    // a warnGlyph cue so sectionFailed does not flip the Host header.
     rmSync(join(env.testHome, 'claude-nomad'), { recursive: true, force: true });
     rmSync(join(env.testHome, '.claude'), { recursive: true, force: true });
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${failGlyph} repo:`);
-    expect(out).toContain(`${failGlyph} claude home:`);
+    expect(out).toContain(`${warnGlyph} repo:`);
+    expect(out).toContain(`${warnGlyph} claude home:`);
+  });
+
+  it('does NOT decorate the Host section header with ✘ when only CLAUDE_HOME is absent', async () => {
+    // Regression guard: a missing ~/.claude/ is informational. reportRepoState
+    // owns the empty-repo FAIL via process.exitCode; reportHostAndPaths must
+    // use warnGlyph (not failGlyph) so sectionFailed stays calm and the Host
+    // header renders without the red `✘ ` prefix despite the missing dir.
+    // populateHealthy() removes CLAUDE.md's symlink target's parent dir later;
+    // we run it first to get an otherwise-healthy host, then drop ~/.claude/.
+    populateHealthy();
+    rmSync(join(env.testHome, '.claude'), { recursive: true, force: true });
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // The claude-home line carries the WARN glyph...
+    expect(out).toContain(`${warnGlyph} claude home:`);
+    // ...and the Host section header is NOT prefixed with the failed-section glyph.
+    expect(out).toMatch(/^Host$/m);
+    expect(out).not.toMatch(/✘ Host/);
   });
 
   it('emits tree-style section headers and bullet prefixes (Claude /doctor style)', async () => {

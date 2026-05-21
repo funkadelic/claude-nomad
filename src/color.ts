@@ -19,13 +19,13 @@ import pc from 'picocolors';
 
 const enabled = pc.isColorSupported;
 
-/** FAIL prefixes and gitlink path-warnings. */
+/** Wraps the FAIL glyph (failGlyph) and gitlink path warnings. */
 export const red = (s: string): string => (enabled ? pc.red(s) : s);
 
-/** WARN prefixes. */
+/** Wraps the WARN glyph (warnGlyph). */
 export const yellow = (s: string): string => (enabled ? pc.yellow(s) : s);
 
-/** PASS / OK status tags. */
+/** Wraps the PASS glyph (okGlyph) and short positive tags. */
 export const green = (s: string): string => (enabled ? pc.green(s) : s);
 
 /** Hostnames and URLs. */
