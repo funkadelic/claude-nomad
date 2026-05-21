@@ -10,7 +10,7 @@ useDefault = true
 description = "claude-nomad: structurally-distinguishable tool-output noise"
 regexes = [
     '''AY[A-Za-z0-9_-]{20,}''',
-    '''[\w-]+:[\w-]+:\d+''',
+    '''[\w./-]+\.[A-Za-z0-9]+:[\w-]+:\d+''',
     '''"id"\s*:\s*"[a-f0-9]{40,64}"''',
     '''key=[a-f0-9]{8,} [\w./-]+\.\w+:\d+''',
 ]

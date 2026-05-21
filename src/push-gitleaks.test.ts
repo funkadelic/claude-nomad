@@ -613,11 +613,11 @@ describe('allowlist regression fixture (D-13)', () => {
     // One staged file per allowlist pattern. Each MUST be suppressed.
     // Sonar issue key: AY + >=20 base64-like chars.
     writeFileSync(join(repoUnderHome, 'sonar.txt'), 'AYabcdefghijklmnopqrst_xyz\n');
-    // gitleaks fingerprint format: word:word:digit.
-    writeFileSync(
-      join(repoUnderHome, 'gl-fingerprint.txt'),
-      'shared/projects/foo:generic-api-key:42\n',
-    );
+    // gitleaks fingerprint format: <file-path-with-extension>:<rule-id>:<line>.
+    // The path component MUST contain a file-extension token; arbitrary
+    // colon-separated alphanumerics (e.g., user:password:port) are not
+    // suppressed by the tightened allowlist regex.
+    writeFileSync(join(repoUnderHome, 'gl-fingerprint.txt'), 'src/foo.ts:generic-api-key:42\n');
     // npm audit advisory hash anchored on JSON id field.
     writeFileSync(
       join(repoUnderHome, 'audit.json'),
@@ -646,12 +646,64 @@ describe('allowlist regression fixture (D-13)', () => {
     expect(msg).toContain(sid);
     expect(msg).toContain(`nomad drop-session ${sid}`);
 
-    // The four allowlist patterns must NOT appear in the FATAL message —
+    // The four allowlist patterns must NOT appear in the FATAL message,
     // they were suppressed inside the gitleaks process before reaching the
     // findings array. No `Also found:` section should be populated by them.
     expect(msg).not.toContain('sonar.txt');
     expect(msg).not.toContain('gl-fingerprint.txt');
     expect(msg).not.toContain('audit.json');
     expect(msg).not.toContain('coverage.txt');
+  });
+
+  it('does not allowlist a credential-shaped colon tuple co-located with a real PAT', async () => {
+    // Regression for the prior broad allowlist regex `[\w-]+:[\w-]+:\d+`,
+    // which matched arbitrary alphanumeric colon-tuples like
+    // user:password:port. The tightened regex requires a file-extension
+    // token in the path component, so credential-shaped strings no longer
+    // suppress co-located real secrets. The session JSONL embeds both a
+    // colon-tuple line (which the old regex would have allowlisted) and a
+    // real PAT-shaped string. The PAT must still fire AND the
+    // colon-tuple line must NOT trigger an allowlist suppression that
+    // hides any other finding on the same line.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const worktreeToml = join(here, '..', '.gitleaks.toml');
+    copyFileSync(worktreeToml, join(repoUnderHome, '.gitleaks.toml'));
+
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repoUnderHome });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
+      cwd: repoUnderHome,
+    });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: repoUnderHome });
+
+    const sessionDir = join(repoUnderHome, 'shared', 'projects', 'foo');
+    mkdirSync(sessionDir, { recursive: true });
+    const sid = 'sid-credentialish-colon-tuple';
+    // The two lines: a credential-shaped colon tuple (no file extension,
+    // so the tightened allowlist must skip it) and a separate line with a
+    // real GitHub PAT. The PAT must surface in the FATAL.
+    writeFileSync(
+      join(sessionDir, `${sid}.jsonl`),
+      [
+        '{"role":"user","text":"db: admin:SuperSecret123:8080"}',
+        '{"role":"assistant","text":"token=ghp_xJZbT3qfV2nLpKR8mYwH4dGtCsW9aE1uF6oA"}',
+        '',
+      ].join('\n'),
+    );
+
+    execFileSync('git', ['add', '-A'], { cwd: repoUnderHome });
+
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    let caught: Error | null = null;
+    try {
+      runGitleaksScan();
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).not.toBeNull();
+    const msg = caught?.message ?? '';
+    // Session-aware FATAL still names the session id and the
+    // drop-session hint because the PAT fired.
+    expect(msg).toContain(sid);
+    expect(msg).toContain(`nomad drop-session ${sid}`);
   });
 });
