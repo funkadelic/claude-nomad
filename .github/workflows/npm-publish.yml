@@ -49,6 +49,13 @@ jobs:
         # is blank after checkout, so npm ci is mandatory.
         run: npm ci
 
+      - name: Verify tarball composition
+        # Belt-and-suspenders: prepublishOnly chains the verifier inside
+        # `npm publish`, but `--ignore-scripts` would bypass it. Running the
+        # verifier as an explicit CI step ensures the whitelist contract holds
+        # even if a future change adds that flag to the publish call.
+        run: node scripts/verify-tarball.cjs
+
       - name: Publish to npm
         # --provenance is belt-and-suspenders: docs say trusted publishing
         # auto-enables provenance, but community reports say the explicit flag
