@@ -95,6 +95,14 @@ export function cmdDropSession(id: string): void {
       console.error(`${prefix}${err.message}`);
       process.exitCode = 1;
     } else {
+      // Defensive escape hatch: only fires if a non-NomadFatal error
+      // escapes the try block. No production code path inside the block
+      // throws a non-NomadFatal (file-system helpers wrap in NomadFatal,
+      // execFileSync failures are recoverable via the helpers' own
+      // catches), so this rethrow is unreachable at runtime. Excluded
+      // from coverage rather than contorting tests to fake an impossible
+      // state.
+      /* c8 ignore next */
       throw err;
     }
   } finally {

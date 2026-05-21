@@ -71,6 +71,10 @@ export function partitionFindings(findings: Finding[]): {
       continue;
     }
     const sid = m[1];
+    // Defensive type narrowing: the regex guarantees group 1 is captured
+    // when m !== null, so this branch is unreachable at runtime. Excluded
+    // from coverage rather than contorting tests to fake an impossible state.
+    /* c8 ignore next */
     if (sid === undefined) continue;
     let counts = bySession.get(sid);
     if (counts === undefined) {
