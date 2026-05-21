@@ -313,7 +313,9 @@ describe('nomad.ts --version dispatcher', () => {
     await import('./nomad.ts');
     // Assert one of the captured log calls is a single bare-semver string.
     const printed = logSpy.mock.calls.map((args: unknown[]) => args.map(String).join(' '));
-    const matched = printed.find((line) => /^\d+\.\d+\.\d+$/.test(line));
+    const matched = printed.find((line) =>
+      /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(line),
+    );
     expect(matched).toBeDefined();
     expect(exitSpy).not.toHaveBeenCalled();
   });
