@@ -1,0 +1,61 @@
+name: Gitleaks
+permissions:
+  contents: read
+
+# PR-side secret scan. The local `nomad push` pipeline is the primary defense,
+# but PRs landing via the GitHub web UI, forks, or direct branch pushes never
+# touch that pipeline. This workflow closes the gap by scanning every PR's
+# working tree with the same gitleaks version and allowlist used locally.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full PR working tree only; no need for history since we scan with
+          # --no-git. fetch-depth 1 keeps the checkout cheap.
+          fetch-depth: 1
+
+      - name: Install gitleaks
+        env:
+          # Pinned with SHA256 verification; matches tests.yml's pattern.
+          # Bump in lockstep with tests.yml when upgrading.
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -fsSL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            -o /tmp/gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan working tree
+        run: |
+          # --no-git: scan the working tree directly. PR contents are what we
+          # need to gate on; history is already protected by the same check
+          # having run on each prior PR.
+          # --config: honors the repo's tool-output allowlist so structurally-
+          # distinguishable noise (Sonar issue keys, gitleaks fingerprints,
+          # npm audit JSON ids, coverage line-keys) doesn't false-fire.
+          # --redact: keep findings from echoing the secret value back into
+          # CI logs (defense in depth for a public repo).
+          # --exit-code 1 is the default but pin explicitly so a future
+          # gitleaks default change can't silently downgrade the gate.
+          gitleaks detect \
+            --no-git \
+            --source . \
+            --config .gitleaks.toml \
+            --redact \
+            --exit-code 1
