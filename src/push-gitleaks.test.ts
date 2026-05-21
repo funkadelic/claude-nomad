@@ -17,30 +17,30 @@ import {
 
 import type * as cpModule from 'node:child_process';
 
-// Phase 3 D-02 baseline: gitleaks is a required dependency for this project's
-// safety pipeline (`cmdPush` probes for it at top-of-flow). The D-13
-// regression fixture (allowlist behavior) is an integration test against the
-// real binary because the allowlist semantics are enforced inside the
-// gitleaks process, not in nomad code. Hard-fail the whole test file when
-// gitleaks is absent rather than silently skip. The allowlist acceptance
-// criterion must always run on CI.
+// gitleaks is a required dependency for this project's safety pipeline
+// (`cmdPush` probes for it at top-of-flow). The allowlist regression
+// fixture is an integration test against the real binary because the
+// allowlist semantics are enforced inside the gitleaks process, not in
+// nomad code. Hard-fail the whole test file when gitleaks is absent
+// rather than silently skip. The allowlist acceptance criterion must
+// always run on CI.
 beforeAll(() => {
   try {
     execFileSync('gitleaks', ['version'], { stdio: 'ignore' });
   } catch {
     throw new Error(
-      'gitleaks binary required for src/push-gitleaks.test.ts; install per Phase 3 D-02 install-hint or run the install.sh equivalent on this host.',
+      'gitleaks binary required for src/push-gitleaks.test.ts; install via install.sh or the gitleaks release page (https://github.com/gitleaks/gitleaks/releases).',
     );
   }
 });
 
-// Mock-based execFileSync coverage for runGitleaksScan after its Phase 5
-// D-04 split out of push-checks.ts. The four cases here (clean scan,
-// status-1 with stderr, status-1 with stdout-only, ENOENT install hint)
-// previously lived in push-checks.test.ts under the same describe; they
-// move verbatim with the dynamic import retargeted at ./push-gitleaks.ts.
-// The Wave 2 plan extends this file with parser, FATAL builder,
-// mixed-section, multi-session, and regression-fixture tests.
+// Mock-based execFileSync coverage for runGitleaksScan after its split
+// out of push-checks.ts. The four cases here (clean scan, status-1 with
+// stderr, status-1 with stdout-only, ENOENT install hint) previously
+// lived in push-checks.test.ts under the same describe; they move
+// verbatim with the dynamic import retargeted at ./push-gitleaks.ts.
+// This file also extends to parser, FATAL builder, mixed-section,
+// multi-session, and allowlist-regression coverage.
 describe('runGitleaksScan (mocked child_process)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -239,11 +239,10 @@ describe('runGitleaksScan (mocked child_process)', () => {
 // groups findings by session id with per-RuleID counts; non-session paths
 // fall through into `other`. The builder (buildSessionAwareFatal) renders
 // the multi-section FATAL message. These are exported helpers consumed by
-// runGitleaksScan in its non-ENOENT catch branch (Phase 5 Wave 2 work).
+// runGitleaksScan in its non-ENOENT catch branch.
 //
 // Local-shim types mirror the expected signatures so the dynamic import
-// destructures cleanly under @typescript-eslint/no-unsafe-* during the
-// RED phase (when the production exports do not yet exist). They are not
+// destructures cleanly under @typescript-eslint/no-unsafe-*. They are not
 // the contract; the production types in push-gitleaks.ts are.
 type Finding = {
   RuleID: string;
@@ -450,11 +449,11 @@ describe('buildSessionAwareFatal (pure)', () => {
   });
 });
 
-// --config wiring verifies the D-12 conditional flag: pass
-// --config <REPO_HOME>/.gitleaks.toml when the file exists; omit silently
-// when missing (graceful fallback for fresh clones or hosts that have not
-// yet run `nomad update`). Captures the argv passed to mocked execFileSync
-// so the wiring is observable without invoking real gitleaks.
+// --config wiring: pass --config <REPO_HOME>/.gitleaks.toml when the file
+// exists; omit silently when missing (graceful fallback for fresh clones
+// or hosts that have not yet run `nomad update`). Captures the argv
+// passed to mocked execFileSync so the wiring is observable without
+// invoking real gitleaks.
 describe('--config wiring (mocked child_process)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -518,7 +517,7 @@ describe('--config wiring (mocked child_process)', () => {
     expect(value?.endsWith('.gitleaks.toml')).toBe(true);
   });
 
-  it('omits --config when the toml is missing (D-12 graceful skip)', async () => {
+  it('omits --config when the toml is missing (graceful skip)', async () => {
     // Do NOT create the toml. existsSync at the temp REPO_HOME returns false
     // → runGitleaksScan must invoke gitleaks WITHOUT the --config flag.
     vi.doMock('node:child_process', async (importOriginal) => {
@@ -543,16 +542,16 @@ describe('--config wiring (mocked child_process)', () => {
   });
 });
 
-// D-13 regression fixture: real-gitleaks integration test. Builds a temp
-// git repo containing one synthetic file per allowlist pattern plus one
-// real-looking ghp_<36> PAT, runs the real gitleaks binary (no mock) against
-// it, and asserts only the PAT fires. The toml comes from the worktree's
-// committed .gitleaks.toml (read at test setup time) so the test exercises
-// the actual production allowlist. This is the SPEC-binding ALLOWLIST test:
-// future PRs that widen the allowlist to match real-secret formats would
-// regress it. Hard-fails the file when gitleaks is missing (beforeAll above)
-// rather than silently skipping.
-describe('allowlist regression fixture (D-13)', () => {
+// Allowlist regression fixture: real-gitleaks integration test. Builds a
+// temp git repo containing one synthetic file per allowlist pattern plus
+// one real-looking ghp_<36> PAT, runs the real gitleaks binary (no mock)
+// against it, and asserts only the PAT fires. The toml comes from the
+// worktree's committed .gitleaks.toml (read at test setup time) so the
+// test exercises the actual production allowlist. Future PRs that widen
+// the allowlist to match real-secret formats would regress this test.
+// Hard-fails the file when gitleaks is missing (beforeAll above) rather
+// than silently skipping.
+describe('allowlist regression fixture', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let testHome: string;

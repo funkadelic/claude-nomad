@@ -1,7 +1,7 @@
 /**
  * Owns the staged gitleaks scan invoked at the end of `cmdPush`.
  *
- * Lives in its own module (Phase 5 D-04 split from `push-checks.ts`) so the
+ * Lives in its own module (split from `push-checks.ts`) so the
  * session-aware FATAL builder (gitleaks JSON parser + per-session message
  * composer) has a clean home while keeping every file under the 200-line
  * cap. `findGitlinks`, `probeGitleaks`, `gitleaksInstallHint`, and
@@ -148,7 +148,7 @@ function readGitleaksReport(reportPath: string): Finding[] | null {
  * and failure paths.
  *
  * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
- * exists at call time (Phase 5 D-12). The allowlist suppresses
+ * exists at call time. The allowlist suppresses
  * structurally-distinguishable tool-output noise (Sonar issue keys,
  * gitleaks fingerprints, npm audit JSON id-field hashes, coverage line-keys)
  * without weakening real-secret detection. Missing toml = silent fallback

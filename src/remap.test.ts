@@ -375,11 +375,11 @@ describe('remapPush dry-run and unmapped count', () => {
   });
 });
 
-// Covers SRCFILTER (D-14..D-17): remapPush copies only top-level *.jsonl
-// files at depth 0; non-jsonl files at depth 0 are skipped with a log line;
-// subdirectory contents traverse unfiltered; the cpSync source-root case is
-// allowed explicitly; remapPull stays unfiltered (no regression).
-describe('remapPush source-side filter (SRCFILTER)', () => {
+// remapPush copies only top-level *.jsonl files at depth 0; non-jsonl
+// files at depth 0 are skipped with a log line; subdirectory contents
+// traverse unfiltered; the cpSync source-root case is allowed explicitly;
+// remapPull stays unfiltered (no regression).
+describe('remapPush source-side filter', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let testHome: string;
@@ -498,7 +498,7 @@ describe('remapPush source-side filter (SRCFILTER)', () => {
   });
 
   it('does not log a spurious skip line for the cpSync source-root case', async () => {
-    // D-17 / Pitfall 1: cpSync invokes the filter on srcPath === src first.
+    // Pitfall 1: cpSync invokes the filter on srcPath === src first.
     // The callback must return true unconditionally for that case (relative
     // path is the empty string). A naive implementation that splits the
     // empty rel into [''] and applies the depth-0 jsonl-only check would
@@ -533,10 +533,10 @@ describe('remapPush source-side filter (SRCFILTER)', () => {
   });
 
   it('remapPull stays unfiltered: non-jsonl files in shared/projects/<logical>/ copy to local', async () => {
-    // Regression guard for D-14: only remapPush gains the source-side
-    // filter. remapPull keeps the unfiltered copyDir because the repo
-    // side is already curated by the push gate. A future PR that
-    // applies copyDirJsonlOnly symmetrically would break this test.
+    // Regression guard: only remapPush gains the source-side filter.
+    // remapPull keeps the unfiltered copyDir because the repo side is
+    // already curated by the push gate. A future PR that applies
+    // copyDirJsonlOnly symmetrically would break this test.
     mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
     writeFileSync(join(sharedProjects, 'foo', 'sid-A.txt'), 'curated\n');
     writeFileSync(

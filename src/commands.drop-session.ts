@@ -7,27 +7,26 @@ import { acquireLock, die, log, NomadFatal, releaseLock } from './utils.ts';
 
 /**
  * Surgical removal of a contaminated session from the staged tree of
- * `~/claude-nomad/`. Walks `shared/projects/<logical>/<id>.jsonl`
- * (top-level only, per D-06), classifies each match via
- * `git ls-files --error-unmatch`, and unstages with the appropriate
- * primitive (D-07):
+ * `~/claude-nomad/`. Walks `shared/projects/<logical>/<id>.jsonl` at the
+ * top level only, classifies each match via `git ls-files --error-unmatch`,
+ * and unstages with the appropriate primitive:
  *
  *   - tracked-in-HEAD  -> `git restore --staged --worktree -- <rel>`
  *   - newly-staged     -> `git rm --cached -f -- <rel>`
  *
- * Idempotent (Pitfall 7): files that are not in the index at all are
- * skipped silently rather than treated as errors. Exits 0 on any drop,
- * including an idempotent re-run that finds the matches already absent.
- * Exits 1 with `[nomad] no staged session matches <id>` only when no
+ * Idempotent: files that are not in the index at all are skipped silently
+ * rather than treated as errors. Exits 0 on any drop, including an
+ * idempotent re-run that finds the matches already absent. Exits 1 with
+ * `[nomad] no staged session matches <id>` only when no
  * `shared/projects/<logical>/<id>.jsonl` exists at all in the shared tree.
  *
  * Defense-in-depth: the id is validated against the same allowlist regex
  * used in `src/resume.ts` before any path composition. argv-array form
- * for every git invocation (PUSH-04 invariant).
+ * for every git invocation.
  *
- * Per D-09, NEVER touches `~/.claude/projects/<encoded>/<id>.jsonl`. The
- * local file is preserved so it can race-safely coexist with active
- * Claude Code writers; rotate-and-scrub of the local copy is the user's
+ * NEVER touches `~/.claude/projects/<encoded>/<id>.jsonl`. The local file
+ * is preserved so it can race-safely coexist with active Claude Code
+ * writers; rotate-and-scrub of the local copy is the user's
  * responsibility.
  *
  * @param id Session id (filename minus `.jsonl`). Must match `[A-Za-z0-9_-]+`

@@ -2,11 +2,11 @@
  * Reusable helpers for push-boundary safety: gitlink walker, gitleaks
  * presence probe, and rebase-before-push.
  *
- * The staged gitleaks scan lives in `./push-gitleaks.ts` (Phase 5 D-04
- * split) so the upcoming session-aware FATAL builder has its own module
- * under the 200-line cap. `gitleaksInstallHint` stays here because both
- * `probeGitleaks` (top-of-flow) and `runGitleaksScan` (mid-flow) need the
- * platform-aware install scaffold on ENOENT.
+ * The staged gitleaks scan lives in `./push-gitleaks.ts` so the
+ * session-aware FATAL builder has its own module under the 200-line cap.
+ * `gitleaksInstallHint` stays here because both `probeGitleaks`
+ * (top-of-flow) and `runGitleaksScan` (mid-flow) need the platform-aware
+ * install scaffold on ENOENT.
  *
  * All execFileSync-backed helpers use argv-array form with
  * `stdio: ['ignore', 'pipe', 'pipe']` (no shell). Same shape as
@@ -115,8 +115,8 @@ export function findGitlinks(dir: string): string[] {
  * Used by `cmdPush` (top-of-flow probe) and `cmdDoctor` (read-only).
  *
  * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
- * exists at call time (Phase 5 D-12). `gitleaks version` ignores the flag
- * empirically on 8.30.1, so the wiring here is conservative: symmetric with
+ * exists at call time. `gitleaks version` ignores the flag empirically on
+ * 8.30.1, so the wiring here is conservative: symmetric with
  * `runGitleaksScan` and surfaces a malformed toml early if a future gitleaks
  * version starts parsing the config on the `version` subcommand. When the
  * toml is missing (e.g., fresh clone predating the allowlist) the flag is

@@ -506,7 +506,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
   });
 
   it('gitleaks detection on a session JSONL -> FATAL names the session id and drop-session hint; lock released', async () => {
-    // SESSAWARE end-to-end: runGitleaksScan throws a session-aware
+    // Session-aware end-to-end: runGitleaksScan throws a session-aware
     // NomadFatal naming a synthetic session id + drop-session hint;
     // cmdPush's catch block routes the message through console.error with
     // the [nomad] FATAL: prefix, sets exitCode=1, and the finally block

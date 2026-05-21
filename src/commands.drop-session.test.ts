@@ -171,7 +171,7 @@ describe('cmdDropSession (real git temp repo)', () => {
     expect(readFileSync(path, 'utf8')).toBe('{"v":"committed"}\n');
   });
 
-  it('does NOT touch the local ~/.claude/projects/<encoded>/<id>.jsonl file (D-09)', async () => {
+  it('does NOT touch the local ~/.claude/projects/<encoded>/<id>.jsonl file', async () => {
     // SPEC acceptance (b): the local file under CLAUDE_HOME must be byte-
     // identical before and after the drop.
     stageSession('foo', 'sid-A', '{"role":"user","content":"hi"}\n');
