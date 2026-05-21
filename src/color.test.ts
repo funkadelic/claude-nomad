@@ -134,4 +134,79 @@ describe('color helpers (src/color.ts)', () => {
     ).toString();
     expect(got).toBe('X,X,X,X,X,X,X');
   });
+
+  it('in-process: okGlyph and failGlyph are unpadded when WSL_DISTRO_NAME is unset', async () => {
+    // Exercise the falsy branch of the WSL pad ternary in v8's instrumentation
+    // so Codecov sees both directions covered. vi.resetModules() forces a
+    // fresh module evaluation that re-reads the env at top-level.
+    const originalWsl = process.env.WSL_DISTRO_NAME;
+    delete process.env.WSL_DISTRO_NAME;
+    try {
+      vi.resetModules();
+      const { okGlyph, failGlyph } = await import('./color.ts');
+      expect(okGlyph).toBe('✓');
+      expect(failGlyph).toBe('✗');
+    } finally {
+      if (originalWsl === undefined) delete process.env.WSL_DISTRO_NAME;
+      else process.env.WSL_DISTRO_NAME = originalWsl;
+    }
+  });
+
+  it('in-process: okGlyph and failGlyph are padded when WSL_DISTRO_NAME is set', async () => {
+    // Mirror of the falsy-branch test for the truthy WSL path. The pad is a
+    // single literal space so a future refactor can pin both glyphs at once.
+    const originalWsl = process.env.WSL_DISTRO_NAME;
+    process.env.WSL_DISTRO_NAME = 'demo';
+    try {
+      vi.resetModules();
+      const { okGlyph, failGlyph } = await import('./color.ts');
+      expect(okGlyph).toBe('✓ ');
+      expect(failGlyph).toBe('✗ ');
+    } finally {
+      if (originalWsl === undefined) delete process.env.WSL_DISTRO_NAME;
+      else process.env.WSL_DISTRO_NAME = originalWsl;
+    }
+  });
+
+  it('sub-process probe: okGlyph and failGlyph are unpadded when WSL_DISTRO_NAME is unset (non-WSL)', () => {
+    // Module-load-time conditional: `okGlyph` / `failGlyph` carry a trailing
+    // space ONLY when `WSL_DISTRO_NAME` is set. Native Linux / macOS terminals
+    // render every glyph at 1 column, so no pad is needed. This test exercises
+    // the falsy branch of the ternary that the in-process WSL test runner
+    // cannot reach (the env var is always set in WSL invocations).
+    const env = { ...process.env };
+    delete env.WSL_DISTRO_NAME;
+    delete env.NO_COLOR;
+    delete env.FORCE_COLOR;
+    const script = `
+      import { okGlyph, failGlyph } from ${JSON.stringify(COLOR_TS)};
+      process.stdout.write(JSON.stringify({ ok: okGlyph, fail: failGlyph }));
+    `;
+    const got = execFileSync(
+      'node',
+      ['--experimental-strip-types', '--input-type=module', '-e', script],
+      { env, stdio: ['ignore', 'pipe', 'pipe'] },
+    ).toString();
+    expect(JSON.parse(got)).toEqual({ ok: '✓', fail: '✗' });
+  });
+
+  it('sub-process probe: okGlyph and failGlyph are padded when WSL_DISTRO_NAME is set (WSL)', () => {
+    // Mirrors the test above for the truthy branch. Asserting both directions
+    // explicitly so a future refactor that breaks the WSL detection cannot
+    // silently regress the alignment fix.
+    const env = { ...process.env };
+    env.WSL_DISTRO_NAME = 'demo';
+    delete env.NO_COLOR;
+    delete env.FORCE_COLOR;
+    const script = `
+      import { okGlyph, failGlyph } from ${JSON.stringify(COLOR_TS)};
+      process.stdout.write(JSON.stringify({ ok: okGlyph, fail: failGlyph }));
+    `;
+    const got = execFileSync(
+      'node',
+      ['--experimental-strip-types', '--input-type=module', '-e', script],
+      { env, stdio: ['ignore', 'pipe', 'pipe'] },
+    ).toString();
+    expect(JSON.parse(got)).toEqual({ ok: '✓ ', fail: '✗ ' });
+  });
 });
