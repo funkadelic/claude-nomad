@@ -56,6 +56,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./push-checks.ts');
+    vi.doUnmock('./push-gitleaks.ts');
     vi.doUnmock('./remap.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
@@ -151,6 +152,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
+    }));
+    vi.doMock('./push-gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
     vi.doMock('./remap.ts', () => ({
@@ -180,6 +183,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
+    }));
+    vi.doMock('./push-gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
     vi.doMock('./remap.ts', () => ({
@@ -214,6 +219,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
+    }));
+    vi.doMock('./push-gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(() => {
         throw new TypeError('synthetic non-NomadFatal');
       }),

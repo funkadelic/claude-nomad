@@ -59,6 +59,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./push-checks.ts');
+    vi.doUnmock('./push-gitleaks.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('node:child_process');
     process.exitCode = 0;
@@ -94,9 +95,11 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => []),
-        runGitleaksScan: runGitleaksScanMock,
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: runGitleaksScanMock,
+    }));
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
@@ -132,11 +135,13 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           );
         }),
         findGitlinks: vi.fn(() => []),
-        runGitleaksScan: vi.fn(() => {
-          /* no-op success */
-        }),
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(() => {
+        /* no-op success */
+      }),
+    }));
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
     expect(process.exitCode).toBe(1);
@@ -164,11 +169,13 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => []),
-        runGitleaksScan: vi.fn(() => {
-          /* no-op success */
-        }),
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(() => {
+        /* no-op success */
+      }),
+    }));
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
     expect(process.exitCode).toBe(1);
@@ -189,11 +196,13 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => [hitPath]),
-        runGitleaksScan: vi.fn(() => {
-          /* no-op success */
-        }),
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(() => {
+        /* no-op success */
+      }),
+    }));
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
     expect(process.exitCode).toBe(1);
@@ -208,7 +217,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
   it('Test 5: gitleaks detection on scan -> FATAL; lock released', async () => {
     vi.doMock('./push-checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
-      const { NomadFatal } = await import('./utils.ts');
       return {
         ...actual,
         probeGitleaks: vi.fn(() => 'v8.18.2'),
@@ -216,6 +224,11 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./push-gitleaks.ts', async () => {
+      const { NomadFatal } = await import('./utils.ts');
+      return {
         runGitleaksScan: vi.fn(() => {
           throw new NomadFatal(
             'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry',
@@ -262,11 +275,13 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => []),
-        runGitleaksScan: vi.fn(() => {
-          /* no-op success */
-        }),
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(() => {
+        /* no-op success */
+      }),
+    }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 1, collisions: 0 })),
@@ -308,11 +323,13 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => []),
-        runGitleaksScan: vi.fn(() => {
-          /* no-op success */
-        }),
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(() => {
+        /* no-op success */
+      }),
+    }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
@@ -359,9 +376,11 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => []),
-        runGitleaksScan: runGitleaksScanMock,
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: runGitleaksScanMock,
+    }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: remapPushMock,
@@ -409,11 +428,13 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => []),
-        runGitleaksScan: vi.fn(() => {
-          /* no-op success */
-        }),
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(() => {
+        /* no-op success */
+      }),
+    }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 3, collisions: 0 })),
@@ -466,11 +487,13 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           /* no-op success */
         }),
         findGitlinks: vi.fn(() => [hit1, hit2]),
-        runGitleaksScan: vi.fn(() => {
-          /* no-op success */
-        }),
       };
     });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(() => {
+        /* no-op success */
+      }),
+    }));
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
     expect(process.exitCode).toBe(1);
