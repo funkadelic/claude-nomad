@@ -37,7 +37,7 @@ import { acquireLock, die, log, NomadFatal, releaseLock } from './utils.ts';
  *         which routes it to stderr and sets `process.exitCode = 1`.
  */
 export function cmdDropSession(id: string): void {
-  if (!/^[A-Za-z0-9_-]+$/.test(id) || id.length === 0 || id.length > 128) {
+  if (id.length === 0 || id.length > 128 || !/^[A-Za-z0-9_-]+$/.test(id)) {
     console.error(`[nomad] FATAL: invalid session id: ${id}`);
     process.exit(1);
   }
@@ -48,11 +48,10 @@ export function cmdDropSession(id: string): void {
   try {
     const repoProjects = join(REPO_HOME, 'shared', 'projects');
     if (!existsSync(repoProjects)) {
-      console.error(`[nomad] no staged session matches ${id}`);
-      process.exit(1);
+      throw new NomadFatal(`no staged session matches ${id}`);
     }
-    // Top-level walk only (D-06): for each `shared/projects/<logical>/`
-    // child, check whether `<id>.jsonl` exists. No descent into
+    // Top-level walk only: for each `shared/projects/<logical>/` child,
+    // check whether `<id>.jsonl` exists. No descent into
     // subagents/memory/tool-results subdirectories.
     const matches: string[] = [];
     for (const logical of readdirSync(repoProjects)) {
@@ -60,8 +59,7 @@ export function cmdDropSession(id: string): void {
       if (existsSync(candidate)) matches.push(candidate);
     }
     if (matches.length === 0) {
-      console.error(`[nomad] no staged session matches ${id}`);
-      process.exit(1);
+      throw new NomadFatal(`no staged session matches ${id}`);
     }
     for (const m of matches) {
       const rel = relative(REPO_HOME, m);
@@ -88,7 +86,14 @@ export function cmdDropSession(id: string): void {
     }
   } catch (err) {
     if (err instanceof NomadFatal) {
-      console.error(`[nomad] FATAL: ${err.message}`);
+      // The "no staged session matches <id>" path is a routine
+      // not-found result, not an internal failure, so it omits the
+      // FATAL: prefix to keep the user-facing wording stable
+      // (matches README "Exit codes" copy and the existing test).
+      const prefix = err.message.startsWith('no staged session matches ')
+        ? '[nomad] '
+        : '[nomad] FATAL: ';
+      console.error(`${prefix}${err.message}`);
       process.exitCode = 1;
     } else {
       throw err;

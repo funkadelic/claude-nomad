@@ -205,12 +205,32 @@ describe('cmdDropSession (real git temp repo)', () => {
     expect(errOutput()).not.toMatch(/FATAL/);
   });
 
-  it('exits 1 with `[nomad] no staged session matches <id>` when no match exists', async () => {
-    // SPEC acceptance (d): non-existent id.
+  it('exits 1 with `[nomad] no staged session matches <id>` when no match exists and releases the lock', async () => {
+    // SPEC acceptance (d): non-existent id. The no-match arm must throw
+    // NomadFatal so the `finally { releaseLock }` runs; process.exit(1) on
+    // that arm would terminate synchronously and leak the lockfile.
     const { cmdDropSession } = await import('./commands.drop-session.ts');
-    expect(() => cmdDropSession('sid-X')).toThrow('exit:1');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    cmdDropSession('sid-X');
+    expect(process.exitCode).toBe(1);
     expect(errOutput()).toContain('[nomad] no staged session matches sid-X');
+    expect(errOutput()).not.toContain('FATAL');
+    // Lock release on the throw path. The lockfile must NOT exist after the
+    // call: this is the load-bearing assertion that distinguishes the
+    // throw-and-unwind fix from the prior process.exit(1) leak.
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('releases the lock when shared/projects/ is missing entirely', async () => {
+    // The earlier no-match arm fires when shared/projects/ has at least one
+    // logical but no jsonl matches the id. This test exercises the other
+    // throw path: shared/projects/ does not exist at all. Both arms must
+    // unwind via NomadFatal so `finally { releaseLock }` runs.
+    rmSync(sharedProjects, { recursive: true, force: true });
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-Y');
+    expect(process.exitCode).toBe(1);
+    expect(errOutput()).toContain('[nomad] no staged session matches sid-Y');
+    expect(existsSync(lockPath)).toBe(false);
   });
 
   it('exits 0 on lock contention and emits `another nomad drop-session running, skipping`', async () => {
