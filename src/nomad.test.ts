@@ -273,3 +273,57 @@ describe('nomad.ts push dispatcher', () => {
     );
   });
 });
+
+describe('nomad.ts --version dispatcher', () => {
+  // Mirrors the nomad.ts push dispatcher block above: argv-mock +
+  // vi.resetModules + exitSpy. Adds a logSpy so the bare-semver assertion can
+  // read the captured stdout. No commands.* module needs mocking here because
+  // the --version arm reads `pkg.version` synchronously and does not dispatch
+  // to a command module.
+  let originalHome: string | undefined;
+  let originalArgv: string[];
+  let exitSpy: MockInstance<(code?: string | number | null) => never>;
+  let logSpy: MockInstance<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalArgv = process.argv;
+    process.env.HOME = '/tmp';
+    vi.resetModules();
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+      throw new Error(`exit:${String(code)}`);
+    });
+    logSpy = vi.spyOn(console, 'log').mockImplementation((..._args: unknown[]) => {
+      /* captured for assertion */
+    });
+    vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    process.argv = originalArgv;
+  });
+
+  it('prints bare semver and exits 0 for `nomad --version`', async () => {
+    process.argv = ['node', 'nomad.ts', '--version'];
+    await import('./nomad.ts');
+    // Assert one of the captured log calls is a single bare-semver string.
+    const printed = logSpy.mock.calls.map((args: unknown[]) => args.map(String).join(' '));
+    const matched = printed.find((line) =>
+      /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(line),
+    );
+    expect(matched).toBeDefined();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects `nomad --version extra-arg` with the canonical usage line and exitCode=1', async () => {
+    process.argv = ['node', 'nomad.ts', '--version', 'extra-arg'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad --version'));
+  });
+});

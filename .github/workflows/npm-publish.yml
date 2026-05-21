@@ -1,0 +1,117 @@
+# Publishes claude-nomad to npm via OIDC trusted publishing on every GitHub
+# Release event. Bootstrap procedure (one-time, maintainer-only) lives at
+# .planning/phases/08-npm-publish-bin-distribution/08-02-BOOTSTRAP.md.
+# This workflow is INERT until the maintainer (a) does a first manual publish
+# to reserve the package name and (b) configures trusted-publisher rules at
+# https://www.npmjs.com/package/claude-nomad/access.
+
+name: npm-publish
+
+on:
+  release:
+    types: [published]
+
+# contents: read is the minimum needed for actions/checkout to read the tag's
+# tree. id-token: write is scoped to the publish job only (smoke-test reads
+# from the public registry and does not need to mint an OIDC token).
+permissions:
+  contents: read
+
+# Two simultaneous publishes for the same tag would race against the npm
+# registry; cancel-in-progress: false ensures the first wins and the second
+# errors cleanly rather than half-publishing both.
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Skip prereleases: release-please cuts full releases only, and the smoke
+    # test asserts `nomad --version` matches the tag's bare semver. A manually
+    # cut prerelease (e.g. v0.16.3-rc.1) would publish a tag whose suffix is
+    # not reflected in package.json, breaking the smoke test by design.
+    if: ${{ !github.event.repository.private && !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # id-token: write enables OIDC trusted publishing (npm validates the GitHub
+    # OIDC claim against the trusted-publisher rule on the package's /access
+    # page, no long-lived registry credentials required). Scoped to this job
+    # only so smoke-test cannot mint an OIDC token.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        # No git operations after checkout; drop the credential so a
+        # downstream step or dep cannot read it.
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        # registry-url writes the .npmrc that OIDC token resolution depends on.
+        # Without it, the publish step authenticates against the default
+        # registry without the OIDC audience and fails.
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install deps
+        # prepublishOnly fires inside `npm publish` and runs lint + typecheck +
+        # test + verify-tarball, all of which need devDependencies. The runner
+        # is blank after checkout, so npm ci is mandatory.
+        run: npm ci
+
+      - name: Verify tarball composition
+        # Belt-and-suspenders: prepublishOnly chains the verifier inside
+        # `npm publish`, but `--ignore-scripts` would bypass it. Running the
+        # verifier as an explicit CI step ensures the whitelist contract holds
+        # even if a future change adds that flag to the publish call.
+        run: node scripts/verify-tarball.cjs
+
+      - name: Publish to npm
+        # --provenance is belt-and-suspenders: docs say trusted publishing
+        # auto-enables provenance, but community reports say the explicit flag
+        # is still needed in practice. --access public is required for the
+        # first publish of an unscoped package and is harmless on later
+        # publishes.
+        run: npm publish --provenance --access public
+
+  smoke-test:
+    needs: publish
+    # Mirror the publish gate: prereleases are out of contract, so no install
+    # attempt should fire against them.
+    if: ${{ !github.event.repository.private && !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set up Node 24
+        # No registry-url needed: smoke-test installs from the default npm
+        # registry. Only publishing requires the OIDC-aware .npmrc.
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '24'
+
+      - name: Install just-published version
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        # release-please creates tag_name as `v0.16.2`; package.json version
+        # is bare semver `0.16.2`. Strip the leading `v` via shell parameter
+        # expansion so the global install resolves the just-published version.
+        run: npm i -g "claude-nomad@${VERSION#v}"
+
+      - name: Verify --version output matches published tag
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        # Strict-equality assertion: nomad --version prints bare semver to
+        # stdout; if it ever drifts (returns `v0.16.2`, or adds a prefix), the
+        # workflow fails loudly rather than silently passing.
+        run: |
+          set -euo pipefail
+          expected="${VERSION#v}"
+          actual="$(nomad --version)"
+          if [ "$actual" != "$expected" ]; then
+            echo "FAIL: nomad --version returned '$actual', expected '$expected'" >&2
+            exit 1
+          fi
+          echo "OK: nomad --version = $actual"

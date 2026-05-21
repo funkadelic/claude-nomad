@@ -46,12 +46,19 @@ Two things it does that ad-hoc dotfiles syncing can't:
 If you already have a private claude-nomad mirror (see [Setup](#setup) for the one-time bootstrap), adding a new host is three steps:
 
 ```bash
-git clone git@github.com:you/claude-nomad.git ~/claude-nomad
-cd ~/claude-nomad && ./install.sh
+npm i -g claude-nomad
+```
 
-# Add to ~/.zshrc or ~/.bashrc (install.sh prints the alias line):
+```bash
+# Clone your private mirror so nomad has a repo to sync into.
+git clone git@github.com:you/claude-nomad.git ~/claude-nomad
+
+# Add to ~/.zshrc or ~/.bashrc:
 export NOMAD_HOST=<your-host-label>
-alias nomad='tsx ~/claude-nomad/src/nomad.ts'
+
+# Optional: developers running against an alternate checkout can point
+# nomad at it via NOMAD_REPO. Default is ~/claude-nomad/.
+# export NOMAD_REPO=/path/to/repo
 ```
 
 Then the everyday loop:
@@ -71,7 +78,6 @@ claude-nomad is a **tool**, not a config store. You maintain a separate **privat
 ```
 public funkadelic/claude-nomad          your private you/claude-nomad
   ├── src/         (the CLI)              ├── src/         (copy of the CLI)
-  ├── install.sh                          ├── install.sh
   ├── package.json                        ├── package.json
   └── ...                                 ├── ...
                                           ├── shared/      (your config, synced)
@@ -86,9 +92,9 @@ public funkadelic/claude-nomad          your private you/claude-nomad
                                           └── path-map.json
 ```
 
-You bootstrap once by mirror-pushing this public tool repo into a fresh private repo of your own (see [Setup](#setup)), then layer your config on top. Every host afterward clones your private repo to `~/claude-nomad/` and runs `nomad pull` to sync.
+You bootstrap once by mirror-pushing this public tool repo into a fresh private repo of your own (see [Setup](#setup)), then layer your config on top. Every host afterward installs the CLI (`npm i -g claude-nomad`), clones your private repo to `~/claude-nomad/`, and runs `nomad pull` to sync.
 
-The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/config.ts`). Other clones of the tool (e.g., for hacking on the source itself) are fine; `nomad pull` always reads and writes the canonical path.
+By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config.ts`). Developers working from an alternate checkout can `export NOMAD_REPO=/path/to/repo` to point the CLI at their working tree without symlink gymnastics; `nomad doctor` surfaces an active override via a trailing `(NOMAD_REPO)` annotation on the repo-state line. Empty `NOMAD_REPO` falls through to the default, so a clobbered dotfile variable does not break the CLI.
 
 ## Repo layout (what `~/claude-nomad/` looks like on a configured host)
 
@@ -111,7 +117,7 @@ The CLI is hardcoded to operate on `~/claude-nomad/` (see `REPO_HOME` in `src/co
 │   ├── <your-wsl-host>.json
 │   └── <your-nuc>.json
 ├── path-map.json             # logical project -> per-host absolute path
-└── package.json, install.sh, ... (tool metadata)
+└── package.json, ... (tool metadata)
 ```
 
 ## What gets synced vs. not
@@ -194,8 +200,8 @@ Read these before adopting so you opt in with eyes open.
 
 ## Requirements
 
-- Node.js 22.22.1 or newer (24 LTS recommended; `install.sh` enforces the 22.22.1 floor)
-- `tsx` (installed automatically by `install.sh`, or `npm install -g tsx` manually)
+- Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes — npm only blocks the install when `engine-strict=true` is configured)
+- `tsx` (ships as a runtime dependency of the published package; no separate global install required)
 - Git
 - A **private** GitHub repo (or any Git remote you control)
 
@@ -206,39 +212,37 @@ Read these before adopting so you opt in with eyes open.
 > [!WARNING]
 > Keep the mirror private. CI workflows under `.github/workflows/` are gated on `${{ !github.event.repository.private }}`, so they skip on any private repo and run only on public ones. Flipping your mirror to public will start firing CI on every `nomad push` against `main`, and your session transcripts (which include conversation content) become world-readable.
 
-One-time, on your first host:
+Bootstrap (steps 1-2 are once-ever across all hosts; step 3 repeats per host):
 
 ```bash
-# 1. Create the private repo (or use the GitHub UI).
+# 1. Create the private repo (or use the GitHub UI). Once, ever.
 gh repo create you/claude-nomad --private
 
 # 2. Mirror the public tool into it. This severs the fork relationship,
-#    so your repo is independent of upstream.
+#    so your repo is independent of upstream. Once, ever.
 git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git
 cd /tmp/cn.git
 git push --mirror git@github.com:you/claude-nomad.git
 cd .. && rm -rf /tmp/cn.git
 
-# 3. Clone your private copy to the canonical location.
+# 3. Install the CLI globally and clone your private copy. Repeat on every host.
+npm i -g claude-nomad
 git clone git@github.com:you/claude-nomad.git ~/claude-nomad
-cd ~/claude-nomad
-./install.sh
 ```
 
-`install.sh` verifies Node >= 22.22.1, installs `tsx` globally if missing, runs `npm install`, and prints the shell alias to add. It's idempotent, so re-running on the same or a new host is safe.
+`npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. The npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes; npm only blocks the install when `engine-strict=true` is configured.
 
-On every additional host, only step 3 is needed (your private repo already exists).
+On every additional host you only repeat step 3 (the global install is per-host; your private repo already exists on the remote from step 2).
 
-Add to `~/.zshrc` or `~/.bashrc` (the installer prints the alias line):
+Add to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
 export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
-alias nomad='tsx ~/claude-nomad/src/nomad.ts'
 ```
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
 
-Initialize the repo layout. Pick one:
+Initialize the repo layout (first host only; subsequent hosts just clone and `nomad pull`). Pick one:
 
 ```bash
 # Fresh start: scaffold an empty shared/, hosts/, path-map.json skeleton.
@@ -286,7 +290,12 @@ Prefer an explicit tarball rollback and a confirmation prompt before any deletio
 
 ## Upgrading the tool
 
-Your private repo is not a fork, so GitHub's "Sync fork" UI doesn't apply. The shortcut on a configured host is:
+Two upgrade paths, depending on how you installed:
+
+- **Global install (`npm i -g claude-nomad`):** `npm update -g claude-nomad`. This refreshes only the `nomad` CLI binary on PATH; your private `~/claude-nomad/` repo is untouched.
+- **Source-checkout developer workflow:** `nomad update` (run from `~/claude-nomad/`). Topology-aware: detects vanilla vs fork remotes, pulls or merges upstream, and re-runs `npm install` when `package-lock.json` shifted.
+
+Your private repo is not a fork, so GitHub's "Sync fork" UI doesn't apply. The shortcut on a source-checkout host is:
 
 ```bash
 cd ~/claude-nomad
@@ -319,6 +328,8 @@ git remote add upstream git@github.com:funkadelic/claude-nomad.git
 
 To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tracking `main`, fetch tags from the public repo and check out the tag (detached HEAD). On vanilla topology that's `origin`; on fork topology that's `upstream` (the private mirror at `origin` does not accumulate upstream release tags). Example: `git fetch upstream --tags && git switch --detach vX.Y.Z` (substitute `origin` for vanilla; use `git checkout vX.Y.Z` on older Git).
 
+If you installed an earlier version via `./install.sh` and a shell alias (the pre-npm path), your existing alias keeps working unchanged. Run `npm i -g claude-nomad` whenever you're ready to switch to the global binary, confirm `nomad --version` resolves to the npm install (`which nomad` should point under your npm prefix's `bin/`), then delete the alias line from your shell rc.
+
 ## Commands
 
 | Command                          | Description                                                                                                                                                                                                             |
@@ -334,6 +345,7 @@ To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tra
 | `nomad update`                   | Topology-aware upgrade to the latest upstream. Flags: `--dry-run`, `--force`, `--push-origin`. See [Upgrading the tool](#upgrading-the-tool).                                                                           |
 | `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check.              |
 | `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                                                       |
+| `nomad --version`                | Print the installed CLI version as bare semver to stdout; exits 0. Used by the npm-publish smoke test and useful for ad-hoc upgrade checks.                                                                             |
 
 The version-check emits ``⚠︎ version: <local> -> <latest> (run `nomad update`)`` when the local install is behind the latest upstream release, and `✓ version: <local> (latest)` when current. It silently skips on network failures.
 
