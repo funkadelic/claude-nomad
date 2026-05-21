@@ -16,6 +16,7 @@
  */
 
 import { cmdDoctor } from './commands.doctor.ts';
+import { cmdDropSession } from './commands.drop-session.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
 import { cmdUpdate } from './commands.update.ts';
@@ -53,6 +54,8 @@ const DEFAULT_HELP = [
   '                          gitleaks, gitlinks).',
   '       --resume-cmd <id>  Print `cd <abspath> && claude --resume <id>` for a session id',
   '                          from ~/.claude/projects/.',
+  '',
+  '  drop-session <id>   Unstage shared/projects/<logical>/<id>.jsonl from the staged tree (local ~/.claude/projects is never touched).',
   '',
   '  update              Topology-aware upgrade of ~/claude-nomad/ to the latest upstream.',
   '       --dry-run      Detect topology + pre-flight, print would-be git commands only.',
@@ -168,6 +171,16 @@ try {
         cmdDoctor();
       }
       break;
+    case 'drop-session': {
+      // Single positional argv; cmdDropSession revalidates id at entry.
+      const id = process.argv[3];
+      if (process.argv.length !== 4 || typeof id !== 'string' || !/^[^-].*/.test(id)) {
+        console.error('usage: nomad drop-session <id>');
+        process.exit(1);
+      }
+      cmdDropSession(id);
+      break;
+    }
     default:
       console.error(DEFAULT_HELP);
       process.exit(1);
