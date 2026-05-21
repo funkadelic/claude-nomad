@@ -28,8 +28,38 @@ jobs:
         language: ['javascript-typescript']
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Need diff base for the docs-only gate below.
+          fetch-depth: 0
+
+      # Skip CodeQL on docs-only PRs (no analyzable code changed). SHAs flow
+      # through env: to stay out of shell expression context. The scheduled
+      # run has no PR context and falls through to skip=false.
+      - name: Decide whether to run heavy steps
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$PR_BASE" ] || [ "$PR_BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$PR_BASE" "$PR_HEAD" | grep -qvE '\.md$|^LICENSE$'; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=docs-only changes" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Initialize CodeQL
+        if: steps.gate.outputs.skip != 'true'
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
@@ -39,6 +69,7 @@ jobs:
           queries: security-and-quality
 
       - name: Perform CodeQL analysis
+        if: steps.gate.outputs.skip != 'true'
         uses: github/codeql-action/analyze@v4
         with:
           category: '/language:${{ matrix.language }}'

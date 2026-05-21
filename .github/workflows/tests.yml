@@ -35,16 +35,57 @@ jobs:
           # and new-code metrics.
           fetch-depth: 0
 
+      # Single gate step. Sets `skip=true` when (a) the post-merge push:main
+      # is a release-please bookkeeping commit (the source has already passed
+      # CI on its contributing PR), or (b) the changeset only touches docs
+      # (*.md, LICENSE). Untrusted inputs (head_commit.message, SHAs) are
+      # passed via env: so they only enter the shell as quoted vars.
+      - name: Decide whether to run heavy steps
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ] && [ "${HEAD_MSG#chore(main): release}" != "$HEAD_MSG" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=release-please commit" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$EVENT_NAME" in
+            pull_request) BASE="$PR_BASE"; HEAD="$PR_HEAD" ;;
+            push)         BASE="$PUSH_BEFORE"; HEAD="$PUSH_AFTER" ;;
+            *)            echo "skip=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+          # New-branch initial push lacks a parent SHA; run defensively.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE" "$HEAD" | grep -qvE '\.md$|^LICENSE$'; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=docs-only changes" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Node ${{ matrix.node-version }}
+        if: steps.gate.outputs.skip != 'true'
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install deps
+        if: steps.gate.outputs.skip != 'true'
         run: npm ci
 
       - name: Install gitleaks
+        if: steps.gate.outputs.skip != 'true'
         env:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
@@ -58,11 +99,13 @@ jobs:
           gitleaks version
 
       - name: Run tests with coverage
+        if: steps.gate.outputs.skip != 'true'
         run: npm run coverage
 
       - name: SonarCloud scan
         if: >-
-          ${{ env.SONAR_TOKEN != '' && matrix.node-version == '24'
+          ${{ steps.gate.outputs.skip != 'true'
+          && env.SONAR_TOKEN != '' && matrix.node-version == '24'
           && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
         uses: SonarSource/sonarqube-scan-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432 # v8
         env:
@@ -70,7 +113,8 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: >-
-          ${{ matrix.node-version == '24'
+          ${{ steps.gate.outputs.skip != 'true'
+          && matrix.node-version == '24'
           && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
         uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6
         with:
