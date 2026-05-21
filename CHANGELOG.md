@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/funkadelic/claude-nomad/compare/v0.16.1...v0.17.0) (2026-05-21)
+
+
+### Added
+
+* ship to npm with bin shim and NOMAD_REPO override ([#88](https://github.com/funkadelic/claude-nomad/issues/88)) ([62b4ca3](https://github.com/funkadelic/claude-nomad/commit/62b4ca33a763efc39408f5f1fdbc50e2a1985e70))
+
 ## [0.16.1](https://github.com/funkadelic/claude-nomad/compare/v0.16.0...v0.16.1) (2026-05-21)
 
 
