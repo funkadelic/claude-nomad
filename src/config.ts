@@ -58,6 +58,18 @@ export const SHARED_LINKS = [
 ] as const;
 
 /**
+ * Whitelist of directory names allowed in `path-map.json`'s top-level
+ * `extras` field. Gates the named-extras opt-in mechanism: only entries
+ * appearing in this list are eligible for sync. Initial set contains
+ * `.planning` only; widening to include `.notes`, `.scratch`, etc. is a
+ * one-line edit here with no schema migration required (the field is
+ * additive on the consumer side). Mirrors `SHARED_LINKS` in shape and
+ * intent: a short, append-only `as const` tuple that downstream callers
+ * narrow against.
+ */
+export const SUPPORTED_EXTRAS = ['.planning'] as const;
+
+/**
  * Path segments that must never cross the sync boundary in either direction.
  * Defense-in-depth pair with `PUSH_ALLOWED_STATIC`: even if the allow-list
  * misses a path, anything containing one of these segments is hard-blocked.
@@ -146,5 +158,15 @@ export const PUSH_ALLOWED_STATIC = [
  * against `HOST`) to the absolute path the project lives at on that host. Use
  * the literal string `'TBD'` as a placeholder while a host has not yet cloned
  * the project; `remapPull` / `remapPush` skip `'TBD'` entries.
+ *
+ * Optional `extras` field (additive, top-level): opt-in per-project
+ * named-directory sync. Keyed by the same logical project name used in
+ * `projects`; values are arrays of directory names validated by downstream
+ * consumers against `SUPPORTED_EXTRAS`. Absence of the field is equivalent
+ * to no extras for any project; legacy `path-map.json` files without an
+ * `extras` block continue to work unchanged (no migration required).
  */
-export type PathMap = { projects: Record<string, Record<string, string>> };
+export type PathMap = {
+  projects: Record<string, Record<string, string>>;
+  extras?: Record<string, string[]>;
+};
