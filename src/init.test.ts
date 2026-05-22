@@ -219,6 +219,14 @@ describe('classifyRepoState classifier', () => {
     const { reasonForPartial } = await import('./init.classify.ts');
     expect(reasonForPartial(repo, 'test-host')).toBe('- partial state (unknown gap)');
   });
+
+  it('reasonForPartial reports settings.base.json when basePath is missing (direct call)', async () => {
+    // Defensive branch: classifyRepoState would return 'empty' (not 'partial')
+    // if basePath is missing, so this line is unreachable via the normal flow.
+    // Tested directly to ensure patch coverage of the early-return guard.
+    const { reasonForPartial } = await import('./init.classify.ts');
+    expect(reasonForPartial(repo, 'test-host')).toBe('- shared/settings.base.json missing');
+  });
 });
 
 describe('cmdInit snapshot mode', () => {
@@ -518,6 +526,12 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
   it('skips silently when git remote get-url throws (no remote configured)', async () => {
     const { cmdInit } = await import('./init.ts');
     cmdInit({ run: makeGhRun({ remoteThrows: true }) });
+    expect(joinedLog(env.logSpy)).toContain('init complete');
+  });
+
+  it('skips silently when the remote is not a GitHub URL (parseGitHubRemote returns null)', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ run: makeGhRun({ remote: 'https://gitlab.com/a/b.git' }) });
     expect(joinedLog(env.logSpy)).toContain('init complete');
   });
 
