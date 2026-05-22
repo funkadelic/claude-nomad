@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,9 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as fsModule from 'node:fs';
 
 /**
- * Sibling file to utils.test.ts. Covers three small uncovered helpers/
- * branches that did not need to live in the main file:
- *   - writeJson (non-atomic JSON writer) - never called by tests until now
+ * Sibling file to utils.test.ts. Covers two small uncovered branches that
+ * did not need to live in the main file:
  *   - ensureSymlink die-when-not-a-symlink branch
  *   - releaseLock rethrow on non-ENOENT unlink failure
  *
@@ -17,27 +16,6 @@ import type * as fsModule from 'node:fs';
  * already a soft ceiling that utils.test.ts has historically exceeded for
  * legacy reasons, and adding to it would worsen the violation.
  */
-
-describe('writeJson (non-atomic)', () => {
-  let testDir: string;
-
-  beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), 'nomad-writejson-'));
-  });
-
-  afterEach(() => {
-    rmSync(testDir, { recursive: true, force: true });
-  });
-
-  it('writes pretty-printed JSON with two-space indent and trailing newline', async () => {
-    const { writeJson } = await import('./utils.ts');
-    const target = join(testDir, 'out.json');
-    writeJson(target, { model: 'sonnet', hooks: {} });
-    expect(readFileSync(target, 'utf8')).toBe(
-      JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n',
-    );
-  });
-});
 
 describe('ensureSymlink', () => {
   let testDir: string;
