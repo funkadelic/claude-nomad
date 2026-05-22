@@ -533,12 +533,14 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
     expect(joinedLog(env.logSpy)).toContain('gh auth login');
   });
 
-  it('skips silently when isRepoPrivate throws', async () => {
+  it('logs a manual-fallback tip when isRepoPrivate throws', async () => {
     const { cmdInit } = await import('./init.ts');
     cmdInit({
       run: makeGhRun({ remote: 'https://github.com/a/b.git', auth: 'ok', isPrivateThrows: true }),
     });
-    expect(joinedLog(env.logSpy)).toContain('init complete');
+    const joined = joinedLog(env.logSpy);
+    expect(joined).toContain('could not determine privacy for a/b');
+    expect(joined).toContain('init complete');
   });
 
   it('skips silently when the repo is public', async () => {

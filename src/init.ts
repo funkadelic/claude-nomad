@@ -163,6 +163,9 @@ function maybeDisableMirrorActions(repoHome: string, run?: SpawnSyncFn): void {
   try {
     isPrivate = isRepoPrivate(ref, run);
   } catch {
+    log(
+      `could not determine privacy for ${ref.owner}/${ref.repo}; run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' manually if it is private.`,
+    );
     return;
   }
   if (!isPrivate) return;
