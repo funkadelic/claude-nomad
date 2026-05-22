@@ -27,6 +27,7 @@ describe('cmdUpdate', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
     vi.doUnmock('./commands.doctor.ts');
     restoreEnv('HOME', originalHome);
     rmSync(env.testHome, { recursive: true, force: true });
@@ -92,11 +93,16 @@ describe('cmdUpdate', () => {
     expect(git.calls.map((c) => c.args.join(' '))).toContain('push origin main');
   });
 
-  it('fork merge fails with sole package-lock.json conflict: auto-resolves via --theirs + npm install + commit', async () => {
+  it('fork merge fails with sole package-lock.json conflict: auto-resolves via --theirs + npm install + commit (only once)', async () => {
     const git = mockGit({
       remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
       mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
       unmergedPaths: 'package-lock.json\n',
+      // Production-realistic: after the auto-resolved merge commit, the
+      // beforeSha..HEAD diff will include package-lock.json. Asserts that
+      // cmdUpdate's trailing reinstallIfNeeded does NOT fire a second
+      // npm install on top of the one the auto-resolver already ran.
+      diffNames: 'package-lock.json\n',
     });
     const doctor = mockDoctor();
     vi.resetModules();
@@ -107,9 +113,11 @@ describe('cmdUpdate', () => {
     expect(argvs).toContain('git checkout --theirs -- package-lock.json');
     expect(argvs).toContain('git add package-lock.json');
     expect(argvs).toContain('git commit --no-edit');
-    expect(argvs).toContain('npm install');
+    const npmInstallCalls = git.calls.filter((c) => c.bin === 'npm' && c.args[0] === 'install');
+    expect(npmInstallCalls).toHaveLength(1);
     expect(doctor.spy).toHaveBeenCalledTimes(1);
-    expect(joinedLog(env.logSpy)).toContain('auto-resolved package-lock.json conflict');
+    expect(joinedLog(env.logSpy)).toContain('auto-resolved merge conflict');
+    expect(joinedLog(env.logSpy)).toContain('package-lock.json');
   });
 
   it('fork merge fails with multiple conflicts including lockfile: propagates NomadFatal', async () => {
@@ -153,6 +161,109 @@ describe('cmdUpdate', () => {
     expect(caught).toBeInstanceOf(NomadFatal);
     const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
     expect(argvs).not.toContain('git checkout --theirs -- package-lock.json');
+    expect(doctor.spy).not.toHaveBeenCalled();
+  });
+
+  it('fork merge fails with release-please artifact set, prompt y: auto-resolves and continues', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths:
+        'package.json\npackage-lock.json\nCHANGELOG.md\n.release-please-manifest.json\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const promptSpy = vi.fn(() => 'y');
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ prompt: promptSpy });
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).toContain('git checkout --theirs -- package.json');
+    expect(argvs).toContain('git checkout --theirs -- package-lock.json');
+    expect(argvs).toContain('git checkout --theirs -- CHANGELOG.md');
+    expect(argvs).toContain('git checkout --theirs -- .release-please-manifest.json');
+    expect(argvs).toContain('npm install');
+    expect(argvs).toContain('git commit --no-edit');
+    expect(doctor.spy).toHaveBeenCalledTimes(1);
+    expect(promptSpy).toHaveBeenCalled();
+    expect(joinedLog(env.logSpy)).toContain('auto-resolved');
+  });
+
+  it('fork merge fails with release-please artifact subset (no CHANGELOG), prompt y: auto-resolves', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'package.json\npackage-lock.json\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ prompt: () => 'y' });
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).toContain('git checkout --theirs -- package.json');
+    expect(argvs).toContain('git checkout --theirs -- package-lock.json');
+    expect(argvs).not.toContain('git checkout --theirs -- CHANGELOG.md');
+    expect(doctor.spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('fork merge fails with release-please artifacts, prompt n: declines and propagates NomadFatal', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'package.json\npackage-lock.json\nCHANGELOG.md\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const promptSpy = vi.fn(() => 'n');
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate({ prompt: promptSpy });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('git merge upstream/main');
+    expect(promptSpy).toHaveBeenCalled();
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).not.toContain('git checkout --theirs -- package.json');
+    expect(doctor.spy).not.toHaveBeenCalled();
+  });
+
+  it('fork merge fails with release-please artifacts and no prompt opt: defaultPrompt declines, propagates', async () => {
+    // No `prompt` passed: defaultPrompt's /dev/tty open is mocked to throw,
+    // so the prompt returns '' and the y/N check treats it as no. Exercises
+    // the `opts.prompt ?? defaultPrompt` fallback deterministically (without
+    // this mock the test would hang on interactive local Vitest runs where
+    // /dev/tty actually opens).
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'package.json\npackage-lock.json\n',
+    });
+    const doctor = mockDoctor();
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        openSync: vi.fn(() => {
+          throw new Error('ENXIO: no /dev/tty');
+        }),
+      };
+    });
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).not.toContain('git checkout --theirs -- package.json');
     expect(doctor.spy).not.toHaveBeenCalled();
   });
 
