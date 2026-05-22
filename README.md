@@ -435,7 +435,7 @@ The file extends the default gitleaks ruleset, so real high-entropy secrets like
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "claude-nomad: structurally-distinguishable tool-output noise"
 regexes = [
     '''AY[A-Za-z0-9_-]{20,}''',
