@@ -2,6 +2,15 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, type PathMap, REPO_HOME } from './config.ts';
+import {
+  disableActions,
+  ghAuthStatus,
+  isActionsEnabled,
+  isRepoPrivate,
+  parseGitHubRemote,
+  readOriginRemote,
+  type SpawnSyncFn,
+} from './gh-actions.ts';
 import { snapshotIntoShared } from './init.snapshot.ts';
 import { die, log, readJson, writeJsonAtomic } from './utils.ts';
 
@@ -59,8 +68,11 @@ function preflightConflict(repoHome: string): string | null {
  * identical to plain init; a bare `shared/` dir is enough to refuse since
  * partial state is unsafe to merge with.
  */
-export function cmdInit(opts: { snapshot?: boolean } = {}): void {
+export function cmdInit(
+  opts: { snapshot?: boolean; keepActions?: boolean; run?: SpawnSyncFn } = {},
+): void {
   const snapshot = opts.snapshot === true;
+  const keepActions = opts.keepActions === true;
 
   const conflict = preflightConflict(REPO_HOME);
   if (conflict !== null) {
@@ -104,7 +116,77 @@ export function cmdInit(opts: { snapshot?: boolean } = {}): void {
     log('~/.claude/ originals were NOT removed.');
   }
 
+  if (!keepActions) {
+    maybeDisableMirrorActions(REPO_HOME, opts.run);
+  }
+
   log('init complete');
+}
+
+/**
+ * Best-effort hook that disables GitHub Actions on the user's private mirror
+ * after a fresh `nomad init`. The private mirror is a settings store, not a
+ * CI target; leaving Actions enabled there causes the mirror-pushed workflows
+ * (release-please, npm-publish, etc.) to fire on every `nomad push`, which is
+ * pure noise.
+ *
+ * Silently no-ops when: the repo is not a git repo, the origin remote is not
+ * GitHub, the origin is public (not a private mirror), `gh` CLI is missing,
+ * or `gh` is not authed. Prints a tip on the last two so the user can finish
+ * the step manually. Suppress entirely with `nomad init --keep-actions`.
+ */
+function maybeDisableMirrorActions(repoHome: string, run?: SpawnSyncFn): void {
+  let remote: string;
+  try {
+    remote = readOriginRemote(repoHome, run);
+  } catch {
+    return;
+  }
+  const ref = parseGitHubRemote(remote);
+  if (ref === null) return;
+
+  const ghStatus = ghAuthStatus(run);
+  if (ghStatus === 'gh-not-installed') {
+    log(
+      `tip: install gh CLI and run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' to disable Actions on your private mirror.`,
+    );
+    return;
+  }
+  if (ghStatus === 'gh-not-authed') {
+    log(
+      `tip: run 'gh auth login' then 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' to disable Actions on your private mirror.`,
+    );
+    return;
+  }
+
+  let isPrivate: boolean;
+  try {
+    isPrivate = isRepoPrivate(ref, run);
+  } catch {
+    return;
+  }
+  if (!isPrivate) return;
+
+  let alreadyDisabled = false;
+  try {
+    alreadyDisabled = !isActionsEnabled(ref, run);
+  } catch {
+    // Treat as enabled and attempt the disable; the API call itself is
+    // idempotent so this is safe.
+  }
+  if (alreadyDisabled) {
+    log(`actions already disabled on ${ref.owner}/${ref.repo}`);
+    return;
+  }
+
+  try {
+    disableActions(ref, run);
+    log(`disabled GitHub Actions on private mirror ${ref.owner}/${ref.repo}`);
+  } catch {
+    log(
+      `could not auto-disable Actions on ${ref.owner}/${ref.repo}; run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' manually.`,
+    );
+  }
 }
 
 /**
