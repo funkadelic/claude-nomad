@@ -327,3 +327,89 @@ describe('nomad.ts --version dispatcher', () => {
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad --version'));
   });
 });
+
+describe('nomad.ts init dispatcher', () => {
+  // Mirrors the push dispatcher block: argv-mock + vi.resetModules + exitSpy.
+  // vi.doUnmock('./init.ts') in afterEach is required because vi.restoreAllMocks
+  // does not clear vi.doMock module mocks, and the init mock would otherwise
+  // leak into other tests in this file.
+  let originalHome: string | undefined;
+  let originalArgv: string[];
+  let exitSpy: MockInstance<(code?: string | number | null) => never>;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalArgv = process.argv;
+    process.env.HOME = '/tmp';
+    vi.resetModules();
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+      throw new Error(`exit:${String(code)}`);
+    });
+    vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./init.ts');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    process.argv = originalArgv;
+  });
+
+  it('routes `nomad init` (bare) to cmdInit({})', async () => {
+    const cmdInitMock = vi.fn();
+    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
+    process.argv = ['node', 'nomad.ts', 'init'];
+    await import('./nomad.ts');
+    expect(cmdInitMock).toHaveBeenCalledWith({ snapshot: false, keepActions: false });
+    expect(cmdInitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes `nomad init --snapshot` to cmdInit({ snapshot: true })', async () => {
+    const cmdInitMock = vi.fn();
+    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
+    process.argv = ['node', 'nomad.ts', 'init', '--snapshot'];
+    await import('./nomad.ts');
+    expect(cmdInitMock).toHaveBeenCalledWith({ snapshot: true, keepActions: false });
+    expect(cmdInitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes `nomad init --keep-actions` to cmdInit({ keepActions: true })', async () => {
+    const cmdInitMock = vi.fn();
+    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
+    process.argv = ['node', 'nomad.ts', 'init', '--keep-actions'];
+    await import('./nomad.ts');
+    expect(cmdInitMock).toHaveBeenCalledWith({ snapshot: false, keepActions: true });
+    expect(cmdInitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes `nomad init --snapshot --keep-actions` with both flags', async () => {
+    const cmdInitMock = vi.fn();
+    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
+    process.argv = ['node', 'nomad.ts', 'init', '--snapshot', '--keep-actions'];
+    await import('./nomad.ts');
+    expect(cmdInitMock).toHaveBeenCalledWith({ snapshot: true, keepActions: true });
+    expect(cmdInitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects `nomad init --unknown` with usage error and exit 1', async () => {
+    const cmdInitMock = vi.fn();
+    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
+    process.argv = ['node', 'nomad.ts', 'init', '--unknown'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad init'));
+    expect(cmdInitMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate `nomad init --snapshot --snapshot` with usage error', async () => {
+    const cmdInitMock = vi.fn();
+    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
+    process.argv = ['node', 'nomad.ts', 'init', '--snapshot', '--snapshot'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(cmdInitMock).not.toHaveBeenCalled();
+  });
+});

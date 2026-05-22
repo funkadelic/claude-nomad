@@ -2,8 +2,17 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, type PathMap, REPO_HOME } from './config.ts';
+import {
+  disableActions,
+  ghAuthStatus,
+  isActionsEnabled,
+  isRepoPrivate,
+  parseGitHubRemote,
+  readOriginRemote,
+  type SpawnSyncFn,
+} from './gh-actions.ts';
 import { snapshotIntoShared } from './init.snapshot.ts';
-import { die, log, readJson, writeJsonAtomic } from './utils.ts';
+import { die, log, writeJsonAtomic } from './utils.ts';
 
 /**
  * The HTML comment line that anchors `shared/CLAUDE.md` on a fresh scaffold.
@@ -59,8 +68,11 @@ function preflightConflict(repoHome: string): string | null {
  * identical to plain init; a bare `shared/` dir is enough to refuse since
  * partial state is unsafe to merge with.
  */
-export function cmdInit(opts: { snapshot?: boolean } = {}): void {
+export function cmdInit(
+  opts: { snapshot?: boolean; keepActions?: boolean; run?: SpawnSyncFn } = {},
+): void {
   const snapshot = opts.snapshot === true;
+  const keepActions = opts.keepActions === true;
 
   const conflict = preflightConflict(REPO_HOME);
   if (conflict !== null) {
@@ -104,87 +116,78 @@ export function cmdInit(opts: { snapshot?: boolean } = {}): void {
     log('~/.claude/ originals were NOT removed.');
   }
 
+  if (!keepActions) {
+    maybeDisableMirrorActions(REPO_HOME, opts.run);
+  }
+
   log('init complete');
 }
 
 /**
- * Read-only health classifier for `cmdDoctor`'s `repo state:` header.
- * Inspects three signals at the given `repoHome`: `shared/settings.base.json`
- * presence, `path-map.json.projects` having at least one entry, and
- * `hosts/<host>.json` presence.
+ * Best-effort hook that disables GitHub Actions on the user's private mirror
+ * after a fresh `nomad init`. The private mirror is a settings store, not a
+ * CI target; leaving Actions enabled there causes the mirror-pushed workflows
+ * (release-please, npm-publish, etc.) to fire on every `nomad push`, which is
+ * pure noise.
  *
- * Returns `'empty'` when the base is missing AND the path-map has no entries
- * (either missing or `projects` is empty); `'populated'` when all three
- * signals are positive; `'partial'` for anything in between. Malformed
- * `path-map.json` is treated as zero entries rather than thrown, so a doctor
- * run against a corrupted scaffold still produces a classification line.
- *
- * The `host` parameter is passed explicitly (rather than read from the
- * imported `HOST` constant) so the test fixture can drive multiple host
- * scenarios without mutating module-level state via `vi.resetModules()`.
+ * Silently no-ops when: the repo is not a git repo, the origin remote is not
+ * GitHub, the origin is public (not a private mirror), `gh` CLI is missing,
+ * or `gh` is not authed. Prints a tip on the last two so the user can finish
+ * the step manually. Suppress entirely with `nomad init --keep-actions`.
  */
-export function classifyRepoState(
-  repoHome: string,
-  host: string,
-): 'empty' | 'partial' | 'populated' {
-  const basePath = join(repoHome, 'shared', 'settings.base.json');
-  const mapPath = join(repoHome, 'path-map.json');
-  const hostPath = join(repoHome, 'hosts', `${host}.json`);
-
-  const hasBase = existsSync(basePath);
-  const hasMap = existsSync(mapPath);
-  const hasHost = existsSync(hostPath);
-
-  let mapEntryCount = 0;
-  if (hasMap) {
-    try {
-      const map = readJson<PathMap>(mapPath);
-      mapEntryCount = Object.keys(map.projects).length;
-    } catch {
-      // Malformed JSON: treat as zero entries, do NOT throw. The doctor's
-      // own JSON-parse FAIL line will surface the malformed file separately.
-      mapEntryCount = 0;
-    }
-  }
-
-  if (!hasBase && mapEntryCount === 0) return 'empty';
-  if (hasBase && mapEntryCount > 0 && hasHost) return 'populated';
-  return 'partial';
-}
-
-/**
- * Suffix that follows `repo state: WARN partial` per the fixed priority
- * order. First matching condition wins, exactly one suffix per line.
- * Inspects the same on-disk signals `classifyRepoState` reads (base file,
- * `path-map.json` + its `.projects` entry count, `hosts/<host>.json`), but
- * explicitly distinguishes "path-map missing" from "path-map present but
- * empty" because users debug differently for each.
- *
- * Lives alongside `classifyRepoState` so the suffix rules and the classifier
- * stay co-located: changes to one almost always require updating the other.
- * Returns the string with a leading `- ` separator so the caller can
- * concatenate directly without re-deciding the separator.
- */
-export function reasonForPartial(repoHome: string, host: string): string {
-  const basePath = join(repoHome, 'shared', 'settings.base.json');
-  const mapPath = join(repoHome, 'path-map.json');
-  const hostPath = join(repoHome, 'hosts', `${host}.json`);
-  if (!existsSync(basePath)) return '- shared/settings.base.json missing';
-  if (!existsSync(mapPath)) return '- path-map.json missing';
-  let mapEntryCount: number;
+function maybeDisableMirrorActions(repoHome: string, run?: SpawnSyncFn): void {
+  let remote: string;
   try {
-    const map = readJson<PathMap>(mapPath);
-    mapEntryCount = Object.keys(map.projects).length;
+    remote = readOriginRemote(repoHome, run);
   } catch {
-    // Malformed JSON: treat as zero entries. Doctor's own JSON-parse FAIL
-    // line surfaces the malformed file separately.
-    mapEntryCount = 0;
+    return;
   }
-  if (mapEntryCount === 0) return '- path-map.json.projects has no entries';
-  if (!existsSync(hostPath)) return `- hosts/${host}.json missing`;
-  // Defensive fallback: classifyRepoState returned 'partial' for a reason
-  // not captured by the four signals above. Should be unreachable in
-  // practice because the priority order is exhaustive against the
-  // classifier's definition of populated.
-  return '- partial state (unknown gap)';
+  const ref = parseGitHubRemote(remote);
+  if (ref === null) return;
+
+  const ghStatus = ghAuthStatus(run);
+  if (ghStatus === 'gh-not-installed') {
+    log(
+      `tip: install gh CLI and run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' to disable Actions on your private mirror.`,
+    );
+    return;
+  }
+  if (ghStatus === 'gh-not-authed') {
+    log(
+      `tip: run 'gh auth login' then 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' to disable Actions on your private mirror.`,
+    );
+    return;
+  }
+
+  let isPrivate: boolean;
+  try {
+    isPrivate = isRepoPrivate(ref, run);
+  } catch {
+    log(
+      `could not determine privacy for ${ref.owner}/${ref.repo}; run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' manually if it is private.`,
+    );
+    return;
+  }
+  if (!isPrivate) return;
+
+  let alreadyDisabled = false;
+  try {
+    alreadyDisabled = !isActionsEnabled(ref, run);
+  } catch {
+    // Treat as enabled and attempt the disable; the API call itself is
+    // idempotent so this is safe.
+  }
+  if (alreadyDisabled) {
+    log(`actions already disabled on ${ref.owner}/${ref.repo}`);
+    return;
+  }
+
+  try {
+    disableActions(ref, run);
+    log(`disabled GitHub Actions on private mirror ${ref.owner}/${ref.repo}`);
+  } catch {
+    log(
+      `could not auto-disable Actions on ${ref.owner}/${ref.repo}; run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' manually.`,
+    );
+  }
 }

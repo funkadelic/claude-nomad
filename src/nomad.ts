@@ -57,7 +57,8 @@ const DEFAULT_HELP = [
   '                   No git pull, no lock acquired.',
   '',
   '  init             Scaffold an empty ~/claude-nomad/ repo (shared/, hosts/, path-map).',
-  '       --snapshot  Overlay the current ~/.claude/ into shared/ as the initial seed.',
+  '       --snapshot      Overlay the current ~/.claude/ into shared/ as the initial seed.',
+  '       --keep-actions  Skip auto-disabling GitHub Actions on the private mirror.',
   '',
   '  doctor                  Read-only health check (symlinks, host file, path-map,',
   '                          gitleaks, gitlinks).',
@@ -128,20 +129,28 @@ try {
       }
       break;
     }
-    case 'init':
-      // Two valid forms: `nomad init` (empty scaffold) and
-      // `nomad init --snapshot` (overlay user's current ~/.claude/ into
-      // shared/). Anything else (unknown flag, extra positional arg, two
-      // flags) hits the same usage-error pattern as `doctor --resume-cmd`.
-      if (process.argv[3] === undefined) {
-        cmdInit();
-      } else if (process.argv[3] === '--snapshot' && process.argv[4] === undefined) {
-        cmdInit({ snapshot: true });
-      } else {
-        console.error('usage: nomad init [--snapshot]');
+    case 'init': {
+      // Set-based parse so flag order does not matter and duplicates are
+      // rejected. Unknown flags hit the same usage-error pattern as other
+      // subcommands.
+      const known = new Set(['--snapshot', '--keep-actions']);
+      const seen = new Set<string>();
+      let argvOk = true;
+      for (let i = 3; i < process.argv.length; i++) {
+        const flag = process.argv[i];
+        if (!known.has(flag) || seen.has(flag)) {
+          argvOk = false;
+          break;
+        }
+        seen.add(flag);
+      }
+      if (!argvOk) {
+        console.error('usage: nomad init [--snapshot] [--keep-actions]');
         process.exit(1);
       }
+      cmdInit({ snapshot: seen.has('--snapshot'), keepActions: seen.has('--keep-actions') });
       break;
+    }
     case 'diff':
       // Offline, lockless preview against local repo state. No git pull, no
       // lock acquisition. Reject any argv after `diff` since this slice

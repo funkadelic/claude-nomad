@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import type { SpawnSyncFn } from './gh-actions.ts';
+
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
 /**
@@ -142,19 +144,19 @@ describe('classifyRepoState classifier', () => {
   });
 
   it('returns "empty" when settings.base.json is absent and path-map.json missing', async () => {
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('empty');
   });
 
   it('returns "empty" when settings.base.json is absent and path-map.json has zero entries', async () => {
     writeFileSync(join(repo, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('empty');
   });
 
   it('returns "partial" when settings.base.json present but path-map.json missing', async () => {
     writeFileSync(join(repo, 'shared', 'settings.base.json'), '{}\n');
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('partial');
   });
 
@@ -164,7 +166,7 @@ describe('classifyRepoState classifier', () => {
       join(repo, 'path-map.json'),
       JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
     );
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('partial');
   });
 
@@ -175,7 +177,7 @@ describe('classifyRepoState classifier', () => {
       JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
     );
     writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}\n');
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('populated');
   });
 
@@ -191,17 +193,39 @@ describe('classifyRepoState classifier', () => {
     writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}\n');
     // No shared/CLAUDE.md written. Classifier should still report populated.
     expect(existsSync(join(repo, 'shared', 'CLAUDE.md'))).toBe(false);
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('populated');
   });
 
   it('treats malformed path-map.json as zero entries instead of throwing', async () => {
     writeFileSync(join(repo, 'shared', 'settings.base.json'), '{}\n');
     writeFileSync(join(repo, 'path-map.json'), '{not valid');
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     // settings.base.json present but path-map malformed (treated as zero entries)
     // and hosts/<host>.json missing -> partial.
     expect(classifyRepoState(repo, 'test-host')).toBe('partial');
+  });
+
+  it('reasonForPartial returns defensive fallback when all four signals are present (populated state)', async () => {
+    // This path is the defensive line that only fires if reasonForPartial is
+    // called on a fully-populated repo. Unreachable via classifyRepoState in
+    // the normal flow; tested directly to ensure patch coverage.
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), '{}\n');
+    writeFileSync(
+      join(repo, 'path-map.json'),
+      JSON.stringify({ projects: { x: { 'test-host': '/x' } } }) + '\n',
+    );
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}\n');
+    const { reasonForPartial } = await import('./init.classify.ts');
+    expect(reasonForPartial(repo, 'test-host')).toBe('- partial state (unknown gap)');
+  });
+
+  it('reasonForPartial reports settings.base.json when basePath is missing (direct call)', async () => {
+    // Defensive branch: classifyRepoState would return 'empty' (not 'partial')
+    // if basePath is missing, so this line is unreachable via the normal flow.
+    // Tested directly to ensure patch coverage of the early-return guard.
+    const { reasonForPartial } = await import('./init.classify.ts');
+    expect(reasonForPartial(repo, 'test-host')).toBe('- shared/settings.base.json missing');
   });
 });
 
@@ -422,5 +446,192 @@ describe('cmdInit snapshot mode', () => {
     expect(caught).toBeInstanceOf(NomadFatal);
     // Names the file path so the user can fix it.
     expect(caught?.message).toContain('settings.json');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// maybeDisableMirrorActions (exercised via cmdInit opts.run)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a SpawnSyncFn mock that dispatches on (bin, args) to simulate
+ * different gh/git subprocess outcomes for maybeDisableMirrorActions paths.
+ */
+function makeGhRun(opts: {
+  remote?: string;
+  remoteThrows?: true;
+  auth?: 'ok' | 'not-installed' | 'not-authed';
+  isPrivateThrows?: true;
+  isPrivate?: boolean;
+  actionsEnabledThrows?: true;
+  actionsEnabled?: boolean;
+  disable?: 'ok' | 'throw';
+}): SpawnSyncFn {
+  return (bin, args) => {
+    const argv = Array.from(args);
+    if (bin === 'git') {
+      if (opts.remoteThrows === true || opts.remote === undefined) {
+        throw Object.assign(new Error('no remote'), { code: 128 });
+      }
+      return Buffer.from(opts.remote + '\n');
+    }
+    if (bin === 'gh') {
+      if (argv.includes('status')) {
+        if (opts.auth === 'not-installed') {
+          throw Object.assign(new Error('gh ENOENT'), { code: 'ENOENT' });
+        }
+        if (opts.auth === 'not-authed') {
+          throw Object.assign(new Error('not authed'), { code: 1 });
+        }
+        return Buffer.from('');
+      }
+      if (argv.includes('view')) {
+        if (opts.isPrivateThrows === true) throw new Error('api error');
+        return Buffer.from(JSON.stringify({ isPrivate: opts.isPrivate }));
+      }
+      if (argv.includes('--jq')) {
+        if (opts.actionsEnabledThrows === true) throw new Error('api error');
+        return Buffer.from(opts.actionsEnabled ? 'true\n' : 'false\n');
+      }
+      if (argv.includes('PUT')) {
+        if (opts.disable === 'throw') throw new Error('disable failed');
+        return Buffer.from('');
+      }
+    }
+    throw new Error(`Unexpected subprocess: ${bin} ${argv.join(' ')}`);
+  };
+}
+
+describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let env: { testHome: string; logSpy: LogSpy };
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    process.env.NOMAD_HOST = 'test-host';
+    env = makeInitEnv();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('skips silently when git remote get-url throws (no remote configured)', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ run: makeGhRun({ remoteThrows: true }) });
+    expect(joinedLog(env.logSpy)).toContain('init complete');
+  });
+
+  it('skips silently when the remote is not a GitHub URL (parseGitHubRemote returns null)', async () => {
+    const { cmdInit } = await import('./init.ts');
+    const baseRun = makeGhRun({ remote: 'https://gitlab.com/a/b.git' });
+    const runSpy = vi.fn<SpawnSyncFn>(baseRun);
+    cmdInit({ run: runSpy });
+    expect(joinedLog(env.logSpy)).toContain('init complete');
+    const ghCalls = runSpy.mock.calls.filter(([bin]) => bin === 'gh');
+    expect(ghCalls).toHaveLength(0);
+  });
+
+  it('logs gh-CLI tip when gh is not installed', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ run: makeGhRun({ remote: 'https://github.com/a/b.git', auth: 'not-installed' }) });
+    expect(joinedLog(env.logSpy)).toContain('install gh CLI');
+  });
+
+  it('logs auth-login tip when gh is installed but not authed', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ run: makeGhRun({ remote: 'https://github.com/a/b.git', auth: 'not-authed' }) });
+    expect(joinedLog(env.logSpy)).toContain('gh auth login');
+  });
+
+  it('logs a manual-fallback tip when isRepoPrivate throws', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({
+      run: makeGhRun({ remote: 'https://github.com/a/b.git', auth: 'ok', isPrivateThrows: true }),
+    });
+    const joined = joinedLog(env.logSpy);
+    expect(joined).toContain('could not determine privacy for a/b');
+    expect(joined).toContain('init complete');
+  });
+
+  it('skips silently when the repo is public', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({
+      run: makeGhRun({ remote: 'https://github.com/a/b.git', auth: 'ok', isPrivate: false }),
+    });
+    expect(joinedLog(env.logSpy)).toContain('init complete');
+  });
+
+  it('logs already-disabled message when actions are already off', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({
+      run: makeGhRun({
+        remote: 'https://github.com/a/b.git',
+        auth: 'ok',
+        isPrivate: true,
+        actionsEnabled: false,
+      }),
+    });
+    expect(joinedLog(env.logSpy)).toContain('already disabled');
+  });
+
+  it('treats isActionsEnabled throw as enabled and attempts disable (success path)', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({
+      run: makeGhRun({
+        remote: 'https://github.com/a/b.git',
+        auth: 'ok',
+        isPrivate: true,
+        actionsEnabledThrows: true,
+        disable: 'ok',
+      }),
+    });
+    expect(joinedLog(env.logSpy)).toContain('disabled GitHub Actions');
+  });
+
+  it('logs success when actions are enabled and disableActions succeeds', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({
+      run: makeGhRun({
+        remote: 'https://github.com/a/b.git',
+        auth: 'ok',
+        isPrivate: true,
+        actionsEnabled: true,
+        disable: 'ok',
+      }),
+    });
+    expect(joinedLog(env.logSpy)).toContain('disabled GitHub Actions on private mirror');
+  });
+
+  it('logs manual-run tip when disableActions throws', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({
+      run: makeGhRun({
+        remote: 'https://github.com/a/b.git',
+        auth: 'ok',
+        isPrivate: true,
+        actionsEnabled: true,
+        disable: 'throw',
+      }),
+    });
+    expect(joinedLog(env.logSpy)).toContain('could not auto-disable');
+  });
+
+  it('suppresses all gh activity when keepActions is true', async () => {
+    const calls: string[] = [];
+    const run: SpawnSyncFn = (bin) => {
+      calls.push(bin);
+      return Buffer.from('');
+    };
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ keepActions: true, run });
+    expect(calls).toHaveLength(0);
   });
 });

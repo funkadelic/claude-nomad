@@ -6,7 +6,8 @@ node_modules/
 dist/
 coverage/
 
-/.planning
+# GSD planning artifacts; local-only, never tracked in the public repo
+.planning/
 /.claude
 /CLAUDE.md
 /graphify-out

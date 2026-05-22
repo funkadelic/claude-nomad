@@ -30,6 +30,9 @@ Two things it does that ad-hoc dotfiles syncing can't:
 - **Getting started**
   - [Requirements](#requirements)
   - [Setup](#setup)
+    - [Privacy by default](#privacy-by-default)
+    - [Bootstrap](#bootstrap)
+    - [Initialize the repo layout](#initialize-the-repo-layout)
   - [Migrating an existing ~/.claude/](#migrating-an-existing-claude)
   - [Upgrading the tool](#upgrading-the-tool)
 - **Reference**
@@ -51,7 +54,7 @@ npm i -g claude-nomad
 
 ```bash
 # Clone your private mirror so nomad has a repo to sync into.
-git clone git@github.com:you/claude-nomad.git ~/claude-nomad
+git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 
 # Add to ~/.zshrc or ~/.bashrc:
 export NOMAD_HOST=<your-host-label>
@@ -76,7 +79,7 @@ First-host bootstrap and the safe-migration sequence for a populated `~/.claude/
 claude-nomad is a **tool**, not a config store. You maintain a separate **private** repo that holds your actual config (`CLAUDE.md`, agents, skills, settings overrides, session transcripts). The tool's source and your config end up coexisting in one working tree on each host.
 
 ```
-public funkadelic/claude-nomad          your private you/claude-nomad
+public funkadelic/claude-nomad          your private <your-username>/claude-nomad
   ├── src/         (the CLI)              ├── src/         (copy of the CLI)
   ├── package.json                        ├── package.json
   └── ...                                 ├── ...
@@ -101,7 +104,7 @@ By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config
 ```
 ~/claude-nomad/
 ├── src/                      # the CLI (came from the public tool repo)
-├── scripts/                  # tool helpers (update.sh; plus any one-shot scripts you add)
+├── scripts/                  # helper scripts you add
 ├── shared/                   # synced to every machine
 │   ├── CLAUDE.md
 │   ├── settings.base.json    # baseline settings
@@ -209,25 +212,36 @@ Read these before adopting so you opt in with eyes open.
 
 **Why not just fork?** GitHub doesn't let you flip a public fork to private, and your config (especially session transcripts) must stay private. So the bootstrap is a one-time mirror-push into a fresh private repo, not a fork.
 
-> [!WARNING]
-> Keep the mirror private. CI workflows under `.github/workflows/` are gated on `${{ !github.event.repository.private }}`, so they skip on any private repo and run only on public ones. Flipping your mirror to public will start firing CI on every `nomad push` against `main`, and your session transcripts (which include conversation content) become world-readable.
+### Privacy by default
 
-Bootstrap (steps 1-2 are once-ever across all hosts; step 3 repeats per host):
+Your private mirror has two layers of defense against leaking transcripts via CI, both applied automatically:
+
+1. Every workflow under `.github/workflows/` is gated on `${{ !github.event.repository.private }}`, so they skip on private repos and only run on public ones.
+2. `nomad init` calls `gh api -X PUT repos/<owner>/<repo>/actions/permissions -F enabled=false` on first run, turning Actions off at the repo level. Requires `gh` CLI authed; if missing or unauthed, init logs a manual fallback tip and continues.
+
+Pass `--keep-actions` to either form of init to skip step 2 (for example, when your org already enforces an Actions policy upstream).
+
+> [!WARNING]
+> If you ever flip the mirror to public, both protections evaporate: CI starts firing on every `nomad push` against `main`, and your session transcripts (which include conversation content) become world-readable. Keep it private.
+
+### Bootstrap
+
+Steps 1-2 are once-ever across all hosts; step 3 repeats per host:
 
 ```bash
 # 1. Create the private repo (or use the GitHub UI). Once, ever.
-gh repo create you/claude-nomad --private
+gh repo create <your-username>/claude-nomad --private
 
 # 2. Mirror the public tool into it. This severs the fork relationship,
 #    so your repo is independent of upstream. Once, ever.
 git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git
 cd /tmp/cn.git
-git push --mirror git@github.com:you/claude-nomad.git
+git push --mirror git@github.com:<your-username>/claude-nomad.git
 cd .. && rm -rf /tmp/cn.git
 
 # 3. Install the CLI globally and clone your private copy. Repeat on every host.
 npm i -g claude-nomad
-git clone git@github.com:you/claude-nomad.git ~/claude-nomad
+git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 ```
 
 `npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. The npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes; npm only blocks the install when `engine-strict=true` is configured.
@@ -242,7 +256,9 @@ export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads 
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
 
-Initialize the repo layout (first host only; subsequent hosts just clone and `nomad pull`). Pick one:
+### Initialize the repo layout
+
+First host only; subsequent hosts just clone and `nomad pull`. Both forms below auto-disable Actions on a detected private GitHub mirror as described in [Privacy by default](#privacy-by-default). Pick one:
 
 ```bash
 # Fresh start: scaffold an empty shared/, hosts/, path-map.json skeleton.
@@ -252,6 +268,9 @@ nomad init
 # starting point. Stages shared/ and writes hosts/<NOMAD_HOST>.json from
 # your current ~/.claude/settings.json. Does NOT touch the originals.
 nomad init --snapshot
+
+# Either form accepts --keep-actions to skip the auto-disable.
+nomad init --keep-actions
 ```
 
 `nomad init` refuses to clobber existing scaffold artifacts, so re-running on a populated repo is a safe no-op (it errors out naming the offender). `nomad pull` against an unscaffolded repo fails fast with `FATAL: repo not initialized; run 'nomad init' to scaffold` instead of silently leaving a half-state.
@@ -324,8 +343,6 @@ One-time setup if you're running a fork layout and don't have the `upstream` rem
 git remote add upstream git@github.com:funkadelic/claude-nomad.git
 ```
 
-`npm run update` still exists as a legacy shim that shells out to `scripts/update.sh`; prefer `nomad update` for new invocations.
-
 To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tracking `main`, fetch tags from the public repo and check out the tag (detached HEAD). On vanilla topology that's `origin`; on fork topology that's `upstream` (the private mirror at `origin` does not accumulate upstream release tags). Example: `git fetch upstream --tags && git switch --detach vX.Y.Z` (substitute `origin` for vanilla; use `git checkout vX.Y.Z` on older Git).
 
 If you installed an earlier version via `./install.sh` and a shell alias (the pre-npm path), your existing alias keeps working unchanged. Run `npm i -g claude-nomad` whenever you're ready to switch to the global binary, confirm `nomad --version` resolves to the npm install (`which nomad` should point under your npm prefix's `bin/`), then delete the alias line from your shell rc.
@@ -334,8 +351,9 @@ If you installed an earlier version via `./install.sh` and a shell alias (the pr
 
 | Command                          | Description                                                                                                                                                                                                             |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nomad init`                     | Scaffold empty `shared/`, `hosts/`, `path-map.json` on a fresh clone. Refuses to clobber existing scaffold.                                                                                                             |
-| `nomad init --snapshot`          | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified.                                                                 |
+| `nomad init`                     | Scaffold empty `shared/`, `hosts/`, `path-map.json` on a fresh clone. Refuses to clobber existing scaffold. Auto-disables Actions on a detected private GitHub mirror (see [Privacy by default](#privacy-by-default)).  |
+| `nomad init --snapshot`          | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified. Same auto-disable behavior as `nomad init`.                     |
+| `nomad init --keep-actions`      | Skip the auto-disable. Combinable with `--snapshot`. Use when an upstream org policy already governs Actions, or you intentionally want CI on the private mirror.                                                       |
 | `nomad pull`                     | `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths. FATAL if scaffold missing.                                                                                            |
 | `nomad pull --dry-run`           | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), exit without writing.                                                    |
 | `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                                                            |
