@@ -156,6 +156,29 @@ describe('cmdUpdate', () => {
     expect(doctor.spy).not.toHaveBeenCalled();
   });
 
+  it('fork merge fails and unmerged-path probe also throws: original merge NomadFatal propagates', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      diffThrows: new Error('git diff exploded'),
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate({ prompt: () => 'n' });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('git merge upstream/main');
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).not.toContain('git checkout --theirs -- package-lock.json');
+    expect(doctor.spy).not.toHaveBeenCalled();
+  });
+
   it('vanilla topology with --push-origin: FATALs (flag is fork-only)', async () => {
     mockGit({ remotes: { origin: PUBLIC_SSH } });
     mockDoctor();

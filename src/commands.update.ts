@@ -180,13 +180,20 @@ function runVanilla(opts: CmdUpdateOpts): void {
  * @returns `true` when the conflict was auto-resolved and the merge committed; `false` when other files are also unmerged (caller should re-throw the original failure).
  */
 function tryAutoResolveLockfileConflict(): boolean {
-  const unmerged = execFileSync('git', ['diff', '--name-only', '--diff-filter=U'], {
-    cwd: REPO_HOME,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-    .toString()
-    .split('\n')
-    .filter((line) => line !== '');
+  let unmerged: string[];
+  try {
+    unmerged = execFileSync('git', ['diff', '--name-only', '--diff-filter=U'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .split('\n')
+      .filter((line) => line !== '');
+  } catch {
+    // Probe failure must not mask the original merge NomadFatal. Returning
+    // false lets the caller re-throw the merge error unchanged.
+    return false;
+  }
   if (unmerged.length !== 1 || unmerged[0] !== 'package-lock.json') return false;
 
   gitOrFatal(
