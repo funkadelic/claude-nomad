@@ -38,7 +38,8 @@ const GH_TIMEOUT_MS = 5_000;
  * `.git` if present.
  */
 export function parseGitHubRemote(remoteUrl: string): GhRepoRef | null {
-  const m = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(remoteUrl.trim());
+  const normalized = remoteUrl.trim().replace(/\/$/, '');
+  const m = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(normalized);
   if (m === null) return null;
   return { owner: m[1] ?? '', repo: m[2] ?? '' };
 }
