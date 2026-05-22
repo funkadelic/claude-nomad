@@ -24,6 +24,14 @@ export type SpawnSyncFn = (
 ) => Buffer | string;
 
 /**
+ * Maximum time in milliseconds to wait for a `gh` CLI subprocess. Prevents
+ * `nomad init` from hanging indefinitely on a slow or captive-portal network;
+ * `execFileSync` throws `ETIMEDOUT` on expiry, which the callers' try/catch
+ * blocks already handle as a silent-skip.
+ */
+const GH_TIMEOUT_MS = 5_000;
+
+/**
  * Parse a git remote URL into `{ owner, repo }` when it points at GitHub.
  * Returns `null` for any non-GitHub URL (other forge, local path, malformed)
  * so the caller silently skips rather than failing init. Strips a trailing
@@ -43,7 +51,7 @@ export function parseGitHubRemote(remoteUrl: string): GhRepoRef | null {
  */
 export function ghAuthStatus(run: SpawnSyncFn = execFileSync): GhUnavailableReason | null {
   try {
-    run('gh', ['auth', 'status'], { stdio: ['ignore', 'ignore', 'ignore'] });
+    run('gh', ['auth', 'status'], { stdio: ['ignore', 'ignore', 'ignore'], timeout: GH_TIMEOUT_MS });
     return null;
   } catch (err) {
     const e = err as { code?: string };
@@ -59,6 +67,7 @@ export function ghAuthStatus(run: SpawnSyncFn = execFileSync): GhUnavailableReas
 export function isRepoPrivate(ref: GhRepoRef, run: SpawnSyncFn = execFileSync): boolean {
   const out = run('gh', ['repo', 'view', `${ref.owner}/${ref.repo}`, '--json', 'isPrivate'], {
     stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: GH_TIMEOUT_MS,
   }).toString();
   const parsed = JSON.parse(out) as { isPrivate?: unknown };
   return parsed.isPrivate === true;
@@ -72,7 +81,7 @@ export function isActionsEnabled(ref: GhRepoRef, run: SpawnSyncFn = execFileSync
   const out = run(
     'gh',
     ['api', `repos/${ref.owner}/${ref.repo}/actions/permissions`, '--jq', '.enabled'],
-    { stdio: ['ignore', 'pipe', 'ignore'] },
+    { stdio: ['ignore', 'pipe', 'ignore'], timeout: GH_TIMEOUT_MS },
   )
     .toString()
     .trim();
@@ -94,7 +103,7 @@ export function disableActions(ref: GhRepoRef, run: SpawnSyncFn = execFileSync):
       '-F',
       'enabled=false',
     ],
-    { stdio: ['ignore', 'ignore', 'pipe'] },
+    { stdio: ['ignore', 'ignore', 'pipe'], timeout: GH_TIMEOUT_MS },
   );
 }
 
