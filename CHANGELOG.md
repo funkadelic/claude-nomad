@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/funkadelic/claude-nomad/compare/v0.17.2...v0.18.0) (2026-05-22)
+
+
+### Added
+
+* **init:** auto-disable GitHub Actions on private mirror ([#94](https://github.com/funkadelic/claude-nomad/issues/94)) ([aee4736](https://github.com/funkadelic/claude-nomad/commit/aee47365f504c4700a619a2828c6fca8c18b1868))
+
 ## [0.17.2](https://github.com/funkadelic/claude-nomad/compare/v0.17.1...v0.17.2) (2026-05-22)
 
 
