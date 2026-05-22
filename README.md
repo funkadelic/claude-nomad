@@ -54,7 +54,7 @@ npm i -g claude-nomad
 
 ```bash
 # Clone your private mirror so nomad has a repo to sync into.
-git clone git@github.com:you/claude-nomad.git ~/claude-nomad
+git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 
 # Add to ~/.zshrc or ~/.bashrc:
 export NOMAD_HOST=<your-host-label>
@@ -79,7 +79,7 @@ First-host bootstrap and the safe-migration sequence for a populated `~/.claude/
 claude-nomad is a **tool**, not a config store. You maintain a separate **private** repo that holds your actual config (`CLAUDE.md`, agents, skills, settings overrides, session transcripts). The tool's source and your config end up coexisting in one working tree on each host.
 
 ```
-public funkadelic/claude-nomad          your private you/claude-nomad
+public funkadelic/claude-nomad          your private <your-username>/claude-nomad
   ├── src/         (the CLI)              ├── src/         (copy of the CLI)
   ├── package.json                        ├── package.json
   └── ...                                 ├── ...
@@ -104,7 +104,7 @@ By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config
 ```
 ~/claude-nomad/
 ├── src/                      # the CLI (came from the public tool repo)
-├── scripts/                  # tool helpers (update.sh; plus any one-shot scripts you add)
+├── scripts/                  # helper scripts you add
 ├── shared/                   # synced to every machine
 │   ├── CLAUDE.md
 │   ├── settings.base.json    # baseline settings
@@ -230,18 +230,18 @@ Steps 1-2 are once-ever across all hosts; step 3 repeats per host:
 
 ```bash
 # 1. Create the private repo (or use the GitHub UI). Once, ever.
-gh repo create you/claude-nomad --private
+gh repo create <your-username>/claude-nomad --private
 
 # 2. Mirror the public tool into it. This severs the fork relationship,
 #    so your repo is independent of upstream. Once, ever.
 git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git
 cd /tmp/cn.git
-git push --mirror git@github.com:you/claude-nomad.git
+git push --mirror git@github.com:<your-username>/claude-nomad.git
 cd .. && rm -rf /tmp/cn.git
 
 # 3. Install the CLI globally and clone your private copy. Repeat on every host.
 npm i -g claude-nomad
-git clone git@github.com:you/claude-nomad.git ~/claude-nomad
+git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 ```
 
 `npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. The npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes; npm only blocks the install when `engine-strict=true` is configured.
@@ -342,8 +342,6 @@ One-time setup if you're running a fork layout and don't have the `upstream` rem
 ```bash
 git remote add upstream git@github.com:funkadelic/claude-nomad.git
 ```
-
-`npm run update` still exists as a legacy shim that shells out to `scripts/update.sh`; prefer `nomad update` for new invocations.
 
 To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tracking `main`, fetch tags from the public repo and check out the tag (detached HEAD). On vanilla topology that's `origin`; on fork topology that's `upstream` (the private mirror at `origin` does not accumulate upstream release tags). Example: `git fetch upstream --tags && git switch --detach vX.Y.Z` (substitute `origin` for vanilla; use `git checkout vX.Y.Z` on older Git).
 
