@@ -98,6 +98,13 @@ export type GitBehavior = {
   /** When set, `git remote -v` throws this error. Used to exercise
    * `loadTopology`'s NomadFatal-wrapping catch arm. */
   remoteThrows?: Error;
+  /** Output for `git diff --name-only --diff-filter=U`: newline-separated
+   * unmerged paths after a failed merge. Empty/unset = no unmerged paths. */
+  unmergedPaths?: string;
+  /** When set, `git diff --name-only --diff-filter=U` throws this error.
+   * Used to verify the auto-resolve probe degrades gracefully and the
+   * original merge failure surfaces instead of a probe exception. */
+  diffThrows?: Error;
 };
 
 /** Single recorded execFileSync invocation; used by tests to assert on the
@@ -140,7 +147,16 @@ const HANDLERS: Record<string, Handler> = {
     return Buffer.from('');
   },
   'git push': () => Buffer.from(''),
-  'git diff': (b) => Buffer.from(b.diffNames ?? ''),
+  'git diff': (b, args) => {
+    if (args.includes('--diff-filter=U')) {
+      if (b.diffThrows !== undefined) throw b.diffThrows;
+      return Buffer.from(b.unmergedPaths ?? '');
+    }
+    return Buffer.from(b.diffNames ?? '');
+  },
+  'git checkout': () => Buffer.from(''),
+  'git add': () => Buffer.from(''),
+  'git commit': () => Buffer.from(''),
   'npm install': () => Buffer.from(''),
 };
 

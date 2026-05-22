@@ -170,6 +170,46 @@ function runVanilla(opts: CmdUpdateOpts): void {
 }
 
 /**
+ * Auto-resolve a merge conflict when `package-lock.json` is the only unmerged
+ * path. Release-please bumps the lockfile on every release, so any host that
+ * has run `npm install` against its mirror will hit this conflict on the next
+ * `nomad update`. The semantically-correct resolution is "take upstream's
+ * lockfile, then regenerate locally", so do that automatically when no other
+ * files are unmerged. Multi-file conflicts still fail loud for human review.
+ *
+ * @returns `true` when the conflict was auto-resolved and the merge committed; `false` when other files are also unmerged (caller should re-throw the original failure).
+ */
+function tryAutoResolveLockfileConflict(): boolean {
+  let unmerged: string[];
+  try {
+    unmerged = execFileSync('git', ['diff', '--name-only', '--diff-filter=U'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .split('\n')
+      .filter((line) => line !== '');
+  } catch {
+    // Probe failure must not mask the original merge NomadFatal. Returning
+    // false lets the caller re-throw the merge error unchanged.
+    return false;
+  }
+  if (unmerged.length !== 1 || unmerged[0] !== 'package-lock.json') return false;
+
+  gitOrFatal(
+    ['checkout', '--theirs', '--', 'package-lock.json'],
+    'git checkout --theirs package-lock.json',
+    REPO_HOME,
+  );
+  gitOrFatal(['add', 'package-lock.json'], 'git add package-lock.json', REPO_HOME);
+  execFileSync('npm', ['install'], { cwd: REPO_HOME, stdio: 'inherit' });
+  gitOrFatal(['add', 'package-lock.json'], 'git add package-lock.json', REPO_HOME);
+  gitOrFatal(['commit', '--no-edit'], 'git commit --no-edit', REPO_HOME);
+  log('auto-resolved package-lock.json conflict (took upstream, reinstalled, committed merge)');
+  return true;
+}
+
+/**
  * Perform a fork-style update by fetching from `upstream`, merging `upstream/main` into `main`, and optionally pushing the merge to `origin`.
  *
  * The prompt step is gated by `pushOrigin` (no prompt when explicit) and by
@@ -199,7 +239,11 @@ function runFork(opts: CmdUpdateOpts): void {
     return;
   }
   gitOrFatal(['fetch', 'upstream'], 'git fetch upstream', REPO_HOME);
-  gitOrFatal(['merge', 'upstream/main'], 'git merge upstream/main', REPO_HOME);
+  try {
+    gitOrFatal(['merge', 'upstream/main'], 'git merge upstream/main', REPO_HOME);
+  } catch (err) {
+    if (!tryAutoResolveLockfileConflict()) throw err;
+  }
   if (opts.pushOrigin === true) {
     gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
     return;
