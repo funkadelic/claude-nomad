@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/funkadelic/claude-nomad/compare/v0.19.0...v0.20.0) (2026-05-22)
+
+
+### Added
+
+* **update:** prompted auto-resolve for release-please artifact conflicts ([#98](https://github.com/funkadelic/claude-nomad/issues/98)) ([958cbf1](https://github.com/funkadelic/claude-nomad/commit/958cbf19839f1bda8ad0e25db0bb8495a88c2ee9))
+
 ## [0.19.0](https://github.com/funkadelic/claude-nomad/compare/v0.18.0...v0.19.0) (2026-05-22)
 
 
