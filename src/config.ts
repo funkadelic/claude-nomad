@@ -65,6 +65,7 @@ export const SHARED_LINKS = [
 export const NEVER_SYNC = new Set([
   '.claude.json',
   'history.jsonl',
+  'settings.local.json',
   'stats-cache.json',
   'todos',
   'shell-snapshots',
