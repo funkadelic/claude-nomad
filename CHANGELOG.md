@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/funkadelic/claude-nomad/compare/v0.20.0...v0.21.0) (2026-05-22)
+
+
+### Added
+
+* **config:** add settings.local.json to NEVER_SYNC ([#100](https://github.com/funkadelic/claude-nomad/issues/100)) ([26c7dc1](https://github.com/funkadelic/claude-nomad/commit/26c7dc1ef15206056349d117395cd22a4ee5bd84))
+
+
+### Changed
+
+* **utils:** drop unused writeJson helper ([#101](https://github.com/funkadelic/claude-nomad/issues/101)) ([168a9d7](https://github.com/funkadelic/claude-nomad/commit/168a9d7a582e3cd8ff97e26ac32c9ee4adad1a0d))
+
 ## [0.20.0](https://github.com/funkadelic/claude-nomad/compare/v0.19.0...v0.20.0) (2026-05-22)
 
 
