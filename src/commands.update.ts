@@ -160,13 +160,15 @@ function reinstallIfNeeded(beforeSha: string): void {
  * today.
  *
  * @param opts - Update options; only `dryRun` is observed for this topology.
+ * @returns `true` when this path already ran `npm install` and committed the merged lockfile (so the caller should skip `reinstallIfNeeded`). Vanilla `--ff-only` pulls never conflict, so this is always `false`.
  */
-function runVanilla(opts: CmdUpdateOpts): void {
+function runVanilla(opts: CmdUpdateOpts): boolean {
   if (opts.dryRun === true) {
     log('DRY-RUN: would run `git pull --ff-only origin main`');
-    return;
+    return false;
   }
   gitOrFatal(['pull', '--ff-only', 'origin', 'main'], 'git pull', REPO_HOME);
+  return false;
 }
 
 /**
@@ -280,7 +282,7 @@ function tryAutoResolveMergeConflict(opts: CmdUpdateOpts): boolean {
  *   - `pushOrigin`: when true, push to `origin/main` without prompting
  *   - `prompt`: optional prompt function used for interactive confirmation
  */
-function runFork(opts: CmdUpdateOpts): void {
+function runFork(opts: CmdUpdateOpts): boolean {
   const promptFn = opts.prompt ?? defaultPrompt;
   if (opts.dryRun === true) {
     log('DRY-RUN: would run `git fetch upstream`');
@@ -290,17 +292,19 @@ function runFork(opts: CmdUpdateOpts): void {
     } else {
       log('DRY-RUN: would prompt before pushing to origin/main');
     }
-    return;
+    return false;
   }
   gitOrFatal(['fetch', 'upstream'], 'git fetch upstream', REPO_HOME);
+  let autoResolved = false;
   try {
     gitOrFatal(['merge', 'upstream/main'], 'git merge upstream/main', REPO_HOME);
   } catch (err) {
     if (!tryAutoResolveMergeConflict(opts)) throw err;
+    autoResolved = true;
   }
   if (opts.pushOrigin === true) {
     gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
-    return;
+    return autoResolved;
   }
   const answer = promptFn(
     'Push merge to origin/main? (y publishes to your private mirror so other hosts see it; N keeps it local) [y/N] ',
@@ -310,6 +314,7 @@ function runFork(opts: CmdUpdateOpts): void {
   } else {
     log('skipping push to origin (run `git push origin main` later)');
   }
+  return autoResolved;
 }
 
 /**
@@ -371,9 +376,8 @@ export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
   }
 
   const beforeSha = headSha();
-  if (topology === 'vanilla') runVanilla(opts);
-  else runFork(opts);
+  const installAlreadyRan = topology === 'vanilla' ? runVanilla(opts) : runFork(opts);
 
-  reinstallIfNeeded(beforeSha);
+  if (!installAlreadyRan) reinstallIfNeeded(beforeSha);
   cmdDoctor();
 }
