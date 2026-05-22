@@ -98,7 +98,22 @@ jobs:
         # release-please creates tag_name as `v0.16.2`; package.json version
         # is bare semver `0.16.2`. Strip the leading `v` via shell parameter
         # expansion so the global install resolves the just-published version.
-        run: npm i -g "claude-nomad@${VERSION#v}"
+        # npm's registry CDN can lag the publish by tens of seconds; poll up
+        # to 90s (6 attempts, 15s apart) so a transient propagation race does
+        # not fail the workflow when the publish itself succeeded.
+        run: |
+          set -euo pipefail
+          bare="${VERSION#v}"
+          for attempt in 1 2 3 4 5 6; do
+            if npm i -g "claude-nomad@${bare}"; then
+              echo "OK: installed claude-nomad@${bare} on attempt ${attempt}"
+              exit 0
+            fi
+            echo "attempt ${attempt} failed; sleeping 15s before retry"
+            sleep 15
+          done
+          echo "FAIL: claude-nomad@${bare} did not propagate within 90s" >&2
+          exit 1
 
       - name: Verify --version output matches published tag
         env:
