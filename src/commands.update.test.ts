@@ -92,6 +92,70 @@ describe('cmdUpdate', () => {
     expect(git.calls.map((c) => c.args.join(' '))).toContain('push origin main');
   });
 
+  it('fork merge fails with sole package-lock.json conflict: auto-resolves via --theirs + npm install + commit', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'package-lock.json\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ prompt: () => 'n' });
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).toContain('git merge upstream/main');
+    expect(argvs).toContain('git checkout --theirs -- package-lock.json');
+    expect(argvs).toContain('git add package-lock.json');
+    expect(argvs).toContain('git commit --no-edit');
+    expect(argvs).toContain('npm install');
+    expect(doctor.spy).toHaveBeenCalledTimes(1);
+    expect(joinedLog(env.logSpy)).toContain('auto-resolved package-lock.json conflict');
+  });
+
+  it('fork merge fails with multiple conflicts including lockfile: propagates NomadFatal', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'package-lock.json\nsrc/foo.ts\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate({ prompt: () => 'n' });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).not.toContain('git checkout --theirs -- package-lock.json');
+    expect(doctor.spy).not.toHaveBeenCalled();
+  });
+
+  it('fork merge fails with sole non-lockfile conflict: propagates NomadFatal', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'src/foo.ts\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate({ prompt: () => 'n' });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).not.toContain('git checkout --theirs -- package-lock.json');
+    expect(doctor.spy).not.toHaveBeenCalled();
+  });
+
   it('vanilla topology with --push-origin: FATALs (flag is fork-only)', async () => {
     mockGit({ remotes: { origin: PUBLIC_SSH } });
     mockDoctor();
