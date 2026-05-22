@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/funkadelic/claude-nomad/compare/v0.17.1...v0.17.2) (2026-05-22)
+
+
+### Fixed
+
+* **ci:** retry smoke-test install for registry propagation ([#92](https://github.com/funkadelic/claude-nomad/issues/92)) ([1ae7576](https://github.com/funkadelic/claude-nomad/commit/1ae75760f674e93be1fadc2b927ee4dd03f9d346))
+
 ## [0.17.1](https://github.com/funkadelic/claude-nomad/compare/v0.17.0...v0.17.1) (2026-05-21)
 
 
