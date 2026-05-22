@@ -235,7 +235,6 @@ function runFork(opts: CmdUpdateOpts): void {
   try {
     gitOrFatal(['merge', 'upstream/main'], 'git merge upstream/main', REPO_HOME);
   } catch (err) {
-    if (!(err instanceof NomadFatal)) throw err;
     if (!tryAutoResolveLockfileConflict()) throw err;
   }
   if (opts.pushOrigin === true) {
