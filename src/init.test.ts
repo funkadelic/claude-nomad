@@ -142,19 +142,19 @@ describe('classifyRepoState classifier', () => {
   });
 
   it('returns "empty" when settings.base.json is absent and path-map.json missing', async () => {
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('empty');
   });
 
   it('returns "empty" when settings.base.json is absent and path-map.json has zero entries', async () => {
     writeFileSync(join(repo, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('empty');
   });
 
   it('returns "partial" when settings.base.json present but path-map.json missing', async () => {
     writeFileSync(join(repo, 'shared', 'settings.base.json'), '{}\n');
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('partial');
   });
 
@@ -164,7 +164,7 @@ describe('classifyRepoState classifier', () => {
       join(repo, 'path-map.json'),
       JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
     );
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('partial');
   });
 
@@ -175,7 +175,7 @@ describe('classifyRepoState classifier', () => {
       JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
     );
     writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}\n');
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('populated');
   });
 
@@ -191,14 +191,14 @@ describe('classifyRepoState classifier', () => {
     writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}\n');
     // No shared/CLAUDE.md written. Classifier should still report populated.
     expect(existsSync(join(repo, 'shared', 'CLAUDE.md'))).toBe(false);
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     expect(classifyRepoState(repo, 'test-host')).toBe('populated');
   });
 
   it('treats malformed path-map.json as zero entries instead of throwing', async () => {
     writeFileSync(join(repo, 'shared', 'settings.base.json'), '{}\n');
     writeFileSync(join(repo, 'path-map.json'), '{not valid');
-    const { classifyRepoState } = await import('./init.ts');
+    const { classifyRepoState } = await import('./init.classify.ts');
     // settings.base.json present but path-map malformed (treated as zero entries)
     // and hosts/<host>.json missing -> partial.
     expect(classifyRepoState(repo, 'test-host')).toBe('partial');

@@ -17,7 +17,7 @@ import {
 // prettier-ignore
 import { CLAUDE_HOME, HOST, KNOWN_SETTINGS_KEYS, NEVER_SYNC, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { classifyRepoState, reasonForPartial } from './init.ts';
+import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 import { findGitlinks } from './push-checks.ts';
 import { encodePath, gitStatusPorcelainZ, readJson } from './utils.ts';
 
