@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as childProcessModule from 'node:child_process';
+import type { PathMap } from './config.ts';
 import type * as pushChecksModule from './push-checks.ts';
 import type * as utilsModule from './utils.ts';
 
@@ -573,6 +574,42 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toContain('✗ ');
     expect(out).toContain('abc12345-test-fixture');
     expect(out).toContain('nomad drop-session');
+  });
+});
+
+// Coverage for the settings.local.json NEVER_SYNC entry added to config.ts.
+// settings.local.json is Anthropic's per-host overrides file; it must hard-block
+// at the push boundary even if it somehow lands in the repo tree (e.g. an
+// accidental copy of ~/.claude/ into shared/). Sibling case to the .claude.json
+// NEVER_SYNC coverage in commands.test.ts; lives here so the push-boundary test
+// surface keeps every NEVER_SYNC entry of immediate push concern in one file.
+describe('enforceAllowList NEVER_SYNC settings.local.json', () => {
+  let errorSpy: MockInstance<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rejects settings.local.json as NEVER_SYNC at repo root AND under shared/', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // Porcelain -z records for untracked files. NUL-terminated to match
+    // git status -z output (parsePorcelainZ splits on \0). The shared/
+    // case is the load-bearing one for this PR: defense-in-depth against an
+    // accidental copy of ~/.claude/settings.local.json into the synced tree.
+    const map: PathMap = { projects: {} };
+    for (const status of ['?? settings.local.json\0', '?? shared/settings.local.json\0']) {
+      expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    }
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('settings.local.json is in NEVER_SYNC and must never be pushed'),
+    );
   });
 });
 
