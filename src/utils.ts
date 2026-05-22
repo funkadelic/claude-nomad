@@ -117,11 +117,6 @@ export function readJson<T>(path: string): T {
   return data as T;
 }
 
-/** Write `data` as pretty-printed JSON (2-space indent, trailing newline). Non-atomic. */
-export function writeJson(path: string, data: unknown): void {
-  writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
-}
-
 /**
  * Atomic write: temp + fsync + rename + parent-dir fsync. Survives
  * interrupted pulls. Preserves the destination file's existing mode when it
