@@ -531,8 +531,12 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
 
   it('skips silently when the remote is not a GitHub URL (parseGitHubRemote returns null)', async () => {
     const { cmdInit } = await import('./init.ts');
-    cmdInit({ run: makeGhRun({ remote: 'https://gitlab.com/a/b.git' }) });
+    const baseRun = makeGhRun({ remote: 'https://gitlab.com/a/b.git' });
+    const runSpy = vi.fn<SpawnSyncFn>(baseRun);
+    cmdInit({ run: runSpy });
     expect(joinedLog(env.logSpy)).toContain('init complete');
+    const ghCalls = runSpy.mock.calls.filter(([bin]) => bin === 'gh');
+    expect(ghCalls).toHaveLength(0);
   });
 
   it('logs gh-CLI tip when gh is not installed', async () => {

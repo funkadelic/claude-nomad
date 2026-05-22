@@ -364,6 +364,7 @@ describe('nomad.ts init dispatcher', () => {
     process.argv = ['node', 'nomad.ts', 'init'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({ snapshot: false, keepActions: false });
+    expect(cmdInitMock).toHaveBeenCalledTimes(1);
   });
 
   it('routes `nomad init --snapshot` to cmdInit({ snapshot: true })', async () => {
@@ -372,6 +373,7 @@ describe('nomad.ts init dispatcher', () => {
     process.argv = ['node', 'nomad.ts', 'init', '--snapshot'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({ snapshot: true, keepActions: false });
+    expect(cmdInitMock).toHaveBeenCalledTimes(1);
   });
 
   it('routes `nomad init --keep-actions` to cmdInit({ keepActions: true })', async () => {
@@ -380,6 +382,7 @@ describe('nomad.ts init dispatcher', () => {
     process.argv = ['node', 'nomad.ts', 'init', '--keep-actions'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({ snapshot: false, keepActions: true });
+    expect(cmdInitMock).toHaveBeenCalledTimes(1);
   });
 
   it('routes `nomad init --snapshot --keep-actions` with both flags', async () => {
@@ -388,6 +391,7 @@ describe('nomad.ts init dispatcher', () => {
     process.argv = ['node', 'nomad.ts', 'init', '--snapshot', '--keep-actions'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({ snapshot: true, keepActions: true });
+    expect(cmdInitMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects `nomad init --unknown` with usage error and exit 1', async () => {
