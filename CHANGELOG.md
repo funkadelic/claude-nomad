@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/funkadelic/claude-nomad/compare/v0.18.0...v0.19.0) (2026-05-22)
+
+
+### Added
+
+* **update:** auto-resolve sole package-lock.json merge conflict ([#96](https://github.com/funkadelic/claude-nomad/issues/96)) ([8d76be9](https://github.com/funkadelic/claude-nomad/commit/8d76be9791b427484d709d97a5d077539c0f9f1a))
+
 ## [0.18.0](https://github.com/funkadelic/claude-nomad/compare/v0.17.2...v0.18.0) (2026-05-22)
 
 
