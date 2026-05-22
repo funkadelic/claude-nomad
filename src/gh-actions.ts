@@ -41,7 +41,7 @@ export function parseGitHubRemote(remoteUrl: string): GhRepoRef | null {
   const normalized = remoteUrl.trim().replace(/\/$/, '');
   const m = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(normalized);
   if (m === null) return null;
-  return { owner: m[1] ?? '', repo: m[2] ?? '' };
+  return { owner: m[1], repo: m[2] };
 }
 
 /**
