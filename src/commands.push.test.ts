@@ -596,14 +596,17 @@ describe('enforceAllowList NEVER_SYNC settings.local.json', () => {
     vi.restoreAllMocks();
   });
 
-  it('rejects settings.local.json as NEVER_SYNC with FATAL message and throws NomadFatal', async () => {
+  it('rejects settings.local.json as NEVER_SYNC at repo root AND under shared/', async () => {
     const { enforceAllowList } = await import('./commands.push.ts');
     const { NomadFatal } = await import('./utils.ts');
-    // Porcelain -z record for an untracked file at repo root. NUL-terminated to
-    // match git status -z output (parsePorcelainZ splits on \0).
-    const status = '?? settings.local.json\0';
+    // Porcelain -z records for untracked files. NUL-terminated to match
+    // git status -z output (parsePorcelainZ splits on \0). The shared/
+    // case is the load-bearing one for this PR: defense-in-depth against an
+    // accidental copy of ~/.claude/settings.local.json into the synced tree.
     const map: PathMap = { projects: {} };
-    expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    for (const status of ['?? settings.local.json\0', '?? shared/settings.local.json\0']) {
+      expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    }
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('settings.local.json is in NEVER_SYNC and must never be pushed'),
     );
