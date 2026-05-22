@@ -135,3 +135,31 @@ describe('isActionsEnabled', () => {
     expect(isActionsEnabled(ref, run)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// disableActions
+// ---------------------------------------------------------------------------
+
+import { disableActions } from './gh-actions.ts';
+
+describe('disableActions', () => {
+  const ref = { owner: 'alice', repo: 'mirror' };
+
+  it('calls gh api PUT with the correct args and does not throw on success', () => {
+    const calls: string[] = [];
+    const run: SpawnSyncFn = (bin, args) => {
+      calls.push([bin, ...args].join(' '));
+      return Buffer.from('');
+    };
+    expect(() => disableActions(ref, run)).not.toThrow();
+    expect(calls[0]).toContain('repos/alice/mirror/actions/permissions');
+    expect(calls[0]).toContain('PUT');
+  });
+
+  it('propagates subprocess errors to the caller', () => {
+    const run: SpawnSyncFn = () => {
+      throw new Error('gh api failed');
+    };
+    expect(() => disableActions(ref, run)).toThrow('gh api failed');
+  });
+});
