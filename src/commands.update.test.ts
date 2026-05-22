@@ -109,7 +109,8 @@ describe('cmdUpdate', () => {
     expect(argvs).toContain('git commit --no-edit');
     expect(argvs).toContain('npm install');
     expect(doctor.spy).toHaveBeenCalledTimes(1);
-    expect(joinedLog(env.logSpy)).toContain('auto-resolved package-lock.json conflict');
+    expect(joinedLog(env.logSpy)).toContain('auto-resolved merge conflict');
+    expect(joinedLog(env.logSpy)).toContain('package-lock.json');
   });
 
   it('fork merge fails with multiple conflicts including lockfile: propagates NomadFatal', async () => {
@@ -153,6 +154,97 @@ describe('cmdUpdate', () => {
     expect(caught).toBeInstanceOf(NomadFatal);
     const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
     expect(argvs).not.toContain('git checkout --theirs -- package-lock.json');
+    expect(doctor.spy).not.toHaveBeenCalled();
+  });
+
+  it('fork merge fails with release-please artifact set, prompt y: auto-resolves and continues', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths:
+        'package.json\npackage-lock.json\nCHANGELOG.md\n.release-please-manifest.json\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const promptSpy = vi.fn(() => 'y');
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ prompt: promptSpy });
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).toContain('git checkout --theirs -- package.json');
+    expect(argvs).toContain('git checkout --theirs -- package-lock.json');
+    expect(argvs).toContain('git checkout --theirs -- CHANGELOG.md');
+    expect(argvs).toContain('git checkout --theirs -- .release-please-manifest.json');
+    expect(argvs).toContain('npm install');
+    expect(argvs).toContain('git commit --no-edit');
+    expect(doctor.spy).toHaveBeenCalledTimes(1);
+    expect(promptSpy).toHaveBeenCalled();
+    expect(joinedLog(env.logSpy)).toContain('auto-resolved');
+  });
+
+  it('fork merge fails with release-please artifact subset (no CHANGELOG), prompt y: auto-resolves', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'package.json\npackage-lock.json\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ prompt: () => 'y' });
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).toContain('git checkout --theirs -- package.json');
+    expect(argvs).toContain('git checkout --theirs -- package-lock.json');
+    expect(argvs).not.toContain('git checkout --theirs -- CHANGELOG.md');
+    expect(doctor.spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('fork merge fails with release-please artifacts, prompt n: declines and propagates NomadFatal', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'package.json\npackage-lock.json\nCHANGELOG.md\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const promptSpy = vi.fn(() => 'n');
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate({ prompt: promptSpy });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toContain('git merge upstream/main');
+    expect(promptSpy).toHaveBeenCalled();
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).not.toContain('git checkout --theirs -- package.json');
+    expect(doctor.spy).not.toHaveBeenCalled();
+  });
+
+  it('fork merge fails with release-please artifacts and no prompt opt: defaultPrompt declines, propagates', async () => {
+    // No `prompt` passed: defaultPrompt's /dev/tty open fails in the test env
+    // and returns '', which the y/N check treats as no. Exercises the
+    // `opts.prompt ?? defaultPrompt` fallback for branch coverage.
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      mergeThrows: Object.assign(new Error('CONFLICT'), { stderr: Buffer.from('CONFLICT') }),
+      unmergedPaths: 'package.json\npackage-lock.json\n',
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      cmdUpdate();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const argvs = git.calls.map((c) => `${c.bin} ${c.args.join(' ')}`);
+    expect(argvs).not.toContain('git checkout --theirs -- package.json');
     expect(doctor.spy).not.toHaveBeenCalled();
   });
 
