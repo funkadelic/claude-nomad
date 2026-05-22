@@ -138,7 +138,10 @@ try {
       let argvOk = true;
       for (let i = 3; i < process.argv.length; i++) {
         const flag = process.argv[i];
-        if (!known.has(flag) || seen.has(flag)) { argvOk = false; break; }
+        if (!known.has(flag) || seen.has(flag)) {
+          argvOk = false;
+          break;
+        }
         seen.add(flag);
       }
       if (!argvOk) {

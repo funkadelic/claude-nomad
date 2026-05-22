@@ -52,7 +52,10 @@ export function parseGitHubRemote(remoteUrl: string): GhRepoRef | null {
  */
 export function ghAuthStatus(run: SpawnSyncFn = execFileSync): GhUnavailableReason | null {
   try {
-    run('gh', ['auth', 'status'], { stdio: ['ignore', 'ignore', 'ignore'], timeout: GH_TIMEOUT_MS });
+    run('gh', ['auth', 'status'], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+      timeout: GH_TIMEOUT_MS,
+    });
     return null;
   } catch (err) {
     const e = err as { code?: string };
