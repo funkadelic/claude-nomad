@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.3](https://github.com/funkadelic/claude-nomad/compare/v0.22.2...v0.22.3) (2026-05-23)
+
+
+### Changed
+
+* **deps:** resync package-lock with manifest after 0.22.2 ([#109](https://github.com/funkadelic/claude-nomad/issues/109)) ([7317fd4](https://github.com/funkadelic/claude-nomad/commit/7317fd4bb375c5a5fb9c05c327fc75423946b0f0))
+
 ## [0.22.2](https://github.com/funkadelic/claude-nomad/compare/v0.22.1...v0.22.2) (2026-05-23)
 
 
