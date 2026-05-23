@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 // prettier-ignore
-import { HOME, HOST, NEVER_SYNC, PUSH_ALLOWED_STATIC, REPO_HOME, type PathMap } from './config.ts';
+import { HOME, HOST, NEVER_SYNC, PUSH_ALLOWED_STATIC, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
 import { remapExtrasPush } from './extras-sync.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { runGitleaksScan } from './push-gitleaks.ts';
@@ -85,17 +85,23 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
  * Reject any staged path that is not on the push allow-list or that matches a
  * `NEVER_SYNC` entry. Builds the runtime allow-list by combining
  * `PUSH_ALLOWED_STATIC` with one `shared/projects/<logical>/` prefix per entry
- * in `path-map.json` AND one `shared/extras/<logical>/` prefix per key in
- * `map.extras ?? {}` (Pitfall 4 closed: data-driven, no hand-rolled bypass).
- * Logs every violation as a FATAL line so the user sees the full set (not
- * just the first), then throws `NomadFatal` to unwind the caller's
- * try/finally and release the push lock.
+ * in `path-map.json` AND one `shared/extras/<logical>/<dirname>/` prefix per
+ * (logical, whitelisted dirname) pair in `map.extras ?? {}` (Pitfall 4 closed:
+ * data-driven, no hand-rolled bypass). The dirname filter (`SUPPORTED_EXTRAS`)
+ * is the same one `remapExtrasPush` honors, so manually staged content under a
+ * non-whitelisted dirname surfaces as a FATAL instead of riding through on the
+ * logical-only prefix. Logs every violation as a FATAL line so the user sees
+ * the full set (not just the first), then throws `NomadFatal` to unwind the
+ * caller's try/finally and release the push lock.
  */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
+  const extrasWhitelist: readonly string[] = SUPPORTED_EXTRAS;
   const allowed = [
     ...PUSH_ALLOWED_STATIC,
     ...Object.keys(map.projects).map((l) => `shared/projects/${l}/`),
-    ...Object.keys(map.extras ?? {}).map((l) => `shared/extras/${l}/`),
+    ...Object.entries(map.extras ?? {}).flatMap(([l, dirnames]) =>
+      dirnames.filter((d) => extrasWhitelist.includes(d)).map((d) => `shared/extras/${l}/${d}/`),
+    ),
   ];
   const neverSyncHits: string[] = [];
   const violations: string[] = [];

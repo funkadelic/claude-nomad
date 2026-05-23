@@ -791,6 +791,36 @@ describe('enforceAllowList: extras prefix', () => {
       NomadFatal,
     );
   });
+
+  it('rejects non-whitelisted dirnames under a declared extras logical', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // Declaring `foo: ['.planning']` only widens the allow-list for the
+    // whitelisted dirname; manually staged content under `random-dir` (or any
+    // name outside `SUPPORTED_EXTRAS`) must still surface as FATAL so the
+    // dirname whitelist is enforced at the staging boundary, not just inside
+    // `remapExtrasPush`.
+    const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
+    expect(() => enforceAllowList('A  shared/extras/foo/random-dir/FILE.md\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('to sync shared/extras/foo/random-dir/FILE.md'),
+    );
+  });
+
+  it('drops non-whitelisted dirnames from the allow-list even when declared in path-map.json', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // If `path-map.json` declares a dirname outside `SUPPORTED_EXTRAS`,
+    // `remapExtrasPush` skips it with a log line, so it never reaches the
+    // staged tree on a clean run. The allow-list filters by the same
+    // whitelist so a manually staged copy is still blocked.
+    const map: PathMap = { projects: {}, extras: { foo: ['.scratch'] } };
+    expect(() => enforceAllowList('A  shared/extras/foo/.scratch/note.md\0', map)).toThrow(
+      NomadFatal,
+    );
+  });
 });
 
 // isNeverSync scope fix: paths under `shared/extras/` are exempt from the
