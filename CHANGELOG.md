@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/funkadelic/claude-nomad/compare/v0.21.0...v0.22.0) (2026-05-23)
+
+
+### Added
+
+* **extras-sync:** sync per-project .planning/ directories across hosts ([#103](https://github.com/funkadelic/claude-nomad/issues/103)) ([4563fe3](https://github.com/funkadelic/claude-nomad/commit/4563fe32a143dd9a2450baab8ec94a902800c2b3))
+
 ## [0.21.0](https://github.com/funkadelic/claude-nomad/compare/v0.20.0...v0.21.0) (2026-05-22)
 
 
