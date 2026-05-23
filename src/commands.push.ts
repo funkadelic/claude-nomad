@@ -229,7 +229,12 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
     gitOrFatal(['push'], 'git push', REPO_HOME);
     log('push complete');
-    emitSummary('push', remapResult.unmapped, remapResult.collisions, extrasResult.skipped);
+    emitSummary(
+      'push',
+      remapResult.unmapped + extrasResult.unmapped,
+      remapResult.collisions,
+      extrasResult.skipped,
+    );
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);
