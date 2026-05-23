@@ -729,7 +729,11 @@ describe.skipIf(!hasGitleaks)('allowlist regression fixture', () => {
     const sessionDir = join(repoUnderHome, 'shared', 'projects', 'foo');
     mkdirSync(sessionDir, { recursive: true });
     const sid = 'sid-allowlist-regression';
-    const fakePat = ['gh', 'p_', 'xJZbT3qfV2nLpKR8mYwH4dGtCsW9aE1uF6oA'].join('');
+    // Distinct from the documented test-fixture literal so the new
+    // path-scoped allowlist (which suppresses the documented literal under
+    // `shared/projects/.../*.jsonl`) does NOT swallow this fake. The
+    // fragments avoid storing a contiguous PAT-shaped token in source.
+    const fakePat = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');
     writeFileSync(join(sessionDir, `${sid}.jsonl`), `{"role":"user","text":"${fakePat}"}\n`);
 
     // One staged file per allowlist pattern. Each MUST be suppressed.
@@ -804,7 +808,9 @@ describe.skipIf(!hasGitleaks)('allowlist regression fixture', () => {
     // so the tightened allowlist must skip it) and a separate line with a
     // real GitHub PAT. The PAT must surface in the FATAL. Assemble the PAT
     // at runtime so the contiguous token shape is not committed verbatim.
-    const fakePat = ['gh', 'p_', 'xJZbT3qfV2nLpKR8mYwH4dGtCsW9aE1uF6oA'].join('');
+    // Distinct body from the documented test-fixture literal so the new
+    // path-scoped allowlist does not swallow this PAT.
+    const fakePat = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');
     writeFileSync(
       join(sessionDir, `${sid}.jsonl`),
       [
@@ -829,5 +835,48 @@ describe.skipIf(!hasGitleaks)('allowlist regression fixture', () => {
     // drop-session hint because the PAT fired.
     expect(msg).toContain(sid);
     expect(msg).toContain(`nomad drop-session ${sid}`);
+  });
+
+  it('allowlists the documented test-fixture github-pat literal inside shared/projects session paths', async () => {
+    // The literal `ghp_<test-fixture-pat>` (see `.gitleaks.toml`
+    // path-scoped `[[allowlists]]` block) accumulates in Claude Code
+    // session transcripts whenever a conversation touches the
+    // gitleaks Pitfall 4 docs or the allowlist config itself. Live
+    // sessions cannot be safely sed-scrubbed (sed -i renames out from
+    // under the open file descriptor), so the allowlist swallows the
+    // documented literal under `shared/projects/<logical>/.../*.jsonl`
+    // paths. A real PAT in the same file (different 36-char body)
+    // still fires; see the earlier regression test above.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const worktreeToml = join(here, '..', '.gitleaks.toml');
+    copyFileSync(worktreeToml, join(repoUnderHome, '.gitleaks.toml'));
+
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repoUnderHome });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
+      cwd: repoUnderHome,
+    });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: repoUnderHome });
+
+    const sessionDir = join(repoUnderHome, 'shared', 'projects', 'foo');
+    mkdirSync(join(sessionDir, 'sid-suppressed', 'subagents'), { recursive: true });
+    // Assemble the documented test-fixture literal at runtime so the
+    // contiguous token shape never sits in source-controlled bytes.
+    const fixture = ['gh', 'p_', 'xJZbT3qfV2nLpKR8mYwH4dGtCsW9aE1uF6oA'].join('');
+    writeFileSync(
+      join(sessionDir, 'sid-suppressed.jsonl'),
+      `{"role":"user","text":"${fixture}"}\n`,
+    );
+    writeFileSync(
+      join(sessionDir, 'sid-suppressed', 'subagents', 'agent-a1.jsonl'),
+      `{"role":"assistant","text":"${fixture}"}\n`,
+    );
+
+    execFileSync('git', ['add', '-A'], { cwd: repoUnderHome });
+
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    // No throw expected: both top-level and subagent paths are
+    // allowlisted by the new path-scoped block, and there is no other
+    // staged content that would fire on a different rule.
+    expect(() => runGitleaksScan()).not.toThrow();
   });
 });
