@@ -92,20 +92,30 @@ export function remapExtrasPush(
   const extrasMap = map.extras ?? {};
   if (Object.keys(extrasMap).length === 0) return { unmapped: 0, skipped: 0 };
 
+  // Validation pass: FATAL on any poisoned logical or unnormalized
+  // localRoot before any filesystem mutation. Runs over the entire extras
+  // map up-front so the documented "FATAL before any filesystem mutation"
+  // contract holds even when a clean entry sits ahead of a poisoned one in
+  // the iteration order (otherwise `mkdirSync(shared/extras/)` and the
+  // first cpSync would already have landed before the FATAL fired).
+  for (const logical of Object.keys(extrasMap)) {
+    assertSafeLogical(logical);
+    const localRoot = map.projects[logical]?.[HOST];
+    if (localRoot && localRoot !== 'TBD') assertSafeLocalRoot(localRoot, logical);
+  }
+
   const repoExtras = join(REPO_HOME, 'shared', 'extras');
   if (!dryRun) mkdirSync(repoExtras, { recursive: true });
 
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
 
   for (const [logical, dirnames] of Object.entries(extrasMap)) {
-    assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') {
       unmapped++;
       log(`skip ${logical}: no path for ${HOST}`);
       continue;
     }
-    assertSafeLocalRoot(localRoot, logical);
     for (const dirname of dirnames) {
       if (!whitelist.includes(dirname)) {
         skipped++;

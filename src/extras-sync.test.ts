@@ -883,6 +883,32 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
     });
   }
 
+  it('remapExtrasPush does not mkdir shared/extras/ when a later map entry is poisoned', async () => {
+    // Multi-entry guarantee: a clean logical at the head of the map must NOT
+    // cause `mkdirSync(shared/extras/)` (or its first cpSync) to land if a
+    // poisoned key sits later in iteration order. The validation pass FATALs
+    // up-front so the "FATAL before any filesystem mutation" contract holds
+    // across the entire map, not just per-entry. Without it, `clean` would
+    // race ahead of the FATAL for `../escape`.
+    const repoExtras = join(repoUnderHome, 'shared', 'extras');
+    // Beat the beforeEach scaffolding so we can prove absence post-call.
+    rmSync(repoExtras, { recursive: true, force: true });
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: {
+          clean: { 'test-host': projectRoot },
+          '../escape': { 'test-host': projectRoot },
+        },
+        extras: { clean: ['.planning'], '../escape': ['.planning'] },
+      }) + '\n',
+    );
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapExtrasPush('20260522-multi-evil')).toThrow(NomadFatal);
+    expect(existsSync(repoExtras)).toBe(false);
+  });
+
   // localRoot axis: poisoned path-map.json with an unnormalized host path
   // would silently land writes at a different absolute path than declared
   // (path.join normalizes '..' before cpSync sees the destination). The
