@@ -3,7 +3,8 @@ import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { isAbsolute, join, normalize } from 'node:path';
 
 import { HOME, HOST, REPO_HOME, SUPPORTED_EXTRAS } from './config.ts';
-import { backupExtrasWrite, backupRepoWrite, log, NomadFatal, readPathMap, warn } from './utils.ts';
+// prettier-ignore
+import { backupExtrasWrite, backupRepoWrite, encodePath, log, NomadFatal, readPathMap, warn } from './utils.ts';
 
 /**
  * `logical` keys in `path-map.json` are project identifiers (e.g. `ha-acwd`,
@@ -229,10 +230,13 @@ function listDivergingFiles(a: string, b: string): string[] {
  * diverging file plus a count summary. Runs AFTER `git pull --rebase` and
  * BEFORE `remapExtrasPull` (so local state is intact for comparison).
  * Non-blocking per the inherited LWW model; the WARN message names the
- * exact `~/.cache/claude-nomad/backup/<ts>/extras/` path that
- * `remapExtrasPull` will write to so users can recover the overwritten
- * content. Silent skip on missing path-map, no `extras` key, missing or
- * `'TBD'` host path, non-whitelisted dirname, or either side absent.
+ * per-project `~/.cache/claude-nomad/backup/<ts>/extras/<encoded-localRoot>/`
+ * path that `remapExtrasPull` will write to so users can recover the
+ * overwritten content. The `<encoded-localRoot>` namespace mirrors
+ * `backupExtrasWrite`'s layout so two opted-in projects with the same
+ * relative extras path do not collide. Silent skip on missing path-map, no
+ * `extras` key, missing or `'TBD'` host path, non-whitelisted dirname, or
+ * either side absent.
  */
 export function divergenceCheckExtras(ts: string): void {
   const mapPath = join(REPO_HOME, 'path-map.json');
@@ -247,6 +251,7 @@ export function divergenceCheckExtras(ts: string): void {
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') continue;
     assertSafeLocalRoot(localRoot, logical);
+    const projectBackupRoot = join(backupRoot, encodePath(localRoot));
     for (const dirname of dirnames) {
       if (!whitelist.includes(dirname)) continue;
       const local = join(localRoot, dirname);
@@ -255,7 +260,7 @@ export function divergenceCheckExtras(ts: string): void {
       const diff = listDivergingFiles(local, repo);
       if (diff.length > 0) {
         warn(
-          `local ${dirname} for ${logical} diverges from origin in ${diff.length} file(s); next remapExtrasPull will overwrite them (backups at ${backupRoot}/)`,
+          `local ${dirname} for ${logical} diverges from origin in ${diff.length} file(s); next remapExtrasPull will overwrite them (backups at ${projectBackupRoot}/)`,
         );
         for (const f of diff) warn(`  ${f}`);
       }

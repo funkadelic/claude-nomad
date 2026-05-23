@@ -270,15 +270,21 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
  *
  * Backup root is `extras/`-prefixed inside the same `<ts>` dir so the
  * snapshot is distinguishable from `CLAUDE_HOME` dumps (no prefix) and
- * `repo/` dumps. Layout: `~/.cache/claude-nomad/backup/<ts>/extras/<rel>/`
- * where `<rel>` is `relative(projectRoot, absPath)`.
+ * `repo/` dumps. Layout:
+ * `~/.cache/claude-nomad/backup/<ts>/extras/<encoded-projectRoot>/<rel>/`
+ * where `<rel>` is `relative(projectRoot, absPath)` and
+ * `<encoded-projectRoot>` is `encodePath(projectRoot)`. The encoded prefix
+ * namespaces snapshots by project so two opted-in projects with the same
+ * relative extras path (e.g. both with `.planning/PLAN.md`) cannot collide
+ * inside the same `<ts>` directory (`cpSync` runs with `force: false`, so a
+ * collision would silently drop the second snapshot).
  */
 export function backupExtrasWrite(absPath: string, ts: string, projectRoot: string): void {
   if (!existsSync(absPath)) return;
   const rel = relative(projectRoot, absPath);
   if (rel.startsWith('..') || rel === '') return;
   const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'extras');
-  const dst = join(backupRoot, rel);
+  const dst = join(backupRoot, encodePath(projectRoot), rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
 }

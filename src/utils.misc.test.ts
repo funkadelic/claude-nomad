@@ -149,34 +149,83 @@ describe('backupExtrasWrite', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('snapshots a single file to the extras-prefixed backup root', async () => {
+  it('snapshots a single file to the extras-prefixed backup root, namespaced by projectRoot', async () => {
     const planningDir = join(projectRoot, '.planning');
     mkdirSync(planningDir, { recursive: true });
     const src = join(planningDir, 'PLAN.md');
     writeFileSync(src, '# plan content\n');
 
-    const { backupExtrasWrite } = await import('./utils.ts');
+    const { backupExtrasWrite, encodePath } = await import('./utils.ts');
     backupExtrasWrite(src, '20260522-100000', projectRoot);
 
-    const backupFile = join(cacheBase, '20260522-100000', 'extras', '.planning', 'PLAN.md');
+    const backupFile = join(
+      cacheBase,
+      '20260522-100000',
+      'extras',
+      encodePath(projectRoot),
+      '.planning',
+      'PLAN.md',
+    );
     expect(existsSync(backupFile)).toBe(true);
     expect(readFileSync(backupFile, 'utf8')).toBe('# plan content\n');
   });
 
-  it('recursively snapshots a directory tree', async () => {
+  it('recursively snapshots a directory tree under the encoded-projectRoot namespace', async () => {
     const planningDir = join(projectRoot, '.planning');
     mkdirSync(join(planningDir, 'phases', '01'), { recursive: true });
     writeFileSync(join(planningDir, 'STATE.md'), 'state\n');
     writeFileSync(join(planningDir, 'phases', '01', 'PLAN.md'), 'plan\n');
 
-    const { backupExtrasWrite } = await import('./utils.ts');
+    const { backupExtrasWrite, encodePath } = await import('./utils.ts');
     backupExtrasWrite(planningDir, '20260522-100001', projectRoot);
 
-    const backupRoot = join(cacheBase, '20260522-100001', 'extras', '.planning');
+    const backupRoot = join(
+      cacheBase,
+      '20260522-100001',
+      'extras',
+      encodePath(projectRoot),
+      '.planning',
+    );
     expect(existsSync(join(backupRoot, 'STATE.md'))).toBe(true);
     expect(readFileSync(join(backupRoot, 'STATE.md'), 'utf8')).toBe('state\n');
     expect(existsSync(join(backupRoot, 'phases', '01', 'PLAN.md'))).toBe(true);
     expect(readFileSync(join(backupRoot, 'phases', '01', 'PLAN.md'), 'utf8')).toBe('plan\n');
+  });
+
+  it('does not collide when two projectRoots share the same relative extras path', async () => {
+    // Without the encodePath(projectRoot) namespace, `backup/<ts>/extras/<rel>`
+    // collides whenever two opted-in projects pull simultaneously with the
+    // same relative extras tree. `cpSync` runs with `force: false`, so the
+    // second snapshot would silently drop and the user would lose recovery
+    // coverage for one of the two projects.
+    const projectRootB = join(testHome, 'fake-project-b');
+    mkdirSync(join(projectRootB, '.planning'), { recursive: true });
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), 'A\n');
+    writeFileSync(join(projectRootB, '.planning', 'PLAN.md'), 'B\n');
+
+    const { backupExtrasWrite, encodePath } = await import('./utils.ts');
+    backupExtrasWrite(join(projectRoot, '.planning', 'PLAN.md'), '20260522-100004', projectRoot);
+    backupExtrasWrite(join(projectRootB, '.planning', 'PLAN.md'), '20260522-100004', projectRootB);
+
+    const aBackup = join(
+      cacheBase,
+      '20260522-100004',
+      'extras',
+      encodePath(projectRoot),
+      '.planning',
+      'PLAN.md',
+    );
+    const bBackup = join(
+      cacheBase,
+      '20260522-100004',
+      'extras',
+      encodePath(projectRootB),
+      '.planning',
+      'PLAN.md',
+    );
+    expect(readFileSync(aBackup, 'utf8')).toBe('A\n');
+    expect(readFileSync(bBackup, 'utf8')).toBe('B\n');
   });
 
   it('no-ops when the source path does not exist', async () => {

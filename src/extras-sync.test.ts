@@ -383,7 +383,7 @@ describe('remapExtrasPull (integration)', () => {
     expect(existsSync(join(projectRoot, '.planning'))).toBe(false);
   });
 
-  it('backs up prior <localRoot>/.planning/ to .../backup/<ts>/extras/ via backupExtrasWrite', async () => {
+  it('backs up prior <localRoot>/.planning/ to .../backup/<ts>/extras/<encoded>/ via backupExtrasWrite', async () => {
     mkdirSync(join(projectRoot, '.planning'), { recursive: true });
     writeFileSync(join(projectRoot, '.planning', 'old.md'), 'old\n');
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
@@ -397,11 +397,21 @@ describe('remapExtrasPull (integration)', () => {
     );
 
     const { remapExtrasPull } = await import('./extras-sync.ts');
+    const { encodePath } = await import('./utils.ts');
     remapExtrasPull('20260522-120005');
 
-    // backupExtrasWrite uses the extras/-prefix path layout. Backup root is
-    // ~/.cache/claude-nomad/backup/<ts>/extras/<rel-to-localRoot>/.
-    const backupOld = join(cacheBase, '20260522-120005', 'extras', '.planning', 'old.md');
+    // backupExtrasWrite uses the extras/-prefix path layout, namespaced by
+    // encodePath(projectRoot) so two opted-in projects with the same relative
+    // extras path do not collide. Layout:
+    //   ~/.cache/claude-nomad/backup/<ts>/extras/<encoded-projectRoot>/<rel>/.
+    const backupOld = join(
+      cacheBase,
+      '20260522-120005',
+      'extras',
+      encodePath(projectRoot),
+      '.planning',
+      'old.md',
+    );
     expect(existsSync(backupOld)).toBe(true);
     expect(readFileSync(backupOld, 'utf8')).toBe('old\n');
 
