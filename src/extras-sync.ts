@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { isAbsolute, join, normalize } from 'node:path';
 
-import { HOST, REPO_HOME, SUPPORTED_EXTRAS } from './config.ts';
+import { HOME, HOST, REPO_HOME, SUPPORTED_EXTRAS } from './config.ts';
 import { backupExtrasWrite, backupRepoWrite, log, NomadFatal, readPathMap, warn } from './utils.ts';
 
 /**
@@ -241,7 +241,7 @@ export function divergenceCheckExtras(ts: string): void {
   const map = readPathMap(mapPath);
   const extrasMap = map.extras ?? {};
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
-  const backupRoot = join('~', '.cache', 'claude-nomad', 'backup', ts, 'extras');
+  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'extras');
   for (const [logical, dirnames] of Object.entries(extrasMap)) {
     assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];

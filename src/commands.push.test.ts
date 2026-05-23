@@ -978,6 +978,65 @@ describe('cmdPush: extras pipeline integration', () => {
     expect(remapExtrasPushMock).toHaveBeenCalledWith(expect.any(String), { dryRun: true });
   });
 
+  it('combines remapResult.unmapped + extrasResult.unmapped in the post-push success summary', async () => {
+    // Regression pin for the 3-site emitSummary contract: the post-commit
+    // success path historically only passed remapResult.unmapped, silently
+    // dropping TBD-host extras from the user-visible WARN. With 2 session
+    // unmapped + 3 extras unmapped, the combined "5 unmapped on push" must
+    // appear in the WARN summary line.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, extras: {} }) + '\n',
+    );
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op */
+        }),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 2, collisions: 0 })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 3, skipped: 0 })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0'),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+    const errSpyLocal = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush()).not.toThrow();
+    // push complete log line confirms we reached the success path (not the
+    // empty-status or dry-run branches whose own coverage exists elsewhere).
+    expect(logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n')).toContain(
+      'push complete',
+    );
+    const combined = errSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).toContain('5 unmapped on push');
+  });
+
   it('surfaces extrasResult.skipped to emitSummary on the clean push success path', async () => {
     // skipped=2 from remapExtrasPush should produce the new
     // "2 extras skipped" suffix on the push WARN line.
