@@ -117,7 +117,7 @@ function mockGitleaksPresent(): void {
  * (sandbox HOME, settings files, gitleaks probes, etc.) fall through to the
  * real implementation so the rest of `cmdDoctor` behaves normally.
  */
-function mockPackageJsonVersion(version: string | null): void {
+function mockPackageJsonVersion(version: string | null, engines?: { node?: string } | null): void {
   vi.doMock('node:fs', async (importOriginal) => {
     const actual = await importOriginal<typeof fsModule>();
     return {
@@ -126,7 +126,9 @@ function mockPackageJsonVersion(version: string | null): void {
         (path: fsModule.PathOrFileDescriptor, opts?: Parameters<typeof actual.readFileSync>[1]) => {
           if (typeof path === 'string' && path.endsWith('/package.json')) {
             if (version === null) throw new Error('ENOENT package.json');
-            return JSON.stringify({ name: 'claude-nomad', version });
+            const pkg: Record<string, unknown> = { name: 'claude-nomad', version };
+            if (engines !== undefined && engines !== null) pkg.engines = engines;
+            return JSON.stringify(pkg);
           }
           return actual.readFileSync(path, opts);
         },
@@ -1675,5 +1677,151 @@ describe('compareSemver', () => {
     expect(compareSemver('not-semver', '1.0.0')).toBe(0);
     expect(compareSemver('1.0.0', '1.0.0-rc.1')).toBe(0);
     expect(compareSemver('1.2', '1.2.0')).toBe(0);
+  });
+});
+
+describe('parseMinVersion', () => {
+  it('peels the bare version out of `>=X.Y.Z`', async () => {
+    const { parseMinVersion } = await import('./commands.doctor.engine.ts');
+    expect(parseMinVersion('>=22.22.1')).toBe('22.22.1');
+  });
+
+  it('tolerates optional whitespace after `>=`', async () => {
+    const { parseMinVersion } = await import('./commands.doctor.engine.ts');
+    expect(parseMinVersion('>= 22.22.1')).toBe('22.22.1');
+  });
+
+  it('returns null for caret ranges', async () => {
+    const { parseMinVersion } = await import('./commands.doctor.engine.ts');
+    expect(parseMinVersion('^22.22.1')).toBeNull();
+  });
+
+  it('returns null for tilde ranges', async () => {
+    const { parseMinVersion } = await import('./commands.doctor.engine.ts');
+    expect(parseMinVersion('~22.22.1')).toBeNull();
+  });
+
+  it('returns null for bare versions with no operator', async () => {
+    const { parseMinVersion } = await import('./commands.doctor.engine.ts');
+    expect(parseMinVersion('22.22.1')).toBeNull();
+  });
+
+  it('returns null for OR-combined ranges', async () => {
+    const { parseMinVersion } = await import('./commands.doctor.engine.ts');
+    expect(parseMinVersion('>=22.0.0 || >=24.0.0')).toBeNull();
+  });
+
+  it('returns null for an empty string', async () => {
+    const { parseMinVersion } = await import('./commands.doctor.engine.ts');
+    expect(parseMinVersion('')).toBeNull();
+  });
+});
+
+describe('cmdDoctor node-engine check', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let originalNodeVersion: string;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    originalNodeVersion = process.version;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/srv/foo' } } }) + '\n',
+    );
+    const sharedClaude = join(env.testHome, 'claude-nomad', 'shared', 'CLAUDE.md');
+    writeFileSync(sharedClaude, '# shared\n');
+    symlinkSync(sharedClaude, join(env.testHome, '.claude', 'CLAUDE.md'));
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
+    Object.defineProperty(process, 'version', {
+      value: originalNodeVersion,
+      configurable: true,
+    });
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  /** Override `process.version` for a single test. Restored in `afterEach`. */
+  function setNodeVersion(v: string): void {
+    Object.defineProperty(process, 'version', { value: v, configurable: true });
+  }
+
+  it('emits PASS when current node equals the engines minimum', async () => {
+    setNodeVersion('v22.22.1');
+    mockPackageJsonVersion('0.22.3', { node: '>=22.22.1' });
+    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${okGlyph} node: v22.22.1 (satisfies >=22.22.1)`);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits PASS when current node is above the engines minimum', async () => {
+    setNodeVersion('v24.0.0');
+    mockPackageJsonVersion('0.22.3', { node: '>=22.22.1' });
+    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${okGlyph} node: v24.0.0 (satisfies >=22.22.1)`);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits WARN (no exitCode change) when current node is below the engines minimum', async () => {
+    setNodeVersion('v22.16.0');
+    mockPackageJsonVersion('0.22.3', { node: '>=22.22.1' });
+    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${warnGlyph} node: v22.16.0 (below required >=22.22.1`);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO node line when engines field is missing', async () => {
+    setNodeVersion('v22.22.1');
+    mockPackageJsonVersion('0.22.3', null);
+    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/node: v/);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO node line when engines.node uses unsupported range syntax', async () => {
+    setNodeVersion('v22.22.1');
+    mockPackageJsonVersion('0.22.3', { node: '^22.22.1' });
+    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/node: v/);
+    expect(process.exitCode === 1).toBe(false);
   });
 });

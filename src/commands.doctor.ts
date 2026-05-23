@@ -12,6 +12,7 @@ import {
   reportRepoState,
   reportSharedLinks,
 } from './commands.doctor.checks.ts';
+import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { renderDoctor, section } from './commands.doctor.format.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
 
@@ -51,6 +52,7 @@ export function cmdDoctor(): void {
 
   const version = section('Version');
   reportVersionCheck(version);
+  reportNodeEngineCheck(version);
 
   renderDoctor([version, host, links, settings, pathMap, neverSync, repository]);
 }
