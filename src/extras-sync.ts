@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, normalize } from 'node:path';
 
 import { HOST, REPO_HOME, SUPPORTED_EXTRAS } from './config.ts';
 import { backupExtrasWrite, backupRepoWrite, log, NomadFatal, readPathMap, warn } from './utils.ts';
@@ -20,6 +20,30 @@ function assertSafeLogical(logical: string): void {
   if (!SAFE_LOGICAL.test(logical) || logical === '.' || logical === '..') {
     throw new NomadFatal(
       `invalid logical name in path-map.json extras: ${JSON.stringify(logical)} (must match [A-Za-z0-9._-]+; no path separators or '..')`,
+    );
+  }
+}
+
+/**
+ * Reject `localRoot` values that contain unnormalized segments (`..`,
+ * redundant `/.`, trailing slashes that don't survive `normalize`). A
+ * poisoned `path-map.json` with `host: '/tmp/x/../escape'` would silently
+ * land writes at `/tmp/escape/.planning/` because `path.join` normalizes
+ * `..` before `cpSync` sees the destination. The user thinks they declared
+ * one path and got another. Requiring `localRoot === normalize(localRoot)`
+ * (and an absolute path on top) catches the obvious traversal trick and
+ * forces poisoned-map writes to surface as a FATAL before any filesystem
+ * mutation. Same defense-in-depth shape as `assertSafeLogical`.
+ */
+function assertSafeLocalRoot(localRoot: string, logical: string): void {
+  if (!isAbsolute(localRoot)) {
+    throw new NomadFatal(
+      `invalid localRoot for ${logical} in path-map.json: ${JSON.stringify(localRoot)} (must be absolute)`,
+    );
+  }
+  if (localRoot !== normalize(localRoot)) {
+    throw new NomadFatal(
+      `invalid localRoot for ${logical} in path-map.json: ${JSON.stringify(localRoot)} (must be already-normalized; no '..' or redundant segments)`,
     );
   }
 }
@@ -80,6 +104,7 @@ export function remapExtrasPush(
       log(`skip ${logical}: no path for ${HOST}`);
       continue;
     }
+    assertSafeLocalRoot(localRoot, logical);
     for (const dirname of dirnames) {
       if (!whitelist.includes(dirname)) {
         skipped++;
@@ -140,6 +165,7 @@ export function remapExtrasPull(
       log(`skip ${logical}: no path for ${HOST}`);
       continue;
     }
+    assertSafeLocalRoot(localRoot, logical);
     for (const dirname of dirnames) {
       if (!whitelist.includes(dirname)) {
         skipped++;
@@ -220,6 +246,7 @@ export function divergenceCheckExtras(ts: string): void {
     assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') continue;
+    assertSafeLocalRoot(localRoot, logical);
     for (const dirname of dirnames) {
       if (!whitelist.includes(dirname)) continue;
       const local = join(localRoot, dirname);
