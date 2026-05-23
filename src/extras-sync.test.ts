@@ -504,6 +504,13 @@ describe('divergenceCheckExtras (integration)', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    // Mirror the `vi.doMock('node:child_process', ...)` calls that the
+    // ENOENT and unexpected-git-failure tests register. `vi.restoreAllMocks()`
+    // does NOT clear `vi.doMock` module mocks, and the inline
+    // `vi.doUnmock` at the end of each test is skipped if any assertion
+    // throws first, so without this safety net a failing test would leak
+    // the mock into later tests in the file.
+    vi.doUnmock('node:child_process');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
