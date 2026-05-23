@@ -39,12 +39,16 @@ export function copyExtras(src: string, dst: string): void {
 /**
  * Push: copy whitelisted extras directories under each project's localRoot
  * into the repo at `shared/extras/<logical>/<dirname>/`. Returns
- * `{ unmapped, skipped }` where `unmapped` counts projects with no host
- * path (missing, empty, or `'TBD'`) and `skipped` counts dirnames not in
- * `SUPPORTED_EXTRAS` (whitelist enforcement); both counts feed the future
- * `emitSummary` widening. `opts.dryRun` logs `would push extras:` lines
- * without writing, with identical count semantics. Legacy `path-map.json`
- * without an `extras` key returns `{ unmapped: 0, skipped: 0 }` cleanly.
+ * `{ unmapped, skipped }` with intentionally asymmetric granularity:
+ * `unmapped` is per-project (one increment per `logical` with no host path,
+ * which short-circuits before its dirnames are visited) and `skipped` is
+ * per-dirname (one increment per non-whitelisted entry inside an otherwise
+ * mapped project). Both counts feed `emitSummary`; the asymmetry mirrors
+ * the underlying skip-loop control flow (outer per-logical, inner
+ * per-dirname) and matches what an operator wants to see in the summary
+ * line. `opts.dryRun` logs `would push extras:` lines without writing,
+ * with identical count semantics. Legacy `path-map.json` without an
+ * `extras` key returns `{ unmapped: 0, skipped: 0 }` cleanly.
  */
 export function remapExtrasPush(
   ts: string,
@@ -100,7 +104,8 @@ export function remapExtrasPush(
 /**
  * Pull: copy whitelisted extras from `shared/extras/<logical>/<dirname>/`
  * back into each project's localRoot on this host. Returns `{ unmapped,
- * skipped }` symmetric with `remapExtrasPush`. `opts.dryRun` logs `would
+ * skipped }` with the same asymmetric granularity as `remapExtrasPush`:
+ * `unmapped` per-project, `skipped` per-dirname. `opts.dryRun` logs `would
  * overwrite extras:` lines without writing. Uses `backupExtrasWrite` (not
  * `backupBeforeWrite`) because `<localRoot>/<dirname>` lives outside
  * `CLAUDE_HOME` and the standard helper's relative-path guard would no-op
