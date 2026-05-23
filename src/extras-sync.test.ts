@@ -646,3 +646,142 @@ describe('divergenceCheckExtras (integration)', () => {
     expect(captured.read()).not.toContain('⚠︎');
   });
 });
+
+describe('extras-sync e2e round-trip', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testRepo: string;
+  let hostAHome: string;
+  let hostBHome: string;
+  let hostAProjectRoot: string;
+  let hostBProjectRoot: string;
+  let mapPath: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testRepo = mkdtempSync(join(tmpdir(), 'nomad-extras-e2e-repo-'));
+    hostAHome = mkdtempSync(join(tmpdir(), 'nomad-extras-e2e-hostA-'));
+    hostBHome = mkdtempSync(join(tmpdir(), 'nomad-extras-e2e-hostB-'));
+    hostAProjectRoot = join(hostAHome, 'fake-project');
+    hostBProjectRoot = join(hostBHome, 'fake-project');
+    mapPath = join(testRepo, 'path-map.json');
+    mkdirSync(hostAProjectRoot, { recursive: true });
+    mkdirSync(hostBProjectRoot, { recursive: true });
+    // Pin the repo location across both hosts via NOMAD_REPO so HOME mutations
+    // do not relocate the shared repo between the push and pull halves.
+    process.env.NOMAD_REPO = testRepo;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testRepo, { recursive: true, force: true });
+    rmSync(hostAHome, { recursive: true, force: true });
+    rmSync(hostBHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Switch the process env to the named host's identity and reset the module
+   * graph so the next dynamic import of `./extras-sync.ts` re-evaluates
+   * `HOST` and `REPO_HOME` from `./config.ts` against the new env. Both
+   * constants are resolved at module load; without the reset the second
+   * host's call would still see the first host's identity.
+   */
+  function actAsHost(home: string, host: string): void {
+    process.env.HOME = home;
+    process.env.NOMAD_HOST = host;
+    vi.resetModules();
+  }
+
+  it('happy path: host A push -> host B pull preserves byte-equality across mixed file types', async () => {
+    // Populate host A's project with three artifacts of different content
+    // shapes: top-level markdown, nested-dir markdown, and JSON. The
+    // composed round-trip must preserve all three byte-for-byte.
+    const stateMd = '# state\n\nactive: phase-19\n';
+    const planMd = '# plan\n\nstep 1\nstep 2\n';
+    const configJson = '{"feature":"extras","enabled":true}\n';
+    mkdirSync(join(hostAProjectRoot, '.planning', 'phases', '01'), { recursive: true });
+    writeFileSync(join(hostAProjectRoot, '.planning', 'STATE.md'), stateMd);
+    writeFileSync(join(hostAProjectRoot, '.planning', 'phases', '01', 'PLAN.md'), planMd);
+    writeFileSync(join(hostAProjectRoot, '.planning', 'config.json'), configJson);
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { demo: { 'host-a': hostAProjectRoot, 'host-b': hostBProjectRoot } },
+        extras: { demo: ['.planning'] },
+      }) + '\n',
+    );
+
+    // Push from host A.
+    actAsHost(hostAHome, 'host-a');
+    const push = await import('./extras-sync.ts');
+    const pushResult = push.remapExtrasPush('20260522-100000');
+    expect(pushResult).toEqual({ unmapped: 0, skipped: 0 });
+
+    // Shared repo now mirrors host A's .planning/ byte-for-byte.
+    const sharedState = join(testRepo, 'shared', 'extras', 'demo', '.planning', 'STATE.md');
+    const sharedPlan = join(
+      testRepo,
+      'shared',
+      'extras',
+      'demo',
+      '.planning',
+      'phases',
+      '01',
+      'PLAN.md',
+    );
+    const sharedCfg = join(testRepo, 'shared', 'extras', 'demo', '.planning', 'config.json');
+    expect(readFileSync(sharedState, 'utf8')).toBe(stateMd);
+    expect(readFileSync(sharedPlan, 'utf8')).toBe(planMd);
+    expect(readFileSync(sharedCfg, 'utf8')).toBe(configJson);
+
+    // Pull on host B.
+    actAsHost(hostBHome, 'host-b');
+    const pull = await import('./extras-sync.ts');
+    const pullResult = pull.remapExtrasPull('20260522-100001');
+    expect(pullResult).toEqual({ unmapped: 0, skipped: 0 });
+
+    // Host B's project root now contains exactly the bytes host A wrote.
+    expect(readFileSync(join(hostBProjectRoot, '.planning', 'STATE.md'), 'utf8')).toBe(stateMd);
+    expect(
+      readFileSync(join(hostBProjectRoot, '.planning', 'phases', '01', 'PLAN.md'), 'utf8'),
+    ).toBe(planMd);
+    expect(readFileSync(join(hostBProjectRoot, '.planning', 'config.json'), 'utf8')).toBe(
+      configJson,
+    );
+  });
+
+  it('back-compat: legacy path-map without extras key is a clean no-op on push and pull', async () => {
+    mkdirSync(join(hostAProjectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(hostAProjectRoot, '.planning', 'STATE.md'), '# legacy\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { demo: { 'host-a': hostAProjectRoot, 'host-b': hostBProjectRoot } },
+      }) + '\n',
+    );
+
+    // Push from host A: no extras key -> clean no-op, shared/extras absent.
+    actAsHost(hostAHome, 'host-a');
+    const push = await import('./extras-sync.ts');
+    const pushResult = push.remapExtrasPush('20260522-100002');
+    expect(pushResult).toEqual({ unmapped: 0, skipped: 0 });
+    expect(existsSync(join(testRepo, 'shared', 'extras', 'demo'))).toBe(false);
+
+    // Pull on host B: same clean no-op, host B's project is untouched.
+    actAsHost(hostBHome, 'host-b');
+    const pull = await import('./extras-sync.ts');
+    const pullResult = pull.remapExtrasPull('20260522-100003');
+    expect(pullResult).toEqual({ unmapped: 0, skipped: 0 });
+    expect(existsSync(join(hostBProjectRoot, '.planning'))).toBe(false);
+  });
+});
