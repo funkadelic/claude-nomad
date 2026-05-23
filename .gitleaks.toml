@@ -15,19 +15,24 @@ regexes = [
     '''key=[a-f0-9]{8,} [\w./-]+\.\w+:\d+''',
 ]
 
-# Path-scoped: the documented test-fixture github-pat literal accumulates
+# Path-scoped: the documented test-fixture github-pat literal AND the three
+# entropy-variant placeholders (zero-suffix, alphabet, repeat-A) accumulate
 # in Claude Code session transcripts whenever a conversation touches the
-# Pitfall 4 docs or this allowlist itself. Live sessions cannot be
-# safely sed-scrubbed (sed -i renames out from under the running CLI's
-# open file descriptor and silently drops post-rename writes), so the
-# only sustainable false-positive handler is a narrow allowlist scoped
-# to synced session paths. `condition = "AND"` requires BOTH the literal
-# AND a `shared/projects/<logical>/.../*.jsonl` path; a real PAT in the
-# same file (different 36-char body) still fires.
+# Pitfall 4 docs, this allowlist itself, or a session-scrub discussion that
+# names one of the variants. Live sessions cannot be safely sed-scrubbed
+# (sed -i renames out from under the running CLI's open file descriptor
+# and silently drops post-rename writes), so the only sustainable
+# false-positive handler is a narrow allowlist scoped to synced session
+# paths. `condition = "AND"` requires BOTH a known literal AND a
+# `shared/projects/<logical>/.../*.jsonl` path; a real PAT in the same
+# file (different 36-char body) still fires.
 [[allowlists]]
-description = "claude-nomad: documented test-fixture github-pat literal in synced session transcripts"
+description = "claude-nomad: documented test-fixture github-pat literals + scrub placeholders in synced session transcripts"
 regexes = [
     '''ghp_xJZbT3qfV2nLpKR8mYwH4dGtCsW9aE1uF6oA''',
+    '''ghp_xJZbT3qfV2nLpKR8mYwH4dGtCs0000000000''',
+    '''ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789''',
+    '''ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA''',
 ]
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
