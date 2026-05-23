@@ -1,25 +1,16 @@
+import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { HOST, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
-import { backupExtrasWrite, backupRepoWrite, log, readJson } from './utils.ts';
+import { backupExtrasWrite, backupRepoWrite, log, readJson, warn } from './utils.ts';
 
 /**
- * Recursive mirror copy: removes `dst` first, then copies `src` into it.
- * `cpSync(force:true)` overwrites matching files but does not delete
- * dst-only entries; the upfront `rmSync` makes the operation a true mirror
- * so `dst` reflects `src` exactly rather than accumulating stale files.
- *
- * Differs from `copyDir` in `remap.ts` only by passing `verbatimSymlinks: true`
- * to `cpSync`. Without that flag, Node's default behavior rewrites relative
- * symlink targets inside the source tree to absolute paths into the source
- * host's filesystem (Pitfall 1; see nodejs/node issue 41693, fixed by the
- * flag introduced in Node 18). The repo would then carry dangling absolute
- * paths that break on every other host. The `.planning/` tree is the first
- * sync target that realistically contains symlinks, so the flag is required.
- *
- * Exported (not file-local) so the test file can call it directly;
- * `remapExtrasPush` and `remapExtrasPull` below are the primary public API.
+ * Recursive mirror copy: `rmSync` then `cpSync` so dst-only entries are
+ * removed (true mirror, not just overwrite). Passes `verbatimSymlinks: true`
+ * to keep relative symlink targets unrewritten across hosts (Pitfall 1;
+ * nodejs/node issue 41693). Exported so the test file can call it directly;
+ * `remapExtrasPush` and `remapExtrasPull` are the primary public API.
  */
 export function copyExtras(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
@@ -28,21 +19,13 @@ export function copyExtras(src: string, dst: string): void {
 
 /**
  * Push: copy whitelisted extras directories under each project's localRoot
- * into the repo at `shared/extras/<logical>/<dirname>/`.
- *
- * Returns `{ unmapped: N, skipped: M }` where `unmapped` counts projects
- * that have an `extras` entry but no resolvable host path (missing entry,
- * empty string, or `'TBD'`), and `skipped` counts directory names that
- * appear in `extras` but are not on `SUPPORTED_EXTRAS` (D-04 whitelist
- * enforcement). The two counts are independent and consumed by the future
- * `emitSummary` widening.
- *
- * `opts.dryRun` (default `false`): when `true`, log `would push extras:`
- * lines instead of calling `backupRepoWrite` + `copyExtras`. Counts are
- * computed identically in both modes.
- *
- * Legacy `path-map.json` files without a top-level `extras` key return
- * `{ unmapped: 0, skipped: 0 }` cleanly per the D-03 additive contract.
+ * into the repo at `shared/extras/<logical>/<dirname>/`. Returns
+ * `{ unmapped, skipped }` where `unmapped` counts projects with no host
+ * path (missing, empty, or `'TBD'`) and `skipped` counts dirnames not in
+ * `SUPPORTED_EXTRAS` (whitelist enforcement); both counts feed the future
+ * `emitSummary` widening. `opts.dryRun` logs `would push extras:` lines
+ * without writing, with identical count semantics. Legacy `path-map.json`
+ * without an `extras` key returns `{ unmapped: 0, skipped: 0 }` cleanly.
  */
 export function remapExtrasPush(
   ts: string,
@@ -95,23 +78,14 @@ export function remapExtrasPush(
 }
 
 /**
- * Pull: copy whitelisted extras directories from the repo at
- * `shared/extras/<logical>/<dirname>/` back into each project's localRoot
- * on this host.
- *
- * Returns `{ unmapped: N, skipped: M }`, symmetric with `remapExtrasPush`.
- * `opts.dryRun` (default `false`): when `true`, log `would overwrite
- * extras:` lines instead of calling `backupExtrasWrite` + `copyExtras`.
- *
- * Backs up host-side state via `backupExtrasWrite` (NOT `backupBeforeWrite`)
- * because `<localRoot>/<dirname>` lives outside `CLAUDE_HOME`; the existing
- * helper's `relative(CLAUDE_HOME, absPath)` guard would silently no-op and
- * the prior on-disk content would be lost. See `utils.ts` for the
- * `extras/`-prefixed backup root layout.
- *
- * Legacy `path-map.json` files without a top-level `extras` key, or a
- * missing `shared/extras/` directory in the repo, both produce a clean
- * `{ unmapped: 0, skipped: 0 }` no-op per the D-03 additive contract.
+ * Pull: copy whitelisted extras from `shared/extras/<logical>/<dirname>/`
+ * back into each project's localRoot on this host. Returns `{ unmapped,
+ * skipped }` symmetric with `remapExtrasPush`. `opts.dryRun` logs `would
+ * overwrite extras:` lines without writing. Uses `backupExtrasWrite` (not
+ * `backupBeforeWrite`) because `<localRoot>/<dirname>` lives outside
+ * `CLAUDE_HOME` and the standard helper's relative-path guard would no-op
+ * and lose prior content. Legacy `path-map.json` without an `extras` key,
+ * or a missing `shared/extras/`, both produce a clean no-op.
  */
 export function remapExtrasPull(
   ts: string,
@@ -161,4 +135,65 @@ export function remapExtrasPull(
     }
   }
   return { unmapped, skipped };
+}
+
+/**
+ * List files that differ between two paths via `git diff --no-index
+ * --name-only`. Exit 0 = identical, exit 1 = differences exist (not an
+ * error: read names from `e.stdout`). Any other status is a real git
+ * failure, silently swallowed per the non-blocking contract. Argv-array
+ * `execFileSync` (no shell) so paths cannot inject.
+ */
+function listDivergingFiles(a: string, b: string): string[] {
+  try {
+    const stdout = execFileSync('git', ['diff', '--no-index', '--name-only', a, b], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    return stdout.split('\n').filter((line) => line.length > 0);
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { status?: number; stdout?: Buffer };
+    if (e.status === 1 && e.stdout !== undefined) {
+      return e.stdout
+        .toString()
+        .split('\n')
+        .filter((line) => line.length > 0);
+    }
+    return [];
+  }
+}
+
+/**
+ * Read-only pre-pull check: compare local `<localRoot>/<dirname>/` against
+ * the just-pulled `shared/extras/<logical>/<dirname>/` and emit a WARN per
+ * diverging file plus a count summary. Runs AFTER `git pull --rebase` and
+ * BEFORE `remapExtrasPull` (so local state is intact for comparison).
+ * Non-blocking per the inherited LWW model; recovery is from
+ * `~/.cache/claude-nomad/backup/<ts>/extras/` once the remap snapshots
+ * host state. Silent skip on missing path-map, no `extras` key, missing
+ * or `'TBD'` host path, non-whitelisted dirname, or either side absent.
+ */
+export function divergenceCheckExtras(): void {
+  const mapPath = join(REPO_HOME, 'path-map.json');
+  if (!existsSync(mapPath)) return;
+
+  const map = readJson<PathMap>(mapPath);
+  const extrasMap = map.extras ?? {};
+  const whitelist: readonly string[] = SUPPORTED_EXTRAS;
+  for (const [logical, dirnames] of Object.entries(extrasMap)) {
+    const localRoot = map.projects[logical]?.[HOST];
+    if (!localRoot || localRoot === 'TBD') continue;
+    for (const dirname of dirnames) {
+      if (!whitelist.includes(dirname)) continue;
+      const local = join(localRoot, dirname);
+      const repo = join(REPO_HOME, 'shared', 'extras', logical, dirname);
+      if (!existsSync(local) || !existsSync(repo)) continue;
+      const diff = listDivergingFiles(local, repo);
+      if (diff.length > 0) {
+        warn(
+          `local ${dirname} for ${logical} diverges from origin in ${diff.length} file(s); next remapExtrasPull will overwrite them (backups at ~/.cache/claude-nomad/backup/<ts>/extras/)`,
+        );
+        for (const f of diff) warn(`  ${f}`);
+      }
+    }
+  }
 }

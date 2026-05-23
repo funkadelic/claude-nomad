@@ -430,3 +430,219 @@ describe('remapExtrasPull (integration)', () => {
     expect(readlinkSync(join(projectRoot, '.planning', 'PLAN-link.md'))).toBe('PLAN.md');
   });
 });
+
+describe('divergenceCheckExtras (integration)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedExtras: string;
+  let projectRoot: string;
+  let mapPath: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-extras-diverge-test-home-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedExtras = join(repoUnderHome, 'shared', 'extras');
+    projectRoot = join(testHome, 'fake-project');
+    mapPath = join(repoUnderHome, 'path-map.json');
+    mkdirSync(sharedExtras, { recursive: true });
+    mkdirSync(projectRoot, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Capture both `process.stderr.write` and `console.error` output and return
+   * the concatenated string. The `warn()` helper routes through
+   * `console.error` which by default writes to `process.stderr.write`; spying
+   * on `console.error` short-circuits that, so both spies are installed in
+   * case either path is exercised by future refactors. Returns the joined
+   * stderr captures so tests can assert against the WARN glyph and file
+   * names.
+   */
+  const captureStderr = (): { read: () => string } => {
+    const writes: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+    return { read: () => writes.join('\n') };
+  };
+
+  it('no WARN when local and repo are byte-equal (no divergence)', async () => {
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras();
+
+    expect(captured.read()).not.toContain('⚠︎');
+  });
+
+  it('WARN names the diverging file plus a count summary line', async () => {
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '{"old":true}\n');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '{"new":true}\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras();
+
+    const output = captured.read();
+    expect(output).toContain('PLAN.md');
+    expect(output).toMatch(/1 file/);
+  });
+
+  it('two diverging files: two file-name WARNs plus one summary WARN', async () => {
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), 'local-plan\n');
+    writeFileSync(join(projectRoot, '.planning', 'NOTES.md'), 'local-notes\n');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), 'repo-plan\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'NOTES.md'), 'repo-notes\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras();
+
+    const output = captured.read();
+    expect(output).toContain('PLAN.md');
+    expect(output).toContain('NOTES.md');
+    expect(output).toMatch(/2 file/);
+  });
+
+  it('silently skips when local extras directory is absent', async () => {
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), 'repo-only\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras();
+
+    expect(captured.read()).not.toContain('⚠︎');
+  });
+
+  it('silently skips when repo extras directory is absent', async () => {
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), 'local-only\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras();
+
+    expect(captured.read()).not.toContain('⚠︎');
+  });
+
+  it('returns void and does not throw even when divergence is detected', async () => {
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), 'local\n');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), 'repo\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    const result = divergenceCheckExtras();
+
+    expect(result).toBeUndefined();
+  });
+
+  it('silently skips non-whitelisted dir names (SUPPORTED_EXTRAS guard)', async () => {
+    mkdirSync(join(projectRoot, 'node_modules'), { recursive: true });
+    writeFileSync(join(projectRoot, 'node_modules', 'a.js'), 'local\n');
+    mkdirSync(join(sharedExtras, 'foo', 'node_modules'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', 'node_modules', 'a.js'), 'repo\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['node_modules'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras();
+
+    expect(captured.read()).not.toContain('⚠︎');
+  });
+
+  it('silently skips when host path is TBD', async () => {
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), 'repo\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': 'TBD' } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras();
+
+    expect(captured.read()).not.toContain('⚠︎');
+  });
+});
