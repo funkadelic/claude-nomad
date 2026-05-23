@@ -858,7 +858,111 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
       const { NomadFatal } = await import('./utils.ts');
       expect(() => remapExtrasPull('20260522-evil')).toThrow(NomadFatal);
     });
+
+    it(`divergenceCheckExtras rejects logical key ${JSON.stringify(evilKey)} before any git invocation`, async () => {
+      writeFileSync(
+        mapPath,
+        JSON.stringify({
+          projects: { [evilKey]: { 'test-host': projectRoot } },
+          extras: { [evilKey]: ['.planning'] },
+        }) + '\n',
+      );
+      const { divergenceCheckExtras } = await import('./extras-sync.ts');
+      const { NomadFatal } = await import('./utils.ts');
+      expect(() => divergenceCheckExtras('20260522-evil')).toThrow(NomadFatal);
+    });
   }
+
+  // localRoot axis: poisoned path-map.json with an unnormalized host path
+  // would silently land writes at a different absolute path than declared
+  // (path.join normalizes '..' before cpSync sees the destination). The
+  // assertSafeLocalRoot guard rejects unnormalized or non-absolute paths
+  // before any filesystem mutation.
+  // /tmp/trailing/ is left OUT: POSIX path.normalize preserves trailing slashes,
+  // and a trailing slash is benign (not a traversal vector). The check is about
+  // catching `..` and redundant-segment shenanigans that cause silent target drift.
+  const evilLocalRoots = ['/tmp/x/../escape', '/tmp/./redundant', 'relative/path'];
+  for (const evilRoot of evilLocalRoots) {
+    it(`remapExtrasPush rejects unnormalized localRoot ${JSON.stringify(evilRoot)}`, async () => {
+      writeFileSync(
+        mapPath,
+        JSON.stringify({
+          projects: { foo: { 'test-host': evilRoot } },
+          extras: { foo: ['.planning'] },
+        }) + '\n',
+      );
+      const { remapExtrasPush } = await import('./extras-sync.ts');
+      const { NomadFatal } = await import('./utils.ts');
+      expect(() => remapExtrasPush('20260522-evil-root')).toThrow(NomadFatal);
+    });
+
+    it(`remapExtrasPull rejects unnormalized localRoot ${JSON.stringify(evilRoot)}`, async () => {
+      writeFileSync(
+        mapPath,
+        JSON.stringify({
+          projects: { foo: { 'test-host': evilRoot } },
+          extras: { foo: ['.planning'] },
+        }) + '\n',
+      );
+      const { remapExtrasPull } = await import('./extras-sync.ts');
+      const { NomadFatal } = await import('./utils.ts');
+      expect(() => remapExtrasPull('20260522-evil-root')).toThrow(NomadFatal);
+    });
+  }
+
+  it('divergenceCheckExtras WARN interpolates the real ts into the backup path', async () => {
+    // The WARN message must point users at the actual ~/.cache/.../<ts>/extras/
+    // dir that the next remapExtrasPull will write to, not a literal `<ts>`
+    // placeholder. Set up content that differs between local and shared so
+    // listDivergingFiles fires the WARN branch.
+    const sharedExtras = join(repoUnderHome, 'shared', 'extras');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'STATE.md'), '# shared\n');
+    writeFileSync(join(projectRoot, '.planning', 'STATE.md'), '# local\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260522-real-ts');
+    const warned = warnSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+    // ts substring present in backup path; no un-interpolated placeholder.
+    expect(warned).toContain('20260522-real-ts');
+    expect(warned).not.toContain('<ts>');
+  });
+
+  it('listDivergingFiles WARNs (not silently empty) when git is not on PATH (ENOENT)', async () => {
+    // Defeats D-08 if a missing git binary collapses to "no diff". Mock
+    // execFileSync to throw ENOENT and confirm the WARN line fires.
+    const sharedExtras = join(repoUnderHome, 'shared', 'extras');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'STATE.md'), '# shared\n');
+    writeFileSync(join(projectRoot, '.planning', 'STATE.md'), '# local\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    vi.doMock('node:child_process', () => ({
+      execFileSync: vi.fn(() => {
+        const err = new Error('spawn git ENOENT') as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        throw err;
+      }),
+    }));
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260522-enoent-ts');
+    const warned = warnSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(warned).toContain('git not on PATH');
+    vi.doUnmock('node:child_process');
+  });
 
   it('safe logical names pass: ha-acwd, foo_bar, project.name, A1', async () => {
     // Smoke-check that the regex isn't accidentally too strict; a real-world
