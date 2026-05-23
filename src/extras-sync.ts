@@ -2,8 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { HOST, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
-import { backupExtrasWrite, backupRepoWrite, log, readJson, warn } from './utils.ts';
+import { HOST, REPO_HOME, SUPPORTED_EXTRAS } from './config.ts';
+import { backupExtrasWrite, backupRepoWrite, log, readPathMap, warn } from './utils.ts';
 
 /**
  * Recursive mirror copy: `rmSync` then `cpSync` so dst-only entries are
@@ -40,7 +40,7 @@ export function remapExtrasPush(
     return { unmapped: 0, skipped: 0 };
   }
 
-  const map = readJson<PathMap>(mapPath);
+  const map = readPathMap(mapPath);
   const extrasMap = map.extras ?? {};
   if (Object.keys(extrasMap).length === 0) return { unmapped: 0, skipped: 0 };
 
@@ -101,7 +101,7 @@ export function remapExtrasPull(
     return { unmapped: 0, skipped: 0 };
   }
 
-  const map = readJson<PathMap>(mapPath);
+  const map = readPathMap(mapPath);
   const extrasMap = map.extras ?? {};
   if (Object.keys(extrasMap).length === 0) return { unmapped: 0, skipped: 0 };
 
@@ -123,6 +123,7 @@ export function remapExtrasPull(
       const src = join(repoExtras, logical, dirname);
       if (!existsSync(src)) continue;
       const dst = join(localRoot, dirname);
+
       if (dryRun) {
         log(`would overwrite extras: ${dst} (from ${src})`);
         continue;
@@ -176,7 +177,7 @@ export function divergenceCheckExtras(): void {
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (!existsSync(mapPath)) return;
 
-  const map = readJson<PathMap>(mapPath);
+  const map = readPathMap(mapPath);
   const extrasMap = map.extras ?? {};
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
   for (const [logical, dirnames] of Object.entries(extrasMap)) {

@@ -9,7 +9,7 @@ import { runGitleaksScan } from './push-gitleaks.ts';
 import { remapPush } from './remap.ts';
 import { emitSummary } from './summary.ts';
 // prettier-ignore
-import { acquireLock, die, fail, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readJson, releaseLock } from './utils.ts';
+import { acquireLock, die, fail, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readPathMap, releaseLock } from './utils.ts';
 
 /**
  * Match `path` against an entry in the push allow-list. Exact match for
@@ -195,13 +195,8 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     }
     const mapPath = join(REPO_HOME, 'path-map.json');
     if (!existsSync(mapPath)) die('path-map.json missing, cannot enforce push allow-list');
-    // Route a malformed path-map.json through NomadFatal so finally releases the lock.
-    let map: PathMap;
-    try {
-      map = readJson<PathMap>(mapPath);
-    } catch (err) {
-      throw new NomadFatal(`could not parse path-map.json: ${(err as Error).message}`);
-    }
+    // readPathMap routes parse failures through NomadFatal so finally releases the lock.
+    const map = readPathMap(mapPath);
     enforceAllowList(status, map);
     if (dryRun) {
       // Skip the staging quartet so no commit lands and nothing is pushed.

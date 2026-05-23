@@ -181,10 +181,11 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   });
 
   it('releases the lockfile when cmdPush dies on malformed path-map.json (parse failure)', async () => {
-    // path-map.json present but readJson throws SyntaxError. cmdPush wraps
-    // it in NomadFatal; the catch block sets exitCode and finally releases
-    // the lock. Mock push-checks/remap so the pre-checks no-op, and mock
-    // readJson on utils to deterministically throw.
+    // path-map.json present but malformed. readPathMap wraps the SyntaxError
+    // as NomadFatal at the first read site (remapExtrasPush, which runs
+    // before cmdPush's own readPathMap call). The catch block sets exitCode
+    // and finally releases the lock. Mock push-checks/remap so the
+    // pre-checks no-op; the malformed file on disk drives the actual parse.
     writeFileSync(join(repoUnderHome, 'path-map.json'), '{');
     vi.doMock('./push-checks.ts', () => ({
       findGitlinks: vi.fn(() => []),
@@ -198,25 +199,6 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
     }));
-    // remapExtrasPush would otherwise call the mocked readJson and surface
-    // the SyntaxError before the wrapped readJson call in cmdPush reaches it.
-    // Stub the entire module so the parse-failure assertion exercises the
-    // intended path (the readJson try/catch in cmdPush itself, around line 184).
-    vi.doMock('./extras-sync.ts', () => ({
-      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0 })),
-      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0 })),
-      divergenceCheckExtras: vi.fn(),
-    }));
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return {
-        ...actual,
-        gitStatusPorcelainZ: vi.fn(() => '?? shared/CLAUDE.md\0'),
-        readJson: vi.fn(() => {
-          throw new SyntaxError('Unexpected end of JSON input');
-        }),
-      };
-    });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
     expect(process.exitCode).toBe(1);

@@ -17,7 +17,7 @@ import {
 import { dirname, join, relative } from 'node:path';
 
 import { dim, failGlyph, green, infoGlyph, okGlyph, red, warnGlyph, yellow } from './color.ts';
-import { CLAUDE_HOME, HOME } from './config.ts';
+import { CLAUDE_HOME, HOME, type PathMap } from './config.ts';
 
 const LOCK_PATH = join(HOME, '.cache', 'claude-nomad', 'nomad.lock');
 
@@ -115,6 +115,22 @@ export function gitOrFatal(args: readonly string[], context: string, cwd?: strin
 export function readJson<T>(path: string): T {
   const data: unknown = JSON.parse(readFileSync(path, 'utf8'));
   return data as T;
+}
+
+/**
+ * Read `path-map.json` and wrap parse errors as `NomadFatal` so callers route
+ * the failure through their `try/finally` lock-release path instead of
+ * exposing a raw `SyntaxError` past `NomadFatal`-only catch blocks. Equivalent
+ * to the inline `try { readJson } catch { throw NomadFatal }` pattern in
+ * `cmdPush`; use this helper at every other read site so the lock-release
+ * contract holds uniformly across the pipeline.
+ */
+export function readPathMap(mapPath: string): PathMap {
+  try {
+    return readJson<PathMap>(mapPath);
+  } catch (err) {
+    throw new NomadFatal(`could not parse path-map.json: ${(err as Error).message}`);
+  }
 }
 
 /**
