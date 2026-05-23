@@ -785,3 +785,99 @@ describe('extras-sync e2e round-trip', () => {
     expect(existsSync(join(hostBProjectRoot, '.planning'))).toBe(false);
   });
 });
+
+describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let projectRoot: string;
+  let mapPath: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-extras-safe-logical-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    projectRoot = join(testHome, 'fake-project');
+    mapPath = join(repoUnderHome, 'path-map.json');
+    mkdirSync(join(repoUnderHome, 'shared', 'extras'), { recursive: true });
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'STATE.md'), '# state\n');
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  // Each case crafts a path-map.json with a malicious logical key and expects
+  // NomadFatal BEFORE any cpSync/write side-effect lands on the filesystem.
+  // The push allow-list also catches these eventually, but only after the
+  // copy has already mutated state on disk. assertSafeLogical fails fast.
+  const malicious = ['../escape', '..', 'foo/bar', 'foo\\bar', '.', 'a/../b'];
+  for (const evilKey of malicious) {
+    it(`remapExtrasPush rejects logical key ${JSON.stringify(evilKey)} before any write`, async () => {
+      writeFileSync(
+        mapPath,
+        JSON.stringify({
+          projects: { [evilKey]: { 'test-host': projectRoot } },
+          extras: { [evilKey]: ['.planning'] },
+        }) + '\n',
+      );
+      const { remapExtrasPush } = await import('./extras-sync.ts');
+      const { NomadFatal } = await import('./utils.ts');
+      expect(() => remapExtrasPush('20260522-evil')).toThrow(NomadFatal);
+      // Confirm no escape-write happened (shared/extras stays empty of crafted keys).
+      const repoExtras = join(repoUnderHome, 'shared', 'extras');
+      const entries = existsSync(repoExtras)
+        ? readdirSync(repoExtras).filter((e) => e === evilKey || e === '..' || e === 'escape')
+        : [];
+      expect(entries).toEqual([]);
+    });
+
+    it(`remapExtrasPull rejects logical key ${JSON.stringify(evilKey)} before any write`, async () => {
+      // Set up shared/extras content under a SAFE name first so the
+      // existsSync(src) guard would otherwise pass. The crafted KEY is what
+      // assertSafeLogical must reject.
+      writeFileSync(
+        mapPath,
+        JSON.stringify({
+          projects: { [evilKey]: { 'test-host': projectRoot } },
+          extras: { [evilKey]: ['.planning'] },
+        }) + '\n',
+      );
+      const { remapExtrasPull } = await import('./extras-sync.ts');
+      const { NomadFatal } = await import('./utils.ts');
+      expect(() => remapExtrasPull('20260522-evil')).toThrow(NomadFatal);
+    });
+  }
+
+  it('safe logical names pass: ha-acwd, foo_bar, project.name, A1', async () => {
+    // Smoke-check that the regex isn't accidentally too strict; a real-world
+    // mix of valid names must all be accepted by push (it'll then short-circuit
+    // on the missing extras-source path with skipped count).
+    const safe = ['ha-acwd', 'foo_bar', 'project.name', 'A1'];
+    for (const okKey of safe) {
+      writeFileSync(
+        mapPath,
+        JSON.stringify({
+          projects: { [okKey]: { 'test-host': projectRoot } },
+          extras: { [okKey]: ['.planning'] },
+        }) + '\n',
+      );
+      const { remapExtrasPush } = await import('./extras-sync.ts');
+      const r = remapExtrasPush(`20260522-safe-${okKey}`);
+      expect(r.unmapped).toBe(0);
+      expect(r.skipped).toBe(0);
+      vi.resetModules();
+    }
+  });
+});

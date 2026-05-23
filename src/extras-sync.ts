@@ -3,7 +3,26 @@ import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { HOST, REPO_HOME, SUPPORTED_EXTRAS } from './config.ts';
-import { backupExtrasWrite, backupRepoWrite, log, readPathMap, warn } from './utils.ts';
+import { backupExtrasWrite, backupRepoWrite, log, NomadFatal, readPathMap, warn } from './utils.ts';
+
+/**
+ * `logical` keys in `path-map.json` are project identifiers (e.g. `ha-acwd`,
+ * `foo`), never path fragments. A crafted key like `../escape` or `foo/bar`
+ * would escape `shared/extras/` via `join()` (which normalizes `..`) and land
+ * content somewhere unexpected on the filesystem. The push allow-list catches
+ * such commits at the `git add` boundary, but the filesystem mutation has
+ * already happened by then. This check fails fast before any write. The
+ * pattern matches what every reasonable project name looks like and rejects
+ * everything else; tighten only if a real project needs broader characters.
+ */
+const SAFE_LOGICAL = /^[A-Za-z0-9._-]+$/;
+function assertSafeLogical(logical: string): void {
+  if (!SAFE_LOGICAL.test(logical) || logical === '.' || logical === '..') {
+    throw new NomadFatal(
+      `invalid logical name in path-map.json extras: ${JSON.stringify(logical)} (must match [A-Za-z0-9._-]+; no path separators or '..')`,
+    );
+  }
+}
 
 /**
  * Recursive mirror copy: `rmSync` then `cpSync` so dst-only entries are
@@ -50,6 +69,7 @@ export function remapExtrasPush(
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
 
   for (const [logical, dirnames] of Object.entries(extrasMap)) {
+    assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') {
       unmapped++;
@@ -108,6 +128,7 @@ export function remapExtrasPull(
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
 
   for (const [logical, dirnames] of Object.entries(extrasMap)) {
+    assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') {
       unmapped++;
@@ -181,6 +202,7 @@ export function divergenceCheckExtras(): void {
   const extrasMap = map.extras ?? {};
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
   for (const [logical, dirnames] of Object.entries(extrasMap)) {
+    assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') continue;
     for (const dirname of dirnames) {
