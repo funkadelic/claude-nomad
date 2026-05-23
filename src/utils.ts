@@ -118,18 +118,25 @@ export function readJson<T>(path: string): T {
 }
 
 /**
- * Read `path-map.json` and wrap parse errors as `NomadFatal` so callers route
- * the failure through their `try/finally` lock-release path instead of
- * exposing a raw `SyntaxError` past `NomadFatal`-only catch blocks. Equivalent
- * to the inline `try { readJson } catch { throw NomadFatal }` pattern in
- * `cmdPush`; use this helper at every other read site so the lock-release
- * contract holds uniformly across the pipeline.
+ * Read `path-map.json` and wrap failures as `NomadFatal` so callers route the
+ * failure through their `try/finally` lock-release path instead of exposing a
+ * raw `SyntaxError` (or `ENOENT`/`EACCES`) past `NomadFatal`-only catch
+ * blocks. Equivalent to the inline `try { readJson } catch { throw NomadFatal }`
+ * pattern in `cmdPush`; use this helper at every other read site so the
+ * lock-release contract holds uniformly across the pipeline.
+ *
+ * Error verb is conditioned on the cause so ops can distinguish parse
+ * failures (malformed JSON) from IO failures (permission denied, file
+ * removed mid-run) without scraping the wrapped message. Callers gate on
+ * `existsSync(mapPath)` first in the happy path, so an `ENOENT` here means
+ * a TOCTOU race rather than the expected absent-file case.
  */
 export function readPathMap(mapPath: string): PathMap {
   try {
     return readJson<PathMap>(mapPath);
   } catch (err) {
-    throw new NomadFatal(`could not parse path-map.json: ${(err as Error).message}`);
+    const verb = err instanceof SyntaxError ? 'parse' : 'read';
+    throw new NomadFatal(`could not ${verb} path-map.json: ${(err as Error).message}`);
   }
 }
 

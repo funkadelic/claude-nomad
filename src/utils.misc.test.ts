@@ -251,3 +251,50 @@ describe('backupExtrasWrite', () => {
     expect(existsSync(join(cacheBase, '20260522-100003'))).toBe(false);
   });
 });
+
+describe('readPathMap error labels', () => {
+  // The wrapped FATAL message conditions its verb ("parse" vs "read") on the
+  // underlying error so ops can distinguish malformed JSON from IO/permission
+  // failures without scraping the wrapped message. Callers gate on
+  // `existsSync(mapPath)` in the happy path, but TOCTOU races and permission
+  // changes mid-run still surface here.
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'nomad-readpathmap-'));
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('uses the "parse" verb for malformed JSON', async () => {
+    const mapPath = join(testDir, 'path-map.json');
+    writeFileSync(mapPath, '{ not json');
+
+    const { readPathMap, NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      readPathMap(mapPath);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toMatch(/could not parse path-map\.json/);
+  });
+
+  it('uses the "read" verb for IO failures (missing file)', async () => {
+    const missing = join(testDir, 'no-such-file.json');
+
+    const { readPathMap, NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      readPathMap(missing);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toMatch(/could not read path-map\.json/);
+    expect((caught as Error).message).not.toMatch(/could not parse/);
+  });
+});
