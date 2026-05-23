@@ -80,6 +80,22 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
+      # Catch the release-please-vs-`npm install` drift class: release-please
+      # bumps `package.json` (version, engines, bin, license, deps location)
+      # but only emits a minimal lockfile shape change, leaving metadata
+      # rollups stale. `npm ci` tolerates that drift; `--package-lock-only`
+      # regenerates the lockfile against the manifest without touching
+      # node_modules, then the diff assertion fails the PR before merge.
+      # Single node version since lockfile is one file; matches the SonarCloud
+      # gating pattern below.
+      - name: Verify lockfile in sync with manifest
+        if: >-
+          ${{ steps.gate.outputs.skip != 'true'
+          && matrix.node-version == '24' }}
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git diff --exit-code package-lock.json
+
       - name: Install deps
         if: steps.gate.outputs.skip != 'true'
         run: npm ci
