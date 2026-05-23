@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.0](https://github.com/funkadelic/claude-nomad/compare/v0.22.3...v0.23.0) (2026-05-23)
+
+
+### Added
+
+* **doctor:** warn when host node is below engines.node minimum ([#116](https://github.com/funkadelic/claude-nomad/issues/116)) ([3caf8d0](https://github.com/funkadelic/claude-nomad/commit/3caf8d09362b2f290af3d0efd9ea79a64aac39c1))
+
+
+### Changed
+
+* **tests:** add lockfile drift gate to catch release-please mismatches ([#114](https://github.com/funkadelic/claude-nomad/issues/114)) ([5847553](https://github.com/funkadelic/claude-nomad/commit/58475538ed405e1d2d1d00662ea6730ad124da42))
+
 ## [0.22.3](https://github.com/funkadelic/claude-nomad/compare/v0.22.2...v0.22.3) (2026-05-23)
 
 
