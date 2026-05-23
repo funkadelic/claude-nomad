@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/funkadelic/claude-nomad/compare/v0.22.1...v0.22.2) (2026-05-23)
+
+
+### Fixed
+
+* **gitleaks:** allowlist entropy-variant placeholders alongside the canonical PAT literal ([#107](https://github.com/funkadelic/claude-nomad/issues/107)) ([cb3bd59](https://github.com/funkadelic/claude-nomad/commit/cb3bd5923669aaf758d37afb5ed8f82261472d3a))
+
 ## [0.22.1](https://github.com/funkadelic/claude-nomad/compare/v0.22.0...v0.22.1) (2026-05-23)
 
 
