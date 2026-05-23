@@ -6,8 +6,11 @@ node_modules/
 dist/
 coverage/
 
-# GSD planning artifacts; local-only, never tracked in the public repo
-.planning/
+# GSD planning artifacts; local-only at the source repo root. The pattern is
+# root-anchored so it does NOT match nested `.planning/` directories under
+# `shared/extras/<logical>/` in the sync-repo mirror (Phase 19 extras-sync
+# would otherwise silently fail at the git-add boundary).
+/.planning/
 /.claude
 /CLAUDE.md
 /graphify-out
