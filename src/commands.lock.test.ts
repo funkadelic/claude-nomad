@@ -64,6 +64,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doUnmock('./push-checks.ts');
     vi.doUnmock('./push-gitleaks.ts');
     vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -195,7 +196,16 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
-      remapPush: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
+    }));
+    // remapExtrasPush would otherwise call the mocked readJson and surface
+    // the SyntaxError before the wrapped readJson call in cmdPush reaches it.
+    // Stub the entire module so the parse-failure assertion exercises the
+    // intended path (the readJson try/catch in cmdPush itself, around line 184).
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0 })),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0 })),
+      divergenceCheckExtras: vi.fn(),
     }));
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
