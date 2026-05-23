@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/funkadelic/claude-nomad/compare/v0.22.0...v0.22.1) (2026-05-23)
+
+
+### Fixed
+
+* **gitignore:** anchor .planning/ to source repo root ([#105](https://github.com/funkadelic/claude-nomad/issues/105)) ([50c403d](https://github.com/funkadelic/claude-nomad/commit/50c403d7223f79f30fa28b99ce6e5b2dcc350356))
+
 ## [0.22.0](https://github.com/funkadelic/claude-nomad/compare/v0.21.0...v0.22.0) (2026-05-23)
 
 
