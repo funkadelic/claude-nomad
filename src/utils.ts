@@ -243,6 +243,31 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
 }
 
 /**
+ * Parallel of `backupBeforeWrite` and `backupRepoWrite`, scoped to an
+ * explicit `projectRoot` instead of `CLAUDE_HOME` or `REPO_HOME`. Used by
+ * `remapExtrasPull` to snapshot host-side extras content (e.g.
+ * `<localRoot>/.planning/`) before `copyExtras` clobbers it. The existing
+ * helpers cannot serve this case: their `relative(CLAUDE_HOME, absPath)` and
+ * `relative(repoHome, absPath)` guards return a `..`-prefixed string for any
+ * path outside their anchor and silently no-op, so a pull-side
+ * `<localRoot>/.planning/` would never be backed up.
+ *
+ * Backup root is `extras/`-prefixed inside the same `<ts>` dir so the
+ * snapshot is distinguishable from `CLAUDE_HOME` dumps (no prefix) and
+ * `repo/` dumps. Layout: `~/.cache/claude-nomad/backup/<ts>/extras/<rel>/`
+ * where `<rel>` is `relative(projectRoot, absPath)`.
+ */
+export function backupExtrasWrite(absPath: string, ts: string, projectRoot: string): void {
+  if (!existsSync(absPath)) return;
+  const rel = relative(projectRoot, absPath);
+  if (rel.startsWith('..') || rel === '') return;
+  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'extras');
+  const dst = join(backupRoot, rel);
+  mkdirSync(dirname(dst), { recursive: true });
+  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+}
+
+/**
  * Acquire the exclusive nomad lockfile so two pulls/pushes cannot mutate
  * `~/.claude/` concurrently. Returns the handle on success, or `null` on
  * contention (caller should `process.exit(0)`; skip-on-contention is the
