@@ -142,6 +142,7 @@ describe('cmdPull: extras integration', () => {
     vi.doUnmock('./links.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('./preview.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
