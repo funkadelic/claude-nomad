@@ -1829,4 +1829,20 @@ describe('cmdDoctor node-engine check', () => {
     expect(out).not.toMatch(/node: v/);
     expect(process.exitCode === 1).toBe(false);
   });
+
+  it('emits NO node line when process.version is non-strict (e.g. prerelease build)', async () => {
+    // Prerelease/nightly Node builds can ship a process.version like
+    // `v22.0.0-rc.1` that fails the strict-semver regex. Without the strict
+    // guard inside reportNodeEngineCheck, compareSemver would return 0 for
+    // such inputs and fall through to a falsely green "satisfies" line.
+    setNodeVersion('v22.0.0-rc.1');
+    mockPackageJsonVersion('0.22.3', { node: '>=22.22.1' });
+    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/node: v/);
+    expect(process.exitCode === 1).toBe(false);
+  });
 });

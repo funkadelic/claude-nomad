@@ -70,6 +70,14 @@ export function reportNodeEngineCheck(section: DoctorSection): void {
   const min = parseMinVersion(required);
   if (min === null) return;
   const current = process.version.replace(/^v/, '');
+  // Belt-and-suspenders: official Node release builds always produce a strict
+  // `vX.Y.Z`, but prerelease/nightly builds can carry a suffix
+  // (e.g. `v22.0.0-rc.1`) that compareSemver classifies as undecidable
+  // (returns 0). Without this guard, an undecidable comparison would fall
+  // through to the green PASS branch and falsely claim the host satisfies the
+  // engine constraint. Silent-skip matches the module's "err on the side of
+  // saying nothing" philosophy.
+  if (!/^\d+\.\d+\.\d+$/.test(current)) return;
   const cmp = compareSemver(current, min);
   if (cmp === -1) {
     addItem(
