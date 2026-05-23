@@ -6,7 +6,7 @@
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "claude-nomad: structurally-distinguishable tool-output noise"
 regexes = [
     '''AY[A-Za-z0-9_-]{20,}''',

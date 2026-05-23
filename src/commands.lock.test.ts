@@ -64,6 +64,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doUnmock('./push-checks.ts');
     vi.doUnmock('./push-gitleaks.ts');
     vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -180,10 +181,11 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   });
 
   it('releases the lockfile when cmdPush dies on malformed path-map.json (parse failure)', async () => {
-    // path-map.json present but readJson throws SyntaxError. cmdPush wraps
-    // it in NomadFatal; the catch block sets exitCode and finally releases
-    // the lock. Mock push-checks/remap so the pre-checks no-op, and mock
-    // readJson on utils to deterministically throw.
+    // path-map.json present but malformed. readPathMap wraps the SyntaxError
+    // as NomadFatal at the first read site (remapExtrasPush, which runs
+    // before cmdPush's own readPathMap call). The catch block sets exitCode
+    // and finally releases the lock. Mock push-checks/remap so the
+    // pre-checks no-op; the malformed file on disk drives the actual parse.
     writeFileSync(join(repoUnderHome, 'path-map.json'), '{');
     vi.doMock('./push-checks.ts', () => ({
       findGitlinks: vi.fn(() => []),
@@ -195,18 +197,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
-      remapPush: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
     }));
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return {
-        ...actual,
-        gitStatusPorcelainZ: vi.fn(() => '?? shared/CLAUDE.md\0'),
-        readJson: vi.fn(() => {
-          throw new SyntaxError('Unexpected end of JSON input');
-        }),
-      };
-    });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
     expect(process.exitCode).toBe(1);

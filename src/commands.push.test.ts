@@ -738,3 +738,387 @@ describe('cmdPush lock-contention skip path', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 });
+
+// Extras allow-list widening: `enforceAllowList` builds its runtime allowed
+// array by spreading `Object.keys(map.extras ?? {})` into one prefix per
+// declared logical, mirroring the existing `shared/projects/<logical>/`
+// pattern. A staged path under a declared logical passes; one under an
+// unmapped logical (no `extras` entry for that name) fails with the existing
+// `to sync ... add to PUSH_ALLOWED` FATAL. Data-driven by construction so
+// Pitfall 4 (allow-list bypass via crafted `shared/extras/` path) is closed.
+describe('enforceAllowList: extras prefix', () => {
+  let errorSpy: MockInstance<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('permits shared/extras/<logical>/ paths when logical is declared in extras map', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
+    // A staged file under the declared logical must pass without throwing.
+    expect(() => enforceAllowList('A  shared/extras/foo/.planning/PLAN.md\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects shared/extras/<logical>/ paths when logical is not in extras map', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // `bar` is not in extras, so the runtime allowed array has no entry for
+    // it. The classifier surfaces the existing `to sync ...` FATAL.
+    const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
+    expect(() => enforceAllowList('A  shared/extras/bar/.planning/PLAN.md\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('to sync shared/extras/bar/.planning/PLAN.md'),
+    );
+  });
+
+  it('legacy path-map.json without extras key produces no extras allow-list entries', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // Absence of the `extras` key (D-03 additive contract) means no
+    // `shared/extras/` prefixes are generated; any such path is rejected.
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('A  shared/extras/foo/.planning/PLAN.md\0', map)).toThrow(
+      NomadFatal,
+    );
+  });
+
+  it('rejects non-whitelisted dirnames under a declared extras logical', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // Declaring `foo: ['.planning']` only widens the allow-list for the
+    // whitelisted dirname; manually staged content under `random-dir` (or any
+    // name outside `SUPPORTED_EXTRAS`) must still surface as FATAL so the
+    // dirname whitelist is enforced at the staging boundary, not just inside
+    // `remapExtrasPush`.
+    const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
+    expect(() => enforceAllowList('A  shared/extras/foo/random-dir/FILE.md\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('to sync shared/extras/foo/random-dir/FILE.md'),
+    );
+  });
+
+  it('drops non-whitelisted dirnames from the allow-list even when declared in path-map.json', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // If `path-map.json` declares a dirname outside `SUPPORTED_EXTRAS`,
+    // `remapExtrasPush` skips it with a log line, so it never reaches the
+    // staged tree on a clean run. The allow-list filters by the same
+    // whitelist so a manually staged copy is still blocked.
+    const map: PathMap = { projects: {}, extras: { foo: ['.scratch'] } };
+    expect(() => enforceAllowList('A  shared/extras/foo/.scratch/note.md\0', map)).toThrow(
+      NomadFatal,
+    );
+  });
+});
+
+// isNeverSync scope fix: paths under `shared/extras/` are exempt from the
+// `NEVER_SYNC` segment scan because the segment list was authored against
+// `~/.claude/` semantics for ephemeral Claude Code state. `.planning/todos/`
+// inside the extras tree is a meaningful GSD path; blocking it would corrupt
+// the sync. The early-return narrows scope to non-extras paths only; the
+// regression guard below proves the original surface still blocks.
+describe('isNeverSync: extras scope', () => {
+  it('returns false for shared/extras/<logical>/.planning/todos/... paths (Pitfall 6 fix)', async () => {
+    // Re-import via a small wrapper because isNeverSync is not exported.
+    // The acceptance signal is end-to-end via enforceAllowList: a path that
+    // would otherwise hit the `todos` segment hard-block must pass when it
+    // lives under `shared/extras/`.
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.planning/todos/2026-05-22-task.md\0', map),
+    ).not.toThrow();
+  });
+
+  it('still hard-blocks NEVER_SYNC segments outside shared/extras/ (regression guard)', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // A path NOT prefixed with `shared/extras/` that contains a NEVER_SYNC
+    // segment must still trigger the hard-block. This proves the early-return
+    // narrows scope rather than removing the guard wholesale.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('A  shared/projects/foo/todos/file.md\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('shared/projects/foo/todos/file.md is in NEVER_SYNC'),
+    );
+    vi.restoreAllMocks();
+  });
+});
+
+// cmdPush integration: the new `remapExtrasPush` call lands between
+// `remapPush` and `findGitlinks` so the produced `shared/extras/...` paths
+// are visible to the allow-list classification on the resulting `git
+// status`. The integration mocks the remap functions so the test does not
+// depend on host disk state and proves the call site fires before the
+// gitlink walk runs.
+describe('cmdPush: extras pipeline integration', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-cmdpush-extras-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+    vi.resetModules();
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./push-checks.ts');
+    vi.doUnmock('./push-gitleaks.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('node:child_process');
+    process.exitCode = 0;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('calls remapExtrasPush after remapPush and before the gitlink walk', async () => {
+    // Track the relative order of remapPush, remapExtrasPush, findGitlinks.
+    // The plan's required order: remapPush -> remapExtrasPush -> findGitlinks.
+    const callOrder: string[] = [];
+    const remapPushMock = vi.fn(() => {
+      callOrder.push('remapPush');
+      return { unmapped: 0, collisions: 0 };
+    });
+    const remapExtrasPushMock = vi.fn(() => {
+      callOrder.push('remapExtrasPush');
+      return { unmapped: 0, skipped: 0 };
+    });
+    const findGitlinksMock = vi.fn(() => {
+      callOrder.push('findGitlinks');
+      return [];
+    });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, extras: { foo: ['.planning'] } }) + '\n',
+    );
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op */
+        }),
+        findGitlinks: findGitlinksMock,
+      };
+    });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: remapPushMock,
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: remapExtrasPushMock,
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => ''),
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush()).not.toThrow();
+    expect(remapExtrasPushMock).toHaveBeenCalled();
+    // The required call-order invariant: remapExtrasPush is between remapPush
+    // and findGitlinks.
+    expect(callOrder).toEqual(['remapPush', 'remapExtrasPush', 'findGitlinks']);
+  });
+
+  it('passes dryRun through to remapExtrasPush', async () => {
+    const remapExtrasPushMock = vi.fn(() => ({ unmapped: 0, skipped: 0 }));
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, extras: { foo: ['.planning'] } }) + '\n',
+    );
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op */
+        }),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: remapExtrasPushMock,
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => ''),
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    expect(remapExtrasPushMock).toHaveBeenCalledWith(expect.any(String), { dryRun: true });
+  });
+
+  it('combines remapResult.unmapped + extrasResult.unmapped in the post-push success summary', async () => {
+    // Regression pin for the 3-site emitSummary contract: the post-commit
+    // success path historically only passed remapResult.unmapped, silently
+    // dropping TBD-host extras from the user-visible WARN. With 2 session
+    // unmapped + 3 extras unmapped, the combined "5 unmapped on push" must
+    // appear in the WARN summary line.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, extras: {} }) + '\n',
+    );
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op */
+        }),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 2, collisions: 0 })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 3, skipped: 0 })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0'),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+    const errSpyLocal = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush()).not.toThrow();
+    // push complete log line confirms we reached the success path (not the
+    // empty-status or dry-run branches whose own coverage exists elsewhere).
+    expect(logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n')).toContain(
+      'push complete',
+    );
+    const combined = errSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).toContain('5 unmapped on push');
+  });
+
+  it('surfaces extrasResult.skipped to emitSummary on the clean push success path', async () => {
+    // skipped=2 from remapExtrasPush should produce the new
+    // "2 extras skipped" suffix on the push WARN line.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, extras: { foo: ['node_modules', '.planning'] } }) + '\n',
+    );
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op */
+        }),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./push-gitleaks.ts', () => ({
+      runGitleaksScan: vi.fn(),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 2 })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0'),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+    // Hoist a single console.error spy so the test asserts against the WARN
+    // glyph routed through warn() -> console.error.
+    const errSpyLocal = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush()).not.toThrow();
+    const combined = errSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).toContain('2 extras skipped');
+  });
+});

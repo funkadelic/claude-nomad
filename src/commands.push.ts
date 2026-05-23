@@ -2,13 +2,14 @@ import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 // prettier-ignore
-import { HOME, HOST, NEVER_SYNC, PUSH_ALLOWED_STATIC, REPO_HOME, type PathMap } from './config.ts';
+import { HOME, HOST, NEVER_SYNC, PUSH_ALLOWED_STATIC, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import { remapExtrasPush } from './extras-sync.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { runGitleaksScan } from './push-gitleaks.ts';
 import { remapPush } from './remap.ts';
 import { emitSummary } from './summary.ts';
 // prettier-ignore
-import { acquireLock, die, fail, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readJson, releaseLock } from './utils.ts';
+import { acquireLock, die, fail, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readPathMap, releaseLock } from './utils.ts';
 
 /**
  * Match `path` against an entry in the push allow-list. Exact match for
@@ -29,8 +30,16 @@ function isAllowed(path: string, allowed: readonly string[]): boolean {
   return false;
 }
 
-/** True when any path segment matches a `NEVER_SYNC` entry (hard-block list). */
+/**
+ * True when any path segment matches a `NEVER_SYNC` entry (hard-block list).
+ * Scope exception (Pitfall 6): paths beginning with `shared/extras/` are
+ * exempt. The segment list was authored against `~/.claude/` semantics for
+ * ephemeral Claude Code state (`todos/`, `shell-snapshots/`, etc.); inside
+ * the extras tree, `.planning/todos/` is a meaningful GSD-managed path. The
+ * narrowed scope preserves the original hard-block for all other surface.
+ */
 function isNeverSync(path: string): boolean {
+  if (path.startsWith('shared/extras/')) return false;
   for (const segment of path.split('/')) {
     if (NEVER_SYNC.has(segment)) return true;
   }
@@ -76,14 +85,23 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
  * Reject any staged path that is not on the push allow-list or that matches a
  * `NEVER_SYNC` entry. Builds the runtime allow-list by combining
  * `PUSH_ALLOWED_STATIC` with one `shared/projects/<logical>/` prefix per entry
- * in `path-map.json`. Logs every violation as a FATAL line so the user sees
+ * in `path-map.json` AND one `shared/extras/<logical>/<dirname>/` prefix per
+ * (logical, whitelisted dirname) pair in `map.extras ?? {}` (Pitfall 4 closed:
+ * data-driven, no hand-rolled bypass). The dirname filter (`SUPPORTED_EXTRAS`)
+ * is the same one `remapExtrasPush` honors, so manually staged content under a
+ * non-whitelisted dirname surfaces as a FATAL instead of riding through on the
+ * logical-only prefix. Logs every violation as a FATAL line so the user sees
  * the full set (not just the first), then throws `NomadFatal` to unwind the
  * caller's try/finally and release the push lock.
  */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
+  const extrasWhitelist: readonly string[] = SUPPORTED_EXTRAS;
   const allowed = [
     ...PUSH_ALLOWED_STATIC,
     ...Object.keys(map.projects).map((l) => `shared/projects/${l}/`),
+    ...Object.entries(map.extras ?? {}).flatMap(([l, dirnames]) =>
+      dirnames.filter((d) => extrasWhitelist.includes(d)).map((d) => `shared/extras/${l}/${d}/`),
+    ),
   ];
   const neverSyncHits: string[] = [];
   const violations: string[] = [];
@@ -111,11 +129,13 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
  *   2. `rebaseBeforePush` (surface remote conflicts against committed state,
  *      not against in-flight `remapPush` copies)
  *   3. `remapPush` (copy host-encoded session dirs into shared logical names)
- *   4. `findGitlinks` walk of `shared/` (refuse to push nested .git entries;
- *      runs AFTER `remapPush` so it catches .git dirs copied in from the host)
- *   5. allow-list enforcement on the resulting `git status` (refuse any path
- *      not on `PUSH_ALLOWED_STATIC` or matching `NEVER_SYNC`)
- *   6. `git add -A` -> `runGitleaksScan` on staged tree -> `git commit` -> `git push`
+ *   4. `remapExtrasPush` (copy whitelisted per-project extras under
+ *      `shared/extras/<logical>/<dirname>/`, between `remapPush` and the
+ *      gitlink walk so produced paths reach both the walk and the allow-list)
+ *   5. `findGitlinks` walk of `shared/` (refuse to push nested .git entries)
+ *   6. allow-list enforcement on the resulting `git status` (runtime
+ *      `shared/extras/<logical>/` prefix per declared logical added)
+ *   7. `git add -A` -> `runGitleaksScan` on staged tree -> `git commit` -> `git push`
  *
  * The gitleaks scan runs AFTER staging so it sees what would actually be
  * pushed, but BEFORE commit so a detection unwinds cleanly without leaving a
@@ -149,6 +169,11 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
     const remapResult = remapPush(ts, { dryRun });
+    // remapExtrasPush lands between remapPush and findGitlinks so the
+    // produced `shared/extras/<logical>/<dirname>/` paths are visible to
+    // both the gitlink walk and the downstream allow-list classification.
+    // dryRun is forwarded so a preview push reports the same skipped count.
+    const extrasResult = remapExtrasPush(ts, { dryRun });
     // Gitlink walk of shared/ AFTER remapPush so it inspects the post-copy tree.
     // A nested .git copied in from a host's encoded session dir would slip past a
     // pre-remap scan and reach the remote via the shared/projects/<logical>/ prefix.
@@ -171,25 +196,34 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     const status = gitStatusPorcelainZ(REPO_HOME);
     if (!status) {
       log('nothing to commit');
-      emitSummary('push', remapResult.unmapped, remapResult.collisions);
+      // Combine session-unmapped and extras-unmapped into one user-visible
+      // count; both mean "couldn't sync this for the host". extras-skipped
+      // (non-whitelisted dirname) stays separate because it signals config
+      // misuse, not a host-config gap.
+      emitSummary(
+        'push',
+        remapResult.unmapped + extrasResult.unmapped,
+        remapResult.collisions,
+        extrasResult.skipped,
+      );
       return;
     }
     const mapPath = join(REPO_HOME, 'path-map.json');
     if (!existsSync(mapPath)) die('path-map.json missing, cannot enforce push allow-list');
-    // Route a malformed path-map.json through NomadFatal so finally releases the lock.
-    let map: PathMap;
-    try {
-      map = readJson<PathMap>(mapPath);
-    } catch (err) {
-      throw new NomadFatal(`could not parse path-map.json: ${(err as Error).message}`);
-    }
+    // readPathMap routes parse failures through NomadFatal so finally releases the lock.
+    const map = readPathMap(mapPath);
     enforceAllowList(status, map);
     if (dryRun) {
       // Skip the staging quartet so no commit lands and nothing is pushed.
       // The user has already seen probeGitleaks pass, the rebase result, the
       // remap preview, the gitlink scan, and the allow-list classification.
       log('push: dry-run; skipping git add, gitleaks scan, commit, and push');
-      emitSummary('push', remapResult.unmapped, remapResult.collisions);
+      emitSummary(
+        'push',
+        remapResult.unmapped + extrasResult.unmapped,
+        remapResult.collisions,
+        extrasResult.skipped,
+      );
       return;
     }
     // gitOrFatal uses execFileSync (no shell) so NOMAD_HOST cannot escape quoting.
@@ -201,7 +235,12 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
     gitOrFatal(['push'], 'git push', REPO_HOME);
     log('push complete');
-    emitSummary('push', remapResult.unmapped, remapResult.collisions);
+    emitSummary(
+      'push',
+      remapResult.unmapped + extrasResult.unmapped,
+      remapResult.collisions,
+      extrasResult.skipped,
+    );
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);

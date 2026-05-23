@@ -17,7 +17,7 @@ import {
 import { dirname, join, relative } from 'node:path';
 
 import { dim, failGlyph, green, infoGlyph, okGlyph, red, warnGlyph, yellow } from './color.ts';
-import { CLAUDE_HOME, HOME } from './config.ts';
+import { CLAUDE_HOME, HOME, type PathMap } from './config.ts';
 
 const LOCK_PATH = join(HOME, '.cache', 'claude-nomad', 'nomad.lock');
 
@@ -115,6 +115,29 @@ export function gitOrFatal(args: readonly string[], context: string, cwd?: strin
 export function readJson<T>(path: string): T {
   const data: unknown = JSON.parse(readFileSync(path, 'utf8'));
   return data as T;
+}
+
+/**
+ * Read `path-map.json` and wrap failures as `NomadFatal` so callers route the
+ * failure through their `try/finally` lock-release path instead of exposing a
+ * raw `SyntaxError` (or `ENOENT`/`EACCES`) past `NomadFatal`-only catch
+ * blocks. Equivalent to the inline `try { readJson } catch { throw NomadFatal }`
+ * pattern in `cmdPush`; use this helper at every other read site so the
+ * lock-release contract holds uniformly across the pipeline.
+ *
+ * Error verb is conditioned on the cause so ops can distinguish parse
+ * failures (malformed JSON) from IO failures (permission denied, file
+ * removed mid-run) without scraping the wrapped message. Callers gate on
+ * `existsSync(mapPath)` first in the happy path, so an `ENOENT` here means
+ * a TOCTOU race rather than the expected absent-file case.
+ */
+export function readPathMap(mapPath: string): PathMap {
+  try {
+    return readJson<PathMap>(mapPath);
+  } catch (err) {
+    const verb = err instanceof SyntaxError ? 'parse' : 'read';
+    throw new NomadFatal(`could not ${verb} path-map.json: ${(err as Error).message}`);
+  }
 }
 
 /**
@@ -238,6 +261,37 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
   if (rel.startsWith('..') || rel === '') return;
   const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'repo');
   const dst = join(backupRoot, rel);
+  mkdirSync(dirname(dst), { recursive: true });
+  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+}
+
+/**
+ * Parallel of `backupBeforeWrite` and `backupRepoWrite`, scoped to an
+ * explicit `projectRoot` instead of `CLAUDE_HOME` or `REPO_HOME`. Used by
+ * `remapExtrasPull` to snapshot host-side extras content (e.g.
+ * `<localRoot>/.planning/`) before `copyExtras` clobbers it. The existing
+ * helpers cannot serve this case: their `relative(CLAUDE_HOME, absPath)` and
+ * `relative(repoHome, absPath)` guards return a `..`-prefixed string for any
+ * path outside their anchor and silently no-op, so a pull-side
+ * `<localRoot>/.planning/` would never be backed up.
+ *
+ * Backup root is `extras/`-prefixed inside the same `<ts>` dir so the
+ * snapshot is distinguishable from `CLAUDE_HOME` dumps (no prefix) and
+ * `repo/` dumps. Layout:
+ * `~/.cache/claude-nomad/backup/<ts>/extras/<encoded-projectRoot>/<rel>/`
+ * where `<rel>` is `relative(projectRoot, absPath)` and
+ * `<encoded-projectRoot>` is `encodePath(projectRoot)`. The encoded prefix
+ * namespaces snapshots by project so two opted-in projects with the same
+ * relative extras path (e.g. both with `.planning/PLAN.md`) cannot collide
+ * inside the same `<ts>` directory (`cpSync` runs with `force: false`, so a
+ * collision would silently drop the second snapshot).
+ */
+export function backupExtrasWrite(absPath: string, ts: string, projectRoot: string): void {
+  if (!existsSync(absPath)) return;
+  const rel = relative(projectRoot, absPath);
+  if (rel.startsWith('..') || rel === '') return;
+  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'extras');
+  const dst = join(backupRoot, encodePath(projectRoot), rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
 }
