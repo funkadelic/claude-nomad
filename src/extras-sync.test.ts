@@ -909,6 +909,37 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
     expect(existsSync(repoExtras)).toBe(false);
   });
 
+  it('remapExtrasPull does not clobber host content when a later map entry is poisoned', async () => {
+    // Symmetric multi-entry guarantee for pull: a clean logical at the head
+    // of the map must NOT trigger `backupExtrasWrite` / `copyExtras` against
+    // the host filesystem if a poisoned key sits later in iteration order.
+    // Without the validation pass, the host-side `<localRoot>/.planning/`
+    // would already be replaced (and backed up) before the FATAL fired for
+    // `../escape`, partially mutating user state.
+    const repoExtras = join(repoUnderHome, 'shared', 'extras');
+    mkdirSync(join(repoExtras, 'clean', '.planning'), { recursive: true });
+    writeFileSync(join(repoExtras, 'clean', '.planning', 'STATE.md'), '# incoming\n');
+    const localPlanning = join(projectRoot, '.planning');
+    mkdirSync(localPlanning, { recursive: true });
+    writeFileSync(join(localPlanning, 'STATE.md'), '# original\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: {
+          clean: { 'test-host': projectRoot },
+          '../escape': { 'test-host': projectRoot },
+        },
+        extras: { clean: ['.planning'], '../escape': ['.planning'] },
+      }) + '\n',
+    );
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapExtrasPull('20260522-pull-multi-evil')).toThrow(NomadFatal);
+    // Host content untouched: original file still there, no backup written.
+    expect(readFileSync(join(localPlanning, 'STATE.md'), 'utf8')).toBe('# original\n');
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
   // localRoot axis: poisoned path-map.json with an unnormalized host path
   // would silently land writes at a different absolute path than declared
   // (path.join normalizes '..' before cpSync sees the destination). The

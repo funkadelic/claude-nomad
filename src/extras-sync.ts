@@ -166,17 +166,28 @@ export function remapExtrasPull(
   const extrasMap = map.extras ?? {};
   if (Object.keys(extrasMap).length === 0) return { unmapped: 0, skipped: 0 };
 
+  // Validation pass: FATAL on any poisoned logical or unnormalized
+  // localRoot before any host-side `backupExtrasWrite` or `copyExtras`
+  // runs. Symmetric with `remapExtrasPush`: a poisoned entry anywhere in
+  // the map must fail the whole pull up-front, otherwise a clean entry
+  // earlier in iteration order would already have clobbered the host
+  // before the FATAL fired (partial host-side mutation breaks the
+  // documented "fail before mutation" contract).
+  for (const logical of Object.keys(extrasMap)) {
+    assertSafeLogical(logical);
+    const localRoot = map.projects[logical]?.[HOST];
+    if (localRoot && localRoot !== 'TBD') assertSafeLocalRoot(localRoot, logical);
+  }
+
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
 
   for (const [logical, dirnames] of Object.entries(extrasMap)) {
-    assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') {
       unmapped++;
       log(`skip ${logical}: no path for ${HOST}`);
       continue;
     }
-    assertSafeLocalRoot(localRoot, logical);
     for (const dirname of dirnames) {
       if (!whitelist.includes(dirname)) {
         skipped++;
