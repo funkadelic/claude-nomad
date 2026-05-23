@@ -102,4 +102,52 @@ describe('emitSummary', () => {
     const total = logSpy.mock.calls.length + errorSpy.mock.calls.length;
     expect(total).toBe(1);
   });
+
+  // Extras-skipped widening: the fourth positional argument carries the count
+  // of extras dirs the runtime declined to sync (per-project whitelist misses
+  // surfaced by `remapExtrasPush` / `remapExtrasPull` / `divergenceCheckExtras`).
+  // The default value is 0 so legacy three-arg call sites stay clean.
+  it('pull clean with zero extras-skipped still emits the clean line', () => {
+    emitSummary('pull', 0, 0, 0);
+    expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('pull with zero unmapped and two extras-skipped emits the extras-skipped WARN', () => {
+    emitSummary('pull', 0, 0, 2);
+    expect(erroredLine()).toBe(
+      '⚠︎ summary: 0 unmapped on pull, 2 extras skipped (run nomad doctor to list)',
+    );
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('pull with one unmapped and two extras-skipped emits both counts in the WARN', () => {
+    emitSummary('pull', 1, 0, 2);
+    expect(erroredLine()).toBe(
+      '⚠︎ summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor to list)',
+    );
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('push with one extras-skipped folds into the existing collisions WARN line', () => {
+    emitSummary('push', 0, 0, 1);
+    expect(erroredLine()).toBe(
+      '⚠︎ summary: 0 unmapped on push, 0 collisions, 1 extras skipped (run nomad doctor to list)',
+    );
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('push clean path stays clean when extras-skipped is zero', () => {
+    emitSummary('push', 0, 0, 0);
+    expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('legacy three-arg pull call still produces the clean line via default', () => {
+    // Default `extrasSkipped = 0` preserves back-compat for the existing call
+    // sites in cmdPull / cmdPush / cmdDiff that have not yet been widened.
+    emitSummary('pull', 0);
+    expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
 });
