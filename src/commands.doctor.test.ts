@@ -192,10 +192,11 @@ function mockCurlReleases(
 }
 
 /**
- * Override `process.version` for a single test, returning the original so the
- * caller can restore it in `afterEach`. `process.version` is a getter on the
- * Node global; `Object.defineProperty` with `configurable: true` is the
- * supported way to swap it for testing.
+ * Override `process.version` for a single test. The caller is responsible for
+ * capturing the pre-override value in `beforeEach` and restoring it in
+ * `afterEach`; this helper is fire-and-forget. `process.version` is a getter
+ * on the Node global, so `Object.defineProperty` with `configurable: true` is
+ * the supported way to swap it for testing.
  */
 function setNodeVersion(v: string): void {
   Object.defineProperty(process, 'version', { value: v, configurable: true });
