@@ -212,7 +212,12 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
       // The user has already seen probeGitleaks pass, the rebase result, the
       // remap preview, the gitlink scan, and the allow-list classification.
       log('push: dry-run; skipping git add, gitleaks scan, commit, and push');
-      emitSummary('push', remapResult.unmapped, remapResult.collisions, extrasResult.skipped);
+      emitSummary(
+        'push',
+        remapResult.unmapped + extrasResult.unmapped,
+        remapResult.collisions,
+        extrasResult.skipped,
+      );
       return;
     }
     // gitOrFatal uses execFileSync (no shell) so NOMAD_HOST cannot escape quoting.
