@@ -12,10 +12,11 @@ claude-nomad keeps all of it in sync through a private Git repo you control. `no
 
 **Who this is for:** anyone running Claude Code on more than one machine. A laptop and a desktop, a Mac and a WSL box, a personal rig and a work machine, or any combination. If you've ever felt the friction of starting fresh on a second machine or copying files around by hand, this is for you.
 
-Two things it does that ad-hoc dotfiles syncing can't:
+Three things it does that ad-hoc dotfiles syncing can't:
 
 - **Session history survives path differences.** The same project at `/Users/norm/code/foo` on your Mac and `/home/norm/foo` on Linux gets remapped automatically, so `claude --resume` finds your past conversations on whichever machine you're on.
 - **Per-host settings via deep merge.** Shared defaults live in one file; machine-specific overrides (model choice, MCP server URLs, env vars, hooks) live in a per-host file. They're merged on every pull instead of overwriting each other.
+- **Per-project content rides along, opt-in.** Whitelisted directories at a project's root (declared via `path-map.json`'s `extras` field) sync alongside session transcripts, so project-attached state like `.planning/` follows you across hosts. Off by default; projects without an `extras` entry behave exactly as before.
 
 ## Table of contents
 
@@ -114,7 +115,8 @@ By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config
 │   ├── rules/
 │   ├── my-statusline.cjs     # any script you want symlinked into ~/.claude/
 │   ├── .gitignore            # defense-in-depth: blocks .claude.json, settings.local.json, *.token, *.key, .env
-│   └── projects/             # session transcripts under logical names
+│   ├── projects/             # session transcripts under logical names
+│   └── extras/               # opt-in per-project content (materializes when path-map.json declares extras)
 ├── hosts/
 │   ├── <your-mac>.json       # patches merged over settings.base.json
 │   ├── <your-wsl-host>.json
@@ -125,13 +127,14 @@ By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config
 
 ## What gets synced vs. not
 
-| Category            | Items                                                                                                                                                                                                                                     | Behavior                                                                                                                                                                                   |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Synced**          | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs`                                                                                                                                                             | Symlinked into `~/.claude/` from `shared/` (see `SHARED_LINKS` in `src/config.ts`).                                                                                                        |
-| **Generated**       | `settings.json`                                                                                                                                                                                                                           | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`. Rewritten on every pull.                                                                                                  |
-| **Remapped**        | `projects/` session transcripts                                                                                                                                                                                                           | Copied with path translation per `path-map.json`.                                                                                                                                          |
-| **Never synced**    | `~/.claude.json` (OAuth, MCP state), `history.jsonl`, `settings.local.json` (per-host overrides), `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/` | Per-host ephemeral state.                                                                                                                                                                  |
-| **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...`                                                                                                                                                                                                    | Plugin payloads not synced. Claude Code re-downloads them on first use from the `enabledPlugins` list in the regenerated `settings.json`; no manual `claude plugins install ...` per host. |
+| Category               | Items                                                                                                                                                                                                                                     | Behavior                                                                                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Synced**             | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs`                                                                                                                                                             | Symlinked into `~/.claude/` from `shared/` (see `SHARED_LINKS` in `src/config.ts`).                                                                                                        |
+| **Generated**          | `settings.json`                                                                                                                                                                                                                           | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`. Rewritten on every pull.                                                                                                  |
+| **Remapped**           | `projects/` session transcripts                                                                                                                                                                                                           | Copied with path translation per `path-map.json`.                                                                                                                                          |
+| **Per-project extras** | `<localRoot>/.planning/` and other directories whitelisted by `SUPPORTED_EXTRAS` in `src/config.ts`                                                                                                                                       | Opt-in via the `extras` field in `path-map.json`. Mirrored to/from `shared/extras/<logical>/<dirname>/`. Pre-pull divergence WARN flags local edits before they get overwritten.           |
+| **Never synced**       | `~/.claude.json` (OAuth, MCP state), `history.jsonl`, `settings.local.json` (per-host overrides), `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/` | Per-host ephemeral state.                                                                                                                                                                  |
+| **Auto-rehydrated**    | `~/.claude/plugins/cache/<plugin>/...`                                                                                                                                                                                                    | Plugin payloads not synced. Claude Code re-downloads them on first use from the `enabledPlugins` list in the regenerated `settings.json`; no manual `claude plugins install ...` per host. |
 
 > [!NOTE]
 > Plugins that depend on host-specific state (external binaries, API keys in env, MCP server URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the plugin's own per-host config.
@@ -142,7 +145,7 @@ For the rationale behind these choices, see [What does NOT sync (deliberate trad
 
 The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-path>/` where the encoded path is the absolute path with `/` replaced by `-`. So the same logical project ends up in different directories on each host.
 
-`path-map.json` defines logical names and where the repo lives on each host:
+`path-map.json` defines logical names and where the repo lives on each host. The optional `extras` block opts a project into syncing whitelisted directories at its root:
 
 ```json
 {
@@ -152,6 +155,9 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
       "<your-wsl-host>": "/home/you/code/ha-acwd",
       "<your-nuc>": "TBD"
     }
+  },
+  "extras": {
+    "ha-acwd": [".planning"]
   }
 }
 ```
@@ -162,6 +168,8 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
 
 On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the cross-OS cwd-binding gotcha).
+
+The `extras` block is additive and back-compatible: legacy `path-map.json` files without it continue to work unchanged. Each value is an array of directory names validated against `SUPPORTED_EXTRAS` in `src/config.ts`; values outside the whitelist are skipped with a log line so an unrecognized name cannot widen the sync surface. On `push`, opted-in directories at `<localRoot>/<dirname>/` are copied to `shared/extras/<logical>/<dirname>/` and inherit the staged-tree gitleaks scan. On `pull`, the reverse copy runs after `git pull --rebase`; just before it overwrites your working tree, a divergence check compares the incoming content against your local copy and emits a per-file WARN naming the diverging files. The existing local content is backed up to `~/.cache/claude-nomad/backup/<ts>/extras/<rel>/` before the pull copy lands.
 
 ## Per-host overrides
 
@@ -198,12 +206,13 @@ Read these before adopting so you opt in with eyes open.
 - **Manual push/pull.** No file watcher. Shell hooks recommended.
 - **OAuth doesn't sync.** You'll log in once per host. Intentional.
 - **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone.
+- **Extras are opt-in and whitelisted.** Projects without an `extras` entry in `path-map.json` are unaffected. Only names in `SUPPORTED_EXTRAS` are accepted; malformed values (path traversal, unnormalized roots, non-whitelisted names) FATAL before any filesystem mutation via `assertSafeLogical` / `assertSafeLocalRoot` in `src/extras-sync.ts`.
 - **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so the picker's `cd ... && claude --resume <id>` line fails on a different host. Use `nomad doctor --resume-cmd <id>` for a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach preserves transcript byte-equality.
 - **Empty directories don't survive sync.** Git doesn't track empty dirs; `nomad doctor` reports them as `missing` (benign). Drop a `.gitkeep` to force materialization.
 
 ## Requirements
 
-- Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes — npm only blocks the install when `engine-strict=true` is configured)
+- Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes - npm only blocks the install when `engine-strict=true` is configured)
 - `tsx` (ships as a runtime dependency of the published package; no separate global install required)
 - Git
 - A **private** GitHub repo (or any Git remote you control)
@@ -354,10 +363,10 @@ If you installed an earlier version via `./install.sh` and a shell alias (the pr
 | `nomad init`                     | Scaffold empty `shared/`, `hosts/`, `path-map.json` on a fresh clone. Refuses to clobber existing scaffold. Auto-disables Actions on a detected private GitHub mirror (see [Privacy by default](#privacy-by-default)).  |
 | `nomad init --snapshot`          | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified. Same auto-disable behavior as `nomad init`.                     |
 | `nomad init --keep-actions`      | Skip the auto-disable. Combinable with `--snapshot`. Use when an upstream org policy already governs Actions, or you intentionally want CI on the private mirror.                                                       |
-| `nomad pull`                     | `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths. FATAL if scaffold missing.                                                                                            |
+| `nomad pull`                     | `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths, and pull opted-in per-project extras. FATAL if scaffold missing.                                                      |
 | `nomad pull --dry-run`           | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), exit without writing.                                                    |
 | `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                                                            |
-| `nomad push`                     | Export local sessions to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                                                 |
+| `nomad push`                     | Export local sessions and opted-in per-project extras to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                 |
 | `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list); skip stage, scan, commit, and push.                                                                                       |
 | `nomad drop-session <id>`        | Surgically unstage every `shared/projects/*/<id>.jsonl` from the staged tree of `~/claude-nomad/`. Idempotent; the local `~/.claude/projects/<encoded>/<id>.jsonl` is preserved. See [Recovery flows](#recovery-flows). |
 | `nomad update`                   | Topology-aware upgrade to the latest upstream. Flags: `--dry-run`, `--force`, `--push-origin`. See [Upgrading the tool](#upgrading-the-tool).                                                                           |
