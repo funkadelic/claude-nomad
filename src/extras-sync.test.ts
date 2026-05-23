@@ -253,6 +253,25 @@ describe('remapExtrasPush (integration)', () => {
     expect(existsSync(join(sharedExtras, 'foo', '.planning', 'old.md'))).toBe(false);
     expect(readFileSync(join(sharedExtras, 'foo', '.planning', 'new.md'), 'utf8')).toBe('new\n');
   });
+
+  it('silently skips dirnames whose src directory does not exist on this host', async () => {
+    // The host opted into `.planning` for the project but hasn't created the
+    // dir yet (typical first-time scenario before any planning artifacts
+    // exist). The push must silently continue rather than error so the
+    // user-facing contract "opting in is safe even with no content yet"
+    // holds.
+    // Note: <projectRoot>/.planning intentionally NOT created.
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    expect(() => remapExtrasPush('20260522-no-src-push')).not.toThrow();
+    expect(existsSync(join(sharedExtras, 'foo', '.planning'))).toBe(false);
+  });
 });
 
 describe('remapExtrasPull (integration)', () => {
@@ -438,6 +457,24 @@ describe('remapExtrasPull (integration)', () => {
     // The relative symlink target survives the pull verbatim, not rewritten
     // to an absolute path into the source tree.
     expect(readlinkSync(join(projectRoot, '.planning', 'PLAN-link.md'))).toBe('PLAN.md');
+  });
+
+  it('silently skips dirnames whose src does not exist in shared/extras/', async () => {
+    // First pull on a fresh host where the logical is opted-in but nobody
+    // has pushed extras content for it yet. The pull must continue silently
+    // rather than error so a fresh host onboarding does not fail just
+    // because a project hasn't materialized its extras yet.
+    // Note: shared/extras/foo/.planning intentionally NOT created.
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    expect(() => remapExtrasPull('20260522-no-src-pull')).not.toThrow();
+    expect(existsSync(join(projectRoot, '.planning'))).toBe(false);
   });
 });
 
@@ -1028,6 +1065,42 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
     divergenceCheckExtras('20260522-enoent-ts');
     const warned = warnSpy.mock.calls.map((args) => args.join(' ')).join('\n');
     expect(warned).toContain('git not on PATH');
+    vi.doUnmock('node:child_process');
+  });
+
+  it('listDivergingFiles WARNs (not silently empty) on unexpected git failures', async () => {
+    // Symmetric to the ENOENT test: a git invocation that fails with neither
+    // status === 1 (real diff) nor `ENOENT` (missing binary) must still
+    // emit a WARN so D-08's loud-doctor contract holds. Without this branch
+    // an unexpected git failure (e.g., status 128 from a corrupted repo
+    // state) would collapse to a silent empty list and the operator would
+    // not know the divergence check skipped.
+    const sharedExtras = join(repoUnderHome, 'shared', 'extras');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'STATE.md'), '# shared\n');
+    writeFileSync(join(projectRoot, '.planning', 'STATE.md'), '# local\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    vi.doMock('node:child_process', () => ({
+      execFileSync: vi.fn(() => {
+        const err = new Error('git: unexpected boom') as NodeJS.ErrnoException & {
+          status?: number;
+        };
+        err.status = 128; // status != 1 AND code !== 'ENOENT': fall-through branch.
+        throw err;
+      }),
+    }));
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260522-git-fail-ts');
+    const warned = warnSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(warned).toContain('divergence check failed');
+    expect(warned).toContain('git: unexpected boom');
     vi.doUnmock('node:child_process');
   });
 
