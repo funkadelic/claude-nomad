@@ -94,3 +94,260 @@ describe('cmdPull precondition and lock-contention branches', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 });
+
+// Extras integration in cmdPull. Three insertion points are exercised:
+//   1. divergenceCheckExtras runs immediately AFTER `git pull --rebase` and
+//      BEFORE any local mutation, so its WARN output is the user's signal
+//      that a subsequent remapExtrasPull will clobber local edits.
+//   2. remapExtrasPull runs in the wet-mutation `else` branch AFTER
+//      `remapPull(ts)` and BEFORE `log('pull complete')`. The dry-run
+//      branch deliberately skips it (per the plan; preserves the
+//      zero-mutation contract).
+//   3. emitSummary in the wet path carries `extrasResult.skipped` as the
+//      fourth positional argument.
+describe('cmdPull: extras integration', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedExtras: string;
+  let projectRoot: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-extras-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedExtras = join(repoUnderHome, 'shared', 'extras');
+    projectRoot = join(testHome, 'fake-project');
+    mkdirSync(sharedExtras, { recursive: true });
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    vi.resetModules();
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    process.exitCode = 0;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('calls divergenceCheckExtras after git pull --rebase and before remapExtrasPull', async () => {
+    // Track relative order of the three new pipeline steps. The plan's
+    // required order: gitOrFatal('pull') -> divergenceCheckExtras ->
+    // applySharedLinks/regenerateSettings -> remapPull -> remapExtrasPull.
+    const callOrder: string[] = [];
+    const divergenceCheckExtrasMock = vi.fn(() => {
+      callOrder.push('divergenceCheckExtras');
+    });
+    const remapExtrasPullMock = vi.fn(() => {
+      callOrder.push('remapExtrasPull');
+      return { unmapped: 0, skipped: 0 };
+    });
+    const remapPullMock = vi.fn(() => {
+      callOrder.push('remapPull');
+      return { unmapped: 0 };
+    });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: remapPullMock,
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: remapExtrasPullMock,
+      divergenceCheckExtras: divergenceCheckExtrasMock,
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: vi.fn(() => {
+          callOrder.push('gitOrFatal');
+        }),
+      };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(divergenceCheckExtrasMock).toHaveBeenCalled();
+    expect(remapExtrasPullMock).toHaveBeenCalled();
+    // Required call-order: pull --rebase -> divergenceCheckExtras (BEFORE
+    // any mutation) -> remapPull -> remapExtrasPull.
+    expect(callOrder).toEqual([
+      'gitOrFatal',
+      'divergenceCheckExtras',
+      'remapPull',
+      'remapExtrasPull',
+    ]);
+  });
+
+  it('passes ts as a string to remapExtrasPull (matches the remap.ts ts contract)', async () => {
+    const remapExtrasPullMock = vi.fn(() => ({ unmapped: 0, skipped: 0 }));
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0 })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: remapExtrasPullMock,
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(remapExtrasPullMock).toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it('dry-run skips remapExtrasPull but still runs divergenceCheckExtras (D-08 read-only contract)', async () => {
+    // Per the plan: dryRun preserves the zero-mutation contract by skipping
+    // remapExtrasPull entirely, but divergenceCheckExtras still fires
+    // because it is read-only and the user wants to see the same
+    // pre-pull WARN in both wet and dry modes.
+    const divergenceCheckExtrasMock = vi.fn();
+    const remapExtrasPullMock = vi.fn(() => ({ unmapped: 0, skipped: 0 }));
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0 })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: remapExtrasPullMock,
+      divergenceCheckExtras: divergenceCheckExtrasMock,
+    }));
+    vi.doMock('./preview.ts', () => ({
+      computePreview: vi.fn(() => ({ unmapped: 0 })),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull({ dryRun: true })).not.toThrow();
+    expect(divergenceCheckExtrasMock).toHaveBeenCalled();
+    expect(remapExtrasPullMock).not.toHaveBeenCalled();
+    vi.doUnmock('./preview.ts');
+  });
+
+  it('legacy path-map.json without extras key: divergenceCheckExtras and remapExtrasPull are still invoked (they no-op internally)', async () => {
+    // D-03 additive contract: the call sites in cmdPull always fire; the
+    // extras-sync functions themselves return early when no extras key is
+    // present (covered by extras-sync.test.ts). cmdPull does not branch
+    // on the presence of the extras key.
+    const divergenceCheckExtrasMock = vi.fn();
+    const remapExtrasPullMock = vi.fn(() => ({ unmapped: 0, skipped: 0 }));
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
+    );
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0 })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: remapExtrasPullMock,
+      divergenceCheckExtras: divergenceCheckExtrasMock,
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(divergenceCheckExtrasMock).toHaveBeenCalled();
+    expect(remapExtrasPullMock).toHaveBeenCalled();
+  });
+
+  it('passes extrasResult.skipped to emitSummary on the wet-mutation pull success path', async () => {
+    // skipped=3 from remapExtrasPull should surface in the pull WARN line
+    // as "3 extras skipped".
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['node_modules', '.planning'] },
+      }) + '\n',
+    );
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0 })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 3 })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const errSpyLocal = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    const combined = errSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).toContain('3 extras skipped');
+  });
+});

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { HOME, HOST, REPO_HOME } from './config.ts';
+import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
@@ -12,18 +13,23 @@ import { acquireLock, die, fail, freshBackupTs, gitOrFatal, log, NomadFatal, rel
 /**
  * `nomad pull` command. Acquires the push/pull lock, takes a backup
  * timestamp, runs `git pull --rebase --autostash` in `REPO_HOME`, then
- * applies the three side-effecting sync steps in order:
- *   1. `applySharedLinks` (symlink shared/* into ~/.claude/)
- *   2. `regenerateSettings` (deep-merge base + host-override into settings.json)
- *   3. `remapPull` (copy repo-side session transcripts into host-encoded dirs)
+ * applies the side-effecting sync steps in order:
+ *   1. `divergenceCheckExtras` (read-only WARN naming local files that
+ *      diverge from origin; fires in BOTH wet and dry modes per D-08)
+ *   2. `applySharedLinks` (symlink shared/* into ~/.claude/)
+ *   3. `regenerateSettings` (deep-merge base + host-override into settings.json)
+ *   4. `remapPull` (copy repo-side session transcripts into host-encoded dirs)
+ *   5. `remapExtrasPull` (copy `shared/extras/<logical>/<dirname>/` back
+ *      into each project's localRoot; SKIPPED under dryRun)
  *
  * `opts.dryRun` (default `false`): when `true`, the lock IS still acquired
  * and `git pull --rebase` still runs (so concurrent invocations cannot race
- * and so the user sees the same network round-trip behavior they would on a
- * real pull). Then `computePreview` runs in place of the three mutating
- * steps. The per-run backup directory under
- * `~/.cache/claude-nomad/backup/<ts>/` is intentionally NOT created (no
- * backups are written under dryRun and an empty dir would pollute the cache).
+ * and the user sees the same network round-trip as a real pull).
+ * `divergenceCheckExtras` still fires (read-only by design). Then
+ * `computePreview` runs in place of the four mutating steps. The per-run
+ * backup directory under `~/.cache/claude-nomad/backup/<ts>/` is
+ * intentionally NOT created (no backups are written under dryRun and an
+ * empty dir would pollute the cache).
  *
  * Any `NomadFatal` thrown along the way is caught here so the `finally` block
  * releases the lock before exit (a raw `process.exit()` would skip `finally`
@@ -62,16 +68,24 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
     }
     log(`pulling on host=${HOST} (backup=${ts}${dryRun ? '; dry-run' : ''})`);
     gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', REPO_HOME);
+    // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
+    // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
+    // mutation (so local state is intact for byte-level comparison). The
+    // function itself silently skips when no `extras` key is declared.
+    divergenceCheckExtras();
     if (dryRun) {
       const previewResult = computePreview(ts);
+      // dryRun deliberately omits remapExtrasPull to preserve the
+      // zero-mutation contract; users still see the divergence WARN above.
       log('dry-run complete; no mutation');
       emitSummary('pull', previewResult.unmapped);
     } else {
       applySharedLinks(ts);
       regenerateSettings(ts);
       const remapResult = remapPull(ts);
+      const extrasResult = remapExtrasPull(ts);
       log('pull complete');
-      emitSummary('pull', remapResult.unmapped);
+      emitSummary('pull', remapResult.unmapped, 0, extrasResult.skipped);
     }
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the
