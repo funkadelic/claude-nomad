@@ -162,9 +162,12 @@ export function remapExtrasPull(
 /**
  * List files that differ between two paths via `git diff --no-index
  * --name-only`. Exit 0 = identical, exit 1 = differences exist (not an
- * error: read names from `e.stdout`). Any other status is a real git
- * failure, silently swallowed per the non-blocking contract. Argv-array
- * `execFileSync` (no shell) so paths cannot inject.
+ * error: read names from `e.stdout`). Other failures are surfaced via WARN
+ * so the operator can tell the difference between "no diff" (silent),
+ * "git not on PATH" (WARN), and other git failures (WARN) instead of all
+ * three paths collapsing to a silent empty list and defeating D-08's
+ * loud-doctor contract. Argv-array `execFileSync` (no shell) so paths
+ * cannot inject.
  */
 function listDivergingFiles(a: string, b: string): string[] {
   try {
@@ -180,6 +183,11 @@ function listDivergingFiles(a: string, b: string): string[] {
         .split('\n')
         .filter((line) => line.length > 0);
     }
+    if (e.code === 'ENOENT') {
+      warn(`git not on PATH; divergence check skipped for ${a}`);
+      return [];
+    }
+    warn(`divergence check failed for ${a}: ${e.message ?? String(err)}`);
     return [];
   }
 }
@@ -189,18 +197,20 @@ function listDivergingFiles(a: string, b: string): string[] {
  * the just-pulled `shared/extras/<logical>/<dirname>/` and emit a WARN per
  * diverging file plus a count summary. Runs AFTER `git pull --rebase` and
  * BEFORE `remapExtrasPull` (so local state is intact for comparison).
- * Non-blocking per the inherited LWW model; recovery is from
- * `~/.cache/claude-nomad/backup/<ts>/extras/` once the remap snapshots
- * host state. Silent skip on missing path-map, no `extras` key, missing
- * or `'TBD'` host path, non-whitelisted dirname, or either side absent.
+ * Non-blocking per the inherited LWW model; the WARN message names the
+ * exact `~/.cache/claude-nomad/backup/<ts>/extras/` path that
+ * `remapExtrasPull` will write to so users can recover the overwritten
+ * content. Silent skip on missing path-map, no `extras` key, missing or
+ * `'TBD'` host path, non-whitelisted dirname, or either side absent.
  */
-export function divergenceCheckExtras(): void {
+export function divergenceCheckExtras(ts: string): void {
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (!existsSync(mapPath)) return;
 
   const map = readPathMap(mapPath);
   const extrasMap = map.extras ?? {};
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
+  const backupRoot = join('~', '.cache', 'claude-nomad', 'backup', ts, 'extras');
   for (const [logical, dirnames] of Object.entries(extrasMap)) {
     assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
@@ -213,7 +223,7 @@ export function divergenceCheckExtras(): void {
       const diff = listDivergingFiles(local, repo);
       if (diff.length > 0) {
         warn(
-          `local ${dirname} for ${logical} diverges from origin in ${diff.length} file(s); next remapExtrasPull will overwrite them (backups at ~/.cache/claude-nomad/backup/<ts>/extras/)`,
+          `local ${dirname} for ${logical} diverges from origin in ${diff.length} file(s); next remapExtrasPull will overwrite them (backups at ${backupRoot}/)`,
         );
         for (const f of diff) warn(`  ${f}`);
       }

@@ -500,7 +500,7 @@ describe('divergenceCheckExtras (integration)', () => {
     const captured = captureStderr();
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    divergenceCheckExtras();
+    divergenceCheckExtras('20260522-test');
 
     expect(captured.read()).not.toContain('⚠︎');
   });
@@ -520,7 +520,7 @@ describe('divergenceCheckExtras (integration)', () => {
     const captured = captureStderr();
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    divergenceCheckExtras();
+    divergenceCheckExtras('20260522-test');
 
     const output = captured.read();
     expect(output).toContain('PLAN.md');
@@ -544,7 +544,7 @@ describe('divergenceCheckExtras (integration)', () => {
     const captured = captureStderr();
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    divergenceCheckExtras();
+    divergenceCheckExtras('20260522-test');
 
     const output = captured.read();
     expect(output).toContain('PLAN.md');
@@ -565,7 +565,7 @@ describe('divergenceCheckExtras (integration)', () => {
     const captured = captureStderr();
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    divergenceCheckExtras();
+    divergenceCheckExtras('20260522-test');
 
     expect(captured.read()).not.toContain('⚠︎');
   });
@@ -583,7 +583,7 @@ describe('divergenceCheckExtras (integration)', () => {
     const captured = captureStderr();
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    divergenceCheckExtras();
+    divergenceCheckExtras('20260522-test');
 
     expect(captured.read()).not.toContain('⚠︎');
   });
@@ -603,7 +603,7 @@ describe('divergenceCheckExtras (integration)', () => {
     captureStderr();
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    const result = divergenceCheckExtras();
+    const result = divergenceCheckExtras('20260522-test');
 
     expect(result).toBeUndefined();
   });
@@ -623,7 +623,7 @@ describe('divergenceCheckExtras (integration)', () => {
     const captured = captureStderr();
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    divergenceCheckExtras();
+    divergenceCheckExtras('20260522-test');
 
     expect(captured.read()).not.toContain('⚠︎');
   });
@@ -641,7 +641,7 @@ describe('divergenceCheckExtras (integration)', () => {
     const captured = captureStderr();
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    divergenceCheckExtras();
+    divergenceCheckExtras('20260522-test');
 
     expect(captured.read()).not.toContain('⚠︎');
   });

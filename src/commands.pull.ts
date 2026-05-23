@@ -72,7 +72,7 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
     // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
     // mutation (so local state is intact for byte-level comparison). The
     // function itself silently skips when no `extras` key is declared.
-    divergenceCheckExtras();
+    divergenceCheckExtras(ts);
     if (dryRun) {
       const previewResult = computePreview(ts);
       // dryRun deliberately omits remapExtrasPull to preserve the
@@ -85,7 +85,11 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
       const remapResult = remapPull(ts);
       const extrasResult = remapExtrasPull(ts);
       log('pull complete');
-      emitSummary('pull', remapResult.unmapped, 0, extrasResult.skipped);
+      // Combine session-unmapped and extras-unmapped into one user-visible
+      // count; from the operator's perspective both mean "couldn't sync this
+      // for the host". extras-skipped (non-whitelisted dirname) stays
+      // separate because it signals config misuse, not a host-config gap.
+      emitSummary('pull', remapResult.unmapped + extrasResult.unmapped, 0, extrasResult.skipped);
     }
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the

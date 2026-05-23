@@ -190,7 +190,16 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     const status = gitStatusPorcelainZ(REPO_HOME);
     if (!status) {
       log('nothing to commit');
-      emitSummary('push', remapResult.unmapped, remapResult.collisions, extrasResult.skipped);
+      // Combine session-unmapped and extras-unmapped into one user-visible
+      // count; both mean "couldn't sync this for the host". extras-skipped
+      // (non-whitelisted dirname) stays separate because it signals config
+      // misuse, not a host-config gap.
+      emitSummary(
+        'push',
+        remapResult.unmapped + extrasResult.unmapped,
+        remapResult.collisions,
+        extrasResult.skipped,
+      );
       return;
     }
     const mapPath = join(REPO_HOME, 'path-map.json');
