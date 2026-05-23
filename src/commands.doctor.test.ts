@@ -191,6 +191,16 @@ function mockCurlReleases(
   });
 }
 
+/**
+ * Override `process.version` for a single test, returning the original so the
+ * caller can restore it in `afterEach`. `process.version` is a getter on the
+ * Node global; `Object.defineProperty` with `configurable: true` is the
+ * supported way to swap it for testing.
+ */
+function setNodeVersion(v: string): void {
+  Object.defineProperty(process, 'version', { value: v, configurable: true });
+}
+
 describe('cmdDoctor settings.json schema sanity', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -1759,11 +1769,6 @@ describe('cmdDoctor node-engine check', () => {
     restoreEnv('NO_COLOR', originalNoColor);
     rmSync(env.testHome, { recursive: true, force: true });
   });
-
-  /** Override `process.version` for a single test. Restored in `afterEach`. */
-  function setNodeVersion(v: string): void {
-    Object.defineProperty(process, 'version', { value: v, configurable: true });
-  }
 
   it('emits PASS when current node equals the engines minimum', async () => {
     setNodeVersion('v22.22.1');
