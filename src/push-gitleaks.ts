@@ -104,27 +104,23 @@ export function buildSessionAwareFatal(
 ): string {
   if (bySession.size === 0) return LEGACY_FATAL;
   const lines: string[] = [];
-  lines.push(`gitleaks detected secrets in ${bySession.size} session transcript(s).`);
   lines.push(
+    `gitleaks detected secrets in ${bySession.size} session transcript(s).`,
     "nomad drop-session also clears each session's sibling subagent transcript directory.",
   );
   for (const [sid, counts] of bySession) {
     const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
-    lines.push('');
-    lines.push(`Session ${sid}:`);
-    lines.push(`  ${summary}`);
-    lines.push(`  Recover with: nomad drop-session ${sid}`);
+    lines.push('', `Session ${sid}:`, `  ${summary}`, `  Recover with: nomad drop-session ${sid}`);
   }
   if (other.length > 0) {
-    lines.push('');
-    lines.push('Also found:');
-    for (const f of other) {
-      lines.push(`  ${f.File}  ${f.RuleID}`);
-    }
-    lines.push('  Review with: git diff --cached, then unstage manually.');
+    lines.push(
+      '',
+      'Also found:',
+      ...other.map((f) => `  ${f.File}  ${f.RuleID}`),
+      '  Review with: git diff --cached, then unstage manually.',
+    );
   }
-  lines.push('');
-  lines.push('After recovery, re-run nomad push.');
+  lines.push('', 'After recovery, re-run nomad push.');
   return lines.join('\n');
 }
 
