@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
@@ -7,27 +7,32 @@ import { acquireLock, die, fail, log, NomadFatal, releaseLock } from './utils.ts
 
 /**
  * Surgical removal of a contaminated session from the staged tree of
- * `~/claude-nomad/`. Walks `shared/projects/<logical>/<id>.jsonl` at the
- * top level only, classifies each match via `git ls-files --error-unmatch`,
- * and unstages with the appropriate primitive:
+ * `~/claude-nomad/`. For each `shared/projects/<logical>/` child this
+ * matches both the flat `<id>.jsonl` AND the sibling subagent directory
+ * `<id>/` (whose nested transcripts are keyed by the same session id),
+ * classifies each staged entry via `git ls-files --error-unmatch`, and
+ * unstages with the appropriate primitive:
  *
  *   - tracked-in-HEAD  -> `git restore --staged --worktree -- <rel>`
  *   - newly-staged     -> `git rm --cached -f -- <rel>`
  *
- * Idempotent: files that are not in the index at all are skipped silently
- * rather than treated as errors. Exits 0 on any drop, including an
- * idempotent re-run that finds the matches already absent. Exits 1 with
- * `✗ no staged session matches <id>` (red `✗` fail glyph) only when no
- * `shared/projects/<logical>/<id>.jsonl` exists at all in the shared tree.
+ * The directory tree is expanded into its staged entries via
+ * `git ls-files -z -- <dir-rel>` so every nested file flows through the
+ * same per-entry classification loop as the flat jsonl; this closes the
+ * leak where a "dropped" session still shipped its subagent transcripts.
+ *
+ * Idempotent: entries not in the index are skipped silently. Exits 0 on
+ * any drop (including an idempotent re-run); exits 1 with `✗ no staged
+ * session matches <id>` only when neither a flat `<id>.jsonl` nor a
+ * `<id>/` directory with staged entries exists anywhere in the tree.
  *
  * Defense-in-depth: the id is validated against the same allowlist regex
  * used in `src/resume.ts` before any path composition. argv-array form
  * for every git invocation.
  *
- * NEVER touches `~/.claude/projects/<encoded>/<id>.jsonl`. The local file
- * is preserved so it can race-safely coexist with active Claude Code
- * writers; rotate-and-scrub of the local copy is the user's
- * responsibility.
+ * NEVER touches `~/.claude/projects/<encoded>/<id>.jsonl` or the local
+ * `<id>/` tree; the local copies are preserved so they race-safely
+ * coexist with active Claude Code writers.
  *
  * @param id Session id (filename minus `.jsonl`). Must match `[A-Za-z0-9_-]+`
  *           with length 1..128.
@@ -49,21 +54,25 @@ export function cmdDropSession(id: string): void {
     if (!existsSync(repoProjects)) {
       throw new NomadFatal(`no staged session matches ${id}`);
     }
-    // Top-level walk only: for each `shared/projects/<logical>/` child,
-    // check whether `<id>.jsonl` exists. No descent into
-    // subagents/memory/tool-results subdirectories.
+    // For each `shared/projects/<logical>/` child, match the flat
+    // `<id>.jsonl` plus the sibling subagent directory `<id>/`. The
+    // directory is expanded into its staged entries so every nested file
+    // flows through the same per-entry unstage loop as the flat jsonl.
     const matches: string[] = [];
     for (const logical of readdirSync(repoProjects)) {
       const candidate = join(repoProjects, logical, `${id}.jsonl`);
       if (existsSync(candidate)) {
-        matches.push(candidate);
+        matches.push(relative(REPO_HOME, candidate));
+      }
+      const dir = join(repoProjects, logical, id);
+      if (existsSync(dir) && statSync(dir).isDirectory()) {
+        matches.push(...expandStagedDir(relative(REPO_HOME, dir)));
       }
     }
     if (matches.length === 0) {
       throw new NomadFatal(`no staged session matches ${id}`);
     }
-    for (const m of matches) {
-      const rel = relative(REPO_HOME, m);
+    for (const rel of matches) {
       // Pitfall 7: skip files that are not in the index at all (the
       // load-bearing guard for the idempotent second-run case, where the
       // first drop already removed the entry from the index but left the
@@ -117,6 +126,31 @@ export function cmdDropSession(id: string): void {
     process.exitCode = 1;
   } finally {
     releaseLock(handle);
+  }
+}
+
+/**
+ * Expand a repo-relative directory into its staged entries via
+ * `git ls-files -z -- <dirRel>` (argv-array form, NUL-split for path
+ * safety). Returns repo-relative POSIX paths for every staged file under
+ * the directory, or an empty array when none are staged or `git` fails
+ * (missing/corrupt index); the caller then falls through to the existing
+ * per-entry idempotency guard rather than escalating to a FATAL.
+ *
+ * @param dirRel Repo-relative directory path (`shared/projects/<logical>/<id>`).
+ */
+function expandStagedDir(dirRel: string): string[] {
+  try {
+    const out = execFileSync('git', ['ls-files', '-z', '--', dirRel], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return out
+      .toString()
+      .split('\0')
+      .filter((p) => p !== '');
+  } catch {
+    return [];
   }
 }
 

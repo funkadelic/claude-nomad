@@ -65,6 +65,22 @@ describe('cmdDropSession (real git temp repo)', () => {
   }
 
   /**
+   * Stage one nested entry under the sibling subagent directory
+   * `shared/projects/<logical>/<sid>/<relName>` (creating parent dirs as
+   * needed) with the given content. Mirrors `stageSession` but targets the
+   * `<sid>/` directory tree (keyed by the same session id) rather than the
+   * flat `<sid>.jsonl`. Returns the absolute path of the staged file.
+   */
+  function stageSessionDir(logical: string, sid: string, relName: string, content: string): string {
+    const path = join(sharedProjects, logical, sid, relName);
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, content);
+    const rel = `shared/projects/${logical}/${sid}/${relName}`;
+    execFileSync('git', ['add', rel], { cwd: repoUnderHome });
+    return path;
+  }
+
+  /**
    * Read `git diff --cached --name-only` from the temp repo as a single
    * trimmed string. Useful to assert that a file is or is not in the staged
    * tree without depending on `git ls-files` quoting.
@@ -319,6 +335,85 @@ describe('cmdDropSession (real git temp repo)', () => {
     const logged = logSpy.mock.calls.map((c: unknown[]) => c.join(' ')).join('\n');
     expect(logged).toContain('already absent from index');
     expect(process.exitCode).toBe(0);
+  });
+
+  it('cascades into the newly-staged subagent directory (Test A)', async () => {
+    // Issue #110: dropping a session must also unstage the sibling subagent
+    // directory `shared/projects/<logical>/<id>/...` keyed by the same id.
+    stageSession('foo', 'sid-A', '{"role":"user","content":"hi"}\n');
+    stageSessionDir('foo', 'sid-A', 'subagents/agent-1.jsonl', '{"agent":"1"}\n');
+    expect(diffCached()).toContain('shared/projects/foo/sid-A.jsonl');
+    expect(diffCached()).toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-A');
+
+    const cached = diffCached();
+    expect(cached).not.toContain('shared/projects/foo/sid-A.jsonl');
+    expect(cached).not.toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('cascades a tracked-in-HEAD subagent file and resets the working tree (Test B)', async () => {
+    // The cascade must classify a committed-then-restaged subagent entry as
+    // tracked-in-HEAD and use `git restore --staged --worktree`.
+    const path = stageSessionDir('foo', 'sid-A', 'subagents/agent-1.jsonl', '{"v":"committed"}\n');
+    execFileSync('git', ['commit', '-q', '-m', 'add subagent'], { cwd: repoUnderHome });
+    writeFileSync(path, '{"v":"new-staged"}\n');
+    execFileSync('git', ['add', 'shared/projects/foo/sid-A/subagents/agent-1.jsonl'], {
+      cwd: repoUnderHome,
+    });
+    expect(diffCached()).toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-A');
+
+    expect(diffCached()).toBe('');
+    expect(readFileSync(path, 'utf8')).toBe('{"v":"committed"}\n');
+  });
+
+  it('drops a dir-only session with no flat <id>.jsonl (Test C)', async () => {
+    // A session that has only a subagent directory (no top-level <id>.jsonl)
+    // must still be droppable, not a no-match exit 1.
+    stageSessionDir('foo', 'sid-A', 'subagents/agent-1.jsonl', '{"agent":"1"}\n');
+    expect(diffCached()).toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    expect(() => cmdDropSession('sid-A')).not.toThrow();
+
+    expect(diffCached()).not.toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
+    expect(process.exitCode === 1).toBe(false);
+    expect(errOutput()).not.toMatch(/✗/);
+  });
+
+  it('is idempotent across the directory cascade on a second run (Test D)', async () => {
+    stageSession('foo', 'sid-A', '{"role":"user","content":"hi"}\n');
+    stageSessionDir('foo', 'sid-A', 'subagents/agent-1.jsonl', '{"agent":"1"}\n');
+
+    const mod = await import('./commands.drop-session.ts');
+    mod.cmdDropSession('sid-A');
+    expect(diffCached()).not.toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
+
+    expect(() => mod.cmdDropSession('sid-A')).not.toThrow();
+    expect(process.exitCode === 1).toBe(false);
+    expect(errOutput()).not.toMatch(/✗/);
+  });
+
+  it('does NOT touch the local subagent directory tree (Test E)', async () => {
+    // The cascade operates only on REPO_HOME's git index; the local
+    // ~/.claude/projects/<encoded>/<id>/subagents/... must be untouched.
+    stageSessionDir('foo', 'sid-A', 'subagents/agent-1.jsonl', '{"agent":"1"}\n');
+    const localDir = join(claudeProjects, '-tmp-foo', 'sid-A', 'subagents');
+    mkdirSync(localDir, { recursive: true });
+    const localPath = join(localDir, 'agent-1.jsonl');
+    const localMarker = '{"local":"subagent marker"}\n';
+    writeFileSync(localPath, localMarker);
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-A');
+
+    expect(existsSync(localPath)).toBe(true);
+    expect(readFileSync(localPath, 'utf8')).toBe(localMarker);
   });
 
   it('rejects invalid session ids at function entry with `✗ invalid session id`', async () => {
