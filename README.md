@@ -334,9 +334,9 @@ nomad update
 `nomad update` (see `cmdUpdate` in `src/commands.update.ts`) detects which layout your `~/claude-nomad/` uses and does the right thing:
 
 - **vanilla** (`origin` points at the public repo): `git pull --ff-only origin main`.
-- **fork** (`upstream` points at the public repo, `origin` points at your private mirror): `git fetch upstream`, `git merge upstream/main`, then prompt before pushing the merge to `origin/main`. Pass `--push-origin` to skip the prompt.
+- **fork** (`upstream` points at the public repo, `origin` points at your private mirror): `git fetch upstream`, then (before merging) commit any whitelisted `shared/extras/` content that is still untracked locally so an overlap with upstream becomes a normal file merge instead of an untracked-overwrite abort, `git merge upstream/main`, then prompt before pushing the merge to `origin/main`. Pass `--push-origin` to skip the prompt.
 
-Pre-flight checks run before any mutation: `REPO_HOME` exists, topology resolves to `vanilla` or `fork`, current branch is `main`, working tree is clean per `git status --porcelain -z` (override with `--force`), and `--push-origin` is rejected on vanilla topology. After the merge or pull, `nomad update` re-runs `npm install` only when `package-lock.json` actually shifted, then invokes `nomad doctor`. The trailing version-check is non-fatal: `✓` when local matches the latest release, `⚠︎` when behind, an informational `ℹ︎ ... ahead of latest release` line when ahead (e.g. a `-dev` build between releases), and silent on network failures.
+Pre-flight checks run before any mutation: `REPO_HOME` exists, topology resolves to `vanilla` or `fork`, current branch is `main`, working tree is clean per `git status --porcelain -z` (override with `--force`), and `--push-origin` is rejected on vanilla topology. After the merge or pull, `nomad update` re-runs `npm install` only when `package-lock.json` actually shifted, commits the regenerated `package-lock.json` (fork topology) if the reinstall changed it, then invokes `nomad doctor`. The trailing version-check is non-fatal: `✓` when local matches the latest release, `⚠︎` when behind, an informational `ℹ︎ ... ahead of latest release` line when ahead (e.g. a `-dev` build between releases), and silent on network failures.
 
 Common cases:
 
