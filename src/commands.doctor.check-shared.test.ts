@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as cpModule from 'node:child_process';
+import type * as fsModule from 'node:fs';
 
 import { failGlyph, okGlyph, warnGlyph } from './color.ts';
 import { type PathMap } from './config.ts';
@@ -299,7 +300,10 @@ describe('reportCheckShared (mocked child_process)', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
+    // Pair every doMock with a doUnmock; restoreAllMocks does NOT clear doMock
+    // module mocks, so an unpaired mock would leak into later files.
     vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -343,5 +347,100 @@ describe('reportCheckShared (mocked child_process)', () => {
     expect(section.items.some((r) => r.includes(failGlyph))).toBe(false);
     expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
     expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a scan-failed fail row, exits 1, and writes no session row when the report is unparseable (D-10)', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-unparseable.jsonl'),
+      `{"role":"user","text":"benign content"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          // The gitleaks `version` probe must succeed so the flow reaches the
+          // scan; only the `dir` scan fails.
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          // The `dir` scan exits non-zero WITHOUT writing any report at
+          // --report-path, so readGitleaksReport returns null (the unparseable
+          // signal) and the catch branch reports scan-failed rather than
+          // chasing phantom sessions.
+          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+        }),
+      };
+    });
+
+    expect(process.exitCode).toBe(0);
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    expect(section.items.some((r) => r.includes(failGlyph))).toBe(true);
+    expect(rows).toMatch(/scan failed/i);
+    expect(rows).not.toContain('session ');
+    expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('removes the temp report and temp tree in finally on the failure path (D-04)', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-fail-cleanup.jsonl'),
+      `{"role":"user","text":"benign content"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    const rmCalls: { path: string; opts: unknown }[] = [];
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        // Record every removal so we can assert the finally block removed both
+        // the report file ({ force: true }) and the temp tree ({ recursive:
+        // true, force: true }); still delegate to the real rmSync so the disk
+        // is actually cleaned.
+        rmSync: vi.fn((p: fsModule.PathLike, o?: fsModule.RmOptions) => {
+          rmCalls.push({ path: String(p), opts: o });
+          actual.rmSync(p, o);
+        }),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+        }),
+      };
+    });
+
+    const { existsSync } = await import('node:fs');
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    expect(process.exitCode).toBe(1);
+    const reportRm = rmCalls.find(
+      (c) => c.path.includes('check-shared-') && c.path.endsWith('.json'),
+    );
+    const treeRm = rmCalls.find((c) => c.path.includes('check-shared-tree-'));
+    expect(reportRm).toBeDefined();
+    expect(reportRm?.opts).toMatchObject({ force: true });
+    expect(treeRm).toBeDefined();
+    expect(treeRm?.opts).toMatchObject({ recursive: true, force: true });
+    // The artifacts must be gone from disk after the run.
+    expect(reportRm && existsSync(reportRm.path)).toBeFalsy();
+    expect(treeRm && existsSync(treeRm.path)).toBeFalsy();
   });
 });
