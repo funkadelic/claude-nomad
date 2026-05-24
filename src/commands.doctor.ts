@@ -12,6 +12,7 @@ import {
   reportRepoState,
   reportSharedLinks,
 } from './commands.doctor.checks.ts';
+import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { renderDoctor, section } from './commands.doctor.format.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
@@ -24,8 +25,13 @@ import { reportVersionCheck } from './commands.doctor.version.ts';
  * inside the individual reporters, so a piped
  * `nomad doctor 2>/dev/null` still exposes failures to scripts. Differs from
  * `cmdPull` / `cmdPush` / `resumeCmd`, where FATAL is on stderr.
+ *
+ * `opts.checkShared` (the `--check-shared` sub-flag) appends a "Shared scan"
+ * section that runs the gitleaks preflight over the session transcripts a
+ * `nomad push` would stage. It is OFF by default so plain `nomad doctor`
+ * stays the fast read-only smoke test (no scan, no temp tree).
  */
-export function cmdDoctor(): void {
+export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
   const host = section('Host');
   reportHostAndPaths(host);
   reportRepoState(host);
@@ -45,7 +51,7 @@ export function cmdDoctor(): void {
   reportNeverSync(neverSync);
 
   const repository = section('Repository');
-  reportGitleaksProbe(repository);
+  const gitleaksReady = reportGitleaksProbe(repository);
   reportGitlinks(repository);
   reportRemote(repository);
   reportRebaseClean(repository);
@@ -54,5 +60,11 @@ export function cmdDoctor(): void {
   reportVersionCheck(version);
   reportNodeEngineCheck(version);
 
-  renderDoctor([version, host, links, settings, pathMap, neverSync, repository]);
+  const sharedScan = section('Shared scan');
+  // Pass the Repository-section probe result so gitleaks `version` is not
+  // invoked a second time on a --check-shared run; reportCheckShared still
+  // probes for itself when called standalone.
+  if (opts.checkShared === true) reportCheckShared(sharedScan, gitleaksReady);
+
+  renderDoctor([version, host, links, settings, pathMap, neverSync, repository, sharedScan]);
 }

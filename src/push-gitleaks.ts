@@ -43,7 +43,7 @@ export type Finding = {
  * paths (e.g., `shared/projects/<logical>/subagents/<id>.jsonl`) fall
  * through to the non-session `other` bucket.
  */
-const SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\.jsonl$/;
+export const SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\.jsonl$/;
 
 /**
  * Legacy fallback FATAL emitted when no finding's File matches the session
@@ -129,7 +129,7 @@ export function buildSessionAwareFatal(
  * the failure path must NOT cascade into a parse-error stack trace; the
  * caller falls back to the legacy FATAL string in that case.
  */
-function readGitleaksReport(reportPath: string): Finding[] | null {
+export function readGitleaksReport(reportPath: string): Finding[] | null {
   try {
     const raw = readFileSync(reportPath, 'utf8');
     const parsed: unknown = JSON.parse(raw);

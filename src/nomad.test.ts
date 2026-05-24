@@ -272,6 +272,83 @@ describe('nomad.ts push dispatcher', () => {
       expect.stringContaining('usage: nomad drop-session'),
     );
   });
+
+  it('routes bare `nomad doctor` to cmdDoctor() with no opts', async () => {
+    const cmdDoctorMock = vi.fn();
+    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    process.argv = ['node', 'nomad.ts', 'doctor'];
+    await import('./nomad.ts');
+    expect(cmdDoctorMock).toHaveBeenCalledTimes(1);
+    expect(cmdDoctorMock).toHaveBeenCalledWith();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('routes `nomad doctor --check-shared` to cmdDoctor({ checkShared: true })', async () => {
+    const cmdDoctorMock = vi.fn();
+    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    process.argv = ['node', 'nomad.ts', 'doctor', '--check-shared'];
+    await import('./nomad.ts');
+    expect(cmdDoctorMock).toHaveBeenCalledTimes(1);
+    expect(cmdDoctorMock).toHaveBeenCalledWith({ checkShared: true });
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects `nomad doctor --check-shared extra` (trailing arg) with exitCode=1', async () => {
+    const cmdDoctorMock = vi.fn();
+    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    process.argv = ['node', 'nomad.ts', 'doctor', '--check-shared', 'extra'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDoctorMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad doctor'));
+  });
+
+  it('routes `nomad doctor --resume-cmd sid-A` to resumeCmd(`sid-A`)', async () => {
+    const resumeCmdMock = vi.fn();
+    vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
+    process.argv = ['node', 'nomad.ts', 'doctor', '--resume-cmd', 'sid-A'];
+    await import('./nomad.ts');
+    expect(resumeCmdMock).toHaveBeenCalledTimes(1);
+    expect(resumeCmdMock).toHaveBeenCalledWith('sid-A');
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects bare `nomad doctor --resume-cmd` (no id) with the usage line and exitCode=1', async () => {
+    const resumeCmdMock = vi.fn();
+    vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
+    process.argv = ['node', 'nomad.ts', 'doctor', '--resume-cmd'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(resumeCmdMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad doctor --resume-cmd'),
+    );
+  });
+
+  it('rejects `nomad doctor --resume-cmd sid-A extra` (trailing arg) with exitCode=1', async () => {
+    // The argv-shape guard requires exactly `doctor --resume-cmd <id>`; a
+    // trailing positional must surface the usage line, not silently pass the
+    // first id through to resumeCmd.
+    const resumeCmdMock = vi.fn();
+    vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
+    process.argv = ['node', 'nomad.ts', 'doctor', '--resume-cmd', 'sid-A', 'extra'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(resumeCmdMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('usage: nomad doctor --resume-cmd'),
+    );
+  });
+
+  it('rejects `nomad doctor --bogus` (unknown sub-flag) with the usage line and exitCode=1', async () => {
+    const cmdDoctorMock = vi.fn();
+    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    process.argv = ['node', 'nomad.ts', 'doctor', '--bogus'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdDoctorMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad doctor'));
+  });
 });
 
 describe('nomad.ts --version dispatcher', () => {

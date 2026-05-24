@@ -27,7 +27,7 @@ function copyDir(src: string, dst: string): void {
  * keeps the unfiltered copyDir because the repo side is already curated
  * by the push gate.
  */
-function copyDirJsonlOnly(src: string, dst: string): void {
+export function copyDirJsonlOnly(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, {
     recursive: true,

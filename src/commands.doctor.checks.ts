@@ -272,13 +272,19 @@ export function reportNeverSync(section: DoctorSection): void {
   addItem(section, `${dim(infoGlyph)} never-sync items: ${[...NEVER_SYNC].join(', ')}`);
 }
 
-/** Probes for gitleaks on PATH; emits okGlyph with version, or failGlyph with ENOENT vs other-error distinction (sets exitCode=1). */
-export function reportGitleaksProbe(section: DoctorSection): void {
+/**
+ * Probes for gitleaks on PATH; emits okGlyph with version, or failGlyph with
+ * ENOENT vs other-error distinction (sets exitCode=1). Returns `true` when a
+ * usable binary was found so the caller can skip a redundant second `version`
+ * probe (e.g. the `--check-shared` Shared scan section).
+ */
+export function reportGitleaksProbe(section: DoctorSection): boolean {
   try {
     const v = execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
       .toString()
       .trim();
     addItem(section, `${green(okGlyph)} gitleaks: ${dim(v)}`);
+    return true;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       addItem(section, `${red(failGlyph)} gitleaks: not on PATH (required for nomad push)`);
@@ -286,6 +292,7 @@ export function reportGitleaksProbe(section: DoctorSection): void {
       addItem(section, `${red(failGlyph)} gitleaks: probe failed: ${(err as Error).message}`);
     }
     process.exitCode = 1;
+    return false;
   }
 }
 
