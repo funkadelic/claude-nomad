@@ -399,6 +399,22 @@ describe('cmdDropSession (real git temp repo)', () => {
     expect(errOutput()).not.toMatch(/✗/);
   });
 
+  it('is idempotent for a dir-only session on a second run (Test D2)', async () => {
+    // Regression for the dir-only rerun gap: after the first drop, the
+    // newly-staged subagent files remain on disk but leave the index, so a
+    // second run finds the <id>/ dir present yet `git ls-files` empty. It must
+    // be a no-op exit 0, not a `✗ no staged session matches` fatal.
+    stageSessionDir('foo', 'sid-A', 'subagents/agent-1.jsonl', '{"agent":"1"}\n');
+
+    const mod = await import('./commands.drop-session.ts');
+    mod.cmdDropSession('sid-A');
+    expect(diffCached()).not.toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
+
+    expect(() => mod.cmdDropSession('sid-A')).not.toThrow();
+    expect(process.exitCode === 1).toBe(false);
+    expect(errOutput()).not.toMatch(/✗/);
+  });
+
   it('does NOT touch the local subagent directory tree (Test E)', async () => {
     // The cascade operates only on REPO_HOME's git index; the local
     // ~/.claude/projects/<encoded>/<id>/subagents/... must be untouched.

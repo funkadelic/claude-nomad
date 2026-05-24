@@ -66,7 +66,14 @@ export function cmdDropSession(id: string): void {
       }
       const dir = join(repoProjects, logical, id);
       if (existsSync(dir) && statSync(dir).isDirectory()) {
-        matches.push(...expandStagedDir(relative(REPO_HOME, dir)));
+        const dirRel = relative(REPO_HOME, dir);
+        const staged = expandStagedDir(dirRel);
+        // A dir present on disk but absent from the index is an already-dropped
+        // rerun: push the dir path itself so the per-entry isInIndex() guard
+        // logs it as "already absent" rather than letting an empty match set
+        // escalate to the no-match fatal (idempotency for dir-only sessions).
+        if (staged.length > 0) matches.push(...staged);
+        else matches.push(dirRel);
       }
     }
     if (matches.length === 0) {
