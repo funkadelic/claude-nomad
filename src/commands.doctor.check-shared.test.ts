@@ -389,6 +389,112 @@ describe('reportCheckShared (mocked child_process)', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('degrades a malformed path-map.json to a FAIL row and exit 1 without throwing', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // A malformed path-map.json: readJson (raw JSON.parse) would throw a
+    // SyntaxError. The reporter must catch it, emit a FAIL row, and set
+    // exitCode 1 rather than letting the error propagate and abort doctor.
+    writeFileSync(join(testHome, 'claude-nomad', 'path-map.json'), '{ this is not valid json');
+
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        // The version probe must succeed so the flow reaches the path-map read.
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          return Buffer.from('');
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    expect(() => {
+      reportCheckShared(section);
+    }).not.toThrow();
+
+    expect(section.items.some((r) => r.includes(failGlyph))).toBe(true);
+    expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('emits a probe-failed FAIL row (not a not-on-PATH skip) when the gitleaks probe fails with EACCES', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-eacces.jsonl'),
+      `{"role":"user","text":"benign"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        // A permission error (corrupt binary / bad perms), NOT ENOENT. The
+        // reporter must distinguish this from missing-on-PATH (which is a WARN
+        // skip) and report a FAIL with the underlying message, mirroring
+        // reportGitleaksProbe.
+        execFileSync: vi.fn(() => {
+          throw Object.assign(new Error('spawn gitleaks EACCES'), { code: 'EACCES' });
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    expect(section.items.some((r) => r.includes(failGlyph))).toBe(true);
+    expect(section.items.some((r) => r.includes(warnGlyph))).toBe(false);
+    expect(rows).toMatch(/EACCES/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('includes the underlying gitleaks error message in the scan-failed row (no stderr/stdout leak)', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-scanmsg.jsonl'),
+      `{"role":"user","text":"benign content"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    const secretInStreams = 'TOP_SECRET_STREAM_CONTENT';
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          // The dir scan fails with a descriptive message but ALSO carries
+          // stderr/stdout that must never be forwarded into the row.
+          throw Object.assign(new Error('gitleaks dir exited 126: bad invocation'), {
+            status: 126,
+            stderr: Buffer.from(secretInStreams),
+            stdout: Buffer.from(secretInStreams),
+          });
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    expect(rows).toMatch(/scan failed/i);
+    expect(rows).toContain('gitleaks dir exited 126');
+    // e.stderr / e.stdout must never leak into doctor output.
+    expect(rows).not.toContain(secretInStreams);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('removes the temp report and temp tree in finally on the failure path (D-04)', async () => {
     const env = makeEnv();
     testHome = env.testHome;
