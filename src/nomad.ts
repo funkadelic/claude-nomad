@@ -202,7 +202,7 @@ try {
         cmdDoctor({ checkShared: true });
       } else if (process.argv[3] === '--resume-cmd') {
         const id = process.argv[4];
-        if (typeof id !== 'string' || id.length === 0) {
+        if (process.argv.length !== 5 || typeof id !== 'string' || id.length === 0) {
           console.error('usage: nomad doctor --resume-cmd <session-id>');
           process.exit(1);
         }
