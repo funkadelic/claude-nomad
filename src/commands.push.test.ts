@@ -1,8 +1,15 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+
+/** Run a git command in `cwd`, surfacing stderr on failure. Test-only helper
+ * for the real-repo regression suites (no production code path uses it). */
+function runGit(cwd: string, args: readonly string[]): void {
+  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+}
 
 import type * as childProcessModule from 'node:child_process';
 import type { PathMap } from './config.ts';
@@ -1120,5 +1127,67 @@ describe('cmdPush: extras pipeline integration', () => {
     expect(() => cmdPush()).not.toThrow();
     const combined = errSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
     expect(combined).toContain('2 extras skipped');
+  });
+});
+
+// Regression for issue #111: a fresh host whose entire `shared/extras/`
+// subtree is untracked. Git's default porcelain collapses an all-untracked
+// subtree to a single `?? shared/extras/` parent record, which the child
+// prefix allow-list (`shared/extras/<logical>/<dirname>/`) rejects. The
+// push path must read with `untrackedAll: true` so per-file extras paths
+// surface and the existing allow-list matches. Uses a REAL git repo so the
+// collapse behavior is exercised end-to-end, not faked through a literal.
+describe('issue #111: untracked extras subtree porcelain collapse', () => {
+  let repo: string;
+
+  beforeEach(() => {
+    // Defend against a leaked `node:child_process` doMock from an earlier
+    // test in this file: the dynamically-imported gitStatusPorcelainZ would
+    // otherwise bind to a mock returning empty Buffers and the real-git
+    // assertions would see no status output. Unmock + reset so a fresh,
+    // unmocked utils.ts loads.
+    vi.doUnmock('node:child_process');
+    vi.resetModules();
+    repo = mkdtempSync(join(tmpdir(), 'nomad-111-'));
+    runGit(repo, ['init', '-q']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test']);
+    // shared/ is tracked (committed); only the new extras subtree is untracked.
+    mkdirSync(join(repo, 'shared'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'CLAUDE.md'), '# shared\n');
+    runGit(repo, ['add', 'shared/CLAUDE.md']);
+    runGit(repo, ['commit', '-q', '-m', 'init']);
+    // Untracked extras: a multi-file subtree under a project's logical name.
+    const planning = join(repo, 'shared', 'extras', 'myproj', '.planning');
+    mkdirSync(join(planning, 'todos'), { recursive: true });
+    writeFileSync(join(planning, 'PLAN.md'), '# plan\n');
+    writeFileSync(join(planning, 'todos', 'a.md'), '# todo\n');
+  });
+
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('default porcelain collapses the untracked subtree to a bare parent record', async () => {
+    const { gitStatusPorcelainZ } = await import('./utils.ts');
+    const { parsePorcelainZ } = await import('./commands.push.ts');
+    const paths = parsePorcelainZ(gitStatusPorcelainZ(repo));
+    // The collapse: a single `shared/extras/` directory record, no per-file paths.
+    expect(paths).toContain('shared/extras/');
+    expect(paths).not.toContain('shared/extras/myproj/.planning/PLAN.md');
+  });
+
+  it('untrackedAll porcelain expands the subtree to per-file paths the allow-list accepts', async () => {
+    const { gitStatusPorcelainZ } = await import('./utils.ts');
+    const { parsePorcelainZ, enforceAllowList } = await import('./commands.push.ts');
+    const status = gitStatusPorcelainZ(repo, { untrackedAll: true });
+    const paths = parsePorcelainZ(status);
+    // Per-file expansion, not the collapsed parent.
+    expect(paths).toContain('shared/extras/myproj/.planning/PLAN.md');
+    expect(paths).toContain('shared/extras/myproj/.planning/todos/a.md');
+    expect(paths).not.toContain('shared/extras/');
+    // The runtime allow-list child prefix now matches every per-file path.
+    const map: PathMap = { projects: {}, extras: { myproj: ['.planning'] } };
+    expect(() => enforceAllowList(status, map)).not.toThrow();
   });
 });

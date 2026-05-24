@@ -193,7 +193,13 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     }
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()
     // the leading status-space and shift parsePorcelainZ's offsets.
-    const status = gitStatusPorcelainZ(REPO_HOME);
+    // `untrackedAll` (issue #111): the allow-list runs on this snapshot BEFORE
+    // `git add -A`. Without it, a fresh host whose entire `shared/extras/`
+    // subtree is untracked yields a single collapsed `?? shared/extras/`
+    // record that the `shared/extras/<logical>/<dirname>/` child prefix cannot
+    // match, so the first extras push is rejected. Expanding to per-file paths
+    // lets the existing allow-list accept them while keeping the gate order.
+    const status = gitStatusPorcelainZ(REPO_HOME, { untrackedAll: true });
     if (!status) {
       log('nothing to commit');
       // Combine session-unmapped and extras-unmapped into one user-visible

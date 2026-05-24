@@ -3,6 +3,7 @@ import { closeSync, existsSync, openSync, readSync } from 'node:fs';
 
 import { cmdDoctor } from './commands.doctor.ts';
 import { REPO_HOME } from './config.ts';
+import { commitRegeneratedLockfile, precommitForkExtras } from './update.fork-extras.ts';
 import { loadTopology } from './update.topology.ts';
 import { die, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, warn } from './utils.ts';
 
@@ -295,6 +296,10 @@ function runFork(opts: CmdUpdateOpts): boolean {
     return false;
   }
   gitOrFatal(['fetch', 'upstream'], 'git fetch upstream', REPO_HOME);
+  // Pre-commit whitelisted extras (issue #112): otherwise untracked
+  // shared/extras/ content that upstream also adds makes the merge abort
+  // pre-merge with no UU state, so the lone-lockfile auto-resolve never fires.
+  precommitForkExtras();
   let autoResolved = false;
   try {
     gitOrFatal(['merge', 'upstream/main'], 'git merge upstream/main', REPO_HOME);
@@ -379,5 +384,9 @@ export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
   const installAlreadyRan = topology === 'vanilla' ? runVanilla(opts) : runFork(opts);
 
   if (!installAlreadyRan) reinstallIfNeeded(beforeSha);
+  // Secondary item of issue #112: a post-merge `npm install` that regenerated
+  // package-lock.json leaves uncommitted drift the trailing doctor flags.
+  // Commit just the lockfile (fork topology only) so the repo is clean.
+  if (topology === 'fork') commitRegeneratedLockfile();
   cmdDoctor();
 }
