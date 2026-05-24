@@ -5,7 +5,9 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, okGlyph } from './color.ts';
+import type * as cpModule from 'node:child_process';
+
+import { failGlyph, okGlyph, warnGlyph } from './color.ts';
 import { type PathMap } from './config.ts';
 
 /**
@@ -59,6 +61,27 @@ function writePathMap(testHome: string, projects: PathMap['projects']): void {
  * source-controlled bytes. Distinct body from the documented test-fixture
  * literal so the path-scoped allowlist does not swallow it. */
 const PLANTED_SECRET = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');
+
+/**
+ * Minimal .gitleaks.toml written into the fixture REPO_HOME for the
+ * allowlist-only case. Carries the path-scoped allowlist (condition = AND) that
+ * drops the documented test-fixture github-pat literal when it appears at a
+ * `shared/projects/<logical>/*.jsonl` path. The literal is split so no
+ * contiguous PAT-shaped token sits in source-controlled bytes.
+ */
+const GITLEAKS_TOML = `[extend]
+useDefault = true
+
+[[allowlists]]
+description = "test-fixture github-pat literals in synced session transcripts"
+regexes = [
+    '''${['gh', 'p_', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'].join('')}''',
+]
+paths = [
+    '''^shared/projects/[^/]+/.*\\.jsonl$''',
+]
+condition = "AND"
+`;
 
 describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
   let originalHome: string | undefined;
@@ -196,6 +219,35 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('renders an ok row and exits 0 when the only flagged content matches the .gitleaks.toml allowlist (D-10)', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // Plant a documented test-fixture github-pat literal that the repo-root
+    // .gitleaks.toml path-scoped allowlist drops for synced session paths
+    // (condition = AND: a known literal AND a shared/projects/<logical>/*.jsonl
+    // path). Default gitleaks rules flag the ghp_ shape, but with --config
+    // pointing at the toml the match is allowlisted, so partitionFindings sees
+    // zero sessions and reportCheckShared reports clean.
+    const allowlisted = ['gh', 'p_', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'].join('');
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-allowlist.jsonl'),
+      `{"role":"user","text":"${allowlisted}"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+    // The harness HOME doubles as the repo root (REPO_HOME = ~/claude-nomad),
+    // so writing the allowlist here makes reportCheckShared pass --config.
+    writeFileSync(join(testHome, 'claude-nomad', '.gitleaks.toml'), GITLEAKS_TOML);
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const okRows = section.items.filter((r) => r.includes(okGlyph));
+    expect(okRows.length).toBe(1);
+    expect(section.items.some((r) => r.includes(failGlyph))).toBe(false);
+    expect(process.exitCode).toBe(0);
+  });
+
   it('removes the temp tree and report after a clean scan', async () => {
     const env = makeEnv();
     testHome = env.testHome;
@@ -215,5 +267,81 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
       const leftovers = readdirSync(cacheDir).filter((n) => n.startsWith('check-shared'));
       expect(leftovers).toEqual([]);
     }
+  });
+});
+
+/**
+ * Mocked `node:child_process` cases (no real gitleaks needed): the two
+ * exit-code-matrix endpoints that cannot be driven by a real binary, namely
+ * gitleaks-missing (D-09, ENOENT on the probe) and the unparseable-report fail
+ * (D-10, non-zero exit with no readable report). Every `vi.doMock` here is
+ * paired with a `vi.doUnmock` in `afterEach` because `vi.restoreAllMocks` does
+ * NOT clear `vi.doMock` module mocks (they would otherwise leak across files).
+ */
+describe('reportCheckShared (mocked child_process)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    vi.resetModules();
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      // Capture only; suppress copyDirJsonlOnly skip lines.
+    });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('emits exactly one warn row and leaves exitCode 0 when the gitleaks probe throws ENOENT (D-09)', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // A planted secret + valid map would normally fail; the missing-binary
+    // probe must short-circuit BEFORE any scan, so the leak is never reached.
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-no-gitleaks.jsonl'),
+      `{"role":"user","text":"${PLANTED_SECRET}"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        // probeGitleaks calls execFileSync('gitleaks', ['version', ...]); throw
+        // an ENOENT-coded error to simulate the binary being absent from PATH.
+        execFileSync: vi.fn(() => {
+          throw Object.assign(new Error('spawn gitleaks ENOENT'), { code: 'ENOENT' });
+        }),
+      };
+    });
+
+    expect(process.exitCode).toBe(0);
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const warnRows = section.items.filter((r) => r.includes(warnGlyph));
+    expect(warnRows.length).toBe(1);
+    expect(warnRows[0]).toMatch(/skip/i);
+    expect(section.items.some((r) => r.includes(failGlyph))).toBe(false);
+    expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
+    expect(process.exitCode).toBe(0);
   });
 });
