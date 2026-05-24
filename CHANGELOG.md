@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/funkadelic/claude-nomad/compare/v0.23.0...v0.24.0) (2026-05-24)
+
+
+### Added
+
+* **doctor:** add --check-shared preflight gitleaks scan ([#117](https://github.com/funkadelic/claude-nomad/issues/117)) ([0089d09](https://github.com/funkadelic/claude-nomad/commit/0089d09ef91ff7b6778b065bcfe8be97f4c54d1b))
+
+
+### Documentation
+
+* **readme:** document nomad doctor --check-shared preflight ([#119](https://github.com/funkadelic/claude-nomad/issues/119)) ([d08ed91](https://github.com/funkadelic/claude-nomad/commit/d08ed91bbfd4c976f56c510b086e375c4595e682))
+
 ## [0.23.0](https://github.com/funkadelic/claude-nomad/compare/v0.22.3...v0.23.0) (2026-05-23)
 
 
