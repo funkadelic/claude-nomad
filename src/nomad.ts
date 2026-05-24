@@ -62,6 +62,8 @@ const DEFAULT_HELP = [
   '',
   '  doctor                  Read-only health check (symlinks, host file, path-map,',
   '                          gitleaks, gitlinks).',
+  '       --check-shared     Preflight gitleaks scan of the session transcripts a',
+  '                          `nomad push` would stage (a temp copy, never the live dir).',
   '       --resume-cmd <id>  Print `cd <abspath> && claude --resume <id>` for a session id',
   '                          from ~/.claude/projects/.',
   '',
@@ -188,9 +190,17 @@ try {
       break;
     }
     case 'doctor':
-      // Sub-flag: `doctor --resume-cmd <session-id>` dispatches to the
-      // read-only sidecar that prints `cd <abspath> && claude --resume <id>`.
-      if (process.argv[3] === '--resume-cmd') {
+      // Sub-flags: `doctor --resume-cmd <session-id>` dispatches to the
+      // read-only sidecar that prints `cd <abspath> && claude --resume <id>`;
+      // `doctor --check-shared` (no positional) appends the gitleaks preflight
+      // scan of the transcripts a push would stage. Bare `doctor` runs the
+      // plain read-only health check. Any other shape (unknown flag, extra
+      // positional, `--check-shared` with trailing args) is a usage error.
+      if (process.argv[3] === undefined) {
+        cmdDoctor();
+      } else if (process.argv[3] === '--check-shared' && process.argv.length === 4) {
+        cmdDoctor({ checkShared: true });
+      } else if (process.argv[3] === '--resume-cmd') {
         const id = process.argv[4];
         if (typeof id !== 'string' || id.length === 0) {
           console.error('usage: nomad doctor --resume-cmd <session-id>');
@@ -198,7 +208,8 @@ try {
         }
         resumeCmd(id);
       } else {
-        cmdDoctor();
+        console.error('usage: nomad doctor [--check-shared | --resume-cmd <session-id>]');
+        process.exit(1);
       }
       break;
     case 'drop-session': {
