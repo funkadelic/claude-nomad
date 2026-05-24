@@ -1141,6 +1141,13 @@ describe('issue #111: untracked extras subtree porcelain collapse', () => {
   let repo: string;
 
   beforeEach(() => {
+    // Defend against a leaked `node:child_process` doMock from an earlier
+    // test in this file: the dynamically-imported gitStatusPorcelainZ would
+    // otherwise bind to a mock returning empty Buffers and the real-git
+    // assertions would see no status output. Unmock + reset so a fresh,
+    // unmocked utils.ts loads.
+    vi.doUnmock('node:child_process');
+    vi.resetModules();
     repo = mkdtempSync(join(tmpdir(), 'nomad-111-'));
     runGit(repo, ['init', '-q']);
     runGit(repo, ['config', 'user.email', 'test@example.com']);
