@@ -577,4 +577,183 @@ describe('reportCheckShared (mocked child_process)', () => {
     expect(reportRm && existsSync(reportRm.path)).toBeFalsy();
     expect(treeRm && existsSync(treeRm.path)).toBeFalsy();
   });
+
+  it('reports clean with zero scanned when no path-map.json exists', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // No path-map.json written: buildScanTree finds nothing to stage, so the
+    // reporter short-circuits to a clean "0 project(s)" row without scanning.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          if ((args ?? [])[0] === 'version') return Buffer.from('8.0.0');
+          throw new Error('scan must not run when nothing is staged');
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    expect(section.items.some((r) => r.includes(okGlyph) && r.includes('0 project'))).toBe(true);
+    expect(section.items.some((r) => r.includes(failGlyph))).toBe(false);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('reports clean with zero scanned when path-map projects is not an object', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // A structurally valid JSON whose `projects` is a non-object: buildScanTree
+    // treats it as empty (no crash) and the reporter emits a clean 0 row.
+    writeFileSync(
+      join(testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: 'nope' }) + '\n',
+    );
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) =>
+          (args ?? [])[0] === 'version' ? Buffer.from('8.0.0') : Buffer.from(''),
+        ),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    expect(section.items.some((r) => r.includes(okGlyph) && r.includes('0 project'))).toBe(true);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('skips a project whose host map is not an object and reports clean zero', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // `projects.foo` is a string, not a { host: path } object: buildScanTree
+    // skips it (continue) rather than throwing, leaving nothing staged.
+    writeFileSync(
+      join(testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: { foo: 'not-an-object' } }) + '\n',
+    );
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) =>
+          (args ?? [])[0] === 'version' ? Buffer.from('8.0.0') : Buffer.from(''),
+        ),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    expect(section.items.some((r) => r.includes(okGlyph) && r.includes('0 project'))).toBe(true);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('reports clean when a non-zero scan still writes an empty findings report', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-empty.jsonl'),
+      `{"role":"user","text":"benign"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          // gitleaks exits non-zero but writes a parseable empty array: both
+          // partition buckets are empty, so the reporter emits the clean row
+          // (staged count) rather than a phantom-session fail.
+          const rp = list.find((a) => a.startsWith('--report-path='));
+          if (rp) writeFileSync(rp.slice('--report-path='.length), '[]');
+          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    expect(section.items.some((r) => r.includes(okGlyph) && r.includes('1 project'))).toBe(true);
+    expect(section.items.some((r) => r.includes(failGlyph))).toBe(false);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits both an other-bucket leak row and per-session rows when findings mix session and nested paths', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-mixed.jsonl'),
+      `{"role":"user","text":"benign"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    // Two findings share session `sid-1` (exercises the duplicate-sid path in
+    // the logical-name capture) and one is a nested path that matches neither
+    // the flat SESSION_PATH nor any session (the `other` bucket).
+    const report = JSON.stringify([
+      {
+        RuleID: 'aws-access-key',
+        File: 'shared/projects/foo/sid-1.jsonl',
+        StartLine: 1,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-a',
+      },
+      {
+        RuleID: 'github-pat',
+        File: 'shared/projects/foo/sid-1.jsonl',
+        StartLine: 2,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-b',
+      },
+      {
+        RuleID: 'generic-api-key',
+        File: 'shared/projects/foo/subagents/nested.jsonl',
+        StartLine: 1,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-c',
+      },
+    ]);
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          const rp = list.find((a) => a.startsWith('--report-path='));
+          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
+          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    // Session row carries both RuleID counts for sid-1.
+    expect(rows).toMatch(/session sid-1:.*aws-access-key \(1\)/);
+    expect(rows).toContain('github-pat (1)');
+    // Other-bucket row names the nested path and its RuleID.
+    expect(rows).toContain('leak in shared/projects/foo/subagents/nested.jsonl: generic-api-key');
+    // The scrub hint reuses the captured logical/encoded mapping.
+    expect(rows).toMatch(/rotate the credential, then scrub .*sid-1\.jsonl/);
+    expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
 });

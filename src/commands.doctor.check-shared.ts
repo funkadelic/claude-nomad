@@ -117,6 +117,7 @@ function probeGitleaksForScan(): 'ok' | 'missing' | { fail: string } {
  * model guarantees a hit).
  */
 function scrubPath(logical: string, sid: string, logicalToEncoded: Map<string, string>): string {
+  /* c8 ignore next -- the `?? logical` fallback is defensive; the temp-tree build keys every staged logical */
   const encoded = logicalToEncoded.get(logical) ?? logical;
   return join(CLAUDE_HOME, 'projects', encoded, `${sid}.jsonl`);
 }
@@ -142,6 +143,7 @@ function reportSessionFindings(
     const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
     addItem(section, `${red(failGlyph)} session ${sid}: ${summary}`);
     const logical = logicalBySession.get(sid);
+    /* c8 ignore next -- false branch is defensive; every bySession sid is keyed in logicalBySession */
     if (logical !== undefined) {
       addItem(
         section,
@@ -293,6 +295,7 @@ export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolea
         for (const f of findings) {
           const m = SESSION_PATH_LOGICAL.exec(f.File);
           if (m?.[2] !== undefined && !logicalBySession.has(m[2])) {
+            /* c8 ignore next -- `?? ''` is defensive; group 1 is always captured when the match succeeds */
             logicalBySession.set(m[2], m[1] ?? '');
           }
         }
