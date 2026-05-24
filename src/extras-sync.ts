@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { isAbsolute, join, normalize } from 'node:path';
 
-import { HOME, HOST, REPO_HOME, SUPPORTED_EXTRAS } from './config.ts';
+import { HOME, HOST, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
 // prettier-ignore
 import { backupExtrasWrite, backupRepoWrite, encodePath, log, NomadFatal, readPathMap, warn } from './utils.ts';
 
@@ -59,6 +59,35 @@ function assertSafeLocalRoot(localRoot: string, logical: string): void {
 export function copyExtras(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+}
+
+/**
+ * Repo-relative `shared/extras/<logical>/<dirname>` paths for every
+ * (logical, whitelisted dirname) pair declared in `map.extras`. This is the
+ * same prefix set the push allow-list permits (minus the trailing slash, so
+ * the values are usable directly as `git add` arguments). Used by the fork
+ * update path (issue #112) to pre-commit overlapping extras before
+ * `git merge upstream/main`, turning an untracked-overwrite abort into a
+ * tracked-file merge. Non-whitelisted dirnames are filtered out so manually
+ * staged content under a non-supported dirname is never auto-committed.
+ * Logical names are validated for path-traversal safety first, matching the
+ * `remapExtras*` contract.
+ *
+ * @param map - Parsed `path-map.json`. A missing `extras` key yields `[]`.
+ * @returns Sorted, de-duplicated repo-relative extras paths (no trailing slash).
+ */
+export function whitelistedExtrasPaths(map: PathMap): string[] {
+  const extrasMap = map.extras ?? {};
+  const whitelist: readonly string[] = SUPPORTED_EXTRAS;
+  const paths = new Set<string>();
+  for (const [logical, dirnames] of Object.entries(extrasMap)) {
+    assertSafeLogical(logical);
+    for (const dirname of dirnames) {
+      if (!whitelist.includes(dirname)) continue;
+      paths.add(`shared/extras/${logical}/${dirname}`);
+    }
+  }
+  return [...paths].sort();
 }
 
 /**
