@@ -88,12 +88,32 @@ export const die = (msg: string): never => {
  * and the first record's leading space is part of the format (e.g.
  * `" M path\0"` for unstaged-modified). Going through `sh` would strip that
  * space and shift the fixed-offset parse in `parsePorcelainZ`.
+ *
+ * `opts.untrackedAll` (default `false`): when `true`, passes
+ * `--untracked-files=all` so git emits one record per untracked file instead
+ * of collapsing a fully-untracked subtree to its highest all-untracked parent
+ * directory (`?? shared/extras/`). The push allow-list (issue #111) needs the
+ * per-file paths so its `shared/extras/<logical>/<dirname>/` child prefix
+ * matches; the working-tree-clean checks in `cmdUpdate` and `cmdDoctor` only
+ * care whether output is empty, so they keep the cheaper default-collapse
+ * behavior. Opt-in rather than a global default so those consumers do not
+ * pay for the deeper walk.
+ *
+ * @param cwd - Working directory for the git invocation; defaults to the process cwd.
+ * @param opts - Reader options. `untrackedAll` expands collapsed untracked directory records into per-file paths.
+ * @returns The raw NUL-delimited porcelain v1 output as a string.
  */
-export const gitStatusPorcelainZ = (cwd?: string): string =>
-  execFileSync('git', ['status', '--porcelain=v1', '-z'], {
+export const gitStatusPorcelainZ = (
+  cwd?: string,
+  opts: { untrackedAll?: boolean } = {},
+): string => {
+  const args = ['status', '--porcelain=v1', '-z'];
+  if (opts.untrackedAll === true) args.push('--untracked-files=all');
+  return execFileSync('git', args, {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).toString();
+};
 
 /**
  * Run `git <args>` in `cwd`, forwarding stderr and converting non-zero exits
