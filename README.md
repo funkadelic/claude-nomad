@@ -369,7 +369,7 @@ If you installed an earlier version via `./install.sh` and a shell alias (the pr
 | `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                                                                                                                                                                                             |
 | `nomad push`                     | Export local sessions and opted-in per-project extras to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                                                                                                                                                  |
 | `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list); skip stage, scan, commit, and push.                                                                                                                                                                                                                        |
-| `nomad drop-session <id>`        | Surgically unstage every `shared/projects/*/<id>.jsonl` from the staged tree of `~/claude-nomad/`. Idempotent; the local `~/.claude/projects/<encoded>/<id>.jsonl` is preserved. See [Recovery flows](#recovery-flows).                                                                                                                                  |
+| `nomad drop-session <id>`        | Surgically unstage every `shared/projects/*/<id>.jsonl` and the sibling `shared/projects/*/<id>/` subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the local `~/.claude/projects/<encoded>/<id>.jsonl` and `<id>/` tree are preserved. See [Recovery flows](#recovery-flows).                                                   |
 | `nomad update`                   | Topology-aware upgrade to the latest upstream. Flags: `--dry-run`, `--force`, `--push-origin`. See [Upgrading the tool](#upgrading-the-tool).                                                                                                                                                                                                            |
 | `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check.                                                                                                                                               |
 | `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                                                                                                                                                                                        |
@@ -392,7 +392,7 @@ Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summa
 
 ### `nomad drop-session <id>`
 
-Surgically unstages every `shared/projects/*/<id>.jsonl` from the staged tree of `~/claude-nomad/`. The local `~/.claude/projects/<encoded>/<id>.jsonl` is never touched.
+Surgically unstages every `shared/projects/*/<id>.jsonl` plus the sibling `shared/projects/*/<id>/` subagent directory (whose nested transcripts are keyed by the same session id) from the staged tree of `~/claude-nomad/`. The local `~/.claude/projects/<encoded>/<id>.jsonl` and the local `<id>/` tree are never touched.
 
 ```bash
 nomad drop-session <id>
@@ -400,14 +400,14 @@ nomad drop-session <id>
 
 Single positional id (the session filename minus `.jsonl`). Anything else (missing id, leading dash, extra arg) exits 1 with a `usage:` line.
 
-For each match in the staged tree, `cmdDropSession` (in `src/commands.drop-session.ts`) classifies the entry as tracked-in-HEAD vs newly-staged and unstages it via `git restore --staged --worktree --` or `git rm --cached -f --` respectively. Idempotent: a second run on the same id sees no matching staged file and exits 0.
+For each match in the staged tree, `cmdDropSession` (in `src/commands.drop-session.ts`) classifies the entry as tracked-in-HEAD vs newly-staged and unstages it via `git restore --staged --worktree --` or `git rm --cached -f --` respectively. The `<id>/` subagent directory is expanded into its staged entries via `git ls-files -z` so every nested transcript flows through the same per-entry classification; a session that has only a subagent directory (no flat `<id>.jsonl`) is still droppable. Idempotent: a second run on the same id sees no matching staged entries and exits 0.
 
 Exit codes:
 
 - `0` on any drop, including an idempotent re-run.
-- `1` with `✗ no staged session matches <id>` on stderr when no `shared/projects/*/<id>.jsonl` matches.
+- `1` with `✗ no staged session matches <id>` on stderr when neither a `shared/projects/*/<id>.jsonl` nor a `shared/projects/*/<id>/` directory with staged entries matches.
 
-What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` file. The local copy is preserved for `claude --resume`, grep recovery, or whatever the user wants. If the underlying secret is real, scrub the local file separately.
+What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` file or the local `<id>/` subagent tree. The local copies are preserved for `claude --resume`, grep recovery, or whatever the user wants. If the underlying secret is real, scrub the local files separately.
 
 ### Recovery flow: gitleaks FATAL on a session JSONL
 
