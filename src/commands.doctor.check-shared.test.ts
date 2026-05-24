@@ -181,6 +181,34 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('fails on a nested non-session transcript secret that lands in the other bucket and sets exitCode=1', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // copyDirJsonlOnly filters *.jsonl only at depth 0; subdirectories copy
+    // recursively unfiltered, so a secret in subagents/<id>.jsonl (depth 4)
+    // does NOT match the flat SESSION_PATH and is routed to partitionFindings'
+    // `other` bucket. push would stage this file, so the preflight must fail
+    // too. A bySession-only gate would report this clean.
+    const nestedDir = join(testHome, '.claude', 'projects', env.encodedDir, 'subagents');
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(
+      join(nestedDir, 'nested-agent.jsonl'),
+      `{"role":"user","text":"${PLANTED_SECRET}"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    expect(section.items.some((r) => r.includes(failGlyph))).toBe(true);
+    // The fail row names the offending repo-relative nested path, not a session.
+    expect(rows).toContain('subagents/nested-agent.jsonl');
+    expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('renders one ok row reporting the scanned-session count and leaves exitCode 0 on a clean tree', async () => {
     const env = makeEnv();
     testHome = env.testHome;

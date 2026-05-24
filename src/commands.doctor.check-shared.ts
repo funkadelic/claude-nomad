@@ -20,6 +20,7 @@
  * codebase PUSH-04 invariant.
  */
 
+import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -28,7 +29,7 @@ import { join } from 'node:path';
 import { green, red, yellow, okGlyph, failGlyph, warnGlyph } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { partitionFindings, readGitleaksReport, SESSION_PATH } from './push-gitleaks.ts';
+import { type Finding, partitionFindings, readGitleaksReport } from './push-gitleaks.ts';
 import { copyDirJsonlOnly } from './remap.ts';
 import { encodePath, nowTimestamp, readJson } from './utils.ts';
 
@@ -122,23 +123,21 @@ function scrubPath(logical: string, sid: string, logicalToEncoded: Map<string, s
 
 /**
  * Emit one fail row per affected session plus rotate-and-scrub + allowlist
- * guidance, and set `process.exitCode = 1`. `fileBySession` carries the first
- * finding `File` per session so the `<logical>` segment can be recovered for
- * the scrub-path hint.
+ * guidance, and set `process.exitCode = 1`. `logicalBySession` carries the
+ * `<logical>` segment captured from the same `SESSION_PATH` match that keyed
+ * `bySession`, so the scrub-path hint reuses the authoritative parse rather
+ * than re-deriving the logical name from the finding `File`.
  */
 function reportSessionFindings(
   section: DoctorSection,
   bySession: Map<string, Map<string, number>>,
-  fileBySession: Map<string, string>,
+  logicalBySession: Map<string, string>,
   logicalToEncoded: Map<string, string>,
 ): void {
   for (const [sid, counts] of bySession) {
     const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
     addItem(section, `${red(failGlyph)} session ${sid}: ${summary}`);
-    const file = fileBySession.get(sid) ?? '';
-    const logical = file.startsWith('shared/projects/')
-      ? (file.slice('shared/projects/'.length).split('/')[0] ?? sid)
-      : sid;
+    const logical = logicalBySession.get(sid) ?? sid;
     addItem(
       section,
       `  rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
@@ -146,6 +145,41 @@ function reportSessionFindings(
     addItem(section, `  false positive? add a pattern to .gitleaks.toml`);
   }
   process.exitCode = 1;
+}
+
+/**
+ * Emit one fail row per non-session ("other"-bucket) finding and set
+ * `process.exitCode = 1`. These are findings whose `File` did not match the
+ * flat `SESSION_PATH` shape (nested transcripts under `subagents/`, `memory/`,
+ * etc., which `copyDirJsonlOnly` copies recursively and `nomad push` would
+ * stage). Names the repo-relative path and RuleID only, never the matched
+ * secret. Mirrors the push-side guarantee that any finding outside `bySession`
+ * still fails the scan (`buildSessionAwareFatal`'s `LEGACY_FATAL` fallback).
+ */
+function reportOtherFindings(section: DoctorSection, other: Finding[]): void {
+  for (const f of other) {
+    addItem(section, `${red(failGlyph)} leak in ${f.File}: ${f.RuleID}`);
+  }
+  process.exitCode = 1;
+}
+
+/**
+ * Captures both the `<logical>` segment and the `<sid>` from a repo-relative
+ * `shared/projects/<logical>/<sid>.jsonl` path. The session-id group matches
+ * the exported `SESSION_PATH` shape; the extra `<logical>` group lets the
+ * scrub-path hint reuse this single authoritative parse.
+ */
+const SESSION_PATH_LOGICAL = /^shared\/projects\/([^/]+)\/([^/]+)\.jsonl$/;
+
+/**
+ * Emit the single canonical clean row reporting the scanned-session count.
+ * Centralizing the literal (zero-staged, scanned-clean, and the
+ * findings-but-no-`other` paths all route through here) keeps the phrasing
+ * consistent and prevents one copy drifting from another, which is what let a
+ * "no session findings == clean" path slip past the `other`-bucket gate.
+ */
+function emitClean(section: DoctorSection, staged: number): void {
+  addItem(section, `${green(okGlyph)} ${staged} sessions scanned, no leaks`);
 }
 
 /**
@@ -186,7 +220,11 @@ export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolea
 
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
-  const stamp = `${nowTimestamp()}-${process.pid}`;
+  // nowTimestamp() is second-resolution and --check-shared takes no lock
+  // (read-only), so two same-second, same-pid invocations would otherwise
+  // share a stamp and clobber each other's temp tree / report. The random
+  // suffix makes the stamp collision-resistant, matching the push report path.
+  const stamp = `${nowTimestamp()}-${process.pid}-${randomBytes(4).toString('hex')}`;
   const reportPath = join(cacheDir, `check-shared-${stamp}.json`);
   const tmpRoot = join(cacheDir, `check-shared-tree-${stamp}`);
 
@@ -201,7 +239,7 @@ export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolea
       // No path-map entry maps to this host (or all are TBD). Nothing would be
       // staged by push either, so report clean without invoking gitleaks (a
       // scan of a non-existent dir would exit non-zero and misfire).
-      addItem(section, `${green(okGlyph)} 0 sessions scanned, no leaks`);
+      emitClean(section, 0);
       return;
     }
     const tomlPath = join(REPO_HOME, '.gitleaks.toml');
@@ -217,7 +255,7 @@ export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolea
 
     try {
       execFileSync('gitleaks', args, { cwd: tmpRoot, stdio: ['ignore', 'pipe', 'pipe'] });
-      addItem(section, `${green(okGlyph)} ${staged} sessions scanned, no leaks`);
+      emitClean(section, staged);
     } catch (err) {
       const findings = readGitleaksReport(reportPath);
       if (findings === null) {
@@ -229,17 +267,29 @@ export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolea
         process.exitCode = 1;
         return;
       }
-      const { bySession } = partitionFindings(findings);
-      if (bySession.size === 0) {
-        addItem(section, `${green(okGlyph)} ${staged} sessions scanned, no leaks`);
+      const { bySession, other } = partitionFindings(findings);
+      // Both buckets must gate the clean row. A finding routed to `other`
+      // (nested transcripts that match neither the flat SESSION_PATH nor any
+      // session) is still a stageable secret push would catch, so reporting
+      // clean on `bySession.size === 0` alone would make the preflight weaker
+      // than the push scan it stands in for.
+      if (bySession.size === 0 && other.length === 0) {
+        emitClean(section, staged);
         return;
       }
-      const fileBySession = new Map<string, string>();
-      for (const f of findings) {
-        const m = SESSION_PATH.exec(f.File);
-        if (m?.[1] !== undefined && !fileBySession.has(m[1])) fileBySession.set(m[1], f.File);
+      if (other.length > 0) reportOtherFindings(section, other);
+      if (bySession.size > 0) {
+        // Capture <logical> alongside <sid> from the same authoritative match
+        // so the scrub hint never re-derives the logical name independently.
+        const logicalBySession = new Map<string, string>();
+        for (const f of findings) {
+          const m = SESSION_PATH_LOGICAL.exec(f.File);
+          if (m?.[2] !== undefined && !logicalBySession.has(m[2])) {
+            logicalBySession.set(m[2], m[1] ?? '');
+          }
+        }
+        reportSessionFindings(section, bySession, logicalBySession, logicalToEncoded);
       }
-      reportSessionFindings(section, bySession, fileBySession, logicalToEncoded);
     }
   } finally {
     rmSync(reportPath, { force: true });
