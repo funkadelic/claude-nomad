@@ -1132,3 +1132,20 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
     }
   });
 });
+
+describe('whitelistedExtrasPaths', () => {
+  it('returns [] when the map declares no extras field', async () => {
+    const { whitelistedExtrasPaths } = await import('./extras-sync.ts');
+    expect(whitelistedExtrasPaths({ projects: {} })).toEqual([]);
+  });
+
+  it('skips dirnames outside SUPPORTED_EXTRAS and returns the sorted whitelisted set', async () => {
+    const { whitelistedExtrasPaths } = await import('./extras-sync.ts');
+    const out = whitelistedExtrasPaths({
+      projects: {},
+      extras: { beta: ['.planning'], alpha: ['.planning', 'secrets'] },
+    });
+    // `secrets` is not in SUPPORTED_EXTRAS so it is skipped; results sorted.
+    expect(out).toEqual(['shared/extras/alpha/.planning', 'shared/extras/beta/.planning']);
+  });
+});

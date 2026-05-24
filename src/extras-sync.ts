@@ -87,7 +87,7 @@ export function whitelistedExtrasPaths(map: PathMap): string[] {
       paths.add(`shared/extras/${logical}/${dirname}`);
     }
   }
-  return [...paths].sort();
+  return [...paths].sort((a, b) => a.localeCompare(b));
 }
 
 /**

@@ -256,4 +256,39 @@ describe('issue #112: fork merge with overlapping untracked extras', () => {
       'package-lock.json',
     );
   });
+
+  it('precommitForkExtras is a no-op when declared extras do not exist on disk', async () => {
+    // path-map declares an extras dir that is not present on disk, so the
+    // candidate set filters to empty and the helper returns before committing.
+    writeFileSync(
+      join(local, 'path-map.json'),
+      JSON.stringify({ projects: {}, extras: { myproj: ['.planning'] } }) + '\n',
+    );
+    const before = git(local, ['rev-parse', 'HEAD']);
+    vi.resetModules();
+    const { precommitForkExtras } = await import('./update.fork-extras.ts');
+
+    expect(() => precommitForkExtras()).not.toThrow();
+    expect(git(local, ['rev-parse', 'HEAD'])).toBe(before);
+  });
+
+  it('precommitForkExtras is a no-op when extras are already tracked and unmodified', async () => {
+    // The extras path exists and is already committed unchanged, so the
+    // path-scoped `git add` stages nothing and the scoped dirty probe sees no
+    // change: no empty commit is created.
+    mkdirSync(join(local, 'shared', 'extras', 'myproj', '.planning'), { recursive: true });
+    writeFileSync(join(local, 'shared', 'extras', 'myproj', '.planning', 'x.md'), '# tracked\n');
+    git(local, ['add', '--', 'shared/extras/myproj/.planning/x.md']);
+    git(local, ['commit', '-q', '-m', 'track extras']);
+    writeFileSync(
+      join(local, 'path-map.json'),
+      JSON.stringify({ projects: {}, extras: { myproj: ['.planning'] } }) + '\n',
+    );
+    const before = git(local, ['rev-parse', 'HEAD']);
+    vi.resetModules();
+    const { precommitForkExtras } = await import('./update.fork-extras.ts');
+
+    expect(() => precommitForkExtras()).not.toThrow();
+    expect(git(local, ['rev-parse', 'HEAD'])).toBe(before);
+  });
 });

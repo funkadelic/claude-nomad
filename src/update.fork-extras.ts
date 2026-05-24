@@ -35,13 +35,15 @@ export function precommitForkExtras(): void {
   if (candidates.length === 0) return;
 
   gitOrFatal(['add', '--', ...candidates], 'git add extras', REPO_HOME);
-  // Only commit when staging actually changed the index. `git diff --cached
-  // --quiet` exits 0 when the index matches HEAD (nothing to commit), 1 when
-  // it differs. Avoids an empty-commit failure when the extras were already
-  // tracked and unmodified.
+  // Only commit when staging actually changed the index. The probe and commit
+  // are BOTH path-scoped to the extras candidates so an unrelated staged change
+  // present before update neither flips the dirty probe nor rides along in the
+  // commit. `git diff --cached --quiet -- <candidates>` exits 0 when those paths
+  // match HEAD (nothing to commit), 1 when they differ; avoids an empty-commit
+  // failure when the extras were already tracked and unmodified.
   let dirty = false;
   try {
-    execFileSync('git', ['diff', '--cached', '--quiet'], {
+    execFileSync('git', ['diff', '--cached', '--quiet', '--', ...candidates], {
       cwd: REPO_HOME,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -50,7 +52,7 @@ export function precommitForkExtras(): void {
   }
   if (!dirty) return;
   gitOrFatal(
-    ['commit', '-m', 'chore: stage local extras before upstream merge'],
+    ['commit', '-m', 'chore: stage local extras before upstream merge', '--', ...candidates],
     'git commit extras',
     REPO_HOME,
   );
@@ -83,9 +85,15 @@ export function commitRegeneratedLockfile(): void {
     drifted = true;
   }
   if (!drifted) return;
-  gitOrFatal(['add', 'package-lock.json'], 'git add package-lock.json', REPO_HOME);
+  gitOrFatal(['add', '--', 'package-lock.json'], 'git add package-lock.json', REPO_HOME);
   gitOrFatal(
-    ['commit', '-m', 'chore: commit regenerated package-lock.json after update'],
+    [
+      'commit',
+      '-m',
+      'chore: commit regenerated package-lock.json after update',
+      '--',
+      'package-lock.json',
+    ],
     'git commit package-lock.json',
     REPO_HOME,
   );
