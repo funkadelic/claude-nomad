@@ -93,7 +93,10 @@ export function partitionFindings(findings: Finding[]): {
  * transcript(s).` header, one block per affected session with a
  * `Recover with: nomad drop-session <id>` line, an optional `Also found:`
  * block for non-session paths, and a trailing `After recovery, re-run
- * nomad push.` line. Pure.
+ * nomad push.` line. The header carries a single clarifying note that the
+ * drop also clears any sibling subagent transcript directory for the
+ * session, since those nested paths route to the `other` bucket and are
+ * not listed per-session. Pure.
  */
 export function buildSessionAwareFatal(
   bySession: Map<string, Map<string, number>>,
@@ -102,6 +105,9 @@ export function buildSessionAwareFatal(
   if (bySession.size === 0) return LEGACY_FATAL;
   const lines: string[] = [];
   lines.push(`gitleaks detected secrets in ${bySession.size} session transcript(s).`);
+  lines.push(
+    "nomad drop-session also clears each session's sibling subagent transcript directory.",
+  );
   for (const [sid, counts] of bySession) {
     const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
     lines.push('');
