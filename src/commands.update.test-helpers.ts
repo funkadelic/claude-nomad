@@ -95,6 +95,11 @@ export type GitBehavior = {
   /** When set, `git rev-parse HEAD` throws this error. Used to exercise
    * `headSha`'s NomadFatal-wrapping catch arm. */
   headShaThrows?: Error;
+  /** Successive `git rev-parse HEAD` return values, consumed in order (one
+   * per call) and sticky on the last entry once exhausted. Lets a test model
+   * HEAD advancing across a merge (distinct pre/post SHAs) or staying put (a
+   * single entry, or unset for the constant default). Mutated in place. */
+  headShas?: string[];
   /** When set, `git remote -v` throws this error. Used to exercise
    * `loadTopology`'s NomadFatal-wrapping catch arm. */
   remoteThrows?: Error;
@@ -129,6 +134,11 @@ const HANDLERS: Record<string, Handler> = {
     }
     if (args[1] === 'HEAD') {
       if (b.headShaThrows !== undefined) throw b.headShaThrows;
+      const seq = b.headShas;
+      if (seq !== undefined && seq.length > 0) {
+        const next = seq.length > 1 ? seq.shift()! : seq[0];
+        return Buffer.from(next + '\n');
+      }
       return Buffer.from('0123456789abcdef0123456789abcdef01234567\n');
     }
     throw new Error(`unhandled: git rev-parse ${args.join(' ')}`);

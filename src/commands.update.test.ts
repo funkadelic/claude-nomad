@@ -56,8 +56,49 @@ describe('cmdUpdate', () => {
     expect(git.calls.find((c) => c.bin === 'git' && c.args[0] === 'pull')).toBeDefined();
   });
 
+  it('fork topology, no-op merge (HEAD unchanged): skips the push prompt entirely', async () => {
+    // Pre- and post-merge HEAD are identical, so the merge brought nothing new
+    // and there is nothing to push: no prompt, no `git push` (issue #66).
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: ['1111111111111111111111111111111111111111'],
+    });
+    const doctor = mockDoctor();
+    vi.resetModules();
+    const promptSpy = vi.fn(() => 'y');
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ prompt: promptSpy });
+    const argvs = git.calls.map((c) => c.args.join(' '));
+    expect(argvs).toContain('fetch upstream');
+    expect(argvs).toContain('merge upstream/main');
+    expect(argvs.some((a) => a.startsWith('push'))).toBe(false);
+    expect(promptSpy).not.toHaveBeenCalled();
+    expect(joinedLog(env.logSpy)).toContain('already in sync with origin/main');
+    expect(doctor.spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('fork topology, no-op merge with --push-origin: skips the redundant push', async () => {
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: ['1111111111111111111111111111111111111111'],
+    });
+    mockDoctor();
+    vi.resetModules();
+    const { cmdUpdate } = await import('./commands.update.ts');
+    cmdUpdate({ pushOrigin: true });
+    const argvs = git.calls.map((c) => c.args.join(' '));
+    expect(argvs.some((a) => a.startsWith('push'))).toBe(false);
+    expect(joinedLog(env.logSpy)).toContain('already in sync with origin/main');
+  });
+
   it('fork topology, no --push-origin: fetches + merges + prompts; n declines push', async () => {
-    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: [
+        '1111111111111111111111111111111111111111',
+        '2222222222222222222222222222222222222222',
+      ],
+    });
     const doctor = mockDoctor();
     vi.resetModules();
     const { cmdUpdate } = await import('./commands.update.ts');
@@ -71,7 +112,13 @@ describe('cmdUpdate', () => {
   });
 
   it('fork topology with --push-origin: pushes without prompting', async () => {
-    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: [
+        '1111111111111111111111111111111111111111',
+        '2222222222222222222222222222222222222222',
+      ],
+    });
     mockDoctor();
     vi.resetModules();
     const promptSpy = vi.fn(() => 'n');
@@ -85,7 +132,13 @@ describe('cmdUpdate', () => {
   });
 
   it('fork topology, interactive y: pushes to origin', async () => {
-    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: [
+        '1111111111111111111111111111111111111111',
+        '2222222222222222222222222222222222222222',
+      ],
+    });
     mockDoctor();
     vi.resetModules();
     const { cmdUpdate } = await import('./commands.update.ts');
@@ -521,7 +574,13 @@ describe('cmdUpdate', () => {
   });
 
   it('defaultPrompt: /dev/tty `y\\n` triggers push to origin', async () => {
-    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: [
+        '1111111111111111111111111111111111111111',
+        '2222222222222222222222222222222222222222',
+      ],
+    });
     mockDoctor();
     // Silence the prompt's `process.stdout.write(question)` so the y/N
     // marker does not leak into the test runner's output.
@@ -551,7 +610,13 @@ describe('cmdUpdate', () => {
   });
 
   it('defaultPrompt: openSync failure returns empty string and skips push', async () => {
-    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: [
+        '1111111111111111111111111111111111111111',
+        '2222222222222222222222222222222222222222',
+      ],
+    });
     mockDoctor();
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     vi.doMock('node:fs', async (importOriginal) => {
@@ -571,7 +636,13 @@ describe('cmdUpdate', () => {
   });
 
   it('defaultPrompt: readSync returns 0 on first call yields empty answer', async () => {
-    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: [
+        '1111111111111111111111111111111111111111',
+        '2222222222222222222222222222222222222222',
+      ],
+    });
     mockDoctor();
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     vi.doMock('node:fs', async (importOriginal) => {
@@ -649,7 +720,13 @@ describe('cmdUpdate', () => {
   });
 
   it('defaultPrompt: readSync throw is swallowed and returns empty string', async () => {
-    const git = mockGit({ remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH } });
+    const git = mockGit({
+      remotes: { origin: PRIVATE_SSH, upstream: PUBLIC_SSH },
+      headShas: [
+        '1111111111111111111111111111111111111111',
+        '2222222222222222222222222222222222222222',
+      ],
+    });
     mockDoctor();
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const closeSpy = vi.fn();

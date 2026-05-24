@@ -278,12 +278,21 @@ function tryAutoResolveMergeConflict(opts: CmdUpdateOpts): boolean {
  * pushes when the answer is `y` or `yes` (case-insensitive). Non-affirmative
  * answers skip the push and log a "run later" hint.
  *
+ * When the merge (and any extras precommit) leaves `HEAD` unchanged from
+ * `beforeSha`, there is nothing new to push: the function logs a one-line
+ * "already in sync" and returns without pushing or prompting (issue #66). An
+ * auto-resolved conflict always advances `HEAD` via its merge commit, so that
+ * path is never mistaken for a no-op.
+ *
  * @param opts - Update options; respected fields are:
  *   - `dryRun`: when true, log actions instead of executing them
  *   - `pushOrigin`: when true, push to `origin/main` without prompting
  *   - `prompt`: optional prompt function used for interactive confirmation
+ * @param beforeSha - `HEAD` SHA captured before the fork update began; the
+ *   post-merge `HEAD` is compared against it to detect a no-op. When omitted
+ *   (dry-run preview) the no-op short-circuit is skipped.
  */
-function runFork(opts: CmdUpdateOpts): boolean {
+function runFork(opts: CmdUpdateOpts, beforeSha?: string): boolean {
   const promptFn = opts.prompt ?? defaultPrompt;
   if (opts.dryRun === true) {
     log('DRY-RUN: would run `git fetch upstream`');
@@ -306,6 +315,13 @@ function runFork(opts: CmdUpdateOpts): boolean {
   } catch (err) {
     if (!tryAutoResolveMergeConflict(opts)) throw err;
     autoResolved = true;
+  }
+  // No-op merge (and no extras precommit): HEAD never moved, so there is
+  // nothing new to push. A `beforeSha` of undefined (dry-run never reaches
+  // here) can never equal a real SHA, so the comparison is self-guarding.
+  if (headSha() === beforeSha) {
+    log('already in sync with origin/main, nothing to push');
+    return autoResolved;
   }
   if (opts.pushOrigin === true) {
     gitOrFatal(['push', 'origin', 'main'], 'git push origin main', REPO_HOME);
@@ -381,7 +397,7 @@ export function cmdUpdate(opts: CmdUpdateOpts = {}): void {
   }
 
   const beforeSha = headSha();
-  const installAlreadyRan = topology === 'vanilla' ? runVanilla(opts) : runFork(opts);
+  const installAlreadyRan = topology === 'vanilla' ? runVanilla(opts) : runFork(opts, beforeSha);
 
   if (!installAlreadyRan) reinstallIfNeeded(beforeSha);
   // Secondary item of issue #112: a post-merge `npm install` that regenerated
