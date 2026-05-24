@@ -29,9 +29,21 @@ import { green, red, yellow, okGlyph, failGlyph, warnGlyph } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { partitionFindings, readGitleaksReport, SESSION_PATH } from './push-gitleaks.ts';
-import { probeGitleaks } from './push-checks.ts';
 import { copyDirJsonlOnly } from './remap.ts';
 import { encodePath, nowTimestamp, readJson } from './utils.ts';
+
+/**
+ * Result of staging the scan tree. `malformed` is true when `path-map.json`
+ * exists but does not parse as JSON; the caller emits a FAIL row and stops
+ * (mirroring `reportPathMap`'s `readJsonSafe` degradation) rather than letting
+ * the `SyntaxError` propagate past `nomad.ts`'s `NomadFatal`-only handler and
+ * abort the whole doctor run with a stack trace.
+ */
+type ScanTree = {
+  logicalToEncoded: Map<string, string>;
+  staged: number;
+  malformed: boolean;
+};
 
 /**
  * Build the temp staging tree under `tmpRoot/shared/projects/<logical>/` by
@@ -40,16 +52,22 @@ import { encodePath, nowTimestamp, readJson } from './utils.ts';
  * scrub-path hint can name the live `~/.claude/projects/<encoded>/<sid>.jsonl`
  * file, plus the count of session dirs staged. Skips `TBD`/unmapped entries
  * (the D-03 scope: exactly what `remapPush` would stage). Uses the same
- * depth-0 `*.jsonl` filter as push via `copyDirJsonlOnly`.
+ * depth-0 `*.jsonl` filter as push via `copyDirJsonlOnly`. A malformed
+ * `path-map.json` sets `malformed: true` rather than throwing.
  */
-function buildScanTree(tmpRoot: string): { logicalToEncoded: Map<string, string>; staged: number } {
+function buildScanTree(tmpRoot: string): ScanTree {
   const logicalToEncoded = new Map<string, string>();
   let staged = 0;
   const mapPath = join(REPO_HOME, 'path-map.json');
-  if (!existsSync(mapPath)) return { logicalToEncoded, staged };
-  const map = readJson<PathMap>(mapPath);
+  if (!existsSync(mapPath)) return { logicalToEncoded, staged, malformed: false };
+  let map: PathMap;
+  try {
+    map = readJson<PathMap>(mapPath);
+  } catch {
+    return { logicalToEncoded, staged, malformed: true };
+  }
   if (typeof map.projects !== 'object' || map.projects === null) {
-    return { logicalToEncoded, staged };
+    return { logicalToEncoded, staged, malformed: false };
   }
 
   const reverse = new Map<string, string>();
@@ -61,7 +79,7 @@ function buildScanTree(tmpRoot: string): { logicalToEncoded: Map<string, string>
   }
 
   const localProjects = join(CLAUDE_HOME, 'projects');
-  if (!existsSync(localProjects)) return { logicalToEncoded, staged };
+  if (!existsSync(localProjects)) return { logicalToEncoded, staged, malformed: false };
   for (const dir of readdirSync(localProjects)) {
     const logical = reverse.get(dir);
     if (!logical) continue;
@@ -69,7 +87,25 @@ function buildScanTree(tmpRoot: string): { logicalToEncoded: Map<string, string>
     logicalToEncoded.set(logical, dir);
     staged++;
   }
-  return { logicalToEncoded, staged };
+  return { logicalToEncoded, staged, malformed: false };
+}
+
+/**
+ * Probe for the gitleaks binary on PATH, distinguishing the not-installed case
+ * (ENOENT -> `'missing'`, a WARN skip per the read-only doctor contract) from a
+ * real probe failure (EACCES, corrupt binary -> `{ fail: message }`, a FAIL).
+ * Mirrors `reportGitleaksProbe`'s ENOENT-vs-other split rather than collapsing
+ * every failure into "not on PATH". Probes directly (not via `probeGitleaks`)
+ * so the doctor flavor stays read-only and need not unwrap a `NomadFatal`.
+ */
+function probeGitleaksForScan(): 'ok' | 'missing' | { fail: string } {
+  try {
+    execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    return 'ok';
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
+    return { fail: (err as Error).message };
+  }
 }
 
 /**
@@ -115,23 +151,37 @@ function reportSessionFindings(
 /**
  * Run the `--check-shared` preflight and append its rows to `section`.
  *
- * Flow (D-01..D-10): probe gitleaks (missing -> one WARN row, exit untouched);
- * stage a temp copy of this-host mapped session dirs; scan with the positional
- * `gitleaks dir shared/projects` invocation (NOT `--source`, which `gitleaks
- * dir` rejects with exit 126); on a clean scan emit one ok row reporting the
- * scanned-session count; on findings emit per-session fail rows with
- * rotate-and-scrub guidance and set `process.exitCode = 1`; on a non-zero exit
- * with no parseable report emit a scan-failed fail row + exit 1 (do not chase
- * phantom sessions). Removes both the temp report and the temp tree in
- * `finally` on success and failure. Never writes to stderr (read-only doctor
- * contract).
+ * Flow (D-01..D-10): probe gitleaks (missing -> one WARN row, exit untouched;
+ * a non-ENOENT probe failure -> FAIL row + exit 1, mirroring
+ * `reportGitleaksProbe`); stage a temp copy of this-host mapped session dirs
+ * (a malformed `path-map.json` -> FAIL row + exit 1, no crash); scan with the
+ * positional `gitleaks dir shared/projects` invocation (NOT `--source`, which
+ * `gitleaks dir` rejects with exit 126); on a clean scan emit one ok row
+ * reporting the scanned-session count; on findings emit per-session fail rows
+ * with rotate-and-scrub guidance and set `process.exitCode = 1`; on a non-zero
+ * exit with no parseable report emit a scan-failed fail row carrying the
+ * gitleaks error message (never its stderr/stdout, which may hold secrets) +
+ * exit 1 (do not chase phantom sessions). Removes both the temp report and the
+ * temp tree in `finally` on success and failure. Never writes to stderr
+ * (read-only doctor contract).
+ *
+ * `gitleaksReady` lets the doctor orchestrator pass the result of the
+ * Repository section's gitleaks probe so the `version` subcommand is not
+ * invoked a second time on a `--check-shared` run. When omitted (the module's
+ * standalone contract) this reporter probes for itself.
  */
-export function reportCheckShared(section: DoctorSection): void {
-  try {
-    probeGitleaks();
-  } catch {
-    addItem(section, `${yellow(warnGlyph)} gitleaks not on PATH; shared scan skipped`);
-    return;
+export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolean): void {
+  if (gitleaksReady !== true) {
+    const probe = probeGitleaksForScan();
+    if (probe === 'missing') {
+      addItem(section, `${yellow(warnGlyph)} gitleaks not on PATH; shared scan skipped`);
+      return;
+    }
+    if (probe !== 'ok') {
+      addItem(section, `${red(failGlyph)} gitleaks probe failed: ${probe.fail}`);
+      process.exitCode = 1;
+      return;
+    }
   }
 
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
@@ -141,7 +191,12 @@ export function reportCheckShared(section: DoctorSection): void {
   const tmpRoot = join(cacheDir, `check-shared-tree-${stamp}`);
 
   try {
-    const { logicalToEncoded, staged } = buildScanTree(tmpRoot);
+    const { logicalToEncoded, staged, malformed } = buildScanTree(tmpRoot);
+    if (malformed) {
+      addItem(section, `${red(failGlyph)} path-map.json malformed JSON; shared scan skipped`);
+      process.exitCode = 1;
+      return;
+    }
     if (staged === 0) {
       // No path-map entry maps to this host (or all are TBD). Nothing would be
       // staged by push either, so report clean without invoking gitleaks (a
@@ -163,10 +218,14 @@ export function reportCheckShared(section: DoctorSection): void {
     try {
       execFileSync('gitleaks', args, { cwd: tmpRoot, stdio: ['ignore', 'pipe', 'pipe'] });
       addItem(section, `${green(okGlyph)} ${staged} sessions scanned, no leaks`);
-    } catch {
+    } catch (err) {
       const findings = readGitleaksReport(reportPath);
       if (findings === null) {
-        addItem(section, `${red(failGlyph)} scan failed: no parseable gitleaks report`);
+        // Carry the gitleaks error message only (never e.stderr/e.stdout, which
+        // can echo the redacted-but-still-sensitive scan output), matching
+        // runGitleaksScan on the push side.
+        const msg = (err as Error).message;
+        addItem(section, `${red(failGlyph)} scan failed: no parseable gitleaks report (${msg})`);
         process.exitCode = 1;
         return;
       }

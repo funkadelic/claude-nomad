@@ -51,7 +51,7 @@ export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
   reportNeverSync(neverSync);
 
   const repository = section('Repository');
-  reportGitleaksProbe(repository);
+  const gitleaksReady = reportGitleaksProbe(repository);
   reportGitlinks(repository);
   reportRemote(repository);
   reportRebaseClean(repository);
@@ -61,7 +61,10 @@ export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
   reportNodeEngineCheck(version);
 
   const sharedScan = section('Shared scan');
-  if (opts.checkShared === true) reportCheckShared(sharedScan);
+  // Pass the Repository-section probe result so gitleaks `version` is not
+  // invoked a second time on a --check-shared run; reportCheckShared still
+  // probes for itself when called standalone.
+  if (opts.checkShared === true) reportCheckShared(sharedScan, gitleaksReady);
 
   renderDoctor([version, host, links, settings, pathMap, neverSync, repository, sharedScan]);
 }
