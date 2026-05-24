@@ -209,7 +209,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('renders one ok row reporting the scanned-session count and leaves exitCode 0 on a clean tree', async () => {
+  it('renders one ok row reporting the scanned-project count and leaves exitCode 0 on a clean tree', async () => {
     const env = makeEnv();
     testHome = env.testHome;
     writeFileSync(

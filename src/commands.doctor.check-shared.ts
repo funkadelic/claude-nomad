@@ -126,7 +126,11 @@ function scrubPath(logical: string, sid: string, logicalToEncoded: Map<string, s
  * guidance, and set `process.exitCode = 1`. `logicalBySession` carries the
  * `<logical>` segment captured from the same `SESSION_PATH` match that keyed
  * `bySession`, so the scrub-path hint reuses the authoritative parse rather
- * than re-deriving the logical name from the finding `File`.
+ * than re-deriving the logical name from the finding `File`. Every `bySession`
+ * sid is keyed in `logicalBySession` (both come from the identical sid capture),
+ * so the scrub hint always renders; the guard omits the hint rather than
+ * printing a wrong path if that invariant ever breaks, and the leak row itself
+ * is always emitted.
  */
 function reportSessionFindings(
   section: DoctorSection,
@@ -137,11 +141,13 @@ function reportSessionFindings(
   for (const [sid, counts] of bySession) {
     const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
     addItem(section, `${red(failGlyph)} session ${sid}: ${summary}`);
-    const logical = logicalBySession.get(sid) ?? sid;
-    addItem(
-      section,
-      `  rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
-    );
+    const logical = logicalBySession.get(sid);
+    if (logical !== undefined) {
+      addItem(
+        section,
+        `  rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
+      );
+    }
     addItem(section, `  false positive? add a pattern to .gitleaks.toml`);
   }
   process.exitCode = 1;
@@ -172,14 +178,16 @@ function reportOtherFindings(section: DoctorSection, other: Finding[]): void {
 const SESSION_PATH_LOGICAL = /^shared\/projects\/([^/]+)\/([^/]+)\.jsonl$/;
 
 /**
- * Emit the single canonical clean row reporting the scanned-session count.
- * Centralizing the literal (zero-staged, scanned-clean, and the
- * findings-but-no-`other` paths all route through here) keeps the phrasing
- * consistent and prevents one copy drifting from another, which is what let a
- * "no session findings == clean" path slip past the `other`-bucket gate.
+ * Emit the single canonical clean row reporting the scanned-project count
+ * (`staged` is the number of mapped project directories whose transcripts were
+ * staged, not a transcript total). Centralizing the literal (zero-staged,
+ * scanned-clean, and the findings-but-no-`other` paths all route through here)
+ * keeps the phrasing consistent and prevents one copy drifting from another,
+ * which is what let a "no session findings == clean" path slip past the
+ * `other`-bucket gate.
  */
 function emitClean(section: DoctorSection, staged: number): void {
-  addItem(section, `${green(okGlyph)} ${staged} sessions scanned, no leaks`);
+  addItem(section, `${green(okGlyph)} ${staged} project(s) scanned, no leaks`);
 }
 
 /**
@@ -191,7 +199,7 @@ function emitClean(section: DoctorSection, staged: number): void {
  * (a malformed `path-map.json` -> FAIL row + exit 1, no crash); scan with the
  * positional `gitleaks dir shared/projects` invocation (NOT `--source`, which
  * `gitleaks dir` rejects with exit 126); on a clean scan emit one ok row
- * reporting the scanned-session count; on findings emit per-session fail rows
+ * reporting the scanned-project count; on findings emit per-session fail rows
  * with rotate-and-scrub guidance and set `process.exitCode = 1`; on a non-zero
  * exit with no parseable report emit a scan-failed fail row carrying the
  * gitleaks error message (never its stderr/stdout, which may hold secrets) +
