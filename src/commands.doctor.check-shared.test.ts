@@ -26,13 +26,6 @@ const hasGitleaks = ((): boolean => {
 /** Shape of the section reportCheckShared appends rows to (mirrors DoctorSection). */
 type Section = { header: string; items: string[] };
 
-/**
- * Local shim for the module under test so the dynamic import destructures
- * cleanly under @typescript-eslint/no-unsafe-*. Mirrors the expected signature;
- * the production type in commands.doctor.check-shared.ts is the real contract.
- */
-type CheckSharedModule = { reportCheckShared: (section: Section) => void };
-
 /** Local shim for the SESSION_PATH regex re-imported in the fidelity case. */
 type PushGitleaksModule = { SESSION_PATH: RegExp };
 
@@ -61,9 +54,11 @@ function writePathMap(testHome: string, projects: PathMap['projects']): void {
   );
 }
 
-/** A planted AWS access key id, recognized by default gitleaks rules. Assembled
- * at runtime so a contiguous AKIA token never sits in source-controlled bytes. */
-const PLANTED_SECRET = ['AKIA', 'IOSFODNN7', 'EXAMPLE'].join('');
+/** A planted GitHub PAT (ghp_ + 36 chars), reliably flagged by default gitleaks
+ * rules. Assembled at runtime so a contiguous PAT-shaped token never sits in
+ * source-controlled bytes. Distinct body from the documented test-fixture
+ * literal so the path-scoped allowlist does not swallow it. */
+const PLANTED_SECRET = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');
 
 describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
   let originalHome: string | undefined;
@@ -107,8 +102,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     );
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
 
-    const { reportCheckShared } =
-      (await import('./commands.doctor.check-shared.ts')) as CheckSharedModule;
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
     reportCheckShared(section);
 
@@ -129,8 +123,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     );
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
 
-    const { reportCheckShared } =
-      (await import('./commands.doctor.check-shared.ts')) as CheckSharedModule;
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
     reportCheckShared(section);
 
@@ -150,8 +143,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     );
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
 
-    const { reportCheckShared } =
-      (await import('./commands.doctor.check-shared.ts')) as CheckSharedModule;
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
     const { SESSION_PATH } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
     const section: Section = { header: 'Shared scan', items: [] };
     reportCheckShared(section);
@@ -174,8 +166,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     );
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
 
-    const { reportCheckShared } =
-      (await import('./commands.doctor.check-shared.ts')) as CheckSharedModule;
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
     reportCheckShared(section);
 
@@ -197,8 +188,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     );
     writePathMap(testHome, { foo: { 'test-host': 'TBD' } });
 
-    const { reportCheckShared } =
-      (await import('./commands.doctor.check-shared.ts')) as CheckSharedModule;
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
     reportCheckShared(section);
 
@@ -215,8 +205,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     );
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
 
-    const { reportCheckShared } =
-      (await import('./commands.doctor.check-shared.ts')) as CheckSharedModule;
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
     reportCheckShared(section);
 
