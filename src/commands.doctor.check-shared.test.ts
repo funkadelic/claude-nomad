@@ -137,6 +137,39 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('flags a flat-session secret that gitleaks dir missed under a path-scoped AND allowlist (scan parity regression)', async () => {
+    // The bug: with a repo .gitleaks.toml carrying a path-scoped
+    // `condition = "AND"` allowlist (a known literal AND a
+    // shared/projects/<logical>/*.jsonl path), the old `gitleaks dir`
+    // preflight reported "no leaks" (exit 0) on a NON-allowlisted secret at
+    // such a path, while `gitleaks push protect --staged` (the push gate)
+    // flagged it. Routing the preflight through the shared scanStagedTree
+    // (protect --staged) closes the gap. PLANTED_SECRET has a distinct 36-char
+    // body from the allowlisted literals, so it is a real finding that must
+    // fire; the allowlist's mere presence is what triggered the dir miss.
+    const env = makeEnv();
+    testHome = env.testHome;
+    const sid = 'sid-parity';
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, `${sid}.jsonl`),
+      `{"role":"user","text":"${PLANTED_SECRET}"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+    // The harness HOME doubles as REPO_HOME, so writing the toml here makes the
+    // shared scan pass --config and reproduces the dir-vs-protect divergence.
+    writeFileSync(join(testHome, 'claude-nomad', '.gitleaks.toml'), GITLEAKS_TOML);
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    expect(rows).toContain(failGlyph);
+    expect(rows).toContain(sid);
+    expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('renders rotate-and-scrub guidance naming the live session path plus an allowlist hint', async () => {
     const env = makeEnv();
     testHome = env.testHome;
@@ -157,7 +190,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     expect(rows).toContain('.gitleaks.toml');
   });
 
-  it('matches the recovered finding File against SESSION_PATH (positional dir invocation fidelity)', async () => {
+  it('matches the recovered finding File against SESSION_PATH', async () => {
     const env = makeEnv();
     testHome = env.testHome;
     const sid = 'sid-fidelity';
@@ -174,7 +207,8 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
 
     // The session id surfaces only when a finding File matched SESSION_PATH and
     // partitionFindings keyed it; the recovered File reads
-    // shared/projects/foo/<sid>.jsonl, which the regex captures.
+    // shared/projects/foo/<sid>.jsonl, which the regex captures. The scan now
+    // runs via protect --staged (scanStagedTree), not a positional dir scan.
     const reconstructed = `shared/projects/foo/${sid}.jsonl`;
     expect(SESSION_PATH.test(reconstructed)).toBe(true);
     expect(section.items.join('\n')).toContain(sid);
@@ -392,13 +426,14 @@ describe('reportCheckShared (mocked child_process)', () => {
         ...actual,
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
-          // The gitleaks `version` probe must succeed so the flow reaches the
-          // scan; only the `dir` scan fails.
+          // The gitleaks `version` probe and the git init/add stage must succeed
+          // so the flow reaches the scan; only the protect --staged scan fails.
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          // The `dir` scan exits non-zero WITHOUT writing any report at
-          // --report-path, so readGitleaksReport returns null (the unparseable
-          // signal) and the catch branch reports scan-failed rather than
-          // chasing phantom sessions.
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          // gitleaks protect --staged exits non-zero WITHOUT writing any report
+          // at --report-path, so readGitleaksReport returns null (the unparseable
+          // signal) and the reporter reports scan-failed rather than chasing
+          // phantom sessions.
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
         }),
       };
@@ -483,7 +518,7 @@ describe('reportCheckShared (mocked child_process)', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('includes the underlying gitleaks error message in the scan-failed row (no stderr/stdout leak)', async () => {
+  it('never leaks gitleaks stderr/stdout into the scan-failed row when protect --staged fails', async () => {
     const env = makeEnv();
     testHome = env.testHome;
     writeFileSync(
@@ -500,9 +535,12 @@ describe('reportCheckShared (mocked child_process)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          // The dir scan fails with a descriptive message but ALSO carries
-          // stderr/stdout that must never be forwarded into the row.
-          throw Object.assign(new Error('gitleaks dir exited 126: bad invocation'), {
+          // git init / git add succeed; only the protect --staged scan fails.
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          // gitleaks protect --staged fails and carries stderr/stdout that must
+          // never reach the doctor row (the shared scanStagedTree is called with
+          // forwardStreams=false, so the streams are dropped entirely).
+          throw Object.assign(new Error('gitleaks protect exited 126: bad invocation'), {
             status: 126,
             stderr: Buffer.from(secretInStreams),
             stdout: Buffer.from(secretInStreams),
@@ -516,9 +554,9 @@ describe('reportCheckShared (mocked child_process)', () => {
     reportCheckShared(section);
 
     const rows = section.items.join('\n');
+    // No report was written, so the helper returns null and the doctor reports a
+    // scan-failed row. The redacted-but-sensitive streams must never appear.
     expect(rows).toMatch(/scan failed/i);
-    expect(rows).toContain('gitleaks dir exited 126');
-    // e.stderr / e.stdout must never leak into doctor output.
     expect(rows).not.toContain(secretInStreams);
     expect(process.exitCode).toBe(1);
   });
@@ -554,6 +592,7 @@ describe('reportCheckShared (mocked child_process)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
         }),
       };
@@ -673,9 +712,10 @@ describe('reportCheckShared (mocked child_process)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          // gitleaks exits non-zero but writes a parseable empty array: both
-          // partition buckets are empty, so the reporter emits the clean row
-          // (staged count) rather than a phantom-session fail.
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          // gitleaks protect --staged exits non-zero but writes a parseable
+          // empty array: both partition buckets are empty, so the reporter emits
+          // the clean row (staged count) rather than a phantom-session fail.
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), '[]');
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
@@ -734,6 +774,7 @@ describe('reportCheckShared (mocked child_process)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });

@@ -85,7 +85,10 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          // scanStagedTree runs `git init` + `git add -A` before gitleaks; let
+          // those succeed so the gitleaks failure below is what drives the test.
+          if (bin === 'git') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -136,7 +139,10 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          // Let scanStagedTree's `git init` + `git add -A` succeed so the
+          // gitleaks failure below is the condition under test.
+          if (bin === 'git') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -186,7 +192,9 @@ describe('runGitleaksScan (mocked child_process)', () => {
       return {
         ...actual,
         // No --report-path file is written, so readGitleaksReport returns null.
-        execFileSync: vi.fn(() => {
+        // scanStagedTree's `git init` + `git add -A` succeed; only gitleaks fails.
+        execFileSync: vi.fn((bin: string) => {
+          if (bin === 'git') return Buffer.from('');
           const err = new Error('config parse error') as NodeJS.ErrnoException & {
             status?: number;
             stderr?: Buffer;
@@ -212,7 +220,8 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'git') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -245,7 +254,8 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'git') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -272,7 +282,11 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((bin: string) => {
+          // scanStagedTree's `git init` + `git add -A` succeed; gitleaks is the
+          // binary missing from PATH, so its ENOENT propagates to the
+          // install-hint FATAL.
+          if (bin === 'git') return Buffer.from('');
           const err = new Error('spawn gitleaks ENOENT') as NodeJS.ErrnoException;
           err.code = 'ENOENT';
           throw err;
@@ -322,7 +336,8 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'git') return Buffer.from('');
           const argList = args ?? [];
           const flag = argList.find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {

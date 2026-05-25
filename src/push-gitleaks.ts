@@ -1,11 +1,15 @@
 /**
- * Owns the staged gitleaks scan invoked at the end of `cmdPush`.
+ * Owns the push-side gitleaks orchestration invoked at the end of `cmdPush`:
+ * the session-aware FATAL builder (`partitionFindings` + `buildSessionAwareFatal`)
+ * and `runGitleaksScan`, which delegates the git-stage + scan mechanism to the
+ * shared `scanStagedTree` in `./push-gitleaks.scan.ts`.
  *
- * Lives in its own module (split from `push-checks.ts`) so the
- * session-aware FATAL builder (gitleaks JSON parser + per-session message
- * composer) has a clean home while keeping every file under the 200-line
- * cap. `findGitlinks`, `probeGitleaks`, `gitleaksInstallHint`, and
- * `rebaseBeforePush` stay in `push-checks.ts`.
+ * Lives in its own module (split from `push-checks.ts`) so the FATAL builder
+ * has a clean home while keeping every file under the 200-line cap.
+ * `findGitlinks`, `probeGitleaks`, `gitleaksInstallHint`, and `rebaseBeforePush`
+ * stay in `push-checks.ts`. The staged-scan primitives (`Finding`,
+ * `readGitleaksReport`, `scanStagedTree`) live in `./push-gitleaks.scan.ts` and
+ * are re-exported here so existing import sites are unaffected.
  *
  * `gitleaksInstallHint` is imported from `./push-checks.ts` because the
  * ENOENT branch surfaces the same platform-aware install scaffold whether
@@ -13,27 +17,16 @@
  * this scan (defense-in-depth mid-flow).
  */
 
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-
 import { REPO_HOME } from './config.ts';
 import { gitleaksInstallHint } from './push-checks.ts';
-import { NomadFatal, nowTimestamp } from './utils.ts';
+import { type Finding, readGitleaksReport, scanStagedTree } from './push-gitleaks.scan.ts';
+import { NomadFatal } from './utils.ts';
 
-/**
- * Subset of gitleaks 8.x JSON report fields the parser consumes. The
- * report is an array of objects (one per finding) emitted to the
- * `--report-path` file; on clean scans the array is empty.
- */
-export type Finding = {
-  RuleID: string;
-  File: string;
-  StartLine: number;
-  Match: string;
-  Fingerprint: string;
-};
+// Re-export the staged-scan primitives (moved to ./push-gitleaks.scan.ts to
+// keep both this module and commands.doctor.check-shared.ts under the 200-line
+// cap) so existing `from './push-gitleaks.ts'` import sites stay unchanged and
+// push + the --check-shared preflight share one scan mechanism.
+export { type Finding, readGitleaksReport, scanStagedTree };
 
 /**
  * Captures the session id from a repo-relative POSIX path of the form
@@ -125,95 +118,45 @@ export function buildSessionAwareFatal(
 }
 
 /**
- * Read and parse the gitleaks JSON report at `reportPath`. Returns the
- * findings array on success, or `null` when the file is missing or the
- * JSON is malformed. Defense-in-depth: an unreadable/invalid report on
- * the failure path must NOT cascade into a parse-error stack trace; the
- * caller falls back to the legacy FATAL string in that case.
- */
-export function readGitleaksReport(reportPath: string): Finding[] | null {
-  try {
-    const raw = readFileSync(reportPath, 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return parsed as Finding[];
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Run gitleaks against the staged index, writing the JSON report to a
- * collision-resistant path under `~/.cache/claude-nomad/`. On non-zero
- * exit, forwards gitleaks' redacted stderr/stdout so the user sees which
- * file is dirty, reads the JSON report, classifies findings into session
- * vs non-session paths, and throws a session-aware NomadFatal whose
- * message names every affected session id with a `nomad drop-session`
- * recovery hint. Non-session-only findings fall back to the legacy FATAL
- * string. The temp report file is removed via `finally` on both success
- * and failure paths.
+ * Run the staged gitleaks scan at the end of `cmdPush`, delegating the
+ * git-stage + scan mechanism to the shared `scanStagedTree(REPO_HOME, true)`
+ * so the push gate and the `--check-shared` preflight cannot drift. The
+ * `forwardStreams = true` argument reproduces the prior behavior of writing
+ * gitleaks' redacted stderr/stdout so the user sees which file is dirty.
  *
- * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
- * exists at call time. The allowlist suppresses
- * structurally-distinguishable tool-output noise (Sonar issue keys,
- * gitleaks fingerprints, npm audit JSON id-field hashes, coverage line-keys)
- * without weakening real-secret detection. Missing toml = silent fallback
- * to the default gitleaks ruleset (e.g., fresh clones pre-allowlist).
+ * On findings, classifies them into session vs non-session paths and throws a
+ * session-aware NomadFatal whose message names every affected session id with
+ * a `nomad drop-session` recovery hint; non-session-only findings fall back to
+ * the legacy FATAL string. When the helper returns `null` (gitleaks exited
+ * non-zero but wrote no parseable report: a scanner crash, malformed JSON,
+ * missing/locked file, or a non-finding runtime failure, since gitleaks v8.x
+ * returns exit 1 for both "leaks found" and runtime errors) it throws a
+ * distinct scan-failed FATAL so the operator does not chase a phantom
+ * `nomad drop-session` recovery; the forwarded stderr/stdout above carries the
+ * underlying gitleaks output.
  *
- * ENOENT branch is defense-in-depth: the presence probe at the top of
- * `cmdPush` should have caught a missing binary, but if `cmdPush` ever
- * bypasses the probe (or the user uninstalls gitleaks mid-flow) the same
+ * ENOENT (gitleaks or git absent) propagates from the helper and is mapped to
+ * the platform-aware install-hint FATAL. Defense-in-depth: the presence probe
+ * at the top of `cmdPush` should have caught a missing binary, but if `cmdPush`
+ * ever bypasses the probe (or the user uninstalls gitleaks mid-flow) the same
  * install-hint FATAL fires here.
  */
 export function runGitleaksScan(): void {
-  const cacheDir = join(homedir(), '.cache', 'claude-nomad');
-  mkdirSync(cacheDir, { recursive: true });
-  // Disambiguate with pid so the lockfile invariant (one concurrent push
-  // per host) is enough to keep the report path unique. The prior
-  // freshBackupTs() call checked for a sibling directory named exactly
-  // <ts>, which never collides with the file `gitleaks-<ts>.json` being
-  // written.
-  const reportPath = join(cacheDir, `gitleaks-${nowTimestamp()}-${process.pid}.json`);
-  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
-  const args: string[] = [
-    'protect',
-    '--staged',
-    '--redact',
-    '-v',
-    '--report-format=json',
-    `--report-path=${reportPath}`,
-  ];
-  if (existsSync(tomlPath)) args.push('--config', tomlPath);
+  let findings: Finding[] | null;
   try {
-    execFileSync('gitleaks', args, {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    findings = scanStagedTree(REPO_HOME, true);
   } catch (err) {
-    const e = err as NodeJS.ErrnoException & {
-      status?: number;
-      stderr?: Buffer;
-      stdout?: Buffer;
-    };
-    if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
-    if (e.stderr) process.stderr.write(e.stderr);
-    if (e.stdout) process.stdout.write(e.stdout);
-    const findings = readGitleaksReport(reportPath);
-    if (findings === null) {
-      // gitleaks exited non-zero but no parseable JSON report exists at the
-      // expected path. Could be a scanner crash, a malformed report, a
-      // missing/locked file, or a non-finding runtime failure (gitleaks v8.x
-      // returns exit 1 for both "leaks found" and runtime errors). Tell the
-      // operator the scan itself failed so they do not chase a phantom
-      // `nomad drop-session` rabbit hole. The stderr/stdout already
-      // forwarded above carries the underlying gitleaks output.
-      throw new NomadFatal(
-        `gitleaks scan failed: no parseable JSON report at ${reportPath} (${e.message}). Review the gitleaks output above.`,
-      );
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new NomadFatal(gitleaksInstallHint());
     }
-    const { bySession, other } = partitionFindings(findings);
-    throw new NomadFatal(buildSessionAwareFatal(bySession, other));
-  } finally {
-    rmSync(reportPath, { force: true });
+    throw err;
   }
+  if (findings === null) {
+    throw new NomadFatal(
+      'gitleaks scan failed: no parseable JSON report. Review the gitleaks output above.',
+    );
+  }
+  if (findings.length === 0) return;
+  const { bySession, other } = partitionFindings(findings);
+  throw new NomadFatal(buildSessionAwareFatal(bySession, other));
 }
