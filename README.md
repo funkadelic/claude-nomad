@@ -117,7 +117,7 @@ By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config
 │   ├── commands/
 │   ├── rules/
 │   ├── my-statusline.cjs     # any script you want symlinked into ~/.claude/
-│   ├── .gitignore            # defense-in-depth: blocks .claude.json, settings.local.json, *.token, *.key, .env
+│   ├── .gitignore            # defense-in-depth: blocks .claude.json, settings.local.json, *.token, *.key, *.pem, id_rsa, id_ed25519, .env, .env.*
 │   ├── projects/             # session transcripts under logical names
 │   └── extras/               # opt-in per-project content (materializes when path-map.json declares extras)
 ├── hosts/
