@@ -31,9 +31,10 @@ import {
  *   gate 5 - Actions are already disabled, or the Actions probe throws
  * Only when all five gates pass does it emit the single yellow WARN line with a
  * `gh api -X PUT ... -F enabled=false` remediation hint (the exact shape
- * `disableActions` would run). The four gh probes (gates 2-5) carry the shared
- * `GH_TIMEOUT_MS` internally; gate 1 is a local `git remote get-url` config read
- * (no network, no timeout needed). No new doctor section; no opt-out flag.
+ * `disableActions` would run). The three gh probes (gates 3-5) carry the shared
+ * `GH_TIMEOUT_MS` internally; gates 1-2 are local (a `git remote get-url` config
+ * read and a regex parse), so no network and no timeout needed. No new doctor
+ * section; no opt-out flag.
  *
  * @param section - The Repository section to append the WARN line to.
  * @param run - Injectable subprocess runner; defaults to `execFileSync`.

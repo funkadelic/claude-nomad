@@ -65,9 +65,10 @@ export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
   reportGitleaksVersionCheck(version);
 
   const sharedScan = section('Shared scan');
-  // Pass the Repository-section probe result so gitleaks `version` is not
-  // invoked a second time on a --check-shared run; reportCheckShared still
-  // probes for itself when called standalone.
+  // Reuse the Repository-section readiness probe so reportCheckShared does not
+  // re-spawn gitleaks for its own readiness on a --check-shared run; it still
+  // probes standalone when called without a prior result. (The Version-section
+  // drift check above spawns `gitleaks version` separately, by design.)
   if (opts.checkShared === true) reportCheckShared(sharedScan, gitleaksReady);
 
   renderDoctor([version, host, links, settings, pathMap, neverSync, repository, sharedScan]);
