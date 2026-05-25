@@ -518,6 +518,62 @@ describe('reportCheckShared (mocked child_process)', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('emits one scan-failed fail row and exits 1 when scanStagedTree throws a non-ENOENT error', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // A real session dir maps to this host so buildScanTree stages it
+    // (staged > 0) and the flow reaches scanStagedTree inside the inner try.
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-scan-throw.jsonl'),
+      `{"role":"user","text":"benign content"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    // scanStagedTree swallows non-ENOENT execFileSync failures, so drive the
+    // error from its pre-try `mkdirSync(cacheDir)`. reportCheckShared also
+    // mkdirs that same cacheDir once before the scan, so throw only on the
+    // SECOND cacheDir mkdir (scanStagedTree's), leaving the reporter's own
+    // setup intact. The non-ENOENT error then escapes scanStagedTree into the
+    // reporter's inner catch (the scan-failed fail row + exitCode 1).
+    let cacheMkdirs = 0;
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        mkdirSync: vi.fn((p: fsModule.PathLike, o?: fsModule.MakeDirectoryOptions) => {
+          if (String(p).includes(join('.cache', 'claude-nomad'))) {
+            cacheMkdirs++;
+            if (cacheMkdirs >= 2) {
+              throw Object.assign(new Error('mkdir cache failed: disk error'), { code: 'EIO' });
+            }
+          }
+          return actual.mkdirSync(p, o);
+        }),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        // The version probe must succeed so the flow reaches the scan; the
+        // mkdirSync throw above fires before any git/gitleaks call.
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) =>
+          (args ?? [])[0] === 'version' ? Buffer.from('8.0.0') : Buffer.from(''),
+        ),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const failRows = section.items.filter((r) => r.includes(failGlyph));
+    expect(failRows.length).toBe(1);
+    expect(failRows[0]).toMatch(/scan failed: .*disk error/);
+    expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('never leaks gitleaks stderr/stdout into the scan-failed row when protect --staged fails', async () => {
     const env = makeEnv();
     testHome = env.testHome;
