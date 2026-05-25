@@ -272,6 +272,30 @@ describe('remapExtrasPush (integration)', () => {
     expect(() => remapExtrasPush('20260522-no-src-push')).not.toThrow();
     expect(existsSync(join(sharedExtras, 'foo', '.planning'))).toBe(false);
   });
+
+  it('copies a single root file <localRoot>/CLAUDE.md into shared/extras/<logical>/CLAUDE.md, creating the missing logical dir', async () => {
+    // The single-file extras case. Crucially, shared/extras/foo/ does NOT
+    // pre-exist (beforeEach only creates shared/extras/); a real gap from
+    // verified_fact 1 (cpSync recursive must create the intermediate parent
+    // for a file copy) would surface here as an ENOENT.
+    writeFileSync(join(projectRoot, 'CLAUDE.md'), '# project rules\n');
+    expect(existsSync(join(sharedExtras, 'foo'))).toBe(false);
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['CLAUDE.md'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    const result = remapExtrasPush('20260522-110006');
+
+    const repoFile = join(sharedExtras, 'foo', 'CLAUDE.md');
+    expect(existsSync(repoFile)).toBe(true);
+    expect(readFileSync(repoFile, 'utf8')).toBe('# project rules\n');
+    expect(result).toEqual({ unmapped: 0, skipped: 0 });
+  });
 });
 
 describe('remapExtrasPull (integration)', () => {
@@ -476,6 +500,58 @@ describe('remapExtrasPull (integration)', () => {
     expect(() => remapExtrasPull('20260522-no-src-pull')).not.toThrow();
     expect(existsSync(join(projectRoot, '.planning'))).toBe(false);
   });
+
+  it('copies shared/extras/<logical>/CLAUDE.md back to <localRoot>/CLAUDE.md byte-equal', async () => {
+    mkdirSync(join(sharedExtras, 'foo'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# incoming rules\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['CLAUDE.md'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const result = remapExtrasPull('20260522-120007');
+
+    const localFile = join(projectRoot, 'CLAUDE.md');
+    expect(existsSync(localFile)).toBe(true);
+    expect(readFileSync(localFile, 'utf8')).toBe('# incoming rules\n');
+    expect(result).toEqual({ unmapped: 0, skipped: 0 });
+  });
+
+  it('backs up a prior <localRoot>/CLAUDE.md before overwriting it on pull', async () => {
+    writeFileSync(join(projectRoot, 'CLAUDE.md'), '# original rules\n');
+    mkdirSync(join(sharedExtras, 'foo'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# replacement rules\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['CLAUDE.md'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const { encodePath } = await import('./utils.ts');
+    remapExtrasPull('20260522-120008');
+
+    // relative(projectRoot, <root file>) is just the basename, so the backup
+    // lands directly under the encoded-projectRoot namespace.
+    const backupOld = join(
+      cacheBase,
+      '20260522-120008',
+      'extras',
+      encodePath(projectRoot),
+      'CLAUDE.md',
+    );
+    expect(existsSync(backupOld)).toBe(true);
+    expect(readFileSync(backupOld, 'utf8')).toBe('# original rules\n');
+
+    // The replacement file is now in place on the host.
+    expect(readFileSync(join(projectRoot, 'CLAUDE.md'), 'utf8')).toBe('# replacement rules\n');
+  });
 });
 
 describe('divergenceCheckExtras (integration)', () => {
@@ -604,6 +680,30 @@ describe('divergenceCheckExtras (integration)', () => {
     expect(output).toContain('PLAN.md');
     expect(output).toContain('NOTES.md');
     expect(output).toMatch(/2 file/);
+  });
+
+  it('WARNs on a diverging single root file naming CLAUDE.md and a count', async () => {
+    // A diverging CLAUDE.md (file extra, not a directory) must surface the
+    // same per-file WARN + count as a diverging directory entry. git diff
+    // --no-index compares the two file paths directly.
+    writeFileSync(join(projectRoot, 'CLAUDE.md'), '# local rules\n');
+    mkdirSync(join(sharedExtras, 'foo'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# repo rules\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['CLAUDE.md'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260522-test');
+
+    const output = captured.read();
+    expect(output).toContain('CLAUDE.md');
+    expect(output).toMatch(/1 file/);
   });
 
   it('silently skips when local extras directory is absent', async () => {
@@ -1147,5 +1247,16 @@ describe('whitelistedExtrasPaths', () => {
     });
     // `secrets` is not in SUPPORTED_EXTRAS so it is skipped; results sorted.
     expect(out).toEqual(['shared/extras/alpha/.planning', 'shared/extras/beta/.planning']);
+  });
+
+  it('includes a single root-file extra (CLAUDE.md) with no trailing slash alongside a directory', async () => {
+    const { whitelistedExtrasPaths } = await import('./extras-sync.ts');
+    const out = whitelistedExtrasPaths({
+      projects: {},
+      extras: { foo: ['CLAUDE.md', '.planning'] },
+    });
+    // Both the file and the directory entry resolve to no-trailing-slash
+    // repo-relative paths; the result is sorted.
+    expect(out).toEqual(['shared/extras/foo/.planning', 'shared/extras/foo/CLAUDE.md']);
   });
 });
