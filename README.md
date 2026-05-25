@@ -10,11 +10,14 @@ Claude Code's state is per-machine. Your `CLAUDE.md`, custom agents, skills, sla
 
 claude-nomad keeps all of it in sync through a private Git repo you control. `nomad push` on one machine, `nomad pull` on another, and your full setup is there, including past sessions you can resume.
 
+That state is sensitive: `~/.claude/` also holds OAuth tokens, MCP credentials, and the full text of your past conversations. Copying it around by hand (dotfiles, rsync) pushes all of that straight into git. nomad syncs what should travel and holds back what shouldn't: every push is scanned for secrets before it leaves your machine, credentials and ephemeral state never sync, and your mirror ships private with CI disabled so transcripts can't leak through Actions logs.
+
 **Who this is for:** anyone running Claude Code on more than one machine. A laptop and a desktop, a Mac and a WSL box, a personal rig and a work machine, or any combination. If you've ever felt the friction of starting fresh on a second machine or copying files around by hand, this is for you.
 
-Three things it does that ad-hoc dotfiles syncing can't:
+Four things it does that ad-hoc dotfiles syncing can't:
 
 - **Session history survives path differences.** The same project at `/Users/norm/code/foo` on your Mac and `/home/norm/foo` on Linux gets remapped automatically, so `claude --resume` finds your past conversations on whichever machine you're on.
+- **Secrets never ride along.** Syncing `~/.claude/` by hand would push your OAuth tokens, MCP credentials, and conversation logs into git. nomad scans every push with gitleaks, keeps tokens and ephemeral state host-local, and ships your mirror private with Actions disabled. See [Privacy by default](#privacy-by-default).
 - **Per-host settings via deep merge.** Shared defaults live in one file; machine-specific overrides (model choice, MCP server URLs, env vars, hooks) live in a per-host file. They're merged on every pull instead of overwriting each other.
 - **Per-project content rides along, opt-in.** Whitelisted directories at a project's root (declared via `path-map.json`'s `extras` field) sync alongside session transcripts, so project-attached state like `.planning/` follows you across hosts. Off by default; projects without an `extras` entry behave exactly as before.
 
