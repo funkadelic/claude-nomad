@@ -37,6 +37,17 @@ export const REPO_HOME = process.env.NOMAD_REPO || resolve(HOME, 'claude-nomad')
 export const UPSTREAM_REPO_SLUG = 'funkadelic/claude-nomad';
 
 /**
+ * Pinned gitleaks version. Single source of truth for the gitleaks pin used by
+ * `nomad doctor`'s version-drift check (`reportGitleaksVersionCheck`), which
+ * WARNs when the host's installed gitleaks major.minor diverges from this
+ * value. Mirrors the `GITLEAKS_VERSION` env in both `.github/workflows/tests.yml`
+ * and `.github/workflows/gitleaks.yml`; `config.gitleaks-pin.test.ts` asserts
+ * all three stay in lockstep so a CI bump that misses this constant (or vice
+ * versa) fails the suite. Bump here and in both workflow YAMLs together.
+ */
+export const GITLEAKS_PINNED_VERSION = '8.30.1';
+
+/**
  * Resolved host identity used to pick `hosts/<HOST>.json` and key entries in
  * `path-map.json`. Reads `NOMAD_HOST` first, falls back to `hostname()`, then
  * lowercases. A set-but-empty `NOMAD_HOST` (e.g. `export NOMAD_HOST=` in a
