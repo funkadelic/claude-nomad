@@ -135,7 +135,7 @@ By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config
 | **Synced**             | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs`                                                                                                                                                             | Symlinked into `~/.claude/` from `shared/` (see `SHARED_LINKS` in `src/config.ts`).                                                                                                        |
 | **Generated**          | `settings.json`                                                                                                                                                                                                                           | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`. Rewritten on every pull.                                                                                                  |
 | **Remapped**           | `projects/` session transcripts                                                                                                                                                                                                           | Copied with path translation per `path-map.json`.                                                                                                                                          |
-| **Per-project extras** | `<localRoot>/.planning/` and other directories whitelisted by `SUPPORTED_EXTRAS` in `src/config.ts`                                                                                                                                       | Opt-in via the `extras` field in `path-map.json`. Mirrored to/from `shared/extras/<logical>/<dirname>/`. Pre-pull divergence WARN flags local edits before they get overwritten.           |
+| **Per-project extras** | `<localRoot>/.planning/` and other directories, or a single root file like `CLAUDE.md`, whitelisted by `SUPPORTED_EXTRAS` in `src/config.ts`                                                                                              | Opt-in via the `extras` field in `path-map.json`. Mirrored to/from `shared/extras/<logical>/<name>/`. Pre-pull divergence WARN flags local edits before they get overwritten.              |
 | **Never synced**       | `~/.claude.json` (OAuth, MCP state), `history.jsonl`, `settings.local.json` (per-host overrides), `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/` | Per-host ephemeral state.                                                                                                                                                                  |
 | **Auto-rehydrated**    | `~/.claude/plugins/cache/<plugin>/...`                                                                                                                                                                                                    | Plugin payloads not synced. Claude Code re-downloads them on first use from the `enabledPlugins` list in the regenerated `settings.json`; no manual `claude plugins install ...` per host. |
 
@@ -148,7 +148,7 @@ For the rationale behind these choices, see [What does NOT sync (deliberate trad
 
 The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-path>/` where the encoded path is the absolute path with `/` replaced by `-`. So the same logical project ends up in different directories on each host.
 
-`path-map.json` defines logical names and where the repo lives on each host. The optional `extras` block opts a project into syncing whitelisted directories at its root:
+`path-map.json` defines logical names and where the repo lives on each host. The optional `extras` block opts a project into syncing whitelisted directories (or a single root file) at its root:
 
 ```json
 {
@@ -160,7 +160,7 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
     }
   },
   "extras": {
-    "ha-acwd": [".planning"]
+    "ha-acwd": [".planning", "CLAUDE.md"]
   }
 }
 ```
@@ -172,7 +172,7 @@ Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` 
 
 On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the cross-OS cwd-binding gotcha).
 
-The `extras` block is additive and back-compatible: legacy `path-map.json` files without it continue to work unchanged. Each value is an array of directory names validated against `SUPPORTED_EXTRAS` in `src/config.ts`; values outside the whitelist are skipped with a log line so an unrecognized name cannot widen the sync surface. On `push`, opted-in directories at `<localRoot>/<dirname>/` are copied to `shared/extras/<logical>/<dirname>/` and inherit the staged-tree gitleaks scan. On `pull`, the reverse copy runs after `git pull --rebase`; just before it overwrites your working tree, a divergence check compares the incoming content against your local copy and emits a per-file WARN naming the diverging files. The existing local content is backed up to `~/.cache/claude-nomad/backup/<ts>/extras/<encoded-localRoot>/<rel>/` before the pull copy lands (`<encoded-localRoot>` is the `localRoot` with `/` rewritten as `-`, so two opted-in projects with the same relative extras path do not collide in one backup run).
+The `extras` block is additive and back-compatible: legacy `path-map.json` files without it continue to work unchanged. Each value is an array of directory or root-file names (e.g. `.planning`, `CLAUDE.md`) validated against `SUPPORTED_EXTRAS` in `src/config.ts`; values outside the whitelist are skipped with a log line so an unrecognized name cannot widen the sync surface. On `push`, opted-in content at `<localRoot>/<name>` (a directory subtree or a single file) is copied to `shared/extras/<logical>/<name>` and inherits the staged-tree gitleaks scan. On `pull`, the reverse copy runs after `git pull --rebase`; just before it overwrites your working tree, a divergence check compares the incoming content against your local copy and emits a per-file WARN naming the diverging files. The existing local content is backed up to `~/.cache/claude-nomad/backup/<ts>/extras/<encoded-localRoot>/<rel>/` before the pull copy lands (`<encoded-localRoot>` is the `localRoot` with `/` rewritten as `-`, so two opted-in projects with the same relative extras path do not collide in one backup run).
 
 ## Per-host overrides
 
@@ -209,7 +209,7 @@ Read these before adopting so you opt in with eyes open.
 - **Manual push/pull.** No file watcher. Shell hooks recommended.
 - **OAuth doesn't sync.** You'll log in once per host. Intentional.
 - **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone.
-- **Extras are opt-in and whitelisted.** Projects without an `extras` entry in `path-map.json` are unaffected. Dirnames outside `SUPPORTED_EXTRAS` are skipped with a `skip ... not in SUPPORTED_EXTRAS` log line so an unrecognized name cannot widen the sync surface. Unsafe path-map values (path-traversal in `logical` keys, non-absolute or unnormalized `localRoot` values) FATAL before any filesystem mutation via `assertSafeLogical` / `assertSafeLocalRoot` in `src/extras-sync.ts`.
+- **Extras are opt-in and whitelisted.** Projects without an `extras` entry in `path-map.json` are unaffected. Names (a directory or a single root file) outside `SUPPORTED_EXTRAS` are skipped with a `skip ... not in SUPPORTED_EXTRAS` log line so an unrecognized name cannot widen the sync surface. Unsafe path-map values (path-traversal in `logical` keys, non-absolute or unnormalized `localRoot` values) FATAL before any filesystem mutation via `assertSafeLogical` / `assertSafeLocalRoot` in `src/extras-sync.ts`.
 - **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so the picker's `cd ... && claude --resume <id>` line fails on a different host. Use `nomad doctor --resume-cmd <id>` for a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach preserves transcript byte-equality.
 - **Empty directories don't survive sync.** Git doesn't track empty dirs; `nomad doctor` reports them as `missing` (benign). Drop a `.gitkeep` to force materialization.
 
