@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as cpModule from 'node:child_process';
+import type * as fsModule from 'node:fs';
 
 /**
  * Probe for a usable gitleaks binary once at suite-load time. Only the
@@ -57,6 +58,10 @@ describe('runGitleaksScan (mocked child_process)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
+    // The non-ENOENT re-throw test below adds a node:fs doMock; pair it here.
+    // vi.restoreAllMocks does NOT clear vi.doMock module mocks, so an unpaired
+    // mock would leak into later tests/files.
+    vi.doUnmock('node:fs');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -85,7 +90,10 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          // scanStagedTree runs `git init` + `git add -A` before gitleaks; let
+          // those succeed so the gitleaks failure below is what drives the test.
+          if (bin === 'git') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -136,7 +144,10 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          // Let scanStagedTree's `git init` + `git add -A` succeed so the
+          // gitleaks failure below is the condition under test.
+          if (bin === 'git') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -186,7 +197,9 @@ describe('runGitleaksScan (mocked child_process)', () => {
       return {
         ...actual,
         // No --report-path file is written, so readGitleaksReport returns null.
-        execFileSync: vi.fn(() => {
+        // scanStagedTree's `git init` + `git add -A` succeed; only gitleaks fails.
+        execFileSync: vi.fn((bin: string) => {
+          if (bin === 'git') return Buffer.from('');
           const err = new Error('config parse error') as NodeJS.ErrnoException & {
             status?: number;
             stderr?: Buffer;
@@ -212,7 +225,8 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'git') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -245,7 +259,8 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'git') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -272,7 +287,11 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((bin: string) => {
+          // scanStagedTree's `git init` + `git add -A` succeed; gitleaks is the
+          // binary missing from PATH, so its ENOENT propagates to the
+          // install-hint FATAL.
+          if (bin === 'git') return Buffer.from('');
           const err = new Error('spawn gitleaks ENOENT') as NodeJS.ErrnoException;
           err.code = 'ENOENT';
           throw err;
@@ -282,6 +301,32 @@ describe('runGitleaksScan (mocked child_process)', () => {
     const { runGitleaksScan } = await import('./push-gitleaks.ts');
     expect(() => runGitleaksScan()).toThrow(/gitleaks not on PATH/);
     expect(() => runGitleaksScan()).toThrow(/Install:/);
+  });
+
+  it('re-throws a non-ENOENT scanStagedTree error verbatim instead of the install-hint FATAL', async () => {
+    // The catch in runGitleaksScan only maps ENOENT to the install-hint FATAL;
+    // any other error must propagate unchanged (`throw err`). scanStagedTree
+    // swallows non-ENOENT execFileSync failures, so drive the error from its
+    // pre-try `mkdirSync(cacheDir)`: a non-ENOENT (EACCES) failure there escapes
+    // scanStagedTree directly, reaching runGitleaksScan's non-ENOENT branch.
+    const cacheFailure = Object.assign(new Error('mkdir /cache: permission denied'), {
+      code: 'EACCES',
+    });
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        mkdirSync: vi.fn((p: fsModule.PathLike, o?: fsModule.MakeDirectoryOptions) => {
+          if (String(p).includes(join('.cache', 'claude-nomad'))) throw cacheFailure;
+          return actual.mkdirSync(p, o);
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).toThrow(cacheFailure);
+    // The error is the raw EACCES, NOT wrapped in the install-hint NomadFatal.
+    expect(() => runGitleaksScan()).not.toThrow(/gitleaks not on PATH/);
+    expect(() => runGitleaksScan()).not.toThrow(/Install:/);
   });
 
   it('removes the temp gitleaks JSON report after a successful (no-findings) scan', async () => {
@@ -322,7 +367,8 @@ describe('runGitleaksScan (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'git') return Buffer.from('');
           const argList = args ?? [];
           const flag = argList.find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {

@@ -3,18 +3,20 @@
  *
  * Read-only diagnostic that runs gitleaks against the LOCAL session
  * transcripts `nomad push` would stage (each path-map entry mapped to this
- * host), surfacing secret leaks BEFORE the push pipeline fires. Mirrors the
- * push-time scan (`runGitleaksScan` in `./push-gitleaks.ts`) but: scans a
- * temp COPY of the live transcripts (never the live dir), uses the
- * purpose-built `gitleaks dir` subcommand, and emits doctor-flavored glyph
- * rows + `process.exitCode` instead of throwing a push-flavored FATAL.
+ * host), surfacing secret leaks BEFORE the push pipeline fires. Shares the
+ * push-time scan mechanism (`scanStagedTree` in `./push-gitleaks.scan.ts`,
+ * also used by `runGitleaksScan`): it stages a temp COPY of the live
+ * transcripts (never the live dir) into a throwaway git repo and scans it with
+ * `gitleaks protect --staged`, so the preflight cannot miss a secret the push
+ * gate would catch. It emits doctor-flavored glyph rows + `process.exitCode`
+ * instead of throwing a push-flavored FATAL.
  *
- * Composition only: reuses `partitionFindings` / `readGitleaksReport` /
- * `SESSION_PATH` (the gitleaks JSON parser) and `copyDirJsonlOnly` (the
- * push-fidelity source filter) verbatim. The doctor-flavored guidance
- * composer is new (push's `buildSessionAwareFatal` is wrong at doctor time:
- * `nomad drop-session` operates on the staged tree, and nothing is staged
- * during a preflight).
+ * Composition only: reuses `scanStagedTree` (the shared git-stage + scan),
+ * `partitionFindings` / `SESSION_PATH` (the gitleaks JSON classifier), and
+ * `copyDirJsonlOnly` (the push-fidelity source filter) verbatim. The
+ * doctor-flavored guidance composer is new (push's `buildSessionAwareFatal` is
+ * wrong at doctor time: `nomad drop-session` operates on the staged tree, and
+ * nothing is staged during a preflight).
  *
  * All external calls use `execFileSync` argv-array form (no shell), the
  * codebase PUSH-04 invariant.
@@ -29,7 +31,7 @@ import { join } from 'node:path';
 import { green, red, yellow, okGlyph, failGlyph, warnGlyph } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { type Finding, partitionFindings, readGitleaksReport } from './push-gitleaks.ts';
+import { type Finding, partitionFindings, scanStagedTree } from './push-gitleaks.ts';
 import { copyDirJsonlOnly } from './remap.ts';
 import { encodePath, nowTimestamp, readJson } from './utils.ts';
 
@@ -198,16 +200,18 @@ function emitClean(section: DoctorSection, staged: number): void {
  * Flow (D-01..D-10): probe gitleaks (missing -> one WARN row, exit untouched;
  * a non-ENOENT probe failure -> FAIL row + exit 1, mirroring
  * `reportGitleaksProbe`); stage a temp copy of this-host mapped session dirs
- * (a malformed `path-map.json` -> FAIL row + exit 1, no crash); scan with the
- * positional `gitleaks dir shared/projects` invocation (NOT `--source`, which
- * `gitleaks dir` rejects with exit 126); on a clean scan emit one ok row
- * reporting the scanned-project count; on findings emit per-session fail rows
- * with rotate-and-scrub guidance and set `process.exitCode = 1`; on a non-zero
- * exit with no parseable report emit a scan-failed fail row carrying the
- * gitleaks error message (never its stderr/stdout, which may hold secrets) +
- * exit 1 (do not chase phantom sessions). Removes both the temp report and the
- * temp tree in `finally` on success and failure. Never writes to stderr
- * (read-only doctor contract).
+ * (a malformed `path-map.json` -> FAIL row + exit 1, no crash); scan the temp
+ * tree through the shared `scanStagedTree` (git init + git add -A + gitleaks
+ * protect --staged), the same mechanism push uses, so the preflight cannot miss
+ * what push catches; on a clean scan emit one ok row reporting the
+ * scanned-project count; on findings emit per-session fail rows with
+ * rotate-and-scrub guidance and set `process.exitCode = 1`; on a scan failure
+ * (ENOENT/git error, or a non-zero gitleaks exit with no parseable report) emit
+ * a scan-failed fail row carrying the error message only (never stderr/stdout,
+ * which may hold secrets) + exit 1 (do not chase phantom sessions). Removes the
+ * temp tree (including the injected throwaway `.git`) in `finally` on success
+ * and failure. Never writes to stderr (read-only doctor contract:
+ * `scanStagedTree` is called with `forwardStreams` left false).
  *
  * `gitleaksReady` lets the doctor orchestrator pass the result of the
  * Repository section's gitleaks probe so the `version` subcommand is not
@@ -252,55 +256,54 @@ export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolea
       emitClean(section, 0);
       return;
     }
-    const tomlPath = join(REPO_HOME, '.gitleaks.toml');
-    const args: string[] = [
-      'dir',
-      'shared/projects',
-      '--redact',
-      '-v',
-      '--report-format=json',
-      `--report-path=${reportPath}`,
-    ];
-    if (existsSync(tomlPath)) args.push('--config', tomlPath);
 
+    // Scan the temp tree through the SAME mechanism push uses (scanStagedTree:
+    // git init + add + gitleaks protect --staged), so the preflight cannot miss
+    // a secret the push gate would catch. forwardStreams stays false so the
+    // read-only doctor never writes gitleaks output to stderr; the injected
+    // throwaway .git under tmpRoot is removed by the finally below.
+    let findings: Finding[] | null;
     try {
-      execFileSync('gitleaks', args, { cwd: tmpRoot, stdio: ['ignore', 'pipe', 'pipe'] });
-      emitClean(section, staged);
+      findings = scanStagedTree(tmpRoot);
     } catch (err) {
-      const findings = readGitleaksReport(reportPath);
-      if (findings === null) {
-        // Carry the gitleaks error message only (never e.stderr/e.stdout, which
-        // can echo the redacted-but-still-sensitive scan output), matching
-        // runGitleaksScan on the push side.
-        const msg = (err as Error).message;
-        addItem(section, `${red(failGlyph)} scan failed: no parseable gitleaks report (${msg})`);
-        process.exitCode = 1;
-        return;
-      }
-      const { bySession, other } = partitionFindings(findings);
-      // Both buckets must gate the clean row. A finding routed to `other`
-      // (nested transcripts that match neither the flat SESSION_PATH nor any
-      // session) is still a stageable secret push would catch, so reporting
-      // clean on `bySession.size === 0` alone would make the preflight weaker
-      // than the push scan it stands in for.
-      if (bySession.size === 0 && other.length === 0) {
-        emitClean(section, staged);
-        return;
-      }
-      if (other.length > 0) reportOtherFindings(section, other);
-      if (bySession.size > 0) {
-        // Capture <logical> alongside <sid> from the same authoritative match
-        // so the scrub hint never re-derives the logical name independently.
-        const logicalBySession = new Map<string, string>();
-        for (const f of findings) {
-          const m = SESSION_PATH_LOGICAL.exec(f.File);
-          if (m?.[2] !== undefined && !logicalBySession.has(m[2])) {
-            /* c8 ignore next -- `?? ''` is defensive; group 1 is always captured when the match succeeds */
-            logicalBySession.set(m[2], m[1] ?? '');
-          }
+      // ENOENT (binary vanished mid-flow) or a git failure. The top-of-flow
+      // probe WARN-skips a truly missing gitleaks; this catch reports a
+      // scan-failed FAIL row with err.message only (never stderr/stdout, which
+      // can echo redacted-but-sensitive scan output).
+      addItem(section, `${red(failGlyph)} scan failed: ${(err as Error).message}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (findings === null) {
+      // Non-zero gitleaks exit with no parseable report. Carry no stream
+      // output, matching runGitleaksScan on the push side.
+      addItem(section, `${red(failGlyph)} scan failed: no parseable gitleaks report`);
+      process.exitCode = 1;
+      return;
+    }
+    const { bySession, other } = partitionFindings(findings);
+    // Both buckets must gate the clean row. A finding routed to `other` (nested
+    // transcripts that match neither the flat SESSION_PATH nor any session) is
+    // still a stageable secret push would catch, so reporting clean on
+    // `bySession.size === 0` alone would make the preflight weaker than the push
+    // scan it stands in for.
+    if (bySession.size === 0 && other.length === 0) {
+      emitClean(section, staged);
+      return;
+    }
+    if (other.length > 0) reportOtherFindings(section, other);
+    if (bySession.size > 0) {
+      // Capture <logical> alongside <sid> from the same authoritative match so
+      // the scrub hint never re-derives the logical name independently.
+      const logicalBySession = new Map<string, string>();
+      for (const f of findings) {
+        const m = SESSION_PATH_LOGICAL.exec(f.File);
+        if (m?.[2] !== undefined && !logicalBySession.has(m[2])) {
+          /* c8 ignore next -- `?? ''` is defensive; group 1 is always captured when the match succeeds */
+          logicalBySession.set(m[2], m[1] ?? '');
         }
-        reportSessionFindings(section, bySession, logicalBySession, logicalToEncoded);
       }
+      reportSessionFindings(section, bySession, logicalBySession, logicalToEncoded);
     }
   } finally {
     rmSync(reportPath, { force: true });
