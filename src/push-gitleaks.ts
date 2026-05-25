@@ -19,14 +19,15 @@
 
 import { REPO_HOME } from './config.ts';
 import { gitleaksInstallHint } from './push-checks.ts';
-import { type Finding, readGitleaksReport, scanStagedTree } from './push-gitleaks.scan.ts';
+import { type Finding, scanStagedTree } from './push-gitleaks.scan.ts';
 import { NomadFatal } from './utils.ts';
 
 // Re-export the staged-scan primitives (moved to ./push-gitleaks.scan.ts to
 // keep both this module and commands.doctor.check-shared.ts under the 200-line
 // cap) so existing `from './push-gitleaks.ts'` import sites stay unchanged and
 // push + the --check-shared preflight share one scan mechanism.
-export { type Finding, readGitleaksReport, scanStagedTree };
+export { readGitleaksReport } from './push-gitleaks.scan.ts';
+export { type Finding, scanStagedTree };
 
 /**
  * Captures the session id from a repo-relative POSIX path of the form
