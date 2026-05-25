@@ -15,6 +15,7 @@ import {
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { renderDoctor, section } from './commands.doctor.format.ts';
+import { reportGitleaksVersionCheck } from './commands.doctor.gitleaks-version.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
 
 /**
@@ -59,6 +60,7 @@ export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
   const version = section('Version');
   reportVersionCheck(version);
   reportNodeEngineCheck(version);
+  reportGitleaksVersionCheck(version);
 
   const sharedScan = section('Shared scan');
   // Pass the Repository-section probe result so gitleaks `version` is not
