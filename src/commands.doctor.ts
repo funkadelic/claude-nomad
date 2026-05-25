@@ -16,6 +16,7 @@ import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { renderDoctor, section } from './commands.doctor.format.ts';
 import { reportGitleaksVersionCheck } from './commands.doctor.gitleaks-version.ts';
+import { reportMirrorActions } from './commands.doctor.mirror-actions.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
 
 /**
@@ -56,6 +57,7 @@ export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
   reportGitlinks(repository);
   reportRemote(repository);
   reportRebaseClean(repository);
+  reportMirrorActions(repository);
 
   const version = section('Version');
   reportVersionCheck(version);
