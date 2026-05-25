@@ -409,7 +409,7 @@ Exit codes:
 - `0` on any drop, including an idempotent re-run.
 - `1` with `✗ no staged session matches <id>` on stderr when neither a `shared/projects/*/<id>.jsonl` nor a `shared/projects/*/<id>/` directory with staged entries matches.
 
-What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` file or the local `<id>/` subagent tree. The local copies are preserved for `claude --resume`, grep recovery, or whatever the user wants. If the underlying secret is real, scrub the local files separately.
+What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` file or the local `<id>/` subagent tree. The local copies are preserved for `claude --resume`, grep recovery, or whatever the user wants. If the underlying secret is real, scrubbing or removing the local files is REQUIRED for durability, not optional housekeeping: `remapPush` (in `src/remap.ts`) re-mirrors the local content into the staged tree on the next push, so a drop without a local scrub re-stages the same secret.
 
 ### Recovery flow: gitleaks FATAL on a session JSONL
 
@@ -427,7 +427,7 @@ After recovery, re-run nomad push.
 
 Two branches from here:
 
-1. **Real secret.** Rotate the credential at its provider (revoke in dashboard, issue replacement), then run `nomad drop-session <sid-aaaa>` to remove the contaminated staged copy, then re-run `nomad push`. To clear the secret from the local transcript as well, edit `~/.claude/projects/<encoded>/<sid-aaaa>.jsonl` to scrub the offending lines; the next `remapPush` copies the cleaned version forward. If the local file is not important to you, leave it alone, the staged-tree drop is enough to publish the push.
+1. **Real secret.** Rotate the credential at its provider first (revoke in dashboard, issue replacement) before touching anything else. Running `nomad drop-session <sid-aaaa>` clears the contaminated copy from the current staged tree, but that alone is NOT durable: `remapPush` (in `src/remap.ts`) does a full rm-and-copy mirror of your LOCAL transcripts into `shared/projects/` on every push, so the next `nomad push` re-copies the un-scrubbed local file forward and re-stages the same secret. The durable fix is to rotate AND scrub or remove the local transcript at `~/.claude/projects/<encoded>/<sid-aaaa>.jsonl` (plus any sibling `subagents/` file under that encoded dir) so the next `remapPush` carries clean content forward. Do not leave the local file un-scrubbed and expect the staged-tree drop to hold.
 
 2. **False positive.** Add an allowlist regex to `.gitleaks.toml` at the repo root that matches the noise pattern but not real-secret formats, commit it, then re-run `nomad push`. The new allowlist propagates to deploy hosts via `nomad update`.
 
