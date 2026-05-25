@@ -52,6 +52,19 @@ describe('gitleaks version drift check', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it('WARNs when the installed major differs from the pin', () => {
+    const s = section('Version');
+    // Pin is 8.30.x; 7.30.1 differs at the major, so the major comparison is
+    // false and short-circuits before the minor is checked.
+    reportGitleaksVersionCheck(s, runReturning('7.30.1'));
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain(warnGlyph);
+    expect(s.items[0]).toContain('->');
+    expect(s.items[0]).toContain('7.30.1');
+    expect(s.items[0]).toContain(GITLEAKS_PINNED_VERSION);
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it('emits an OK line (no WARN) on a patch-only difference', () => {
     const s = section('Version');
     // 8.30.5 vs pinned 8.30.1: same major.minor, patch differs -> OK.
