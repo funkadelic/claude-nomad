@@ -11,7 +11,7 @@
 Open Claude Code on a second machine and it is a blank slate: none of your custom agents, slash commands, tuned settings, or past conversations. claude-nomad keeps all of it in sync through a private Git repo you control. `nomad push` on one machine, `nomad pull` on the next, and everything is there, conversations included.
 
 - **Resume your sessions on any machine.** Start a conversation on your desktop and pick it up on your laptop. claude-nomad remaps the file paths Claude Code embeds in every transcript, so your history follows you instead of getting stranded on the box where it started.
-- **Private by default.** Your `~/.claude/` also holds OAuth tokens, MCP credentials, and the full text of every conversation. Every push is secret-scanned before it leaves your machine, credentials and ephemeral state never sync, and your mirror ships private with CI off, so nothing leaks through Actions logs.
+- **Private by default.** Your `~/.claude/` also holds OAuth tokens, MCP credentials, and the full text of every conversation. Every push is secret-scanned before it leaves your machine, credentials and ephemeral state never sync, and `nomad init` disables CI on your private mirror by default, so transcripts can't leak through Actions logs.
 - **One setup, every machine.** Your agents, skills, slash commands, and settings live in one place and follow you everywhere. Per-machine tweaks like model choice, MCP URLs, and env vars merge on top instead of clobbering your shared defaults.
 
 Not dotfiles, not rsync. claude-nomad understands Claude Code's state, so your session history survives different file paths and your secrets never ride along.
