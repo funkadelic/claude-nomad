@@ -28,6 +28,11 @@ import type { SpawnSyncFn } from './gh-actions.ts';
  * value to a triple-segment comparator would be undecidable). */
 const SEMVER_MAJOR_MINOR = /^(\d+)\.(\d+)\.\d+$/;
 
+/** Hard cap on the `gitleaks version` subprocess (matching the gh-actions
+ * primitives' `GH_TIMEOUT_MS` convention) so a wedged binary cannot hang the
+ * synchronous doctor run; the timeout throws and is swallowed as a silent skip. */
+const GITLEAKS_TIMEOUT_MS = 5_000;
+
 /**
  * Capture the `[major, minor]` pair from a strict `X.Y.Z` semver string.
  * Returns `null` when the input does not match a three-segment semver (e.g. a
@@ -48,8 +53,9 @@ function majorMinorOf(value: string): [string, string] | null {
  * the `probeGitleaks` invocation form in `push-checks.ts`: argv-array
  * `execFileSync` (no shell), piped stdio, and a conditional
  * `--config <REPO_HOME>/.gitleaks.toml` when that allowlist exists at call
- * time. Swallowing the error here is what makes the absent-gitleaks case a
- * silent skip rather than a doctor failure.
+ * time, plus a `GITLEAKS_TIMEOUT_MS` cap so a wedged binary cannot hang the
+ * synchronous doctor run. Swallowing the error here is what makes both the
+ * absent-gitleaks case and a timeout a silent skip rather than a doctor failure.
  *
  * @param run - Injectable subprocess runner; defaults to `execFileSync`.
  * @returns The trimmed `gitleaks version` output, or `null` on any failure.
@@ -59,7 +65,10 @@ function readGitleaksVersion(run: SpawnSyncFn): string | null {
   const args: string[] = ['version'];
   if (existsSync(tomlPath)) args.push('--config', tomlPath);
   try {
-    return run('gitleaks', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    return run('gitleaks', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: GITLEAKS_TIMEOUT_MS,
+    })
       .toString()
       .trim();
   } catch {
