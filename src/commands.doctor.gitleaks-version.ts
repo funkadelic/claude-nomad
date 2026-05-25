@@ -58,12 +58,18 @@ function majorMinorOf(value: string): [string, string] | null {
  * absent-gitleaks case and a timeout a silent skip rather than a doctor failure.
  *
  * @param run - Injectable subprocess runner; defaults to `execFileSync`.
+ * @param tomlExists - Injectable allowlist-file existence check; defaults to
+ *   `existsSync`. Injected in tests so the `--config` branch is exercised
+ *   independent of the host filesystem (REPO_HOME varies per host and in CI).
  * @returns The trimmed `gitleaks version` output, or `null` on any failure.
  */
-function readGitleaksVersion(run: SpawnSyncFn): string | null {
+function readGitleaksVersion(
+  run: SpawnSyncFn,
+  tomlExists: (path: string) => boolean,
+): string | null {
   const tomlPath = join(REPO_HOME, '.gitleaks.toml');
   const args: string[] = ['version'];
-  if (existsSync(tomlPath)) args.push('--config', tomlPath);
+  if (tomlExists(tomlPath)) args.push('--config', tomlPath);
   try {
     return run('gitleaks', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -92,12 +98,16 @@ function readGitleaksVersion(run: SpawnSyncFn): string | null {
  *
  * @param section - The Version section to append the diagnostic line to.
  * @param run - Injectable subprocess runner; defaults to `execFileSync`.
+ * @param tomlExists - Injectable allowlist-file existence check; defaults to
+ *   `existsSync`. Mirrors the `run` seam so tests cover the `--config` branch
+ *   deterministically.
  */
 export function reportGitleaksVersionCheck(
   section: DoctorSection,
   run: SpawnSyncFn = execFileSync,
+  tomlExists: (path: string) => boolean = existsSync,
 ): void {
-  const raw = readGitleaksVersion(run);
+  const raw = readGitleaksVersion(run, tomlExists);
   if (raw === null) return;
   const local = majorMinorOf(raw);
   if (local === null) return;

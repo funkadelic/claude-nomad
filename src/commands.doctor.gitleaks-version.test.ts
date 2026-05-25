@@ -106,4 +106,28 @@ describe('gitleaks version drift check', () => {
     expect(s.items).toHaveLength(0);
     expect(process.exitCode).toBeUndefined();
   });
+
+  it('passes --config to gitleaks when the allowlist toml exists', () => {
+    // tomlExists is injected so the `if (existsSync(tomlPath))` branch is
+    // exercised independent of the host filesystem (REPO_HOME, and whether it
+    // holds a .gitleaks.toml, varies per host and in CI). The injected run
+    // captures the args so --config presence is asserted as observable output.
+    let captured: readonly string[] = [];
+    const run: SpawnSyncFn = (_bin, args) => {
+      captured = args;
+      return Buffer.from(`${GITLEAKS_PINNED_VERSION}\n`);
+    };
+    reportGitleaksVersionCheck(section('Version'), run, () => true);
+    expect(captured).toContain('--config');
+  });
+
+  it('omits --config when the allowlist toml is absent', () => {
+    let captured: readonly string[] = ['sentinel'];
+    const run: SpawnSyncFn = (_bin, args) => {
+      captured = args;
+      return Buffer.from(`${GITLEAKS_PINNED_VERSION}\n`);
+    };
+    reportGitleaksVersionCheck(section('Version'), run, () => false);
+    expect(captured).toEqual(['version']);
+  });
 });
