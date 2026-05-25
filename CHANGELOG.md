@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.25.0](https://github.com/funkadelic/claude-nomad/compare/v0.24.0...v0.25.0) (2026-05-25)
+
+
+### Added
+
+* **doctor:** add gitleaks version and mirror-Actions drift checks ([#125](https://github.com/funkadelic/claude-nomad/issues/125)) ([8a16e0c](https://github.com/funkadelic/claude-nomad/commit/8a16e0c274bb7b961c6fd2df9912874c572023ee))
+* **extras:** support a single root file as an extras entry ([#132](https://github.com/funkadelic/claude-nomad/issues/132)) ([6303b62](https://github.com/funkadelic/claude-nomad/commit/6303b62de84406da6a7fa2b7eb7af28a0473d0aa))
+
+
+### Fixed
+
+* **drop-session:** cascade unstage into subagent transcript directory ([#120](https://github.com/funkadelic/claude-nomad/issues/120)) ([7f10d51](https://github.com/funkadelic/claude-nomad/commit/7f10d5135a7eaa9b6e74fb1aa863506a7b914a09))
+* **push,update:** handle untracked extras in allow-list and fork merge ([#122](https://github.com/funkadelic/claude-nomad/issues/122)) ([e710a48](https://github.com/funkadelic/claude-nomad/commit/e710a48973a7c4e7479a9671d5891458a182dac7))
+* **update:** skip push prompt when fork merge is a no-op ([#123](https://github.com/funkadelic/claude-nomad/issues/123)) ([77fdb20](https://github.com/funkadelic/claude-nomad/commit/77fdb20244a096e44a1fecd0a283e3401a78972d))
+
+
+### Changed
+
+* pin workflow actions to SHAs and drop persisted CI credentials ([#130](https://github.com/funkadelic/claude-nomad/issues/130)) ([b60109c](https://github.com/funkadelic/claude-nomad/commit/b60109c0cbb5dff1b13c4155cc12c3d98ce1b141))
+
+
+### Documentation
+
+* add CONTRIBUTING, PR template, and SECURITY policy ([#131](https://github.com/funkadelic/claude-nomad/issues/131)) ([774eb58](https://github.com/funkadelic/claude-nomad/commit/774eb58a36af032f7d1cd109d59f313c4ff6affa))
+* lead README with a benefit-first pitch ([#133](https://github.com/funkadelic/claude-nomad/issues/133)) ([289e299](https://github.com/funkadelic/claude-nomad/commit/289e2994fd7dffb10818fe02aad64b193ad800b6))
+* **readme:** foreground secret-safety in the intro ([#126](https://github.com/funkadelic/claude-nomad/issues/126)) ([e661e9f](https://github.com/funkadelic/claude-nomad/commit/e661e9f02247fc30630fd90d5facc65aa7b4f2a0))
+
+
+### Dependencies
+
+* bump SonarSource/sonarqube-scan-action from 8.0.0 to 8.1.0 ([#127](https://github.com/funkadelic/claude-nomad/issues/127)) ([603f20d](https://github.com/funkadelic/claude-nomad/commit/603f20d9a22528c8df19d328c91a02012690836c))
+* bump the dev-dependencies group across 1 directory with 2 updates ([#128](https://github.com/funkadelic/claude-nomad/issues/128)) ([50b1b87](https://github.com/funkadelic/claude-nomad/commit/50b1b87b7288eed60280843504e6ccc2598f10b0))
+* bump tsx from 4.22.2 to 4.22.3 in the prod-dependencies group ([#129](https://github.com/funkadelic/claude-nomad/issues/129)) ([a7ada00](https://github.com/funkadelic/claude-nomad/commit/a7ada000ec2d3dbee132c7b61dc207012e53c1c3))
+
 ## [0.24.0](https://github.com/funkadelic/claude-nomad/compare/v0.23.0...v0.24.0) (2026-05-24)
 
 
