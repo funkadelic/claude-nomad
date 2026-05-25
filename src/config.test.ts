@@ -87,10 +87,11 @@ describe('REPO_HOME resolution', () => {
   });
 });
 
-// Schema-extension foundation for phase 19 (planning-dir sync). These cases
-// pin two invariants every downstream plan reads:
+// Schema-extension foundation for the named-extras sync. These cases pin two
+// invariants every downstream consumer reads:
 //   1. SUPPORTED_EXTRAS is the runtime whitelist for the top-level `extras`
-//      key in path-map.json. Initial value is `.planning` only.
+//      key in path-map.json. It carries the `.planning` directory plus the
+//      `CLAUDE.md` root file, proving an entry may be a directory or a file.
 //   2. PathMap accepts an optional top-level `extras` field without breaking
 //      legacy path-map.json files that omit it (additive contract).
 
@@ -101,11 +102,16 @@ describe('SUPPORTED_EXTRAS and PathMap widening', () => {
     expect(config.SUPPORTED_EXTRAS).toBeDefined();
   });
 
-  it('SUPPORTED_EXTRAS equals [".planning"]', async () => {
+  it('SUPPORTED_EXTRAS equals [".planning", "CLAUDE.md"]', async () => {
     vi.resetModules();
     const config = await import('./config.ts');
-    expect(config.SUPPORTED_EXTRAS).toEqual(['.planning']);
-    expect(config.SUPPORTED_EXTRAS).toHaveLength(1);
+    expect(config.SUPPORTED_EXTRAS).toEqual(['.planning', 'CLAUDE.md']);
+  });
+
+  it('includes CLAUDE.md so a single root file is a valid extras entry', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    expect(config.SUPPORTED_EXTRAS).toContain('CLAUDE.md');
   });
 
   it('PathMap accepts optional extras field', () => {

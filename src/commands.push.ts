@@ -85,22 +85,28 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
  * Reject any staged path that is not on the push allow-list or that matches a
  * `NEVER_SYNC` entry. Builds the runtime allow-list by combining
  * `PUSH_ALLOWED_STATIC` with one `shared/projects/<logical>/` prefix per entry
- * in `path-map.json` AND one `shared/extras/<logical>/<dirname>/` prefix per
- * (logical, whitelisted dirname) pair in `map.extras ?? {}` (Pitfall 4 closed:
- * data-driven, no hand-rolled bypass). The dirname filter (`SUPPORTED_EXTRAS`)
- * is the same one `remapExtrasPush` honors, so manually staged content under a
- * non-whitelisted dirname surfaces as a FATAL instead of riding through on the
- * logical-only prefix. Logs every violation as a FATAL line so the user sees
- * the full set (not just the first), then throws `NomadFatal` to unwind the
- * caller's try/finally and release the push lock.
+ * in `path-map.json` AND, per (logical, whitelisted name) pair in
+ * `map.extras ?? {}`, an exact `shared/extras/<logical>/<name>` entry plus a
+ * `shared/extras/<logical>/<name>/` prefix entry (Pitfall 4 closed:
+ * data-driven, no hand-rolled bypass). The exact entry permits the declared
+ * name when it is a single root file (e.g. `CLAUDE.md`); the prefix entry
+ * permits the declared name's subtree when it is a directory. Neither widens
+ * to a logical-only prefix, so an arbitrary sibling file under the same
+ * logical stays rejected. The name filter (`SUPPORTED_EXTRAS`) is the same one
+ * `remapExtrasPush` honors, so manually staged content under a non-whitelisted
+ * name surfaces as a FATAL instead of riding through. Logs every violation as
+ * a FATAL line so the user sees the full set (not just the first), then throws
+ * `NomadFatal` to unwind the caller's try/finally and release the push lock.
  */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   const extrasWhitelist: readonly string[] = SUPPORTED_EXTRAS;
   const allowed = [
     ...PUSH_ALLOWED_STATIC,
     ...Object.keys(map.projects).map((l) => `shared/projects/${l}/`),
-    ...Object.entries(map.extras ?? {}).flatMap(([l, dirnames]) =>
-      dirnames.filter((d) => extrasWhitelist.includes(d)).map((d) => `shared/extras/${l}/${d}/`),
+    ...Object.entries(map.extras ?? {}).flatMap(([l, names]) =>
+      names
+        .filter((n) => extrasWhitelist.includes(n))
+        .flatMap((n) => [`shared/extras/${l}/${n}`, `shared/extras/${l}/${n}/`]),
     ),
   ];
   const neverSyncHits: string[] = [];

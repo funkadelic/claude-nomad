@@ -828,6 +828,40 @@ describe('enforceAllowList: extras prefix', () => {
       NomadFatal,
     );
   });
+
+  it('permits a single root-file extra staged at shared/extras/<logical>/CLAUDE.md', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    // A whitelisted file produces a staged path with no trailing slash and no
+    // children. The exact allow-list entry (added alongside the prefix entry)
+    // must match it so the file push is not rejected.
+    const map: PathMap = { projects: {}, extras: { foo: ['CLAUDE.md'] } };
+    expect(() => enforceAllowList('A  shared/extras/foo/CLAUDE.md\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('still rejects an arbitrary sibling file under the same logical when a file extra is declared', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // Declaring `foo: ['CLAUDE.md']` adds an exact entry for CLAUDE.md and a
+    // prefix entry for the CLAUDE.md/ subtree, NOT a logical-only
+    // `shared/extras/foo/` prefix. An unrelated sibling file must still FATAL,
+    // proving the exact+prefix pair did not widen the boundary.
+    const map: PathMap = { projects: {}, extras: { foo: ['CLAUDE.md'] } };
+    expect(() => enforceAllowList('A  shared/extras/foo/secrets.txt\0', map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('to sync shared/extras/foo/secrets.txt'),
+    );
+  });
+
+  it('leaves directory extras unchanged: a subtree path under a declared dir still passes', async () => {
+    const { enforceAllowList } = await import('./commands.push.ts');
+    // Regression guard for the prefix entry: a directory extra still permits
+    // its subtree after the exact+prefix change. The exact entry alone would
+    // not match a child path, so this proves the prefix entry survives.
+    const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
+    expect(() => enforceAllowList('A  shared/extras/foo/.planning/PLAN.md\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
 });
 
 // isNeverSync scope fix: paths under `shared/extras/` are exempt from the

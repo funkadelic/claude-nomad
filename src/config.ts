@@ -69,16 +69,18 @@ export const SHARED_LINKS = [
 ] as const;
 
 /**
- * Whitelist of directory names allowed in `path-map.json`'s top-level
- * `extras` field. Gates the named-extras opt-in mechanism: only entries
- * appearing in this list are eligible for sync. Initial set contains
- * `.planning` only; widening to include `.notes`, `.scratch`, etc. is a
- * one-line edit here with no schema migration required (the field is
- * additive on the consumer side). Mirrors `SHARED_LINKS` in shape and
+ * Whitelist of names allowed in `path-map.json`'s top-level `extras` field.
+ * Each entry is either a directory name (e.g. `.planning`) OR a single
+ * root-level file name (e.g. `CLAUDE.md`); both are validated the same way
+ * and copied verbatim under `shared/extras/<logical>/<name>`. Gates the
+ * named-extras opt-in mechanism: only entries appearing in this list are
+ * eligible for sync. Widening to include `.notes`, `.scratch`, `AGENTS.md`,
+ * etc. is a one-line edit here with no schema migration required (the field
+ * is additive on the consumer side). Mirrors `SHARED_LINKS` in shape and
  * intent: a short, append-only `as const` tuple that downstream callers
  * narrow against.
  */
-export const SUPPORTED_EXTRAS = ['.planning'] as const;
+export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md'] as const;
 
 /**
  * Path segments that must never cross the sync boundary in either direction.
@@ -170,9 +172,9 @@ export const PUSH_ALLOWED_STATIC = [
  * the literal string `'TBD'` as a placeholder while a host has not yet cloned
  * the project; `remapPull` / `remapPush` skip `'TBD'` entries.
  *
- * Optional `extras` field (additive, top-level): opt-in per-project
- * named-directory sync. Keyed by the same logical project name used in
- * `projects`; values are arrays of directory names validated by downstream
+ * Optional `extras` field (additive, top-level): opt-in per-project sync of
+ * named content. Keyed by the same logical project name used in `projects`;
+ * values are arrays of directory or root-file names validated by downstream
  * consumers against `SUPPORTED_EXTRAS`. Absence of the field is equivalent
  * to no extras for any project; legacy `path-map.json` files without an
  * `extras` block continue to work unchanged (no migration required).
