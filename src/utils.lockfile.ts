@@ -25,10 +25,11 @@ export function acquireLock(verb: string): LockHandle | null {
     try {
       writeFileSync(fd, String(process.pid));
     } catch (writeErr) {
-      // PID-write failed after the lock file was created. Best-effort cleanup
-      // mirrors releaseLock: close the fd (ignore errors), then unlink the
-      // orphaned lock file (tolerate ENOENT). Rethrow the original write error
-      // so non-EEXIST throw semantics are preserved.
+      // PID-write failed after the lock file was created. Best-effort cleanup:
+      // close the fd (ignore errors), then unlink the orphaned lock file
+      // (ignore ANY unlink failure). The original write error is rethrown
+      // unconditionally, so a cleanup failure can never mask it and non-EEXIST
+      // throw semantics are preserved.
       try {
         closeSync(fd);
       } catch {
@@ -36,8 +37,8 @@ export function acquireLock(verb: string): LockHandle | null {
       }
       try {
         unlinkSync(LOCK_PATH);
-      } catch (unlinkErr) {
-        if ((unlinkErr as NodeJS.ErrnoException).code !== 'ENOENT') throw unlinkErr;
+      } catch {
+        /* best-effort cleanup; the original write failure takes precedence */
       }
       throw writeErr;
     }
@@ -144,8 +145,8 @@ function retryOnce(verb: string): LockHandle | null {
       writeFileSync(fd, String(process.pid));
     } catch {
       // Twin of the acquireLock write-failure guard. Best-effort cleanup: close
-      // the fd (ignore errors) and unlink the orphaned lock file (tolerate
-      // ENOENT). retryOnce's existing null-on-failure contract is preserved.
+      // the fd (ignore errors) and unlink the orphaned lock file (ignore ANY
+      // unlink failure). retryOnce's null-on-failure contract is preserved.
       try {
         closeSync(fd);
       } catch {
@@ -153,8 +154,8 @@ function retryOnce(verb: string): LockHandle | null {
       }
       try {
         unlinkSync(LOCK_PATH);
-      } catch (unlinkErr) {
-        if ((unlinkErr as NodeJS.ErrnoException).code !== 'ENOENT') throw unlinkErr;
+      } catch {
+        /* best-effort cleanup; the null return below is the contract */
       }
       warn(`another nomad ${verb} running, skipping`);
       return null;

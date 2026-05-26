@@ -97,6 +97,51 @@ describe('acquireLock / retryOnce: PID-write failure cleanup (issue #139)', () =
     expect(existsSync(lockPath)).toBe(false);
   });
 
+  it('acquireLock: surfaces the ORIGINAL write error even when the cleanup unlink also fails', async () => {
+    // Regression for cleanup masking the primary error: writeFileSync(fd) fails
+    // with EACCES AND the best-effort unlinkSync(LOCK_PATH) cleanup then throws a
+    // non-ENOENT error (EPERM). acquireLock must rethrow the ORIGINAL write error
+    // (EACCES), never the secondary cleanup error. The orphaned lockfile is left
+    // behind here (the unlink was forced to fail) and cleaned up in afterEach.
+    mkdirSync(lockDir, { recursive: true });
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        writeFileSync: vi.fn(
+          (
+            path: fsModule.PathOrFileDescriptor,
+            data: Parameters<typeof actual.writeFileSync>[1],
+            opts?: Parameters<typeof actual.writeFileSync>[2],
+          ) => {
+            if (typeof path === 'number') {
+              const err = new Error('permission denied') as NodeJS.ErrnoException;
+              err.code = 'EACCES';
+              throw err;
+            }
+            return actual.writeFileSync(path, data, opts);
+          },
+        ),
+        unlinkSync: vi.fn(() => {
+          const err = new Error('operation not permitted') as NodeJS.ErrnoException;
+          err.code = 'EPERM';
+          throw err;
+        }),
+      };
+    });
+    const { acquireLock } = await import('./utils.lockfile.ts');
+    const thrown = (() => {
+      try {
+        acquireLock('pull');
+        return null;
+      } catch (err) {
+        return err as NodeJS.ErrnoException;
+      }
+    })();
+    expect(thrown).not.toBeNull();
+    expect(thrown?.code).toBe('EACCES');
+  });
+
   it('retryOnce: returns null and leaves no lockfile when writeFileSync(fd) fails in the stale-lock retry path', async () => {
     // Plant a dead PID so checkStaleAndRetry detects ESRCH, unlinks the stale
     // lock, and calls retryOnce. retryOnce's openSync('wx') then succeeds, but
