@@ -3,9 +3,6 @@
 <desc>A dark terminal-themed hero banner with the nomad wordmark, tagline, a mocked nomad doctor terminal window, and three feature blocks below.</desc>
 
 <defs>
-<clipPath id="termClip">
-  <rect x="370" y="70" width="280" height="220" rx="10"/>
-</clipPath>
 <style>
 .bg          { fill: #0a0d0c; }
 .term-bg     { fill: #0f1311; }
@@ -40,32 +37,35 @@
 <text x="40" y="135" class="tag-white">Sync your Claude Code setup.</text>
 <text x="40" y="158" class="tag-green">Same environment. Any machine.</text>
 
-<text x="40" y="195" class="sub">Keep your agents, skills, settings, and</text>
-<text x="40" y="212" class="sub">session history <tspan class="sub-green">in sync across machines.</tspan></text>
+<text x="40" y="195" class="sub">Agents, skills, commands, rules, settings,</text>
+<text x="40" y="212" class="sub">and session history <tspan class="sub-green">- synced to every host.</tspan></text>
 
 <g>
-  <rect x="370" y="70" width="280" height="220" rx="10" class="term-bg term-stroke" stroke-width="0.8"/>
-  <rect x="370" y="70" width="280" height="26" rx="10" class="term-bg term-stroke" stroke-width="0.8" clip-path="url(#termClip)"/>
-  <line x1="370" y1="96" x2="650" y2="96" class="divider"/>
+  <!-- terminal outer shell: now 320 wide (was 280), starting at x=330 (was 370) -->
+  <rect x="330" y="70" width="320" height="220" rx="10" class="term-bg term-stroke" stroke-width="0.8"/>
 
-  <circle cx="386" cy="83" r="4.5" fill="#ed6a5e"/>
-  <circle cx="401" cy="83" r="4.5" fill="#f5bf4f"/>
-  <circle cx="416" cy="83" r="4.5" fill="#61c554"/>
+  <line x1="330" y1="96" x2="650" y2="96" class="divider"/>
 
-  <text x="386" y="121" class="mono-green">$<tspan class="mono"> nomad doctor</tspan></text>
+  <circle cx="346" cy="83" r="4.5" fill="#ed6a5e"/>
+  <circle cx="361" cy="83" r="4.5" fill="#f5bf4f"/>
+  <circle cx="376" cy="83" r="4.5" fill="#61c554"/>
 
-  <text x="386" y="144" class="mono-muted">host: <tspan class="mono">macbook</tspan></text>
+  <text x="346" y="121" class="mono-green">$<tspan class="mono"> nomad doctor</tspan></text>
 
-  <text x="386" y="170" class="mono-green">✓<tspan class="mono">  CLAUDE.md</tspan><tspan class="mono-muted" x="510" y="170">symlink OK</tspan></text>
-  <text x="386" y="188" class="mono-green">✓<tspan class="mono">  agents/</tspan><tspan class="mono-muted" x="510" y="188">symlink OK</tspan></text>
-  <text x="386" y="206" class="mono-green">✓<tspan class="mono">  skills/</tspan><tspan class="mono-muted" x="510" y="206">symlink OK</tspan></text>
-  <text x="386" y="224" class="mono-green">✓<tspan class="mono">  commands/</tspan><tspan class="mono-muted" x="510" y="224">symlink OK</tspan></text>
-  <text x="386" y="242" class="mono-green">✓<tspan class="mono">  settings.json</tspan><tspan class="mono-muted" x="510" y="242">regenerated</tspan></text>
+  <text x="346" y="144" class="mono-muted">host: <tspan class="mono">macbook</tspan></text>
 
-  <text x="386" y="265" class="mono-muted">projects: <tspan class="mono">4 mapped</tspan></text>
+  <text x="346" y="170" class="mono-green">✓<tspan class="mono">  CLAUDE.md</tspan><tspan class="mono-muted" x="490" y="170">symlink OK</tspan></text>
+  <text x="346" y="188" class="mono-green">✓<tspan class="mono">  agents/</tspan><tspan class="mono-muted" x="490" y="188">symlink OK</tspan></text>
+  <text x="346" y="206" class="mono-green">✓<tspan class="mono">  skills/</tspan><tspan class="mono-muted" x="490" y="206">symlink OK</tspan></text>
+  <text x="346" y="224" class="mono-green">✓<tspan class="mono">  commands/</tspan><tspan class="mono-muted" x="490" y="224">symlink OK</tspan></text>
+  <text x="346" y="242" class="mono-green">✓<tspan class="mono">  rules/</tspan><tspan class="mono-muted" x="490" y="242">symlink OK</tspan></text>
 
-  <text x="386" y="284" class="mono-green">$</text>
-  <rect x="399" y="274" width="8" height="13" fill="#8a8f8a"/>
+  <text x="346" y="265" class="mono-muted">projects: <tspan class="mono">4 mapped</tspan>, sessions: <tspan class="mono">47 remapped</tspan></text>
+
+  <text x="346" y="284" class="mono-green">$</text>
+  <rect x="359" y="274" width="8" height="13" fill="#8a8f8a">
+    <animate attributeName="opacity" values="1;0;1" dur="1.2s" repeatCount="indefinite"/>
+  </rect>
 </g>
 
 <line x1="40" y1="320" x2="640" y2="320" class="divider"/>
