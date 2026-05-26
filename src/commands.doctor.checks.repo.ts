@@ -88,7 +88,9 @@ export function reportRepoState(section: DoctorSection): void {
  * (okGlyph/warnGlyph/failGlyph). A non-symlink blocks sync and FAILs via
  * process.exitCode. TOCTOU-safe: lstatSync is wrapped in try/catch so a path
  * that vanishes or becomes unreadable between the probe and the stat yields a
- * row instead of an unhandled throw that aborts the whole doctor run.
+ * row instead of an unhandled throw that aborts the whole doctor run. A symlink
+ * whose target no longer resolves is reported as a broken-symlink WARN rather
+ * than a healthy OK, so a dangling link is not masked.
  */
 export function reportSharedLinks(section: DoctorSection): void {
   for (const name of SHARED_LINKS) {
@@ -107,7 +109,11 @@ export function reportSharedLinks(section: DoctorSection): void {
       continue;
     }
     if (stat.isSymbolicLink()) {
-      addItem(section, `${green(okGlyph)} ${name}: symlink`);
+      if (existsSync(p)) {
+        addItem(section, `${green(okGlyph)} ${name}: symlink`);
+      } else {
+        addItem(section, `${yellow(warnGlyph)} ${name}: broken symlink (target missing)`);
+      }
     } else {
       addItem(section, `${red(failGlyph)} ${name}: NOT a symlink (blocks sync)`);
       process.exitCode = 1;
