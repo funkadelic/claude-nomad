@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2](https://github.com/funkadelic/claude-nomad/compare/v0.25.1...v0.25.2) (2026-05-26)
+
+
+### Fixed
+
+* pre-existing robustness fixes from PR [#136](https://github.com/funkadelic/claude-nomad/issues/136) review ([#140](https://github.com/funkadelic/claude-nomad/issues/140)) ([bf4f443](https://github.com/funkadelic/claude-nomad/commit/bf4f443c50a47efafbb350d45d0e5d6883374f8d))
+
 ## [0.25.1](https://github.com/funkadelic/claude-nomad/compare/v0.25.0...v0.25.1) (2026-05-26)
 
 
