@@ -104,7 +104,7 @@ export function reportSharedLinks(section: DoctorSection): void {
       if (code === 'ENOENT') {
         addItem(section, `${yellow(warnGlyph)} ${name}: missing`);
       } else {
-        addItem(section, `${red(failGlyph)} ${name}: could not stat (${code ?? 'unknown'})`);
+        addItem(section, `${red(failGlyph)} ${name}: could not stat (${String(code)})`);
         process.exitCode = 1;
       }
       continue;
@@ -121,7 +121,7 @@ export function reportSharedLinks(section: DoctorSection): void {
         } else {
           addItem(
             section,
-            `${yellow(warnGlyph)} ${name}: symlink target unreadable (${code ?? 'unknown'})`,
+            `${yellow(warnGlyph)} ${name}: symlink target unreadable (${String(code)})`,
           );
         }
       }
