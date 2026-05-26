@@ -83,15 +83,30 @@ export function reportRepoState(section: DoctorSection): void {
   }
 }
 
-/** Emits a per-entry status line for each name in SHARED_LINKS (okGlyph/warnGlyph/failGlyph). A non-symlink blocks sync and FAILs via process.exitCode. */
+/**
+ * Emits a per-entry status line for each name in SHARED_LINKS
+ * (okGlyph/warnGlyph/failGlyph). A non-symlink blocks sync and FAILs via
+ * process.exitCode. TOCTOU-safe: lstatSync is wrapped in try/catch so a path
+ * that vanishes or becomes unreadable between the probe and the stat yields a
+ * row instead of an unhandled throw that aborts the whole doctor run.
+ */
 export function reportSharedLinks(section: DoctorSection): void {
   for (const name of SHARED_LINKS) {
     const p = join(CLAUDE_HOME, name);
-    if (!existsSync(p)) {
-      addItem(section, `${yellow(warnGlyph)} ${name}: missing`);
+    let stat;
+    try {
+      stat = lstatSync(p);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        addItem(section, `${yellow(warnGlyph)} ${name}: missing`);
+      } else {
+        addItem(section, `${red(failGlyph)} ${name}: could not stat (${code ?? 'unknown'})`);
+        process.exitCode = 1;
+      }
       continue;
     }
-    if (lstatSync(p).isSymbolicLink()) {
+    if (stat.isSymbolicLink()) {
       addItem(section, `${green(okGlyph)} ${name}: symlink`);
     } else {
       addItem(section, `${red(failGlyph)} ${name}: NOT a symlink (blocks sync)`);
