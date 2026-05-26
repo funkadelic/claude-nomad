@@ -58,7 +58,7 @@ $ npm i -g claude-nomad
 $ git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 
 # Add to ~/.zshrc or ~/.bashrc:
-$ export NOMAD_HOST=<your-host-label>
+export NOMAD_HOST=<your-host-label>
 
 # Optional: developers running against an alternate checkout can point
 # nomad at it via NOMAD_REPO. Default is ~/claude-nomad/.
@@ -271,7 +271,7 @@ On every additional host you only repeat step 3 (the global install is per-host;
 Add to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
-$ export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
+export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
 ```
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
