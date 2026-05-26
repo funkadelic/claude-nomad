@@ -22,7 +22,26 @@ export function acquireLock(verb: string): LockHandle | null {
   mkdirSync(dirname(LOCK_PATH), { recursive: true });
   try {
     const fd = openSync(LOCK_PATH, 'wx');
-    writeFileSync(fd, String(process.pid));
+    try {
+      writeFileSync(fd, String(process.pid));
+    } catch (writeErr) {
+      // PID-write failed after the lock file was created. Best-effort cleanup:
+      // close the fd (ignore errors), then unlink the orphaned lock file
+      // (ignore ANY unlink failure). The original write error is rethrown
+      // unconditionally, so a cleanup failure can never mask it and non-EEXIST
+      // throw semantics are preserved.
+      try {
+        closeSync(fd);
+      } catch {
+        /* already closed; ignore */
+      }
+      try {
+        unlinkSync(LOCK_PATH);
+      } catch {
+        /* best-effort cleanup; the original write failure takes precedence */
+      }
+      throw writeErr;
+    }
     return { fd };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
@@ -122,7 +141,25 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
 function retryOnce(verb: string): LockHandle | null {
   try {
     const fd = openSync(LOCK_PATH, 'wx');
-    writeFileSync(fd, String(process.pid));
+    try {
+      writeFileSync(fd, String(process.pid));
+    } catch {
+      // Twin of the acquireLock write-failure guard. Best-effort cleanup: close
+      // the fd (ignore errors) and unlink the orphaned lock file (ignore ANY
+      // unlink failure). retryOnce's null-on-failure contract is preserved.
+      try {
+        closeSync(fd);
+      } catch {
+        /* already closed; ignore */
+      }
+      try {
+        unlinkSync(LOCK_PATH);
+      } catch {
+        /* best-effort cleanup; the null return below is the contract */
+      }
+      warn(`another nomad ${verb} running, skipping`);
+      return null;
+    }
     return { fd };
   } catch {
     warn(`another nomad ${verb} running, skipping`);
