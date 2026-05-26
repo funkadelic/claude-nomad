@@ -1,4 +1,4 @@
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -89,8 +89,9 @@ export function reportRepoState(section: DoctorSection): void {
  * process.exitCode. TOCTOU-safe: lstatSync is wrapped in try/catch so a path
  * that vanishes or becomes unreadable between the probe and the stat yields a
  * row instead of an unhandled throw that aborts the whole doctor run. A symlink
- * whose target no longer resolves is reported as a broken-symlink WARN rather
- * than a healthy OK, so a dangling link is not masked.
+ * whose target cannot be resolved is a WARN (broken-symlink for a missing
+ * target, target-unreadable otherwise), never a healthy OK, so a dangling or
+ * unreadable link is not masked.
  */
 export function reportSharedLinks(section: DoctorSection): void {
   for (const name of SHARED_LINKS) {
@@ -109,10 +110,20 @@ export function reportSharedLinks(section: DoctorSection): void {
       continue;
     }
     if (stat.isSymbolicLink()) {
-      if (existsSync(p)) {
+      try {
+        // statSync follows the link; a throw means the target does not resolve.
+        statSync(p);
         addItem(section, `${green(okGlyph)} ${name}: symlink`);
-      } else {
-        addItem(section, `${yellow(warnGlyph)} ${name}: broken symlink (target missing)`);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') {
+          addItem(section, `${yellow(warnGlyph)} ${name}: broken symlink (target missing)`);
+        } else {
+          addItem(
+            section,
+            `${yellow(warnGlyph)} ${name}: symlink target unreadable (${code ?? 'unknown'})`,
+          );
+        }
       }
     } else {
       addItem(section, `${red(failGlyph)} ${name}: NOT a symlink (blocks sync)`);

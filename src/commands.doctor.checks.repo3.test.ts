@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,13 +10,14 @@ import { section } from './commands.doctor.format.ts';
 import { restoreEnv } from './commands.doctor.checks.test-helpers.ts';
 
 describe('reportSharedLinks dangling symlink detection', () => {
-  // The TOCTOU fix swapped an existsSync pre-check (which FOLLOWS symlinks) for
-  // a lstatSync (which does NOT). That left a gap: a symlink whose target was
-  // deleted still reports isSymbolicLink() === true, so it rendered a green OK
-  // row and masked the broken link. reportSharedLinks now follows the link with
-  // existsSync and warns "broken symlink (target missing)" for the dangling
-  // case while keeping the healthy case green. These tests use real symlinks on
-  // disk (no fs mocking) so they pin observable behavior, not internal calls.
+  // lstatSync does NOT follow symlinks, so a symlink whose target was deleted
+  // still reports isSymbolicLink() === true and (before the fix) rendered a
+  // green OK row, masking the broken link. reportSharedLinks now resolves the
+  // target with statSync: a missing target warns "broken symlink (target
+  // missing)", a non-ENOENT failure warns "target unreadable", and a resolving
+  // target stays green. The dangling and healthy cases use real symlinks on
+  // disk; the unreadable case mocks statSync (a real EACCES target is not
+  // portably reproducible in CI).
 
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -43,6 +45,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
   afterEach(() => {
     process.exitCode = 0;
     vi.restoreAllMocks();
+    vi.doUnmock('node:fs');
     vi.resetModules();
     restoreEnv('HOME', originalHome);
     restoreEnv('NOMAD_HOST', originalNomadHost);
@@ -76,7 +79,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
 
   it('keeps the green OK row when the symlink target resolves', async () => {
     // Guards against over-correction: a symlink pointing at an existing target
-    // (existsSync follows and returns true) must still render the green OK row.
+    // (statSync resolves it) must still render the green OK row.
     vi.resetModules();
     const { SHARED_LINKS } = await import('./config.ts');
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
@@ -94,6 +97,46 @@ describe('reportSharedLinks dangling symlink detection', () => {
     expect(row).toContain(okGlyph);
     expect(row).toContain('symlink');
     expect(row).not.toContain('broken');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('warns "target unreadable" (not "missing") when the target fails with a non-ENOENT error', async () => {
+    // A real symlink (so the real lstatSync reports isSymbolicLink() === true)
+    // whose target statSync rejects with EACCES. The entry must be flagged as
+    // unreadable with the error code, not misclassified as a missing target.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        statSync: vi.fn((p: fsModule.PathLike, opts?: unknown) => {
+          if (typeof p === 'string' && p.includes('.claude')) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          // @ts-expect-error -- pass-through with optional opts param
+          return actual.statSync(p, opts);
+        }),
+      };
+    });
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const name = SHARED_LINKS[0];
+    if (!name) throw new Error('SHARED_LINKS is empty');
+    const target = join(testHome, 'unreadable-target');
+    writeFileSync(target, 'x');
+    symlinkSync(target, join(testHome, '.claude', name));
+
+    const sec = section('Links');
+    reportSharedLinks(sec);
+
+    const row = sec.items.find((item) => item.includes(`${name}:`));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('unreadable');
+    expect(row).toContain('EACCES');
+    expect(row).not.toContain('target missing');
     expect(process.exitCode).toBe(0);
   });
 });
