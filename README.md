@@ -215,7 +215,7 @@ Read these before adopting so you opt in with eyes open.
 - Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes - npm only blocks the install when `engine-strict=true` is configured)
 - `tsx` (ships as a runtime dependency of the published package; no separate global install required)
 - Git
-- `gitleaks` (required for `nomad push`, which fail-fasts if it is not on PATH; `nomad doctor` also checks it against the pinned 8.30.x and warns when it is absent or mismatched)
+- [`gitleaks`](https://github.com/gitleaks/gitleaks) (required for `nomad push`, which fail-fasts if it is not on PATH; `nomad doctor` also checks it against the pinned 8.30.x and warns when it is absent or mismatched)
 - A **private** GitHub repo (or any Git remote you control)
 
 **Optional:**
