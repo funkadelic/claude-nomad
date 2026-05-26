@@ -123,13 +123,13 @@ function saveCache(latest: string): void {
 /**
  * Fetch the latest release tag from the upstream GitHub releases API. Uses
  * `execFileSync('curl', ...)` rather than `node:https` because curl honors
- * system proxies, respects the `-m` timeout reliably, and is already a
- * required dependency on every supported host (push uses gitleaks; pull uses
- * git). 3-second timeout, fail-fast on non-2xx (`-f`), silent (`-s`), follow
- * redirects (`-L`). Returns `null` on ANY failure path including a missing
- * `tag_name` field or a tag that fails strict-semver validation after the
- * leading `v` strip. Release tags ship as `v<semver>` per
- * `release-please-config.json`'s `include-v-in-tag: true`.
+ * system proxies and respects the `-m` timeout reliably. curl is optional, not
+ * a hard dependency: this is its only consumer, so a host without curl simply
+ * skips the version line. 3-second timeout, fail-fast on non-2xx (`-f`), silent
+ * (`-s`), follow redirects (`-L`). Returns `null` on ANY failure path (curl
+ * missing from PATH, a missing `tag_name` field, or a tag that fails
+ * strict-semver validation after the leading `v` strip). Release tags ship as
+ * `v<semver>` per `release-please-config.json`'s `include-v-in-tag: true`.
  */
 function fetchLatestTag(): string | null {
   try {
