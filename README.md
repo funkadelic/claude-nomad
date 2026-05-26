@@ -169,7 +169,11 @@ Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` 
 
 On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the cross-OS cwd-binding gotcha).
 
-The `extras` block is additive and back-compatible: legacy `path-map.json` files without it continue to work unchanged. Each value is an array of directory or root-file names (e.g. `.planning`, `CLAUDE.md`) validated against `SUPPORTED_EXTRAS` in `src/config.ts`; values outside the whitelist are skipped with a log line so an unrecognized name cannot widen the sync surface. On `push`, opted-in content at `<localRoot>/<name>` (a directory subtree or a single file) is copied to `shared/extras/<logical>/<name>` and inherits the staged-tree gitleaks scan. On `pull`, the reverse copy runs after `git pull --rebase`; just before it overwrites your working tree, a divergence check compares the incoming content against your local copy and emits a per-file WARN naming the diverging files. The existing local content is backed up to `~/.cache/claude-nomad/backup/<ts>/extras/<encoded-localRoot>/<rel>/` before the pull copy lands (`<encoded-localRoot>` is the `localRoot` with `/` rewritten as `-`, so two opted-in projects with the same relative extras path do not collide in one backup run).
+The `extras` block is additive and back-compatible: legacy `path-map.json` files without it keep working unchanged. Each value is an array of directory or root-file names (e.g. `.planning`, `CLAUDE.md`) checked against `SUPPORTED_EXTRAS` in `src/config.ts`; anything outside that whitelist is skipped with a log line, so an unrecognized name cannot widen the sync surface.
+
+On `push`, opted-in content at `<localRoot>/<name>` (a directory subtree or a single file) is copied to `shared/extras/<logical>/<name>` and goes through the same staged-tree gitleaks scan as everything else. On `pull`, the reverse copy runs after `git pull --rebase`, and just before it overwrites your working tree a divergence check compares the incoming content against your local copy and prints a per-file WARN naming anything that differs.
+
+Your existing local content is backed up under `~/.cache/claude-nomad/backup/<ts>/extras/` before the pull copy lands, so an unexpected overwrite is always recoverable.
 
 ## Per-host overrides
 
@@ -206,7 +210,7 @@ Read these before adopting so you opt in with eyes open.
 - **Manual push/pull.** No file watcher. Shell hooks recommended.
 - **OAuth doesn't sync.** You'll log in once per host. Intentional.
 - **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are left alone.
-- **Extras are opt-in and whitelisted.** Projects without an `extras` entry in `path-map.json` are unaffected. Names (a directory or a single root file) outside `SUPPORTED_EXTRAS` are skipped with a `skip ... not in SUPPORTED_EXTRAS` log line so an unrecognized name cannot widen the sync surface. Unsafe path-map values (path-traversal in `logical` keys, non-absolute or unnormalized `localRoot` values) FATAL before any filesystem mutation via `assertSafeLogical` / `assertSafeLocalRoot` in `src/extras-sync.ts`.
+- **Extras are opt-in and whitelisted.** Projects without an `extras` entry in `path-map.json` are unaffected. Names (a directory or a single root file) outside `SUPPORTED_EXTRAS` are skipped with a `skip ... not in SUPPORTED_EXTRAS` log line so an unrecognized name cannot widen the sync surface. Unsafe path-map values (path-traversal in `logical` keys, non-absolute or unnormalized `localRoot` values) abort the run before any file is touched, so a malformed entry fails loudly instead of corrupting state.
 - **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so the picker's `cd ... && claude --resume <id>` line fails on a different host. Use `nomad doctor --resume-cmd <id>` for a host-local equivalent (see [Cross-OS resume](#cross-os-resume)). The sidecar approach preserves transcript byte-equality.
 - **Empty directories don't survive sync.** Git doesn't track empty dirs; `nomad doctor` reports them as `missing` (benign). Drop a `.gitkeep` to force materialization.
 
@@ -260,7 +264,7 @@ npm i -g claude-nomad
 git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 ```
 
-`npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. The npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes; npm only blocks the install when `engine-strict=true` is configured.
+`npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. (The Node version floor and the `engine-strict` caveat are in [Requirements](#requirements).)
 
 On every additional host you only repeat step 3 (the global install is per-host; your private repo already exists on the remote from step 2).
 
@@ -340,12 +344,14 @@ cd ~/claude-nomad
 nomad update
 ```
 
-`nomad update` (see `cmdUpdate` in `src/commands.update.ts`) detects which layout your `~/claude-nomad/` uses and does the right thing:
+`nomad update` detects which layout your `~/claude-nomad/` uses and does the right thing:
 
 - **vanilla** (`origin` points at the public repo): `git pull --ff-only origin main`.
 - **fork** (`upstream` points at the public repo, `origin` points at your private mirror): `git fetch upstream`, then (before merging) commit any whitelisted `shared/extras/` content that is still untracked locally so an overlap with upstream becomes a normal file merge instead of an untracked-overwrite abort, `git merge upstream/main`, then prompt before pushing the merge to `origin/main`. Pass `--push-origin` to skip the prompt. When the merge is a no-op (HEAD unchanged, nothing new to push) the prompt is skipped entirely and `nomad update` logs `already in sync with origin/main`.
 
-Pre-flight checks run before any mutation: `REPO_HOME` exists, topology resolves to `vanilla` or `fork`, current branch is `main`, working tree is clean per `git status --porcelain -z` (override with `--force`), and `--push-origin` is rejected on vanilla topology. After the merge or pull, `nomad update` re-runs `npm install` only when `package-lock.json` actually shifted, commits the regenerated `package-lock.json` (fork topology) if the reinstall changed it, then invokes `nomad doctor`. The trailing version-check is non-fatal: `✓` when local matches the latest release, `⚠︎` when behind, an informational `ℹ︎ ... ahead of latest release` line when ahead (e.g. a `-dev` build between releases), and silent on network failures.
+Pre-flight checks run before any mutation: `REPO_HOME` exists, the topology resolves to `vanilla` or `fork`, the current branch is `main`, the working tree is clean (override with `--force`), and `--push-origin` is rejected on vanilla topology.
+
+After the merge or pull, `nomad update` re-runs `npm install` only when `package-lock.json` actually shifted, commits the regenerated `package-lock.json` (fork topology) if the reinstall changed it, then invokes `nomad doctor`. The trailing version-check is non-fatal: `✓` when local matches the latest release, `⚠︎` when behind, an informational `ℹ︎ ... ahead of latest release` line when ahead (e.g. a `-dev` build between releases), and silent on network failures.
 
 Common cases:
 
