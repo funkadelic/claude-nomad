@@ -1,17 +1,20 @@
 import {
-  loadAndReportSettings,
-  loadBaseSettings,
-  reportGitleaksProbe,
-  reportGitlinks,
   reportHostAndPaths,
-  reportHostOverrides,
-  reportNeverSync,
-  reportPathMap,
-  reportRebaseClean,
-  reportRemote,
   reportRepoState,
   reportSharedLinks,
-} from './commands.doctor.checks.ts';
+} from './commands.doctor.checks.repo.ts';
+import {
+  loadAndReportSettings,
+  loadBaseSettings,
+  reportHostOverrides,
+} from './commands.doctor.checks.settings.ts';
+import { reportNeverSync, reportPathMap } from './commands.doctor.checks.pathmap.ts';
+import {
+  reportGitleaksProbe,
+  reportGitlinks,
+  reportRebaseClean,
+  reportRemote,
+} from './commands.doctor.checks.repository.ts';
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { renderDoctor, section } from './commands.doctor.format.ts';

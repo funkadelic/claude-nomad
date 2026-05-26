@@ -1,0 +1,99 @@
+import { rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { failGlyph, okGlyph } from './color.ts';
+import { type PathMap } from './config.ts';
+import {
+  type Env,
+  joinedLog,
+  makeDoctorEnv,
+  restoreEnv,
+} from './commands.doctor.checks.test-helpers.ts';
+
+describe('cmdDoctor path-encoding collision detection', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', writeSettings: true });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('stays silent on path-encoding collisions when none exist', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+        bar: { 'test-host': '/srv/bar' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    // The gitleaks-presence diagnostic may set exitCode=1 on dev hosts
+    // without gitleaks; this test only asserts the path-encoding diagnostic
+    // is silent and that no NEW exitCode-setting condition fires from THIS
+    // describe's setup.
+    expect(joinedLog(env.logSpy)).not.toContain('path-encoding collision');
+  });
+
+  // Collisions cause silent data loss in remap, so doctor emits FAIL (not
+  // WARN) and sets exitCode=1 so downstream automation can gate on them.
+  it('skips TBD and empty abspaths during the collision scan', async () => {
+    // `reportPathCollisions` filters out `TBD` placeholders (used before a
+    // host is set up) and empty strings before encoding. Without the skip,
+    // an unmapped host's `TBD` could collide with another unmapped host's
+    // `TBD`, producing a spurious FAIL. The test feeds both `TBD` and `''`
+    // and asserts the scanner still PASSes.
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo', 'other-host': 'TBD' },
+        bar: { 'test-host': '/srv/bar', 'other-host': '' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toContain(`${failGlyph} path-encoding collision`);
+    expect(out).toContain(`${okGlyph} path-encoding: no collisions`);
+  });
+
+  it('emits FAIL with exit code 1 listing both abspaths and the encoded result on collision', async () => {
+    // `/foo/bar-baz` and `/foo-bar/baz` both encode to `-foo-bar-baz`
+    // because encodePath swaps `/` for `-` without escaping literal dashes.
+    // Per-host abspaths in different logical projects share the same encoded
+    // dir name, so remap would clobber one with the other.
+    const map: PathMap = {
+      projects: {
+        a: { 'test-host': '/foo/bar-baz', 'other-host': '/X' },
+        b: { 'test-host': '/foo-bar/baz', 'other-host': '/Y' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${failGlyph} path-encoding collision:`);
+    expect(out).toContain('/foo/bar-baz');
+    expect(out).toContain('/foo-bar/baz');
+    expect(out).toContain('-foo-bar-baz');
+    expect(process.exitCode).toBe(1);
+  });
+});
