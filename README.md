@@ -6,12 +6,12 @@
 
 ![claude-nomad - Sync your Claude Code setup. Same environment. Any machine.](docs/hero.svg)
 
-**Your entire Claude Code setup, on every machine. History included, secrets excluded.**
+**Your entire Claude Code setup, on every machine. History included, every push secret-scanned.**
 
 Open Claude Code on a second machine and it is a blank slate: none of your custom agents, slash commands, tuned settings, or past conversations. claude-nomad keeps all of it in sync through a private Git repo you control. `nomad push` on one machine, `nomad pull` on the next, and everything is there, conversations included.
 
 - **Resume your sessions on any machine.** Start a conversation on your desktop and pick it up on your laptop. claude-nomad remaps the file paths Claude Code embeds in every transcript, so your history follows you instead of getting stranded on the box where it started.
-- **Private by default.** Your `~/.claude/` also holds OAuth tokens, MCP credentials, and the full text of every conversation. Every push is secret-scanned before it leaves your machine, credentials and ephemeral state never sync, and `nomad init` disables CI on your private mirror by default, so transcripts can't leak through Actions logs.
+- **Secret-scanned, private by default.** Your `~/.claude/` also holds OAuth tokens, MCP credentials, and the full text of every conversation, so claude-nomad is deliberate about what leaves your machine: credentials and ephemeral state never sync, only an explicit allow-list of paths is pushed, and everything that does go up is scanned by [gitleaks](https://github.com/gitleaks/gitleaks) before it leaves your machine; the push aborts on any hit. `nomad init` also disables Actions on your private mirror by default, so transcripts can't leak through CI logs.
 - **One setup, every machine.** Your agents, skills, slash commands, and settings live in one place and follow you everywhere. Per-machine tweaks like model choice, MCP URLs, and env vars merge on top instead of clobbering your shared defaults.
 
 Not dotfiles, not rsync. claude-nomad understands Claude Code's state, so your session history survives different file paths and your secrets never ride along.
