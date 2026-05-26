@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { enforceAllowList } from './commands.push.ts';
+import { enforceAllowList } from './commands.push.allowlist.ts';
 import { type PathMap } from './config.ts';
 import { NomadFatal } from './utils.ts';
 
