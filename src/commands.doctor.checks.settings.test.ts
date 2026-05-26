@@ -29,6 +29,9 @@ describe('cmdDoctor settings.json schema sanity', () => {
   });
 
   afterEach(() => {
+    // Reset BEFORE spy restore so a leaked process.exitCode = 1 from cmdDoctor()
+    // does not bleed into later tests.
+    process.exitCode = 0;
     vi.restoreAllMocks();
     restoreEnv('HOME', originalHome);
     restoreEnv('NOMAD_HOST', originalNomadHost);

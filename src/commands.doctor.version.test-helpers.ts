@@ -44,7 +44,11 @@ export function mockPackageJsonVersion(
       readFileSync: vi.fn(
         (path: fsModule.PathOrFileDescriptor, opts?: Parameters<typeof actual.readFileSync>[1]) => {
           if (typeof path === 'string' && path.endsWith('/package.json')) {
-            if (version === null) throw new Error('ENOENT package.json');
+            if (version === null) {
+              const err = new Error('ENOENT package.json') as NodeJS.ErrnoException;
+              err.code = 'ENOENT';
+              throw err;
+            }
             const pkg: Record<string, unknown> = { name: 'claude-nomad', version };
             if (engines !== undefined && engines !== null) pkg.engines = engines;
             return JSON.stringify(pkg);

@@ -20,6 +20,7 @@ export type LogSpy = MockInstance<(...args: unknown[]) => void>;
 export type PushEnv = {
   originalHome: string | undefined;
   originalNomadHost: string | undefined;
+  originalExitCode: typeof process.exitCode;
   testHome: string;
   repoUnderHome: string;
   lockPath: string;
@@ -40,6 +41,7 @@ export type PushEnv = {
 export function makePushEnv(): PushEnv {
   const originalHome = process.env.HOME;
   const originalNomadHost = process.env.NOMAD_HOST;
+  const originalExitCode = process.exitCode;
   const testHome = mkdtempSync(join(tmpdir(), 'nomad-push-test-'));
   process.env.HOME = testHome;
   process.env.NOMAD_HOST = 'test-host';
@@ -60,14 +62,23 @@ export function makePushEnv(): PushEnv {
     /* captured */
   });
   vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-  return { originalHome, originalNomadHost, testHome, repoUnderHome, lockPath, errSpy, logSpy };
+  return {
+    originalHome,
+    originalNomadHost,
+    originalExitCode,
+    testHome,
+    repoUnderHome,
+    lockPath,
+    errSpy,
+    logSpy,
+  };
 }
 
 /**
  * Tear down a sandbox created by `makePushEnv`: restore all mocks, unmock every
  * pipeline dependency a test may have mocked (idempotent for unmocked
- * modules), reset `process.exitCode`, restore the saved env vars, and remove
- * the temp HOME tree.
+ * modules), restore the saved `process.exitCode` and env vars, and remove the
+ * temp HOME tree.
  *
  * @param env The sandbox to tear down.
  */
@@ -80,7 +91,7 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('./utils.ts');
   vi.doUnmock('./utils.lockfile.ts');
   vi.doUnmock('node:child_process');
-  process.exitCode = 0;
+  process.exitCode = env.originalExitCode;
   if (env.originalHome !== undefined) process.env.HOME = env.originalHome;
   else delete process.env.HOME;
   if (env.originalNomadHost !== undefined) process.env.NOMAD_HOST = env.originalNomadHost;
