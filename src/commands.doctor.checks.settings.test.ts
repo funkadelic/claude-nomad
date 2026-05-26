@@ -132,6 +132,25 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('FAILs without a candidates line when hostFile missing, settings drift, AND hosts/ dir absent', async () => {
+    process.env.NOMAD_HOST = 'nonexistent-host';
+    // Remove the hosts/ dir so existsSync(hostsDir) takes its false path: the
+    // drift FAIL still fires, but no candidates line is emitted.
+    rmSync(join(env.testHome, 'claude-nomad', 'hosts'), { recursive: true, force: true });
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(
+      `${failGlyph} no hosts/nonexistent-host.json AND settings.json has unbased keys`,
+    );
+    expect(out).not.toMatch(/candidates:/);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('logs informational base-only line when hostFile missing AND settings has no drift', async () => {
     process.env.NOMAD_HOST = 'nonexistent-host';
     writeFileSync(

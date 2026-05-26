@@ -33,6 +33,7 @@ export function listDivergingFiles(a: string, b: string): string[] {
       warn(`git not on PATH; divergence check skipped for ${a}`);
       return [];
     }
+    /* c8 ignore next -- e.message is set on any thrown Error; String(err) is a defensive fallback */
     warn(`divergence check failed for ${a}: ${e.message ?? String(err)}`);
     return [];
   }

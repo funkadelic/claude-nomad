@@ -68,6 +68,7 @@ function unlinkIfSamePid(expectedPidStr: string): boolean {
   } catch {
     return false;
   }
+  /* c8 ignore next -- TOCTOU drift between the two reads is a documented residual race, hard to exercise deterministically */
   if (current !== expectedPidStr) return false;
   try {
     unlinkSync(LOCK_PATH);
