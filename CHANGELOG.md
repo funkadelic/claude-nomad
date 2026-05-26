@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.1](https://github.com/funkadelic/claude-nomad/compare/v0.25.0...v0.25.1) (2026-05-26)
+
+
+### Fixed
+
+* **doctor:** scan --check-shared like push to fix false negatives ([#134](https://github.com/funkadelic/claude-nomad/issues/134)) ([5063028](https://github.com/funkadelic/claude-nomad/commit/5063028c6a695709f7f2d2dfe3cceabedecc17f9))
+
+
+### Changed
+
+* split over-cap source and test files under the ~200-line cap ([#136](https://github.com/funkadelic/claude-nomad/issues/136)) ([0cc7eed](https://github.com/funkadelic/claude-nomad/commit/0cc7eed13abbc85084b04cfc8b686e53b26133c6))
+
 ## [0.25.0](https://github.com/funkadelic/claude-nomad/compare/v0.24.0...v0.25.0) (2026-05-25)
 
 
