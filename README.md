@@ -50,15 +50,15 @@ For anyone running Claude Code on more than one machine: a laptop and a desktop,
 If you already have a private claude-nomad mirror (see [Setup](#setup) for the one-time bootstrap), adding a new host is three steps:
 
 ```bash
-npm i -g claude-nomad
+$ npm i -g claude-nomad
 ```
 
 ```bash
 # Clone your private mirror so nomad has a repo to sync into.
-git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
+$ git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 
 # Add to ~/.zshrc or ~/.bashrc:
-export NOMAD_HOST=<your-host-label>
+$ export NOMAD_HOST=<your-host-label>
 
 # Optional: developers running against an alternate checkout can point
 # nomad at it via NOMAD_REPO. Default is ~/claude-nomad/.
@@ -68,9 +68,9 @@ export NOMAD_HOST=<your-host-label>
 Then the everyday loop:
 
 ```bash
-nomad doctor   # confirm setup
-nomad pull     # apply config to ~/.claude/
-nomad push     # publish local changes (sessions, settings)
+$ nomad doctor   # confirm setup
+$ nomad pull     # apply config to ~/.claude/
+$ nomad push     # publish local changes (sessions, settings)
 ```
 
 First-host bootstrap and the safe-migration sequence for a populated `~/.claude/` are in [Setup](#setup) and [Migrating an existing ~/.claude/](#migrating-an-existing-claude).
@@ -249,19 +249,19 @@ Steps 1-2 are once-ever across all hosts; step 3 repeats per host:
 
 ```bash
 # 1. Create the private repo (or use the GitHub UI). Once, ever.
-gh repo create <your-username>/claude-nomad --private
+$ gh repo create <your-username>/claude-nomad --private
 
 # 2. Copy the public tool into your private repo. A bare clone followed by a
 #    mirror push makes a complete, independent copy (every branch and tag) with
 #    no fork link back to upstream, which is what lets you keep it private. Once, ever.
-git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git # download a full copy
-cd /tmp/cn.git
-git push --mirror git@github.com:<your-username>/claude-nomad.git # upload it to your private repo
-cd .. && rm -rf /tmp/cn.git
+$ git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git # download a full copy
+$ cd /tmp/cn.git
+$ git push --mirror git@github.com:<your-username>/claude-nomad.git # upload it to your private repo
+$ cd .. && rm -rf /tmp/cn.git
 
 # 3. Install the CLI globally and clone your private copy. Repeat on every host.
-npm i -g claude-nomad
-git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
+$ npm i -g claude-nomad
+$ git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 ```
 
 `npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. (The Node version floor and the `engine-strict` caveat are in [Requirements](#requirements).)
@@ -271,7 +271,7 @@ On every additional host you only repeat step 3 (the global install is per-host;
 Add to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
-export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
+$ export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
 ```
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
@@ -282,15 +282,15 @@ First host only; subsequent hosts just clone and `nomad pull`. Both forms below 
 
 ```bash
 # Fresh start: scaffold an empty shared/, hosts/, path-map.json skeleton.
-nomad init
+$ nomad init
 
 # Already have ~/.claude/ populated on this host? Capture it as the
 # starting point. Stages shared/ and writes hosts/<NOMAD_HOST>.json from
 # your current ~/.claude/settings.json. Does NOT touch the originals.
-nomad init --snapshot
+$ nomad init --snapshot
 
 # Either form accepts --keep-actions to skip the auto-disable.
-nomad init --keep-actions
+$ nomad init --keep-actions
 ```
 
 `nomad init` refuses to clobber existing scaffold artifacts, so re-running on a populated repo is a safe no-op (it errors out naming the offender). `nomad pull` against an unscaffolded repo fails fast with `FATAL: repo not initialized; run 'nomad init' to scaffold` instead of silently leaving a half-state.
@@ -298,11 +298,11 @@ nomad init --keep-actions
 Edit `path-map.json` to add your logical projects (see [Path remapping](#path-remapping)), then:
 
 ```bash
-nomad doctor                # read-only state check; reports host, repo state, every check as ✓ (pass) / ✗ (fail) / ⚠︎ (warn)
-nomad doctor --check-shared # read-only gitleaks preflight over the session transcripts a push would stage
-nomad diff                  # preview what nomad pull would change on this host; no lock, no network, no mutation
-nomad push                  # send current state to the private remote
-nomad pull                  # apply on another host (or this one after a remote update)
+$ nomad doctor                # read-only state check; reports host, repo state, every check as ✓ (pass) / ✗ (fail) / ⚠︎ (warn)
+$ nomad doctor --check-shared # read-only gitleaks preflight over the session transcripts a push would stage
+$ nomad diff                  # preview what nomad pull would change on this host; no lock, no network, no mutation
+$ nomad push                  # send current state to the private remote
+$ nomad pull                  # apply on another host (or this one after a remote update)
 ```
 
 `nomad pull --dry-run` is the network-aware twin of `nomad diff`: it acquires the lock and runs `git pull` so you see what the next real pull would do given the latest remote, then exits without mutating.
@@ -315,11 +315,11 @@ If a host already has real files at `~/.claude/{CLAUDE.md, agents/, skills/, ...
 
 ```bash
 # From the host that has the canonical config (the originals are not modified):
-nomad init --snapshot   # stages shared/ and writes hosts/<NOMAD_HOST>.json from ~/.claude/
-nomad push              # publish the captured state to the private remote
+$ nomad init --snapshot   # stages shared/ and writes hosts/<NOMAD_HOST>.json from ~/.claude/
+$ nomad push              # publish the captured state to the private remote
 
 # Then, on this host or any other host that has the private remote checked out:
-nomad pull              # materializes the symlinks
+$ nomad pull              # materializes the symlinks
 ```
 
 `nomad pull` is what actually migrates the host. `applySharedLinks` runs a two-pass scan: any pre-existing non-symlink at a `SHARED_LINKS` path whose counterpart exists under `shared/` is renamed into `~/.cache/claude-nomad/backup/<ts>/` first, then the symlink is created. Your originals are preserved under that timestamped backup directory, not deleted. Paths whose `shared/<name>` is absent from the remote are left untouched, so a partial publish does not delete data on the destination host.
@@ -340,8 +340,8 @@ Most people who followed the Quickstart need both: `npm update -g` for the binar
 Your private repo is not a fork, so GitHub's "Sync fork" UI doesn't apply. The shortcut on a source-checkout host is:
 
 ```bash
-cd ~/claude-nomad
-nomad update
+$ cd ~/claude-nomad
+$ nomad update
 ```
 
 `nomad update` detects which layout your `~/claude-nomad/` uses and does the right thing:
@@ -356,16 +356,16 @@ After the merge or pull, `nomad update` re-runs `npm install` only when `package
 Common cases:
 
 ```bash
-nomad update                  # the usual path
-nomad update --dry-run        # detect topology + pre-flight, print would-be git commands only
-nomad update --push-origin    # fork topology: push merge to origin/main without prompting
-nomad update --force          # proceed past a dirty working tree
+$ nomad update                  # the usual path
+$ nomad update --dry-run        # detect topology + pre-flight, print would-be git commands only
+$ nomad update --push-origin    # fork topology: push merge to origin/main without prompting
+$ nomad update --force          # proceed past a dirty working tree
 ```
 
 One-time setup if you're running a fork layout and don't have the `upstream` remote yet:
 
 ```bash
-git remote add upstream git@github.com:funkadelic/claude-nomad.git
+$ git remote add upstream git@github.com:funkadelic/claude-nomad.git
 ```
 
 To pin to a specific release (`vX.Y.Z`, tagged by release-please) instead of tracking `main`, fetch tags from the public repo and check out the tag (detached HEAD). On vanilla topology that's `origin`; on fork topology that's `upstream` (the private mirror at `origin` does not accumulate upstream release tags). Example: `git fetch upstream --tags && git switch --detach vX.Y.Z` (substitute `origin` for vanilla; use `git checkout vX.Y.Z` on older Git).
@@ -412,7 +412,7 @@ Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summa
 Surgically unstages every `shared/projects/*/<id>.jsonl` plus the sibling `shared/projects/*/<id>/` subagent directory (whose nested transcripts are keyed by the same session id) from the staged tree of `~/claude-nomad/`. The local `~/.claude/projects/<encoded>/<id>.jsonl` and the local `<id>/` tree are never touched.
 
 ```bash
-nomad drop-session <id>
+$ nomad drop-session <id>
 ```
 
 Single positional id (the session filename minus `.jsonl`). Anything else (missing id, leading dash, extra arg) exits 1 with a `usage:` line.
@@ -483,13 +483,13 @@ Claude Code embeds the original `cwd` in each session transcript. When you resum
 Run this instead:
 
 ```bash
-eval "$(nomad doctor --resume-cmd <session-id>)"
+$ eval "$(nomad doctor --resume-cmd <session-id>)"
 ```
 
 Or pipe through bash:
 
 ```bash
-nomad doctor --resume-cmd <session-id> | bash
+$ nomad doctor --resume-cmd <session-id> | bash
 ```
 
 `nomad doctor --resume-cmd <id>` reads the `.jsonl`'s recorded `cwd`, reverse-looks up the logical project in `path-map.json`, finds your current host's abspath for that logical, and prints `cd <local-abspath> && claude --resume <id>` to stdout. The command is read-only: it never modifies any transcript byte (Phase 1's sha256 byte-equality invariant is preserved).
@@ -505,6 +505,6 @@ Other fatal surfaces: missing `~/.claude/projects/`, session id absent from ever
 ## Run tests
 
 ```bash
-npm install
-npx vitest run
+$ npm install
+$ npx vitest run
 ```
