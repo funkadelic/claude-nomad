@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.3](https://github.com/funkadelic/claude-nomad/compare/v0.25.2...v0.25.3) (2026-05-26)
+
+
+### Changed
+
+* **config:** add skipAutoPermissionPrompt to KNOWN_SETTINGS_KEYS ([#142](https://github.com/funkadelic/claude-nomad/issues/142)) ([09b4d7c](https://github.com/funkadelic/claude-nomad/commit/09b4d7c27d74cc922f9c516296ca6123e1ee84f5))
+
+
+### Documentation
+
+* document runtime deps and foreground the security posture ([#145](https://github.com/funkadelic/claude-nomad/issues/145)) ([fb029ee](https://github.com/funkadelic/claude-nomad/commit/fb029eec1a6d915224a39cc2755ff76e42618365))
+* refresh hero.svg tagline and doctor mockup ([#144](https://github.com/funkadelic/claude-nomad/issues/144)) ([58a0176](https://github.com/funkadelic/claude-nomad/commit/58a01760e8d977ce4cf46dcd3137c02f3bc6541c))
+
 ## [0.25.2](https://github.com/funkadelic/claude-nomad/compare/v0.25.1...v0.25.2) (2026-05-26)
 
 
