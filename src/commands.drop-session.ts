@@ -3,23 +3,17 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
-import { acquireLock, die, fail, log, NomadFatal, releaseLock } from './utils.ts';
+import { expandStagedDir, isInIndex, isTrackedInHead } from './commands.drop-session.git.ts';
+import { die, fail, log, NomadFatal } from './utils.ts';
+import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
 /**
  * Surgical removal of a contaminated session from the staged tree of
- * `~/claude-nomad/`. For each `shared/projects/<logical>/` child this
- * matches both the flat `<id>.jsonl` AND the sibling subagent directory
- * `<id>/` (whose nested transcripts are keyed by the same session id),
- * classifies each staged entry via `git ls-files --error-unmatch`, and
- * unstages with the appropriate primitive:
- *
- *   - tracked-in-HEAD  -> `git restore --staged --worktree -- <rel>`
- *   - newly-staged     -> `git rm --cached -f -- <rel>`
- *
- * The directory tree is expanded into its staged entries via
- * `git ls-files -z -- <dir-rel>` so every nested file flows through the
- * same per-entry classification loop as the flat jsonl; this closes the
- * leak where a "dropped" session still shipped its subagent transcripts.
+ * `~/claude-nomad/`. Thin orchestrator: validates the id, acquires the
+ * lock, collects every staged path matching the flat `<id>.jsonl` and the
+ * sibling subagent directory `<id>/` (via `collectMatches`), then unstages
+ * each (via `unstageOne`). This closes the leak where a "dropped" session
+ * still shipped its subagent transcripts.
  *
  * Idempotent: entries not in the index are skipped silently. Exits 0 on
  * any drop (including an idempotent re-run); exits 1 with `✗ no staged
@@ -27,8 +21,8 @@ import { acquireLock, die, fail, log, NomadFatal, releaseLock } from './utils.ts
  * `<id>/` directory with staged entries exists anywhere in the tree.
  *
  * Defense-in-depth: the id is validated against the same allowlist regex
- * used in `src/resume.ts` before any path composition. argv-array form
- * for every git invocation.
+ * used in `src/resume.ts` before any path composition or lock acquisition.
+ * argv-array form for every git invocation.
  *
  * NEVER touches `~/.claude/projects/<encoded>/<id>.jsonl` or the local
  * `<id>/` tree; the local copies are preserved so they race-safely
@@ -54,68 +48,11 @@ export function cmdDropSession(id: string): void {
     if (!existsSync(repoProjects)) {
       throw new NomadFatal(`no staged session matches ${id}`);
     }
-    // For each `shared/projects/<logical>/` child, match the flat
-    // `<id>.jsonl` plus the sibling subagent directory `<id>/`. The
-    // directory is expanded into its staged entries so every nested file
-    // flows through the same per-entry unstage loop as the flat jsonl.
-    const matches: string[] = [];
-    for (const logical of readdirSync(repoProjects)) {
-      const candidate = join(repoProjects, logical, `${id}.jsonl`);
-      if (existsSync(candidate)) {
-        matches.push(relative(REPO_HOME, candidate));
-      }
-      const dir = join(repoProjects, logical, id);
-      if (existsSync(dir) && statSync(dir).isDirectory()) {
-        const dirRel = relative(REPO_HOME, dir);
-        const staged = expandStagedDir(dirRel);
-        // A dir present on disk but absent from the index is an already-dropped
-        // rerun: push the dir path itself so the per-entry isInIndex() guard
-        // logs it as "already absent" rather than letting an empty match set
-        // escalate to the no-match fatal (idempotency for dir-only sessions).
-        if (staged.length > 0) matches.push(...staged);
-        else matches.push(dirRel);
-      }
-    }
+    const matches = collectMatches(repoProjects, id);
     if (matches.length === 0) {
       throw new NomadFatal(`no staged session matches ${id}`);
     }
-    for (const rel of matches) {
-      // Pitfall 7: skip files that are not in the index at all (the
-      // load-bearing guard for the idempotent second-run case, where the
-      // first drop already removed the entry from the index but left the
-      // working tree file in place).
-      if (!isInIndex(rel)) {
-        log(`dropped ${rel} (already absent from index)`);
-        continue;
-      }
-      try {
-        if (isTrackedInHead(rel)) {
-          execFileSync('git', ['restore', '--staged', '--worktree', '--', rel], {
-            cwd: REPO_HOME,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
-        } else {
-          execFileSync('git', ['rm', '--cached', '-f', '--', rel], {
-            cwd: REPO_HOME,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
-        }
-      } catch (err) {
-        // Convert raw execFileSync failures (non-zero git exit, EACCES on
-        // .git/index, EPERM, etc.) into NomadFatal so the outer catch can
-        // emit a clean `✗ ...` line instead of letting the ExecException
-        // bubble past nomad.ts's NomadFatal-only dispatcher.
-        // The `?? err.message` fallback only fires when git fails without
-        // producing stderr (spawn-level error before the process emits
-        // anything), which `cmdPush`'s gitleaks probe already rules out
-        // for the typical install path. Excluded from coverage.
-        const e = err as NodeJS.ErrnoException & { stderr?: Buffer };
-        /* c8 ignore next */
-        const detail = e.stderr?.toString().trim() ?? e.message;
-        throw new NomadFatal(`git failed to unstage ${rel}: ${detail}`);
-      }
-      log(`dropped ${rel}`);
-    }
+    for (const rel of matches) unstageOne(rel);
   } catch (err) {
     // Defensive escape hatch: only fires if a non-NomadFatal error escapes
     // the try block. All execFileSync mutation failures are wrapped in
@@ -137,78 +74,82 @@ export function cmdDropSession(id: string): void {
 }
 
 /**
- * Expand a repo-relative directory into its staged entries via
- * `git ls-files -z -- <dirRel>` (argv-array form, NUL-split for path
- * safety). Returns repo-relative POSIX paths for every staged file under
- * the directory, or an empty array when none are staged or `git` fails
- * (missing/corrupt index); the caller then falls through to the existing
- * per-entry idempotency guard rather than escalating to a FATAL.
+ * Collect repo-relative staged paths matching the session `id`. For each
+ * `shared/projects/<logical>/` child, match the flat `<id>.jsonl` plus the
+ * sibling subagent directory `<id>/`. The directory is expanded into its
+ * staged entries via `expandStagedDir` so every nested file flows through
+ * the same per-entry unstage loop as the flat jsonl.
  *
- * @param dirRel Repo-relative directory path (`shared/projects/<logical>/<id>`).
+ * @param repoProjects Absolute path to `<REPO_HOME>/shared/projects`.
+ * @param id Already-validated session id (see `cmdDropSession`'s entry guard).
+ * @returns Repo-relative paths to unstage (possibly empty).
  */
-function expandStagedDir(dirRel: string): string[] {
-  try {
-    const out = execFileSync('git', ['ls-files', '-z', '--', dirRel], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return out
-      .toString()
-      .split('\0')
-      .filter((p) => p !== '');
-  } catch {
-    return [];
+function collectMatches(repoProjects: string, id: string): string[] {
+  const matches: string[] = [];
+  for (const logical of readdirSync(repoProjects)) {
+    const candidate = join(repoProjects, logical, `${id}.jsonl`);
+    if (existsSync(candidate)) {
+      matches.push(relative(REPO_HOME, candidate));
+    }
+    const dir = join(repoProjects, logical, id);
+    if (existsSync(dir) && statSync(dir).isDirectory()) {
+      const dirRel = relative(REPO_HOME, dir);
+      const staged = expandStagedDir(dirRel);
+      // A dir present on disk but absent from the index is an already-dropped
+      // rerun: push the dir path itself so the per-entry isInIndex() guard
+      // logs it as "already absent" rather than letting an empty match set
+      // escalate to the no-match fatal (idempotency for dir-only sessions).
+      if (staged.length > 0) matches.push(...staged);
+      else matches.push(dirRel);
+    }
   }
+  return matches;
 }
 
 /**
- * Is `rel` (repo-relative path) present in the HEAD tree? Wraps
- * `git cat-file -e HEAD:<rel>`: exit 0 means tracked in HEAD,
- * non-zero means either no HEAD exists yet (empty repo) or the path is
- * only in the index (newly-staged-not-in-HEAD). `git ls-files
- * --error-unmatch` is NOT a HEAD-presence check; it matches anything in
- * the index too, which would misclassify newly-staged paths.
+ * Unstage one repo-relative path via the tracked-vs-newly-staged primitive.
+ * Skips paths absent from the index (Pitfall 7 idempotency guard), then
+ * classifies via `isTrackedInHead` and unstages with `git restore
+ * --staged --worktree` (tracked-in-HEAD) or `git rm --cached -f`
+ * (newly-staged). Git calls keep `execFileSync` argv-array form (PUSH-04).
  *
- * The catch deliberately collapses three cases to `false`: (a) HEAD has
- * no commit yet (fresh `git init`), (b) HEAD is unresolvable / corrupt
- * (e.g., `.git/refs/heads/main` was deleted manually), and (c) the
- * specific path simply does not exist in a valid HEAD. Git produces the
- * same exit 128 and the same stderr (`fatal: invalid object name 'HEAD'`)
- * for (a) and (b), so a probe-based distinction would require additional
- * git-plumbing reads (`rev-parse --verify HEAD`, `.git/refs/heads/`
- * inspection) that are brittle and break the empty-repo path every
- * existing test runs through. The downstream `git rm --cached -f` is
- * idempotent and produces the user-intended unstage outcome regardless
- * of which case fired, so the collapsed return is intentional. Repo
- * health belongs to `nomad doctor`, not drop-session.
+ * @param rel Repo-relative path to unstage.
+ * @throws NomadFatal when the underlying git invocation fails.
  */
-function isTrackedInHead(rel: string): boolean {
-  try {
-    execFileSync('git', ['cat-file', '-e', `HEAD:${rel}`], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return true;
-  } catch {
-    return false;
+function unstageOne(rel: string): void {
+  // Pitfall 7: skip files that are not in the index at all (the
+  // load-bearing guard for the idempotent second-run case, where the
+  // first drop already removed the entry from the index but left the
+  // working tree file in place).
+  if (!isInIndex(rel)) {
+    log(`dropped ${rel} (already absent from index)`);
+    return;
   }
-}
-
-/**
- * Is `rel` present in the index at all? Wraps `git ls-files -- <rel>` and
- * checks for non-empty stdout. Required for the Pitfall 7 idempotency
- * guard: a second invocation on the same id finds the file on disk (per
- * `existsSync`) but absent from the index, and must NOT call `git rm
- * --cached` on it (which would fail with exit 128).
- */
-function isInIndex(rel: string): boolean {
   try {
-    const out = execFileSync('git', ['ls-files', '--', rel], {
-      cwd: REPO_HOME,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return out.toString().trim() !== '';
-  } catch {
-    return false;
+    if (isTrackedInHead(rel)) {
+      execFileSync('git', ['restore', '--staged', '--worktree', '--', rel], {
+        cwd: REPO_HOME,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } else {
+      execFileSync('git', ['rm', '--cached', '-f', '--', rel], {
+        cwd: REPO_HOME,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    }
+  } catch (err) {
+    // Convert raw execFileSync failures (non-zero git exit, EACCES on
+    // .git/index, EPERM, etc.) into NomadFatal so the outer catch can
+    // emit a clean `✗ ...` line instead of letting the ExecException
+    // bubble past nomad.ts's NomadFatal-only dispatcher.
+    // The `?? err.message` fallback only fires when git fails without
+    // producing stderr (spawn-level error before the process emits
+    // anything), which `cmdPush`'s gitleaks probe already rules out
+    // for the typical install path. Excluded from coverage.
+    const e = err as NodeJS.ErrnoException & { stderr?: Buffer };
+    /* c8 ignore next */
+    const detail = e.stderr?.toString().trim() ?? e.message;
+    throw new NomadFatal(`git failed to unstage ${rel}: ${detail}`);
   }
+  log(`dropped ${rel}`);
 }

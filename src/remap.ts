@@ -2,7 +2,9 @@ import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'no
 import { join, relative, sep } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { backupBeforeWrite, backupRepoWrite, encodePath, log, readJson } from './utils.ts';
+import { log } from './utils.ts';
+import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
+import { encodePath, readJson } from './utils.json.ts';
 
 /**
  * Recursive mirror copy: removes `dst` first, then copies `src` into it.

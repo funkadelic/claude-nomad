@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { fail, readJson } from './utils.ts';
+import { fail } from './utils.ts';
+import { readJson } from './utils.json.ts';
 
 type TranscriptLine = { type?: string; cwd?: string };
 

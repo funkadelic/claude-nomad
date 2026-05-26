@@ -1,4 +1,5 @@
 import { failGlyph, red } from './color.ts';
+import { readJson } from './utils.json.ts';
 
 /**
  * Bare `failGlyph` codepoint (`✗`, U+2717) without any WSL padding the
@@ -36,6 +37,23 @@ export function section(header: string): DoctorSection {
 /** Append one rendered line to a section. */
 export function addItem(s: DoctorSection, text: string): void {
   s.items.push(text);
+}
+
+/**
+ * Tolerant JSON reader for `cmdDoctor`. Doctor reads three JSON files
+ * (`settings.json`, `settings.base.json`, `path-map.json`); a malformed
+ * input must not throw mid-output (user would lose every line below it).
+ * Returns `null` on parse failure, records a FAIL item in the supplied
+ * section, and sets `process.exitCode = 1` so scripts can gate on the result.
+ */
+export function readJsonSafe<T>(path: string, label: string, section: DoctorSection): T | null {
+  try {
+    return readJson<T>(path);
+  } catch (err) {
+    addItem(section, `${red(failGlyph)} ${label} malformed JSON: ${(err as Error).message}`);
+    process.exitCode = 1;
+    return null;
+  }
 }
 
 /**

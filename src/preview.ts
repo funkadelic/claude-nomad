@@ -5,7 +5,8 @@ import { green, red } from './color.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME } from './config.ts';
 import { applySharedLinks } from './links.ts';
 import { remapPull } from './remap.ts';
-import { deepMerge, log, readJson } from './utils.ts';
+import { log } from './utils.ts';
+import { deepMerge, readJson } from './utils.json.ts';
 
 /**
  * Minimal in-tree unified-diff helper for two pre-stringified JSON

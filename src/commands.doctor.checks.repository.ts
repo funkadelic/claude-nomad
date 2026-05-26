@@ -1,0 +1,105 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
+import {
+  blue,
+  cyan,
+  dim,
+  failGlyph,
+  green,
+  infoGlyph,
+  okGlyph,
+  red,
+  warnGlyph,
+  yellow,
+} from './color.ts';
+import { REPO_HOME } from './config.ts';
+import { addItem, type DoctorSection } from './commands.doctor.format.ts';
+import { findGitlinks } from './push-checks.ts';
+import { gitStatusPorcelainZ } from './utils.ts';
+
+/**
+ * Repository-state reporters for `cmdDoctor`: the gitleaks presence probe, the
+ * nested-gitlink scan of `shared/`, the remote-origin line, and the
+ * rebase-clean-tree WARN. Each helper appends items to its target
+ * `DoctorSection` and signals failure by setting `process.exitCode = 1`.
+ * Read-only: FAIL lines stay on stdout.
+ */
+
+/**
+ * Probes for gitleaks on PATH; emits okGlyph with version, or failGlyph with
+ * ENOENT vs other-error distinction (sets exitCode=1). Returns `true` when a
+ * usable binary was found so the caller can skip a redundant second `version`
+ * probe (e.g. the `--check-shared` Shared scan section).
+ */
+export function reportGitleaksProbe(section: DoctorSection): boolean {
+  try {
+    const v = execFileSync('gitleaks', ['version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+      .toString()
+      .trim();
+    addItem(section, `${green(okGlyph)} gitleaks: ${dim(v)}`);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      addItem(section, `${red(failGlyph)} gitleaks: not on PATH (required for nomad push)`);
+    } else {
+      addItem(section, `${red(failGlyph)} gitleaks: probe failed: ${(err as Error).message}`);
+    }
+    process.exitCode = 1;
+    return false;
+  }
+}
+
+/** Walks shared/ for nested .git gitlinks; emits failGlyph per gitlink found (sets exitCode=1), okGlyph when none. */
+export function reportGitlinks(section: DoctorSection): void {
+  const sharedDir = join(REPO_HOME, 'shared');
+  if (existsSync(sharedDir)) {
+    const gitlinks = findGitlinks(sharedDir);
+    for (const p of gitlinks) {
+      const rel = relative(REPO_HOME, p);
+      addItem(
+        section,
+        `${red(failGlyph)} gitlink: ${blue(rel)} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
+      );
+    }
+    if (gitlinks.length > 0) {
+      process.exitCode = 1;
+    } else {
+      addItem(section, `${green(okGlyph)} gitlink scan: no nested .git in shared/`);
+    }
+  }
+}
+
+/** Pushes the `git remote get-url origin` line or a `not configured` informational line. */
+export function reportRemote(section: DoctorSection): void {
+  try {
+    const url = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd: REPO_HOME,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .trim();
+    addItem(section, `${dim(infoGlyph)} remote origin: ${cyan(url)}`);
+  } catch {
+    addItem(section, `${dim(infoGlyph)} remote origin: not configured`);
+  }
+}
+
+/** WARNs when ~/claude-nomad/ has uncommitted changes (autostash territory for push). */
+export function reportRebaseClean(section: DoctorSection): void {
+  try {
+    const status = gitStatusPorcelainZ(REPO_HOME);
+    if (status.length > 0) {
+      addItem(
+        section,
+        `${yellow(warnGlyph)} ${blue('~/claude-nomad/')} has uncommitted changes (nomad push will --autostash these)`,
+      );
+    }
+  } catch {
+    // gitStatusPorcelainZ failure on a missing or non-repo REPO_HOME is
+    // already surfaced by reportHostAndPaths (warnGlyph on the `repo:` line
+    // when the directory is absent) and reportRepoState ('empty' FAIL when
+    // the scaffold is absent). Swallowing here avoids double-reporting.
+  }
+}

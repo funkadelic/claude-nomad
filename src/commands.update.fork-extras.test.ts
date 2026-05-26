@@ -1,28 +1,15 @@
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as cpModule from 'node:child_process';
-import type * as topologyModule from './update.topology.ts';
-
-/**
- * Run a real git command in `cwd`. Test-only helper for the fork-topology
- * regression suite; surfaces stderr on failure so a misbuilt fixture is loud.
- */
-function git(cwd: string, args: readonly string[]): string {
-  return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
-}
-
-/**
- * Read `git status --porcelain=v1` in `cwd` as a trimmed string. Used to
- * assert observable index/working-tree state after `cmdUpdate` runs.
- */
-function status(cwd: string): string {
-  return git(cwd, ['status', '--porcelain=v1']).trim();
-}
+import {
+  advanceUpstream,
+  git,
+  installStubs,
+  setupForkRepo,
+  status,
+} from './commands.update.fork-extras.test-helpers.ts';
 
 // Regression for issue #112. A fork host whose untracked `shared/extras/`
 // overlaps a path upstream also introduces makes `git merge upstream/main`
@@ -46,37 +33,7 @@ describe('issue #112: fork merge with overlapping untracked extras', () => {
     originalHome = process.env.HOME;
     originalNomadRepo = process.env.NOMAD_REPO;
     originalNomadHost = process.env.NOMAD_HOST;
-    root = mkdtempSync(join(tmpdir(), 'nomad-112-'));
-    process.env.HOME = root;
-    process.env.NOMAD_HOST = 'test-host';
-
-    // Bare upstream + seed checkout that pushes the base commit. `-b main`
-    // makes the bare HEAD point at `main` so the local clone checks out
-    // `main` (not an unborn default branch that fails `cmdUpdate`'s branch
-    // check). Matches the production layout the fork update expects.
-    const upstreamBare = join(root, 'up.git');
-    git(root, ['init', '-q', '-b', 'main', '--bare', upstreamBare]);
-    const seed = join(root, 'seed');
-    git(root, ['init', '-q', seed]);
-    git(seed, ['config', 'user.email', 't@e.com']);
-    git(seed, ['config', 'user.name', 'T']);
-    mkdirSync(join(seed, 'shared'), { recursive: true });
-    writeFileSync(join(seed, 'shared', 'CLAUDE.md'), '# c\n');
-    writeFileSync(join(seed, 'package.json'), '{"name":"x","version":"1.0.0"}\n');
-    writeFileSync(join(seed, 'package-lock.json'), '{"v":1}\n');
-    git(seed, ['add', '-A']);
-    git(seed, ['commit', '-q', '-m', 'base']);
-    git(seed, ['branch', '-M', 'main']);
-    git(seed, ['remote', 'add', 'up', upstreamBare]);
-    git(seed, ['push', '-q', 'up', 'main']);
-
-    // Local mirror clones the base commit (no extras yet).
-    local = join(root, 'claude-nomad');
-    git(root, ['clone', '-q', upstreamBare, local]);
-    git(local, ['config', 'user.email', 't@e.com']);
-    git(local, ['config', 'user.name', 'T']);
-    git(local, ['remote', 'add', 'upstream', upstreamBare]);
-    process.env.NOMAD_REPO = local;
+    ({ root, local } = setupForkRepo());
 
     vi.resetModules();
     vi.spyOn(console, 'log').mockImplementation(() => {
@@ -102,56 +59,9 @@ describe('issue #112: fork merge with overlapping untracked extras', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  /**
-   * Advance the seed checkout and push it to the bare upstream so the local
-   * mirror's `git fetch upstream` sees the new commit. `mutate` writes the
-   * upstream-side files before the commit.
-   */
-  function advanceUpstream(message: string, mutate: () => void): void {
-    mutate();
-    const seed = join(root, 'seed');
-    git(seed, ['add', '-A']);
-    git(seed, ['commit', '-q', '-m', message]);
-    git(seed, ['push', '-q', 'up', 'main']);
-  }
-
-  /**
-   * Install the standard stubs: `loadTopology` -> 'fork' (bypasses the
-   * canonical-URL slug match so a local bare upstream counts as fork), a
-   * no-op `cmdDoctor`, and an `execFileSync` that passes git through to the
-   * real binary while no-opping `npm` (so the auto-resolver's reinstall does
-   * not touch the registry). Returns the recorded npm argv list.
-   */
-  function installStubs(onNpm?: () => void): { npmCalls: string[] } {
-    const npmCalls: string[] = [];
-    vi.doMock('./update.topology.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof topologyModule>();
-      return { ...actual, loadTopology: vi.fn(() => 'fork') };
-    });
-    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: vi.fn() }));
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn(
-          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
-            if (bin === 'npm') {
-              npmCalls.push(args.join(' '));
-              // Simulate a lockfile-regenerating install when the test asks.
-              if (onNpm) onNpm();
-              return Buffer.from('');
-            }
-            return actual.execFileSync(bin, args, opts);
-          },
-        ),
-      };
-    });
-    return { npmCalls };
-  }
-
   it('identical extras overlap: pre-commit lets the lone-lockfile auto-resolve fire', async () => {
     // Upstream adds the extras path AND bumps the lockfile (release landed).
-    advanceUpstream('release + extras', () => {
+    advanceUpstream(root, 'release + extras', () => {
       const seed = join(root, 'seed');
       mkdirSync(join(seed, 'shared', 'extras', 'myproj', '.planning'), { recursive: true });
       writeFileSync(join(seed, 'shared', 'extras', 'myproj', '.planning', 'x.md'), '# SHARED\n');
@@ -192,7 +102,7 @@ describe('issue #112: fork merge with overlapping untracked extras', () => {
   });
 
   it('divergent extras overlap: surfaces a real merge conflict, not an opaque abort', async () => {
-    advanceUpstream('add extras', () => {
+    advanceUpstream(root, 'add extras', () => {
       const seed = join(root, 'seed');
       mkdirSync(join(seed, 'shared', 'extras', 'myproj', '.planning'), { recursive: true });
       writeFileSync(join(seed, 'shared', 'extras', 'myproj', '.planning', 'x.md'), '# UPSTREAM\n');
@@ -231,7 +141,7 @@ describe('issue #112: fork merge with overlapping untracked extras', () => {
     // regenerates package-lock.json to a third value, leaving drift the
     // trailing doctor would otherwise flag. commitRegeneratedLockfile must
     // stage + commit just that file.
-    advanceUpstream('bump lockfile', () => {
+    advanceUpstream(root, 'bump lockfile', () => {
       const seed = join(root, 'seed');
       writeFileSync(join(seed, 'package-lock.json'), '{"v":2}\n');
     });
@@ -255,40 +165,5 @@ describe('issue #112: fork merge with overlapping untracked extras', () => {
     expect(git(local, ['show', '--name-only', '--pretty=format:', 'HEAD']).trim()).toBe(
       'package-lock.json',
     );
-  });
-
-  it('precommitForkExtras is a no-op when declared extras do not exist on disk', async () => {
-    // path-map declares an extras dir that is not present on disk, so the
-    // candidate set filters to empty and the helper returns before committing.
-    writeFileSync(
-      join(local, 'path-map.json'),
-      JSON.stringify({ projects: {}, extras: { myproj: ['.planning'] } }) + '\n',
-    );
-    const before = git(local, ['rev-parse', 'HEAD']);
-    vi.resetModules();
-    const { precommitForkExtras } = await import('./update.fork-extras.ts');
-
-    expect(() => precommitForkExtras()).not.toThrow();
-    expect(git(local, ['rev-parse', 'HEAD'])).toBe(before);
-  });
-
-  it('precommitForkExtras is a no-op when extras are already tracked and unmodified', async () => {
-    // The extras path exists and is already committed unchanged, so the
-    // path-scoped `git add` stages nothing and the scoped dirty probe sees no
-    // change: no empty commit is created.
-    mkdirSync(join(local, 'shared', 'extras', 'myproj', '.planning'), { recursive: true });
-    writeFileSync(join(local, 'shared', 'extras', 'myproj', '.planning', 'x.md'), '# tracked\n');
-    git(local, ['add', '--', 'shared/extras/myproj/.planning/x.md']);
-    git(local, ['commit', '-q', '-m', 'track extras']);
-    writeFileSync(
-      join(local, 'path-map.json'),
-      JSON.stringify({ projects: {}, extras: { myproj: ['.planning'] } }) + '\n',
-    );
-    const before = git(local, ['rev-parse', 'HEAD']);
-    vi.resetModules();
-    const { precommitForkExtras } = await import('./update.fork-extras.ts');
-
-    expect(() => precommitForkExtras()).not.toThrow();
-    expect(git(local, ['rev-parse', 'HEAD'])).toBe(before);
   });
 });

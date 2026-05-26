@@ -12,7 +12,8 @@ import {
   type SpawnSyncFn,
 } from './gh-actions.ts';
 import { snapshotIntoShared } from './init.snapshot.ts';
-import { die, log, writeJsonAtomic } from './utils.ts';
+import { die, log } from './utils.ts';
+import { writeJsonAtomic } from './utils.fs.ts';
 
 /**
  * The HTML comment line that anchors `shared/CLAUDE.md` on a fresh scaffold.

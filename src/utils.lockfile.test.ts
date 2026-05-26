@@ -15,27 +15,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as fsModule from 'node:fs';
 
 /**
- * Split off from utils.test.ts to keep file sizes under the ~200-line cap.
- * Covers the stale-lock recovery branches in `checkStaleAndRetry`,
- * `unlinkIfSamePid`, and `retryOnce` that the happy-path tests in
- * utils.test.ts do not reach.
+ * Lockfile happy-path + release error-propagation coverage, mirroring the
+ * utils.lockfile.ts source module. The stale-lock recovery branches live in
+ * the sibling utils.lockfile.recovery.test.ts to keep both files under the
+ * ~200-line cap. SUT symbols load from ./utils.lockfile.ts.
  */
-describe('acquireLock stale-lock recovery branches', () => {
+describe('acquireLock / releaseLock', () => {
   let originalHome: string | undefined;
   let testHome: string;
-  let lockDir: string;
   let lockPath: string;
   let stderrWrites: string[];
 
   beforeEach(() => {
     originalHome = process.env.HOME;
-    testHome = mkdtempSync(join(tmpdir(), 'nomad-lockfile-test-'));
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
     process.env.HOME = testHome;
-    lockDir = join(testHome, '.cache', 'claude-nomad');
-    lockPath = join(lockDir, 'nomad.lock');
+    lockPath = join(testHome, '.cache', 'claude-nomad', 'nomad.lock');
     stderrWrites = [];
     // warn() routes through console.error; capture both stdio paths so the
-    // lock-contention assertions remain stream-agnostic.
+    // lock-contention assertions remain stream-agnostic across the helper
+    // refactor (process.stderr.write is still spied for defense in depth).
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       stderrWrites.push(args.map(String).join(' ') + '\n');
     });
@@ -48,7 +47,6 @@ describe('acquireLock stale-lock recovery branches', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('node:fs');
     try {
       unlinkSync(lockPath);
     } catch {
@@ -59,42 +57,43 @@ describe('acquireLock stale-lock recovery branches', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('returns null and writes stderr skip line when PID is non-numeric AND unlink fails', async () => {
-    // Pre-write a non-numeric PID so parseInt fails (NaN, not finite).
-    // Mock unlinkSync to throw EACCES for the lock path so unlinkIfSamePid
-    // returns false. The fallthrough lands on the stderr skip line, returning
-    // null without recovering. Mock-based (vs chmod) for determinism across
-    // root-owned CI containers where POSIX bits do not bind.
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(lockPath, 'not-a-pid');
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      return {
-        ...actual,
-        unlinkSync: vi.fn((path: fsModule.PathLike) => {
-          if (typeof path === 'string' && path === lockPath) {
-            const err = new Error('permission denied') as NodeJS.ErrnoException;
-            err.code = 'EACCES';
-            throw err;
-          }
-          return actual.unlinkSync(path);
-        }),
-      };
-    });
-    const { acquireLock } = await import('./utils.ts');
+  it('fresh acquire creates lockfile with our PID, release removes it', async () => {
+    const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    expect(existsSync(lockPath)).toBe(true);
+    expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    releaseLock(handle);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('returns null and writes stderr skip line when a live PID owns the lock', async () => {
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(lockPath, String(process.pid));
+    const { acquireLock } = await import('./utils.lockfile.ts');
     const handle = acquireLock('pull');
     expect(handle).toBeNull();
     expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
     expect(existsSync(lockPath)).toBe(true);
   });
 
-  it('recovers and retries successfully when PID is non-numeric AND unlink succeeds', async () => {
-    // Empty string -> parseInt('') is NaN -> !Number.isFinite(pid) true ->
-    // unlinkIfSamePid('') compares against the file's trimmed content '' and
-    // unlinks it. retryOnce then opens the lock fresh and writes our PID.
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(lockPath, '');
-    const { acquireLock, releaseLock } = await import('./utils.ts');
+  it('unlinks stale lockfile and retries when PID file references a dead process', async () => {
+    const deadPid = 2147483647;
+    let guarded = false;
+    try {
+      process.kill(deadPid, 0);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ESRCH') guarded = true;
+    }
+    if (!guarded) {
+      throw new Error(
+        `PID ${deadPid} unexpectedly live on this host; raise pid_max guard or pick a higher PID.`,
+      );
+    }
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(lockPath, String(deadPid));
+    const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
     const handle = acquireLock('pull');
     expect(handle).not.toBeNull();
     expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
@@ -102,191 +101,56 @@ describe('acquireLock stale-lock recovery branches', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
-  it('returns null when process.kill(pid, 0) throws non-ESRCH (e.g. EPERM)', async () => {
-    // Plant a live PID (our own) so the liveness probe is reached. Spy on
-    // process.kill so it throws EPERM (root-owned process scenario). The
-    // catch's `code !== ESRCH` branch writes the skip line and returns null.
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(lockPath, String(process.pid));
-    // process.kill is a union overload (number | string for signal); the
-    // spy implementation must accept the broader (string | number) and throw,
-    // so coerce via `as never` after the impl to satisfy the never-returning
-    // mock signature.
-    vi.spyOn(process, 'kill').mockImplementation(((): boolean => {
-      const err = new Error('operation not permitted') as NodeJS.ErrnoException;
-      err.code = 'EPERM';
-      throw err;
-    }) as never);
-    const { acquireLock } = await import('./utils.ts');
-    const handle = acquireLock('pull');
-    expect(handle).toBeNull();
+  it('returns null on double-acquire in the same process (own PID is alive)', async () => {
+    const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
+    const first = acquireLock('pull');
+    expect(first).not.toBeNull();
+    const second = acquireLock('pull');
+    expect(second).toBeNull();
     expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
-    expect(existsSync(lockPath)).toBe(true);
+    releaseLock(first);
+    expect(existsSync(lockPath)).toBe(false);
   });
 
-  it('returns null when stale-lock confirmed but retryOnce openSync(EEXIST) fails', async () => {
-    // Plant a dead PID so the ESRCH branch fires, unlinkIfSamePid succeeds,
-    // then retryOnce's openSync throws EEXIST (another process raced in and
-    // recreated the lockfile between unlink and our retry). retryOnce's
-    // catch writes the skip line and returns null.
-    const deadPid = 2147483647;
-    let guarded = false;
-    try {
-      process.kill(deadPid, 0);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ESRCH') guarded = true;
-    }
-    if (!guarded) {
-      throw new Error(`PID ${deadPid} unexpectedly live; pick a higher PID.`);
-    }
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(lockPath, String(deadPid));
+  it('releaseLock(null) is a safe no-op', async () => {
+    const { releaseLock } = await import('./utils.lockfile.ts');
+    expect(() => releaseLock(null)).not.toThrow();
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad'))).toBe(false);
+  });
+});
 
-    // Mock openSync so the FIRST call (initial acquire) throws EEXIST as it
-    // would naturally (lock file exists), and the SECOND call (retryOnce
-    // after stale-unlink) ALSO throws EEXIST to exercise its catch branch.
-    let callCount = 0;
+describe('releaseLock error propagation', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+  let lockPath: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-release-rethrow-'));
+    process.env.HOME = testHome;
+    lockPath = join(testHome, '.cache', 'claude-nomad', 'nomad.lock');
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:fs');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('rethrows when unlinkSync fails with a non-ENOENT error (e.g. EACCES)', async () => {
+    // releaseLock tolerates ENOENT (lockfile already gone) but rethrows
+    // everything else so the caller surfaces unexpected I/O failures.
+    // Mock node:fs.unlinkSync to throw EACCES for the lockfile path; the
+    // `code !== 'ENOENT'` true branch in releaseLock is exercised.
+    // Done via vi.doMock (rather than spyOn) because ESM module namespaces
+    // are not configurable.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
         ...actual,
-        openSync: vi.fn(
-          (
-            path: fsModule.PathLike,
-            flags: fsModule.OpenMode,
-            mode?: fsModule.Mode | null,
-          ): number => {
-            // Only intercept opens of the lock path with the 'wx' flag (the
-            // exclusive-create path that drives acquireLock + retryOnce).
-            // All other opens (readJson, fsync on dir, etc.) pass through.
-            if (typeof path === 'string' && path === lockPath && flags === 'wx') {
-              callCount++;
-              const err = new Error('file exists') as NodeJS.ErrnoException;
-              err.code = 'EEXIST';
-              throw err;
-            }
-            return actual.openSync(path, flags, mode);
-          },
-        ),
-      };
-    });
-    const { acquireLock } = await import('./utils.ts');
-    const handle = acquireLock('pull');
-    expect(handle).toBeNull();
-    // Both openSync('wx') attempts went through the mock.
-    expect(callCount).toBe(2);
-    expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
-  });
-
-  it('recovers from a vanished-file race (readFileSync throws ENOENT during stale check)', async () => {
-    // Spy on readFileSync to throw ENOENT on the lockfile read inside
-    // checkStaleAndRetry. The catch sets pidStr = '', parseInt yields NaN,
-    // unlinkIfSamePid('') is called; its readFileSync also fails (file truly
-    // gone) so it returns false. Skip line fires, null returned. The file
-    // never existed for the test to inspect; assert only the null return and
-    // the stderr line. This exercises the line-296 catch branch.
-    // Use vi.doMock so the spied-fs is in scope during dynamic import.
-    mkdirSync(lockDir, { recursive: true });
-    // No actual lock file - openSync('wx') would normally succeed. Force
-    // EEXIST so checkStaleAndRetry is invoked.
-    let openCount = 0;
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      return {
-        ...actual,
-        openSync: vi.fn(
-          (
-            path: fsModule.PathLike,
-            flags: fsModule.OpenMode,
-            mode?: fsModule.Mode | null,
-          ): number => {
-            if (typeof path === 'string' && path === lockPath && flags === 'wx') {
-              openCount++;
-              const err = new Error('file exists') as NodeJS.ErrnoException;
-              err.code = 'EEXIST';
-              throw err;
-            }
-            return actual.openSync(path, flags, mode);
-          },
-        ),
-        readFileSync: vi.fn(
-          (
-            path: fsModule.PathOrFileDescriptor,
-            opts?: Parameters<typeof actual.readFileSync>[1],
-          ) => {
-            if (typeof path === 'string' && path === lockPath) {
-              const err = new Error('no such file') as NodeJS.ErrnoException;
-              err.code = 'ENOENT';
-              throw err;
-            }
-            return actual.readFileSync(path, opts);
-          },
-        ),
-      };
-    });
-    const { acquireLock } = await import('./utils.ts');
-    const handle = acquireLock('pull');
-    expect(handle).toBeNull();
-    expect(openCount).toBe(1);
-    expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
-  });
-
-  it('rethrows when openSync fails with a non-EEXIST error (e.g. EACCES on parent dir)', async () => {
-    // acquireLock catches openSync errors and only converts EEXIST into the
-    // contention-recovery path. Any other code (EACCES, ENOSPC, etc.) must
-    // be rethrown unchanged so the caller sees the underlying I/O failure.
-    // Covers the line-233 truthy `code !== 'EEXIST'` rethrow branch.
-    mkdirSync(lockDir, { recursive: true });
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      return {
-        ...actual,
-        openSync: vi.fn(
-          (
-            path: fsModule.PathLike,
-            flags: fsModule.OpenMode,
-            mode?: fsModule.Mode | null,
-          ): number => {
-            if (typeof path === 'string' && path === lockPath && flags === 'wx') {
-              const err = new Error('permission denied') as NodeJS.ErrnoException;
-              err.code = 'EACCES';
-              throw err;
-            }
-            return actual.openSync(path, flags, mode);
-          },
-        ),
-      };
-    });
-    const { acquireLock } = await import('./utils.ts');
-    expect(() => acquireLock('pull')).toThrow(/permission denied/);
-  });
-
-  it('returns null after ESRCH liveness probe when unlinkIfSamePid cannot remove the stale lock', async () => {
-    // Plant a dead PID so process.kill(pid, 0) throws ESRCH. Then mock
-    // unlinkSync to throw EACCES so unlinkIfSamePid (line 280) returns
-    // false. Control flow lands on the post-ESRCH fallthrough at lines
-    // 312-313 (stderr skip + null return) WITHOUT retrying. Distinct from
-    // the successful-ESRCH-recovery path covered by utils.test.ts.
-    const deadPid = 2147483647;
-    let guarded = false;
-    try {
-      process.kill(deadPid, 0);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ESRCH') guarded = true;
-    }
-    if (!guarded) {
-      throw new Error(`PID ${deadPid} unexpectedly live; pick a higher PID.`);
-    }
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(lockPath, String(deadPid));
-
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      return {
-        ...actual,
-        // Allow openSync('wx') to throw EEXIST naturally (the planted file
-        // is on disk), then block unlinkSync so unlinkIfSamePid bails with
-        // false at line 280's catch.
         unlinkSync: vi.fn((path: fsModule.PathLike) => {
           if (typeof path === 'string' && path === lockPath) {
             const err = new Error('permission denied') as NodeJS.ErrnoException;
@@ -297,11 +161,35 @@ describe('acquireLock stale-lock recovery branches', () => {
         }),
       };
     });
-    const { acquireLock } = await import('./utils.ts');
+    const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
     const handle = acquireLock('pull');
-    expect(handle).toBeNull();
-    expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
-    // Lockfile remains because unlink was blocked.
+    expect(handle).not.toBeNull();
     expect(existsSync(lockPath)).toBe(true);
+    expect(() => releaseLock(handle)).toThrow(/permission denied/);
+  });
+
+  it('silently tolerates ENOENT on unlinkSync (lockfile already vanished)', async () => {
+    // ENOENT branch of releaseLock's unlink catch: the lockfile is gone
+    // before we get to unlink it (e.g. another process cleaned up first).
+    // Must NOT throw - this is the documented tolerance contract.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        unlinkSync: vi.fn((path: fsModule.PathLike) => {
+          if (typeof path === 'string' && path === lockPath) {
+            const err = new Error('no such file') as NodeJS.ErrnoException;
+            err.code = 'ENOENT';
+            throw err;
+          }
+          return actual.unlinkSync(path);
+        }),
+      };
+    });
+    const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    // Silent: no throw despite the simulated vanish.
+    expect(() => releaseLock(handle)).not.toThrow();
   });
 });
