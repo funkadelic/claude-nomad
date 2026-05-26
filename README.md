@@ -150,14 +150,14 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 ```json
 {
   "projects": {
-    "ha-acwd": {
-      "<your-mac>": "/Users/you/code/ha-acwd",
-      "<your-wsl-host>": "/home/you/code/ha-acwd",
+    "my-example-repo": {
+      "<your-mac>": "/Users/you/code/my-example-repo",
+      "<your-wsl-host>": "/home/you/code/my-example-repo",
       "<your-nuc>": "TBD"
     }
   },
   "extras": {
-    "ha-acwd": [".planning", "CLAUDE.md"]
+    "my-example-repo": [".planning", "CLAUDE.md"]
   }
 }
 ```
@@ -167,7 +167,7 @@ The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-pa
 
 Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the real path when you bring up that host.
 
-On `push`, sessions in `~/.claude/projects/-Users-you-code-ha-acwd/` get copied to `shared/projects/ha-acwd/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the cross-OS cwd-binding gotcha).
+On `push`, sessions in `~/.claude/projects/-Users-you-code-my-example-repo/` get copied to `shared/projects/my-example-repo/`. On `pull` on another machine, they get copied to that host's encoded path. `claude --resume` then finds them (see [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the cross-OS cwd-binding gotcha).
 
 The `extras` block is additive and back-compatible: legacy `path-map.json` files without it keep working unchanged. Each value is an array of directory or root-file names (e.g. `.planning`, `CLAUDE.md`) checked against `SUPPORTED_EXTRAS` in `src/config.ts`; anything outside that whitelist is skipped with a log line, so an unrecognized name cannot widen the sync surface.
 
@@ -492,7 +492,7 @@ Or pipe through bash:
 $ nomad doctor --resume-cmd <session-id> | bash
 ```
 
-`nomad doctor --resume-cmd <id>` reads the `.jsonl`'s recorded `cwd`, reverse-looks up the logical project in `path-map.json`, finds your current host's abspath for that logical, and prints `cd <local-abspath> && claude --resume <id>` to stdout. The command is read-only: it never modifies any transcript byte (Phase 1's sha256 byte-equality invariant is preserved).
+`nomad doctor --resume-cmd <id>` reads the `.jsonl`'s recorded `cwd`, reverse-looks up the logical project in `path-map.json`, finds your current host's abspath for that logical, and prints `cd <local-abspath> && claude --resume <id>` to stdout. The command is read-only: it never modifies any transcript byte.
 
 If the session isn't mapped on this host, you'll see:
 
