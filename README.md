@@ -229,10 +229,10 @@ Read these before adopting so you opt in with eyes open.
 
 ### Privacy by default
 
-Your private mirror has two layers of defense against leaking transcripts via CI, both applied automatically:
+When you mirror-push the tool into your repo, you copy its automation along with its code: the `.github/workflows/` directory holds the public project's own CI (running its test suite, linting, secret and code scanning, release tagging, and npm publishing). That CI is meant for the public project, not your config; if it ran on your private mirror, a job could echo transcript contents into build logs. So your mirror gets two independent layers of defense against that, both applied automatically:
 
-1. Every workflow under `.github/workflows/` is gated on `${{ !github.event.repository.private }}`, so they skip on private repos and only run on public ones.
-2. `nomad init` calls `gh api -X PUT repos/<owner>/<repo>/actions/permissions -F enabled=false` on first run, turning Actions off at the repo level. Requires `gh` CLI authed; if missing or unauthed, init logs a manual fallback tip and continues.
+1. **The workflows are written to skip private repos.** Each one carries the run condition `${{ !github.event.repository.private }}` (in plain terms: "run only when this repo is NOT private"), so even with Actions enabled the jobs do not run on your mirror.
+2. **`nomad init` turns Actions off for the whole repo** on first run, via the GitHub API call `gh api -X PUT repos/<owner>/<repo>/actions/permissions -F enabled=false`. This needs the `gh` CLI installed and authed; if it is missing or unauthed, init logs a manual fallback tip and continues.
 
 Pass `--keep-actions` to either form of init to skip step 2 (for example, when your org already enforces an Actions policy upstream).
 
@@ -325,10 +325,12 @@ Prefer an explicit tarball rollback and a confirmation prompt before any deletio
 
 ## Upgrading the tool
 
-Two upgrade paths, depending on how you installed:
+Two different things can fall behind, and they update independently:
 
-- **Global install (`npm i -g claude-nomad`):** `npm update -g claude-nomad`. This refreshes only the `nomad` CLI binary on PATH; your private `~/claude-nomad/` repo is untouched.
-- **Source-checkout developer workflow:** `nomad update` (run from `~/claude-nomad/`). Topology-aware: detects vanilla vs fork remotes, pulls or merges upstream, and re-runs `npm install` when `package-lock.json` shifted.
+- **The `nomad` CLI binary** (what runs when you type `nomad`). If you installed it with `npm i -g claude-nomad`, upgrade it with `npm update -g claude-nomad`. This refreshes only the binary on your PATH; it does not touch anything inside your private `~/claude-nomad/` repo.
+- **The synced tool files inside your private repo:** `src/`, `.gitleaks.toml` (the secret-scan allowlist), and the `.github/workflows/` privacy gating. These were copied from the public repo at bootstrap and then froze, so `npm update -g` does not refresh them. `nomad update`, run from `~/claude-nomad/`, is what pulls newer versions of these files in. Topology-aware: detects vanilla vs fork remotes, pulls or merges upstream, and re-runs `npm install` when `package-lock.json` shifted.
+
+Most people who followed the Quickstart need both: `npm update -g` for the binary, and an occasional `nomad update` for the repo files (notably to receive `.gitleaks.toml` allowlist changes and any update to the privacy gating itself). The mirror-push bootstrap leaves your repo with `origin` on your private mirror and no `upstream` remote; that becomes the "fork" topology `nomad update` expects once you add the upstream remote (the one-time `git remote add upstream ...` step is below).
 
 Your private repo is not a fork, so GitHub's "Sync fork" UI doesn't apply. The shortcut on a source-checkout host is:
 
