@@ -139,6 +139,7 @@ export const KNOWN_SETTINGS_KEYS = new Set<string>([
   'pluginRepositoryEnabled',
   'pluginsLocalConfig',
   'proxy',
+  'skipAutoPermissionPrompt',
   'statsig',
   'statusLine',
   'subagents',
