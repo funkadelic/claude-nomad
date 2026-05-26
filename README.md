@@ -215,7 +215,7 @@ Read these before adopting so you opt in with eyes open.
 - Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field declares the 22.22.1 floor and surfaces a warning on older runtimes - npm only blocks the install when `engine-strict=true` is configured)
 - `tsx` (ships as a runtime dependency of the published package; no separate global install required)
 - Git
-- [`gitleaks`](https://github.com/gitleaks/gitleaks) (required for `nomad push`, which fail-fasts if it is not on PATH; `nomad doctor` also checks it against the pinned 8.30.x and warns when it is absent or mismatched)
+- [`gitleaks`](https://github.com/gitleaks/gitleaks) (required for `nomad push`, which exits with an error if it is not on PATH; `nomad doctor` also checks it against the pinned 8.30.x and warns when it is absent or mismatched)
 - A **private** GitHub repo (or any Git remote you control)
 
 **Optional:**
@@ -247,11 +247,12 @@ Steps 1-2 are once-ever across all hosts; step 3 repeats per host:
 # 1. Create the private repo (or use the GitHub UI). Once, ever.
 gh repo create <your-username>/claude-nomad --private
 
-# 2. Mirror the public tool into it. This severs the fork relationship,
-#    so your repo is independent of upstream. Once, ever.
-git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git
+# 2. Copy the public tool into your private repo. A bare clone followed by a
+#    mirror push makes a complete, independent copy (every branch and tag) with
+#    no fork link back to upstream, which is what lets you keep it private. Once, ever.
+git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git # download a full copy
 cd /tmp/cn.git
-git push --mirror git@github.com:<your-username>/claude-nomad.git
+git push --mirror git@github.com:<your-username>/claude-nomad.git # upload it to your private repo
 cd .. && rm -rf /tmp/cn.git
 
 # 3. Install the CLI globally and clone your private copy. Repeat on every host.
@@ -372,7 +373,7 @@ If you installed an earlier version via `./install.sh` and a shell alias (the pr
 | `nomad init`                     | Scaffold empty `shared/`, `hosts/`, `path-map.json` on a fresh clone. Refuses to clobber existing scaffold. Auto-disables Actions on a detected private GitHub mirror (see [Privacy by default](#privacy-by-default)).                                                                                                                                   |
 | `nomad init --snapshot`          | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified. Same auto-disable behavior as `nomad init`.                                                                                                                                                      |
 | `nomad init --keep-actions`      | Skip the auto-disable. Combinable with `--snapshot`. Use when an upstream org policy already governs Actions, or you intentionally want CI on the private mirror.                                                                                                                                                                                        |
-| `nomad pull`                     | `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths, and pull opted-in per-project extras. FATAL if scaffold missing.                                                                                                                                                                                       |
+| `nomad pull`                     | `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths, and pull opted-in per-project extras. Errors out if scaffold missing.                                                                                                                                                                                  |
 | `nomad pull --dry-run`           | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), exit without writing.                                                                                                                                                                                     |
 | `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                                                                                                                                                                                             |
 | `nomad push`                     | Export local sessions and opted-in per-project extras to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                                                                                                                                                  |
@@ -421,7 +422,7 @@ What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` f
 
 ### Recovery flow: gitleaks FATAL on a session JSONL
 
-`nomad push` runs `gitleaks protect --staged` before commit. To catch the same findings before you push (and without mutating anything), run the read-only preflight `nomad doctor --check-shared`, which stages and scans the exact transcripts a push would publish. When findings live in a session transcript, the push FATAL names every affected session id and the recovery command:
+`nomad push` runs `gitleaks protect --staged` before commit. To catch the same findings before you push (and without mutating anything), run the read-only preflight `nomad doctor --check-shared`, which stages and scans the exact transcripts a push would publish. When findings live in a session transcript, the push aborts and names every affected session id and the recovery command:
 
 ```text
 ✗ gitleaks detected secrets in 1 session transcript(s).
