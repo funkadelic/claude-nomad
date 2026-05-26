@@ -245,7 +245,7 @@ Pass `--keep-actions` to either form of init to skip step 2 (for example, when y
 
 ### Bootstrap
 
-Steps 1-2 are once-ever across all hosts; step 3 repeats per host:
+Steps 1-2 are once-ever across all hosts; steps 3-4 repeat on every host:
 
 ```bash
 # 1. Create the private repo (or use the GitHub UI). Once, ever.
@@ -262,17 +262,14 @@ $ cd .. && rm -rf /tmp/cn.git
 # 3. Install the CLI globally and clone your private copy. Repeat on every host.
 $ npm i -g claude-nomad
 $ git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
+
+# 4. Add a stable host label to your shell rc (~/.zshrc or ~/.bashrc). Repeat on every host.
+export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
 ```
 
 `npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing `src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. (The Node version floor and the `engine-strict` caveat are in [Requirements](#requirements).)
 
-On every additional host you only repeat step 3 (the global install is per-host; your private repo already exists on the remote from step 2).
-
-Add to `~/.zshrc` or `~/.bashrc`:
-
-```bash
-export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
-```
+On every additional host you repeat only steps 3-4; steps 1-2 are already done, since your private repo lives on the remote from step 2.
 
 `NOMAD_HOST` overrides `os.hostname()`, which returns noisy values like `WINDOWS-I5NT6OH` on WSL or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`, `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
 
