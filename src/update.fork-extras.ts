@@ -4,7 +4,8 @@ import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
 import { whitelistedExtrasPaths } from './extras-sync.ts';
-import { gitOrFatal, log, readPathMap } from './utils.ts';
+import { gitOrFatal, log } from './utils.ts';
+import { readPathMap } from './utils.json.ts';
 
 /**
  * Pre-commit whitelisted extras before a fork merge so an untracked-overwrite

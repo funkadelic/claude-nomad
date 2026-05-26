@@ -18,7 +18,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
-import { nowTimestamp } from './utils.ts';
+import { nowTimestamp } from './utils.fs.ts';
 
 /**
  * Subset of gitleaks 8.x JSON report fields the parser consumes. The

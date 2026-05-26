@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { HOME, REPO_HOME } from './config.ts';
 import { computePreview } from './preview.ts';
 import { emitSummary } from './summary.ts';
-import { die, fail, freshBackupTs, NomadFatal } from './utils.ts';
+import { die, fail, NomadFatal } from './utils.ts';
+import { freshBackupTs } from './utils.fs.ts';
 
 /**
  * `nomad diff` command. Offline-safe, read-only preview surface that runs

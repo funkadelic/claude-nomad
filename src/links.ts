@@ -2,16 +2,9 @@ import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, SHARED_LINKS } from './config.ts';
-import {
-  backupBeforeWrite,
-  deepMerge,
-  die,
-  ensureSymlink,
-  log,
-  readJson,
-  warn,
-  writeJsonAtomic,
-} from './utils.ts';
+import { die, log, warn } from './utils.ts';
+import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
+import { deepMerge, readJson } from './utils.json.ts';
 
 /**
  * Symlink the `SHARED_LINKS` names from the repo's `shared/` dir into

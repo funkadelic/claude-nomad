@@ -2,7 +2,9 @@ import { copyFileSync, cpSync, existsSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, SHARED_LINKS } from './config.ts';
-import { die, log, readJson, writeJsonAtomic } from './utils.ts';
+import { die, log } from './utils.ts';
+import { writeJsonAtomic } from './utils.fs.ts';
+import { readJson } from './utils.json.ts';
 
 /**
  * Overlay `~/.claude/` SHARED_LINKS onto the freshly-written scaffold under

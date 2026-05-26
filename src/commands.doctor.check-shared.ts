@@ -33,7 +33,8 @@ import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { type Finding, partitionFindings, scanStagedTree } from './push-gitleaks.ts';
 import { copyDirJsonlOnly } from './remap.ts';
-import { encodePath, nowTimestamp, readJson } from './utils.ts';
+import { nowTimestamp } from './utils.fs.ts';
+import { encodePath, readJson } from './utils.json.ts';
 
 /**
  * Result of staging the scan tree. `malformed` is true when `path-map.json`

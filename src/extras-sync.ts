@@ -3,8 +3,9 @@ import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { isAbsolute, join, normalize } from 'node:path';
 
 import { HOME, HOST, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
-// prettier-ignore
-import { backupExtrasWrite, backupRepoWrite, encodePath, log, NomadFatal, readPathMap, warn } from './utils.ts';
+import { log, NomadFatal, warn } from './utils.ts';
+import { backupExtrasWrite, backupRepoWrite } from './utils.fs.ts';
+import { encodePath, readPathMap } from './utils.json.ts';
 
 /**
  * `logical` keys in `path-map.json` are project identifiers (e.g. `ha-acwd`,

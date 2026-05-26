@@ -1,0 +1,152 @@
+import {
+  closeSync,
+  cpSync,
+  existsSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+
+import { CLAUDE_HOME, HOME } from './config.ts';
+import { encodePath } from './utils.json.ts';
+import { die, log } from './utils.ts';
+
+/**
+ * Atomic write: temp + fsync + rename + parent-dir fsync. Survives
+ * interrupted pulls. Preserves the destination file's existing mode when it
+ * exists, defaults to 0o600 otherwise so credentials in `settings.json` are
+ * not widened by the process umask on every regenerate.
+ */
+export function writeJsonAtomic(path: string, data: unknown): void {
+  const mode = existsSync(path) ? statSync(path).mode & 0o777 : 0o600;
+  const tmp = `${path}.tmp.${process.pid}`;
+  const fd = openSync(tmp, 'w', mode);
+  try {
+    writeFileSync(fd, JSON.stringify(data, null, 2) + '\n');
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmp, path);
+  // Fsync the parent directory so the rename itself is durable across a crash;
+  // otherwise the file contents are persisted but the directory entry can be
+  // lost. Linux/macOS support this on a read-only fd to the dir.
+  const dirFd = openSync(dirname(path), 'r');
+  try {
+    fsyncSync(dirFd);
+  } finally {
+    closeSync(dirFd);
+  }
+}
+
+/** Local-time YYYYMMDD-HHMMSS timestamp; lexicographically sortable. Pure. */
+export function nowTimestamp(): string {
+  const d = new Date();
+  const pad = (n: number): string => n.toString().padStart(2, '0');
+  return (
+    d.getFullYear().toString() +
+    pad(d.getMonth() + 1) +
+    pad(d.getDate()) +
+    '-' +
+    pad(d.getHours()) +
+    pad(d.getMinutes()) +
+    pad(d.getSeconds())
+  );
+}
+
+/**
+ * Collision-resistant backup timestamp. `nowTimestamp()` is second-resolution,
+ * so two pulls in the same wall-clock second would share `ts`, and the
+ * second's `backupBeforeWrite` calls (which use `cpSync` with `force:false`)
+ * would silently no-op against the existing first snapshot. Append a `-N`
+ * suffix until the backup dir is unique.
+ */
+export function freshBackupTs(backupRoot: string): string {
+  const base = nowTimestamp();
+  if (!existsSync(join(backupRoot, base))) return base;
+  let n = 1;
+  while (existsSync(join(backupRoot, `${base}-${n}`))) n++;
+  return `${base}-${n}`;
+}
+
+/**
+ * Create a symlink at `linkPath` pointing to `target`, idempotently. No-op if
+ * a symlink already exists at `linkPath`; dies if a non-symlink exists there
+ * (caller should pre-scan and back up first; see `applySharedLinks`).
+ */
+export function ensureSymlink(linkPath: string, target: string): void {
+  if (existsSync(linkPath)) {
+    if (lstatSync(linkPath).isSymbolicLink()) return;
+    die(`${linkPath} exists and is not a symlink. Move it aside first.`);
+  }
+  mkdirSync(dirname(linkPath), { recursive: true });
+  symlinkSync(target, linkPath);
+  log(`linked ${linkPath} -> ${target}`);
+}
+
+/**
+ * Snapshot `absPath` into `~/.cache/claude-nomad/backup/<ts>/<rel>` before destructive write.
+ * No-op if source missing or outside CLAUDE_HOME. Recursive for directories.
+ */
+export function backupBeforeWrite(absPath: string, ts: string): void {
+  if (!existsSync(absPath)) return;
+  const rel = relative(CLAUDE_HOME, absPath);
+  if (rel.startsWith('..') || rel === '') return;
+  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts);
+  const dst = join(backupRoot, rel);
+  mkdirSync(dirname(dst), { recursive: true });
+  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+}
+
+/**
+ * Parallel of `backupBeforeWrite`, but scoped to `REPO_HOME` instead of
+ * `CLAUDE_HOME`. Used by `remapPush` to snapshot repo-side encoded-dir
+ * state before `copyDir` clobbers it. Backup root is repo-prefixed so the
+ * dump is distinguishable from `CLAUDE_HOME` backups in the same `ts` dir.
+ */
+export function backupRepoWrite(absPath: string, ts: string, repoHome: string): void {
+  if (!existsSync(absPath)) return;
+  const rel = relative(repoHome, absPath);
+  if (rel.startsWith('..') || rel === '') return;
+  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'repo');
+  const dst = join(backupRoot, rel);
+  mkdirSync(dirname(dst), { recursive: true });
+  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+}
+
+/**
+ * Parallel of `backupBeforeWrite` and `backupRepoWrite`, scoped to an
+ * explicit `projectRoot` instead of `CLAUDE_HOME` or `REPO_HOME`. Used by
+ * `remapExtrasPull` to snapshot host-side extras content (e.g.
+ * `<localRoot>/.planning/`) before `copyExtras` clobbers it. The existing
+ * helpers cannot serve this case: their `relative(CLAUDE_HOME, absPath)` and
+ * `relative(repoHome, absPath)` guards return a `..`-prefixed string for any
+ * path outside their anchor and silently no-op, so a pull-side
+ * `<localRoot>/.planning/` would never be backed up.
+ *
+ * Backup root is `extras/`-prefixed inside the same `<ts>` dir so the
+ * snapshot is distinguishable from `CLAUDE_HOME` dumps (no prefix) and
+ * `repo/` dumps. Layout:
+ * `~/.cache/claude-nomad/backup/<ts>/extras/<encoded-projectRoot>/<rel>/`
+ * where `<rel>` is `relative(projectRoot, absPath)` and
+ * `<encoded-projectRoot>` is `encodePath(projectRoot)`. The encoded prefix
+ * namespaces snapshots by project so two opted-in projects with the same
+ * relative extras path (e.g. both with `.planning/PLAN.md`) cannot collide
+ * inside the same `<ts>` directory (`cpSync` runs with `force: false`, so a
+ * collision would silently drop the second snapshot).
+ */
+export function backupExtrasWrite(absPath: string, ts: string, projectRoot: string): void {
+  if (!existsSync(absPath)) return;
+  const rel = relative(projectRoot, absPath);
+  if (rel.startsWith('..') || rel === '') return;
+  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'extras');
+  const dst = join(backupRoot, encodePath(projectRoot), rel);
+  mkdirSync(dirname(dst), { recursive: true });
+  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+}

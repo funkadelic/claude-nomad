@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { type PathMap } from './config.ts';
-import { readJson } from './utils.ts';
+import { readJson } from './utils.json.ts';
 
 /**
  * Read-only health classifier for `cmdDoctor`'s `repo state:` header.

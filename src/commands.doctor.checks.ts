@@ -19,7 +19,8 @@ import { CLAUDE_HOME, HOST, KNOWN_SETTINGS_KEYS, NEVER_SYNC, REPO_HOME, SHARED_L
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 import { findGitlinks } from './push-checks.ts';
-import { encodePath, gitStatusPorcelainZ, readJson } from './utils.ts';
+import { gitStatusPorcelainZ } from './utils.ts';
+import { encodePath, readJson } from './utils.json.ts';
 
 /**
  * Per-check helpers used by `cmdDoctor`. Each helper appends one or more items

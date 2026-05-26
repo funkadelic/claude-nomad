@@ -440,7 +440,7 @@ describe('remapExtrasPull (integration)', () => {
     );
 
     const { remapExtrasPull } = await import('./extras-sync.ts');
-    const { encodePath } = await import('./utils.ts');
+    const { encodePath } = await import('./utils.json.ts');
     remapExtrasPull('20260522-120005');
 
     // backupExtrasWrite uses the extras/-prefix path layout, namespaced by
@@ -534,7 +534,7 @@ describe('remapExtrasPull (integration)', () => {
     );
 
     const { remapExtrasPull } = await import('./extras-sync.ts');
-    const { encodePath } = await import('./utils.ts');
+    const { encodePath } = await import('./utils.json.ts');
     remapExtrasPull('20260522-120008');
 
     // relative(projectRoot, <root file>) is just the basename, so the backup

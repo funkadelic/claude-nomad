@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as utilsModule from './utils.ts';
+import type * as lockfileModule from './utils.lockfile.ts';
 
 /**
  * Covers the two scattered branches in cmdPull that the existing
@@ -46,6 +47,7 @@ describe('cmdPull precondition and lock-contention branches', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./utils.ts');
+    vi.doUnmock('./utils.lockfile.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -82,8 +84,8 @@ describe('cmdPull precondition and lock-contention branches', () => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     const acquireSpy = vi.fn(() => null);
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
+    vi.doMock('./utils.lockfile.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: acquireSpy };
     });
     const { cmdPull } = await import('./commands.pull.ts');

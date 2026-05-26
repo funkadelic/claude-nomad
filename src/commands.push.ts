@@ -8,8 +8,10 @@ import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts'
 import { runGitleaksScan } from './push-gitleaks.ts';
 import { remapPush } from './remap.ts';
 import { emitSummary } from './summary.ts';
-// prettier-ignore
-import { acquireLock, die, fail, freshBackupTs, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, readPathMap, releaseLock } from './utils.ts';
+import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
+import { freshBackupTs } from './utils.fs.ts';
+import { readPathMap } from './utils.json.ts';
+import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
 /**
  * Match `path` against an entry in the push allow-list. Exact match for

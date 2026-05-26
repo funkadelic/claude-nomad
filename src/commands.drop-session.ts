@@ -3,7 +3,8 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
-import { acquireLock, die, fail, log, NomadFatal, releaseLock } from './utils.ts';
+import { die, fail, log, NomadFatal } from './utils.ts';
+import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
 /**
  * Surgical removal of a contaminated session from the staged tree of

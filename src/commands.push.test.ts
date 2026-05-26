@@ -15,6 +15,7 @@ import type * as childProcessModule from 'node:child_process';
 import type { PathMap } from './config.ts';
 import type * as pushChecksModule from './push-checks.ts';
 import type * as utilsModule from './utils.ts';
+import type * as lockfileModule from './utils.lockfile.ts';
 
 // NomadFatal is loaded dynamically inside each test AFTER vi.resetModules()
 // + vi.doMock so the class reference shared with the freshly-loaded
@@ -717,6 +718,7 @@ describe('cmdPush lock-contention skip path', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./utils.ts');
+    vi.doUnmock('./utils.lockfile.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -733,8 +735,8 @@ describe('cmdPush lock-contention skip path', () => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     const acquireSpy = vi.fn(() => null);
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
+    vi.doMock('./utils.lockfile.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: acquireSpy };
     });
     const { cmdPush } = await import('./commands.push.ts');

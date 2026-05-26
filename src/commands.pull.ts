@@ -7,8 +7,9 @@ import { applySharedLinks, regenerateSettings } from './links.ts';
 import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
 import { emitSummary } from './summary.ts';
-// prettier-ignore
-import { acquireLock, die, fail, freshBackupTs, gitOrFatal, log, NomadFatal, releaseLock } from './utils.ts';
+import { die, fail, gitOrFatal, log, NomadFatal } from './utils.ts';
+import { freshBackupTs } from './utils.fs.ts';
+import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
 /**
  * `nomad pull` command. Acquires the push/pull lock, takes a backup

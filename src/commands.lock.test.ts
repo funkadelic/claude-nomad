@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import type * as childProcessModule from 'node:child_process';
 import type * as utilsModule from './utils.ts';
+import type * as lockfileModule from './utils.lockfile.ts';
 
 // Regression: cmdPull and cmdPush must release the lockfile even when a
 // fatal error fires mid-flight. Earlier code path called process.exit()
@@ -60,6 +61,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
     vi.doUnmock('./utils.ts');
+    vi.doUnmock('./utils.lockfile.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./push-checks.ts');
     vi.doUnmock('./push-gitleaks.ts');
@@ -248,8 +250,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   it('throws init-hint NomadFatal and never invokes acquireLock when cmdPull runs against an unscaffolded repo', async () => {
     expect(existsSync(join(repoUnderHome, 'shared', 'settings.base.json'))).toBe(false);
     const acquireSpy = vi.fn(() => null);
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
+    vi.doMock('./utils.lockfile.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: acquireSpy };
     });
     const { cmdPull } = await import('./commands.pull.ts');
