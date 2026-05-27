@@ -12,15 +12,16 @@
 **Your entire Claude Code setup, on every machine. History included, every push secret-scanned.**
 
 Open Claude Code on a second machine and it is a blank slate: none of your custom agents, slash
-commands, tuned settings, or past conversations. claude-nomad keeps all of it in sync through a
+commands, tuned settings, or past conversations. **claude-nomad** keeps all of it in sync through a
 private Git repo you control. `nomad push` on one machine, `nomad pull` on the next, and everything
 is there, conversations included.
 
-- **Resume your sessions on any machine.** Start a conversation on your desktop and pick it up on
-  your laptop. claude-nomad remaps the file paths Claude Code embeds in every transcript, so your
-  history follows you instead of getting stranded on the box where it started.
+- **Resume your Claude Code [sessions](https://code.claude.com/docs/en/agent-sdk/sessions) on any
+  machine.** Start a conversation on your desktop and pick it up on your laptop. **claude-nomad**
+  remaps the file paths Claude Code embeds in every transcript, so your history follows you instead
+  of getting stranded on the box where it started.
 - **Secret-scanned, private by default.** Your `~/.claude/` also holds OAuth tokens, MCP
-  credentials, and the full text of every conversation, so claude-nomad is deliberate about what
+  credentials, and the full text of every conversation, so **claude-nomad** is deliberate about what
   leaves your machine: credentials and ephemeral state never sync, only an explicit allow-list of
   paths is pushed, and everything that does go up is scanned by
   [gitleaks](https://github.com/gitleaks/gitleaks) before it leaves your machine; the push aborts on
@@ -30,7 +31,7 @@ is there, conversations included.
   and follow you everywhere. Per-machine tweaks like model choice, MCP URLs, and env vars merge on
   top instead of clobbering your shared defaults.
 
-Not dotfiles, not rsync. claude-nomad understands Claude Code's state, so your session history
+Not dotfiles, not rsync. **claude-nomad** understands Claude Code's state, so your session history
 survives different file paths and your secrets never ride along.
 
 For anyone running Claude Code on more than one machine: a laptop and a desktop, a Mac and a WSL
@@ -65,8 +66,8 @@ box, a personal rig and a work machine. [Get started in three steps.](#quickstar
 
 ## Quickstart
 
-If you already have a private claude-nomad mirror (see [Setup](#setup) for the one-time bootstrap),
-adding a new host is three steps:
+If you already have a private **claude-nomad** mirror (see [Setup](#setup) for the one-time
+bootstrap), adding a new host is three steps:
 
 ```bash
 $ npm i -g claude-nomad
@@ -97,8 +98,8 @@ First-host bootstrap and the safe-migration sequence for a populated `~/.claude/
 
 ## How it works (two-repo model)
 
-claude-nomad is a **tool**, not a config store. You maintain a separate **private** repo that holds
-your actual config (`CLAUDE.md`, agents, skills, settings overrides, session transcripts). The
+**claude-nomad** is a **tool**, not a config store. You maintain a separate **private** repo that
+holds your actual config (`CLAUDE.md`, agents, skills, settings overrides, session transcripts). The
 tool's source and your config end up coexisting in one working tree on each host.
 
 ```text
@@ -205,8 +206,8 @@ cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"
 path when you bring up that host.
 
 On `push`, sessions in `~/.claude/projects/-Users-you-code-my-example-repo/` get copied to
-`shared/projects/my-example-repo/`. On `pull` on another machine, they get copied to that host's
-encoded path. `claude --resume` then finds them (see
+`shared/projects/my-example-repo/`. On `nomad pull` on another machine, they get copied to that
+host's encoded path. `claude --resume` then finds them (see
 [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs) for the
 cross-OS cwd-binding gotcha).
 
@@ -215,10 +216,10 @@ working unchanged. Each value is an array of directory or root-file names (e.g. 
 `CLAUDE.md`) checked against `SUPPORTED_EXTRAS` in `src/config.ts`; anything outside that whitelist
 is skipped with a log line, so an unrecognized name cannot widen the sync surface.
 
-On `push`, opted-in content at `<localRoot>/<name>` (a directory subtree or a single file) is copied
-to `shared/extras/<logical>/<name>` and goes through the same staged-tree gitleaks scan as
-everything else. On `pull`, the reverse copy runs after `git pull --rebase`, and just before it
-overwrites your working tree a divergence check compares the incoming content against your local
+On `nomad push`, opted-in content at `<localRoot>/<name>` (a directory subtree or a single file) is
+copied to `shared/extras/<logical>/<name>` and goes through the same staged-tree gitleaks scan as
+everything else. On `nomad pull`, the reverse copy runs after `git pull --rebase`, and just before
+it overwrites your working tree a divergence check compares the incoming content against your local
 copy and prints a per-file WARN naming anything that differs.
 
 Your existing local content is backed up under `~/.cache/claude-nomad/backup/<ts>/extras/` before
@@ -229,10 +230,11 @@ the pull copy lands, so an unexpected overwrite is always recoverable.
 `settings.base.json` holds portable defaults (model, permissions, plugins).
 `hosts/<NOMAD_HOST>.json` holds machine-specific patches. They're deep-merged on every pull (scalars
 override, objects merge recursively, arrays replace). Keys that used to be force-marked per-host
-because they embedded absolute paths (`statusLine.command`, `hooks`) can live in base if you write
-the commands with `$HOME` (e.g. `"command": "node \"$HOME/.claude/my-statusline.cjs\""`); Claude
-Code runs them through a shell so shell expansion applies. Reserve per-host files for truly
-machine-specific values (env, MCP URLs, host-only model overrides).
+because they embedded absolute paths (`statusLine.command`, `hooks`) can live in
+`settings.base.json` if you write the commands with `$HOME` (e.g.
+`"command": "node \"$HOME/.claude/my-statusline.cjs\""`); Claude Code runs them through a shell so
+shell expansion applies. Reserve per-host files for truly machine-specific values (env, MCP URLs,
+host-only model overrides).
 
 `shared/settings.base.json`:
 
@@ -243,7 +245,7 @@ machine-specific values (env, MCP URLs, host-only model overrides).
 }
 ```
 
-`hosts/<your-wsl-host>.json`:
+`hosts/<your-other-host>.json`:
 
 ```json
 {
@@ -252,7 +254,7 @@ machine-specific values (env, MCP URLs, host-only model overrides).
 }
 ```
 
-Result on that host: opus model, the local Ollama env var, plus the shared permissions array.
+Results on `your-other-host`: opus 4.7, the local Ollama env var, plus the shared permissions array.
 
 > [!CAUTION] Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
 > `nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file in the
@@ -273,8 +275,8 @@ Read these before adopting so you opt in with eyes open.
   surface. Unsafe path-map values (path-traversal in `logical` keys, non-absolute or unnormalized
   `localRoot` values) abort the run before any file is touched, so a malformed entry fails loudly
   instead of corrupting state.
-- **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so the
-  picker's `cd ... && claude --resume <id>` line fails on a different host. Use
+- **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so
+  Claude Code's picker's `cd ... && claude --resume <id>` line fails on a different host. Use
   `nomad doctor --resume-cmd <id>` for a host-local equivalent (see
   [Cross-OS resume](#cross-os-resume)). The sidecar approach preserves transcript byte-equality.
 - **Empty directories don't survive sync.** Git doesn't track empty dirs; `nomad doctor` reports
@@ -293,13 +295,14 @@ Read these before adopting so you opt in with eyes open.
   it is absent or mismatched)
 - A **private** GitHub repo (or any Git remote you control)
 
-**Optional:**
+**Optional, but recommended:**
 
-- `gh` (GitHub CLI), used only by `nomad init` to auto-disable Actions on the private repo; if it is
-  missing or unauthenticated, init prints a manual fallback tip and continues
-- `curl`, used only by the version/update check (the `nomad doctor` latest-release line and the
-  post-`nomad update` check); it degrades silently when curl is absent or offline, so the rest of
-  the CLI works without it
+- `gh` ([GitHub CLI](https://cli.github.com/)), used only by `nomad init` to auto-disable Actions on
+  the private repo; if it is missing or unauthenticated, init prints a manual fallback tip and
+  continues
+- [curl](https://curl.se/), used only by the version/update check (the `nomad doctor` latest-release
+  line and the post-`nomad update` check); it degrades silently when curl is absent or offline, so
+  the rest of the CLI works without it
 
 ## Setup
 
@@ -329,7 +332,7 @@ enforces an Actions policy upstream).
 
 > [!WARNING] If you ever flip the mirror to public, both protections evaporate: CI starts firing on
 > every `nomad push` against `main`, and your session transcripts (which include conversation
-> content) become world-readable. Keep it private.
+> content) become world-readable. **Keep it private.**
 
 ### Bootstrap
 
@@ -342,10 +345,10 @@ $ gh repo create <your-username>/claude-nomad --private
 # 2. Copy the public tool into your private repo. A bare clone followed by a
 #    mirror push makes a complete, independent copy (every branch and tag) with
 #    no fork link back to upstream, which is what lets you keep it private. Once, ever.
-$ git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/cn.git # download a full copy
-$ cd /tmp/cn.git
+$ git clone --bare git@github.com:funkadelic/claude-nomad.git /tmp/claude-nomad.git # download a full copy
+$ cd /tmp/claude-nomad.git
 $ git push --mirror git@github.com:<your-username>/claude-nomad.git # upload it to your private repo
-$ cd .. && rm -rf /tmp/cn.git
+$ cd .. && rm -rf /tmp/claude-nomad.git
 
 # 3. Install the CLI globally and clone your private copy. Repeat on every host.
 $ npm i -g claude-nomad
@@ -380,9 +383,6 @@ $ nomad init
 # starting point. Stages shared/ and writes hosts/<NOMAD_HOST>.json from
 # your current ~/.claude/settings.json. Does NOT touch the originals.
 $ nomad init --snapshot
-
-# Either form accepts --keep-actions to skip the auto-disable.
-$ nomad init --keep-actions
 ```
 
 `nomad init` refuses to clobber existing scaffold artifacts, so re-running on a populated repo is a
