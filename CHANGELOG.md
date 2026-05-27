@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.4](https://github.com/funkadelic/claude-nomad/compare/v0.25.3...v0.25.4) (2026-05-27)
+
+
+### Documentation
+
+* **readme:** clarify setup docs, reduce jargon, add $ command prompts ([#147](https://github.com/funkadelic/claude-nomad/issues/147)) ([d590833](https://github.com/funkadelic/claude-nomad/commit/d590833e9a2cc1503651b2a4468ca6e8269fd57c))
+
 ## [0.25.3](https://github.com/funkadelic/claude-nomad/compare/v0.25.2...v0.25.3) (2026-05-26)
 
 
