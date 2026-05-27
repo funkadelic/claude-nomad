@@ -40,10 +40,12 @@ jobs:
       # is a release-please bookkeeping commit (the source has already passed
       # CI on its contributing PR), (b) the changeset only touches docs
       # (*.md, LICENSE), or (c) the PR head branch is a release-please branch
-      # (the PR only bumps version/changelog/manifest; its source rolled up
-      # from PRs that already passed CI). Untrusted inputs (head_commit.message,
-      # head.ref, SHAs) are passed via env: so they only enter the shell as
-      # quoted vars.
+      # from this same repo (the PR only bumps version/changelog/manifest; its
+      # source rolled up from PRs that already passed CI). The same-repo guard
+      # matters: a fork PR can name its branch `release-please--*` to spoof the
+      # prefix, but cannot make its head repo equal this one, so the skip never
+      # fires for forks. Untrusted inputs (head_commit.message, head.ref, SHAs)
+      # are passed via env: so they only enter the shell as quoted vars.
       - name: Decide whether to run heavy steps
         id: gate
         env:
@@ -52,6 +54,8 @@ jobs:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.sha }}
         run: |
@@ -61,7 +65,7 @@ jobs:
             echo "reason=release-please commit" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$EVENT_NAME" = "pull_request" ] && [ "${PR_HEAD_REF#release-please--}" != "$PR_HEAD_REF" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "${PR_HEAD_REF#release-please--}" != "$PR_HEAD_REF" ] && [ "$PR_HEAD_REPO" = "$REPO" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "reason=release-please PR branch" >> "$GITHUB_OUTPUT"
             exit 0
