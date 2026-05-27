@@ -74,12 +74,35 @@ describe('ghAuthStatus', () => {
     expect(ghAuthStatus(run)).toBe('gh-not-installed');
   });
 
-  it('returns "gh-not-authed" when gh exits non-zero without ENOENT', () => {
+  it('returns "gh-not-authed" when gh runs and exits non-zero (numeric status)', () => {
     const run: SpawnSyncFn = (_bin, _args, _opts) => {
-      const err = Object.assign(new Error('Command failed'), { code: 1 });
+      // A clean non-zero exit: spawnSync reports the exit code in `status` with
+      // no terminating signal. The only definitive unauthenticated signal.
+      const err = Object.assign(new Error('Command failed'), { status: 1, signal: null });
       throw err;
     };
     expect(ghAuthStatus(run)).toBe('gh-not-authed');
+  });
+
+  it('returns "gh-probe-error" when the probe times out (SIGTERM kill, null status)', () => {
+    const run: SpawnSyncFn = (_bin, _args, _opts) => {
+      // A timeout kills the child with SIGTERM, so `status` is null. Auth state
+      // is unknown and must not be reported as not-authed.
+      const err = Object.assign(new Error('spawnSync gh ETIMEDOUT'), {
+        code: 'ETIMEDOUT',
+        signal: 'SIGTERM',
+        status: null,
+      });
+      throw err;
+    };
+    expect(ghAuthStatus(run)).toBe('gh-probe-error');
+  });
+
+  it('returns "gh-probe-error" for a transient throw with neither ENOENT nor a numeric status', () => {
+    const run: SpawnSyncFn = (_bin, _args, _opts) => {
+      throw new Error('transient gh failure');
+    };
+    expect(ghAuthStatus(run)).toBe('gh-probe-error');
   });
 
   it('returns null when gh auth status exits 0', () => {

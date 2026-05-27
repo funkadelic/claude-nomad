@@ -17,7 +17,7 @@ import type { SpawnSyncFn } from './gh-actions.ts';
 type GhRunOpts = {
   remote?: string;
   remoteThrows?: true;
-  auth?: 'ok' | 'not-installed' | 'not-authed';
+  auth?: 'ok' | 'not-installed' | 'not-authed' | 'probe-error';
   isPrivateThrows?: true;
   isPrivate?: boolean;
   actionsEnabledThrows?: true;
@@ -39,7 +39,16 @@ function dispatchGh(opts: GhRunOpts, argv: string[]): Buffer {
       throw Object.assign(new Error('gh ENOENT'), { code: 'ENOENT' });
     }
     if (opts.auth === 'not-authed') {
-      throw Object.assign(new Error('not authed'), { code: 1 });
+      // Clean non-zero exit: numeric status, no terminating signal.
+      throw Object.assign(new Error('not authed'), { status: 1, signal: null });
+    }
+    if (opts.auth === 'probe-error') {
+      // Auth-status probe timed out (SIGTERM kill -> null status): indeterminate.
+      throw Object.assign(new Error('gh ETIMEDOUT'), {
+        code: 'ETIMEDOUT',
+        signal: 'SIGTERM',
+        status: null,
+      });
     }
     return Buffer.from('');
   }
@@ -139,6 +148,41 @@ describe('mirror Actions drift check', () => {
       s,
       makeGhRun({ remote: 'https://github.com/octo/mirror.git', auth: 'not-authed' }),
     );
+    expect(s.items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('WARNs on a gh-probe-error when the mirror is private with Actions enabled (gate 3 fall-through, #124)', () => {
+    const s = section('Repository');
+    reportMirrorActions(
+      s,
+      makeGhRun({
+        remote: 'https://github.com/octo/mirror.git',
+        auth: 'probe-error',
+        isPrivate: true,
+        actionsEnabled: true,
+      }),
+    );
+    // A transient auth-status failure must not suppress the drift WARN: gate 3
+    // falls through, gates 4-5 succeed, the WARN fires.
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain(warnGlyph);
+    expect(s.items[0]).toContain('octo/mirror');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('is silent on a gh-probe-error when the privacy probe then throws (gate 4 self-skip)', () => {
+    const s = section('Repository');
+    reportMirrorActions(
+      s,
+      makeGhRun({
+        remote: 'https://github.com/octo/mirror.git',
+        auth: 'probe-error',
+        isPrivateThrows: true,
+      }),
+    );
+    // Under a genuine outage the auth-status blip is followed by a privacy-probe
+    // throw, which gate 4 silently skips: no spurious WARN.
     expect(s.items).toHaveLength(0);
     expect(process.exitCode).toBeUndefined();
   });

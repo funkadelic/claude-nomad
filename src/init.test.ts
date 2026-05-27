@@ -457,7 +457,7 @@ describe('cmdInit snapshot mode', () => {
 type GhRunOpts = {
   remote?: string;
   remoteThrows?: true;
-  auth?: 'ok' | 'not-installed' | 'not-authed';
+  auth?: 'ok' | 'not-installed' | 'not-authed' | 'probe-error';
   isPrivateThrows?: true;
   isPrivate?: boolean;
   actionsEnabledThrows?: true;
@@ -479,7 +479,18 @@ function dispatchGhStatus(opts: GhRunOpts): Buffer {
     throw Object.assign(new Error('gh ENOENT'), { code: 'ENOENT' });
   }
   if (opts.auth === 'not-authed') {
-    throw Object.assign(new Error('not authed'), { code: 1 });
+    // Clean non-zero exit: spawnSync reports the exit code in `status` with no
+    // terminating signal. This is the only definitive not-authed signal.
+    throw Object.assign(new Error('not authed'), { status: 1, signal: null });
+  }
+  if (opts.auth === 'probe-error') {
+    // Auth-status probe timed out: SIGTERM kill leaves `status` null, so the
+    // outcome is indeterminate rather than a definitive not-authed.
+    throw Object.assign(new Error('gh ETIMEDOUT'), {
+      code: 'ETIMEDOUT',
+      signal: 'SIGTERM',
+      status: null,
+    });
   }
   return Buffer.from('');
 }
@@ -562,6 +573,22 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
     const { cmdInit } = await import('./init.ts');
     cmdInit({ run: makeGhRun({ remote: 'https://github.com/a/b.git', auth: 'not-authed' }) });
     expect(joinedLog(env.logSpy)).toContain('gh auth login');
+  });
+
+  it('falls through to the privacy probe on a gh-probe-error, without the auth-login tip (#124)', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({
+      run: makeGhRun({
+        remote: 'https://github.com/a/b.git',
+        auth: 'probe-error',
+        isPrivateThrows: true,
+      }),
+    });
+    const joined = joinedLog(env.logSpy);
+    // Probe-error is indeterminate, not a definitive not-authed: no auth-login
+    // tip, and execution reaches the privacy probe (which then self-reports).
+    expect(joined).not.toContain('gh auth login');
+    expect(joined).toContain('could not determine privacy for a/b');
   });
 
   it('logs a manual-fallback tip when isRepoPrivate throws', async () => {

@@ -159,6 +159,11 @@ function maybeDisableMirrorActions(repoHome: string, run?: SpawnSyncFn): void {
     );
     return;
   }
+  // A gh-probe-error (auth-status timed out or hiccuped) is deliberately left to
+  // fall through: auth state is unknown, so the privacy probe below tries
+  // optimistically with its own catch + tip. This avoids the misleading
+  // 'gh auth login' tip a transient failure used to trigger when the user may
+  // in fact be authed (#124).
 
   let isPrivate: boolean;
   try {
