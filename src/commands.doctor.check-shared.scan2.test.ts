@@ -145,6 +145,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     const report = JSON.stringify([
       {
         RuleID: 'aws-access-key',
+        Description: 'AWS Access Key',
         File: 'shared/projects/foo/sid-1.jsonl',
         StartLine: 1,
         Match: 'REDACTED',
@@ -152,6 +153,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
       },
       {
         RuleID: 'github-pat',
+        Description: 'GitHub Personal Access Token',
         File: 'shared/projects/foo/sid-1.jsonl',
         StartLine: 2,
         Match: 'REDACTED',
@@ -159,10 +161,21 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
       },
       {
         RuleID: 'generic-api-key',
+        Description: 'Generic API Key',
         File: 'shared/projects/foo/subagents/nested.jsonl',
         StartLine: 1,
         Match: 'REDACTED',
         Fingerprint: 'fp-c',
+      },
+      // A second github-pat hit (different file) exercises legend dedup: the
+      // footer lists the rule once, not once per occurrence.
+      {
+        RuleID: 'github-pat',
+        Description: 'GitHub Personal Access Token',
+        File: 'shared/projects/foo/subagents/other.jsonl',
+        StartLine: 9,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-d',
       },
     ]);
     vi.doMock('node:child_process', async (importOriginal) => {
@@ -192,7 +205,63 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     expect(rows).toContain('generic-api-key leak in shared/projects/foo/subagents/nested.jsonl');
     // The scrub hint reuses the captured logical/encoded mapping.
     expect(rows).toMatch(/rotate the credential, then scrub .*sid-1\.jsonl/);
+    // Footer legend explains each distinct RuleID once, set off by blank lines.
+    expect(rows).toContain('[aws-access-key]: AWS Access Key');
+    expect(rows).toContain('[github-pat]: GitHub Personal Access Token');
+    expect(rows).toContain('[generic-api-key]: Generic API Key');
+    // One legend entry per rule (deduplicated), not one per finding.
+    expect(section.items.filter((r) => r.includes('[github-pat]:'))).toHaveLength(1);
+    // Blank-line separators bracket the legend block.
+    expect(section.items.filter((r) => r === '').length).toBeGreaterThanOrEqual(2);
     expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('omits the description legend when findings carry no Description (graceful degradation)', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-nodesc.jsonl'),
+      `{"role":"user","text":"benign"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    // An older gitleaks (or a custom rule) omits the Description field. The
+    // leak row and hints still emit; the legend block (and its blank lines)
+    // is suppressed entirely.
+    const report = JSON.stringify([
+      {
+        RuleID: 'aws-access-key',
+        File: 'shared/projects/foo/sid-1.jsonl',
+        StartLine: 1,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-x',
+      },
+    ]);
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          const rp = list.find((a) => a.startsWith('--report-path='));
+          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
+          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    // Leak row still emits, but no legend bracket and no blank-line separators.
+    expect(rows).toMatch(/aws-access-key \(1\).*in session sid-1/);
+    expect(rows).not.toContain('[aws-access-key]:');
+    expect(section.items.some((r) => r === '')).toBe(false);
     expect(process.exitCode).toBe(1);
   });
 });

@@ -112,6 +112,29 @@ function buildLogicalBySession(findings: Finding[]): Map<string, string> {
 }
 
 /**
+ * Emit a deduplicated description legend in the footer: one `[rule-id]:
+ * description` row per distinct RuleID across all findings, set off by a blank
+ * line before and after. Sourced from the `Description` gitleaks bakes into
+ * each finding, so it needs no network; rules whose description is absent
+ * (older gitleaks, custom rules) are skipped, and the whole block (including
+ * the surrounding blanks) is omitted when no descriptions are available. The
+ * legend lives in the footer so a rule hit across many files or sessions
+ * (e.g. `sonar-api-token`) is explained once, not per occurrence.
+ */
+function emitDescriptionLegend(section: DoctorSection, findings: Finding[]): void {
+  const descByRule = new Map<string, string>();
+  for (const f of findings) {
+    if (f.Description && !descByRule.has(f.RuleID)) descByRule.set(f.RuleID, f.Description);
+  }
+  if (descByRule.size === 0) return;
+  addItem(section, '');
+  for (const [rule, desc] of descByRule) {
+    addItem(section, `  ${red(`[${rule}]`)}: ${dim(desc)}`);
+  }
+  addItem(section, '');
+}
+
+/**
  * Scan the staged temp tree through the shared `scanStagedTree` and emit the
  * result rows. Isolates the deepest nesting from `reportCheckShared`: the scan
  * try/catch (failure -> fail row + exit 1, carrying `err.message` only, never
@@ -155,4 +178,5 @@ export function scanAndReport(
   if (bySession.size > 0) {
     reportSessionFindings(section, bySession, buildLogicalBySession(findings), logicalToEncoded);
   }
+  emitDescriptionLegend(section, findings);
 }
