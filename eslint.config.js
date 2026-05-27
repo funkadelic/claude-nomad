@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import eslintConfigPrettier from 'eslint-config-prettier';
 import globals from 'globals';
+import sonarjs from 'eslint-plugin-sonarjs';
 
 export default tseslint.config(
   {
@@ -20,6 +21,7 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
+    plugins: { sonarjs },
     rules: {
       '@typescript-eslint/consistent-type-imports': [
         'error',
@@ -31,6 +33,8 @@ export default tseslint.config(
       ],
       '@typescript-eslint/consistent-type-definitions': 'off',
       'no-console': 'off',
+      'sonarjs/cognitive-complexity': ['error', 15],
+      'max-lines': ['warn', { max: 220, skipBlankLines: true, skipComments: true }],
     },
   },
   {
@@ -63,6 +67,10 @@ export default tseslint.config(
       ...tseslint.configs.disableTypeChecked.rules,
       '@typescript-eslint/no-require-imports': 'off',
     },
+  },
+  {
+    files: ['src/**/*.test.ts'],
+    rules: { 'max-lines': 'off' },
   },
   eslintConfigPrettier,
 );
