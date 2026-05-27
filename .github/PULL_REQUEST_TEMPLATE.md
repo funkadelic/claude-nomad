@@ -1,3 +1,5 @@
+<!-- markdownlint-disable-file MD013 MD041 (PR-body fragment: starts at h2, helper comments run long) -->
+
 ## Summary
 
 <!-- One or two bullets: what changed and why. Keep it terse, no test-plan checklist, no metrics. -->
