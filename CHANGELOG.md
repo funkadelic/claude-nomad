@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.26.1](https://github.com/funkadelic/claude-nomad/compare/v0.26.0...v0.26.1) (2026-05-27)
+
+
+### Fixed
+
+* **preview:** replace diffJsonStrings parallel walk with jsdiff LCS line diff ([#159](https://github.com/funkadelic/claude-nomad/issues/159)) ([d9c0dca](https://github.com/funkadelic/claude-nomad/commit/d9c0dcae7b417d069e826ce3b825e9f23115ba2d))
+* **remap:** fail closed on path-map collisions in remapPush before any write ([#156](https://github.com/funkadelic/claude-nomad/issues/156)) ([db33157](https://github.com/funkadelic/claude-nomad/commit/db33157faa02b5439278ae4e92a02bd671faee72))
+
+
+### Changed
+
+* **codeql:** skip analysis on release-please PR branches ([#160](https://github.com/funkadelic/claude-nomad/issues/160)) ([2bfed46](https://github.com/funkadelic/claude-nomad/commit/2bfed463ccd76f6331e5ab775bbd5d19df2898e9))
+* **tests:** skip PR-time test matrix on release-please PR branches ([#158](https://github.com/funkadelic/claude-nomad/issues/158)) ([222e27b](https://github.com/funkadelic/claude-nomad/commit/222e27b2643382136505f72e148c17c7ecb7a08f))
+
 ## [0.26.0](https://github.com/funkadelic/claude-nomad/compare/v0.25.5...v0.26.0) (2026-05-27)
 
 
