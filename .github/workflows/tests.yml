@@ -38,9 +38,14 @@ jobs:
 
       # Single gate step. Sets `skip=true` when (a) the post-merge push:main
       # is a release-please bookkeeping commit (the source has already passed
-      # CI on its contributing PR), or (b) the changeset only touches docs
-      # (*.md, LICENSE). Untrusted inputs (head_commit.message, SHAs) are
-      # passed via env: so they only enter the shell as quoted vars.
+      # CI on its contributing PR), (b) the changeset only touches docs
+      # (*.md, LICENSE), or (c) the PR head branch is a release-please branch
+      # from this same repo (the PR only bumps version/changelog/manifest; its
+      # source rolled up from PRs that already passed CI). The same-repo guard
+      # matters: a fork PR can name its branch `release-please--*` to spoof the
+      # prefix, but cannot make its head repo equal this one, so the skip never
+      # fires for forks. Untrusted inputs (head_commit.message, head.ref, SHAs)
+      # are passed via env: so they only enter the shell as quoted vars.
       - name: Decide whether to run heavy steps
         id: gate
         env:
@@ -48,6 +53,9 @@ jobs:
           HEAD_MSG: ${{ github.event.head_commit.message }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.sha }}
         run: |
@@ -55,6 +63,11 @@ jobs:
           if [ "$EVENT_NAME" = "push" ] && [ "${HEAD_MSG#chore(main): release}" != "$HEAD_MSG" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "reason=release-please commit" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "${PR_HEAD_REF#release-please--}" != "$PR_HEAD_REF" ] && [ "$PR_HEAD_REPO" = "$REPO" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=release-please PR branch" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           case "$EVENT_NAME" in
