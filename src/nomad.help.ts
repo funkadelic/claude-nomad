@@ -37,6 +37,8 @@ export const DEFAULT_HELP = [
   '       --force        Proceed even when the working tree is not clean.',
   '       --push-origin  Fork topology only: push the merge to origin/main without prompting.',
   '',
+  '  --version        Print the installed CLI version as bare semver to stdout; exits 0.',
+  '',
   'Run `nomad doctor` to validate your setup. Edit shared/ or hosts/<HOST>.json',
   'in the repo, never ~/.claude/settings.json directly (it is regenerated on',
   'every pull).',

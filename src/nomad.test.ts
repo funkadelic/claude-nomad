@@ -127,6 +127,9 @@ describe('nomad.ts push dispatcher', () => {
     // session-JSONL flow; surface it in DEFAULT_HELP alongside the other
     // subcommands so a cold `nomad` invocation discovers it.
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('drop-session'));
+    // --version is a global flag (not a subcommand); surface it in DEFAULT_HELP
+    // so a cold `nomad` invocation discovers it without consulting the README.
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--version'));
   });
 });
 
