@@ -27,7 +27,7 @@ export function diffLinesToUnified(oldStr: string, newStr: string): string[] {
   for (const part of parts) {
     const partLines = part.value.split('\n');
     // A part value ending in '\n' yields a trailing '' after split; drop it.
-    if (partLines.length > 0 && partLines[partLines.length - 1] === '') {
+    if (partLines[partLines.length - 1] === '') {
       partLines.pop();
     }
     const prefix = part.removed
