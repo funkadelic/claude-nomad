@@ -110,7 +110,7 @@ export function buildSessionAwareFatal(
     lines.push(
       '',
       'Also found:',
-      ...other.map((f) => `  ${f.File}  ${f.RuleID}`),
+      ...other.map((f) => `  ${f.File}:${f.StartLine}  ${f.RuleID}`),
       '  Review with: git diff --cached, then unstage manually.',
     );
   }
@@ -133,8 +133,10 @@ export function buildSessionAwareFatal(
  * missing/locked file, or a non-finding runtime failure, since gitleaks v8.x
  * returns exit 1 for both "leaks found" and runtime errors) it throws a
  * distinct scan-failed FATAL so the operator does not chase a phantom
- * `nomad drop-session` recovery; the forwarded stderr/stdout above carries the
- * underlying gitleaks output.
+ * `nomad drop-session` recovery. On the leaks-found path the raw gitleaks
+ * streams are suppressed (the session-aware FATAL fully describes the findings).
+ * On the scan-failed/null-report path the raw stderr/stdout is forwarded so
+ * "Review the gitleaks output above." has something to point at.
  *
  * ENOENT (gitleaks or git absent) propagates from the helper and is mapped to
  * the platform-aware install-hint FATAL. Defense-in-depth: the presence probe
