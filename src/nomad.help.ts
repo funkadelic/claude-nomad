@@ -5,39 +5,67 @@
  * cold invocation of `nomad` is self-describing without forcing the user
  * into the README. Channel is stderr, exit code is 1.
  */
+
+/**
+ * Column (0-indexed) at which every command and flag description starts. Sized
+ * to clear the longest label (`--resume-cmd <id>`, which ends at column 24)
+ * with a two-space gutter. A single constant is what keeps every row aligned;
+ * padding lines by hand is how a description drifts out of column.
+ */
+const DESC_COL = 26;
+
+/**
+ * Render a `label` + `desc` help row, padding the label out to DESC_COL so the
+ * description lands in the shared column. `padEnd` is a no-op when a label is
+ * already at or past the column, so no row can throw or fall out of alignment.
+ */
+const row = (label: string, desc: string): string => label.padEnd(DESC_COL) + desc;
+
+/**
+ * Indent a continuation line (wrapped description text with no label of its
+ * own) to DESC_COL so it sits directly under the description column.
+ */
+const cont = (text: string): string => ' '.repeat(DESC_COL) + text;
+
 export const DEFAULT_HELP = [
   'usage: nomad <command> [flags]',
   '',
   'Commands:',
-  '  pull             Sync ~/.claude/ from the shared repo (settings, symlinks, sessions).',
-  '       --dry-run   Run lock + git pull, then preview every mutation without writing.',
+  row('  pull', 'Sync ~/.claude/ from the shared repo (settings, symlinks, sessions).'),
+  row('       --dry-run', 'Run lock + git pull, then preview every mutation without writing.'),
   '',
-  '  push             Rebase, run safety checks (gitleaks, gitlinks, allow-list), commit, push.',
-  '       --dry-run   Run pre-checks (rebase, gitleaks probe, gitlink scan) and preview',
-  '                   remap, without staging or pushing.',
+  row('  push', 'Rebase, run safety checks (gitleaks, gitlinks, allow-list), commit, push.'),
+  row('       --dry-run', 'Run pre-checks (rebase, gitleaks probe, gitlink scan) and preview'),
+  cont('remap, without staging or pushing.'),
   '',
-  '  diff             Offline preview of what `pull` would change against local repo state.',
-  '                   No git pull, no lock acquired.',
+  row('  diff', 'Offline preview of what `pull` would change against local repo state.'),
+  cont('No git pull, no lock acquired.'),
   '',
-  '  init             Scaffold an empty ~/claude-nomad/ repo (shared/, hosts/, path-map).',
-  '       --snapshot      Overlay the current ~/.claude/ into shared/ as the initial seed.',
-  '       --keep-actions  Skip auto-disabling GitHub Actions on the private mirror.',
+  row('  init', 'Scaffold an empty ~/claude-nomad/ repo (shared/, hosts/, path-map).'),
+  row('       --snapshot', 'Overlay the current ~/.claude/ into shared/ as the initial seed.'),
+  row('       --keep-actions', 'Skip auto-disabling GitHub Actions on the private mirror.'),
   '',
-  '  doctor                  Read-only health check (symlinks, host file, path-map,',
-  '                          gitleaks, gitlinks).',
-  '       --check-shared     Preflight gitleaks scan of the session transcripts a',
-  '                          `nomad push` would stage (a temp copy, never the live dir).',
-  '       --resume-cmd <id>  Print `cd <abspath> && claude --resume <id>` for a session id',
-  '                          from ~/.claude/projects/.',
+  row('  doctor', 'Read-only health check (symlinks, host file, path-map,'),
+  cont('gitleaks, gitlinks).'),
+  row('       --check-shared', 'Preflight gitleaks scan of the session transcripts a'),
+  cont('`nomad push` would stage (a temp copy, never the live dir).'),
+  row('       --resume-cmd <id>', 'Print `cd <abspath> && claude --resume <id>` for a session id'),
+  cont('from ~/.claude/projects/.'),
   '',
-  '  drop-session <id>   Unstage shared/projects/<logical>/<id>.jsonl from the staged tree (local ~/.claude/projects is never touched).',
+  row(
+    '  drop-session <id>',
+    'Unstage shared/projects/<logical>/<id>.jsonl from the staged tree (local ~/.claude/projects is never touched).',
+  ),
   '',
-  '  update              Topology-aware upgrade of ~/claude-nomad/ to the latest upstream.',
-  '       --dry-run      Detect topology + pre-flight, print would-be git commands only.',
-  '       --force        Proceed even when the working tree is not clean.',
-  '       --push-origin  Fork topology only: push the merge to origin/main without prompting.',
+  row('  update', 'Topology-aware upgrade of ~/claude-nomad/ to the latest upstream.'),
+  row('       --dry-run', 'Detect topology + pre-flight, print would-be git commands only.'),
+  row('       --force', 'Proceed even when the working tree is not clean.'),
+  row(
+    '       --push-origin',
+    'Fork topology only: push the merge to origin/main without prompting.',
+  ),
   '',
-  '  --version        Print the installed CLI version as bare semver to stdout; exits 0.',
+  row('  --version', 'Print the installed CLI version as bare semver to stdout; exits 0.'),
   '',
   'Run `nomad doctor` to validate your setup. Edit shared/ or hosts/<HOST>.json',
   'in the repo, never ~/.claude/settings.json directly (it is regenerated on',
