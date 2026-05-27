@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.25.5](https://github.com/funkadelic/claude-nomad/compare/v0.25.4...v0.25.5) (2026-05-27)
+
+
+### Fixed
+
+* **gh-actions:** distinguish probe errors from not-authed ([#153](https://github.com/funkadelic/claude-nomad/issues/153)) ([14f11df](https://github.com/funkadelic/claude-nomad/commit/14f11df208e7996ddd92ffb79c14cd34707b552c))
+
+
+### Changed
+
+* **eslint:** gate on cognitive complexity, demote line cap to advisory ([#151](https://github.com/funkadelic/claude-nomad/issues/151)) ([43c8130](https://github.com/funkadelic/claude-nomad/commit/43c81309759247f2bca4b90358bf88667e778724))
+* resolve SonarCloud code-smell findings ([#152](https://github.com/funkadelic/claude-nomad/issues/152)) ([497ab64](https://github.com/funkadelic/claude-nomad/commit/497ab646bd56c11c695957400322c4c802a73b1d))
+
+
+### Documentation
+
+* lint and wrap Markdown, refresh badges, document --version ([#149](https://github.com/funkadelic/claude-nomad/issues/149)) ([a8b2636](https://github.com/funkadelic/claude-nomad/commit/a8b2636a7e54f0384b5d0d0a931adf29d2a3a8ac))
+
 ## [0.25.4](https://github.com/funkadelic/claude-nomad/compare/v0.25.3...v0.25.4) (2026-05-27)
 
 
