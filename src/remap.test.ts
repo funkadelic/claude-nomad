@@ -340,6 +340,22 @@ describe('remapPush dry-run and unmapped count', () => {
     expect(result.collisions).toBe(0);
   });
 
+  it('early-return path (path-map present, no local projects dir) returns unmapped:0 and collisions:0', async () => {
+    // path-map.json exists so remapPush passes the first early return and
+    // builds the reverse map, but `~/.claude/projects/` is absent, so the
+    // `!existsSync(localProjects)` guard returns before any directory walk.
+    rmSync(claudeProjects, { recursive: true, force: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260516-000000');
+    expect(result.unmapped).toBe(0);
+    expect(result.collisions).toBe(0);
+  });
+
   it('reverse map filters TBD and empty-string host values (push line 103)', async () => {
     // The reverse map in remapPush walks path-map.json's per-host entries
     // and skips any that are empty-string or `'TBD'`. Without the skip, an
@@ -372,6 +388,239 @@ describe('remapPush dry-run and unmapped count', () => {
     // were filtered from the reverse map and never matched any local dir.
     expect(existsSync(join(sharedProjects, 'placeholder'))).toBe(false);
     expect(existsSync(join(sharedProjects, 'blank'))).toBe(false);
+  });
+});
+
+describe('remapPush collision detection', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-collision-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('throws NomadFatal when two distinct paths encode to the same key', async () => {
+    // /tmp/foo/bar and /tmp/foo-bar both encode to -tmp-foo-bar.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          alpha: { 'test-host': '/tmp/foo/bar' },
+          beta: { 'test-host': '/tmp/foo-bar' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapPush('20260516-000000')).toThrow(NomadFatal);
+  });
+
+  it('collision message contains both abspaths, the encoded key, nomad doctor, and path-map.json', async () => {
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          alpha: { 'test-host': '/tmp/foo/bar' },
+          beta: { 'test-host': '/tmp/foo-bar' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: Error | undefined;
+    try {
+      remapPush('20260516-000000');
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const msg = caught?.message ?? '';
+    expect(msg).toContain('/tmp/foo/bar');
+    expect(msg).toContain('/tmp/foo-bar');
+    expect(msg).toContain('-tmp-foo-bar');
+    expect(msg).toContain('nomad doctor');
+    expect(msg).toContain('path-map.json');
+  });
+
+  it('does not write to shared/projects/ when collision is detected', async () => {
+    const encodedLocal = join(claudeProjects, '-tmp-foo-bar');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'session.jsonl'), '{"x":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          alpha: { 'test-host': '/tmp/foo/bar' },
+          beta: { 'test-host': '/tmp/foo-bar' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapPush('20260516-000000')).toThrow(NomadFatal);
+
+    // No content written to shared/projects/
+    expect(existsSync(join(sharedProjects, 'alpha'))).toBe(false);
+    expect(existsSync(join(sharedProjects, 'beta'))).toBe(false);
+    // No backup dir created either
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('does not create the repo shared/projects/ dir when collision is detected', async () => {
+    // Remove the pre-created repo destination so we can prove a dying push is
+    // fully side-effect-free: collision detection runs before the repoProjects
+    // mkdir, so no empty shared/projects/ is left behind.
+    rmSync(join(repoUnderHome, 'shared'), { recursive: true, force: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          alpha: { 'test-host': '/tmp/foo/bar' },
+          beta: { 'test-host': '/tmp/foo-bar' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapPush('20260516-000000')).toThrow(NomadFatal);
+    expect(existsSync(sharedProjects)).toBe(false);
+    expect(existsSync(join(repoUnderHome, 'shared'))).toBe(false);
+  });
+
+  it('throws NomadFatal under dryRun:true when collision is detected', async () => {
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          alpha: { 'test-host': '/tmp/foo/bar' },
+          beta: { 'test-host': '/tmp/foo-bar' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapPush('20260516-000000', { dryRun: true })).toThrow(NomadFatal);
+  });
+
+  it('throws under dryRun:true even when a local dir matches the colliding key', async () => {
+    // The exact data-loss scenario: a local encoded dir matching the colliding
+    // key exists and a dry-run preview is requested. Detection fails closed
+    // before the dryRun branch, so the local transcript is left intact and
+    // nothing is staged, even in preview mode.
+    const encodedLocal = join(claudeProjects, '-tmp-foo-bar');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'session.jsonl'), '{"x":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          alpha: { 'test-host': '/tmp/foo/bar' },
+          beta: { 'test-host': '/tmp/foo-bar' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapPush('20260516-000000', { dryRun: true })).toThrow(NomadFatal);
+    expect(existsSync(join(encodedLocal, 'session.jsonl'))).toBe(true);
+    expect(existsSync(join(sharedProjects, 'alpha'))).toBe(false);
+    expect(existsSync(join(sharedProjects, 'beta'))).toBe(false);
+  });
+
+  it('reports only the first colliding pair when 3+ paths share an encoded key', async () => {
+    // /tmp/foo/bar, /tmp/foo-bar, and /tmp-foo/bar all encode to -tmp-foo-bar.
+    // Detection dies on the first colliding pair it meets in insertion order,
+    // so the message names alpha and beta and never reaches the third path.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          alpha: { 'test-host': '/tmp/foo/bar' },
+          beta: { 'test-host': '/tmp/foo-bar' },
+          gamma: { 'test-host': '/tmp-foo/bar' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: Error | undefined;
+    try {
+      remapPush('20260516-000000');
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const msg = caught?.message ?? '';
+    expect(msg).toContain('/tmp/foo/bar');
+    expect(msg).toContain('/tmp/foo-bar');
+    expect(msg).not.toContain('/tmp-foo/bar');
+  });
+
+  it('throws when two logical names map to the same absolute path (would orphan one)', async () => {
+    // Two logicals, one host path: only one logical could be pushed and the
+    // other's shared/projects/ copy would be silently orphaned, so the push
+    // fails closed instead of dropping a logical via last-write-wins.
+    const encodedLocal = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'session.jsonl'), '{"x":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          alpha: { 'test-host': '/tmp/foo' },
+          beta: { 'test-host': '/tmp/foo' },
+        },
+      }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: Error | undefined;
+    try {
+      remapPush('20260516-000000');
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const msg = caught?.message ?? '';
+    expect(msg).toContain('duplicate path in path-map.json');
+    expect(msg).toContain('alpha');
+    expect(msg).toContain('beta');
+    expect(msg).toContain('/tmp/foo');
+    // Neither logical was pushed; nothing orphaned.
+    expect(existsSync(join(sharedProjects, 'alpha'))).toBe(false);
+    expect(existsSync(join(sharedProjects, 'beta'))).toBe(false);
   });
 });
 

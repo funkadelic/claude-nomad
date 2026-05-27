@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'no
 import { join, relative, sep } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { log } from './utils.ts';
+import { die, log } from './utils.ts';
 import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
 
@@ -99,16 +99,66 @@ export function remapPull(ts: string, opts: { dryRun?: boolean } = {}): { unmapp
 }
 
 /**
+ * Build the encoded-key to logical-name reverse map for the current host,
+ * failing closed on any `path-map.json` shape that would silently lose session
+ * data on push. Both failure modes `die()` (throw `NomadFatal`) before the
+ * caller writes anything:
+ *
+ * - Encoded-path collision: two distinct host paths that `encodePath` maps to
+ *   the same key (every `/` becomes `-`), which would clobber each other under
+ *   one repo directory.
+ * - Duplicate path: two logical names mapping to the same host path, where only
+ *   one logical could be pushed and the other's `shared/projects/` copy would
+ *   be orphaned.
+ *
+ * @param map - the parsed `path-map.json`
+ * @returns reverse lookup from encoded local dir name to logical project name
+ */
+function buildReverseMap(map: PathMap): Map<string, string> {
+  const reverse = new Map<string, string>();
+  const encodedPaths = new Map<string, string>();
+  for (const [logical, hosts] of Object.entries(map.projects)) {
+    const p = hosts[HOST];
+    if (!p || p === 'TBD') continue;
+    const encoded = encodePath(p);
+    const prior = encodedPaths.get(encoded);
+    if (prior !== undefined) {
+      if (prior !== p) {
+        die(
+          `encoded-path collision in path-map.json: "${prior}" and "${p}" both encode to` +
+            ` "${encoded}" (encodePath replaces every / with -).` +
+            ` Edit path-map.json so the two paths do not encode identically.` +
+            ` Run nomad doctor for the full list of collisions.`,
+        );
+      }
+      die(
+        `duplicate path in path-map.json: logical names "${reverse.get(encoded)}" and "${logical}"` +
+          ` both map to "${p}" for ${HOST}, so only one could be pushed and the other's` +
+          ` shared/projects/ copy would be orphaned.` +
+          ` Edit path-map.json so each host path maps to a single logical name.`,
+      );
+    }
+    encodedPaths.set(encoded, p);
+    reverse.set(encoded, logical);
+  }
+  return reverse;
+}
+
+/**
  * Push: copy local path-encoded dirs back to repo under logical names.
  *
  * Returns `{ unmapped: N, collisions: M }` where `unmapped` is the count of
  * `~/.claude/projects/<dir>/` entries that have no path-map reverse-lookup
- * for this host. `collisions` is reserved for a future slice's path-encoding
- * collision detection and is always `0` here.
+ * for this host. `collisions` is always `0` on the success path: any
+ * `path-map.json` shape that would silently lose data (an encoded-path
+ * collision between two distinct host paths, or two logical names mapping to
+ * the same host path) makes `buildReverseMap` `die()` (throw `NomadFatal`) to
+ * refuse the push before any `shared/projects/` content is written. Detection
+ * runs during the reverse-map build, so it fires under `dryRun` too.
  *
  * `opts.dryRun` (default `false`): when `true`, log `would push:` lines
- * instead of calling `backupRepoWrite` + `copyDir`. Counts are computed
- * identically in both modes.
+ * instead of calling `backupRepoWrite` + `copyDir`. Collision detection
+ * runs identically in both modes.
  */
 export function remapPush(
   ts: string,
@@ -116,7 +166,6 @@ export function remapPush(
 ): { unmapped: number; collisions: number } {
   const dryRun = opts.dryRun === true;
   let unmapped = 0;
-  const collisions = 0;
   const mapPath = join(REPO_HOME, 'path-map.json');
   if (!existsSync(mapPath)) {
     log('no path-map.json; skipping session export');
@@ -126,16 +175,13 @@ export function remapPush(
   const map = readJson<PathMap>(mapPath);
   const localProjects = join(CLAUDE_HOME, 'projects');
   const repoProjects = join(REPO_HOME, 'shared', 'projects');
+
+  const reverse = buildReverseMap(map);
+  // Create the repo destination only after collision detection passes, so a
+  // failing push dies fully side-effect-free (no empty shared/projects/ left).
   if (!dryRun) mkdirSync(repoProjects, { recursive: true });
 
-  const reverse = new Map<string, string>();
-  for (const [logical, hosts] of Object.entries(map.projects)) {
-    const p = hosts[HOST];
-    if (!p || p === 'TBD') continue;
-    reverse.set(encodePath(p), logical);
-  }
-
-  if (!existsSync(localProjects)) return { unmapped, collisions };
+  if (!existsSync(localProjects)) return { unmapped, collisions: 0 };
   for (const dir of readdirSync(localProjects)) {
     const logical = reverse.get(dir);
     if (!logical) {
@@ -156,5 +202,5 @@ export function remapPush(
     copyDirJsonlOnly(join(localProjects, dir), repoDst);
     log(`pushed ${dir} -> ${logical}`);
   }
-  return { unmapped, collisions };
+  return { unmapped, collisions: 0 };
 }
