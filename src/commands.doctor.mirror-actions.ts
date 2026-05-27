@@ -52,9 +52,14 @@ export function reportMirrorActions(section: DoctorSection, run: SpawnSyncFn = e
   const ref = parseGitHubRemote(remote);
   if (ref === null) return;
 
-  // Gate 3: gh available and authed. Doctor stays silent on both miss reasons
-  // (init prints a tip here; doctor does not, per the read-only contract).
-  if (ghAuthStatus(run) !== null) return;
+  // Gate 3: gh available and authed. A definitive gh-not-installed / gh-not-authed
+  // result is a silent skip (init prints a tip here; doctor does not, per the
+  // read-only contract). A gh-probe-error (the auth-status call timed out or
+  // hiccuped) is NOT definitive, so fall through: gates 4-5 run their own probes
+  // and silently skip if the network is genuinely down, but the drift WARN can
+  // still fire when only the auth-status call blipped on an authed host (#124).
+  const auth = ghAuthStatus(run);
+  if (auth === 'gh-not-installed' || auth === 'gh-not-authed') return;
 
   // Gate 4: private mirror. A public repo, or a probe that throws, is a skip.
   let isPrivate: boolean;

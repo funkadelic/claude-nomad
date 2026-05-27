@@ -7,10 +7,13 @@ import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 export type GhRepoRef = { owner: string; repo: string };
 
 /**
- * Reason `ghAuthStatus` returned without success. Distinguishes the two
- * actionable failure modes so callers can print useful tips.
+ * Reason `ghAuthStatus` returned without success. Distinguishes three
+ * actionable failure modes so callers decide how to treat each:
+ * `gh-not-installed` (the binary is missing), `gh-not-authed` (gh ran and
+ * reported no authentication), and `gh-probe-error` (the probe itself failed,
+ * e.g. a timeout or transient spawn error, so the auth state is unknown).
  */
-export type GhUnavailableReason = 'gh-not-installed' | 'gh-not-authed';
+export type GhUnavailableReason = 'gh-not-installed' | 'gh-not-authed' | 'gh-probe-error';
 
 /**
  * Injectable subprocess runner so tests can mock without `vi.doMock` and
@@ -47,8 +50,16 @@ export function parseGitHubRemote(remoteUrl: string): GhRepoRef | null {
 /**
  * Check `gh` CLI availability and auth status in one call. Returns null on
  * success or a structured reason string. `gh auth status` exits 0 when the
- * user is authed against github.com and non-zero otherwise; ENOENT signals
- * the binary itself is missing.
+ * user is authed against github.com and non-zero otherwise.
+ *
+ * The catch separates a definitive answer from an indeterminate one so callers
+ * are not forced to treat a transient probe failure as "not authed":
+ * - `ENOENT`: the binary is missing, so `gh-not-installed`.
+ * - the child ran and exited with a numeric code (`typeof status === 'number'`,
+ *   which by spawnSync semantics means it was not signal-killed): the only
+ *   definitive unauthenticated answer, so `gh-not-authed`.
+ * - anything else (a timeout SIGTERM-kills the child so `status` is null, an
+ *   `ETIMEDOUT`, a spawn hiccup): the probe itself failed, so `gh-probe-error`.
  */
 export function ghAuthStatus(run: SpawnSyncFn = execFileSync): GhUnavailableReason | null {
   try {
@@ -58,9 +69,10 @@ export function ghAuthStatus(run: SpawnSyncFn = execFileSync): GhUnavailableReas
     });
     return null;
   } catch (err) {
-    const e = err as { code?: string };
+    const e = err as { code?: string; status?: number | null };
     if (e.code === 'ENOENT') return 'gh-not-installed';
-    return 'gh-not-authed';
+    if (typeof e.status === 'number') return 'gh-not-authed';
+    return 'gh-probe-error';
   }
 }
 
