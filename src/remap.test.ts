@@ -340,11 +340,14 @@ describe('remapPush dry-run and unmapped count', () => {
     expect(result.collisions).toBe(0);
   });
 
-  it('early-return path (path-map present, no local projects dir) returns unmapped:0 and collisions:0', async () => {
+  it('early-return path (path-map present, no local projects dir) returns 0/0 and creates nothing', async () => {
     // path-map.json exists so remapPush passes the first early return and
     // builds the reverse map, but `~/.claude/projects/` is absent, so the
     // `!existsSync(localProjects)` guard returns before any directory walk.
+    // The guard runs before the repoProjects mkdir, so the no-op push leaves
+    // no empty shared/projects/ behind.
     rmSync(claudeProjects, { recursive: true, force: true });
+    rmSync(join(repoUnderHome, 'shared'), { recursive: true, force: true });
     writeFileSync(
       join(repoUnderHome, 'path-map.json'),
       JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
@@ -354,6 +357,7 @@ describe('remapPush dry-run and unmapped count', () => {
     const result = remapPush('20260516-000000');
     expect(result.unmapped).toBe(0);
     expect(result.collisions).toBe(0);
+    expect(existsSync(sharedProjects)).toBe(false);
   });
 
   it('reverse map filters TBD and empty-string host values (push line 103)', async () => {

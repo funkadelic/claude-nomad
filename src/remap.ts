@@ -177,11 +177,12 @@ export function remapPush(
   const repoProjects = join(REPO_HOME, 'shared', 'projects');
 
   const reverse = buildReverseMap(map);
-  // Create the repo destination only after collision detection passes, so a
-  // failing push dies fully side-effect-free (no empty shared/projects/ left).
+  if (!existsSync(localProjects)) return { unmapped, collisions: 0 };
+  // Create the repo destination only after collision detection passes and we
+  // know there is something to push, so a failing or no-op push is fully
+  // side-effect-free (no empty shared/projects/ left behind).
   if (!dryRun) mkdirSync(repoProjects, { recursive: true });
 
-  if (!existsSync(localProjects)) return { unmapped, collisions: 0 };
   for (const dir of readdirSync(localProjects)) {
     const logical = reverse.get(dir);
     if (!logical) {
