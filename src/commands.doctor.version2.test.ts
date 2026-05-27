@@ -71,7 +71,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
+    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
     expect(out).not.toContain('0.10.0');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -91,7 +91,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
+    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
     expect(out).not.toContain('not-semver');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -108,7 +108,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain(`${okGlyph} version`);
     expect(out).not.toContain(`${warnGlyph} version`);
-    expect(out).not.toMatch(/version: \d/);
+    expect(out).not.toMatch(/claude-nomad: \d/);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -125,7 +125,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
+    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -138,7 +138,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
+    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
     expect(process.exitCode === 1).toBe(false);
   });
 

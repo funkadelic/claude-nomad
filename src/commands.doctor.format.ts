@@ -70,17 +70,32 @@ function sectionFailed(s: DoctorSection): boolean {
  * headers with a red `✗ ` glyph (U+2717, same as the per-item FAIL glyph so
  * `grep -F '✗'` catches both row and header failures), and writes one blank
  * line between rendered sections (no leading or trailing blank).
+ *
+ * An empty-string item renders as a true blank line (no tree connector), which
+ * lets a reporter set off a footer block (e.g. the `--check-shared` description
+ * legend) with vertical whitespace. The `└` connector attaches to the last
+ * non-empty item rather than the last array slot so a trailing blank does not
+ * strand the elbow on an empty line.
  */
+/**
+ * Render one section: a (possibly fail-glyph-prefixed) header followed by its
+ * items as a tree. Empty-string items print as true blank lines; the `└` elbow
+ * attaches to the last non-empty item so a trailing blank cannot strand it.
+ */
+function renderSection(s: DoctorSection): void {
+  const header = sectionFailed(s) ? `${red(FAIL_GLYPH_BARE)} ${s.header}` : s.header;
+  console.log(header);
+  const lastContent = s.items.reduce((acc, item, j) => (item !== '' ? j : acc), -1);
+  for (let j = 0; j < s.items.length; j++) {
+    if (s.items[j] === '') console.log('');
+    else console.log(`${j === lastContent ? '  └ ' : '  ├ '}${s.items[j]}`);
+  }
+}
+
 export function renderDoctor(sections: DoctorSection[]): void {
   const visible = sections.filter((s) => s.items.length > 0);
   for (let i = 0; i < visible.length; i++) {
     if (i > 0) console.log('');
-    const s = visible[i];
-    const header = sectionFailed(s) ? `${red(FAIL_GLYPH_BARE)} ${s.header}` : s.header;
-    console.log(header);
-    for (let j = 0; j < s.items.length; j++) {
-      const isLast = j === s.items.length - 1;
-      console.log(`${isLast ? '  └ ' : '  ├ '}${s.items[j]}`);
-    }
+    renderSection(visible[i]);
   }
 }

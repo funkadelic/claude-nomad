@@ -31,6 +31,13 @@ export type Finding = {
   StartLine: number;
   Match: string;
   Fingerprint: string;
+  /**
+   * Human-readable rule description gitleaks bakes into every finding (the
+   * matched rule's `description` from its toml). Optional: absent on older
+   * gitleaks reports or custom rules with no description, in which case the
+   * doctor legend silently omits the entry (graceful degradation, no network).
+   */
+  Description?: string;
 };
 
 /**

@@ -14,7 +14,7 @@
 
 import { join } from 'node:path';
 
-import { green, red, okGlyph, failGlyph } from './color.ts';
+import { green, red, dim, okGlyph, failGlyph } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { CLAUDE_HOME } from './config.ts';
 import { type Finding, partitionFindings, scanStagedTree } from './push-gitleaks.ts';
@@ -47,16 +47,16 @@ function reportSessionFindings(
 ): void {
   for (const [sid, counts] of bySession) {
     const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
-    addItem(section, `${red(failGlyph)} session ${sid}: ${summary}`);
+    addItem(section, `${red(failGlyph)} ${red(summary)} in session ${sid}`);
     const logical = logicalBySession.get(sid);
     /* c8 ignore next -- false branch is defensive; every bySession sid is keyed in logicalBySession */
     if (logical !== undefined) {
       addItem(
         section,
-        `  rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
+        `  ${dim(`rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`)}`,
       );
     }
-    addItem(section, `  false positive? add a pattern to .gitleaks.toml`);
+    addItem(section, `  ${dim('false positive? add a pattern to .gitleaks.toml')}`);
   }
   process.exitCode = 1;
 }
@@ -70,7 +70,7 @@ function reportSessionFindings(
  */
 function reportOtherFindings(section: DoctorSection, other: Finding[]): void {
   for (const f of other) {
-    addItem(section, `${red(failGlyph)} leak in ${f.File}: ${f.RuleID}`);
+    addItem(section, `${red(failGlyph)} ${red(f.RuleID)} leak in ${f.File}`);
   }
   process.exitCode = 1;
 }
@@ -109,6 +109,29 @@ function buildLogicalBySession(findings: Finding[]): Map<string, string> {
     }
   }
   return logicalBySession;
+}
+
+/**
+ * Emit a deduplicated description legend in the footer: one `[rule-id]:
+ * description` row per distinct RuleID across all findings, set off by a blank
+ * line before and after. Sourced from the `Description` gitleaks bakes into
+ * each finding, so it needs no network; rules whose description is absent
+ * (older gitleaks, custom rules) are skipped, and the whole block (including
+ * the surrounding blanks) is omitted when no descriptions are available. The
+ * legend lives in the footer so a rule hit across many files or sessions
+ * (e.g. `sonar-api-token`) is explained once, not per occurrence.
+ */
+function emitDescriptionLegend(section: DoctorSection, findings: Finding[]): void {
+  const descByRule = new Map<string, string>();
+  for (const f of findings) {
+    if (f.Description && !descByRule.has(f.RuleID)) descByRule.set(f.RuleID, f.Description);
+  }
+  if (descByRule.size === 0) return;
+  addItem(section, '');
+  for (const [rule, desc] of descByRule) {
+    addItem(section, `  ${red(`[${rule}]`)}: ${dim(desc)}`);
+  }
+  addItem(section, '');
 }
 
 /**
@@ -155,4 +178,5 @@ export function scanAndReport(
   if (bySession.size > 0) {
     reportSessionFindings(section, bySession, buildLogicalBySession(findings), logicalToEncoded);
   }
+  emitDescriptionLegend(section, findings);
 }

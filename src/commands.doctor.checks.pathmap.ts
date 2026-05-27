@@ -13,7 +13,7 @@ import { encodePath } from './utils.json.ts';
  * `process.exitCode = 1`. Read-only: FAIL lines stay on stdout.
  */
 
-/** Emits the mapped-projects header for the current host and one line per mapped project. */
+/** Emits the mapped-projects header for the current host and one indented child line per mapped project. */
 function reportMappedProjects(section: DoctorSection, map: PathMap): void {
   const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
   addItem(
@@ -21,7 +21,7 @@ function reportMappedProjects(section: DoctorSection, map: PathMap): void {
     `${dim(infoGlyph)} mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`,
   );
   for (const [name, hosts] of mapped) {
-    addItem(section, `${dim(infoGlyph)} ${name} -> ${blue(hosts[HOST])}`);
+    addItem(section, `      ${name} -> ${blue(hosts[HOST])}`);
   }
 }
 

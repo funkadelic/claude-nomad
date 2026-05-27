@@ -43,7 +43,7 @@ export function isOverrideActive(): boolean {
  * Pushes the host identity (info) and the two key path lines (repo and
  * claude-home) with gutter glyphs. Path presence is reported via warnGlyph
  * (not failGlyph) so an absent CLAUDE_HOME does not flip sectionFailed to
- * decorate the Host header with `✘`. The authoritative empty-repo FAIL is
+ * decorate the Host header with a fail glyph. The authoritative empty-repo FAIL is
  * owned by reportRepoState; these two lines remain informational and do
  * NOT mutate process.exitCode.
  */
@@ -84,6 +84,16 @@ export function reportRepoState(section: DoctorSection): void {
 }
 
 /**
+ * True when the repo has a `shared/<name>` source for this link. `applySharedLinks`
+ * only creates a symlink when this source exists, so when it does NOT, an absent
+ * or dangling link in `~/.claude/` is expected (nothing to sync), not a problem to
+ * fix. Doctor uses this to downgrade those rows from a warn to an info note.
+ */
+function repoHasSharedSource(name: string): boolean {
+  return existsSync(join(REPO_HOME, 'shared', name));
+}
+
+/**
  * Resolve the display item and optional exit-code side-effect for a single
  * shared-link path. Returns `{ line, fail }` where `fail` true means the
  * caller should set `process.exitCode = 1`.
@@ -99,7 +109,12 @@ function classifySharedLink(name: string, p: string): { line: string; fail: bool
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      return { line: `${yellow(warnGlyph)} ${name}: missing`, fail: false };
+      return repoHasSharedSource(name)
+        ? {
+            line: `${yellow(warnGlyph)} ${name}: missing (run \`nomad pull\` to restore)`,
+            fail: false,
+          }
+        : { line: `${dim(infoGlyph)} ${name}: not synced (nothing in shared/)`, fail: false };
     }
     return { line: `${red(failGlyph)} ${name}: could not stat (${String(code)})`, fail: true };
   }
@@ -112,7 +127,10 @@ function classifySharedLink(name: string, p: string): { line: string; fail: bool
 /**
  * Resolve the display item for a path already confirmed to be a symlink.
  * Follows the link via statSync; a throw means the target is missing or
- * unreadable. Returns `{ line, fail: false }` (symlink issues are WARN, not FAIL).
+ * unreadable. Never FAILs (`fail: false`): a dangling link whose source still
+ * lives in the repo is a WARN with a `nomad pull` hint, a dangling link whose
+ * source is gone from the repo is an info note (stale, safe to remove), and a
+ * non-ENOENT stat error is a WARN naming the code.
  */
 function classifySymlinkTarget(name: string, p: string): { line: string; fail: boolean } {
   try {
@@ -121,10 +139,15 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      return {
-        line: `${yellow(warnGlyph)} ${name}: broken symlink (target missing)`,
-        fail: false,
-      };
+      return repoHasSharedSource(name)
+        ? {
+            line: `${yellow(warnGlyph)} ${name}: broken symlink (target missing, run \`nomad pull\`)`,
+            fail: false,
+          }
+        : {
+            line: `${dim(infoGlyph)} ${name}: stale symlink (no longer in shared/, safe to remove)`,
+            fail: false,
+          };
     }
     return {
       line: `${yellow(warnGlyph)} ${name}: symlink target unreadable (${String(code)})`,
@@ -135,13 +158,15 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
 
 /**
  * Emits a per-entry status line for each name in SHARED_LINKS
- * (okGlyph/warnGlyph/failGlyph). A non-symlink blocks sync and FAILs via
- * process.exitCode. TOCTOU-safe: lstatSync is wrapped in try/catch so a path
+ * (okGlyph/warnGlyph/infoGlyph/failGlyph). A non-symlink blocks sync and FAILs
+ * via process.exitCode. TOCTOU-safe: lstatSync is wrapped in try/catch so a path
  * that vanishes or becomes unreadable between the probe and the stat yields a
- * row instead of an unhandled throw that aborts the whole doctor run. A symlink
- * whose target cannot be resolved is a WARN (broken-symlink for a missing
- * target, target-unreadable otherwise), never a healthy OK, so a dangling or
- * unreadable link is not masked.
+ * row instead of an unhandled throw that aborts the whole doctor run. Severity
+ * keys off whether the repo still has a `shared/<name>` source: an absent or
+ * dangling link is a WARN with a `nomad pull` hint when the source exists (a
+ * real out-of-sync state), and a calm info note when it does not (nothing to
+ * sync). A symlink whose target cannot be resolved is never a healthy OK, so a
+ * dangling or unreadable link is not masked.
  */
 export function reportSharedLinks(section: DoctorSection): void {
   for (const name of SHARED_LINKS) {

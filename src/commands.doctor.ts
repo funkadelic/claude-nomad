@@ -62,7 +62,7 @@ export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
   reportRebaseClean(repository);
   reportMirrorActions(repository);
 
-  const version = section('Version');
+  const version = section('Version Checks');
   reportVersionCheck(version);
   reportNodeEngineCheck(version);
   reportGitleaksVersionCheck(version);
