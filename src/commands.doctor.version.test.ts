@@ -64,7 +64,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${okGlyph} version: 0.11.2 (latest)`);
+    expect(out).toContain(`${okGlyph} claude-nomad: 0.11.2 (latest)`);
     // The version check NEVER mutates exitCode; verify alongside the PASS
     // assertion so a future regression cannot silently flip the contract.
     expect(process.exitCode === 1).toBe(false);
@@ -77,7 +77,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
+    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
     // The hint must point at the upgrade path; substring is load-bearing
     // because users grep for it in CI logs.
     expect(out).toContain('nomad update');
@@ -91,13 +91,13 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('version: 0.12.0 (ahead of latest release 0.11.2)');
+    expect(out).toContain('claude-nomad: 0.12.0 (ahead of latest release 0.11.2)');
     // The ahead branch is informational; it must NOT carry a status token.
     // A regression that prepends PASS/WARN/FAIL would flip the meaning of
     // the line for any dev running a not-yet-released version.
-    expect(out).not.toContain(`${okGlyph} version: 0.12.0 (ahead`);
-    expect(out).not.toContain(`${warnGlyph} version: 0.12.0 (ahead`);
-    expect(out).not.toContain(`${failGlyph} version: 0.12.0 (ahead`);
+    expect(out).not.toContain(`${okGlyph} claude-nomad: 0.12.0 (ahead`);
+    expect(out).not.toContain(`${warnGlyph} claude-nomad: 0.12.0 (ahead`);
+    expect(out).not.toContain(`${failGlyph} claude-nomad: 0.12.0 (ahead`);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -108,10 +108,10 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    // Silent-skip means zero `version:` output. We assert on the substring
+    // Silent-skip means zero `claude-nomad:` output. We assert on the substring
     // rather than the full line so a future addition (e.g. dim-blue debug
     // hint) would still be caught by this test.
-    expect(out).not.toContain('version: 0.11.2');
+    expect(out).not.toContain('claude-nomad: 0.11.2');
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -133,7 +133,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${okGlyph} version: 0.11.2 (latest)`);
+    expect(out).toContain(`${okGlyph} claude-nomad: 0.11.2 (latest)`);
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -146,7 +146,7 @@ describe('cmdDoctor version check', () => {
     const out = joinedLog(env.logSpy);
     // Malformed-response is one of the silent-skip paths; doctor must
     // emit no version-related line and must not flip exitCode.
-    expect(out).not.toContain('version: 0.11.2');
+    expect(out).not.toContain('claude-nomad: 0.11.2');
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -184,7 +184,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} version: 0.11.2 -> 0.11.3`);
+    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
     expect(out).not.toContain('0.10.0');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -202,7 +202,7 @@ describe('cmdDoctor version check', () => {
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain(`${okGlyph} version`);
     expect(out).not.toContain(`${warnGlyph} version`);
-    expect(out).not.toMatch(/version: \d/);
+    expect(out).not.toMatch(/claude-nomad: \d/);
     expect(process.exitCode === 1).toBe(false);
   });
 });

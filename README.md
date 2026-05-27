@@ -533,9 +533,9 @@ point under your npm prefix's `bin/`), then delete the alias line from your shel
 | `nomad doctor --check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session with rotate-and-scrub guidance. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl). |
 | `nomad --version`                | Print the installed CLI version as bare semver to stdout; exits 0. Used by the npm-publish smoke test and useful for ad-hoc upgrade checks.                                                                                                                                                                                                              |
 
-The version-check emits ``⚠︎ version: <local> -> <latest> (run `nomad update`)`` when the local
-install is behind the latest upstream release, and `✓ version: <local> (latest)` when current. It
-silently skips on network failures.
+The version-check emits ``⚠︎ claude-nomad: <local> -> <latest> (run `nomad update`)`` when the local
+install is behind the latest upstream release, and `✓ claude-nomad: <local> (latest)` when current.
+It silently skips on network failures.
 
 Two further `⚠︎`-only drift checks run in `nomad doctor`. The gitleaks version-drift line
 `⚠︎ gitleaks: <local> -> <pinned> (...)` fires when the local gitleaks major.minor differs from the
