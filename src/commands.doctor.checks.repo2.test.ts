@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, warnGlyph } from './color.ts';
+import { failGlyph, infoGlyph, warnGlyph } from './color.ts';
 import { section } from './commands.doctor.format.ts';
 import {
   type Env,
@@ -135,10 +135,11 @@ describe('reportSharedLinks TOCTOU safety', () => {
     return err;
   }
 
-  it('emits the existing warn row and leaves exitCode=0 when lstatSync throws ENOENT', async () => {
+  it('emits an info "not synced" row and leaves exitCode=0 when lstatSync throws ENOENT and the repo has no source', async () => {
     // Inject a lstatSync that throws ENOENT only for paths under CLAUDE_HOME
     // (any SHARED_LINKS entry); all other lstat calls pass through so the
-    // module itself can load without side-effects.
+    // module itself can load without side-effects. The sandbox repo has no
+    // shared/<name> sources, so an absent link is expected (nothing to sync).
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
@@ -157,11 +158,45 @@ describe('reportSharedLinks TOCTOU safety', () => {
     const sec = section('Links');
     reportSharedLinks(sec);
 
-    // Every SHARED_LINKS entry threw ENOENT -> every item is a warn row.
+    // Every SHARED_LINKS entry threw ENOENT with no repo source -> info rows.
+    expect(sec.items.length).toBeGreaterThan(0);
+    for (const item of sec.items) {
+      expect(item).toContain(infoGlyph);
+      expect(item).toContain('not synced');
+    }
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('warns "missing" with a pull hint when lstatSync throws ENOENT but the repo still has the shared source', async () => {
+    // Same ENOENT injection, but this time every link has a live shared/<name>
+    // source in the repo, so an absent link is a real out-of-sync state.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: vi.fn((p: fsModule.PathLike, opts?: unknown) => {
+          if (typeof p === 'string' && p.includes('.claude')) {
+            throw makeErrnoError('ENOENT');
+          }
+          // @ts-expect-error -- pass-through with optional opts param
+          return actual.lstatSync(p, opts);
+        }),
+      };
+    });
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    for (const name of SHARED_LINKS) {
+      mkdirSync(join(testHome, 'claude-nomad', 'shared', name), { recursive: true });
+    }
+    const sec = section('Links');
+    reportSharedLinks(sec);
+
     expect(sec.items.length).toBeGreaterThan(0);
     for (const item of sec.items) {
       expect(item).toContain(warnGlyph);
       expect(item).toContain('missing');
+      expect(item).toContain('nomad pull');
     }
     expect(process.exitCode).toBe(0);
   });
@@ -229,10 +264,10 @@ describe('reportSharedLinks TOCTOU safety', () => {
     expect(sec.items).toHaveLength(SHARED_LINKS.length);
     // First item is EACCES (fail row).
     expect(sec.items[0]).toContain(failGlyph);
-    // Remaining items are ENOENT (warn rows).
+    // Remaining items are ENOENT with no repo source (info "not synced" rows).
     for (const item of sec.items.slice(1)) {
-      expect(item).toContain(warnGlyph);
-      expect(item).toContain('missing');
+      expect(item).toContain(infoGlyph);
+      expect(item).toContain('not synced');
     }
   });
 });

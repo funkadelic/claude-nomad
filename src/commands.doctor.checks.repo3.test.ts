@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { okGlyph, warnGlyph } from './color.ts';
+import { infoGlyph, okGlyph, warnGlyph } from './color.ts';
 import { section } from './commands.doctor.format.ts';
 import { restoreEnv } from './commands.doctor.checks.test-helpers.ts';
 
@@ -54,7 +54,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('warns "broken symlink" for a SHARED_LINKS entry whose target is gone', async () => {
+  it('warns "broken symlink" for a SHARED_LINKS entry whose target is gone but the repo still has the source', async () => {
     // resetModules first so config.ts recomputes CLAUDE_HOME from the sandbox
     // HOME set in beforeEach rather than serving a cached real-HOME instance.
     vi.resetModules();
@@ -62,6 +62,8 @@ describe('reportSharedLinks dangling symlink detection', () => {
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
+    // Repo still has the shared source, so the dangling link is a real problem.
+    mkdirSync(join(testHome, 'claude-nomad', 'shared', name), { recursive: true });
     // Dangling: the link itself exists, but its target does not.
     symlinkSync(join(testHome, 'no-such-target'), join(testHome, '.claude', name));
 
@@ -72,8 +74,32 @@ describe('reportSharedLinks dangling symlink detection', () => {
     expect(row).toBeDefined();
     expect(row).toContain(warnGlyph);
     expect(row).toContain('broken symlink');
+    expect(row).toContain('nomad pull');
     // A broken link is a non-blocking warn (mirrors the original "missing"
     // row), so unlike a NOT-a-symlink regular file it must NOT set exitCode.
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('notes a stale symlink (info, not warn) when the dangling link has no repo source', async () => {
+    // Dangling link with NO shared/<name> source in the repo: the source was
+    // removed, so the leftover link is expected cruft, reported as a calm info
+    // note ("safe to remove") rather than a warning.
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const name = SHARED_LINKS[0];
+    if (!name) throw new Error('SHARED_LINKS is empty');
+    symlinkSync(join(testHome, 'no-such-target'), join(testHome, '.claude', name));
+
+    const sec = section('Links');
+    reportSharedLinks(sec);
+
+    const row = sec.items.find((item) => item.includes(`${name}:`));
+    expect(row).toBeDefined();
+    expect(row).toContain(infoGlyph);
+    expect(row).toContain('stale symlink');
+    expect(row).toContain('safe to remove');
+    expect(row).not.toContain(warnGlyph);
     expect(process.exitCode).toBe(0);
   });
 
