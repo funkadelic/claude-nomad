@@ -496,9 +496,11 @@ type BuildSessionAwareFatal = (
   bySession: Map<string, Map<string, number>>,
   other: Finding[],
 ) => string;
+type FormatOtherFinding = (f: Finding) => string;
 type PushGitleaksModule = {
   partitionFindings: PartitionFindings;
   buildSessionAwareFatal: BuildSessionAwareFatal;
+  formatOtherFinding: FormatOtherFinding;
 };
 
 describe('partitionFindings (pure)', () => {
@@ -664,6 +666,35 @@ describe('buildSessionAwareFatal (pure)', () => {
     expect(msg).toContain('shared/CLAUDE.md:3');
     expect(msg).toContain('generic-api-key');
     expect(msg).toContain('Review with: git diff --cached, then unstage manually.');
+  });
+
+  it('formats an `Also found:` row with the File:StartLine locator for a positive line', async () => {
+    const { formatOtherFinding } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const row = formatOtherFinding({
+      RuleID: 'github-pat',
+      File: 'shared/projects/foo/subagents/agent-x.jsonl',
+      StartLine: 208,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    expect(row).toBe('  shared/projects/foo/subagents/agent-x.jsonl:208  github-pat');
+  });
+
+  it('drops the line suffix when StartLine is non-positive or absent', async () => {
+    const { formatOtherFinding } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const base = {
+      RuleID: 'github-pat',
+      File: 'shared/CLAUDE.md',
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    };
+    // StartLine 0 (non-positive integer) and an absent StartLine (a degraded
+    // gitleaks report survives `parsed as Finding[]` without the field) both
+    // render `<File>  <RuleID>` rather than a confusing `:0` / `:undefined`.
+    expect(formatOtherFinding({ ...base, StartLine: 0 })).toBe('  shared/CLAUDE.md  github-pat');
+    expect(formatOtherFinding({ ...base } as unknown as Finding)).toBe(
+      '  shared/CLAUDE.md  github-pat',
+    );
   });
 
   it('non-session-only findings return the exact legacy fallback string', async () => {

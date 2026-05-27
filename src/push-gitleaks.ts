@@ -92,6 +92,20 @@ export function partitionFindings(findings: Finding[]): {
  * session, since those nested paths route to the `other` bucket and are
  * not listed per-session. Pure.
  */
+/**
+ * Render one `Also found:` row for a non-session ("other"-bucket) finding as
+ * `  <File>:<StartLine>  <RuleID>`, where the line number is the manual-scrub
+ * locator for the nested transcript. `StartLine` is typed `number` but comes
+ * from an unvalidated `parsed as Finding[]` cast over gitleaks subprocess
+ * output, so a missing or non-positive value (gitleaks line numbers are
+ * 1-indexed) drops the `:<line>` suffix rather than emit a confusing
+ * `:undefined` / `:0`.
+ */
+export function formatOtherFinding(f: Finding): string {
+  const loc = Number.isInteger(f.StartLine) && f.StartLine > 0 ? `:${f.StartLine}` : '';
+  return `  ${f.File}${loc}  ${f.RuleID}`;
+}
+
 export function buildSessionAwareFatal(
   bySession: Map<string, Map<string, number>>,
   other: Finding[],
@@ -110,7 +124,7 @@ export function buildSessionAwareFatal(
     lines.push(
       '',
       'Also found:',
-      ...other.map((f) => `  ${f.File}:${f.StartLine}  ${f.RuleID}`),
+      ...other.map(formatOtherFinding),
       '  Review with: git diff --cached, then unstage manually.',
     );
   }
