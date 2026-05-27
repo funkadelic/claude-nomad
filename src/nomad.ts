@@ -154,15 +154,11 @@ try {
       // Single positional argv; cmdDropSession revalidates id at entry as
       // defense-in-depth (the function may be called from non-argv paths
       // in tests). The argv regex mirrors the function-entry allowlist
-      // (`[A-Za-z0-9_-]`) but additionally rejects ids starting with `-`
+      // (`[\w-]`) but additionally rejects ids starting with `-`
       // so a typo like `nomad drop-session --bogus` shows the usage line,
       // not a FATAL. The length bound matches cmdDropSession.
       const id = process.argv[3];
-      if (
-        process.argv.length !== 4 ||
-        typeof id !== 'string' ||
-        !/^[A-Za-z0-9_][A-Za-z0-9_-]{0,127}$/.test(id)
-      ) {
+      if (process.argv.length !== 4 || typeof id !== 'string' || !/^\w[\w-]{0,127}$/.test(id)) {
         console.error('usage: nomad drop-session <id>');
         process.exit(1);
       }

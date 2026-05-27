@@ -22,7 +22,6 @@ const _widened: PathMap = {
   extras: { foo: ['.planning'] },
 };
 void _legacy;
-void _widened;
 
 describe('REPO_HOME resolution', () => {
   const originalNomadRepo = process.env.NOMAD_REPO;
@@ -115,9 +114,9 @@ describe('SUPPORTED_EXTRAS and PathMap widening', () => {
   });
 
   it('PathMap accepts optional extras field', () => {
-    // The load-bearing assertions live at module scope (see `_legacy` and
-    // `_widened` above). If PathMap is narrowed or `extras` is removed, this
-    // file fails to typecheck. The runtime body just keeps the test counted.
-    expect(true).toBe(true);
+    // The load-bearing assertion is the module-scope `_widened` type-test
+    // above: if PathMap drops `extras` this file fails to typecheck. This
+    // runtime check exercises the same value so the test asserts something real.
+    expect(_widened.extras).toEqual({ foo: ['.planning'] });
   });
 });

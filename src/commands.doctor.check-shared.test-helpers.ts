@@ -82,12 +82,12 @@ export function saveEnv(): EnvSnapshot {
 export function restoreEnv(snapshot: EnvSnapshot, testHome: string | undefined): void {
   process.exitCode = 0;
   vi.restoreAllMocks();
-  if (snapshot.home !== undefined) process.env.HOME = snapshot.home;
-  else delete process.env.HOME;
-  if (snapshot.nomadHost !== undefined) process.env.NOMAD_HOST = snapshot.nomadHost;
-  else delete process.env.NOMAD_HOST;
-  if (snapshot.noColor !== undefined) process.env.NO_COLOR = snapshot.noColor;
-  else delete process.env.NO_COLOR;
+  if (snapshot.home === undefined) delete process.env.HOME;
+  else process.env.HOME = snapshot.home;
+  if (snapshot.nomadHost === undefined) delete process.env.NOMAD_HOST;
+  else process.env.NOMAD_HOST = snapshot.nomadHost;
+  if (snapshot.noColor === undefined) delete process.env.NO_COLOR;
+  else process.env.NO_COLOR = snapshot.noColor;
   if (testHome !== undefined) rmSync(testHome, { recursive: true, force: true });
 }
 
@@ -104,7 +104,7 @@ export const PLANTED_SECRET = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ
  * `shared/projects/<logical>/*.jsonl` path. The literal is split so no
  * contiguous PAT-shaped token sits in source-controlled bytes.
  */
-export const GITLEAKS_TOML = `[extend]
+export const GITLEAKS_TOML = String.raw`[extend]
 useDefault = true
 
 [[allowlists]]
@@ -113,7 +113,7 @@ regexes = [
     '''${['gh', 'p_', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'].join('')}''',
 ]
 paths = [
-    '''^shared/projects/[^/]+/.*\\.jsonl$''',
+    '''^shared/projects/[^/]+/.*\.jsonl$''',
 ]
 condition = "AND"
 `;

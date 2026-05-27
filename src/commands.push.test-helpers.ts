@@ -92,10 +92,10 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('./utils.lockfile.ts');
   vi.doUnmock('node:child_process');
   process.exitCode = env.originalExitCode;
-  if (env.originalHome !== undefined) process.env.HOME = env.originalHome;
-  else delete process.env.HOME;
-  if (env.originalNomadHost !== undefined) process.env.NOMAD_HOST = env.originalNomadHost;
-  else delete process.env.NOMAD_HOST;
+  if (env.originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = env.originalHome;
+  if (env.originalNomadHost === undefined) delete process.env.NOMAD_HOST;
+  else process.env.NOMAD_HOST = env.originalNomadHost;
   rmSync(env.testHome, { recursive: true, force: true });
 }
 
