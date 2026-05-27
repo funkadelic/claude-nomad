@@ -67,6 +67,42 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
 }
 
 /**
+ * Emit the settings.json section of the dry-run preview. Reads base, host
+ * overrides, and current settings; logs a unified diff or a skip message.
+ *
+ * Extracted from `computePreview` to reduce cognitive complexity: the nested
+ * base-null / malformed-host / malformed-current branches each add score.
+ */
+function previewSettings(basePath: string, hostPath: string, settingsPath: string): void {
+  const base = readJsonOrNull(basePath);
+  if (base === null) {
+    log('settings.json: section skipped (base or current missing)');
+    return;
+  }
+  // Tolerate a malformed hosts/<HOST>.json: log once and fall back to no overrides.
+  const hostOverrides = readJsonOrNull(hostPath);
+  if (hostOverrides === null && existsSync(hostPath)) {
+    log(`settings.json: malformed hosts/${HOST}.json; ignoring overrides`);
+  }
+  const merged = deepMerge(base, hostOverrides ?? {});
+  const current = readJsonOrNull(settingsPath);
+  if (current === null && existsSync(settingsPath)) {
+    log('settings.json: malformed; skipping diff');
+    return;
+  }
+  const diff = diffJsonStrings(
+    JSON.stringify(current ?? {}, null, 2),
+    JSON.stringify(merged, null, 2),
+  );
+  if (diff === '') {
+    log('settings.json: no changes');
+  } else {
+    log('settings.json:');
+    for (const line of diff.split('\n')) log(line);
+  }
+}
+
+/**
  * Orchestrate the dry-run preview across all three sync modalities:
  * symlinks (via applySharedLinks dry-run), settings.json (via deepMerge +
  * diffJsonStrings; we do NOT call regenerateSettings dry-run because that
@@ -83,7 +119,7 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * preview may run against a partially-scaffolded repo (e.g. right after a
  * fresh clone before `nomad init`).
  *
- * Settings diff output goes through `log()` so each line gets the ℹ︎-prefixed
+ * Settings diff output goes through `log()` so each line gets the info-prefixed
  * prefix, keeping output channels consistent across the three sections.
  */
 export function computePreview(ts: string): { unmapped: number; collisions: number } {
@@ -93,47 +129,11 @@ export function computePreview(ts: string): { unmapped: number; collisions: numb
   // lines. dryRun:true is mandatory; a real call here would mutate disk.
   applySharedLinks(ts, { dryRun: true });
 
-  // Settings section: skip-with-log when base or current is missing. Per the
-  // locked phrasing decision, the message text is fixed so cmdDiff users see
-  // the same line regardless of which side is missing. Calling
-  // regenerateSettings(ts, { dryRun: true }) would only emit a generic
-  // "would write" intent line; we want the unified diff here, so we compute
-  // it directly from base + host-override + current.
-  const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
-  const hostPath = join(REPO_HOME, 'hosts', `${HOST}.json`);
-  const settingsPath = join(CLAUDE_HOME, 'settings.json');
-  const base = readJsonOrNull(basePath);
-  if (base === null) {
-    // Base is the load-bearing input here. Per the locked phrasing decision,
-    // emit one canonical message and skip the diff. The current-side missing
-    // case (no ~/.claude/settings.json) is handled below by treating current
-    // as `{}` and producing a normal diff; only base-missing is fatal-ish.
-    log('settings.json: section skipped (base or current missing)');
-  } else {
-    // Tolerate a malformed hosts/<HOST>.json the same way base and current
-    // are tolerated: log once and fall back to no overrides so the preview
-    // keeps rendering instead of crashing the dry-run.
-    const hostOverrides = readJsonOrNull(hostPath);
-    if (hostOverrides === null && existsSync(hostPath)) {
-      log(`settings.json: malformed hosts/${HOST}.json; ignoring overrides`);
-    }
-    const overrides = hostOverrides ?? {};
-    const merged = deepMerge(base, overrides);
-    const current = readJsonOrNull(settingsPath);
-    if (current === null && existsSync(settingsPath)) {
-      log('settings.json: malformed; skipping diff');
-    } else {
-      const currentText = JSON.stringify(current ?? {}, null, 2);
-      const mergedText = JSON.stringify(merged, null, 2);
-      const diff = diffJsonStrings(currentText, mergedText);
-      if (diff === '') {
-        log('settings.json: no changes');
-      } else {
-        log('settings.json:');
-        for (const line of diff.split('\n')) log(line);
-      }
-    }
-  }
+  previewSettings(
+    join(REPO_HOME, 'shared', 'settings.base.json'),
+    join(REPO_HOME, 'hosts', `${HOST}.json`),
+    join(CLAUDE_HOME, 'settings.json'),
+  );
 
   // Projects: remapPull emits its own would-overwrite lines and returns the
   // skipped count.

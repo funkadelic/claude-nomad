@@ -84,6 +84,56 @@ export function reportRepoState(section: DoctorSection): void {
 }
 
 /**
+ * Resolve the display item and optional exit-code side-effect for a single
+ * shared-link path. Returns `{ line, fail }` where `fail` true means the
+ * caller should set `process.exitCode = 1`.
+ *
+ * Extracted from `reportSharedLinks` to reduce cognitive complexity: the lstat
+ * try/catch and the inner symlink-target try/catch each count against the
+ * parent function's score.
+ */
+function classifySharedLink(name: string, p: string): { line: string; fail: boolean } {
+  let stat;
+  try {
+    stat = lstatSync(p);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return { line: `${yellow(warnGlyph)} ${name}: missing`, fail: false };
+    }
+    return { line: `${red(failGlyph)} ${name}: could not stat (${String(code)})`, fail: true };
+  }
+  if (!stat.isSymbolicLink()) {
+    return { line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync)`, fail: true };
+  }
+  return classifySymlinkTarget(name, p);
+}
+
+/**
+ * Resolve the display item for a path already confirmed to be a symlink.
+ * Follows the link via statSync; a throw means the target is missing or
+ * unreadable. Returns `{ line, fail: false }` (symlink issues are WARN, not FAIL).
+ */
+function classifySymlinkTarget(name: string, p: string): { line: string; fail: boolean } {
+  try {
+    statSync(p);
+    return { line: `${green(okGlyph)} ${name}: symlink`, fail: false };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return {
+        line: `${yellow(warnGlyph)} ${name}: broken symlink (target missing)`,
+        fail: false,
+      };
+    }
+    return {
+      line: `${yellow(warnGlyph)} ${name}: symlink target unreadable (${String(code)})`,
+      fail: false,
+    };
+  }
+}
+
+/**
  * Emits a per-entry status line for each name in SHARED_LINKS
  * (okGlyph/warnGlyph/failGlyph). A non-symlink blocks sync and FAILs via
  * process.exitCode. TOCTOU-safe: lstatSync is wrapped in try/catch so a path
@@ -96,38 +146,8 @@ export function reportRepoState(section: DoctorSection): void {
 export function reportSharedLinks(section: DoctorSection): void {
   for (const name of SHARED_LINKS) {
     const p = join(CLAUDE_HOME, name);
-    let stat;
-    try {
-      stat = lstatSync(p);
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        addItem(section, `${yellow(warnGlyph)} ${name}: missing`);
-      } else {
-        addItem(section, `${red(failGlyph)} ${name}: could not stat (${String(code)})`);
-        process.exitCode = 1;
-      }
-      continue;
-    }
-    if (stat.isSymbolicLink()) {
-      try {
-        // statSync follows the link; a throw means the target does not resolve.
-        statSync(p);
-        addItem(section, `${green(okGlyph)} ${name}: symlink`);
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code === 'ENOENT') {
-          addItem(section, `${yellow(warnGlyph)} ${name}: broken symlink (target missing)`);
-        } else {
-          addItem(
-            section,
-            `${yellow(warnGlyph)} ${name}: symlink target unreadable (${String(code)})`,
-          );
-        }
-      }
-    } else {
-      addItem(section, `${red(failGlyph)} ${name}: NOT a symlink (blocks sync)`);
-      process.exitCode = 1;
-    }
+    const { line, fail } = classifySharedLink(name, p);
+    addItem(section, line);
+    if (fail) process.exitCode = 1;
   }
 }

@@ -453,11 +453,8 @@ describe('cmdInit snapshot mode', () => {
 // maybeDisableMirrorActions (exercised via cmdInit opts.run)
 // ---------------------------------------------------------------------------
 
-/**
- * Build a SpawnSyncFn mock that dispatches on (bin, args) to simulate
- * different gh/git subprocess outcomes for maybeDisableMirrorActions paths.
- */
-function makeGhRun(opts: {
+/** Opts shared by the git and gh dispatch helpers for makeGhRun. */
+type GhRunOpts = {
   remote?: string;
   remoteThrows?: true;
   auth?: 'ok' | 'not-installed' | 'not-authed';
@@ -466,38 +463,54 @@ function makeGhRun(opts: {
   actionsEnabledThrows?: true;
   actionsEnabled?: boolean;
   disable?: 'ok' | 'throw';
-}): SpawnSyncFn {
+};
+
+/** Dispatch the `git` bin call for makeGhRun. */
+function dispatchGit(opts: GhRunOpts): Buffer {
+  if (opts.remoteThrows === true || opts.remote === undefined) {
+    throw Object.assign(new Error('no remote'), { code: 128 });
+  }
+  return Buffer.from(opts.remote + '\n');
+}
+
+/** Simulate `gh auth status` outcomes. */
+function dispatchGhStatus(opts: GhRunOpts): Buffer {
+  if (opts.auth === 'not-installed') {
+    throw Object.assign(new Error('gh ENOENT'), { code: 'ENOENT' });
+  }
+  if (opts.auth === 'not-authed') {
+    throw Object.assign(new Error('not authed'), { code: 1 });
+  }
+  return Buffer.from('');
+}
+
+/** Dispatch the `gh` bin call for makeGhRun. */
+function dispatchGh(opts: GhRunOpts, argv: string[]): Buffer {
+  if (argv.includes('status')) return dispatchGhStatus(opts);
+  if (argv.includes('view')) {
+    if (opts.isPrivateThrows === true) throw new Error('api error');
+    return Buffer.from(JSON.stringify({ isPrivate: opts.isPrivate }));
+  }
+  if (argv.includes('--jq')) {
+    if (opts.actionsEnabledThrows === true) throw new Error('api error');
+    return Buffer.from(opts.actionsEnabled ? 'true\n' : 'false\n');
+  }
+  if (argv.includes('PUT')) {
+    if (opts.disable === 'throw') throw new Error('disable failed');
+    return Buffer.from('');
+  }
+  throw new Error(`Unexpected gh argv: ${argv.join(' ')}`);
+}
+
+/**
+ * Build a SpawnSyncFn mock that dispatches on (bin, args) to simulate
+ * different gh/git subprocess outcomes for maybeDisableMirrorActions paths.
+ */
+function makeGhRun(opts: GhRunOpts): SpawnSyncFn {
   return (bin, args) => {
     const argv = Array.from(args);
-    if (bin === 'git') {
-      if (opts.remoteThrows === true || opts.remote === undefined) {
-        throw Object.assign(new Error('no remote'), { code: 128 });
-      }
-      return Buffer.from(opts.remote + '\n');
-    }
-    if (bin === 'gh') {
-      if (argv.includes('status')) {
-        if (opts.auth === 'not-installed') {
-          throw Object.assign(new Error('gh ENOENT'), { code: 'ENOENT' });
-        }
-        if (opts.auth === 'not-authed') {
-          throw Object.assign(new Error('not authed'), { code: 1 });
-        }
-        return Buffer.from('');
-      }
-      if (argv.includes('view')) {
-        if (opts.isPrivateThrows === true) throw new Error('api error');
-        return Buffer.from(JSON.stringify({ isPrivate: opts.isPrivate }));
-      }
-      if (argv.includes('--jq')) {
-        if (opts.actionsEnabledThrows === true) throw new Error('api error');
-        return Buffer.from(opts.actionsEnabled ? 'true\n' : 'false\n');
-      }
-      if (argv.includes('PUT')) {
-        if (opts.disable === 'throw') throw new Error('disable failed');
-        return Buffer.from('');
-      }
-    }
+    if (bin === 'git') return dispatchGit(opts);
+    if (bin === 'gh') return dispatchGh(opts, argv);
     throw new Error(`Unexpected subprocess: ${bin} ${argv.join(' ')}`);
   };
 }

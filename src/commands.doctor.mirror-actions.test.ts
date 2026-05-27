@@ -13,6 +13,47 @@ import type { SpawnSyncFn } from './gh-actions.ts';
 // (the warnGlyph and the `gh api -X PUT` remediation hint). process.exitCode is
 // captured and restored so every case can assert it stays unset (D-11).
 
+/** Opts shared by the git and gh dispatch helpers below. */
+type GhRunOpts = {
+  remote?: string;
+  remoteThrows?: true;
+  auth?: 'ok' | 'not-installed' | 'not-authed';
+  isPrivateThrows?: true;
+  isPrivate?: boolean;
+  actionsEnabledThrows?: true;
+  actionsEnabled?: boolean;
+};
+
+/** Dispatch the `git` bin call for makeGhRun. */
+function dispatchGit(opts: GhRunOpts): Buffer {
+  if (opts.remoteThrows === true || opts.remote === undefined) {
+    throw Object.assign(new Error('no remote'), { code: 128 });
+  }
+  return Buffer.from(opts.remote + '\n');
+}
+
+/** Dispatch the `gh` bin call for makeGhRun. */
+function dispatchGh(opts: GhRunOpts, argv: string[]): Buffer {
+  if (argv.includes('status')) {
+    if (opts.auth === 'not-installed') {
+      throw Object.assign(new Error('gh ENOENT'), { code: 'ENOENT' });
+    }
+    if (opts.auth === 'not-authed') {
+      throw Object.assign(new Error('not authed'), { code: 1 });
+    }
+    return Buffer.from('');
+  }
+  if (argv.includes('view')) {
+    if (opts.isPrivateThrows === true) throw new Error('api error');
+    return Buffer.from(JSON.stringify({ isPrivate: opts.isPrivate }));
+  }
+  if (argv.includes('--jq')) {
+    if (opts.actionsEnabledThrows === true) throw new Error('api error');
+    return Buffer.from(opts.actionsEnabled ? 'true\n' : 'false\n');
+  }
+  throw new Error(`Unexpected gh argv: ${argv.join(' ')}`);
+}
+
 /**
  * Build a SpawnSyncFn mock that dispatches on (bin, args) to simulate the
  * git/gh subprocess outcomes the mirror-Actions gate chain walks. Lifted and
@@ -26,42 +67,11 @@ import type { SpawnSyncFn } from './gh-actions.ts';
  *   `actionsEnabled` / `actionsEnabledThrows` drive gate 5.
  * @returns A SpawnSyncFn suitable as the injected `run` for `reportMirrorActions`.
  */
-function makeGhRun(opts: {
-  remote?: string;
-  remoteThrows?: true;
-  auth?: 'ok' | 'not-installed' | 'not-authed';
-  isPrivateThrows?: true;
-  isPrivate?: boolean;
-  actionsEnabledThrows?: true;
-  actionsEnabled?: boolean;
-}): SpawnSyncFn {
+function makeGhRun(opts: GhRunOpts): SpawnSyncFn {
   return (bin, args) => {
     const argv = Array.from(args);
-    if (bin === 'git') {
-      if (opts.remoteThrows === true || opts.remote === undefined) {
-        throw Object.assign(new Error('no remote'), { code: 128 });
-      }
-      return Buffer.from(opts.remote + '\n');
-    }
-    if (bin === 'gh') {
-      if (argv.includes('status')) {
-        if (opts.auth === 'not-installed') {
-          throw Object.assign(new Error('gh ENOENT'), { code: 'ENOENT' });
-        }
-        if (opts.auth === 'not-authed') {
-          throw Object.assign(new Error('not authed'), { code: 1 });
-        }
-        return Buffer.from('');
-      }
-      if (argv.includes('view')) {
-        if (opts.isPrivateThrows === true) throw new Error('api error');
-        return Buffer.from(JSON.stringify({ isPrivate: opts.isPrivate }));
-      }
-      if (argv.includes('--jq')) {
-        if (opts.actionsEnabledThrows === true) throw new Error('api error');
-        return Buffer.from(opts.actionsEnabled ? 'true\n' : 'false\n');
-      }
-    }
+    if (bin === 'git') return dispatchGit(opts);
+    if (bin === 'gh') return dispatchGh(opts, argv);
     throw new Error(`Unexpected subprocess: ${bin} ${argv.join(' ')}`);
   };
 }
