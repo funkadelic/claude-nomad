@@ -14,7 +14,7 @@
 
 import { join } from 'node:path';
 
-import { green, red, okGlyph, failGlyph } from './color.ts';
+import { green, red, dim, okGlyph, failGlyph } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { CLAUDE_HOME } from './config.ts';
 import { type Finding, partitionFindings, scanStagedTree } from './push-gitleaks.ts';
@@ -47,16 +47,16 @@ function reportSessionFindings(
 ): void {
   for (const [sid, counts] of bySession) {
     const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
-    addItem(section, `${red(failGlyph)} session ${sid}: ${summary}`);
+    addItem(section, `${red(failGlyph)} ${red(summary)} in session ${sid}`);
     const logical = logicalBySession.get(sid);
     /* c8 ignore next -- false branch is defensive; every bySession sid is keyed in logicalBySession */
     if (logical !== undefined) {
       addItem(
         section,
-        `  rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
+        `  ${dim(`rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`)}`,
       );
     }
-    addItem(section, `  false positive? add a pattern to .gitleaks.toml`);
+    addItem(section, `  ${dim('false positive? add a pattern to .gitleaks.toml')}`);
   }
   process.exitCode = 1;
 }
@@ -70,7 +70,7 @@ function reportSessionFindings(
  */
 function reportOtherFindings(section: DoctorSection, other: Finding[]): void {
   for (const f of other) {
-    addItem(section, `${red(failGlyph)} leak in ${f.File}: ${f.RuleID}`);
+    addItem(section, `${red(failGlyph)} ${red(f.RuleID)} leak in ${f.File}`);
   }
   process.exitCode = 1;
 }

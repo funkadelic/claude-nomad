@@ -185,11 +185,11 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     reportCheckShared(section);
 
     const rows = section.items.join('\n');
-    // Session row carries both RuleID counts for sid-1.
-    expect(rows).toMatch(/session sid-1:.*aws-access-key \(1\)/);
+    // Session row leads with both RuleID counts for sid-1, then names the session.
+    expect(rows).toMatch(/aws-access-key \(1\).*in session sid-1/);
     expect(rows).toContain('github-pat (1)');
-    // Other-bucket row names the nested path and its RuleID.
-    expect(rows).toContain('leak in shared/projects/foo/subagents/nested.jsonl: generic-api-key');
+    // Other-bucket row leads with the RuleID, then names the nested path.
+    expect(rows).toContain('generic-api-key leak in shared/projects/foo/subagents/nested.jsonl');
     // The scrub hint reuses the captured logical/encoded mapping.
     expect(rows).toMatch(/rotate the credential, then scrub .*sid-1\.jsonl/);
     expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
