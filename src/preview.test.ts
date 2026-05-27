@@ -76,35 +76,64 @@ describe('diffJsonStrings', () => {
     expect(out).toBe('');
   });
 
-  it('handles a longer "next" (more lines than current) without pushing undefined entries', async () => {
-    // Covers line 48's `if (bv !== undefined)` guard in the diff loop AND
-    // line 44's `if (av !== undefined)` guard in the equality branch when
-    // the parallel walk runs past current's end. Current is shorter, so
-    // the tail iterations have av=undefined; only the `+next` lines should
-    // appear for the extra entries (no `undefined` artifacts in output).
-    const current = '{}';
-    const next = '{\n  "a": 1,\n  "b": 2\n}';
+  it('output starts with the literal header lines', async () => {
+    const current = JSON.stringify({ model: 'sonnet' }, null, 2);
+    const next = JSON.stringify({ model: 'opus' }, null, 2);
+    const { diffJsonStrings } = await import('./preview.ts');
+    const out = diffJsonStrings(current, next);
+    const outputLines = out.split('\n');
+    expect(outputLines[0]).toBe('--- ~/.claude/settings.json');
+    expect(outputLines[1]).toBe('+++ would write');
+  });
+
+  it('add-only: adds a new key without emitting undefined artifacts', async () => {
+    // jsdiff added branch: current is shorter than next; the extra entries in
+    // next must appear as + lines and never contain the string 'undefined'.
+    const current = JSON.stringify({}, null, 2);
+    const next = JSON.stringify({ a: 1, b: 2 }, null, 2);
     const { diffJsonStrings } = await import('./preview.ts');
     const out = diffJsonStrings(current, next);
     expect(out).not.toContain('undefined');
     expect(out).toContain('+');
-    // The added lines from `next` should appear in the output.
     expect(out).toContain('"a": 1');
     expect(out).toContain('"b": 2');
   });
 
-  it('handles a longer "current" (more lines than next) without pushing undefined entries', async () => {
-    // Symmetric to the prior test: current longer than next means tail
-    // iterations have bv=undefined. The diff must emit `-` lines for the
-    // removed entries and skip the bv-side push (line 48 guard).
-    const current = '{\n  "a": 1,\n  "b": 2\n}';
-    const next = '{}';
+  it('remove-only: removes a key without emitting undefined artifacts', async () => {
+    // jsdiff removed branch: current is longer than next; the removed entries
+    // must appear as - lines and never contain the string 'undefined'.
+    const current = JSON.stringify({ a: 1, b: 2 }, null, 2);
+    const next = JSON.stringify({}, null, 2);
     const { diffJsonStrings } = await import('./preview.ts');
     const out = diffJsonStrings(current, next);
     expect(out).not.toContain('undefined');
     expect(out).toContain('-');
     expect(out).toContain('"a": 1');
     expect(out).toContain('"b": 2');
+  });
+
+  it('mid-document insertion: unchanged tail appears as context, not a -/+ cascade', async () => {
+    // The core LCS behavior test. Inserting a key between two existing keys
+    // must not cascade -/+ pairs for every following line. The closing brace
+    // and any tail lines must appear exactly once as space-prefixed context
+    // lines, not duplicated as removed-then-added pairs.
+    const current = JSON.stringify({ a: 1, c: 3 }, null, 2);
+    const next = JSON.stringify({ a: 1, b: 2, c: 3 }, null, 2);
+    const { diffJsonStrings } = await import('./preview.ts');
+    const out = diffJsonStrings(current, next);
+    const outputLines = out.split('\n');
+
+    // The inserted key must appear as a + line (JSON.stringify indents with 2
+    // spaces, so the line is `+  "b": 2,`).
+    expect(out).toContain('+  "b": 2,');
+
+    // The unchanged tail (closing brace line) must appear exactly once as a
+    // space-prefixed context line, not duplicated as -/+ pairs.
+    const closingBraceLines = outputLines.filter((l) => l === ' }');
+    expect(closingBraceLines.length).toBe(1);
+
+    // No removed (-) line for the closing brace.
+    expect(out).not.toContain('-}');
   });
 });
 
