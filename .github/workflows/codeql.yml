@@ -33,19 +33,33 @@ jobs:
           # Need diff base for the docs-only gate below.
           fetch-depth: 0
 
-      # Skip CodeQL on docs-only PRs (no analyzable code changed). SHAs flow
-      # through env: to stay out of shell expression context. The scheduled
-      # run has no PR context and falls through to skip=false.
+      # Skip CodeQL when (a) the PR head branch is a release-please branch from
+      # this same repo (a version/changelog/manifest bump with no analyzable
+      # source delta; its source rolled up from PRs that already scanned), or
+      # (b) the changeset only touches docs (*.md, LICENSE). The same-repo guard
+      # mirrors tests.yml: a fork PR can name its branch release-please--* to
+      # spoof the prefix but cannot make its head repo equal this one, so the
+      # skip never fires for forks. SHAs and refs flow through env: to stay out
+      # of shell expression context. The scheduled run has no PR context and
+      # falls through to skip=false.
       - name: Decide whether to run heavy steps
         id: gate
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" != "pull_request" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${PR_HEAD_REF#release-please--}" != "$PR_HEAD_REF" ] && [ "$PR_HEAD_REPO" = "$REPO" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=release-please PR branch" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ -z "$PR_BASE" ] || [ "$PR_BASE" = "0000000000000000000000000000000000000000" ]; then
