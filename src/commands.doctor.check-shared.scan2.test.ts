@@ -203,15 +203,28 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     expect(rows).toContain('github-pat (1)');
     // Other-bucket row leads with the RuleID, then names the nested path.
     expect(rows).toContain('generic-api-key leak in shared/projects/foo/subagents/nested.jsonl');
-    // The scrub hint reuses the captured logical/encoded mapping.
-    expect(rows).toMatch(/rotate the credential, then scrub .*sid-1\.jsonl/);
-    // Footer legend explains each distinct RuleID once, set off by blank lines.
-    expect(rows).toContain('[aws-access-key]: AWS Access Key');
-    expect(rows).toContain('[github-pat]: GitHub Personal Access Token');
-    expect(rows).toContain('[generic-api-key]: Generic API Key');
+    // The scrub hint carries the bullet prefix and the captured logical/encoded mapping.
+    expect(rows).toMatch(/- rotate the credential, then scrub .*sid-1\.jsonl/);
+    // Footer legend explains each distinct RuleID once with the bullet prefix.
+    expect(rows).toContain('- [aws-access-key]: AWS Access Key');
+    expect(rows).toContain('- [github-pat]: GitHub Personal Access Token');
+    expect(rows).toContain('- [generic-api-key]: Generic API Key');
     // One legend entry per rule (deduplicated), not one per finding.
-    expect(section.items.filter((r) => r.includes('[github-pat]:'))).toHaveLength(1);
-    // Blank-line separators bracket the legend block.
+    expect(section.items.filter((r) => r.includes('- [github-pat]:'))).toHaveLength(1);
+    // Bold headers are present (color disabled in tests, so plain strings match).
+    expect(section.items.some((r) => r === 'Remediation')).toBe(true);
+    expect(section.items.some((r) => r === 'Finding types')).toBe(true);
+    // Exactly one false-positive hint (deduped, not once per session).
+    expect(section.items.filter((r) => r.includes('false positive? add a pattern'))).toHaveLength(
+      1,
+    );
+    // Findings-first: the session row appears before the Remediation header.
+    const sessionIdx = section.items.findIndex((r) => r.includes('in session sid-1'));
+    const remediationIdx = section.items.findIndex((r) => r === 'Remediation');
+    const legendIdx = section.items.findIndex((r) => r === 'Finding types');
+    expect(sessionIdx).toBeLessThan(remediationIdx);
+    expect(sessionIdx).toBeLessThan(legendIdx);
+    // Blank-line separators: one before Remediation, one before Finding types.
     expect(section.items.filter((r) => r === '').length).toBeGreaterThanOrEqual(2);
     expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
     expect(process.exitCode).toBe(1);
@@ -227,8 +240,8 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
 
     // An older gitleaks (or a custom rule) omits the Description field. The
-    // leak row and hints still emit; the legend block (and its blank lines)
-    // is suppressed entirely.
+    // leak row and Remediation block still emit; the Finding types legend (and
+    // its leading blank) is suppressed entirely.
     const report = JSON.stringify([
       {
         RuleID: 'aws-access-key',
@@ -258,10 +271,80 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     reportCheckShared(section);
 
     const rows = section.items.join('\n');
-    // Leak row still emits, but no legend bracket and no blank-line separators.
+    // Leak row still emits.
     expect(rows).toMatch(/aws-access-key \(1\).*in session sid-1/);
+    // Finding types legend is suppressed (no Description in findings).
     expect(rows).not.toContain('[aws-access-key]:');
-    expect(section.items.some((r) => r === '')).toBe(false);
+    expect(section.items.some((r) => r === 'Finding types')).toBe(false);
+    // Remediation block IS present (gated on bySession.size > 0, not Description).
+    expect(section.items.some((r) => r === 'Remediation')).toBe(true);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('dedupes the false-positive hint to exactly one line across multiple sessions', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // Two distinct sessions each have a finding.
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-dedup-a.jsonl'),
+      `{"role":"user","text":"benign"}\n`,
+    );
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'sid-dedup-b.jsonl'),
+      `{"role":"user","text":"benign"}\n`,
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+
+    const report = JSON.stringify([
+      {
+        RuleID: 'github-pat',
+        Description: 'GitHub Personal Access Token',
+        File: 'shared/projects/foo/sid-dedup-a.jsonl',
+        StartLine: 1,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-da',
+      },
+      {
+        RuleID: 'aws-access-key',
+        Description: 'AWS Access Key',
+        File: 'shared/projects/foo/sid-dedup-b.jsonl',
+        StartLine: 2,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-db',
+      },
+    ]);
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          const rp = list.find((a) => a.startsWith('--report-path='));
+          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
+          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    // Two separate session rows must be present.
+    expect(section.items.some((r) => r.includes('in session sid-dedup-a'))).toBe(true);
+    expect(section.items.some((r) => r.includes('in session sid-dedup-b'))).toBe(true);
+    // Two separate rotate-and-scrub lines, one per session.
+    expect(
+      section.items.filter((r) => r.includes('- rotate the credential, then scrub')),
+    ).toHaveLength(2);
+    expect(section.items.some((r) => r.includes('sid-dedup-a.jsonl'))).toBe(true);
+    expect(section.items.some((r) => r.includes('sid-dedup-b.jsonl'))).toBe(true);
+    // Exactly ONE false-positive hint regardless of session count.
+    expect(
+      section.items.filter((r) => r.includes('false positive? add a pattern to .gitleaks.toml')),
+    ).toHaveLength(1);
     expect(process.exitCode).toBe(1);
   });
 });

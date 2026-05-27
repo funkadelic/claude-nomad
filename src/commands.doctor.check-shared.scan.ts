@@ -7,14 +7,14 @@
  * Owns the post-stage block: run the shared `scanStagedTree` (the same git
  * init + add + `gitleaks protect --staged` mechanism push uses), classify the
  * findings via `partitionFindings`, and emit the doctor glyph rows (clean,
- * per-session leak with rotate-and-scrub guidance, and the nested "other"
- * bucket). All external work flows through `scanStagedTree`; this module spawns
+ * per-session leak rows, then a Remediation block, then a Finding types legend).
+ * All external work flows through `scanStagedTree`; this module spawns
  * nothing itself.
  */
 
 import { join } from 'node:path';
 
-import { green, red, dim, okGlyph, failGlyph } from './color.ts';
+import { green, red, dim, bold, okGlyph, failGlyph } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { CLAUDE_HOME } from './config.ts';
 import { type Finding, partitionFindings, scanStagedTree } from './push-gitleaks.ts';
@@ -32,31 +32,18 @@ function scrubPath(logical: string, sid: string, logicalToEncoded: Map<string, s
 }
 
 /**
- * Emit one fail row per affected session plus rotate-and-scrub + allowlist
- * guidance, and set `process.exitCode = 1`. `logicalBySession` carries the
- * `<logical>` captured from the same match that keyed `bySession`, so the
- * scrub-path hint reuses the authoritative parse. The hint guard omits a row
- * rather than print a wrong path if the invariant ever breaks; the leak row is
- * always emitted.
+ * Emit one fail row per affected session (the `✗ ... in session` rows only)
+ * and set `process.exitCode = 1`. Rotate-and-scrub guidance and the
+ * false-positive hint are NOT emitted here; they belong to `reportRemediation`
+ * which is called after all finding rows.
  */
 function reportSessionFindings(
   section: DoctorSection,
   bySession: Map<string, Map<string, number>>,
-  logicalBySession: Map<string, string>,
-  logicalToEncoded: Map<string, string>,
 ): void {
   for (const [sid, counts] of bySession) {
     const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
     addItem(section, `${red(failGlyph)} ${red(summary)} in session ${sid}`);
-    const logical = logicalBySession.get(sid);
-    /* c8 ignore next -- false branch is defensive; every bySession sid is keyed in logicalBySession */
-    if (logical !== undefined) {
-      addItem(
-        section,
-        `  ${dim(`rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`)}`,
-      );
-    }
-    addItem(section, `  ${dim('false positive? add a pattern to .gitleaks.toml')}`);
   }
   process.exitCode = 1;
 }
@@ -73,6 +60,36 @@ function reportOtherFindings(section: DoctorSection, other: Finding[]): void {
     addItem(section, `${red(failGlyph)} ${red(f.RuleID)} leak in ${f.File}`);
   }
   process.exitCode = 1;
+}
+
+/**
+ * Emit the remediation block after all finding rows. Findings-first ordering
+ * means guidance is grouped at the end, not interleaved between session rows.
+ * Emits a leading blank, a bold `Remediation` header, one rotate-and-scrub
+ * line per session (using `logicalBySession` to build the scrub path), and
+ * exactly ONE false-positive hint after the loop (deduped, not once per session).
+ * The hint guard omits a rotate row rather than print a wrong path if the
+ * invariant ever breaks; the false-positive line is always appended.
+ */
+function reportRemediation(
+  section: DoctorSection,
+  bySession: Map<string, Map<string, number>>,
+  logicalBySession: Map<string, string>,
+  logicalToEncoded: Map<string, string>,
+): void {
+  addItem(section, '');
+  addItem(section, bold('Remediation'));
+  for (const [sid] of bySession) {
+    const logical = logicalBySession.get(sid);
+    /* c8 ignore next -- false branch is defensive; every bySession sid is keyed in logicalBySession */
+    if (logical !== undefined) {
+      addItem(
+        section,
+        `  ${dim(`- rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`)}`,
+      );
+    }
+  }
+  addItem(section, `  ${dim('- false positive? add a pattern to .gitleaks.toml')}`);
 }
 
 /**
@@ -112,14 +129,14 @@ function buildLogicalBySession(findings: Finding[]): Map<string, string> {
 }
 
 /**
- * Emit a deduplicated description legend in the footer: one `[rule-id]:
- * description` row per distinct RuleID across all findings, set off by a blank
- * line before and after. Sourced from the `Description` gitleaks bakes into
- * each finding, so it needs no network; rules whose description is absent
- * (older gitleaks, custom rules) are skipped, and the whole block (including
- * the surrounding blanks) is omitted when no descriptions are available. The
- * legend lives in the footer so a rule hit across many files or sessions
- * (e.g. `sonar-api-token`) is explained once, not per occurrence.
+ * Emit a deduplicated description legend in the footer: one `- [rule-id]:
+ * description` row per distinct RuleID across all findings, headed by a bold
+ * `Finding types` header with a leading blank but no trailing blank (renderSection
+ * attaches the `└` elbow to the last non-empty item). Rules whose description
+ * is absent (older gitleaks, custom rules) are skipped, and the whole block
+ * (including the surrounding blank and header) is omitted when no descriptions
+ * are available. The legend lives in the footer so a rule hit across many files
+ * or sessions (e.g. `sonar-api-token`) is explained once, not per occurrence.
  */
 function emitDescriptionLegend(section: DoctorSection, findings: Finding[]): void {
   const descByRule = new Map<string, string>();
@@ -128,16 +145,19 @@ function emitDescriptionLegend(section: DoctorSection, findings: Finding[]): voi
   }
   if (descByRule.size === 0) return;
   addItem(section, '');
+  addItem(section, bold('Finding types'));
   for (const [rule, desc] of descByRule) {
-    addItem(section, `  ${red(`[${rule}]`)}: ${dim(desc)}`);
+    addItem(section, `  ${red(`- [${rule}]`)}: ${dim(desc)}`);
   }
-  addItem(section, '');
 }
 
 /**
  * Scan the staged temp tree through the shared `scanStagedTree` and emit the
- * result rows. Isolates the deepest nesting from `reportCheckShared`: the scan
- * try/catch (failure -> fail row + exit 1, carrying `err.message` only, never
+ * result rows in findings-first order: other-bucket leak rows, then per-session
+ * leak rows, then a `Remediation` block (gated on bySession.size > 0), then a
+ * `Finding types` legend (gated on at least one finding carrying a Description).
+ * Isolates the deepest nesting from `reportCheckShared`: the scan try/catch
+ * (failure -> fail row + exit 1, carrying `err.message` only, never
  * stderr/stdout), the unparseable `findings === null` branch, `partitionFindings`,
  * and the clean / `other` / `bySession` rows. BOTH buckets gate the clean row: a
  * finding in `other` (nested transcripts matching neither the flat `SESSION_PATH`
@@ -175,8 +195,9 @@ export function scanAndReport(
     return;
   }
   if (other.length > 0) reportOtherFindings(section, other);
+  if (bySession.size > 0) reportSessionFindings(section, bySession);
   if (bySession.size > 0) {
-    reportSessionFindings(section, bySession, buildLogicalBySession(findings), logicalToEncoded);
+    reportRemediation(section, bySession, buildLogicalBySession(findings), logicalToEncoded);
   }
   emitDescriptionLegend(section, findings);
 }
