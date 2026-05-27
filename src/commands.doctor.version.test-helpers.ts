@@ -1,4 +1,3 @@
-import type { execFileSync } from 'node:child_process';
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
 
@@ -87,7 +86,11 @@ export function mockCurlReleases(
     return {
       ...actual,
       execFileSync: vi.fn(
-        (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+        (
+          bin: string,
+          args: readonly string[],
+          opts?: Parameters<typeof cpModule.execFileSync>[2],
+        ) => {
           if (bin === 'curl' && args.some(isGithubApiUrl)) {
             if (response.kind === 'throw') {
               const err = new Error(
