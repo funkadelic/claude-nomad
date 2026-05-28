@@ -4,6 +4,7 @@ import { join, relative } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
 import { expandStagedDir, isInIndex, isTrackedInHead } from './commands.drop-session.git.ts';
+import { reportScrubHint } from './commands.drop-session.scrub-hint.ts';
 import { die, fail, log, NomadFatal } from './utils.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
@@ -13,7 +14,9 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  * lock, collects every staged path matching the flat `<id>.jsonl` and the
  * sibling subagent directory `<id>/` (via `collectMatches`), then unstages
  * each (via `unstageOne`). This closes the leak where a "dropped" session
- * still shipped its subagent transcripts.
+ * still shipped its subagent transcripts. A successful drop ends with
+ * `reportScrubHint`, which reminds the operator that the unstage is per-push
+ * only and points at the live transcript that still needs scrubbing.
  *
  * Idempotent: entries not in the index are skipped silently. Exits 0 on
  * any drop (including an idempotent re-run); exits 1 with `✗ no staged
@@ -53,6 +56,7 @@ export function cmdDropSession(id: string): void {
       throw new NomadFatal(`no staged session matches ${id}`);
     }
     for (const rel of matches) unstageOne(rel);
+    reportScrubHint(id, matches);
   } catch (err) {
     // Defensive escape hatch: only fires if a non-NomadFatal error escapes
     // the try block. All execFileSync mutation failures are wrapped in
