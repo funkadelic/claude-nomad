@@ -67,7 +67,7 @@ box, a personal rig and a work machine. [Get started in three steps.](#quickstar
 ## Quickstart
 
 If you already have a private **claude-nomad** mirror (see [Setup](#setup) for the one-time
-bootstrap), adding a new host is three steps:
+bootstrap), adding a new host is two one-time steps, then the everyday loop:
 
 ```bash
 $ npm i -g claude-nomad
@@ -157,14 +157,24 @@ so a clobbered dotfile variable does not break the CLI.
 
 ## What gets synced vs. not
 
-| Category               | Items                                                                                                                                                                                                                                     | Behavior                                                                                                                                                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Synced**             | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs`                                                                                                                                                             | Symlinked into `~/.claude/` from `shared/` (see `SHARED_LINKS` in `src/config.ts`).                                                                                                                             |
-| **Generated**          | `settings.json`                                                                                                                                                                                                                           | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`. Rewritten on every pull.                                                                                                                       |
-| **Remapped**           | `projects/` session transcripts                                                                                                                                                                                                           | Copied with path translation per `path-map.json`.                                                                                                                                                               |
-| **Per-project extras** | `<localRoot>/.planning/` and other directories, or a single root file like `CLAUDE.md`, whitelisted by `SUPPORTED_EXTRAS` in `src/config.ts`                                                                                              | Opt-in via the `extras` field in `path-map.json`. Mirrored to/from `shared/extras/<logical>/<name>` (directory subtree or single file). Pre-pull divergence WARN flags local edits before they get overwritten. |
-| **Never synced**       | `~/.claude.json` (OAuth, MCP state), `history.jsonl`, `settings.local.json` (per-host overrides), `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/` | Per-host ephemeral state.                                                                                                                                                                                       |
-| **Auto-rehydrated**    | `~/.claude/plugins/cache/<plugin>/...`                                                                                                                                                                                                    | Plugin payloads not synced. Claude Code re-downloads them on first use from the `enabledPlugins` list in the regenerated `settings.json`; no manual `claude plugins install ...` per host.                      |
+| Category               | Items                                                                         | Behavior                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Synced**             | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`.                                                    |
+| **Generated**          | `settings.json`                                                               | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull.         |
+| **Remapped**           | `projects/` session transcripts                                               | Copied with path translation per `path-map.json`.                                              |
+| **Per-project extras** | Whitelisted dirs like `.planning/`, or a root file like `CLAUDE.md`           | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
+| **Never synced**       | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs  | Per-host ephemeral state; left untouched in both directions.                                   |
+| **Auto-rehydrated**    | `~/.claude/plugins/cache/<plugin>/...`                                        | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install.              |
+
+Pointers and specifics:
+
+- **Synced** link names live in `SHARED_LINKS`, **whitelisted extras** names in `SUPPORTED_EXTRAS`,
+  and the full **never-synced** set in `NEVER_SYNC` (all in `src/config.ts`).
+- **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `history.jsonl`,
+  `settings.local.json` (per-host overrides), `stats-cache.json`, `todos/`, `shell-snapshots/`,
+  `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/`.
+- **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
+  overwritten.
 
 > [!NOTE] Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
 > URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the plugin's
@@ -249,12 +259,12 @@ host-only model overrides).
 
 ```json
 {
-  "model": "claude-opus-4-7",
+  "model": "claude-opus-4-8",
   "env": { "OLLAMA_HOST": "http://localhost:11434" }
 }
 ```
 
-Results on `your-other-host`: opus 4.7, the local Ollama env var, plus the shared permissions array.
+Results on `your-other-host`: opus 4.8, the local Ollama env var, plus the shared permissions array.
 
 > [!CAUTION] Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
 > `nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file in the
@@ -614,8 +624,9 @@ synced, or a `⚠︎` warning naming the counts when something was skipped:
 gitleaks missing when push checks for it, or a rebase conflict before anything is staged) suppresses
 the tree entirely, so you do not see "summary: clean" stacked under an error. A later leak-scan
 finding is different: by then the tree has already been built, so it still renders in full with a
-`✗` Leak scan row and the recovery block below it (see "Recovery flow: gitleaks FATAL on a session
-JSONL"). Projects with no entry in `path-map.json` for this host count as unmapped and fold into the
+`✗` Leak scan row and the recovery block below it (see
+[Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)).
+Projects with no entry in `path-map.json` for this host count as unmapped and fold into the
 collapsed `ℹ︎ ... not in path-map` count; the hint points at `nomad doctor`, which lists them by
 logical name.
 
