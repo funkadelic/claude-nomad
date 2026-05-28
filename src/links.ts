@@ -1,19 +1,21 @@
 import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOST, REPO_HOME, SHARED_LINKS } from './config.ts';
+import { allSharedLinks, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
 
 /**
- * Symlink the `SHARED_LINKS` names from the repo's `shared/` dir into
- * `~/.claude/`. Two-pass: first back up and remove any pre-existing
- * non-symlink at each link path (auto-move using `ts` as the backup
- * timestamp), then create the symlinks. Skips a link entirely when the repo
- * has no counterpart, so a host where `shared/commands/` does not exist
- * keeps its local `~/.claude/commands/` instead of having it silently
- * deleted.
+ * Symlink every name in `allSharedLinks(map)` (the static shared-link set
+ * plus any validated `sharedDirs` entries from `path-map.json`) from the
+ * repo's `shared/` dir into `~/.claude/`. Two-pass: first back up and remove
+ * any pre-existing non-symlink at each link path (auto-move using `ts` as the
+ * backup timestamp), then create the symlinks. Skips a link entirely when the
+ * repo has no `shared/<name>` counterpart, so a host where `shared/commands/`
+ * does not exist keeps its local `~/.claude/commands/` instead of having it
+ * silently deleted. `sharedDirs` entries route through the identical two-pass
+ * logic (refuse-non-symlink / backup / dryRun-log behavior is unchanged).
  *
  * `opts.dryRun` (default `false`): when `true`, no disk mutation occurs. The
  * function logs `would auto-move non-symlink:` and `would create symlink:`
@@ -21,9 +23,9 @@ import { deepMerge, readJson } from './utils.json.ts';
  * call with no opts arg or with `dryRun: false` keeps the prior mutating
  * behavior.
  */
-export function applySharedLinks(ts: string, opts: { dryRun?: boolean } = {}): void {
+export function applySharedLinks(ts: string, map: PathMap, opts: { dryRun?: boolean } = {}): void {
   const dryRun = opts.dryRun === true;
-  for (const name of SHARED_LINKS) {
+  for (const name of allSharedLinks(map)) {
     const linkPath = join(CLAUDE_HOME, name);
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(linkPath)) continue;
@@ -36,7 +38,7 @@ export function applySharedLinks(ts: string, opts: { dryRun?: boolean } = {}): v
     backupBeforeWrite(linkPath, ts);
     rmSync(linkPath, { recursive: true, force: true });
   }
-  for (const name of SHARED_LINKS) {
+  for (const name of allSharedLinks(map)) {
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(target)) continue;
     if (dryRun) {

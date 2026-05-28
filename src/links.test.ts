@@ -237,7 +237,7 @@ describe('applySharedLinks auto-move', () => {
     writeFileSync(join(claudeDir, 'agents', 'preexisting.md'), '# local content\n');
 
     const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000');
+    applySharedLinks('20260516-000000', { projects: {} });
 
     const backupFile = join(
       testHome,
@@ -262,7 +262,7 @@ describe('applySharedLinks auto-move', () => {
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
 
     const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000');
+    applySharedLinks('20260516-000000', { projects: {} });
 
     const backupFile = join(
       testHome,
@@ -287,7 +287,7 @@ describe('applySharedLinks auto-move', () => {
     symlinkSync(sharedTarget, linkPath);
 
     const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000');
+    applySharedLinks('20260516-000000', { projects: {} });
 
     const backupFile = join(
       testHome,
@@ -315,7 +315,7 @@ describe('applySharedLinks auto-move', () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
 
     const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000');
+    applySharedLinks('20260516-000000', { projects: {} });
 
     expect(existsSync(join(claudeDir, 'commands', 'local-only.md'))).toBe(true);
     expect(readFileSync(join(claudeDir, 'commands', 'local-only.md'), 'utf8')).toBe(
@@ -349,7 +349,7 @@ describe('applySharedLinks auto-move', () => {
     writeFileSync(join(claudeDir, 'skills', 'bar.md'), '# local skills\n');
 
     const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000');
+    applySharedLinks('20260516-000000', { projects: {} });
 
     const agentsLink = join(claudeDir, 'agents');
     const skillsLink = join(claudeDir, 'skills');
@@ -409,7 +409,7 @@ describe('applySharedLinks dry-run', () => {
     });
 
     const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { dryRun: true });
+    applySharedLinks('20260516-000000', { projects: {} }, { dryRun: true });
 
     const joined = logs.join('\n');
     expect(joined).toContain('would auto-move non-symlink:');
@@ -431,7 +431,7 @@ describe('applySharedLinks dry-run', () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
     const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000');
+    applySharedLinks('20260516-000000', { projects: {} });
     expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
   });
 
@@ -439,7 +439,125 @@ describe('applySharedLinks dry-run', () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
     const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { dryRun: false });
+    applySharedLinks('20260516-000000', { projects: {} }, { dryRun: false });
+    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+  });
+});
+
+describe('applySharedLinks sharedDirs support', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('creates a symlink for a valid sharedDirs entry when shared/<entry> exists', async () => {
+    mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+    writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
+
+    const linkPath = join(claudeDir, 'gsd');
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'gsd'));
+  });
+
+  it('backs up a non-symlink at a sharedDirs link path and replaces it with a symlink', async () => {
+    mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+    writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
+    mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
+    writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
+
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
+
+    const backupFile = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      '20260516-000000',
+      'gsd',
+      'local.md',
+    );
+    expect(existsSync(backupFile)).toBe(true);
+    expect(readFileSync(backupFile, 'utf8')).toBe('# local gsd\n');
+
+    const linkPath = join(claudeDir, 'gsd');
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'gsd'));
+  });
+
+  it('logs would-auto-move for a non-symlink sharedDirs entry under dryRun', async () => {
+    mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+    writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
+    mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
+    writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] }, { dryRun: true });
+
+    expect(logs.join('\n')).toContain('would auto-move non-symlink:');
+    expect(logs.join('\n')).toContain('would create symlink:');
+    // Dry-run: original gsd dir must still be intact
+    expect(existsSync(join(claudeDir, 'gsd', 'local.md'))).toBe(true);
+    expect(lstatSync(join(claudeDir, 'gsd')).isSymbolicLink()).toBe(false);
+  });
+
+  it('skips a sharedDirs entry whose shared/<entry> source does not exist', async () => {
+    // shared/gsd does NOT exist; ~/.claude/gsd should be left untouched.
+    mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
+    writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
+    // Provide at least one SHARED_LINKS source so the function is not a no-op.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
+
+    // ~/.claude/gsd must be unchanged (not backed up, not symlinked)
+    expect(lstatSync(join(claudeDir, 'gsd')).isDirectory()).toBe(true);
+    expect(lstatSync(join(claudeDir, 'gsd')).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(claudeDir, 'gsd', 'local.md'))).toBe(true);
+    const backupGsd = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000', 'gsd');
+    expect(existsSync(backupGsd)).toBe(false);
+    // CLAUDE.md is still symlinked (SHARED_LINKS still work)
+    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+  });
+
+  it('no-sharedDirs path produces same output as pre-phase (no-sharedDirs map)', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    const { applySharedLinks } = await import('./links.ts');
+    // Both no-sharedDirs-key and empty-sharedDirs should behave identically
+    applySharedLinks('20260516-000000', { projects: {} });
     expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
   });
 });

@@ -207,7 +207,7 @@ describe('computePreview orchestration', () => {
     });
 
     const { computePreview } = await import('./preview.ts');
-    computePreview('20260516-000000');
+    computePreview('20260516-000000', { projects: {} });
 
     const joined = logs.join('\n');
     // Symlink section: would-create OR would-auto-move
@@ -248,7 +248,7 @@ describe('computePreview orchestration', () => {
     const backupExistedBefore = existsSync(backupRoot);
 
     const { computePreview } = await import('./preview.ts');
-    computePreview('20260516-000000');
+    computePreview('20260516-000000', { projects: {} });
 
     const afterClaude = snapshotTree(claudeDir);
     const afterCache = snapshotTree(cacheRoot);
@@ -277,7 +277,7 @@ describe('computePreview orchestration', () => {
     );
 
     const { computePreview } = await import('./preview.ts');
-    const result = computePreview('20260516-000000');
+    const result = computePreview('20260516-000000', { projects: {} });
 
     expect(result.unmapped).toBe(1);
     expect(result.collisions).toBe(0);
@@ -295,7 +295,7 @@ describe('computePreview orchestration', () => {
     });
 
     const { computePreview } = await import('./preview.ts');
-    const result = computePreview('20260516-000000');
+    const result = computePreview('20260516-000000', { projects: {} });
 
     const joined = logs.join('\n');
     expect(joined).toContain('settings.json: section skipped (base or current missing)');
@@ -317,7 +317,7 @@ describe('computePreview orchestration', () => {
     });
 
     const { computePreview } = await import('./preview.ts');
-    computePreview('20260516-000000');
+    computePreview('20260516-000000', { projects: {} });
 
     expect(logs.join('\n')).toContain('settings.json: no changes');
   });
@@ -334,7 +334,7 @@ describe('computePreview orchestration', () => {
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     const { computePreview } = await import('./preview.ts');
-    expect(() => computePreview('20260516-000000')).not.toThrow();
+    expect(() => computePreview('20260516-000000', { projects: {} })).not.toThrow();
     expect(logs.join('\n')).toContain('settings.json: malformed; skipping diff');
   });
 
@@ -354,7 +354,7 @@ describe('computePreview orchestration', () => {
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     const { computePreview } = await import('./preview.ts');
-    expect(() => computePreview('20260516-000000')).not.toThrow();
+    expect(() => computePreview('20260516-000000', { projects: {} })).not.toThrow();
     expect(logs.join('\n')).toContain(
       'settings.json: malformed hosts/test-host.json; ignoring overrides',
     );

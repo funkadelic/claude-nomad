@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { HOME, REPO_HOME } from './config.ts';
+import { HOME, REPO_HOME, type PathMap } from './config.ts';
 import { computePreview } from './preview.ts';
 import { emitSummary } from './summary.ts';
 import { die, fail, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
+import { readPathMap } from './utils.json.ts';
 
 /**
  * `nomad diff` command. Offline-safe, read-only preview surface that runs
@@ -37,7 +38,11 @@ export function cmdDiff(): void {
     const ts = freshBackupTs(backupBase);
     // Preview log lines reference `ts` so output stays consistent with
     // pull --dry-run; the backup root itself is intentionally NOT created.
-    const result = computePreview(ts);
+    // Read the map tolerantly (offline-safe: fall back to no-sharedDirs when
+    // path-map.json is absent from a partially-scaffolded repo).
+    const mapPath = join(REPO_HOME, 'path-map.json');
+    const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
+    const result = computePreview(ts, map);
     emitSummary('diff', result.unmapped);
   } catch (err) {
     if (err instanceof NomadFatal) {

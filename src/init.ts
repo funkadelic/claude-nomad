@@ -112,7 +112,10 @@ export function cmdInit(
   log('created path-map.json');
 
   if (snapshot) {
-    snapshotIntoShared();
+    // In the init path, path-map.json was just written as `{ projects: {} }`
+    // (preflight refuses a pre-existing one), so sharedDirs is empty by
+    // construction. Pass the minimal map literal to satisfy the type.
+    snapshotIntoShared({ projects: {} });
     log(`snapshot staged in shared/; review, then 'nomad push' to share with other hosts.`);
     log('~/.claude/ originals were NOT removed.');
   }
