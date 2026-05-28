@@ -224,6 +224,8 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     const legendIdx = section.items.findIndex((r) => r === 'Finding types');
     expect(sessionIdx).toBeLessThan(remediationIdx);
     expect(sessionIdx).toBeLessThan(legendIdx);
+    // Header order: the Remediation block precedes the Finding types legend.
+    expect(remediationIdx).toBeLessThan(legendIdx);
     // Blank-line separators: one before Remediation, one before Finding types.
     expect(section.items.filter((r) => r === '').length).toBeGreaterThanOrEqual(2);
     expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
