@@ -15,6 +15,7 @@ import {
   reportRebaseClean,
   reportRemote,
 } from './commands.doctor.checks.repository.ts';
+import { reportCheckSchema } from './commands.doctor.check-schema.ts';
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { renderDoctor, section } from './commands.doctor.format.ts';
@@ -35,8 +36,12 @@ import { reportVersionCheck } from './commands.doctor.version.ts';
  * section that runs the gitleaks preflight over the session transcripts a
  * `nomad push` would stage. It is OFF by default so plain `nomad doctor`
  * stays the fast read-only smoke test (no scan, no temp tree).
+ *
+ * `opts.checkSchema` (the `--check-schema` sub-flag) appends a "Schema scan"
+ * section that fetches the live settings schema and flags local settings.json
+ * keys absent from it. Also OFF by default (it needs the network).
  */
-export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
+export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean } = {}): void {
   const host = section('Host');
   reportHostAndPaths(host);
   reportRepoState(host);
@@ -74,5 +79,18 @@ export function cmdDoctor(opts: { checkShared?: boolean } = {}): void {
   // drift check above spawns `gitleaks version` separately, by design.)
   if (opts.checkShared === true) reportCheckShared(sharedScan, gitleaksReady);
 
-  renderDoctor([version, host, links, settings, pathMap, neverSync, repository, sharedScan]);
+  const schemaScan = section('Schema scan');
+  if (opts.checkSchema === true) reportCheckSchema(schemaScan);
+
+  renderDoctor([
+    version,
+    host,
+    links,
+    settings,
+    pathMap,
+    neverSync,
+    repository,
+    sharedScan,
+    schemaScan,
+  ]);
 }

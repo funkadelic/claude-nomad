@@ -37,6 +37,14 @@ export const REPO_HOME = process.env.NOMAD_REPO || resolve(HOME, 'claude-nomad')
 export const UPSTREAM_REPO_SLUG = 'funkadelic/claude-nomad';
 
 /**
+ * The official Claude Code settings JSON schema. Source of truth for
+ * `SCHEMA_KEYS` (kept current by `scripts/sync-settings-keys.ts`) and the
+ * on-demand `nomad doctor --check-schema` reporter, which fetches it live to
+ * flag local `settings.json` keys absent from the published schema.
+ */
+export const SETTINGS_SCHEMA_URL = 'https://json.schemastore.org/claude-code-settings.json';
+
+/**
  * Pinned gitleaks version. Single source of truth for the gitleaks pin used by
  * `nomad doctor`'s version-drift check (`reportGitleaksVersionCheck`), which
  * WARNs when the host's installed gitleaks major.minor diverges from this

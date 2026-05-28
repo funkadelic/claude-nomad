@@ -176,7 +176,9 @@ Pointers and specifics:
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 
-> [!NOTE] Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
+<!-- prettier-ignore -->
+> [!NOTE]
+> Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
 > URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the plugin's
 > own per-host config.
 
@@ -207,7 +209,9 @@ block opts a project into syncing whitelisted directories (or a single root file
 }
 ```
 
-> [!IMPORTANT] The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see
+<!-- prettier-ignore -->
+> [!IMPORTANT]
+> The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see
 > [Setup](#setup)). Mismatched labels silently skip remap, so sessions land in the wrong host's
 > encoded dir.
 
@@ -266,9 +270,17 @@ host-only model overrides).
 
 Results on `your-other-host`: opus 4.8, the local Ollama env var, plus the shared permissions array.
 
-> [!CAUTION] Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
+<!-- prettier-ignore -->
+> [!CAUTION]
+> Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
 > `nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file in the
 > repo instead.
+
+`nomad doctor` warns when `settings.json` carries a top-level key it does not recognize (a cue that
+Claude Code added a setting). The recognized set is kept current against Claude Code's published
+settings schema by a weekly automated PR in the public repo, so a periodic `nomad update` is what
+keeps that warning quiet on your hosts. To check your own `settings.json` against the live schema on
+demand, run `nomad doctor --check-schema`.
 
 ## What does NOT sync (deliberate trade-offs)
 
@@ -310,9 +322,9 @@ Read these before adopting so you opt in with eyes open.
 - `gh` ([GitHub CLI](https://cli.github.com/)), used only by `nomad init` to auto-disable Actions on
   the private repo; if it is missing or unauthenticated, init prints a manual fallback tip and
   continues
-- [curl](https://curl.se/), used only by the version/update check (the `nomad doctor` latest-release
-  line and the post-`nomad update` check); it degrades silently when curl is absent or offline, so
-  the rest of the CLI works without it
+- [curl](https://curl.se/), used by the version/update check (the `nomad doctor` latest-release line
+  and the post-`nomad update` check) and by `nomad doctor --check-schema`; it degrades silently when
+  curl is absent or offline, so the rest of the CLI works without it
 
 ## Setup
 
@@ -340,7 +352,9 @@ automatically:
 Pass `--keep-actions` to either form of init to skip step 2 (for example, when your org already
 enforces an Actions policy upstream).
 
-> [!WARNING] If you ever flip the mirror to public, both protections evaporate: CI starts firing on
+<!-- prettier-ignore -->
+> [!WARNING]
+> If you ever flip the mirror to public, both protections evaporate: CI starts firing on
 > every `nomad push` against `main`, and your session transcripts (which include conversation
 > content) become world-readable. **Keep it private.**
 
@@ -541,6 +555,7 @@ point under your npm prefix's `bin/`), then delete the alias line from your shel
 | `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check plus two `⚠︎`-only drift checks: gitleaks version drift and, on a private GitHub mirror, re-enabled Actions.                                    |
 | `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                                                                                                                                                                                        |
 | `nomad doctor --check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session with rotate-and-scrub guidance. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl). |
+| `nomad doctor --check-schema`    | Read-only: fetches the live Claude Code settings schema and lists any `~/.claude/settings.json` key absent from it (candidates for the hand-maintained `APP_ONLY_KEYS` list). Non-fatal and offline-tolerant: skips with a `⚠︎` when curl is missing or the schema is unreachable.                                                                        |
 | `nomad --version`                | Print the installed CLI version as bare semver to stdout; exits 0. Used by the npm-publish smoke test and useful for ad-hoc upgrade checks.                                                                                                                                                                                                              |
 
 The version-check emits ``⚠︎ claude-nomad: <local> -> <latest> (run `nomad update`)`` when the local

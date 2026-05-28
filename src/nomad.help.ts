@@ -49,6 +49,8 @@ export const DEFAULT_HELP = [
   cont('gitleaks, gitlinks).'),
   row('       --check-shared', 'Preflight gitleaks scan of the session transcripts a'),
   cont('`nomad push` would stage (a temp copy, never the live dir).'),
+  row('       --check-schema', 'Flag settings.json keys absent from the live published'),
+  cont('Claude Code settings schema (needs network; degrades offline).'),
   row('       --resume-cmd <id>', 'Print `cd <abspath> && claude --resume <id>` for a session id'),
   cont('from ~/.claude/projects/.'),
   '',
