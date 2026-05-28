@@ -1,0 +1,64 @@
+name: Settings schema drift
+
+# Weekly check that src/settings-keys.ts SCHEMA_KEYS still matches the official
+# Claude Code settings JSON schema. On drift, regenerate the file and open (or
+# update) a PR. APP_ONLY_KEYS stays hand-maintained. Gated to the public repo so
+# private mirrors never run it (they receive updates via `nomad update`).
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: '0 7 * * 1' # Mondays 07:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: automated/settings-schema-sync
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Regenerate SCHEMA_KEYS from the live schema
+        run: npx tsx scripts/sync-settings-keys.ts
+
+      - name: Open or update a PR when SCHEMA_KEYS drifted
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- src/settings-keys.ts; then
+            echo "No settings schema drift."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add src/settings-keys.ts
+          git commit -m "chore(doctor): sync settings schema keys"
+          git push --force-with-lease origin "$BRANCH"
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "chore(doctor): sync settings schema keys" \
+              --body "Automated: the Claude Code settings schema changed. SCHEMA_KEYS in \`src/settings-keys.ts\` was regenerated to match. Review the added/removed keys; APP_ONLY_KEYS is unchanged."
+          else
+            echo "PR for $BRANCH already open; force-push updated it."
+          fi

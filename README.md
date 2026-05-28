@@ -270,6 +270,11 @@ Results on `your-other-host`: opus 4.8, the local Ollama env var, plus the share
 > `nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file in the
 > repo instead.
 
+`nomad doctor` warns when `settings.json` carries a top-level key it does not recognize (a cue that
+Claude Code added a setting). The recognized set is kept current against Claude Code's published
+settings schema by a weekly automated PR in the public repo, so a periodic `nomad update` is what
+keeps that warning quiet on your hosts.
+
 ## What does NOT sync (deliberate trade-offs)
 
 Read these before adopting so you opt in with eyes open.
