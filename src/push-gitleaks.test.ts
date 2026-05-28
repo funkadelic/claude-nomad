@@ -81,11 +81,13 @@ describe('runGitleaksScan (mocked child_process)', () => {
     expect(() => runGitleaksScan()).not.toThrow();
   });
 
-  it('runGitleaksScan throws NomadFatal and forwards stderr on detection (status 1)', async () => {
+  it('runGitleaksScan throws NomadFatal and suppresses raw stderr on detection (status 1)', async () => {
     // Synthesize the JSON report at the production-chosen path so the catch
     // block reaches the legacy detection FATAL via partitionFindings +
     // buildSessionAwareFatal (non-session path returns LEGACY_FATAL). Mirrors
     // how real gitleaks v8.x writes the report alongside the exit-1.
+    // Under the new behavior, stderr must NOT be forwarded when the report
+    // parses: the structured FATAL already describes the findings.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
@@ -124,22 +126,20 @@ describe('runGitleaksScan (mocked child_process)', () => {
     const { runGitleaksScan } = await import('./push-gitleaks.ts');
     expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
     expect(() => runGitleaksScan()).toThrow(/git diff --cached/);
-    // stderrSpy should have received the forwarded buffer at least once.
+    // Report parses to a findings array, so raw stderr must NOT be forwarded.
     const calls = stderrSpy.mock.calls.map((c: unknown[]) => c[0]);
-    const matched = calls.some(
+    const leaked = calls.some(
       (chunk: unknown) =>
         (Buffer.isBuffer(chunk) && chunk.toString().includes('redacted-secret')) ||
         (typeof chunk === 'string' && chunk.includes('redacted-secret')),
     );
-    expect(matched).toBe(true);
+    expect(leaked).toBe(false);
   });
 
-  it('runGitleaksScan forwards stdout (not stderr) and throws NomadFatal when the error carries only stdout', async () => {
-    // Cover the stdout-truthy branch AND the stderr-falsey branch together:
-    // gitleaks fails with a stdout payload only (no stderr). The forwarding
-    // code emits the stdout to process.stdout.write and the FATAL still
-    // fires. Synthesize the JSON report so the catch block reaches the
-    // detection FATAL rather than the new scanner-error FATAL.
+  it('runGitleaksScan suppresses raw stdout on detection when the error carries only stdout', async () => {
+    // Report parses to a findings array, so stdout must NOT be forwarded.
+    // The structured FATAL fully describes the findings; the raw stream is
+    // suppressed on the leaks-found path regardless of which stream is set.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
@@ -178,13 +178,14 @@ describe('runGitleaksScan (mocked child_process)', () => {
     });
     const { runGitleaksScan } = await import('./push-gitleaks.ts');
     expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
+    // Report parsed to findings, so raw stdout must NOT have been forwarded.
     const stdoutCalls = stdoutSpy.mock.calls.map((c: unknown[]) => c[0]);
-    const matched = stdoutCalls.some(
+    const leaked = stdoutCalls.some(
       (chunk: unknown) =>
         (Buffer.isBuffer(chunk) && chunk.toString().includes('redacted-finding-on-stdout')) ||
         (typeof chunk === 'string' && chunk.includes('redacted-finding-on-stdout')),
     );
-    expect(matched).toBe(true);
+    expect(leaked).toBe(false);
   });
 
   it('runGitleaksScan throws scan-failed FATAL when the JSON report is missing or unparseable', async () => {
@@ -231,7 +232,7 @@ describe('runGitleaksScan (mocked child_process)', () => {
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
             mkdirSync(dirname(reportPath), { recursive: true });
-            // Valid JSON, but an object — not the expected Finding[] array.
+            // Valid JSON, but an object (not the expected Finding[] array).
             writeFileSync(reportPath, '{"error": "scanner produced no findings list"}');
           }
           const err = new Error('non-array shape') as NodeJS.ErrnoException & {
@@ -280,6 +281,74 @@ describe('runGitleaksScan (mocked child_process)', () => {
     const { runGitleaksScan } = await import('./push-gitleaks.ts');
     expect(() => runGitleaksScan()).toThrow(/gitleaks scan failed/);
     expect(() => runGitleaksScan()).toThrow(/no parseable JSON report/);
+  });
+
+  it('forwards raw stderr on the scan-crash path (unparseable report)', async () => {
+    // gitleaks throws with an err.stderr buffer AND writes no report file, so
+    // readGitleaksReport returns null. On this crash path forwardStreams=true
+    // must write the stderr buffer so "Review the gitleaks output above." has
+    // something to point at. Covers the `report === null` forwarding branch.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string) => {
+          if (bin === 'git') return Buffer.from('');
+          // No --report-path file written: readGitleaksReport returns null.
+          const err = new Error('scanner crash') as NodeJS.ErrnoException & {
+            status?: number;
+            stderr?: Buffer;
+          };
+          err.status = 1;
+          err.stderr = Buffer.from('crash-stderr-diagnostic');
+          throw err;
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).toThrow(/gitleaks scan failed/);
+    // Null-report path: raw stderr must have been forwarded.
+    const calls = stderrSpy.mock.calls.map((c: unknown[]) => c[0]);
+    const forwarded = calls.some(
+      (chunk: unknown) =>
+        (Buffer.isBuffer(chunk) && chunk.toString().includes('crash-stderr-diagnostic')) ||
+        (typeof chunk === 'string' && chunk.includes('crash-stderr-diagnostic')),
+    );
+    expect(forwarded).toBe(true);
+  });
+
+  it('forwards raw stdout on the scan-crash path when only stdout is set (unparseable report)', async () => {
+    // Crash path where only err.stdout is set (no err.stderr). The stdout
+    // branch inside `if (forwardStreams && report === null)` must be exercised
+    // so both inner stream writes have 100% patch coverage.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string) => {
+          if (bin === 'git') return Buffer.from('');
+          // No report file written: readGitleaksReport returns null.
+          const err = new Error('scanner crash stdout') as NodeJS.ErrnoException & {
+            status?: number;
+            stdout?: Buffer;
+          };
+          err.status = 1;
+          err.stdout = Buffer.from('crash-stdout-diagnostic');
+          // No err.stderr - load-bearing: covers the stdout inner write.
+          throw err;
+        }),
+      };
+    });
+    const { runGitleaksScan } = await import('./push-gitleaks.ts');
+    expect(() => runGitleaksScan()).toThrow(/gitleaks scan failed/);
+    // Null-report path: raw stdout must have been forwarded.
+    const calls = stdoutSpy.mock.calls.map((c: unknown[]) => c[0]);
+    const forwarded = calls.some(
+      (chunk: unknown) =>
+        (Buffer.isBuffer(chunk) && chunk.toString().includes('crash-stdout-diagnostic')) ||
+        (typeof chunk === 'string' && chunk.includes('crash-stdout-diagnostic')),
+    );
+    expect(forwarded).toBe(true);
   });
 
   it('runGitleaksScan throws NomadFatal with install hint on ENOENT (defense in depth)', async () => {
@@ -427,9 +496,11 @@ type BuildSessionAwareFatal = (
   bySession: Map<string, Map<string, number>>,
   other: Finding[],
 ) => string;
+type FormatOtherFinding = (f: Finding) => string;
 type PushGitleaksModule = {
   partitionFindings: PartitionFindings;
   buildSessionAwareFatal: BuildSessionAwareFatal;
+  formatOtherFinding: FormatOtherFinding;
 };
 
 describe('partitionFindings (pure)', () => {
@@ -592,9 +663,38 @@ describe('buildSessionAwareFatal (pure)', () => {
     const { bySession, other } = partitionFindings(findings);
     const msg = buildSessionAwareFatal(bySession, other);
     expect(msg).toContain('Also found:');
-    expect(msg).toContain('shared/CLAUDE.md');
+    expect(msg).toContain('shared/CLAUDE.md:3');
     expect(msg).toContain('generic-api-key');
     expect(msg).toContain('Review with: git diff --cached, then unstage manually.');
+  });
+
+  it('formats an `Also found:` row with the File:StartLine locator for a positive line', async () => {
+    const { formatOtherFinding } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const row = formatOtherFinding({
+      RuleID: 'github-pat',
+      File: 'shared/projects/foo/subagents/agent-x.jsonl',
+      StartLine: 208,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    expect(row).toBe('  shared/projects/foo/subagents/agent-x.jsonl:208  github-pat');
+  });
+
+  it('drops the line suffix when StartLine is non-positive or absent', async () => {
+    const { formatOtherFinding } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const base = {
+      RuleID: 'github-pat',
+      File: 'shared/CLAUDE.md',
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    };
+    // StartLine 0 (non-positive integer) and an absent StartLine (a degraded
+    // gitleaks report survives `parsed as Finding[]` without the field) both
+    // render `<File>  <RuleID>` rather than a confusing `:0` / `:undefined`.
+    expect(formatOtherFinding({ ...base, StartLine: 0 })).toBe('  shared/CLAUDE.md  github-pat');
+    expect(formatOtherFinding({ ...base } as unknown as Finding)).toBe(
+      '  shared/CLAUDE.md  github-pat',
+    );
   });
 
   it('non-session-only findings return the exact legacy fallback string', async () => {

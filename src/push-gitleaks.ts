@@ -92,6 +92,20 @@ export function partitionFindings(findings: Finding[]): {
  * session, since those nested paths route to the `other` bucket and are
  * not listed per-session. Pure.
  */
+/**
+ * Render one `Also found:` row for a non-session ("other"-bucket) finding as
+ * `  <File>:<StartLine>  <RuleID>`, where the line number is the manual-scrub
+ * locator for the nested transcript. `StartLine` is typed `number` but comes
+ * from an unvalidated `parsed as Finding[]` cast over gitleaks subprocess
+ * output, so a missing or non-positive value (gitleaks line numbers are
+ * 1-indexed) drops the `:<line>` suffix rather than emit a confusing
+ * `:undefined` / `:0`.
+ */
+export function formatOtherFinding(f: Finding): string {
+  const loc = Number.isInteger(f.StartLine) && f.StartLine > 0 ? `:${f.StartLine}` : '';
+  return `  ${f.File}${loc}  ${f.RuleID}`;
+}
+
 export function buildSessionAwareFatal(
   bySession: Map<string, Map<string, number>>,
   other: Finding[],
@@ -110,7 +124,7 @@ export function buildSessionAwareFatal(
     lines.push(
       '',
       'Also found:',
-      ...other.map((f) => `  ${f.File}  ${f.RuleID}`),
+      ...other.map(formatOtherFinding),
       '  Review with: git diff --cached, then unstage manually.',
     );
   }
@@ -133,8 +147,10 @@ export function buildSessionAwareFatal(
  * missing/locked file, or a non-finding runtime failure, since gitleaks v8.x
  * returns exit 1 for both "leaks found" and runtime errors) it throws a
  * distinct scan-failed FATAL so the operator does not chase a phantom
- * `nomad drop-session` recovery; the forwarded stderr/stdout above carries the
- * underlying gitleaks output.
+ * `nomad drop-session` recovery. On the leaks-found path the raw gitleaks
+ * streams are suppressed (the session-aware FATAL fully describes the findings).
+ * On the scan-failed/null-report path the raw stderr/stdout is forwarded so
+ * "Review the gitleaks output above." has something to point at.
  *
  * ENOENT (gitleaks or git absent) propagates from the helper and is mapped to
  * the platform-aware install-hint FATAL. Defense-in-depth: the presence probe

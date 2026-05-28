@@ -83,10 +83,12 @@ export function readGitleaksReport(reportPath: string): Finding[] | null {
  *
  * `forwardStreams` (default `false`): when `true`, the gitleaks redacted
  * stderr/stdout captured on a non-zero exit is written to the process streams
- * so the operator sees which file is dirty. `runGitleaksScan` passes `true`
- * (byte-identical push behavior); the read-only `--check-shared` preflight
- * leaves it `false` so it never writes to stderr (its scan-failed row carries
- * the error message only, never the streams).
+ * ONLY on the scan-crash path (when the report is unparseable or missing, i.e.
+ * `readGitleaksReport` returns `null`). On the leaks-found path the report
+ * parses to a findings array, the structured caller FATAL fully describes the
+ * findings, and the raw streams are suppressed to avoid printing them twice.
+ * `runGitleaksScan` passes `true`; the read-only `--check-shared` preflight
+ * leaves it `false` so it never writes to streams on any path.
  */
 export function scanStagedTree(repoDir: string, forwardStreams = false): Finding[] | null {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
@@ -111,11 +113,12 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') throw err;
-    if (forwardStreams) {
+    const report = readGitleaksReport(reportPath);
+    if (forwardStreams && report === null) {
       if (e.stderr) process.stderr.write(e.stderr);
       if (e.stdout) process.stdout.write(e.stdout);
     }
-    return readGitleaksReport(reportPath);
+    return report;
   } finally {
     rmSync(reportPath, { force: true });
   }
