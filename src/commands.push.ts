@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { HOME, HOST, REPO_HOME } from './config.ts';
+import { HOME, HOST, type PathMap, REPO_HOME } from './config.ts';
 import { enforceAllowList } from './commands.push.allowlist.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
@@ -63,6 +63,31 @@ function commitAndPush(st: PushState): void {
 }
 
 /**
+ * Render the dry-run leak-scan tree. With `map === null` (a dry-run with no
+ * `path-map.json`) there is nothing to stage, so it renders the no-scan tree
+ * and returns. Otherwise it runs `previewPushLeaks` (which stages its OWN temp
+ * tree from the map, independent of `REPO_HOME` status, and sets
+ * `process.exitCode = 1` on findings), renders the push tree with the verdict
+ * row in the Leak scan section, and prints the recovery body BELOW the tree via
+ * `fail` (stderr) when one is present.
+ *
+ * Extracted from `cmdPush` so the command body and this helper each stay under
+ * the sonarjs cognitive-complexity threshold.
+ *
+ * @param st - The collected push state for the tree render.
+ * @param map - The parsed path-map, or `null` when a dry-run has no map.
+ */
+function runDryRunPreview(st: PushState, map: PathMap | null): void {
+  if (map === null) {
+    renderNoScanTree(st);
+    return;
+  }
+  const verdict = previewPushLeaks(map);
+  renderPushTree(st, verdict);
+  if (verdict.recovery !== null) fail(verdict.recovery);
+}
+
+/**
  * `nomad push` command. Acquires the lock, runs the four pre-push safety
  * checks in the order from CONTEXT.md, stages, and pushes:
  *   1. `probeGitleaks` (fail fast if the secret scanner isn't on PATH)
@@ -85,6 +110,12 @@ function commitAndPush(st: PushState): void {
  * one-line verdict row and the full `buildSessionAwareFatal` recovery block
  * still prints BELOW the rendered tree.
  *
+ * The WET-path Summary row (including the warn `⚠︎` case) renders to STDOUT as
+ * part of the grouped tree via `renderTree`, not to stderr via `warn` as in the
+ * pre-tree behavior. The dry-run preview likewise renders via `renderTree`
+ * (push has no dry-run `emitSummary` path; `cmdPull`'s dry-run does, see its
+ * JSDoc for the intentional wet-stdout/dry-pull-stderr stream split).
+ *
  * The gitleaks scan runs AFTER staging so it sees what would actually be
  * pushed, but BEFORE commit so a detection unwinds cleanly without leaving a
  * commit to amend or revert. Any `NomadFatal` is caught here so `finally`
@@ -99,9 +130,17 @@ function commitAndPush(st: PushState): void {
  * preview against a temp copy of the would-be-staged sessions AND extras
  * (no `REPO_HOME/shared` mutation), returning a structured verdict whose
  * `verdictRow` lands in the Leak scan section and whose `recovery` (if any)
- * prints below the tree; `process.exitCode = 1` is set on findings. The
- * allow-list check still classifies the existing `git status` so a
- * pre-existing violation surfaces before the user thinks everything is fine.
+ * prints below the tree; `process.exitCode = 1` is set on findings.
+ *
+ * The dry-run preview runs REGARDLESS of `REPO_HOME` `git status`: in dry-run
+ * nothing is copied into `shared/`, so an empty status is the normal case for
+ * the headline target (a clean repo with new mapped sessions). `previewPushLeaks`
+ * stages its own temp tree from the path-map, so the empty-status
+ * `'nothing to commit'` early return is REAL-PUSH-ONLY. A dry-run with NO
+ * path-map renders the no-scan tree and returns without dying (a real push with
+ * a non-empty status and no map still dies on the allow-list check). The
+ * allow-list still classifies a non-empty `git status` (dry or wet) so a
+ * pre-existing violation surfaces; an empty status has nothing to classify.
  * Mirrors `cmdPull`'s `dryRun` contract.
  */
 export function cmdPush(opts: { dryRun?: boolean } = {}): void {
@@ -139,25 +178,29 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     // match, so the first extras push is rejected. Expanding to per-file paths
     // lets the existing allow-list accept them while keeping the gate order.
     const status = gitStatusPorcelainZ(REPO_HOME, { untrackedAll: true });
-    if (!status) {
+    // REAL-PUSH-ONLY early return: a dry-run copies nothing into shared/, so an
+    // empty status is the normal headline case (clean repo, new mapped
+    // sessions) and must still reach the dry-run preview below.
+    if (!dryRun && !status) {
       log('nothing to commit');
       renderNoScanTree(st);
       return;
     }
     const mapPath = join(REPO_HOME, 'path-map.json');
-    if (!existsSync(mapPath)) die('path-map.json missing, cannot enforce push allow-list');
+    // A dry-run with no map cannot enforce nor scan: render the no-scan tree and
+    // return without dying. A real push with a non-empty status still dies.
+    if (!existsSync(mapPath)) {
+      if (dryRun) return runDryRunPreview(st, null);
+      die('path-map.json missing, cannot enforce push allow-list');
+    }
     // readPathMap routes parse failures through NomadFatal so finally releases the lock.
     const map = readPathMap(mapPath);
-    enforceAllowList(status, map);
-    if (dryRun) {
-      // Skip git add / commit / push. previewPushLeaks runs a read-only gitleaks
-      // leak preview and RETURNS a structured verdict; its row goes in the tree
-      // and its recovery (if any) prints below.
-      const verdict = previewPushLeaks(map);
-      renderPushTree(st, verdict);
-      if (verdict.recovery !== null) fail(verdict.recovery);
-      return;
-    }
+    // Classify only a non-empty status; an empty status (dry-run on a clean
+    // repo) has nothing to gate.
+    if (status) enforceAllowList(status, map);
+    // dryRun skips git add / commit / push: run the read-only leak preview,
+    // which prints any recovery below the rendered tree.
+    if (dryRun) return runDryRunPreview(st, map);
     commitAndPush(st);
   } catch (err) {
     if (err instanceof NomadFatal) {

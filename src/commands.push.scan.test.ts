@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -209,6 +210,149 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(logOutput(env)).toMatch(/gitleaks detected secrets in 1 session transcript/);
     // The recovery block prints below the tree via fail() (stderr).
     expect(errOutput(env)).toContain('nomad drop-session abc12345');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./push-preview.ts');
+  });
+
+  it('Test 8c: dry-run on a CLEAN repo (empty status) with a planted leak runs the preview, renders ✗, and sets exitCode 1', async () => {
+    // WR-03: the empty-status early return is now real-push-only, so a dry-run
+    // on a clean repo (gitStatusPorcelainZ -> '') still reaches the leak
+    // preview. previewPushLeaks is mocked to a leak verdict AND sets
+    // process.exitCode=1 inside the mock so the assertion mirrors production
+    // (the real fn sets it via verdictFromFindings).
+    const previewPushLeaksMock = vi.fn(() => {
+      process.exitCode = 1;
+      return {
+        leak: true,
+        verdictRow: '✗ gitleaks detected secrets in 1 session transcript(s)',
+        recovery: 'Session abc12345:\n  Recover with: nomad drop-session abc12345',
+      };
+    });
+    const remapPushMock = vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] }));
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op success */
+        }),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./push-preview.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushPreviewModule>();
+      return { ...actual, previewPushLeaks: previewPushLeaksMock };
+    });
+    vi.doMock('./remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      // Empty status: the clean-repo headline case. The dry-run preview MUST
+      // still run despite the empty index.
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    // The clean-repo early return did NOT fire: the preview ran.
+    expect(previewPushLeaksMock).toHaveBeenCalledOnce();
+    expect(process.exitCode).toBe(1);
+    expect(existsSync(env.lockPath)).toBe(false);
+    // The ✗ verdict row renders in the tree (stdout); recovery prints below (stderr).
+    expect(logOutput(env)).toMatch(/gitleaks detected secrets in 1 session transcript/);
+    expect(errOutput(env)).toContain('nomad drop-session abc12345');
+    // The clean-repo real-push terminator must NOT appear on the dry-run path.
+    expect(logOutput(env)).not.toContain('nothing to commit');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./push-preview.ts');
+  });
+
+  it('Test 8d: dry-run on a CLEAN repo with a clean mapped session shows the ✓ no-leaks verdict and leaves exitCode unset', async () => {
+    // WR-03 clean variant: empty status, previewPushLeaks returns the clean
+    // verdict. No recovery, no exitCode bump.
+    const previewPushLeaksMock = vi.fn(() => ({
+      leak: false,
+      verdictRow: '✓ no leaks',
+      recovery: null,
+    }));
+    const remapPushMock = vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] }));
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op success */
+        }),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./push-preview.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushPreviewModule>();
+      return { ...actual, previewPushLeaks: previewPushLeaksMock };
+    });
+    vi.doMock('./remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    expect(previewPushLeaksMock).toHaveBeenCalledOnce();
+    expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
+    const out = logOutput(env);
+    expect(out).toContain('Leak scan');
+    expect(out).toMatch(/no leaks/);
+    // No recovery body on a clean preview.
+    expect(errOutput(env)).not.toContain('nomad drop-session');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./push-preview.ts');
+  });
+
+  it('Test 8e: dry-run with NO path-map on a clean repo renders the no-scan tree, does not die, and never calls previewPushLeaks', async () => {
+    // WR-03 no-map variant: a dry-run with an empty status and no path-map.json
+    // must render the no-scan tree and return WITHOUT dying (a real push with a
+    // non-empty status still dies on the missing map; covered elsewhere).
+    const previewPushLeaksMock = vi.fn(() => ({
+      leak: false,
+      verdictRow: '✓ no leaks',
+      recovery: null,
+    }));
+    const remapPushMock = vi.fn(() => ({ unmapped: 1, collisions: 0, pushed: [], wouldPush: [] }));
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op success */
+        }),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./push-preview.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushPreviewModule>();
+      return { ...actual, previewPushLeaks: previewPushLeaksMock };
+    });
+    vi.doMock('./remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+    // Remove the default path-map.json the harness wrote.
+    rmSync(join(env.repoUnderHome, 'path-map.json'));
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    // No die: the lock released and exitCode stayed clean.
+    expect(existsSync(env.lockPath)).toBe(false);
+    expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
+    // previewPushLeaks is NOT reached when there is no map to stage from.
+    expect(previewPushLeaksMock).not.toHaveBeenCalled();
+    const out = logOutput(env);
+    // The no-scan tree renders (Summary, no Leak scan section).
+    expect(out).toContain('Summary');
+    expect(out).not.toContain('Leak scan');
+    // The missing-map FATAL did NOT fire.
+    expect(errOutput(env)).not.toContain('path-map.json missing');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./push-preview.ts');
   });

@@ -71,6 +71,12 @@ function applyWetPull(ts: string): void {
  * rows; the per-project "not in path-map" skips collapse to one `ℹ︎` count
  * row. There is no Links group (`applySharedLinks` stays silent by design).
  *
+ * The WET-path Summary row (including the warn glyph case) renders to STDOUT as
+ * part of the grouped tree via `renderTree`, not to stderr via `warn` as in the
+ * pre-tree behavior. The dry-run path still routes its summary through
+ * `emitSummary` (stderr). This wet-stdout/dry-stderr stream split is
+ * intentional (the dry-run output is left byte-identical) and not a regression.
+ *
  * `opts.dryRun` (default `false`): when `true`, the lock IS still acquired
  * and `git pull --rebase` still runs (so concurrent invocations cannot race
  * and the user sees the same network round-trip as a real pull).

@@ -175,6 +175,28 @@ describe('previewPushLeaks: nothing staged (no mapped sessions, no extras)', () 
     expect(scanMock).not.toHaveBeenCalled();
   });
 
+  it('returns a nothing-to-scan verdict (no scan, no throw) when map.projects is a non-object but extras is present', async () => {
+    // Covers the WR-01 guard in stageExtras: a malformed map with an `extras`
+    // block but a non-object `projects` must NOT throw on the
+    // `map.projects[logical]` read; it stages nothing and returns clean.
+    const scanMock = vi.fn(() => [] as scanModule.Finding[]);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = {
+      projects: 'bad' as unknown as Record<string, Record<string, string>>,
+      extras: { 'my-project': ['.planning'] },
+    };
+    expect(() => previewPushLeaks(map)).not.toThrow();
+    const verdict = previewPushLeaks(map);
+    expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.verdictRow).toMatch(/nothing to scan, no leaks/i);
+    expect(scanMock).not.toHaveBeenCalled();
+  });
+
   it('skips an unmapped local project dir and still returns a nothing-to-scan verdict', async () => {
     // Covers the `!logical` continue in stageSessions: a dir in ~/.claude/projects/
     // that has no reverse-map entry is silently skipped.

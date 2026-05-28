@@ -72,11 +72,17 @@ function stageSessions(tmpRoot: string, map: PathMap): number {
  * dirnames not in `SUPPORTED_EXTRAS`, and skips when the source path does not
  * exist locally.
  *
+ * Guards a non-object or missing `map.projects` defensively (mirroring
+ * `stageSessions`): a malformed map with an `extras` block but no usable
+ * `projects` stages nothing rather than throwing on the `map.projects[logical]`
+ * read.
+ *
  * @param tmpRoot - Root of the throwaway staging tree.
  * @param map - Parsed `path-map.json`.
  * @returns Number of extras entries staged.
  */
 function stageExtras(tmpRoot: string, map: PathMap): number {
+  if (typeof map.projects !== 'object' || map.projects === null) return 0;
   const extrasMap = map.extras ?? {};
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
   let staged = 0;
