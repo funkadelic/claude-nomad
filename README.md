@@ -176,7 +176,9 @@ Pointers and specifics:
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 
-> [!NOTE] Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
+<!-- prettier-ignore -->
+> [!NOTE]
+> Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
 > URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the plugin's
 > own per-host config.
 
@@ -207,7 +209,9 @@ block opts a project into syncing whitelisted directories (or a single root file
 }
 ```
 
-> [!IMPORTANT] The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see
+<!-- prettier-ignore -->
+> [!IMPORTANT]
+> The host-label keys must match whatever you set `NOMAD_HOST=` to on each host (see
 > [Setup](#setup)). Mismatched labels silently skip remap, so sessions land in the wrong host's
 > encoded dir.
 
@@ -266,7 +270,9 @@ host-only model overrides).
 
 Results on `your-other-host`: opus 4.8, the local Ollama env var, plus the shared permissions array.
 
-> [!CAUTION] Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
+<!-- prettier-ignore -->
+> [!CAUTION]
+> Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
 > `nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file in the
 > repo instead.
 
@@ -346,7 +352,9 @@ automatically:
 Pass `--keep-actions` to either form of init to skip step 2 (for example, when your org already
 enforces an Actions policy upstream).
 
-> [!WARNING] If you ever flip the mirror to public, both protections evaporate: CI starts firing on
+<!-- prettier-ignore -->
+> [!WARNING]
+> If you ever flip the mirror to public, both protections evaporate: CI starts firing on
 > every `nomad push` against `main`, and your session transcripts (which include conversation
 > content) become world-readable. **Keep it private.**
 
