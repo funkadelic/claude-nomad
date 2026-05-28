@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -167,5 +167,64 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} CLAUDE.md: NOT a symlink (blocks sync)`);
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('cmdDoctor sharedDirs symlink row', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('emits a status line for a sharedDirs entry when path-map.json declares it', async () => {
+    // Write path-map.json with sharedDirs: ['gsd'] and a correct symlink at
+    // ~/.claude/gsd -> shared/gsd. The doctor should emit an okGlyph row for gsd.
+    const repoHome = join(env.testHome, 'claude-nomad');
+    const sharedDir = join(repoHome, 'shared');
+    mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+    writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['gsd'] }) + '\n',
+    );
+    const linkPath = join(env.testHome, '.claude', 'gsd');
+    symlinkSync(join(sharedDir, 'gsd'), linkPath);
+
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('gsd: symlink');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('degrades to { projects: {} } when path-map.json is missing (hooks + static rows still emit)', async () => {
+    // No path-map.json written. cmdDoctor's tolerant read must fall back to an
+    // empty map so the static SHARED_LINKS rows (including hooks) still render
+    // instead of throwing.
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // hooks is in SHARED_LINKS; it should appear as an info/warn/ok row.
+    // We only assert that no throw occurred and that output contains link-related rows.
+    expect(out).toContain('hooks');
+    expect(process.exitCode).not.toBeUndefined();
   });
 });

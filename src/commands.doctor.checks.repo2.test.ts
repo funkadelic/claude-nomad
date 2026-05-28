@@ -156,7 +156,7 @@ describe('reportSharedLinks TOCTOU safety', () => {
     vi.resetModules();
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
     const sec = section('Links');
-    reportSharedLinks(sec);
+    reportSharedLinks(sec, { projects: {} });
 
     // Every SHARED_LINKS entry threw ENOENT with no repo source -> info rows.
     expect(sec.items.length).toBeGreaterThan(0);
@@ -190,7 +190,7 @@ describe('reportSharedLinks TOCTOU safety', () => {
       mkdirSync(join(testHome, 'claude-nomad', 'shared', name), { recursive: true });
     }
     const sec = section('Links');
-    reportSharedLinks(sec);
+    reportSharedLinks(sec, { projects: {} });
 
     expect(sec.items.length).toBeGreaterThan(0);
     for (const item of sec.items) {
@@ -222,7 +222,7 @@ describe('reportSharedLinks TOCTOU safety', () => {
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
     const sec = section('Links');
 
-    expect(() => reportSharedLinks(sec)).not.toThrow();
+    expect(() => reportSharedLinks(sec, { projects: {} })).not.toThrow();
 
     expect(sec.items.length).toBeGreaterThan(0);
     for (const item of sec.items) {
@@ -258,7 +258,7 @@ describe('reportSharedLinks TOCTOU safety', () => {
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
     const { SHARED_LINKS } = await import('./config.ts');
     const sec = section('Links');
-    reportSharedLinks(sec);
+    reportSharedLinks(sec, { projects: {} });
 
     // All SHARED_LINKS entries should have produced a row.
     expect(sec.items).toHaveLength(SHARED_LINKS.length);

@@ -68,7 +68,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     symlinkSync(join(testHome, 'no-such-target'), join(testHome, '.claude', name));
 
     const sec = section('Links');
-    reportSharedLinks(sec);
+    reportSharedLinks(sec, { projects: {} });
 
     const row = sec.items.find((item) => item.includes(`${name}:`));
     expect(row).toBeDefined();
@@ -92,7 +92,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     symlinkSync(join(testHome, 'no-such-target'), join(testHome, '.claude', name));
 
     const sec = section('Links');
-    reportSharedLinks(sec);
+    reportSharedLinks(sec, { projects: {} });
 
     const row = sec.items.find((item) => item.includes(`${name}:`));
     expect(row).toBeDefined();
@@ -116,7 +116,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     symlinkSync(target, join(testHome, '.claude', name));
 
     const sec = section('Links');
-    reportSharedLinks(sec);
+    reportSharedLinks(sec, { projects: {} });
 
     const row = sec.items.find((item) => item.includes(`${name}:`));
     expect(row).toBeDefined();
@@ -155,7 +155,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     symlinkSync(target, join(testHome, '.claude', name));
 
     const sec = section('Links');
-    reportSharedLinks(sec);
+    reportSharedLinks(sec, { projects: {} });
 
     const row = sec.items.find((item) => item.includes(`${name}:`));
     expect(row).toBeDefined();

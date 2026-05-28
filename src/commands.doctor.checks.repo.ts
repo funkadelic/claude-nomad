@@ -13,7 +13,7 @@ import {
   warnGlyph,
   yellow,
 } from './color.ts';
-import { CLAUDE_HOME, HOST, REPO_HOME, SHARED_LINKS } from './config.ts';
+import { allSharedLinks, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 
@@ -157,8 +157,9 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
 }
 
 /**
- * Emits a per-entry status line for each name in SHARED_LINKS
- * (okGlyph/warnGlyph/infoGlyph/failGlyph). A non-symlink blocks sync and FAILs
+ * Emits a per-entry status line for each name in `allSharedLinks(map)` (the
+ * static shared-link set plus any validated `sharedDirs` entries) using
+ * okGlyph/warnGlyph/infoGlyph/failGlyph. A non-symlink blocks sync and FAILs
  * via process.exitCode. TOCTOU-safe: lstatSync is wrapped in try/catch so a path
  * that vanishes or becomes unreadable between the probe and the stat yields a
  * row instead of an unhandled throw that aborts the whole doctor run. Severity
@@ -168,8 +169,8 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
  * sync). A symlink whose target cannot be resolved is never a healthy OK, so a
  * dangling or unreadable link is not masked.
  */
-export function reportSharedLinks(section: DoctorSection): void {
-  for (const name of SHARED_LINKS) {
+export function reportSharedLinks(section: DoctorSection, map: PathMap): void {
+  for (const name of allSharedLinks(map)) {
     const p = join(CLAUDE_HOME, name);
     const { line, fail } = classifySharedLink(name, p);
     addItem(section, line);

@@ -1,4 +1,5 @@
 import { NEVER_SYNC, PUSH_ALLOWED_STATIC, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import { isValidSharedDir } from './config.sharedDirs.guard.ts';
 import { fail, NomadFatal } from './utils.ts';
 
 /**
@@ -98,6 +99,7 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
         .filter((n) => extrasWhitelist.includes(n))
         .flatMap((n) => [`shared/extras/${l}/${n}`, `shared/extras/${l}/${n}/`]),
     ),
+    ...(map.sharedDirs ?? []).filter((d) => isValidSharedDir(d)).map((d) => `shared/${d}/`),
   ];
   const neverSyncHits: string[] = [];
   const violations: string[] = [];
