@@ -547,20 +547,79 @@ re-enabled, complementing the auto-disable that runs on `nomad init` (see
 [Privacy by default](#privacy-by-default)); it is silent on every prerequisite miss (non-GitHub
 origin, `gh` unauthed, public repo, or Actions already off).
 
-Every `nomad pull`, `nomad push`, and `nomad diff` run ends with a single `summary:` line. The
-status glyph (`✓` green / `⚠︎` yellow / `✗` red / `ℹ︎` dim) carries the severity, mirroring
-`nomad doctor`'s left-gutter format:
+### Reading push and pull output
+
+`nomad push` and `nomad pull` print a grouped tree, the same left-gutter layout you already see from
+`nomad doctor`. There is a header line naming the command and host, then a few named sections
+(`Sessions`, `Extras`, and so on), each with its items hanging off `├`/`└` connectors. A status
+glyph leads every line: `✓` green for something that synced, `ℹ︎` dim for an informational count, `⚠︎`
+yellow for a warning, and `✗` red for a failure. What this means for you: instead of one long flat
+list with a line per project, related work is grouped and the noise is collapsed.
+
+A clean `nomad push` looks like this (one `✓` row per project whose sessions were copied up, the
+projects this host does not track folded into a single count, then the secret-scan result and a
+one-line summary):
 
 ```text
-✓ summary: clean
+push on host=workstation
+Sessions
+  ├ ✓ claude-nomad
+  ├ ✓ my-side-project
+  └ ℹ︎ 4 not in path-map (run nomad doctor to list)
+Extras
+  └ ✓ claude-nomad/.planning
+Leak scan
+  └ ✓ no leaks
+Summary
+  └ ✓ summary: clean
+```
+
+The `ℹ︎ 4 not in path-map` row is the collapse: rather than printing one line per project that this
+host does not sync, push and pull now show a single count and point you at `nomad doctor`, which
+lists those projects by name if you want the detail. The `Leak scan` section is the secret check
+that runs before anything is published: `✓ no leaks` when the staged transcripts are clean. If a
+secret IS found, that row turns into `✗ gitleaks detected secrets in N session transcript(s)` and
+the full recovery block (which sessions, how to scrub them) still prints below the tree, exactly as
+before (see
+[Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)).
+The same `Leak scan` row shows up under `nomad push --dry-run`, which runs that secret scan as a
+read-only preview (nothing is written to the sync repo) and exits non-zero if the preview finds
+anything.
+
+A `nomad pull` is the mirror image, leading with the settings file it regenerated and then the
+sessions and extras it copied down for this host:
+
+```text
+pull on host=workstation (backup=2026-05-27T14-02-09Z)
+Settings
+  └ ✓ settings.json (base + workstation.json)
+Sessions
+  ├ ✓ claude-nomad
+  └ ℹ︎ 2 not in path-map (run nomad doctor to list)
+Extras
+  └ ✓ claude-nomad/.planning
+Summary
+  └ ✓ summary: clean
+```
+
+The `Summary` row is the final verdict for the run. It reads `✓ summary: clean` when everything
+synced, or a `⚠︎` warning naming the counts when something was skipped:
+
+```text
 ⚠︎ summary: 3 unmapped on pull (run nomad doctor to list)
 ⚠︎ summary: 2 unmapped on push, 1 collisions (run nomad doctor to list)
 ```
 
-`✓` lines go to stdout; `⚠︎` and `✗` lines go to stderr. The summary is suppressed when a fatal (`✗`)
-fires mid-run so you do not see "summary: clean" stacked under an error. Drive-by projects that have
-no entry in `path-map.json` for this host count as unmapped; the hint points at `nomad doctor`,
-which lists them by logical name.
+`✓` lines go to stdout; `⚠︎` and `✗` lines go to stderr. The tree (and its summary row) is suppressed
+when a fatal (`✗`) fires mid-run, so you do not see "summary: clean" stacked under an error.
+Projects with no entry in `path-map.json` for this host count as unmapped and fold into the
+collapsed `ℹ︎ ... not in path-map` count; the hint points at `nomad doctor`, which lists them by
+logical name.
+
+`nomad pull --dry-run` keeps its own readable preview format (a unified diff of the `settings.json`
+changes plus the transcripts a real pull would overwrite) rather than the grouped tree, so that
+preview stays easy to scan; only a real `nomad pull` prints the tree above. `nomad diff` is
+unchanged.
 
 ## Recovery flows
 
@@ -607,8 +666,10 @@ push (and without mutating anything), two read-only options are available:
 `nomad doctor --check-shared` scans the session transcripts a push would publish;
 `nomad push --dry-run` runs the same scan AND also covers opted-in extras (`.planning`,
 `CLAUDE.md`), which `--check-shared` does not. Both stage content into a throwaway temp copy and
-never write to the sync repo. When findings live in a session transcript, the push aborts and names
-every affected session id and the recovery command:
+never write to the sync repo. When findings live in a session transcript, the push aborts: the
+grouped tree renders first with a `✗ gitleaks detected secrets in N session transcript(s)` row in
+its `Leak scan` section, then the full recovery block prints below it, naming every affected session
+id and the recovery command:
 
 ```text
 ✗ gitleaks detected secrets in 1 session transcript(s).
