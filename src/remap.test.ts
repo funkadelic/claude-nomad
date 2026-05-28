@@ -228,6 +228,11 @@ describe('remapPull dry-run and unmapped count', () => {
     const result = remapPull('20260516-000000', { dryRun: true });
 
     expect(result.unmapped).toBe(2);
+    // foo is mapped for this host, so it would be pulled; bar (TBD) and baz
+    // (other-host) are unmapped and do not appear in wouldPull. The wet-mode
+    // pulled array stays empty under dryRun.
+    expect(result.wouldPull).toEqual(['foo']);
+    expect(result.pulled).toEqual([]);
     expect(existsSync(join(claudeProjects, '-tmp-foo'))).toBe(false);
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
     expect(existsSync(backupRoot)).toBe(false);
@@ -252,14 +257,19 @@ describe('remapPull dry-run and unmapped count', () => {
     const result = remapPull('20260516-000000');
 
     expect(result.unmapped).toBe(1);
+    // Wet mode records the copied logical in `pulled`; `wouldPull` stays empty.
+    expect(result.pulled).toEqual(['foo']);
+    expect(result.wouldPull).toEqual([]);
     expect(existsSync(join(claudeProjects, '-tmp-foo', 'a.jsonl'))).toBe(true);
   });
 
-  it('early-return path (no path-map.json) returns unmapped:0', async () => {
+  it('early-return path (no path-map.json) returns unmapped:0 and empty detail arrays', async () => {
     // No path-map.json written.
     const { remapPull } = await import('./remap.ts');
     const result = remapPull('20260516-000000');
     expect(result.unmapped).toBe(0);
+    expect(result.pulled).toEqual([]);
+    expect(result.wouldPull).toEqual([]);
   });
 });
 
@@ -310,6 +320,10 @@ describe('remapPush dry-run and unmapped count', () => {
 
     expect(result.unmapped).toBe(1);
     expect(result.collisions).toBe(0);
+    // foo is mapped, so it would be pushed; -tmp-drive-by is unmapped and
+    // does not appear. Wet `pushed` stays empty under dryRun.
+    expect(result.wouldPush).toEqual(['foo']);
+    expect(result.pushed).toEqual([]);
     expect(existsSync(join(sharedProjects, 'foo', 'a.jsonl'))).toBe(false);
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
     expect(existsSync(backupRoot)).toBe(false);
@@ -330,14 +344,19 @@ describe('remapPush dry-run and unmapped count', () => {
 
     expect(result.unmapped).toBe(1);
     expect(result.collisions).toBe(0);
+    // Wet mode records the copied logical in `pushed`; `wouldPush` stays empty.
+    expect(result.pushed).toEqual(['foo']);
+    expect(result.wouldPush).toEqual([]);
     expect(existsSync(join(sharedProjects, 'foo', 'a.jsonl'))).toBe(true);
   });
 
-  it('early-return path (no path-map.json) returns unmapped:0 and collisions:0', async () => {
+  it('early-return path (no path-map.json) returns unmapped:0, collisions:0, empty detail arrays', async () => {
     const { remapPush } = await import('./remap.ts');
     const result = remapPush('20260516-000000');
     expect(result.unmapped).toBe(0);
     expect(result.collisions).toBe(0);
+    expect(result.pushed).toEqual([]);
+    expect(result.wouldPush).toEqual([]);
   });
 
   it('early-return path (path-map present, no local projects dir) returns 0/0 and creates nothing', async () => {

@@ -64,8 +64,19 @@ export function applySharedLinks(ts: string, opts: { dryRun?: boolean } = {}): v
  * would produce. The unified textual diff of the would-be-written content
  * is produced by `computePreview` in `src/preview.ts`, not here, to keep
  * this function's contract simple (mutation or log-only).
+ *
+ * Returns `{ label }` where `label` is the override-source tag
+ * (`'<HOST>.json'` when a host override exists, else `'no host overrides'`).
+ * The WET path no longer logs `wrote settings.json (base + <label>)` inline;
+ * `cmdPull` consumes the returned label to render the Settings row of its
+ * grouped tree. The dry-run `would write settings.json ...` log and the
+ * drift WARN are unchanged (the WET success log is the only thing that moved).
+ *
+ * @param ts - backup timestamp namespace for `backupBeforeWrite`.
+ * @param opts.dryRun - when `true`, log the would-write line and skip mutation.
+ * @returns `{ label }` describing the override source for the Settings row.
  */
-export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}): void {
+export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}): { label: string } {
   const dryRun = opts.dryRun === true;
   const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
   const hostPath = join(REPO_HOME, 'hosts', `${HOST}.json`);
@@ -107,10 +118,10 @@ export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}):
 
   if (dryRun) {
     log(`would write settings.json (base + ${overrideLabel})`);
-    return;
+    return { label: overrideLabel };
   }
 
   backupBeforeWrite(settingsPath, ts);
   writeJsonAtomic(settingsPath, merged);
-  log(`wrote settings.json (base + ${overrideLabel})`);
+  return { label: overrideLabel };
 }

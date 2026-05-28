@@ -168,7 +168,12 @@ describe('extras-sync e2e round-trip', () => {
     actAsHost(hostAHome, 'host-a');
     const push = await import('./extras-sync.ts');
     const pushResult = push.remapExtrasPush('20260522-100000');
-    expect(pushResult).toEqual({ unmapped: 0, skipped: 0 });
+    expect(pushResult).toEqual({
+      unmapped: 0,
+      skipped: 0,
+      pushed: ['demo/.planning'],
+      wouldPush: [],
+    });
 
     // Shared repo now mirrors host A's .planning/ byte-for-byte.
     const sharedState = join(testRepo, 'shared', 'extras', 'demo', '.planning', 'STATE.md');
@@ -191,7 +196,12 @@ describe('extras-sync e2e round-trip', () => {
     actAsHost(hostBHome, 'host-b');
     const pull = await import('./extras-sync.ts');
     const pullResult = pull.remapExtrasPull('20260522-100001');
-    expect(pullResult).toEqual({ unmapped: 0, skipped: 0 });
+    expect(pullResult).toEqual({
+      unmapped: 0,
+      skipped: 0,
+      pulled: ['demo/.planning'],
+      wouldPull: [],
+    });
 
     // Host B's project root now contains exactly the bytes host A wrote.
     expect(readFileSync(join(hostBProjectRoot, '.planning', 'STATE.md'), 'utf8')).toBe(stateMd);
@@ -217,14 +227,14 @@ describe('extras-sync e2e round-trip', () => {
     actAsHost(hostAHome, 'host-a');
     const push = await import('./extras-sync.ts');
     const pushResult = push.remapExtrasPush('20260522-100002');
-    expect(pushResult).toEqual({ unmapped: 0, skipped: 0 });
+    expect(pushResult).toEqual({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] });
     expect(existsSync(join(testRepo, 'shared', 'extras', 'demo'))).toBe(false);
 
     // Pull on host B: same clean no-op, host B's project is untouched.
     actAsHost(hostBHome, 'host-b');
     const pull = await import('./extras-sync.ts');
     const pullResult = pull.remapExtrasPull('20260522-100003');
-    expect(pullResult).toEqual({ unmapped: 0, skipped: 0 });
+    expect(pullResult).toEqual({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] });
     expect(existsSync(join(hostBProjectRoot, '.planning'))).toBe(false);
   });
 });

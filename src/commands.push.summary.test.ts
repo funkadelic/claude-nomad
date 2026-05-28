@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  errOutput,
   logOutput,
   makePushEnv,
   teardownPushEnv,
@@ -10,6 +9,7 @@ import {
 
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './push-checks.ts';
+import type * as leakVerdictModule from './push-leak-verdict.ts';
 import type * as utilsModule from './utils.ts';
 
 // Coverage for cmdPush's emitSummary terminator lines on the success,
@@ -26,9 +26,9 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     teardownPushEnv(env);
   });
 
-  it('Test 6: cmdPush emits the unmapped-on-push summary line after push complete', async () => {
-    // remapPush stubbed to report 1 unmapped + 0 collisions. The summary line
-    // MUST appear AFTER `push complete` and reflect both counts.
+  it('Test 6: cmdPush renders the unmapped-on-push summary row in the tree on a clean-scan success', async () => {
+    // remapPush stubbed to report 1 unmapped + 0 collisions. The Summary
+    // section row reflects both counts and the Leak scan row shows no leaks.
     vi.doMock('./push-checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
       return {
@@ -40,14 +40,16 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('./push-gitleaks.ts', () => ({
-      runGitleaksScan: vi.fn(() => {
-        /* no-op success */
-      }),
-    }));
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
-      remapPush: vi.fn(() => ({ unmapped: 1, collisions: 0 })),
+      remapPush: vi.fn(() => ({ unmapped: 1, collisions: 0, pushed: [], wouldPush: [] })),
     }));
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -65,16 +67,19 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    // `push complete` goes to log (stdout); the unmapped-style summary now
-    // goes through warn() (stderr / console.error).
-    expect(errOutput(env)).toContain(
-      '⚠︎ summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
-    );
-    expect(logOutput(env)).toContain('push complete');
+    // The Summary section row now renders inside the tree (stdout); the
+    // standalone `push complete` line is gone.
+    const out = logOutput(env);
+    expect(out).toContain('Summary');
+    expect(out).toContain('summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)');
+    expect(out).toContain('Leak scan');
+    expect(out).toMatch(/no leaks/);
+    expect(out).not.toContain('push complete');
     vi.doUnmock('./remap.ts');
+    vi.doUnmock('./push-leak-verdict.ts');
   });
 
-  it('Test 7: cmdPush emits the clean summary line on a successful push with zero unmapped and zero collisions', async () => {
+  it('Test 7: cmdPush renders the clean summary row in the tree on a zero-unmapped, zero-collision push', async () => {
     vi.doMock('./push-checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
       return {
@@ -86,14 +91,21 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('./push-gitleaks.ts', () => ({
-      runGitleaksScan: vi.fn(() => {
-        /* no-op success */
-      }),
-    }));
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
-      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
+      remapPush: vi.fn(() => ({
+        unmapped: 0,
+        collisions: 0,
+        pushed: ['my-project'],
+        wouldPush: [],
+      })),
     }));
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -111,15 +123,22 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    expect(logOutput(env)).toMatch(/✓ +summary: clean/);
+    const out = logOutput(env);
+    // The clean Summary row renders inside the tree (stdout).
+    expect(out).toMatch(/✓ +summary: clean/);
+    // The pushed session shows as a ✓ row under the Sessions section.
+    expect(out).toContain('Sessions');
+    expect(out).toMatch(/✓ +my-project/);
     vi.doUnmock('./remap.ts');
+    vi.doUnmock('./push-leak-verdict.ts');
   });
 
-  it('Test 8: cmdPush emits the summary line on the nothing-to-commit early-return path', async () => {
+  it('Test 8: cmdPush renders the nothing-to-commit tree (Summary row, no Leak scan section)', async () => {
     // gitStatusPorcelainZ returns empty, triggering the `log('nothing to
-    // commit'); return;` branch. remapPush has already run, so its counts
-    // are in scope. The summary line MUST still appear so users see a
-    // consistent terminator even on no-op pushes.
+    // commit')` + no-scan tree branch. remapPush has already run, so its
+    // counts are in scope. The Summary row MUST still appear so users see a
+    // consistent terminator even on no-op pushes; the Leak scan section is
+    // absent (nothing staged to scan).
     vi.doMock('./push-checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
       return {
@@ -131,14 +150,9 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('./push-gitleaks.ts', () => ({
-      runGitleaksScan: vi.fn(() => {
-        /* no-op success */
-      }),
-    }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
-      remapPush: vi.fn(() => ({ unmapped: 3, collisions: 0 })),
+      remapPush: vi.fn(() => ({ unmapped: 3, collisions: 0, pushed: [], wouldPush: [] })),
     }));
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -149,11 +163,60 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    expect(logOutput(env)).toContain('nothing to commit');
-    // unmapped-style summary now goes to warn() (console.error).
-    expect(errOutput(env)).toContain(
-      '⚠︎ summary: 3 unmapped on push, 0 collisions (run nomad doctor to list)',
-    );
+    const out = logOutput(env);
+    expect(out).toContain('nothing to commit');
+    // The Summary row renders in-tree (stdout). With 3 unmapped sessions the
+    // Sessions section shows the collapsed count row.
+    expect(out).toContain('Summary');
+    expect(out).toContain('summary: 3 unmapped on push, 0 collisions (run nomad doctor to list)');
+    expect(out).toContain('Sessions');
+    expect(out).toContain('3 not in path-map (run nomad doctor to list)');
+    // No staging happened, so there is no Leak scan section.
+    expect(out).not.toContain('Leak scan');
     vi.doUnmock('./remap.ts');
+  });
+
+  it('Test 8b: nothing-to-commit with zero pushed AND zero unmapped omits the Sessions header', async () => {
+    // Empty-section omission: pushed=[] AND unmapped==0 (and no extras) means
+    // renderTree skips the empty Sessions/Extras headers; only the Summary row
+    // (✓ clean) prints. Covers the renderTree empty-section branch.
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(() => {
+          /* no-op success */
+        }),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => ''),
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    expect(() => cmdPush()).not.toThrow();
+    const out = logOutput(env);
+    expect(out).toContain('nothing to commit');
+    // Empty Sessions/Extras sections are omitted by renderTree.
+    expect(out).not.toContain('Sessions');
+    expect(out).not.toContain('Extras');
+    // Only the clean Summary row remains.
+    expect(out).toMatch(/✓ +summary: clean/);
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
   });
 });

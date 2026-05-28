@@ -56,9 +56,25 @@ describe('regenerateSettings (integration)', () => {
     );
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
     const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260516-000000');
+    const result = regenerateSettings('20260516-000000');
     const written = readFileSync(join(claudeDir, 'settings.json'), 'utf8');
     expect(written).toBe(JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n');
+    // The wet success log moved to a returned label (cmdPull renders the
+    // Settings tree row from it). With a host override present the label is
+    // `<HOST>.json`.
+    expect(result).toEqual({ label: 'test-host.json' });
+  });
+
+  it('returns the no-overrides label when no host file matches', async () => {
+    // No hosts/test-host.json: the returned label is `no host overrides`,
+    // which cmdPull renders as `✓ settings.json (base + no host overrides)`.
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    const result = regenerateSettings('20260516-000000');
+    expect(result).toEqual({ label: 'no host overrides' });
   });
 
   it('leaves no .tmp sibling after a successful atomic write', async () => {
@@ -472,11 +488,14 @@ describe('regenerateSettings dry-run', () => {
     writeFileSync(join(claudeDir, 'settings.json'), priorContent);
 
     const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260516-000000', { dryRun: true });
+    const result = regenerateSettings('20260516-000000', { dryRun: true });
 
     expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(priorContent);
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
     expect(existsSync(backupRoot)).toBe(false);
+    // The dry-run path still returns the override label so callers have a
+    // consistent return shape (the would-write log is unchanged).
+    expect(result).toEqual({ label: 'test-host.json' });
   });
 
   it('default (no opts), dryRun:false, and empty opts all still mutate settings.json', async () => {

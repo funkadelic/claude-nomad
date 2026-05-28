@@ -1,17 +1,92 @@
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { HOME, HOST, REPO_HOME } from './config.ts';
+import { HOME, HOST, type PathMap, REPO_HOME } from './config.ts';
 import { enforceAllowList } from './commands.push.allowlist.ts';
+import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
+import { scanPushVerdict } from './push-leak-verdict.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
-import { runGitleaksScan } from './push-gitleaks.ts';
+import { previewPushLeaks } from './push-preview.ts';
 import { remapPush } from './remap.ts';
-import { emitSummary } from './summary.ts';
 import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
+
+/**
+ * Walk `shared/` for nested `.git` entries copied in from a host's encoded
+ * session dir. A gitlink would otherwise push as a submodule via the
+ * `shared/projects/<logical>/` prefix. Emits a per-hit FATAL line on stderr and
+ * throws a summarizing `NomadFatal` (caught by `cmdPush` so the lock releases).
+ * Runs AFTER `remapPush` so it inspects the post-copy tree.
+ */
+function guardGitlinks(): void {
+  const gitlinks = findGitlinks(join(REPO_HOME, 'shared'));
+  if (gitlinks.length === 0) return;
+  for (const p of gitlinks) {
+    const rel = relative(REPO_HOME, p);
+    fail(`gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`);
+  }
+  const noun = gitlinks.length === 1 ? 'entry' : 'entries';
+  throw new NomadFatal(
+    `gitlink trap: ${gitlinks.length} nested .git ${noun} in shared/; remove before retry`,
+  );
+}
+
+/**
+ * The staged-tree leak gate + commit/push for the REAL push path. Runs
+ * `scanPushVerdict` AFTER `git add -A` (sees what would push) but BEFORE commit
+ * (a detection unwinds cleanly with no commit to revert). On a leak it renders
+ * the tree (with the ✗ Leak scan row + Summary) so the tree precedes the
+ * recovery block, then throws the recovery body as a `NomadFatal` (the catch
+ * prints it and sets a non-zero exit). On a clean scan it commits, pushes, and
+ * renders the tree with the `✓ no leaks` row.
+ *
+ * @param st - The collected push state for the final tree render.
+ */
+function commitAndPush(st: PushState): void {
+  // gitOrFatal uses execFileSync (no shell) so NOMAD_HOST cannot escape quoting.
+  gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
+  const verdict = scanPushVerdict();
+  if (verdict.leak) {
+    renderPushTree(st, verdict);
+    // Every `leak: true` branch of scanPushVerdict sets a non-null recovery
+    // body, so the `?? fallback` is defensively unreachable (excluded from
+    // coverage rather than contorting a test to fake an impossible state).
+    /* c8 ignore next */
+    throw new NomadFatal(verdict.recovery ?? 'gitleaks detected secrets');
+  }
+  gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
+  gitOrFatal(['push'], 'git push', REPO_HOME);
+  renderPushTree(st, verdict);
+}
+
+/**
+ * Render the dry-run leak-scan tree. With `map === null` (a dry-run with no
+ * `path-map.json`) there is nothing to stage, so it renders the no-scan tree
+ * with the `noMapHint` row and returns. Otherwise it runs `previewPushLeaks`
+ * (which stages its OWN temp
+ * tree from the map, independent of `REPO_HOME` status, and sets
+ * `process.exitCode = 1` on findings), renders the push tree with the verdict
+ * row in the Leak scan section, and prints the recovery body BELOW the tree via
+ * `fail` (stderr) when one is present.
+ *
+ * Extracted from `cmdPush` so the command body and this helper each stay under
+ * the sonarjs cognitive-complexity threshold.
+ *
+ * @param st - The collected push state for the tree render.
+ * @param map - The parsed path-map, or `null` when a dry-run has no map.
+ */
+function runDryRunPreview(st: PushState, map: PathMap | null): void {
+  if (map === null) {
+    renderNoScanTree(st, { noMapHint: true });
+    return;
+  }
+  const verdict = previewPushLeaks(map);
+  renderPushTree(st, verdict);
+  if (verdict.recovery !== null) fail(verdict.recovery);
+}
 
 /**
  * `nomad push` command. Acquires the lock, runs the four pre-push safety
@@ -26,20 +101,48 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  *   5. `findGitlinks` walk of `shared/` (refuse to push nested .git entries)
  *   6. allow-list enforcement on the resulting `git status` (runtime
  *      `shared/extras/<logical>/` prefix per declared logical added)
- *   7. `git add -A` -> `runGitleaksScan` on staged tree -> `git commit` -> `git push`
+ *   7. `git add -A` -> `scanPushVerdict` on staged tree -> `git commit` -> `git push`
+ *
+ * Output is a doctor-style grouped tree: a `push on host=...` header, then
+ * `Sessions` / `Extras` / `Leak scan` / `Summary` sections rendered with
+ * `├`/`└` connectors. Pushed sessions and extras list as `✓` rows; the
+ * per-project "not in path-map" skips collapse to one `ℹ︎` count row. The Leak
+ * scan section shows `✓ no leaks` on a clean scan; on a leak it shows a `✗`
+ * one-line verdict row and the full `buildSessionAwareFatal` recovery block
+ * still prints BELOW the rendered tree.
+ *
+ * The WET-path Summary row (including the warn `⚠︎` case) renders to STDOUT as
+ * part of the grouped tree via `renderTree`, not to stderr via `warn` as in the
+ * pre-tree behavior. The dry-run preview likewise renders via `renderTree`
+ * (push has no dry-run `emitSummary` path; `cmdPull`'s dry-run does, see its
+ * JSDoc for the intentional wet-stdout/dry-pull-stderr stream split).
  *
  * The gitleaks scan runs AFTER staging so it sees what would actually be
  * pushed, but BEFORE commit so a detection unwinds cleanly without leaving a
  * commit to amend or revert. Any `NomadFatal` is caught here so `finally`
- * releases the lock.
+ * releases the lock; a real-push leak re-raises the recovery body as a
+ * `NomadFatal` AFTER the tree renders so the recovery block follows the tree.
  *
  * `opts.dryRun` (default `false`): when `true`, the network round-trip
  * (`rebaseBeforePush`) still runs so users see what a real push would see,
- * but `remapPush` runs with `dryRun: true` (no session copies into shared/),
- * and the `git add` / `runGitleaksScan` / `git commit` / `git push` quartet
- * is skipped. The allow-list check still classifies the existing `git
- * status` so a pre-existing violation surfaces before the user thinks
- * everything is fine. Mirrors `cmdPull`'s `dryRun` contract.
+ * and `remapPush` / `remapExtrasPush` run with `dryRun: true` (no copies
+ * into `shared/`). The `git add` / `git commit` / `git push` steps are
+ * skipped. Instead, `previewPushLeaks` runs a READ-ONLY gitleaks leak
+ * preview against a temp copy of the would-be-staged sessions AND extras
+ * (no `REPO_HOME/shared` mutation), returning a structured verdict whose
+ * `verdictRow` lands in the Leak scan section and whose `recovery` (if any)
+ * prints below the tree; `process.exitCode = 1` is set on findings.
+ *
+ * The dry-run preview runs REGARDLESS of `REPO_HOME` `git status`: in dry-run
+ * nothing is copied into `shared/`, so an empty status is the normal case for
+ * the headline target (a clean repo with new mapped sessions). `previewPushLeaks`
+ * stages its own temp tree from the path-map, so the empty-status
+ * `'nothing to commit'` early return is REAL-PUSH-ONLY. A dry-run with NO
+ * path-map renders the no-scan tree and returns without dying (a real push with
+ * a non-empty status and no map still dies on the allow-list check). The
+ * allow-list still classifies a non-empty `git status` (dry or wet) so a
+ * pre-existing violation surfaces; an empty status has nothing to classify.
+ * Mirrors `cmdPull`'s `dryRun` contract.
  */
 export function cmdPush(opts: { dryRun?: boolean } = {}): void {
   const dryRun = opts.dryRun === true;
@@ -47,7 +150,7 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
   const handle = acquireLock('push');
   if (handle === null) process.exit(0);
   try {
-    log(dryRun ? `pushing on host=${HOST} (dry-run)` : `pushing on host=${HOST}`);
+    console.log(dryRun ? `push on host=${HOST} (dry-run)` : `push on host=${HOST}`);
     // Probe at top of flow: fail fast if gitleaks is missing, before any mutation.
     probeGitleaks();
     // Rebase BEFORE any local mutation: surfaces remote conflicts against the
@@ -59,29 +162,14 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     const ts = freshBackupTs(backupBase);
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
-    const remapResult = remapPush(ts, { dryRun });
+    const remap = remapPush(ts, { dryRun });
     // remapExtrasPush lands between remapPush and findGitlinks so the
     // produced `shared/extras/<logical>/<dirname>/` paths are visible to
     // both the gitlink walk and the downstream allow-list classification.
     // dryRun is forwarded so a preview push reports the same skipped count.
-    const extrasResult = remapExtrasPush(ts, { dryRun });
-    // Gitlink walk of shared/ AFTER remapPush so it inspects the post-copy tree.
-    // A nested .git copied in from a host's encoded session dir would slip past a
-    // pre-remap scan and reach the remote via the shared/projects/<logical>/ prefix.
-    // Per-hit FATAL on stderr plus a summarizing throw, mirroring enforceAllowList.
-    const sharedDir = join(REPO_HOME, 'shared');
-    const gitlinks = findGitlinks(sharedDir);
-    if (gitlinks.length > 0) {
-      for (const p of gitlinks) {
-        const rel = relative(REPO_HOME, p);
-        fail(
-          `gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
-        );
-      }
-      throw new NomadFatal(
-        `gitlink trap: ${gitlinks.length} nested .git ${gitlinks.length === 1 ? 'entry' : 'entries'} in shared/; remove before retry`,
-      );
-    }
+    const extras = remapExtrasPush(ts, { dryRun });
+    const st: PushState = { dryRun, remap, extras };
+    guardGitlinks();
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()
     // the leading status-space and shift parsePorcelainZ's offsets.
     // `untrackedAll` (issue #111): the allow-list runs on this snapshot BEFORE
@@ -91,53 +179,30 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     // match, so the first extras push is rejected. Expanding to per-file paths
     // lets the existing allow-list accept them while keeping the gate order.
     const status = gitStatusPorcelainZ(REPO_HOME, { untrackedAll: true });
-    if (!status) {
+    // REAL-PUSH-ONLY early return: a dry-run copies nothing into shared/, so an
+    // empty status is the normal headline case (clean repo, new mapped
+    // sessions) and must still reach the dry-run preview below.
+    if (!dryRun && !status) {
       log('nothing to commit');
-      // Combine session-unmapped and extras-unmapped into one user-visible
-      // count; both mean "couldn't sync this for the host". extras-skipped
-      // (non-whitelisted dirname) stays separate because it signals config
-      // misuse, not a host-config gap.
-      emitSummary(
-        'push',
-        remapResult.unmapped + extrasResult.unmapped,
-        remapResult.collisions,
-        extrasResult.skipped,
-      );
+      renderNoScanTree(st);
       return;
     }
     const mapPath = join(REPO_HOME, 'path-map.json');
-    if (!existsSync(mapPath)) die('path-map.json missing, cannot enforce push allow-list');
+    // A dry-run with no map cannot enforce nor scan: render the no-scan tree and
+    // return without dying. A real push with a non-empty status still dies.
+    if (!existsSync(mapPath)) {
+      if (dryRun) return runDryRunPreview(st, null);
+      die('path-map.json missing, cannot enforce push allow-list');
+    }
     // readPathMap routes parse failures through NomadFatal so finally releases the lock.
     const map = readPathMap(mapPath);
-    enforceAllowList(status, map);
-    if (dryRun) {
-      // Skip the staging quartet so no commit lands and nothing is pushed.
-      // The user has already seen probeGitleaks pass, the rebase result, the
-      // remap preview, the gitlink scan, and the allow-list classification.
-      log('push: dry-run; skipping git add, gitleaks scan, commit, and push');
-      emitSummary(
-        'push',
-        remapResult.unmapped + extrasResult.unmapped,
-        remapResult.collisions,
-        extrasResult.skipped,
-      );
-      return;
-    }
-    // gitOrFatal uses execFileSync (no shell) so NOMAD_HOST cannot escape quoting.
-    gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
-    // Gitleaks scan AFTER staging (sees what would push), BEFORE commit (no cleanup
-    // needed on detection). The empty-status early return above guarantees the
-    // index is non-empty here.
-    runGitleaksScan();
-    gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
-    gitOrFatal(['push'], 'git push', REPO_HOME);
-    log('push complete');
-    emitSummary(
-      'push',
-      remapResult.unmapped + extrasResult.unmapped,
-      remapResult.collisions,
-      extrasResult.skipped,
-    );
+    // Classify only a non-empty status; an empty status (dry-run on a clean
+    // repo) has nothing to gate.
+    if (status) enforceAllowList(status, map);
+    // dryRun skips git add / commit / push: run the read-only leak preview,
+    // which prints any recovery below the rendered tree.
+    if (dryRun) return runDryRunPreview(st, map);
+    commitAndPush(st);
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);

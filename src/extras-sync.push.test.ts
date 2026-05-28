@@ -56,10 +56,16 @@ describe('remapExtrasPush (integration)', () => {
     const repoFile = join(sharedExtras, 'foo', '.planning', 'PLAN.md');
     expect(existsSync(repoFile)).toBe(true);
     expect(readFileSync(repoFile, 'utf8')).toBe('# plan\n');
-    expect(result).toEqual({ unmapped: 0, skipped: 0 });
+    // Wet copy records the `<logical>/<dirname>` item in `pushed`.
+    expect(result).toEqual({
+      unmapped: 0,
+      skipped: 0,
+      pushed: ['foo/.planning'],
+      wouldPush: [],
+    });
   });
 
-  it('skips non-whitelisted dir names (SUPPORTED_EXTRAS guard) with a log line', async () => {
+  it('skips non-whitelisted dir names (SUPPORTED_EXTRAS guard) with no log line', async () => {
     mkdirSync(join(projectRoot, 'node_modules'), { recursive: true });
     writeFileSync(join(projectRoot, 'node_modules', 'evil.js'), '// evil\n');
     writeFileSync(
@@ -75,11 +81,16 @@ describe('remapExtrasPush (integration)', () => {
     const result = remapExtrasPush('20260522-110001');
 
     expect(existsSync(join(sharedExtras, 'foo', 'node_modules'))).toBe(false);
-    expect(result).toEqual({ unmapped: 0, skipped: 1 });
+    // The skipped count still increments (unaffected by quiet) ...
+    expect(result).toMatchObject({ unmapped: 0, skipped: 1 });
+    expect(result.pushed).toEqual([]);
+    expect(result.wouldPush).toEqual([]);
+    // ... but the per-skip narration was removed (skips are silent, counted
+    // only), so no SUPPORTED_EXTRAS skip line reaches the console.
     const skipLine = logSpy.mock.calls
       .map((args) => args.join(' '))
       .find((line) => line.includes('node_modules') && line.includes('SUPPORTED_EXTRAS'));
-    expect(skipLine).toBeDefined();
+    expect(skipLine).toBeUndefined();
   });
 
   it('counts unmapped projects (TBD host path) and does not copy', async () => {
@@ -96,7 +107,7 @@ describe('remapExtrasPush (integration)', () => {
     const { remapExtrasPush } = await import('./extras-sync.ts');
     const result = remapExtrasPush('20260522-110002');
 
-    expect(result).toEqual({ unmapped: 1, skipped: 0 });
+    expect(result).toEqual({ unmapped: 1, skipped: 0, pushed: [], wouldPush: [] });
     expect(existsSync(join(sharedExtras, 'foo'))).toBe(false);
   });
 
@@ -114,7 +125,8 @@ describe('remapExtrasPush (integration)', () => {
     const { remapExtrasPush } = await import('./extras-sync.ts');
     const result = remapExtrasPush('20260522-110003', { dryRun: true });
 
-    expect(result).toEqual({ unmapped: 0, skipped: 0 });
+    // dryRun records the would-be-pushed item in `wouldPush`, copies nothing.
+    expect(result).toEqual({ unmapped: 0, skipped: 0, pushed: [], wouldPush: ['foo/.planning'] });
     expect(existsSync(join(sharedExtras, 'foo'))).toBe(false);
     expect(existsSync(join(cacheBase, '20260522-110003'))).toBe(false);
   });
@@ -128,7 +140,7 @@ describe('remapExtrasPush (integration)', () => {
     const { remapExtrasPush } = await import('./extras-sync.ts');
     const result = remapExtrasPush('20260522-110004');
 
-    expect(result).toEqual({ unmapped: 0, skipped: 0 });
+    expect(result).toEqual({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] });
     expect(existsSync(join(sharedExtras, 'foo'))).toBe(false);
   });
 
@@ -202,6 +214,11 @@ describe('remapExtrasPush (integration)', () => {
     const repoFile = join(sharedExtras, 'foo', 'CLAUDE.md');
     expect(existsSync(repoFile)).toBe(true);
     expect(readFileSync(repoFile, 'utf8')).toBe('# project rules\n');
-    expect(result).toEqual({ unmapped: 0, skipped: 0 });
+    expect(result).toEqual({
+      unmapped: 0,
+      skipped: 0,
+      pushed: ['foo/CLAUDE.md'],
+      wouldPush: [],
+    });
   });
 });

@@ -30,11 +30,11 @@ describe('cmdPush: extras pipeline integration', () => {
     const callOrder: string[] = [];
     const remapPushMock = vi.fn(() => {
       callOrder.push('remapPush');
-      return { unmapped: 0, collisions: 0 };
+      return { unmapped: 0, collisions: 0, pushed: [], wouldPush: [] };
     });
     const remapExtrasPushMock = vi.fn(() => {
       callOrder.push('remapExtrasPush');
-      return { unmapped: 0, skipped: 0 };
+      return { unmapped: 0, skipped: 0, pushed: [], wouldPush: [] };
     });
     const findGitlinksMock = vi.fn(() => {
       callOrder.push('findGitlinks');
@@ -83,7 +83,12 @@ describe('cmdPush: extras pipeline integration', () => {
   });
 
   it('passes dryRun through to remapExtrasPush', async () => {
-    const remapExtrasPushMock = vi.fn(() => ({ unmapped: 0, skipped: 0 }));
+    const remapExtrasPushMock = vi.fn(() => ({
+      unmapped: 0,
+      skipped: 0,
+      pushed: [],
+      wouldPush: [],
+    }));
     writeFileSync(
       join(env.repoUnderHome, 'path-map.json'),
       JSON.stringify({ projects: {}, extras: { foo: ['.planning'] } }) + '\n',
@@ -99,12 +104,9 @@ describe('cmdPush: extras pipeline integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('./push-gitleaks.ts', () => ({
-      runGitleaksScan: vi.fn(),
-    }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
-      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
     vi.doMock('./extras-sync.ts', () => ({
       remapExtrasPush: remapExtrasPushMock,
