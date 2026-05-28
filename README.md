@@ -662,6 +662,13 @@ REQUIRED for durability, not optional housekeeping: `remapPush` (in `src/remap.t
 local content into the staged tree on the next push, so a drop without a local scrub re-stages the
 same secret.
 
+A successful drop prints this reminder inline, pointing at the live transcript that still needs
+scrubbing (the exact path when `path-map.json` maps the project to the current host, a generic
+`~/.claude/projects/<encoded>/<id>.jsonl` template otherwise). This is why a
+`nomad doctor --check-shared` run still reports the session after a drop: that scan reads the live
+`~/.claude/projects/` source, not the staged tree, so it keeps flagging the secret until the local
+transcript is scrubbed.
+
 ### Recovery flow: gitleaks FATAL on a session JSONL
 
 `nomad push` runs `gitleaks protect --staged` before commit. To catch the same findings before you

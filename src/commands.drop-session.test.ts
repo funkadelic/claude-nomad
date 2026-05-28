@@ -150,3 +150,96 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
     expect(env.logSpy.mock.calls).toHaveLength(0);
   });
 });
+
+describe('cmdDropSession (scrub-remediation hint)', () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = makeDropSessionEnv();
+  });
+
+  afterEach(() => {
+    teardownDropSessionEnv(env);
+  });
+
+  /** Stitch every recorded `console.log` call into one newline-joined string. */
+  function logOutput(): string {
+    return env.logSpy.mock.calls.map((c: unknown[]) => c.join(' ')).join('\n');
+  }
+
+  /**
+   * Write `path-map.json` into the temp REPO_HOME so `resolveLiveTranscript`
+   * can reverse-map a dropped session to its live transcript path.
+   */
+  function writePathMap(body: unknown): void {
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
+    writeFileSync(join(env.repoUnderHome, 'path-map.json'), text);
+  }
+
+  it('points at the exact live transcript when path-map resolves it for this host', async () => {
+    // The unstage clears only the staged copy; the secret still lives in the
+    // local transcript. With path-map mapping the logical to this host
+    // (NOMAD_HOST=test-host), the hint resolves the live path precisely.
+    writePathMap({ projects: { 'proj-x': { 'test-host': '/work/proj-x' } } });
+    const liveDir = join(env.claudeProjects, '-work-proj-x'); // encodePath('/work/proj-x')
+    mkdirSync(liveDir, { recursive: true });
+    const livePath = join(liveDir, 'sid-LEAK.jsonl');
+    writeFileSync(livePath, '{"k":"v"}\n');
+    stageSession(env, 'proj-x', 'sid-LEAK', '{"k":"v"}\n');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-LEAK');
+
+    const logged = logOutput();
+    expect(logged).toContain('un-stages the session from the next push');
+    expect(logged).toContain(`scrub ${livePath}`);
+  });
+
+  it('falls back to the generic template when no path-map exists', async () => {
+    // No path-map.json at all: the live path cannot be resolved, so the hint
+    // still fires with the generic ~/.claude/projects/<encoded>/<id> template.
+    stageSession(env, 'foo', 'sid-A', '{"k":"v"}\n');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-A');
+
+    expect(logOutput()).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl');
+  });
+
+  it('falls back to the generic template when the session is not mapped to this host', async () => {
+    // path-map exists but only maps the logical to a different host, so
+    // hosts[test-host] is undefined and resolution falls through to generic.
+    writePathMap({ projects: { foo: { 'other-host': '/work/foo' } } });
+    stageSession(env, 'foo', 'sid-A', '{"k":"v"}\n');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-A');
+
+    expect(logOutput()).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl');
+  });
+
+  it('falls back to the generic template when the resolved live transcript is absent', async () => {
+    // path-map resolves the logical to this host, but the live file does not
+    // exist on disk (already scrubbed), so the existsSync guard rejects it.
+    writePathMap({ projects: { 'proj-x': { 'test-host': '/work/proj-x' } } });
+    stageSession(env, 'proj-x', 'sid-A', '{"k":"v"}\n');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-A');
+
+    expect(logOutput()).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl');
+  });
+
+  it('falls back to the generic template when path-map.json is malformed JSON', async () => {
+    // A parse error inside resolveLiveTranscript degrades to the generic hint
+    // rather than crashing the (already successful) drop.
+    writePathMap('{ not valid json');
+    stageSession(env, 'foo', 'sid-A', '{"k":"v"}\n');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    cmdDropSession('sid-A');
+
+    expect(logOutput()).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl');
+    expect(process.exitCode === 1).toBe(false);
+  });
+});
