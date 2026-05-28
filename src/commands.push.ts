@@ -65,7 +65,8 @@ function commitAndPush(st: PushState): void {
 /**
  * Render the dry-run leak-scan tree. With `map === null` (a dry-run with no
  * `path-map.json`) there is nothing to stage, so it renders the no-scan tree
- * and returns. Otherwise it runs `previewPushLeaks` (which stages its OWN temp
+ * with the `noMapHint` row and returns. Otherwise it runs `previewPushLeaks`
+ * (which stages its OWN temp
  * tree from the map, independent of `REPO_HOME` status, and sets
  * `process.exitCode = 1` on findings), renders the push tree with the verdict
  * row in the Leak scan section, and prints the recovery body BELOW the tree via
@@ -79,7 +80,7 @@ function commitAndPush(st: PushState): void {
  */
 function runDryRunPreview(st: PushState, map: PathMap | null): void {
   if (map === null) {
-    renderNoScanTree(st);
+    renderNoScanTree(st, { noMapHint: true });
     return;
   }
   const verdict = previewPushLeaks(map);

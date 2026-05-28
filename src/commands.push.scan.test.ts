@@ -348,9 +348,11 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // previewPushLeaks is NOT reached when there is no map to stage from.
     expect(previewPushLeaksMock).not.toHaveBeenCalled();
     const out = logOutput(env);
-    // The no-scan tree renders (Summary, no Leak scan section).
+    // The no-scan tree renders (Summary, no Leak scan section) with the
+    // no-path-map hint so the user sees why nothing was scanned.
     expect(out).toContain('Summary');
     expect(out).not.toContain('Leak scan');
+    expect(out).toContain('no path-map.json');
     // The missing-map FATAL did NOT fire.
     expect(errOutput(env)).not.toContain('path-map.json missing');
     vi.doUnmock('./remap.ts');

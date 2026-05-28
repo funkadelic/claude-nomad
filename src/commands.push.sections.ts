@@ -148,12 +148,24 @@ export function renderPushTree(st: PushState, verdict: LeakVerdict): void {
 }
 
 /**
- * Render the no-Leak-scan push tree (nothing-to-commit early return): the
- * Sessions/Extras rows (if any) plus the Summary row. `renderTree` skips empty
- * sections, so an empty push prints only the Summary.
+ * Render the no-Leak-scan push tree: the Sessions/Extras rows (if any) plus the
+ * Summary row. `renderTree` skips empty sections, so an empty push prints only
+ * the Summary. Two callers: the real-push nothing-to-commit early return
+ * (`noMapHint` omitted) and the dry-run no-`path-map.json` case
+ * (`noMapHint: true`), which prepends a `Path map` section carrying a single
+ * `${dim(infoGlyph)} no path-map.json (nothing to preview)` row so a dry-run
+ * user sees WHY no Leak scan section rendered (no map means nothing to stage).
  *
  * @param st - The collected push state.
+ * @param opts.noMapHint - When `true`, prepend the no-path-map hint section.
+ * @returns Nothing; renders to stdout.
  */
-export function renderNoScanTree(st: PushState): void {
-  renderTree([...syncedSections(st), summarySection(st)]);
+export function renderNoScanTree(st: PushState, opts: { noMapHint?: boolean } = {}): void {
+  const sections: DoctorSection[] = [];
+  if (opts.noMapHint === true) {
+    const pathMap = section('Path map');
+    addItem(pathMap, `${dim(infoGlyph)} no path-map.json (nothing to preview)`);
+    sections.push(pathMap);
+  }
+  renderTree([...sections, ...syncedSections(st), summarySection(st)]);
 }
