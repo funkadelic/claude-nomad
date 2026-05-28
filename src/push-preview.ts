@@ -22,6 +22,7 @@ import { join } from 'node:path';
 
 import { dim, infoGlyph } from './color.ts';
 import { CLAUDE_HOME, HOST, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import { assertSafeLogical } from './extras-sync.guards.ts';
 import { copyExtras } from './extras-sync.ts';
 import { copyDirJsonlOnly } from './remap.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './push-leak-verdict.ts';
@@ -47,6 +48,7 @@ function stageSessions(tmpRoot: string, map: PathMap): number {
 
   const reverse = new Map<string, string>();
   for (const [logical, hosts] of Object.entries(map.projects)) {
+    assertSafeLogical(logical);
     const p = hosts[HOST];
     if (!p || p === 'TBD') continue;
     reverse.set(encodePath(p), logical);
@@ -87,6 +89,7 @@ function stageExtras(tmpRoot: string, map: PathMap): number {
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
   let staged = 0;
   for (const [logical, dirnames] of Object.entries(extrasMap)) {
+    assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') continue;
     for (const dirname of dirnames) {
@@ -117,9 +120,14 @@ function stageExtras(tmpRoot: string, map: PathMap): number {
  * Returns a structured `LeakVerdict` rather than logging the verdict line so
  * `cmdPush` can render `verdictRow` in the Leak scan section and print
  * `recovery` below the tree. Side effects preserved: `process.exitCode = 1` on
- * findings AND on a scan crash; the scan-error (ENOENT / spawn failure) branch
- * maps to a ✗ scan-error row with `exitCode = 1`; nothing-to-scan maps to a
- * neutral ℹ︎ row.
+ * findings AND on a scan crash. A scan that throws maps to a ✗ scan-error row
+ * with `exitCode = 1`: ENOENT (gitleaks/git absent) keeps the "not on PATH"
+ * wording, any other error (e.g. EACCES) surfaces its real message so the
+ * cause is not mislabeled. Nothing-to-scan maps to a neutral ℹ︎ row.
+ *
+ * Fails closed before any copy: an unsafe `logical` key (path separator or
+ * `..`) raised by `assertSafeLogical` in the staging step propagates out as a
+ * `NomadFatal` to `cmdPush`, and the `finally` still removes the temp tree.
  *
  * @param map - Parsed `path-map.json` (already in scope from `cmdPush`).
  * @returns The structured verdict for the Leak scan section.
@@ -139,8 +147,11 @@ export function previewPushLeaks(map: PathMap): LeakVerdict {
     let findings: ReturnType<typeof scanStagedTree>;
     try {
       findings = scanStagedTree(tmpRoot);
-    } catch {
-      return verdictScanError('scan error (git or gitleaks not on PATH)');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return verdictScanError('scan error (git or gitleaks not on PATH)');
+      }
+      return verdictScanError(`scan error: ${(err as Error).message}`);
     }
     return verdictFromFindings(findings);
   } finally {

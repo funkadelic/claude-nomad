@@ -68,7 +68,7 @@ export function divergenceCheckExtras(ts: string): void {
 
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
   const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'extras');
-  for (const { logical, localRoot, dirname } of eachExtrasTarget(v, counts, true)) {
+  for (const { logical, localRoot, dirname } of eachExtrasTarget(v, counts)) {
     const local = join(localRoot, dirname);
     const repo = join(REPO_HOME, 'shared', 'extras', logical, dirname);
     if (!existsSync(local) || !existsSync(repo)) continue;

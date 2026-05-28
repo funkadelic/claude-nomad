@@ -306,6 +306,34 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     expect(verdict.leak).toBe(false);
     expect(verdict.recovery).toBeNull();
     expect(verdict.verdictRow).toMatch(/scan error/i);
+    // ENOENT keeps the "not on PATH" wording (binary genuinely missing).
+    expect(verdict.verdictRow).toMatch(/not on PATH/i);
+  });
+
+  it('surfaces the real error message (not the PATH hint) on a non-ENOENT scan throw', async () => {
+    // A non-ENOENT throw (e.g. EACCES) must not be mislabeled as a missing
+    // binary; the verdict row carries the underlying error message instead.
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((): scanModule.Finding[] | null => {
+          throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+        }),
+      };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    const verdict = previewPushLeaks(map);
+    expect(process.exitCode).toBe(1);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.recovery).toBeNull();
+    expect(verdict.verdictRow).toMatch(/permission denied/);
+    expect(verdict.verdictRow).not.toMatch(/not on PATH/i);
   });
 });
 
@@ -570,6 +598,85 @@ describe('previewPushLeaks: extras staging', () => {
     // Session was staged, so scan runs. Extras were skipped (src missing).
     expect(scanCalled).toBe(true);
     expect(existsSync(join(env.repoUnderHome, 'shared'))).toBe(false);
+  });
+});
+
+describe('previewPushLeaks: path-traversal guard (fail-closed before copy)', () => {
+  let env: PreviewEnv;
+
+  beforeEach(() => {
+    env = makePreviEnv();
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    teardownPreviewEnv(env);
+  });
+
+  it('throws on an unsafe session logical (path separator) before scanning', async () => {
+    // An unsafe logical key in map.projects must fail closed via
+    // assertSafeLogical in stageSessions, before any copy or scan.
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const localPath = join(env.testHome, 'my-project');
+    const map = { projects: { 'foo/bar': { 'test-host': localPath } } };
+    expect(() => previewPushLeaks(map)).toThrow(/invalid logical name/i);
+    // Fail-closed: the scan must never run.
+    expect(scanMock).not.toHaveBeenCalled();
+    // No staging tree content escaped (temp tree cleaned by finally).
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    const remaining = existsSync(cacheDir)
+      ? readdirSync(cacheDir).filter((n) => n.startsWith('push-preview-tree-'))
+      : [];
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('throws on an unsafe extras logical (..) before scanning', async () => {
+    // An unsafe logical in the extras block must fail closed via
+    // assertSafeLogical in stageExtras, before any copy or scan.
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = {
+      // Keep projects safe so the throw originates in stageExtras, not stageSessions.
+      projects: {},
+      extras: { '../escape': ['.planning'] },
+    };
+    expect(() => previewPushLeaks(map)).toThrow(/invalid logical name/i);
+    expect(scanMock).not.toHaveBeenCalled();
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    const remaining = existsSync(cacheDir)
+      ? readdirSync(cacheDir).filter((n) => n.startsWith('push-preview-tree-'))
+      : [];
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('stages and scans normally for a safe logical (guard does not over-reject)', async () => {
+    // The guard must not reject a normal [A-Za-z0-9._-]+ logical.
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    expect(() => previewPushLeaks(map)).not.toThrow();
+    expect(scanMock).toHaveBeenCalledOnce();
   });
 });
 

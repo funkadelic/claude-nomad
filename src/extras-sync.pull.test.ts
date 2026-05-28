@@ -94,8 +94,8 @@ describe('remapExtrasPull (integration)', () => {
     expect(result).toMatchObject({ unmapped: 0, skipped: 1 });
     expect(result.pulled).toEqual([]);
     expect(result.wouldPull).toEqual([]);
-    // ... but the per-skip narration is routed through quiet=true, so no
-    // SUPPORTED_EXTRAS skip line reaches the console.
+    // ... but the per-skip narration was removed (skips are silent, counted
+    // only), so no SUPPORTED_EXTRAS skip line reaches the console.
     const skipLine = logSpy.mock.calls
       .map((args) => args.join(' '))
       .find((line) => line.includes('node_modules') && line.includes('SUPPORTED_EXTRAS'));

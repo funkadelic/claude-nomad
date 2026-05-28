@@ -610,9 +610,12 @@ synced, or a `⚠︎` warning naming the counts when something was skipped:
 ⚠︎ summary: 2 unmapped on push, 1 collisions (run nomad doctor to list)
 ```
 
-`✓` lines go to stdout; `⚠︎` and `✗` lines go to stderr. The tree (and its summary row) is suppressed
-when a fatal (`✗`) fires mid-run, so you do not see "summary: clean" stacked under an error.
-Projects with no entry in `path-map.json` for this host count as unmapped and fold into the
+`✓` lines go to stdout; `⚠︎` and `✗` lines go to stderr. An early, pre-tree fatal abort (for example
+gitleaks missing when push checks for it, or a rebase conflict before anything is staged) suppresses
+the tree entirely, so you do not see "summary: clean" stacked under an error. A later leak-scan
+finding is different: by then the tree has already been built, so it still renders in full with a
+`✗` Leak scan row and the recovery block below it (see "Recovery flow: gitleaks FATAL on a session
+JSONL"). Projects with no entry in `path-map.json` for this host count as unmapped and fold into the
 collapsed `ℹ︎ ... not in path-map` count; the hint points at `nomad doctor`, which lists them by
 logical name.
 
@@ -666,10 +669,11 @@ push (and without mutating anything), two read-only options are available:
 `nomad doctor --check-shared` scans the session transcripts a push would publish;
 `nomad push --dry-run` runs the same scan AND also covers opted-in extras (`.planning`,
 `CLAUDE.md`), which `--check-shared` does not. Both stage content into a throwaway temp copy and
-never write to the sync repo. When findings live in a session transcript, the push aborts: the
-grouped tree renders first with a `✗ gitleaks detected secrets in N session transcript(s)` row in
-its `Leak scan` section, then the full recovery block prints below it, naming every affected session
-id and the recovery command:
+never write to the sync repo. A leak-scan finding is the contrast to an early, pre-tree fatal:
+because the scan runs after the tree is built, the push aborts but the grouped tree still renders in
+full, with a `✗ gitleaks detected secrets in N session transcript(s)` row in its `Leak scan`
+section, and then the full recovery block prints below it, naming every affected session id and the
+recovery command:
 
 ```text
 ✗ gitleaks detected secrets in 1 session transcript(s).

@@ -58,29 +58,24 @@ export function loadValidatedExtras(opts: {
  * the caller builds src/dst from the yielded triple.
  *
  * @param v - validated path-map plus its extras block.
- * @param counts - mutated in place as targets are skipped or yielded.
- * @param quiet - Suppress the per-skip `log()` lines (push/pull and the
- *   read-only divergence check all pass `quiet=true`; the detail arrays or the
- *   collapsed count row carry the information instead). Counts increment
- *   either way.
+ * @param counts - mutated in place as targets are skipped or yielded. Skips are
+ *   counted silently (no per-skip log line); the caller's detail arrays and the
+ *   collapsed count row carry that information to the tree renderer.
  */
 export function* eachExtrasTarget(
   v: ValidatedExtras,
   counts: ExtrasCounts,
-  quiet = false,
 ): Generator<{ logical: string; localRoot: string; dirname: string }> {
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
   for (const [logical, dirnames] of Object.entries(v.extrasMap)) {
     const localRoot = v.map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') {
       counts.unmapped++;
-      if (!quiet) log(`skip ${logical}: no path for ${HOST}`);
       continue;
     }
     for (const dirname of dirnames) {
       if (!whitelist.includes(dirname)) {
         counts.skipped++;
-        if (!quiet) log(`skip ${dirname} for ${logical}: not in SUPPORTED_EXTRAS`);
         continue;
       }
       yield { logical, localRoot, dirname };

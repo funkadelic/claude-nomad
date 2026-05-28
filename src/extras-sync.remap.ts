@@ -19,8 +19,8 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
 
 /**
  * Shared copy loop for `remapExtrasPush` / `remapExtrasPull`. Walks every
- * surviving extras target (counts mutated via `eachExtrasTarget`, `quiet=true`
- * so no per-skip log line is emitted), resolves src/dst through the
+ * surviving extras target (counts mutated via `eachExtrasTarget`; skips are
+ * counted silently, no per-skip log line), resolves src/dst through the
  * side-specific `paths(...)`, and either records the would-copy item under
  * `dryRun` or backs up + copies and records the done item. Returns
  * `{ unmapped, skipped, done, would }`; the public wrappers rename
@@ -42,7 +42,7 @@ function runExtrasOp(
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
   const done: string[] = [];
   const would: string[] = [];
-  for (const t of eachExtrasTarget(v, counts, true)) {
+  for (const t of eachExtrasTarget(v, counts)) {
     const { src, dst } = paths(t);
     if (!existsSync(src)) continue;
     const item = `${t.logical}/${t.dirname}`;
@@ -64,10 +64,10 @@ function runExtrasOp(
  * count granularity (see `eachExtrasTarget`): `unmapped` per-project, `skipped`
  * per-dirname; both feed the summary row. `pushed` / `wouldPush` hold
  * `<logical>/<dirname>` strings copied (wet) or that would copy under
- * `opts.dryRun` so cmdPush can render a grouped tree. Per-skip narration is
- * suppressed (`quiet=true`) and per-item log lines are dropped; counts are
- * unchanged. Legacy `path-map.json` without an `extras` key returns empty
- * arrays and zero counts cleanly.
+ * `opts.dryRun` so cmdPush can render a grouped tree. Skips are counted
+ * silently and per-item log lines are dropped; counts are unchanged. Legacy
+ * `path-map.json` without an `extras` key returns empty arrays and zero counts
+ * cleanly.
  *
  * @param ts - backup timestamp namespace.
  * @param opts.dryRun - when `true`, collect `wouldPush` without mutating.
@@ -100,9 +100,9 @@ export function remapExtrasPush(
  * back into each project's localRoot on this host. Returns
  * `{ unmapped, skipped, pulled, wouldPull }` with the same asymmetric count
  * granularity as `remapExtrasPush`; `pulled` / `wouldPull` hold
- * `<logical>/<dirname>` strings for the grouped tree. Per-skip narration is
- * suppressed (`quiet=true`) and per-item log lines are dropped; counts are
- * unchanged. Uses `backupExtrasWrite` (not `backupBeforeWrite`) because
+ * `<logical>/<dirname>` strings for the grouped tree. Skips are counted
+ * silently and per-item log lines are dropped; counts are unchanged. Uses
+ * `backupExtrasWrite` (not `backupBeforeWrite`) because
  * `<localRoot>/<dirname>` lives outside `CLAUDE_HOME` and the standard helper's
  * relative-path guard would no-op and lose prior content. Legacy
  * `path-map.json` without an `extras` key, or a missing `shared/extras/`, both
