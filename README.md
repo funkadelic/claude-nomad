@@ -273,7 +273,8 @@ Results on `your-other-host`: opus 4.8, the local Ollama env var, plus the share
 `nomad doctor` warns when `settings.json` carries a top-level key it does not recognize (a cue that
 Claude Code added a setting). The recognized set is kept current against Claude Code's published
 settings schema by a weekly automated PR in the public repo, so a periodic `nomad update` is what
-keeps that warning quiet on your hosts.
+keeps that warning quiet on your hosts. To check your own `settings.json` against the live schema on
+demand, run `nomad doctor --check-schema`.
 
 ## What does NOT sync (deliberate trade-offs)
 
@@ -546,6 +547,7 @@ point under your npm prefix's `bin/`), then delete the alias line from your shel
 | `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check plus two `⚠︎`-only drift checks: gitleaks version drift and, on a private GitHub mirror, re-enabled Actions.                                    |
 | `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                                                                                                                                                                                        |
 | `nomad doctor --check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session with rotate-and-scrub guidance. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl). |
+| `nomad doctor --check-schema`    | Read-only: fetches the live Claude Code settings schema and lists any `~/.claude/settings.json` key absent from it (candidates for the hand-maintained `APP_ONLY_KEYS` list). Non-fatal and offline-tolerant: skips with a `⚠︎` when curl is missing or the schema is unreachable.                                                                        |
 | `nomad --version`                | Print the installed CLI version as bare semver to stdout; exits 0. Used by the npm-publish smoke test and useful for ad-hoc upgrade checks.                                                                                                                                                                                                              |
 
 The version-check emits ``⚠︎ claude-nomad: <local> -> <latest> (run `nomad update`)`` when the local

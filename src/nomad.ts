@@ -131,13 +131,16 @@ try {
       // Sub-flags: `doctor --resume-cmd <session-id>` dispatches to the
       // read-only sidecar that prints `cd <abspath> && claude --resume <id>`;
       // `doctor --check-shared` (no positional) appends the gitleaks preflight
-      // scan of the transcripts a push would stage. Bare `doctor` runs the
-      // plain read-only health check. Any other shape (unknown flag, extra
-      // positional, `--check-shared` with trailing args) is a usage error.
+      // scan of the transcripts a push would stage; `doctor --check-schema`
+      // (no positional) appends the live settings-schema check. Bare `doctor`
+      // runs the plain read-only health check. Any other shape (unknown flag,
+      // extra positional, a scan flag with trailing args) is a usage error.
       if (process.argv[3] === undefined) {
         cmdDoctor();
       } else if (process.argv[3] === '--check-shared' && process.argv.length === 4) {
         cmdDoctor({ checkShared: true });
+      } else if (process.argv[3] === '--check-schema' && process.argv.length === 4) {
+        cmdDoctor({ checkSchema: true });
       } else if (process.argv[3] === '--resume-cmd') {
         const id = process.argv[4];
         if (process.argv.length !== 5 || typeof id !== 'string' || id.length === 0) {
@@ -146,7 +149,9 @@ try {
         }
         resumeCmd(id);
       } else {
-        console.error('usage: nomad doctor [--check-shared | --resume-cmd <session-id>]');
+        console.error(
+          'usage: nomad doctor [--check-shared | --check-schema | --resume-cmd <session-id>]',
+        );
         process.exit(1);
       }
       break;
