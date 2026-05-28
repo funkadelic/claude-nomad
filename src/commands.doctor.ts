@@ -17,6 +17,7 @@ import {
 } from './commands.doctor.checks.repository.ts';
 import { reportCheckSchema } from './commands.doctor.check-schema.ts';
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
+import { reportHooksTargetCheck } from './commands.doctor.checks.hooks.ts';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_HOME, type PathMap } from './config.ts';
@@ -58,6 +59,9 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   const map: PathMap = rawMap ?? { projects: {} };
   reportSharedLinks(links, map);
 
+  const hooksScan = section('Hook targets');
+  reportHooksTargetCheck(hooksScan);
+
   const settings = section('Settings');
   const base = loadBaseSettings(settings);
   const parsedSettings = loadAndReportSettings(settings);
@@ -95,6 +99,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
     version,
     host,
     links,
+    hooksScan,
     settings,
     pathMap,
     neverSync,
