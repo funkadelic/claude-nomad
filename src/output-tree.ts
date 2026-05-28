@@ -1,0 +1,91 @@
+import { failGlyph, red } from './color.ts';
+
+/**
+ * Bare `failGlyph` codepoint (`✗`, U+2717) without any WSL padding the
+ * `failGlyph` constant may carry. Header rendering composes its own
+ * spacing (`${red(failGlyph)} ${header}`), so the section-header path
+ * must use the unpadded codepoint to avoid a double space on WSL.
+ */
+const FAIL_GLYPH_BARE = '✗';
+
+/**
+ * Tree-style output builder shared by `cmdDoctor`, `cmdPush`, and `cmdPull`.
+ * Callers build an ordered list of `DoctorSection`s, push pre-rendered
+ * plain-text items into the relevant section, then call `renderTree`
+ * (aliased `renderDoctor` for doctor's call site) to emit a Claude Code
+ * `/doctor`-style tree (`Header` / `  ├ item` / `  └ last`) on stdout.
+ *
+ * Color and status glyphs (okGlyph/warnGlyph/failGlyph/infoGlyph) already
+ * live inside the item text; this module never re-colors or re-tokenizes.
+ * Sections with zero items are skipped at render time (no empty headers).
+ *
+ * Output goes directly through `console.log` rather than `utils.log` so the
+ * dim `ℹ︎` info glyph used by `pull` / `push` / `init` does NOT appear in
+ * doctor output (doctor has its own glyphs per row). Test assertions continue
+ * to spy on `console.log`.
+ */
+export type DoctorSection = {
+  header: string;
+  items: string[];
+};
+
+/** Construct an empty section with the given header. */
+export function section(header: string): DoctorSection {
+  return { header, items: [] };
+}
+
+/** Append one rendered line to a section. */
+export function addItem(s: DoctorSection, text: string): void {
+  s.items.push(text);
+}
+
+/**
+ * True when any item in the section contains the FAIL glyph.
+ * Color-wrapped failGlyph (`[31m✗[39m`) still contains the
+ * glyph as a substring, so this works for both color-on and color-off output.
+ */
+function sectionFailed(s: DoctorSection): boolean {
+  return s.items.some((line) => line.includes(failGlyph));
+}
+
+/**
+ * Render one section: a (possibly fail-glyph-prefixed) header followed by its
+ * items as a tree. Empty-string items print as true blank lines; the `└` elbow
+ * attaches to the last non-empty item so a trailing blank cannot strand it.
+ */
+function renderSection(s: DoctorSection): void {
+  const header = sectionFailed(s) ? `${red(FAIL_GLYPH_BARE)} ${s.header}` : s.header;
+  console.log(header);
+  const lastContent = s.items.reduce((acc, item, j) => (item !== '' ? j : acc), -1);
+  for (let j = 0; j < s.items.length; j++) {
+    if (s.items[j] === '') console.log('');
+    else console.log(`${j === lastContent ? '  └ ' : '  ├ '}${s.items[j]}`);
+  }
+}
+
+/**
+ * Emit the full grouped tree. Skips empty sections, prefixes failed-section
+ * headers with a red `✗ ` glyph (U+2717, same as the per-item FAIL glyph so
+ * `grep -F '✗'` catches both row and header failures), and writes one blank
+ * line between rendered sections (no leading or trailing blank).
+ *
+ * An empty-string item renders as a true blank line (no tree connector), which
+ * lets a reporter set off a footer block (e.g. the `--check-shared` description
+ * legend) with vertical whitespace. The `└` connector attaches to the last
+ * non-empty item rather than the last array slot so a trailing blank does not
+ * strand the elbow on an empty line.
+ */
+export function renderTree(sections: DoctorSection[]): void {
+  const visible = sections.filter((s) => s.items.length > 0);
+  for (let i = 0; i < visible.length; i++) {
+    if (i > 0) console.log('');
+    renderSection(visible[i]);
+  }
+}
+
+/**
+ * Back-compat alias for `renderTree`. Doctor's call site imports
+ * `renderDoctor`; push/pull import `renderTree`. Both point at the same
+ * implementation so doctor output stays byte-identical.
+ */
+export const renderDoctor = renderTree;
