@@ -7,8 +7,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-/** The official Claude Code settings JSON schema (the SCHEMA_KEYS source of truth). */
-const SCHEMA_URL = 'https://json.schemastore.org/claude-code-settings.json';
+import { SETTINGS_SCHEMA_URL } from '../src/config.ts';
+
 /** Absolute path to the module this script keeps in sync. */
 const TARGET = fileURLToPath(new URL('../src/settings-keys.ts', import.meta.url));
 
@@ -62,7 +62,7 @@ export const KNOWN_SETTINGS_KEYS = new Set<string>([...SCHEMA_KEYS, ...APP_ONLY_
 
 /** Fetch the schema and return its top-level property names. Throws on any failure. */
 async function fetchSchemaKeys(): Promise<string[]> {
-  const res = await fetch(SCHEMA_URL);
+  const res = await fetch(SETTINGS_SCHEMA_URL);
   if (!res.ok) throw new Error(`schema fetch failed: HTTP ${res.status}`);
   const schema = (await res.json()) as { properties?: Record<string, unknown> };
   if (typeof schema.properties !== 'object' || schema.properties === null) {

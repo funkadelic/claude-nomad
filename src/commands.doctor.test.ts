@@ -62,4 +62,21 @@ describe('cmdDoctor --check-shared dispatch wiring', () => {
     const out = joinedLog(env.logSpy);
     expect(out).toContain('Shared scan');
   });
+
+  it('does NOT emit a Schema scan section for plain cmdDoctor()', async () => {
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toContain('Schema scan');
+  });
+
+  it('emits a Schema scan section when cmdDoctor({ checkSchema: true })', async () => {
+    // No ~/.claude/settings.json in the sandbox, so reportCheckSchema short
+    // -circuits to its info row before any network fetch; this still exercises
+    // the dispatch wiring (the section renders only when the flag is set).
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor({ checkSchema: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('Schema scan');
+  });
 });

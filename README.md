@@ -322,9 +322,9 @@ Read these before adopting so you opt in with eyes open.
 - `gh` ([GitHub CLI](https://cli.github.com/)), used only by `nomad init` to auto-disable Actions on
   the private repo; if it is missing or unauthenticated, init prints a manual fallback tip and
   continues
-- [curl](https://curl.se/), used only by the version/update check (the `nomad doctor` latest-release
-  line and the post-`nomad update` check); it degrades silently when curl is absent or offline, so
-  the rest of the CLI works without it
+- [curl](https://curl.se/), used by the version/update check (the `nomad doctor` latest-release line
+  and the post-`nomad update` check) and by `nomad doctor --check-schema`; it degrades silently when
+  curl is absent or offline, so the rest of the CLI works without it
 
 ## Setup
 
