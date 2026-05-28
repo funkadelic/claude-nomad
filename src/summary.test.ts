@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { emitSummary } from './summary.ts';
+import { emitSummary, summaryRow, summaryText } from './summary.ts';
 
 /**
  * Unit tests for `emitSummary`. The function is the single source of truth
@@ -149,5 +149,78 @@ describe('emitSummary', () => {
     emitSummary('pull', 0);
     expect(loggedLine()).toMatch(/^✓\s+summary: clean$/);
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Unit tests for the pure phrasing core `summaryText` and the rendered-row
+ * helper `summaryRow`. These back the grouped push/pull tree's Summary section
+ * and must phrase outcomes identically to `emitSummary` so the standalone
+ * cmdDiff line and the in-tree row never drift. Color is disabled in tests, so
+ * the rendered glyph rows match plain substrings.
+ */
+describe('summaryText', () => {
+  it('pull clean returns the clean text and clean=true', () => {
+    expect(summaryText('pull', 0)).toEqual({ text: 'summary: clean', clean: true });
+  });
+
+  it('pull with unmapped returns the unmapped-on-pull text and clean=false', () => {
+    expect(summaryText('pull', 3)).toEqual({
+      text: 'summary: 3 unmapped on pull (run nomad doctor to list)',
+      clean: false,
+    });
+  });
+
+  it('pull with extras-skipped folds the count into the warning text', () => {
+    expect(summaryText('pull', 1, 0, 2)).toEqual({
+      text: 'summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor to list)',
+      clean: false,
+    });
+  });
+
+  it('diff clean and diff with unmapped phrase the same as pull but with the diff verb', () => {
+    expect(summaryText('diff', 0)).toEqual({ text: 'summary: clean', clean: true });
+    expect(summaryText('diff', 2)).toEqual({
+      text: 'summary: 2 unmapped on diff (run nomad doctor to list)',
+      clean: false,
+    });
+  });
+
+  it('push clean returns the clean text', () => {
+    expect(summaryText('push', 0, 0, 0)).toEqual({ text: 'summary: clean', clean: true });
+  });
+
+  it('push with collisions includes the collision count', () => {
+    expect(summaryText('push', 1, 0)).toEqual({
+      text: 'summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
+      clean: false,
+    });
+  });
+
+  it('push with collisions and extras-skipped includes both counts', () => {
+    expect(summaryText('push', 0, 2, 1)).toEqual({
+      text: 'summary: 0 unmapped on push, 2 collisions, 1 extras skipped (run nomad doctor to list)',
+      clean: false,
+    });
+  });
+});
+
+describe('summaryRow', () => {
+  it('renders the clean outcome with the ok glyph', () => {
+    expect(summaryRow('pull', 0)).toMatch(/^✓\s+summary: clean$/);
+  });
+
+  it('renders a pull warning outcome with the warn glyph', () => {
+    expect(summaryRow('pull', 3)).toBe('⚠︎ summary: 3 unmapped on pull (run nomad doctor to list)');
+  });
+
+  it('renders the push clean outcome with the ok glyph', () => {
+    expect(summaryRow('push', 0, 0, 0)).toMatch(/^✓\s+summary: clean$/);
+  });
+
+  it('renders a push warning outcome (collisions + extras) with the warn glyph', () => {
+    expect(summaryRow('push', 1, 2, 3)).toBe(
+      '⚠︎ summary: 1 unmapped on push, 2 collisions, 3 extras skipped (run nomad doctor to list)',
+    );
   });
 });
