@@ -295,11 +295,12 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     expect(existsSync(backupRoot)).toBe(false);
   });
 
-  it('cmdPull emits the unmapped-on-pull summary line after pull complete when path-map has unmapped entries', async () => {
+  it('cmdPull renders the unmapped-on-pull Summary row in the WET tree when path-map has unmapped entries', async () => {
     // Two path-map entries with no host mapping for this host (both `'TBD'`).
-    // remapPull skips them with `unmapped++` per entry, so the summary line
-    // reports `2 unmapped on pull`. The line MUST appear AFTER `pull complete`
-    // so users see a deterministic terminator.
+    // remapPull skips them with `unmapped++` per entry, so the Summary row
+    // reports `2 unmapped on pull`. On the WET path the summary renders inside
+    // the grouped tree via summaryRow (console.log / stdout), replacing the
+    // old standalone `pull complete` + stderr warn() terminator.
     mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
     writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
     mkdirSync(join(repoUnderHome, 'shared', 'projects', 'logical-a'), { recursive: true });
@@ -319,11 +320,16 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
-    // `pull complete` goes through log() (stdout); the summary is now an
-    // unmapped-style warn() (stderr), so check each stream independently.
-    // The `summary:` text appears in err only; the body completed marker in log.
-    expect(errOutput()).toContain('⚠︎ summary: 2 unmapped on pull (run nomad doctor to list)');
-    expect(logOutput()).toContain('pull complete');
+    // WET tree output goes through console.log (stdout): the `pull on host=`
+    // header, the Settings row, and the warn Summary row (summaryRow embeds the
+    // ⚠︎ glyph; phrasing is byte-identical to emitSummary). The standalone
+    // `pull complete` line is gone.
+    const out = logOutput();
+    expect(out).toContain('pull on host=');
+    expect(out).toContain('settings.json (base + no host overrides)');
+    expect(out).toContain('⚠︎ summary: 2 unmapped on pull (run nomad doctor to list)');
+    expect(out).toContain('2 not in path-map (run nomad doctor to list)');
+    expect(out).not.toContain('pull complete');
   });
 
   it('cmdPull emits the clean summary line when path-map has no unmapped entries', async () => {

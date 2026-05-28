@@ -36,6 +36,23 @@ export function collapsedSkipRow(n: number, noun: string): string | null {
 }
 
 /**
+ * Build the Settings section for `cmdPull`: a single
+ * `${green(okGlyph)} settings.json (base + <label>)` row. `label` is the
+ * override-source tag returned by `regenerateSettings` (`'<HOST>.json'` when a
+ * host override exists, else `'no host overrides'`), surfacing what was written
+ * without `regenerateSettings` logging the line inline. Push has no Settings
+ * section, so this helper is pull-only.
+ *
+ * @param label - The override-source tag from `regenerateSettings`.
+ * @returns A `Settings` `DoctorSection` holding the one settings row.
+ */
+export function buildSettingsSection(label: string): DoctorSection {
+  const s = section('Settings');
+  addItem(s, `${green(okGlyph)} settings.json (base + ${label})`);
+  return s;
+}
+
+/**
  * Build the Sessions section: one ✓ row per synced logical name plus, when
  * `unmapped > 0`, a single collapsed `${unmapped} not in path-map` count row.
  * Verb-agnostic: pass `remapResult.pushed` (or `wouldPush`, or the pull-side

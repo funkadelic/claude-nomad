@@ -1,15 +1,56 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  buildExtrasSection,
+  buildSessionsSection,
+  buildSettingsSection,
+} from './commands.push.sections.ts';
 import { HOME, HOST, REPO_HOME } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
+import { renderTree, section, addItem } from './output-tree.ts';
 import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
-import { emitSummary } from './summary.ts';
+import { emitSummary, summaryRow } from './summary.ts';
 import { die, fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
+
+/**
+ * Run the WET (non-dry-run) pull side effects in order and render the
+ * doctor-style grouped tree once at the end: a `pull on host=... (backup=<ts>)`
+ * header followed by `Settings` / `Sessions` / `Extras` / `Summary` sections.
+ * `applySharedLinks` stays silent (no Links group by design);
+ * `regenerateSettings` returns its override-source label so the Settings row
+ * surfaces what was written without logging inline. Sessions/Extras reuse the
+ * verb-agnostic builders shared with `cmdPush`, fed the pull-side `pulled`
+ * detail arrays. The combined session + extras unmapped count and the
+ * extras-skipped count drive the Summary row exactly as `emitSummary` did.
+ *
+ * @param ts - backup timestamp namespace shared by every WET side effect.
+ */
+function applyWetPull(ts: string): void {
+  applySharedLinks(ts);
+  const { label } = regenerateSettings(ts);
+  const remapResult = remapPull(ts);
+  const extrasResult = remapExtrasPull(ts);
+  // Combine session-unmapped and extras-unmapped into one user-visible count;
+  // from the operator's perspective both mean "couldn't sync this for the
+  // host". extras-skipped (non-whitelisted dirname) stays separate because it
+  // signals config misuse, not a host-config gap.
+  const summary = section('Summary');
+  addItem(
+    summary,
+    summaryRow('pull', remapResult.unmapped + extrasResult.unmapped, 0, extrasResult.skipped),
+  );
+  renderTree([
+    buildSettingsSection(label),
+    buildSessionsSection(remapResult.pulled, remapResult.unmapped),
+    buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
+    summary,
+  ]);
+}
 
 /**
  * `nomad pull` command. Acquires the push/pull lock, takes a backup
@@ -23,6 +64,13 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  *   5. `remapExtrasPull` (copy `shared/extras/<logical>/<dirname>/` back
  *      into each project's localRoot; SKIPPED under dryRun)
  *
+ * WET output is a doctor-style grouped tree (`applyWetPull`): a `pull on
+ * host=... (backup=<ts>)` header, then `Settings` / `Sessions` / `Extras` /
+ * `Summary` sections rendered with `├`/`└` connectors. The Settings row shows
+ * `✓ settings.json (base + <label>)`; pulled sessions and extras list as `✓`
+ * rows; the per-project "not in path-map" skips collapse to one `ℹ︎` count
+ * row. There is no Links group (`applySharedLinks` stays silent by design).
+ *
  * `opts.dryRun` (default `false`): when `true`, the lock IS still acquired
  * and `git pull --rebase` still runs (so concurrent invocations cannot race
  * and the user sees the same network round-trip as a real pull).
@@ -30,7 +78,10 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  * `computePreview` runs in place of the four mutating steps. The per-run
  * backup directory under `~/.cache/claude-nomad/backup/<ts>/` is
  * intentionally NOT created (no backups are written under dryRun and an
- * empty dir would pollute the cache).
+ * empty dir would pollute the cache). The dry-run path is BYTE-IDENTICAL:
+ * it keeps the `pulling on host=... (backup=...; dry-run)` header, the
+ * `computePreview` adjacent diff, its standalone `emitSummary`, and the
+ * `dry-run complete; no mutation` line; it does NOT build the tree.
  *
  * Any `NomadFatal` thrown along the way is caught here so the `finally` block
  * releases the lock before exit (a raw `process.exit()` would skip `finally`
@@ -67,7 +118,14 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
         die(`could not create backup dir: ${(err as Error).message}`);
       }
     }
-    log(`pulling on host=${HOST} (backup=${ts}${dryRun ? '; dry-run' : ''})`);
+    // WET header becomes the tree header (no `pulling`/`ℹ︎` prefix). The
+    // dry-run header phrasing is LEFT byte-identical so the readable diff path
+    // does not regress.
+    log(
+      dryRun
+        ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
+        : `pull on host=${HOST} (backup=${ts})`,
+    );
     gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', REPO_HOME);
     // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
     // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
@@ -78,19 +136,11 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
       const previewResult = computePreview(ts);
       // dryRun deliberately omits remapExtrasPull to preserve the
       // zero-mutation contract; users still see the divergence WARN above.
+      // BYTE-IDENTICAL dry-run output: standalone emitSummary, no tree.
       log('dry-run complete; no mutation');
       emitSummary('pull', previewResult.unmapped);
     } else {
-      applySharedLinks(ts);
-      regenerateSettings(ts);
-      const remapResult = remapPull(ts);
-      const extrasResult = remapExtrasPull(ts);
-      log('pull complete');
-      // Combine session-unmapped and extras-unmapped into one user-visible
-      // count; from the operator's perspective both mean "couldn't sync this
-      // for the host". extras-skipped (non-whitelisted dirname) stays
-      // separate because it signals config misuse, not a host-config gap.
-      emitSummary('pull', remapResult.unmapped + extrasResult.unmapped, 0, extrasResult.skipped);
+      applyWetPull(ts);
     }
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the
