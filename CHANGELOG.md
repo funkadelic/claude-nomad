@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/funkadelic/claude-nomad/compare/v0.26.2...v0.27.0) (2026-05-28)
+
+
+### Added
+
+* **output:** grouped tree output for push/pull and dry-run leak preview ([#163](https://github.com/funkadelic/claude-nomad/issues/163)) ([fff6f1e](https://github.com/funkadelic/claude-nomad/commit/fff6f1e28116b072ee4eceda36d87c13f4c1bc1c))
+
 ## [0.26.2](https://github.com/funkadelic/claude-nomad/compare/v0.26.1...v0.26.2) (2026-05-28)
 
 
