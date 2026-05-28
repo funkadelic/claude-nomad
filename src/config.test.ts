@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PathMap } from './config.ts';
 
@@ -10,18 +10,24 @@ import type { PathMap } from './config.ts';
 // REPO_HOME is resolved at module load, so each test must mutate the env
 // BEFORE the dynamic import fires.
 
-// Type-only assignments proving PathMap accepts an optional `extras` field
-// while remaining backward-compatible with legacy maps that omit it. These
-// live at module scope so the typecheck pass is the load-bearing assertion;
-// the runtime it() below keeps vitest's test count honest. If PathMap is
-// narrowed (no `extras` field) the `_widened` assignment fails to compile;
-// if `extras` is made required the `_legacy` assignment fails to compile.
+// Type-only assignments proving PathMap accepts optional `extras` and
+// `sharedDirs` fields while remaining backward-compatible with legacy maps
+// that omit them. These live at module scope so the typecheck pass is the
+// load-bearing assertion; the runtime it() below keeps vitest's test count
+// honest. If PathMap is narrowed (no `extras` field) the `_widened` assignment
+// fails to compile; if `extras` is made required the `_legacy` assignment fails
+// to compile.
 const _legacy: PathMap = { projects: { foo: { 'host-a': '/tmp/foo' } } };
 const _widened: PathMap = {
   projects: { foo: { 'host-a': '/tmp/foo' } },
   extras: { foo: ['.planning'] },
 };
+const _withSharedDirs: PathMap = {
+  projects: {},
+  sharedDirs: ['get-shit-done'],
+};
 void _legacy;
+void _withSharedDirs;
 
 describe('REPO_HOME resolution', () => {
   const originalNomadRepo = process.env.NOMAD_REPO;
@@ -118,5 +124,96 @@ describe('SUPPORTED_EXTRAS and PathMap widening', () => {
     // above: if PathMap drops `extras` this file fails to typecheck. This
     // runtime check exercises the same value so the test asserts something real.
     expect(_widened.extras).toEqual({ foo: ['.planning'] });
+  });
+});
+
+describe('SHARED_LINKS includes hooks', () => {
+  it('contains "hooks" as a member of the sync set', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    expect(config.SHARED_LINKS).toContain('hooks');
+  });
+
+  it('still contains all original SHARED_LINKS members', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    for (const name of [
+      'CLAUDE.md',
+      'agents',
+      'skills',
+      'commands',
+      'rules',
+      'my-statusline.cjs',
+    ]) {
+      expect(config.SHARED_LINKS).toContain(name);
+    }
+  });
+
+  it('PUSH_ALLOWED_STATIC includes "shared/hooks/"', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    expect(config.PUSH_ALLOWED_STATIC).toContain('shared/hooks/');
+  });
+
+  it('PathMap accepts optional sharedDirs field', () => {
+    // Load-bearing typecheck: if sharedDirs is removed from PathMap this file fails to compile.
+    expect(_withSharedDirs.sharedDirs).toEqual(['get-shit-done']);
+  });
+});
+
+describe('allSharedLinks', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'error').mockReturnValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns SHARED_LINKS when map has no sharedDirs key', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const result = allSharedLinks({ projects: {} });
+    expect(result).toEqual([...SHARED_LINKS]);
+  });
+
+  it('returns SHARED_LINKS when sharedDirs is an empty array', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const result = allSharedLinks({ projects: {}, sharedDirs: [] });
+    expect(result).toEqual([...SHARED_LINKS]);
+  });
+
+  it('appends a valid sharedDirs entry after SHARED_LINKS', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const result = allSharedLinks({ projects: {}, sharedDirs: ['get-shit-done'] });
+    expect(result).toEqual([...SHARED_LINKS, 'get-shit-done']);
+  });
+
+  it('drops an invalid entry and keeps the valid one', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const result = allSharedLinks({ projects: {}, sharedDirs: ['../escape', 'get-shit-done'] });
+    expect(result).toEqual([...SHARED_LINKS, 'get-shit-done']);
+  });
+
+  it('emits exactly one warn for each dropped entry', async () => {
+    vi.resetModules();
+    const { allSharedLinks } = await import('./config.ts');
+    allSharedLinks({ projects: {}, sharedDirs: ['../escape', 'get-shit-done'] });
+    // console.error is called by warn(); one invalid entry -> one call
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"../escape"'));
+  });
+
+  it('drops a reserved name (hooks) with a warn', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const result = allSharedLinks({ projects: {}, sharedDirs: ['hooks'] });
+    expect(result).toEqual([...SHARED_LINKS]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,9 @@
 import { homedir, hostname } from 'node:os';
 import { resolve } from 'node:path';
 
+import { isValidSharedDir } from './config.sharedDirs.guard.ts';
+import { warn } from './utils.ts';
+
 /**
  * Resolved home directory. Uses Node's `os.homedir()` which reads `$HOME` on
  * POSIX and falls back to `getpwuid_r()` when the env var is unset. Returns
@@ -74,7 +77,33 @@ export const SHARED_LINKS = [
   'commands',
   'rules',
   'my-statusline.cjs',
+  'hooks',
 ] as const;
+
+/**
+ * Returns the union of `SHARED_LINKS` and any validated entries from
+ * `map.sharedDirs`. Entries that fail the `isValidSharedDir` guard (path
+ * separators, NEVER_SYNC names, reserved shared/ names) are dropped with a
+ * single WARN per entry; the remaining valid entries are appended after the
+ * static `SHARED_LINKS` names. Callers iterate the result with `for...of` to
+ * apply the same symlink machinery to both built-in and user-configured dirs.
+ *
+ * @param map - Parsed `path-map.json` content.
+ * @returns Array of link names to symlink under `~/.claude/`.
+ */
+export function allSharedLinks(map: PathMap): string[] {
+  const extras: string[] = [];
+  for (const entry of map.sharedDirs ?? []) {
+    if (isValidSharedDir(entry)) {
+      extras.push(entry);
+    } else {
+      warn(
+        `sharedDirs entry ${JSON.stringify(entry)} is invalid (path separator, reserved name, or NEVER_SYNC); skipping`,
+      );
+    }
+  }
+  return [...SHARED_LINKS, ...extras];
+}
 
 /**
  * Whitelist of names allowed in `path-map.json`'s top-level `extras` field.
@@ -134,6 +163,7 @@ export const PUSH_ALLOWED_STATIC = [
   'shared/commands/',
   'shared/rules/',
   'shared/.gitignore',
+  'shared/hooks/',
   'hosts/',
   'path-map.json',
 ] as const;
@@ -150,8 +180,16 @@ export const PUSH_ALLOWED_STATIC = [
  * consumers against `SUPPORTED_EXTRAS`. Absence of the field is equivalent
  * to no extras for any project; legacy `path-map.json` files without an
  * `extras` block continue to work unchanged (no migration required).
+ *
+ * Optional `sharedDirs` field (additive, top-level): opt-in global support
+ * directories under `~/.claude/` to include in the `SHARED_LINKS` symlink set.
+ * Each entry is a single path segment (e.g. `"get-shit-done"`); entries that
+ * fail the `isValidSharedDir` guard are dropped with a WARN and never reach the
+ * filesystem. Absence of the field is equivalent to no extra shared dirs; legacy
+ * `path-map.json` files without a `sharedDirs` block continue to work unchanged.
  */
 export type PathMap = {
   projects: Record<string, Record<string, string>>;
   extras?: Record<string, string[]>;
+  sharedDirs?: string[];
 };
