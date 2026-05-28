@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.0](https://github.com/funkadelic/claude-nomad/compare/v0.27.0...v0.28.0) (2026-05-28)
+
+
+### Added
+
+* **doctor:** settings schema drift tooling (auto-sync PR + --check-schema) ([#168](https://github.com/funkadelic/claude-nomad/issues/168)) ([ac4ac21](https://github.com/funkadelic/claude-nomad/commit/ac4ac21f90148d7261b0b907bfdad43b3758f9fd))
+
+
+### Fixed
+
+* **doctor:** resync KNOWN_SETTINGS_KEYS with official settings schema ([#166](https://github.com/funkadelic/claude-nomad/issues/166)) ([2b453e1](https://github.com/funkadelic/claude-nomad/commit/2b453e18c18520dd0a4df035ace3825709097bc1))
+* drop-session scrub hint and README rendering/layout fixes ([#165](https://github.com/funkadelic/claude-nomad/issues/165)) ([0840ab4](https://github.com/funkadelic/claude-nomad/commit/0840ab408b72174b23532a0ea32c27df522cfe39))
+
 ## [0.27.0](https://github.com/funkadelic/claude-nomad/compare/v0.26.2...v0.27.0) (2026-05-28)
 
 
