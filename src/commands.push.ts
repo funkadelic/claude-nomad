@@ -6,6 +6,7 @@ import { enforceAllowList } from './commands.push.allowlist.ts';
 import { remapExtrasPush } from './extras-sync.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { runGitleaksScan } from './push-gitleaks.ts';
+import { previewPushLeaks } from './push-preview.ts';
 import { remapPush } from './remap.ts';
 import { emitSummary } from './summary.ts';
 import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
@@ -35,9 +36,12 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  *
  * `opts.dryRun` (default `false`): when `true`, the network round-trip
  * (`rebaseBeforePush`) still runs so users see what a real push would see,
- * but `remapPush` runs with `dryRun: true` (no session copies into shared/),
- * and the `git add` / `runGitleaksScan` / `git commit` / `git push` quartet
- * is skipped. The allow-list check still classifies the existing `git
+ * and `remapPush` / `remapExtrasPush` run with `dryRun: true` (no copies
+ * into `shared/`). The `git add` / `git commit` / `git push` steps are
+ * skipped. Instead, `previewPushLeaks` runs a READ-ONLY gitleaks leak
+ * preview against a temp copy of the would-be-staged sessions AND extras
+ * (no `REPO_HOME/shared` mutation), setting `process.exitCode = 1` if a
+ * leak is found. The allow-list check still classifies the existing `git
  * status` so a pre-existing violation surfaces before the user thinks
  * everything is fine. Mirrors `cmdPull`'s `dryRun` contract.
  */
@@ -111,10 +115,13 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     const map = readPathMap(mapPath);
     enforceAllowList(status, map);
     if (dryRun) {
-      // Skip the staging quartet so no commit lands and nothing is pushed.
-      // The user has already seen probeGitleaks pass, the rebase result, the
-      // remap preview, the gitlink scan, and the allow-list classification.
-      log('push: dry-run; skipping git add, gitleaks scan, commit, and push');
+      // Skip git add / commit / push. Run a read-only gitleaks leak preview
+      // against a temp copy of the would-be-staged sessions + extras so the
+      // user sees leak signal before a real push would abort.
+      log(
+        'push: dry-run; skipping git add, commit, and push (running read-only gitleaks leak preview)',
+      );
+      previewPushLeaks(map);
       emitSummary(
         'push',
         remapResult.unmapped + extrasResult.unmapped,

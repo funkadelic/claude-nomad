@@ -86,6 +86,7 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.restoreAllMocks();
   vi.doUnmock('./push-checks.ts');
   vi.doUnmock('./push-gitleaks.ts');
+  vi.doUnmock('./push-preview.ts');
   vi.doUnmock('./remap.ts');
   vi.doUnmock('./extras-sync.ts');
   vi.doUnmock('./utils.ts');

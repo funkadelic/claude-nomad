@@ -12,6 +12,7 @@ import {
 
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './push-checks.ts';
+import type * as pushPreviewModule from './push-preview.ts';
 import type * as utilsModule from './utils.ts';
 
 // Coverage for cmdPush's gitleaks-scan stage: a detection on the staged tree
@@ -78,14 +79,18 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(errOutput(env)).toMatch(/gitleaks detected secrets/);
   });
 
-  it('Test 8a: cmdPush({ dryRun: true }) skips git add / scan / commit / push and still emits summary', async () => {
+  it('Test 8a: cmdPush({ dryRun: true }) skips git add / commit / push, runs leak preview, and still emits summary', async () => {
     // Dry-run preview: probeGitleaks + rebase + remap (in dryRun) + gitlink
-    // scan + status read + allow-list classification all run, but the
-    // staging quartet (git add, runGitleaksScan, git commit, git push) is
-    // skipped. The summary line still fires with the remapPush counts so
-    // the user gets a consistent terminator.
+    // scan + status read + allow-list classification all run. git add /
+    // git commit / git push are skipped. previewPushLeaks runs as a
+    // read-only leak preview (mocked here as a no-op to keep this a pure
+    // pipeline test). The summary line still fires so the user gets a
+    // consistent terminator.
     const runGitleaksScanMock = vi.fn(() => {
-      /* should not be invoked */
+      /* should not be invoked directly on the dry-run path */
+    });
+    const previewPushLeaksMock = vi.fn(() => {
+      /* no-op: pure pipeline test, real scan tested in push-preview.test.ts */
     });
     const gitOrFatalMock = vi.fn(() => {
       /* should not be invoked for add/commit/push */
@@ -105,6 +110,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     vi.doMock('./push-gitleaks.ts', () => ({
       runGitleaksScan: runGitleaksScanMock,
     }));
+    vi.doMock('./push-preview.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushPreviewModule>();
+      return { ...actual, previewPushLeaks: previewPushLeaksMock };
+    });
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: remapPushMock,
@@ -125,12 +134,16 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(existsSync(env.lockPath)).toBe(false);
     // remapPush received { dryRun: true } so no host-encoded copies landed.
     expect(remapPushMock).toHaveBeenCalledWith(expect.any(String), { dryRun: true });
-    // Staging quartet skipped.
+    // runGitleaksScan must NOT be called on the dry-run path (preview is delegated).
     expect(runGitleaksScanMock).not.toHaveBeenCalled();
+    // previewPushLeaks MUST be called.
+    expect(previewPushLeaksMock).toHaveBeenCalledOnce();
+    // git add / commit / push skipped.
     expect(gitOrFatalMock).not.toHaveBeenCalled();
     const out = logOutput(env);
     expect(out).toContain('pushing on host=test-host (dry-run)');
-    expect(out).toContain('push: dry-run; skipping git add, gitleaks scan, commit, and push');
+    expect(out).toContain('push: dry-run; skipping git add, commit, and push');
+    expect(out).toContain('running read-only gitleaks leak preview');
     // unmapped-style summary now goes to warn() (console.error).
     expect(errOutput(env)).toContain(
       '⚠︎ summary: 2 unmapped on push, 0 collisions (run nomad doctor to list)',

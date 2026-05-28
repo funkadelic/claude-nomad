@@ -525,7 +525,7 @@ point under your npm prefix's `bin/`), then delete the alias line from your shel
 | `nomad pull --dry-run`           | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), exit without writing.                                                                                                                                                                                     |
 | `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                                                                                                                                                                                             |
 | `nomad push`                     | Export local sessions and opted-in per-project extras to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                                                                                                                                                  |
-| `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list); skip stage, scan, commit, and push.                                                                                                                                                                                                                        |
+| `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage; skip stage, commit, and push. Exits 1 if a leak is found in the preview. Nothing is written to the sync repo.                            |
 | `nomad drop-session <id>`        | Surgically unstage every `shared/projects/*/<id>.jsonl` and the sibling `shared/projects/*/<id>/` subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the local `~/.claude/projects/<encoded>/<id>.jsonl` and `<id>/` tree are preserved. See [Recovery flows](#recovery-flows).                                                   |
 | `nomad update`                   | Topology-aware upgrade to the latest upstream. Flags: `--dry-run`, `--force`, `--push-origin`. See [Upgrading the tool](#upgrading-the-tool).                                                                                                                                                                                                            |
 | `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check plus two `⚠︎`-only drift checks: gitleaks version drift and, on a private GitHub mirror, re-enabled Actions.                                    |
@@ -603,9 +603,12 @@ same secret.
 ### Recovery flow: gitleaks FATAL on a session JSONL
 
 `nomad push` runs `gitleaks protect --staged` before commit. To catch the same findings before you
-push (and without mutating anything), run the read-only preflight `nomad doctor --check-shared`,
-which stages and scans the exact transcripts a push would publish. When findings live in a session
-transcript, the push aborts and names every affected session id and the recovery command:
+push (and without mutating anything), two read-only options are available:
+`nomad doctor --check-shared` scans the session transcripts a push would publish;
+`nomad push --dry-run` runs the same scan AND also covers opted-in extras (`.planning`,
+`CLAUDE.md`), which `--check-shared` does not. Both stage content into a throwaway temp copy and
+never write to the sync repo. When findings live in a session transcript, the push aborts and names
+every affected session id and the recovery command:
 
 ```text
 ✗ gitleaks detected secrets in 1 session transcript(s).
