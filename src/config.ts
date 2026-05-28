@@ -103,48 +103,11 @@ export const NEVER_SYNC = new Set([
   'ide',
 ]);
 
-/**
- * Schema-drift baseline for `~/.claude/settings.json`. Top-level keys not in
- * this set trigger a `nomad doctor` WARN line so we notice when Anthropic
- * adds new settings before they silently round-trip through pull. Update on
- * Anthropic settings.json schema changes.
- */
-export const KNOWN_SETTINGS_KEYS = new Set<string>([
-  '$schema',
-  'agent',
-  'agents',
-  'agentPushNotifEnabled',
-  'allowedHttpHookUrls',
-  'apiKeyHelper',
-  'apiKeyHelperTimeoutMs',
-  'awsAuthRefresh',
-  'awsCredentialExport',
-  'awsLoginRefresh',
-  'awsRegion',
-  'awsRetryMode',
-  'cleanupPeriodDays',
-  'disableNonEssentialModelCalls',
-  'enabledExperimentalFeatures',
-  'enabledPlugins',
-  'env',
-  'forceLoginMethod',
-  'forceLoginOrgUUID',
-  'hooks',
-  'includeCoAuthoredBy',
-  'installMethod',
-  'model',
-  'outputStyle',
-  'permissions',
-  'pluginGroups',
-  'pluginRepositoryEnabled',
-  'pluginsLocalConfig',
-  'proxy',
-  'skipAutoPermissionPrompt',
-  'statsig',
-  'statusLine',
-  'subagents',
-  'theme',
-]);
+// Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in
+// this set trigger a `nomad doctor` WARN. Defined in ./settings-keys.ts so the
+// schema-derived half can be re-synced mechanically; re-exported here so
+// existing `from './config.ts'` imports keep resolving.
+export { KNOWN_SETTINGS_KEYS } from './settings-keys.ts';
 
 /**
  * Static half of the push allow-list. Entries with trailing `/` are prefix
