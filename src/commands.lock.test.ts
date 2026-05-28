@@ -208,8 +208,9 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   });
 
   it('releases the lockfile when cmdPush catches a non-NomadFatal error and rethrows', async () => {
-    // Mock runGitleaksScan to throw a TypeError (non-NomadFatal). cmdPush's
-    // catch rethrows, but finally still releases the lock.
+    // Mock scanPushVerdict to throw a TypeError (non-NomadFatal). cmdPush calls
+    // it on the real-push path after `git add`; its catch rethrows non-fatals,
+    // but finally still releases the lock.
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof childProcessModule>();
@@ -220,8 +221,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
     }));
-    vi.doMock('./push-gitleaks.ts', () => ({
-      runGitleaksScan: vi.fn(() => {
+    vi.doMock('./push-leak-verdict.ts', () => ({
+      scanPushVerdict: vi.fn(() => {
         throw new TypeError('synthetic non-NomadFatal');
       }),
     }));
@@ -235,6 +236,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).toThrow(TypeError);
     expect(existsSync(lockPath)).toBe(false);
+    vi.doUnmock('./push-leak-verdict.ts');
   });
 
   // The cmdPull unscaffolded-repo precondition fires BEFORE acquireLock,

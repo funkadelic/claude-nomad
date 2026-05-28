@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './push-gitleaks.ts';
 
@@ -118,28 +118,17 @@ function plantSession(
   return { encodedDir: encoded, sid };
 }
 
-/** Join all `console.log` spy calls into one string for regex matching. */
-function joinLogCalls(spy: MockInstance<(...args: unknown[]) => void>): string {
-  return spy.mock.calls.map((c) => c.join(' ')).join('\n');
-}
-
-/** Join all `console.error` spy calls into one string for regex matching. */
-function joinErrCalls(spy: MockInstance<(...args: unknown[]) => void>): string {
-  return spy.mock.calls.map((c) => c.join(' ')).join('\n');
-}
-
 // ---------------------------------------------------------------------------
 // Mocked suites: run without the real gitleaks binary.
 // ---------------------------------------------------------------------------
 
 describe('previewPushLeaks: nothing staged (no mapped sessions, no extras)', () => {
   let env: PreviewEnv;
-  let logSpy: MockInstance<(...args: unknown[]) => void>;
 
   beforeEach(() => {
     env = makePreviEnv();
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
-      /* captured */
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured: previewPushLeaks no longer logs, but suppress any incidental */
     });
     vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
@@ -150,7 +139,7 @@ describe('previewPushLeaks: nothing staged (no mapped sessions, no extras)', () 
     teardownPreviewEnv(env);
   });
 
-  it('logs a no-leaks line and does not set exitCode 1 when nothing is mapped', async () => {
+  it('returns a neutral nothing-to-scan verdict and does not set exitCode 1 when nothing is mapped', async () => {
     // No sessions in path-map (projects: {}), no extras. scanStagedTree must
     // NOT be invoked.
     const scanMock = vi.fn(() => [] as scanModule.Finding[]);
@@ -160,14 +149,16 @@ describe('previewPushLeaks: nothing staged (no mapped sessions, no extras)', () 
     });
     const { previewPushLeaks } = await import('./push-preview.ts');
     const map = { projects: {} };
-    previewPushLeaks(map);
+    const verdict = previewPushLeaks(map);
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
-    expect(joinLogCalls(logSpy)).toMatch(/dry-run.*no leaks/i);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.recovery).toBeNull();
+    expect(verdict.verdictRow).toMatch(/nothing to scan, no leaks/i);
     // gitleaks must not have been invoked.
     expect(scanMock).not.toHaveBeenCalled();
   });
 
-  it('returns clean (no scan) when map.projects is not an object', async () => {
+  it('returns a nothing-to-scan verdict (no scan) when map.projects is not an object', async () => {
     // Covers the `typeof map.projects !== 'object'` guard in stageSessions.
     const scanMock = vi.fn(() => [] as scanModule.Finding[]);
     vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
@@ -177,13 +168,14 @@ describe('previewPushLeaks: nothing staged (no mapped sessions, no extras)', () 
     const { previewPushLeaks } = await import('./push-preview.ts');
     // Pass a map whose projects field is a string (not an object).
     const map = { projects: 'bad' as unknown as Record<string, Record<string, string>> };
-    previewPushLeaks(map);
+    const verdict = previewPushLeaks(map);
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
-    expect(joinLogCalls(logSpy)).toMatch(/dry-run.*no leaks/i);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.verdictRow).toMatch(/nothing to scan, no leaks/i);
     expect(scanMock).not.toHaveBeenCalled();
   });
 
-  it('skips an unmapped local project dir and still returns clean', async () => {
+  it('skips an unmapped local project dir and still returns a nothing-to-scan verdict', async () => {
     // Covers the `!logical` continue in stageSessions: a dir in ~/.claude/projects/
     // that has no reverse-map entry is silently skipped.
     const scanMock = vi.fn((): scanModule.Finding[] | null => []);
@@ -198,23 +190,45 @@ describe('previewPushLeaks: nothing staged (no mapped sessions, no extras)', () 
     writeFileSync(join(unmappedDir, 'session.jsonl'), '{"role":"user"}\n');
     // path-map has no entry for this encoded dir.
     const map = { projects: {} };
-    previewPushLeaks(map);
+    const verdict = previewPushLeaks(map);
     // Nothing staged (dir is not in the reverse map), so no scan.
     expect(scanMock).not.toHaveBeenCalled();
-    expect(joinLogCalls(logSpy)).toMatch(/dry-run.*no leaks/i);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.verdictRow).toMatch(/nothing to scan, no leaks/i);
+  });
+
+  it('returns a clean no-leaks verdict (not a nothing-to-scan row) when a session scans clean', async () => {
+    // Covers the empty-findings branch of verdictFromFindings: a mapped session
+    // is staged + scanned, scan returns [], so verdictRow is the clean row.
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    const verdict = previewPushLeaks(map);
+    expect(scanMock).toHaveBeenCalledOnce();
+    expect(verdict.leak).toBe(false);
+    expect(verdict.recovery).toBeNull();
+    expect(verdict.verdictRow).toMatch(/no leaks/);
+    expect(verdict.verdictRow).not.toMatch(/nothing to scan/);
+    expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
   });
 });
 
 describe('previewPushLeaks: scan crash (null findings)', () => {
   let env: PreviewEnv;
-  let errSpy: MockInstance<(...args: unknown[]) => void>;
 
   beforeEach(() => {
     env = makePreviEnv();
     vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
     });
-    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
     });
   });
@@ -223,7 +237,7 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     teardownPreviewEnv(env);
   });
 
-  it('emits a scan-failed line and sets exitCode 1 when scanStagedTree returns null', async () => {
+  it('returns a scan-failed verdict (not a leak) and sets exitCode 1 when scanStagedTree returns null', async () => {
     // Plant a session so staged > 0 (otherwise we never reach scanStagedTree).
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
@@ -238,11 +252,38 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     });
     const { previewPushLeaks } = await import('./push-preview.ts');
     const map = { projects: { [logical]: { 'test-host': localPath } } };
-    previewPushLeaks(map);
+    const verdict = previewPushLeaks(map);
     expect(process.exitCode).toBe(1);
-    expect(joinErrCalls(errSpy)).toMatch(/dry-run.*scan failed/i);
-    // Must NOT contain a phantom drop-session hint.
-    expect(joinErrCalls(errSpy)).not.toContain('nomad drop-session');
+    // A scan crash is surfaced as a ✗ row but is NOT a leak (no throw, no
+    // phantom drop-session recovery).
+    expect(verdict.leak).toBe(false);
+    expect(verdict.recovery).toBeNull();
+    expect(verdict.verdictRow).toMatch(/scan failed/i);
+    expect(verdict.verdictRow).not.toContain('nomad drop-session');
+  });
+
+  it('returns a scan-error verdict (not a leak) and sets exitCode 1 when scanStagedTree throws', async () => {
+    // Covers the catch branch in previewPushLeaks (gitleaks/git not on PATH).
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((): scanModule.Finding[] | null => {
+          throw Object.assign(new Error('spawn gitleaks ENOENT'), { code: 'ENOENT' });
+        }),
+      };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    const verdict = previewPushLeaks(map);
+    expect(process.exitCode).toBe(1);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.recovery).toBeNull();
+    expect(verdict.verdictRow).toMatch(/scan error/i);
   });
 });
 
@@ -516,15 +557,13 @@ describe('previewPushLeaks: extras staging', () => {
 
 describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () => {
   let env: PreviewEnv;
-  let logSpy: MockInstance<(...args: unknown[]) => void>;
-  let errSpy: MockInstance<(...args: unknown[]) => void>;
 
   beforeEach(() => {
     env = makePreviEnv();
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
     });
-    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
     });
   });
@@ -548,14 +587,17 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
 
     const { previewPushLeaks } = await import('./push-preview.ts');
     const map = { projects: { [logical]: { 'test-host': localPath } } };
-    previewPushLeaks(map);
+    const verdict = previewPushLeaks(map);
 
     expect(process.exitCode).toBe(1);
-    // Must contain the session-aware FATAL body.
-    expect(joinErrCalls(errSpy)).toMatch(/gitleaks detected secrets in \d+ session transcript/);
-    expect(joinErrCalls(errSpy)).toContain(`nomad drop-session ${sid}`);
-    // Clean line must NOT appear alongside a leak.
-    expect(joinLogCalls(logSpy)).not.toMatch(/dry-run.*no leaks/i);
+    expect(verdict.leak).toBe(true);
+    // The one-line verdict row names the affected session count.
+    expect(verdict.verdictRow).toMatch(/gitleaks detected secrets in \d+ session transcript/);
+    // The recovery body carries the session-aware drop-session hint.
+    expect(verdict.recovery).not.toBeNull();
+    expect(verdict.recovery ?? '').toContain(`nomad drop-session ${sid}`);
+    // The verdict row itself is a clean one-liner, not the no-leaks row.
+    expect(verdict.verdictRow).not.toMatch(/no leaks/i);
   });
 
   it('removes the temp staging tree after a planted-leak preview', async () => {
@@ -575,7 +617,7 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
     expect(remaining).toHaveLength(0);
   });
 
-  it('clean staged tree logs a no-leaks line and does not set exitCode 1', async () => {
+  it('clean staged tree returns a no-leaks verdict and does not set exitCode 1', async () => {
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
     // Content with no secrets.
@@ -583,9 +625,11 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
 
     const { previewPushLeaks } = await import('./push-preview.ts');
     const map = { projects: { [logical]: { 'test-host': localPath } } };
-    previewPushLeaks(map);
+    const verdict = previewPushLeaks(map);
 
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
-    expect(joinLogCalls(logSpy)).toMatch(/dry-run.*no leaks/i);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.recovery).toBeNull();
+    expect(verdict.verdictRow).toMatch(/no leaks/);
   });
 });

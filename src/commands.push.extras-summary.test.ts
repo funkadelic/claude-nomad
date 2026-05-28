@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  errOutput,
   logOutput,
   makePushEnv,
   teardownPushEnv,
@@ -13,6 +12,7 @@ import {
 
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './push-checks.ts';
+import type * as leakVerdictModule from './push-leak-verdict.ts';
 import type * as utilsModule from './utils.ts';
 
 // cmdPush emitSummary aggregation on the clean push success path: session and
@@ -51,13 +51,19 @@ describe('cmdPush: extras pipeline integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
-      remapPush: vi.fn(() => ({ unmapped: 2, collisions: 0 })),
+      remapPush: vi.fn(() => ({ unmapped: 2, collisions: 0, pushed: [], wouldPush: [] })),
     }));
     vi.doMock('./extras-sync.ts', () => ({
-      remapExtrasPush: vi.fn(() => ({ unmapped: 3, skipped: 0 })),
+      remapExtrasPush: vi.fn(() => ({ unmapped: 3, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
@@ -74,10 +80,16 @@ describe('cmdPush: extras pipeline integration', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    // push complete log line confirms we reached the success path (not the
-    // empty-status or dry-run branches whose own coverage exists elsewhere).
-    expect(logOutput(env)).toContain('push complete');
-    expect(errOutput(env)).toContain('5 unmapped on push');
+    // The in-tree Summary row confirms we reached the success path (not the
+    // empty-status or dry-run branches whose own coverage exists elsewhere)
+    // and carries the combined 2 + 3 = 5 unmapped count.
+    const out = logOutput(env);
+    expect(out).toContain('Summary');
+    expect(out).toContain('5 unmapped on push');
+    expect(out).toMatch(/no leaks/);
+    vi.doUnmock('./push-leak-verdict.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
   });
 
   it('surfaces extrasResult.skipped to emitSummary on the clean push success path', async () => {
@@ -98,15 +110,19 @@ describe('cmdPush: extras pipeline integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('./push-gitleaks.ts', () => ({
-      runGitleaksScan: vi.fn(),
-    }));
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
-      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
     vi.doMock('./extras-sync.ts', () => ({
-      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 2 })),
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 2, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
@@ -126,6 +142,10 @@ describe('cmdPush: extras pipeline integration', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    expect(errOutput(env)).toContain('2 extras skipped');
+    // The "2 extras skipped" suffix now appears in the in-tree Summary row.
+    expect(logOutput(env)).toContain('2 extras skipped');
+    vi.doUnmock('./push-leak-verdict.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
   });
 });

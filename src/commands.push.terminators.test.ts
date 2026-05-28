@@ -12,6 +12,7 @@ import {
 
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './push-checks.ts';
+import type * as leakVerdictModule from './push-leak-verdict.ts';
 import type * as utilsModule from './utils.ts';
 
 // Coverage for cmdPush's failure-path terminators: the repo-absent
@@ -79,14 +80,14 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toMatch(/gitlink trap: 2 nested \.git entries in shared\//);
   });
 
-  it('gitleaks detection on a session JSONL -> FATAL names the session id and drop-session hint; lock released', async () => {
-    // Session-aware end-to-end: runGitleaksScan throws a session-aware
-    // NomadFatal naming a synthetic session id + drop-session hint;
-    // cmdPush's catch block routes the message through console.error with
-    // the ✗ prefix, sets exitCode=1, and the finally block
-    // releases the lock. The unit tests in push-gitleaks.test.ts cover the
-    // builder shape; this test asserts the message propagates through the
-    // command boundary intact.
+  it('gitleaks detection on a session JSONL -> tree ✗ row + recovery block names the session id and drop-session hint; lock released', async () => {
+    // Session-aware end-to-end: scanPushVerdict RETURNS a leak verdict whose
+    // recovery body names a synthetic session id + drop-session hint. cmdPush
+    // renders the tree (✗ Leak scan row to stdout), then re-raises the recovery
+    // body as a NomadFatal; the catch routes it through console.error with the
+    // ✗ prefix, sets exitCode=1, and the finally releases the lock. The unit
+    // tests in push-gitleaks.test.ts cover the builder shape; this asserts the
+    // recovery body propagates through the command boundary intact.
     vi.doMock('./push-checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
       return {
@@ -98,22 +99,23 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('./push-gitleaks.ts', async () => {
-      const { NomadFatal } = await import('./utils.ts');
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
       return {
-        runGitleaksScan: vi.fn(() => {
-          throw new NomadFatal(
-            [
-              'gitleaks detected secrets in 1 session transcript(s).',
-              '',
-              'Session abc12345-test-fixture:',
-              '  generic-api-key (1)',
-              '  Recover with: nomad drop-session abc12345-test-fixture',
-              '',
-              'After recovery, re-run nomad push.',
-            ].join('\n'),
-          );
-        }),
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({
+          leak: true,
+          verdictRow: actual.failRow('gitleaks detected secrets in 1 session transcript(s)'),
+          recovery: [
+            'gitleaks detected secrets in 1 session transcript(s).',
+            '',
+            'Session abc12345-test-fixture:',
+            '  generic-api-key (1)',
+            '  Recover with: nomad drop-session abc12345-test-fixture',
+            '',
+            'After recovery, re-run nomad push.',
+          ].join('\n'),
+        })),
       };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -144,9 +146,11 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(() => cmdPush()).not.toThrow();
     expect(process.exitCode).toBe(1);
     expect(existsSync(env.lockPath)).toBe(false);
+    // The recovery block prints below the tree via fail() (stderr, ✗ prefix).
     const out = errOutput(env);
     expect(out).toContain('✗ ');
     expect(out).toContain('abc12345-test-fixture');
     expect(out).toContain('nomad drop-session');
+    vi.doUnmock('./push-leak-verdict.ts');
   });
 });
