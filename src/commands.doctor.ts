@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
   reportHostAndPaths,
   reportRepoState,
@@ -18,8 +21,6 @@ import {
 import { reportCheckSchema } from './commands.doctor.check-schema.ts';
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportHooksTargetCheck } from './commands.doctor.checks.hooks.ts';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { REPO_HOME, type PathMap } from './config.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { readJsonSafe, renderDoctor, section } from './commands.doctor.format.ts';

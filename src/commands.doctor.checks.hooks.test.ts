@@ -195,6 +195,31 @@ describe('reportHooksTargetCheck', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('does not false-FAIL when a present target is inside a shell-quoted compound command', async () => {
+    touchScript(env.testHome, 'hooks/run.sh');
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: [{ type: 'command', command: `bash -c 'setup.sh; ~/.claude/hooks/run.sh'` }],
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).not.toContain(failGlyph);
+    expect(out).toContain(okGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('still FAILs on a missing target inside a shell-quoted compound command', async () => {
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: [{ type: 'command', command: `bash -c 'setup.sh; ~/.claude/hooks/gone.sh'` }],
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${failGlyph} hooks/PostToolUse: command target missing:`);
+    expect(out).toContain('gone.sh');
+    expect(process.exitCode).toBe(1);
+  });
+
   it('ignores non-command hook entries (e.g. type !== "command")', async () => {
     writeSettings(env.testHome, {
       hooks: {
@@ -207,7 +232,7 @@ describe('reportHooksTargetCheck', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('tolerates grouped shape { hooks: HookEntry[] } and resolves targets within it', async () => {
+  it('parses grouped shape { hooks: HookEntry[] } and FAILs on a missing target within it', async () => {
     writeSettings(env.testHome, {
       hooks: {
         PostToolUse: [

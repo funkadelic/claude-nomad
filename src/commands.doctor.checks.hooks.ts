@@ -17,14 +17,15 @@ import { CLAUDE_HOME, HOME } from './config.ts';
 
 /**
  * Candidate token prefix patterns that indicate a path under `~/.claude`.
- * The absolute `CLAUDE_HOME` prefix covers paths like `/home/norm/.claude/...`.
+ * The first entry is the resolved absolute prefix (e.g. `/home/norm/.claude/`,
+ * identical to `CLAUDE_HOME + '/'` since `CLAUDE_HOME = resolve(HOME, '.claude')`);
+ * the rest are the literal unexpanded forms a hook command may use.
  */
 const CLAUDE_HOME_PREFIXES = [
   `${HOME}/.claude/`,
   '~/.claude/',
   '$HOME/.claude/',
   '${HOME}/.claude/',
-  CLAUDE_HOME + '/',
 ] as const;
 
 /**
@@ -42,18 +43,36 @@ function expandHome(token: string): string {
 }
 
 /**
+ * Strip shell quoting and trailing control punctuation from a raw command
+ * token so a real path is not mistaken for a missing one. Without this, a
+ * quoted compound command like `bash -c 'a.sh; ~/.claude/hooks/run.sh'` yields
+ * the token `~/.claude/hooks/run.sh'` (trailing quote), and `existsSync` would
+ * FAIL on a script that is actually present (a D-09 false-FAIL). Removes
+ * leading quotes and any trailing run of `'"`;)|&>` characters. A genuine path
+ * never carries these on its boundary, so stripping them is safe.
+ *
+ * @param token - A raw whitespace-delimited token from a command segment.
+ * @returns The token with boundary shell punctuation removed.
+ */
+function stripShellPunctuation(token: string): string {
+  return token.replace(/^['"]+/, '').replace(/['"`;)|&>]+$/, '');
+}
+
+/**
  * Extract the first whitespace-delimited token from `command` that begins with
- * a recognisable `~/.claude` prefix. Also checks `&&`- and `;`-separated
- * sub-commands so compound commands like `setup.sh && jq ...` are handled.
+ * a recognisable `~/.claude` prefix. Also checks `&&`-, `;`-, and `|`-separated
+ * sub-commands so compound commands like `setup.sh && jq ...` are handled, and
+ * strips shell quoting so a quoted target is not read as missing.
  * Returns `null` when no such token is found (D-09: skip, never FAIL).
  *
  * @param command - The raw `command` string from a hook entry.
  * @returns The absolute resolved path, or `null` if none is resolvable.
  */
 function resolveClaudePath(command: string): string | null {
-  const segments = command.split(/&&|;/);
+  const segments = command.split(/&&|\|\||;|\|/);
   for (const segment of segments) {
-    const token = segment.trimStart().split(/\s+/)[0] ?? '';
+    const raw = segment.trim().split(/\s+/)[0] ?? '';
+    const token = stripShellPunctuation(raw);
     if (CLAUDE_HOME_PREFIXES.some((prefix) => token.startsWith(prefix))) {
       return expandHome(token);
     }

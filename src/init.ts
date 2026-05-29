@@ -29,7 +29,7 @@ const SHARED_CLAUDE_MD =
  * with the SHARED_LINKS contract in `src/config.ts` (those same names are
  * symlinked into `~/.claude/` on every pull).
  */
-const SHARED_KEEP_DIRS = ['agents', 'skills', 'commands', 'rules'] as const;
+const SHARED_KEEP_DIRS = ['agents', 'skills', 'commands', 'rules', 'hooks'] as const;
 
 /**
  * Pre-flight refuse-to-clobber list. If ANY of these absolute paths
