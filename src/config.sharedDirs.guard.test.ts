@@ -47,6 +47,24 @@ describe('isValidSharedDir (sharedDirs path-traversal and collision guard)', () 
     });
   });
 
+  describe('non-string rejection (runtime-input safety)', () => {
+    it('rejects a number that would otherwise string-coerce through the regex', () => {
+      expect(isValidSharedDir(42)).toBe(false);
+    });
+
+    it('rejects null', () => {
+      expect(isValidSharedDir(null)).toBe(false);
+    });
+
+    it('rejects undefined', () => {
+      expect(isValidSharedDir(undefined)).toBe(false);
+    });
+
+    it('rejects an object', () => {
+      expect(isValidSharedDir({ nested: 'x' })).toBe(false);
+    });
+  });
+
   describe('NEVER_SYNC rejection', () => {
     it('rejects "todos" (NEVER_SYNC segment)', () => {
       expect(isValidSharedDir('todos')).toBe(false);
