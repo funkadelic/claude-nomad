@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import type * as cpModule from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph } from './color.ts';
+import { failGlyph, warnGlyph } from './color.ts';
 import {
   type Env,
   joinedLog,
@@ -63,7 +63,16 @@ describe('cmdDoctor gitleaks presence', () => {
     expect(out).toContain('never-sync items:');
   });
 
-  it('logs FAIL and sets exitCode=1 when gitleaks is NOT on PATH (ENOENT)', async () => {
+  it('logs WARN (not FAIL) and does NOT set exitCode when gitleaks is absent (ENOENT)', async () => {
+    // gitleaks is an optional dependency: its absence must degrade to WARN so
+    // `nomad doctor` exits 0 in environments (e.g. the npm-publish runner) that
+    // have not installed it. Only `nomad push` hard-requires gitleaks.
+    // Populate path-map.json so the Path-map check does not set exitCode
+    // independently of the probe under test.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: {} }) + '\n',
+    );
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
@@ -84,14 +93,17 @@ describe('cmdDoctor gitleaks presence', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(failGlyph);
+    expect(out).toContain(warnGlyph);
     expect(out).toContain('gitleaks');
     expect(out).toContain('not on PATH');
+    expect(out).not.toContain(`${failGlyph} gitleaks`);
     expect(out).toContain('never-sync items:');
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(0);
   });
 
-  it('logs FAIL with probe-failed message when gitleaks errors with non-ENOENT', async () => {
+  it('logs FAIL and sets exitCode=1 when gitleaks errors with non-ENOENT', async () => {
+    // A present-but-unrunnable binary is a real defect (broken install); FAIL
+    // and exitCode=1 are correct here, unlike the absent-gitleaks ENOENT case.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
