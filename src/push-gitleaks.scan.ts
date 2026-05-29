@@ -29,6 +29,10 @@ export type Finding = {
   RuleID: string;
   File: string;
   StartLine: number;
+  /** 1-indexed character offset of the secret span start within the raw JSONL line. Used by span-rewrite logic to locate the secret without needing its redacted value. */
+  StartColumn: number;
+  /** 1-indexed inclusive end offset of the secret span within the raw JSONL line. Used by span-rewrite logic together with StartColumn. */
+  EndColumn: number;
   Match: string;
   Fingerprint: string;
   /**

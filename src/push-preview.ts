@@ -142,7 +142,7 @@ export function previewPushLeaks(map: PathMap): LeakVerdict {
     const sessionCount = stageSessions(tmpRoot, map);
     const extrasCount = stageExtras(tmpRoot, map);
     if (sessionCount + extrasCount === 0) {
-      return { leak: false, verdictRow: NOTHING_TO_SCAN_ROW, recovery: null };
+      return { leak: false, verdictRow: NOTHING_TO_SCAN_ROW, recovery: null, findings: [] };
     }
     let findings: ReturnType<typeof scanStagedTree>;
     try {

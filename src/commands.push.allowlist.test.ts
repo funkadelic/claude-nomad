@@ -228,3 +228,36 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     );
   });
 });
+
+// Regression for D-04: .gitleaksignore must be allowed by enforceAllowList so
+// the nomad push Allow action can write and stage the file without tripping the
+// push gate. The entry must be an exact match (not a prefix) so siblings like
+// .gitleaksignore.bak remain rejected.
+describe('enforceAllowList .gitleaksignore allow-list entry (D-04)', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('allows a staged .gitleaksignore (exact match in PUSH_ALLOWED_STATIC)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  .gitleaksignore\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects .gitleaksignore.bak (exact-match only, no prefix leak)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  .gitleaksignore.bak\0', map)).toThrow(NomadFatal);
+  });
+});

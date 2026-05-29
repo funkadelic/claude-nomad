@@ -17,6 +17,8 @@ function sessionFinding(sid: string): scanModule.Finding {
     RuleID: 'generic-api-key',
     File: `shared/projects/foo/${sid}.jsonl`,
     StartLine: 1,
+    StartColumn: 1,
+    EndColumn: 10,
     Match: 'secret',
     Fingerprint: `fp-${sid}`,
   };
@@ -33,6 +35,8 @@ function otherFinding(): scanModule.Finding {
     RuleID: 'generic-api-key',
     File: 'shared/other/file.txt',
     StartLine: 3,
+    StartColumn: 1,
+    EndColumn: 10,
     Match: 'secret',
     Fingerprint: 'fp-other',
   };
@@ -80,6 +84,7 @@ describe('push-leak-verdict: pure row + verdict builders', () => {
     expect(v.leak).toBe(false);
     expect(v.recovery).toBeNull();
     expect(v.verdictRow).toContain('scan failed, no parseable report');
+    expect(v.findings).toEqual([]);
     expect(process.exitCode).toBe(1);
   });
 
@@ -89,15 +94,18 @@ describe('push-leak-verdict: pure row + verdict builders', () => {
     expect(v.leak).toBe(false);
     expect(v.recovery).toBeNull();
     expect(v.verdictRow).toContain('no leaks');
+    expect(v.findings).toEqual([]);
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
   });
 
   it('verdictFromFindings(findings) is a leak verdict with recovery and sets exitCode 1', async () => {
     const { verdictFromFindings } = await import('./push-leak-verdict.ts');
-    const v = verdictFromFindings([sessionFinding('abc')]);
+    const f = sessionFinding('abc');
+    const v = verdictFromFindings([f]);
     expect(v.leak).toBe(true);
     expect(v.verdictRow).toContain('gitleaks detected secrets in 1 session transcript(s)');
     expect(v.recovery ?? '').toContain('nomad drop-session abc');
+    expect(v.findings).toEqual([f]);
     expect(process.exitCode).toBe(1);
   });
 
@@ -107,6 +115,7 @@ describe('push-leak-verdict: pure row + verdict builders', () => {
     expect(v.leak).toBe(false);
     expect(v.recovery).toBeNull();
     expect(v.verdictRow).toContain('scan error');
+    expect(v.findings).toEqual([]);
     expect(process.exitCode).toBe(1);
   });
 });
@@ -140,14 +149,16 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
     expect(v.leak).toBe(false);
     expect(v.recovery).toBeNull();
     expect(v.verdictRow).toContain('no leaks');
+    expect(v.findings).toEqual([]);
   });
 
   it('returns a leak verdict (✗ row + recovery body) when the staged scan finds secrets', async () => {
+    const f = sessionFinding('zzz');
     vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof scanModule>();
       return {
         ...actual,
-        scanStagedTree: vi.fn((): scanModule.Finding[] | null => [sessionFinding('zzz')]),
+        scanStagedTree: vi.fn((): scanModule.Finding[] | null => [f]),
       };
     });
     const { scanPushVerdict } = await import('./push-leak-verdict.ts');
@@ -155,6 +166,7 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
     expect(v.leak).toBe(true);
     expect(v.verdictRow).toContain('gitleaks detected secrets in 1 session transcript(s)');
     expect(v.recovery ?? '').toContain('nomad drop-session zzz');
+    expect(v.findings).toEqual([f]);
   });
 
   it('returns a leak verdict with the scan-failed recovery string on a null report', async () => {
@@ -167,6 +179,7 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
     expect(v.leak).toBe(true);
     expect(v.verdictRow).toContain('scan failed, no parseable report');
     expect(v.recovery ?? '').toContain('gitleaks scan failed: no parseable JSON report');
+    expect(v.findings).toEqual([]);
   });
 
   it('maps an ENOENT scan throw to the install-hint recovery as a leak verdict', async () => {
@@ -191,6 +204,7 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
     expect(v.leak).toBe(true);
     expect(v.verdictRow).toContain('gitleaks not found');
     expect(v.recovery ?? '').toContain('install gitleaks');
+    expect(v.findings).toEqual([]);
   });
 
   it('rethrows a non-ENOENT scan error (e.g. a TypeError) unchanged', async () => {
