@@ -183,9 +183,9 @@ export async function resolveLeakFindings(
     const actions = await collectActions(current.findings, prompt);
 
     if (hasUnresolved(actions)) {
-      const unresolved = current.findings.filter(
-        (f) => (actions.get(findingKey(f)) ?? 'skip') === 'skip',
-      );
+      // collectActions populates an entry for every finding, so `get` never
+      // returns undefined here; an explicit `=== 'skip'` needs no default.
+      const unresolved = current.findings.filter((f) => actions.get(findingKey(f)) === 'skip');
       const { bySession, other } = partitionFindings(unresolved);
       throw new NomadFatal(buildSessionAwareFatal(bySession, other));
     }

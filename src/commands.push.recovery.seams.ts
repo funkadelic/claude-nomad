@@ -41,17 +41,13 @@ const VALID_SID = /^[A-Za-z0-9_-]+$/;
  *   extracted id contains characters outside `[A-Za-z0-9_-]`.
  */
 export function sessionIdFromFinding(f: Finding): string | null {
-  const m = SESSION_PATH.exec(f.File);
-  if (m !== null) {
-    const sid = m[1] ?? null;
-    return sid !== null && VALID_SID.test(sid) ? sid : null;
-  }
-  const sub = /^shared\/projects\/[^/]+\/([^/]+)\//.exec(f.File);
-  if (sub !== null) {
-    const sid = sub[1] ?? null;
-    return sid !== null && VALID_SID.test(sid) ? sid : null;
-  }
-  return null;
+  // Try the flat `<sid>.jsonl` form first, then the deeper subagent form. Both
+  // patterns capture the session id at group 1; a matched capture group is
+  // always a string, so no nullish guard on `m[1]` is needed.
+  const m = SESSION_PATH.exec(f.File) ?? /^shared\/projects\/[^/]+\/([^/]+)\//.exec(f.File);
+  if (m === null) return null;
+  const sid = m[1];
+  return VALID_SID.test(sid) ? sid : null;
 }
 
 /**

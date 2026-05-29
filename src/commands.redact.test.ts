@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as fsModule from 'node:fs';
 import type * as utilsFsModule from './utils.fs.ts';
+import type * as lockfileModule from './utils.lockfile.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 
 /**
@@ -935,5 +936,156 @@ describe('scanFile', () => {
     };
     expect(parsed.message.content).not.toContain(pat);
     expect(parsed.message.content).toContain('[REDACTED:');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveLiveTranscript: branch + catch coverage
+// ---------------------------------------------------------------------------
+
+describe('resolveLiveTranscript: branch and error coverage', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-resolvelive-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('returns null and swallows the error when path-map.json is malformed', async () => {
+    // readJson throws on invalid JSON; the catch must return null, not propagate.
+    writeFileSync(join(testHome, 'path-map.json'), '{ this is not valid json');
+    const { resolveLiveTranscript } = await import('./commands.redact.ts');
+    expect(resolveLiveTranscript('abc123')).toBeNull();
+  });
+
+  it('skips a project whose host map has no entry for the current host', async () => {
+    // The only project maps a DIFFERENT host, so the `abs === undefined`
+    // continue branch is taken for every entry and the result is null.
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'other-host': '/home/other/git/myproject' } } }),
+    );
+    const { resolveLiveTranscript } = await import('./commands.redact.ts');
+    expect(resolveLiveTranscript('abc123')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdRedact: remaining branch coverage (missing REPO_HOME, held lock,
+// NomadFatal in the try body, rule-scoped no-findings message)
+// ---------------------------------------------------------------------------
+
+describe('cmdRedact: branch and error coverage', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-redact-branch-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.lockfile.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    const orig = process.exitCode;
+    process.exitCode = orig === 1 ? undefined : orig;
+  });
+
+  it('throws NomadFatal (die) when REPO_HOME does not exist', async () => {
+    process.env.NOMAD_REPO = join(testHome, 'does-not-exist');
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => cmdRedact({ id: 'abc123' })).toThrow(NomadFatal);
+  });
+
+  it('exits 0 without mutation when the lock is already held', async () => {
+    process.env.NOMAD_REPO = testHome;
+    vi.doMock('./utils.lockfile.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof lockfileModule>();
+      return { ...actual, acquireLock: () => null };
+    });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit');
+    });
+    const { cmdRedact } = await import('./commands.redact.ts');
+    expect(() => cmdRedact({ id: 'abc123' })).toThrow('process.exit');
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('reports a NomadFatal thrown inside the try body via fail + exitCode=1', async () => {
+    process.env.NOMAD_REPO = testHome;
+    const { transcriptPath, farFuture } = makeTestTranscript(
+      testHome,
+      'sess-fatal',
+      '{"text":"x"}\n',
+    );
+    expect(transcriptPath).toContain('sess-fatal');
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const throwingScan = (_p: string): Finding[] => {
+      throw new NomadFatal('scan blew up');
+    };
+    const prevExitCode = process.exitCode;
+    try {
+      // findings omitted, so resolveRedactFindings invokes the throwing scan;
+      // the NomadFatal propagates to the catch and is reported (not rethrown).
+      cmdRedact({ id: 'sess-fatal' }, () => farFuture, throwingScan);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExitCode;
+    }
+  });
+
+  it('logs a rule-scoped "no findings" message when a rule filter yields nothing', async () => {
+    process.env.NOMAD_REPO = testHome;
+    const { farFuture } = makeTestTranscript(testHome, 'sess-rule', '{"text":"x"}\n');
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    // Provide a finding that does not match the rule filter, so the filtered
+    // findings list is empty and the rule-scoped no-findings branch is taken.
+    cmdRedact(
+      {
+        id: 'sess-rule',
+        rule: 'some-other-rule',
+        findings: [{ StartLine: 1, Match: 'x', RuleID: 'test-rule' }],
+      },
+      () => farFuture,
+    );
+    const printed = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('some-other-rule');
   });
 });

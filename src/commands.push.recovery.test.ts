@@ -1628,3 +1628,382 @@ describe('applyRedact: no map-match returns false and emits message', () => {
     expect(existsSync(join(testHome, 'shared', 'projects', 'foo', 'sid-bar.jsonl'))).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// collectActions: session-less finding omits the "(session: ...)" header tag
+// ---------------------------------------------------------------------------
+
+describe('collectActions - header for a finding with no resolvable session id', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('omits the "(session:" suffix when sessionIdFromFinding returns null', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    // A File path that matches neither the flat nor subagent session pattern.
+    const finding = makeFinding({ File: 'shared/other/not-a-session.txt' });
+    const prompts: string[] = [];
+    const prompt = (p: string): Promise<string> => {
+      prompts.push(p);
+      return Promise.resolve('s');
+    };
+    await collectActions([finding], prompt);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).not.toContain('(session:');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// redactAllFindings: dedup, sid-null skip, applyRedact true/false, default scan
+// ---------------------------------------------------------------------------
+
+describe('redactAllFindings - batch redaction branches', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-redactall-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('is a no-op on an empty findings list (default scan arg, never invoked)', async () => {
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const map: PathMap = { projects: {} };
+    // No scan argument: exercises the default-parameter path without touching gitleaks.
+    expect(() => redactAllFindings([], 'ts-x', map, () => Date.now())).not.toThrow();
+  });
+
+  it('skips findings with no resolvable session id', async () => {
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const map: PathMap = { projects: {} };
+    const scanSpy = vi.fn().mockReturnValue([]);
+    const finding = makeFinding({ File: 'shared/other/not-a-session.txt' });
+    redactAllFindings([finding], 'ts-x', map, () => Date.now(), scanSpy);
+    // sid === null short-circuits before applyRedact, so scan is never called.
+    expect(scanSpy).not.toHaveBeenCalled();
+  });
+
+  it('redacts the first finding per session and de-duplicates the rest', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const scanSpy = vi.fn().mockReturnValue([
+      {
+        RuleID: 'test-rule',
+        File: transcriptPath,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 25,
+        Match: 'real-secret-value',
+        Fingerprint: 'fp1',
+      },
+    ] satisfies Finding[]);
+    // Two findings for the same session (sid123): the second must be deduped.
+    const f1 = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 2 });
+
+    redactAllFindings([f1, f2], 'ts-x', map, () => farFuture, scanSpy);
+
+    // applyRedact ran once for the session (dedup), so scan was invoked once.
+    expect(scanSpy).toHaveBeenCalledOnce();
+    const written = readFileSync(transcriptPath, 'utf8');
+    expect(written).toContain('[REDACTED:test-rule]');
+  });
+
+  it('does not mark a session redacted when applyRedact fails (scan returns null)', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const original = readFileSync(transcriptPath, 'utf8');
+    // scan returns null on every call: applyRedact returns false each time, so
+    // the session is never added to redactedSids and the second call retries.
+    const scanSpy = vi.fn().mockReturnValue(null);
+    const f1 = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 2 });
+
+    redactAllFindings([f1, f2], 'ts-x', map, () => farFuture, scanSpy);
+
+    expect(scanSpy).toHaveBeenCalledTimes(2);
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(original);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dispatchActions: skip / unmapped-key / sid-null / redact success+dedup+fail
+// ---------------------------------------------------------------------------
+
+describe('dispatchActions - remaining dispatchOne branches', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-dispatchone-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('returns early for skip and for a finding with no entry in the actions map', async () => {
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const scanSpy = vi.fn();
+    const skipped = makeFinding({ File: 'shared/projects/p/skip1.jsonl', StartLine: 1 });
+    const unmapped = makeFinding({ File: 'shared/projects/p/none1.jsonl', StartLine: 2 });
+    // skipped -> explicit 'skip'; unmapped has NO key in the map (defaults skip).
+    const actions = new Map([[findingKey(skipped), 'skip' as const]]);
+    const map: PathMap = { projects: { p: { 'test-host': '/x/p' } } };
+    dispatchActions([skipped, unmapped], actions, 'ts-x', map, Date.now, scanSpy);
+    expect(scanSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns early for a non-skip action whose finding has no resolvable session id', async () => {
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const scanSpy = vi.fn();
+    const finding = makeFinding({ File: 'shared/other/not-a-session.txt' });
+    const actions = new Map([[findingKey(finding), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+    dispatchActions([finding], actions, 'ts-x', map, Date.now, scanSpy);
+    // sid === null short-circuits, so applyRedact (and scan) never run.
+    expect(scanSpy).not.toHaveBeenCalled();
+  });
+
+  it('redacts a session once and de-duplicates a second redact for the same session', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const scanSpy = vi.fn().mockReturnValue([
+      {
+        RuleID: 'test-rule',
+        File: transcriptPath,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 25,
+        Match: 'real-secret-value',
+        Fingerprint: 'fp1',
+      },
+    ] satisfies Finding[]);
+    const f1 = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+
+    dispatchActions([f1, f2], actions, 'ts-x', map, () => farFuture, scanSpy);
+
+    // First redact succeeds and marks the session; the second is deduped.
+    expect(scanSpy).toHaveBeenCalledOnce();
+    expect(readFileSync(transcriptPath, 'utf8')).toContain('[REDACTED:test-rule]');
+  });
+
+  it('leaves the session unmarked when applyRedact fails (scan null), retrying the next finding', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const original = readFileSync(transcriptPath, 'utf8');
+    const scanSpy = vi.fn().mockReturnValue(null);
+    const f1 = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+
+    dispatchActions([f1, f2], actions, 'ts-x', map, () => farFuture, scanSpy);
+
+    // applyRedact returned false both times, so the session was never marked
+    // redacted and the second finding retried.
+    expect(scanSpy).toHaveBeenCalledTimes(2);
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(original);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRedact: project whose host map lacks the current host is skipped
+// ---------------------------------------------------------------------------
+
+describe('applyRedact - copy-back loop skips a project with no entry for this host', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-host-undef-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('./utils.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('returns false when the only mapped project has no entry for this host', async () => {
+    // resolveLiveTranscript finds the transcript via path-map.json (otherproject
+    // mapped to test-host). The map passed to applyRedact lists otherproject but
+    // only for a DIFFERENT host, so the copy-back loop hits `abs === undefined`
+    // and continues, leaving no match.
+    const claudeHome = join(testHome, '.claude');
+    const encodedDir = join(claudeHome, 'projects', '-home-norm-git-otherproject');
+    mkdirSync(encodedDir, { recursive: true });
+    const transcriptPath = join(encodedDir, 'sid-h.jsonl');
+    writeFileSync(transcriptPath, '{"text":"secret"}\n');
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { otherproject: { 'test-host': '/home/norm/git/otherproject' } },
+      }),
+    );
+    const map: PathMap = {
+      projects: { otherproject: { 'other-host': '/home/norm/git/otherproject' } },
+    };
+    const farFuture = Date.now() + 10 * 60 * 1000;
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn() };
+    });
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/otherproject/sid-h.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-h',
+    };
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'test-rule',
+        File: transcriptPath,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 15,
+        Match: 'secret',
+        Fingerprint: 'fp-h',
+      },
+    ];
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    expect(result).toBe(false);
+    expect(logSpy).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveLeakFindings: default readline prompt (makeRealPrompt) coverage
+// ---------------------------------------------------------------------------
+
+describe('resolveLeakFindings - default readline prompt', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:readline/promises');
+  });
+
+  it('uses the real readline-based prompt when makePrompt is not injected', async () => {
+    // Mock node:readline/promises so makeRealPrompt's createInterface/question/
+    // close path runs without a real TTY. A single "skip" answer aborts via
+    // NomadFatal after exercising the default prompt closure.
+    const questionMock = vi.fn().mockResolvedValue('s');
+    const closeMock = vi.fn();
+    vi.doMock('node:readline/promises', () => ({
+      createInterface: vi.fn(() => ({ question: questionMock, close: closeMock })),
+    }));
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const finding = makeFinding({ File: 'shared/projects/p/abc123.jsonl', StartLine: 1 });
+    const verdict: LeakVerdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      findings: [finding],
+      recovery: 'recovery body',
+    };
+    const map: PathMap = { projects: { p: { 'test-host': '/x/p' } } };
+
+    await expect(
+      resolveLeakFindings(verdict, 'ts-x', map, {
+        isTTYCheck: () => true,
+        scanVerdict: () => ({ leak: false, verdictRow: '✓', findings: [], recovery: null }),
+        printLegend: () => undefined,
+        // makePrompt intentionally omitted: exercises makeRealPrompt default.
+      }),
+    ).rejects.toThrow();
+
+    expect(questionMock).toHaveBeenCalledOnce();
+    expect(closeMock).toHaveBeenCalledOnce();
+  });
+});
