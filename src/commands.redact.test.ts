@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as fsModule from 'node:fs';
 import type * as utilsFsModule from './utils.fs.ts';
+import type { Finding } from './push-gitleaks.scan.ts';
 
 /**
  * Unit tests for the pure TDD seams in `commands.redact.core.ts` and the
@@ -548,5 +549,290 @@ describe('cmdRedact', () => {
     expect(written).not.toContain('[REDACTED:rule-b]');
     // Line 2 original value should be intact
     expect(written).toContain('BBBBB');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdRedact standalone (no opts.findings -- scan DI path)
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper to build a standard test transcript in a temp directory, with a
+ * path-map.json pointing at it. Returns the transcript path and the far-future
+ * clock value used to bypass the live-session guard.
+ */
+function makeTestTranscript(
+  testHome: string,
+  sessionId: string,
+  content: string,
+): { transcriptPath: string; farFuture: number } {
+  const claudeHome = join(testHome, '.claude');
+  const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+  mkdirSync(projectsDir, { recursive: true });
+  const transcriptPath = join(projectsDir, `${sessionId}.jsonl`);
+  writeFileSync(transcriptPath, content);
+  writeFileSync(
+    join(testHome, 'path-map.json'),
+    JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+  );
+  return { transcriptPath, farFuture: Date.now() + 10 * 60 * 1000 };
+}
+
+describe('cmdRedact standalone (scan DI)', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-redact-scan-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:fs');
+    vi.doUnmock('./utils.fs.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    const orig = process.exitCode;
+    process.exitCode = orig === 1 ? undefined : orig;
+  });
+
+  it('backs up and redacts when injected scan returns a finding', async () => {
+    const { transcriptPath, farFuture } = makeTestTranscript(
+      testHome,
+      'sess-scan1',
+      '{"text":"my-secret-value"}\n',
+    );
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'test-secret',
+        StartLine: 1,
+        Match: 'my-secret-value',
+        StartColumn: 1,
+        EndColumn: 15,
+        File: transcriptPath,
+        Fingerprint: 'fp1',
+      },
+    ];
+    cmdRedact({ id: 'sess-scan1' }, () => farFuture, fakeScan);
+
+    expect(backupSpy).toHaveBeenCalledOnce();
+    const { readFileSync: realRead } = await import('node:fs');
+    const written = realRead(transcriptPath, 'utf8');
+    expect(written).toContain('[REDACTED:test-secret]');
+    expect(written).not.toContain('my-secret-value');
+  });
+
+  it('logs "no findings" and writes nothing when injected scan returns []', async () => {
+    const { transcriptPath, farFuture } = makeTestTranscript(
+      testHome,
+      'sess-scan2',
+      '{"text":"clean"}\n',
+    );
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const fakeScan = (_p: string): Finding[] => [];
+    const originalExitCode = process.exitCode;
+    cmdRedact({ id: 'sess-scan2' }, () => farFuture, fakeScan);
+
+    // exit code must not become 1 (clean no-op)
+    expect(process.exitCode).toBe(originalExitCode);
+    const { readFileSync: realRead } = await import('node:fs');
+    expect(realRead(transcriptPath, 'utf8')).toBe('{"text":"clean"}\n');
+  });
+
+  it('sets exitCode=1 when injected scan returns null (scan failed, not "no findings")', async () => {
+    makeTestTranscript(testHome, 'sess-scan3', '{"text":"content"}\n');
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const fakeScan = (_p: string): null => null;
+    const prevExitCode = process.exitCode;
+    try {
+      cmdRedact({ id: 'sess-scan3' }, () => Date.now() + 10 * 60 * 1000, fakeScan);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExitCode;
+    }
+  });
+
+  it('applies rule filter to scan results', async () => {
+    const { transcriptPath, farFuture } = makeTestTranscript(
+      testHome,
+      'sess-scan4',
+      '{"a":"AAAAA","b":"BBBBB"}\n',
+    );
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'rule-a',
+        StartLine: 1,
+        Match: 'AAAAA',
+        StartColumn: 1,
+        EndColumn: 5,
+        File: transcriptPath,
+        Fingerprint: 'fp-a',
+      },
+      {
+        RuleID: 'rule-b',
+        StartLine: 1,
+        Match: 'BBBBB',
+        StartColumn: 10,
+        EndColumn: 14,
+        File: transcriptPath,
+        Fingerprint: 'fp-b',
+      },
+    ];
+    cmdRedact({ id: 'sess-scan4', rule: 'rule-a' }, () => farFuture, fakeScan);
+
+    const { readFileSync: realRead } = await import('node:fs');
+    const written = realRead(transcriptPath, 'utf8');
+    expect(written).toContain('[REDACTED:rule-a]');
+    expect(written).not.toContain('[REDACTED:rule-b]');
+    expect(written).toContain('BBBBB');
+  });
+
+  it('dry-run with scanned findings prints plan and writes nothing', async () => {
+    const { transcriptPath, farFuture } = makeTestTranscript(
+      testHome,
+      'sess-scan5',
+      '{"text":"secret-val"}\n',
+    );
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'github-pat',
+        StartLine: 1,
+        Match: 'secret-val',
+        StartColumn: 1,
+        EndColumn: 10,
+        File: transcriptPath,
+        Fingerprint: 'fp-dry',
+      },
+    ];
+    cmdRedact({ id: 'sess-scan5', dryRun: true }, () => farFuture, fakeScan);
+
+    const { readFileSync: realRead } = await import('node:fs');
+    expect(realRead(transcriptPath, 'utf8')).toBe('{"text":"secret-val"}\n');
+  });
+
+  it('idempotent re-run: scan returns [] after redaction, logs "no findings", clean no-op', async () => {
+    const { transcriptPath, farFuture } = makeTestTranscript(
+      testHome,
+      'sess-scan6',
+      '{"text":"[REDACTED:github-pat]"}\n',
+    );
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    // Simulate scan finding nothing (already redacted)
+    const fakeScan = (_p: string): Finding[] => [];
+    const prevExitCode = process.exitCode;
+    cmdRedact({ id: 'sess-scan6' }, () => farFuture, fakeScan);
+
+    expect(process.exitCode).toBe(prevExitCode);
+    const { readFileSync: realRead } = await import('node:fs');
+    // Content unchanged
+    expect(realRead(transcriptPath, 'utf8')).toBe('{"text":"[REDACTED:github-pat]"}\n');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scanFile (integration, real gitleaks)
+// ---------------------------------------------------------------------------
+
+describe('scanFile', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'nomad-scanfile-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns a finding with matching RuleID and StartLine for a github-pat-shaped value', async () => {
+    // Skip if gitleaks is not installed in this environment
+    const { execFileSync: realExec } = await import('node:child_process');
+    try {
+      realExec('gitleaks', ['version'], { stdio: 'ignore' });
+    } catch {
+      return; // gitleaks not available; skip
+    }
+
+    const { scanFile: realScanFile } = await import('./push-gitleaks.scan.ts');
+    // A realistic github fine-grained PAT pattern (40 hex chars after the prefix)
+    const pat = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const filePath = join(tmpDir, 'transcript.jsonl');
+    writeFileSync(filePath, `{"text":"export GITHUB_TOKEN=${pat}"}\n`);
+
+    const findings = realScanFile(filePath);
+    expect(findings).not.toBeNull();
+    // Must have at least one finding
+    expect(findings!.length).toBeGreaterThan(0);
+    // The first finding should be on line 1 and have a github-related rule
+    const f = findings![0];
+    expect(f.StartLine).toBe(1);
+    expect(f.RuleID).toBeTruthy();
+  });
+
+  it('returns [] for a file with no secrets', async () => {
+    // Skip if gitleaks is not installed in this environment
+    const { execFileSync: realExec } = await import('node:child_process');
+    try {
+      realExec('gitleaks', ['version'], { stdio: 'ignore' });
+    } catch {
+      return; // gitleaks not available; skip
+    }
+
+    const { scanFile: realScanFile } = await import('./push-gitleaks.scan.ts');
+    const filePath = join(tmpDir, 'clean.jsonl');
+    writeFileSync(filePath, '{"text":"nothing sensitive here"}\n');
+
+    const findings = realScanFile(filePath);
+    expect(findings).toEqual([]);
   });
 });

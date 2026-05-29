@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { applyRedactions, isRecentlyModified } from './commands.redact.core.ts';
+import { type Finding, scanFile } from './push-gitleaks.scan.ts';
 import { backupBeforeWrite, freshBackupTs } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
 import { die, fail, log, NomadFatal } from './utils.ts';
@@ -53,10 +54,12 @@ export type RedactOpts = {
   /** When true, print the plan and write nothing. */
   dryRun?: boolean;
   /**
-   * Findings to redact. If omitted, `cmdRedact` logs "no findings" and exits
-   * cleanly. The push-time recovery flow passes the scan findings here; the
-   * standalone `nomad redact` subcommand leaves this undefined until a re-scan
-   * is wired in a later plan.
+   * Findings to redact. When provided (push-time recovery flow), used directly
+   * after applying the optional `rule` filter. When omitted (standalone
+   * `nomad redact`), `cmdRedact` scans the local transcript with `gitleaks
+   * detect --no-git` and uses the resulting findings. A scan error (gitleaks
+   * absent or crashed) is reported as a distinct failure, not silently treated
+   * as "no findings".
    */
   findings?: readonly {
     StartLine: number;
@@ -66,10 +69,39 @@ export type RedactOpts = {
 };
 
 /**
+ * Resolve the findings list for a redact operation. When `rawFindings` is
+ * provided (push-time recovery), returns them filtered by `rule`. When
+ * `rawFindings` is undefined (standalone `nomad redact`), calls `scan` on the
+ * local transcript and returns the findings filtered by `rule`, or `null` when
+ * the scan itself fails (gitleaks absent or crashed).
+ *
+ * @param localPath Absolute path to the local transcript.
+ * @param rawFindings Pre-supplied findings or undefined to trigger a scan.
+ * @param rule Optional rule-id filter applied after findings are resolved.
+ * @param scan Injectable scan function (default: `scanFile`).
+ * @returns Filtered findings array, or `null` when scan fails.
+ */
+function resolveRedactFindings(
+  localPath: string,
+  rawFindings: RedactOpts['findings'],
+  rule: string | undefined,
+  scan: (p: string) => Finding[] | null,
+): readonly { StartLine: number; Match: string; RuleID: string }[] | null {
+  const source = rawFindings ?? scan(localPath);
+  if (source === null) return null;
+  return source.filter((f) => rule === undefined || f.RuleID === rule);
+}
+
+/**
  * Non-interactive redaction of a session transcript's secret spans. Rewrites
  * the LOCAL source transcript at `~/.claude/projects/<encoded>/<id>.jsonl` in
  * place (same inode) after backing it up via `backupBeforeWrite`. Refuses to
  * touch a transcript whose mtime is within the live-session threshold (D-06).
+ *
+ * When `opts.findings` is provided, uses it directly (push-time recovery flow).
+ * When `opts.findings` is omitted, scans the local transcript with gitleaks
+ * detect via the injected `scan` function. A scan failure (null return) is
+ * reported as a distinct error rather than silently treated as "no findings".
  *
  * Validates `id` before any path resolution or lock acquisition. Uses
  * `acquireLock('redact')` with the standard `try/catch(NomadFatal)/finally
@@ -77,8 +109,13 @@ export type RedactOpts = {
  *
  * @param opts Redact options: session id, optional rule filter, optional dry-run, optional findings.
  * @param nowMs Injectable clock for live-session detection (tests inject a fixed value).
+ * @param scan Injectable single-file scan function (tests inject a fake; default: `scanFile`).
  */
-export function cmdRedact(opts: RedactOpts, nowMs: () => number = Date.now): void {
+export function cmdRedact(
+  opts: RedactOpts,
+  nowMs: () => number = Date.now,
+  scan: (p: string) => Finding[] | null = scanFile,
+): void {
   const { id, rule, dryRun = false, findings: rawFindings } = opts;
 
   if (id.length === 0 || id.length > 128 || !/^[A-Za-z0-9_-]+$/.test(id)) {
@@ -109,7 +146,12 @@ export function cmdRedact(opts: RedactOpts, nowMs: () => number = Date.now): voi
       return;
     }
 
-    const findings = (rawFindings ?? []).filter((f) => rule === undefined || f.RuleID === rule);
+    const findings = resolveRedactFindings(localPath, rawFindings, rule, scan);
+    if (findings === null) {
+      fail(`gitleaks scan failed for session ${id} (is gitleaks installed?)`);
+      process.exitCode = 1;
+      return;
+    }
 
     if (findings.length === 0) {
       log(`no findings${rule !== undefined ? ` for rule ${rule}` : ''} in session ${id}`);
