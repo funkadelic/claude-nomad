@@ -48,25 +48,27 @@ function stripShellPunctuation(token: string): string {
 }
 
 /**
- * Find the first command token that resolves to a path under `~/.claude`. Each
- * `&&`-, `||`-, `;`-, or `|`-separated sub-command's leading token is stripped
- * of shell quoting and home-expanded, then tested against the resolved
- * `~/.claude` directory. Expanding first means the literal `~`, `$HOME`, and
- * `${HOME}` forms a hook command may use all collapse to one comparison.
- * Returns `null` when no token resolves under `~/.claude` (D-09: skip, never
- * FAIL).
+ * Yield every command token that resolves to a path under `~/.claude`. Each
+ * `&&`-, `||`-, `;`-, or `|`-separated sub-command is scanned token by token
+ * (not just its leading word), so wrappers like `bash ~/.claude/hooks/run.sh`
+ * are caught and not just `~/.claude/hooks/run.sh` on its own. Every token is
+ * stripped of shell quoting and home-expanded before comparison, so the
+ * literal `~`, `$HOME`, and `${HOME}` forms collapse to one check. Tokens that
+ * do not resolve under `~/.claude` (bare binaries, flags, unresolved env vars)
+ * are skipped per D-09, so the check only ever FAILs on a real `~/.claude`
+ * target.
  *
  * @param command - The raw `command` string from a hook entry.
- * @returns The absolute resolved path under `~/.claude`, or `null` if none.
+ * @returns Iterable of absolute resolved paths under `~/.claude`.
  */
-function resolveClaudePath(command: string): string | null {
+function* claudePathsIn(command: string): Iterable<string> {
   const claudePrefix = `${CLAUDE_HOME}/`;
   for (const segment of command.split(/&&|\|\||;|\|/)) {
-    const raw = segment.trim().split(/\s+/)[0] ?? '';
-    const expanded = expandHome(stripShellPunctuation(raw));
-    if (expanded.startsWith(claudePrefix)) return expanded;
+    for (const raw of segment.trim().split(/\s+/).filter(Boolean)) {
+      const expanded = expandHome(stripShellPunctuation(raw));
+      if (expanded.startsWith(claudePrefix)) yield expanded;
+    }
   }
-  return null;
 }
 
 /**
@@ -125,9 +127,8 @@ function checkEventGroups(section: DoctorSection, event: string, groups: unknown
   let anyFail = false;
   for (const group of groups) {
     for (const cmd of commandsFromGroup(group)) {
-      const resolved = resolveClaudePath(cmd);
-      if (resolved === null) continue;
-      if (!existsSync(resolved)) {
+      for (const resolved of claudePathsIn(cmd)) {
+        if (existsSync(resolved)) continue;
         addItem(section, `${red(failGlyph)} hooks/${event}: command target missing: ${resolved}`);
         process.exitCode = 1;
         anyFail = true;

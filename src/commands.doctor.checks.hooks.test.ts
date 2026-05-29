@@ -220,6 +220,31 @@ describe('reportHooksTargetCheck', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('FAILs on a missing target that is not the first token (interpreter wrapper)', async () => {
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: [{ type: 'command', command: `bash ~/.claude/hooks/run.sh` }],
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${failGlyph} hooks/PostToolUse: command target missing:`);
+    expect(out).toContain('run.sh');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('emits OK for a present target wrapped behind an interpreter token', async () => {
+    touchScript(env.testHome, 'hooks/run.sh');
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: [{ type: 'command', command: `bash ~/.claude/hooks/run.sh` }],
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).not.toContain(failGlyph);
+    expect(out).toContain(okGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
   it('ignores non-command hook entries (e.g. type !== "command")', async () => {
     writeSettings(env.testHome, {
       hooks: {
@@ -253,6 +278,43 @@ describe('reportHooksTargetCheck', () => {
     writeSettings(env.testHome, {
       hooks: {
         PostToolUse: [null, 42, 'string'],
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).not.toContain(failGlyph);
+    expect(out).toContain(okGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('skips malformed nested entries in a grouped shape but still FAILs on a real missing target', async () => {
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: [
+          {
+            matcher: 'Edit',
+            hooks: [
+              null,
+              42,
+              { type: 'mcp' },
+              { type: 'command', command: 123 },
+              { type: 'command', command: `~/.claude/hooks/grouped-missing.sh` },
+            ],
+          },
+        ],
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${failGlyph} hooks/PostToolUse: command target missing:`);
+    expect(out).toContain('grouped-missing.sh');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('skips a hooks event whose value is not an array', async () => {
+    touchScript(env.testHome, 'hooks/ok.sh');
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: 'not-an-array',
+        PreToolUse: [{ type: 'command', command: `~/.claude/hooks/ok.sh` }],
       },
     });
     const { out } = await runCheck();

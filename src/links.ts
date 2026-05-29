@@ -25,7 +25,10 @@ import { deepMerge, readJson } from './utils.json.ts';
  */
 export function applySharedLinks(ts: string, map: PathMap, opts: { dryRun?: boolean } = {}): void {
   const dryRun = opts.dryRun === true;
-  for (const name of allSharedLinks(map)) {
+  // Derive once: allSharedLinks emits a WARN per invalid sharedDirs entry, so
+  // calling it per loop would double every such warning in a single run.
+  const linkNames = allSharedLinks(map);
+  for (const name of linkNames) {
     const linkPath = join(CLAUDE_HOME, name);
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(linkPath)) continue;
@@ -38,7 +41,7 @@ export function applySharedLinks(ts: string, map: PathMap, opts: { dryRun?: bool
     backupBeforeWrite(linkPath, ts);
     rmSync(linkPath, { recursive: true, force: true });
   }
-  for (const name of allSharedLinks(map)) {
+  for (const name of linkNames) {
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(target)) continue;
     if (dryRun) {
