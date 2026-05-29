@@ -27,14 +27,13 @@ export function diffLinesToUnified(oldStr: string, newStr: string): string[] {
   for (const part of parts) {
     const partLines = part.value.split('\n');
     // A part value ending in '\n' yields a trailing '' after split; drop it.
-    if (partLines[partLines.length - 1] === '') {
+    if (partLines.at(-1) === '') {
       partLines.pop();
     }
-    const prefix = part.removed
-      ? (line: string) => red(`-${line}`)
-      : part.added
-        ? (line: string) => green(`+${line}`)
-        : (line: string) => ` ${line}`;
+    let prefix: (line: string) => string;
+    if (part.removed) prefix = (line) => red(`-${line}`);
+    else if (part.added) prefix = (line) => green(`+${line}`);
+    else prefix = (line) => ` ${line}`;
     for (const line of partLines) {
       lines.push(prefix(line));
     }
