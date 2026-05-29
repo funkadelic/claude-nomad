@@ -88,7 +88,8 @@ export function applyRedact(
   if (isRecentlyModified(statSync(localPath).mtimeMs, nowMs())) {
     return refuse(
       `session ${sid} looks active (modified within the last 5 minutes); refusing to redact, no changes made.\n` +
-        `  End the session and choose Redact again, or choose Drop session / Skip for this finding.`,
+        `  End the session and choose Redact again, or choose Drop session (holds this session back` +
+        ` from the push, local copy kept) or Skip.`,
     );
   }
 

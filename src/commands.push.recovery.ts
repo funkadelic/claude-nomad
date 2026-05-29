@@ -55,6 +55,8 @@ export type RecoveryDeps = {
   makePrompt?: () => PromptFn;
   /** Injectable single-file scan for redaction (default: `scanFile`). */
   scan?: (p: string) => Finding[] | null;
+  /** Injectable legend printer for tests (default: `printRecoveryLegend`). */
+  printLegend?: () => void;
 };
 
 /**
@@ -84,6 +86,23 @@ export function hasUnresolved(actions: Map<string, FindingAction>): boolean {
     if (action === 'skip') return true;
   }
   return false;
+}
+
+/**
+ * Print a one-time action legend to stdout before the interactive menu loop.
+ * Called exactly once on the TTY path; never called on non-TTY or --redact-all.
+ *
+ * @param print Output sink (default: `console.log`). Injectable for tests.
+ */
+export function printRecoveryLegend(print: (line: string) => void = console.log): void {
+  print('');
+  print('Recovery actions:');
+  print('  Redact       - scrub the secret from the local transcript, push the cleaned copy');
+  print('  Allow        - mark as false positive (adds a .gitleaksignore fingerprint), push as-is');
+  print('  Drop session - exclude this session from this push (local transcript kept, running');
+  print('                 session is not stopped)');
+  print('  Skip         - leave unresolved (the push aborts)');
+  print('');
 }
 
 /** Build the real-TTY readline-based prompt function (one interface per call). */
@@ -132,6 +151,7 @@ export async function resolveLeakFindings(
     redactAll = false,
     makePrompt: makePromptFn = makeRealPrompt,
     scan = scanFile,
+    printLegend = printRecoveryLegend,
   } = deps;
 
   const scanVerdict = deps.scanVerdict ?? (await import('./push-leak-verdict.ts')).scanPushVerdict;
@@ -157,6 +177,7 @@ export async function resolveLeakFindings(
   }
 
   const prompt = makePromptFn();
+  printLegend();
 
   while (current.leak && current.findings.length > 0) {
     const actions = await collectActions(current.findings, prompt);

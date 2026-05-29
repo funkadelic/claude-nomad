@@ -645,6 +645,9 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
     expect(msg).toContain('sid123');
     expect(msg).toContain('active');
     expect(msg).toMatch(/[Dd]rop session|[Ss]kip/);
+    // Drop semantics must be explicit: excludes from push, local copy kept
+    expect(msg).toMatch(/local copy kept|local.*kept/i);
+    expect(msg).toMatch(/holds.*back.*from.*push|back from the push/i);
   });
 
   it('returns false and emits scan-failed message when scan returns null', async () => {
@@ -929,5 +932,135 @@ describe('resolveLeakFindings - live session + Redact then Skip aborts with Noma
     expect(logSpy).toHaveBeenCalled();
     const msgs: string[] = logSpy.mock.calls.map((c) => c[0] as string);
     expect(msgs.some((m) => /active|live/i.test(m))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// printRecoveryLegend: exported helper
+// ---------------------------------------------------------------------------
+
+describe('printRecoveryLegend', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('prints all four action names to the injected sink', async () => {
+    const { printRecoveryLegend } = await import('./commands.push.recovery.ts');
+    const lines: string[] = [];
+    printRecoveryLegend((line) => lines.push(line));
+    const combined = lines.join('\n');
+    expect(combined).toMatch(/Redact/);
+    expect(combined).toMatch(/Allow/);
+    expect(combined).toMatch(/Drop session/);
+    expect(combined).toMatch(/Skip/);
+  });
+
+  it('explains Drop as excluding the session from the push with local copy kept', async () => {
+    const { printRecoveryLegend } = await import('./commands.push.recovery.ts');
+    const lines: string[] = [];
+    printRecoveryLegend((line) => lines.push(line));
+    const dropLine = lines.find((l) => l.includes('Drop session')) ?? '';
+    expect(dropLine).toMatch(/exclude|excludes|hold|back from/i);
+    const combined = lines.join('\n');
+    expect(combined).toMatch(/local.*kept|kept.*local/i);
+    expect(combined).toMatch(/not stopped|is not stopped/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveLeakFindings: legend printed once on TTY, not on non-TTY / --redact-all
+// ---------------------------------------------------------------------------
+
+describe('resolveLeakFindings - legend emission', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.ts');
+  });
+
+  it('calls printLegend exactly once on the TTY interactive path', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const finding = makeFinding();
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: 'session-aware fatal',
+      findings: [finding],
+    };
+    const map: PathMap = { projects: {} };
+    const legendSpy = vi.fn();
+
+    await expect(
+      resolveLeakFindings(verdict, 'ts-001', map, {
+        isTTYCheck: () => true,
+        makePrompt: () => () => Promise.resolve(''),
+        scanVerdict: () => ({ leak: false, verdictRow: '✓', recovery: null, findings: [] }),
+        printLegend: legendSpy,
+      }),
+    ).rejects.toThrow(); // all-skip -> NomadFatal
+
+    expect(legendSpy).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT call printLegend on the non-TTY path', async () => {
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: 'gitleaks detected secrets; recover manually',
+      findings: [],
+    };
+    const map: PathMap = { projects: {} };
+    const legendSpy = vi.fn();
+
+    await expect(
+      resolveLeakFindings(verdict, 'ts-001', map, {
+        isTTYCheck: () => false,
+        printLegend: legendSpy,
+      }),
+    ).rejects.toThrow(NomadFatal);
+
+    expect(legendSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call printLegend on the --redact-all path', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+
+    const redactAllMock = vi.fn();
+    vi.doUnmock('./commands.push.recovery.actions.ts');
+    vi.doMock('./commands.push.recovery.actions.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryActionsModule>();
+      return { ...actual, redactAllFindings: redactAllMock };
+    });
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const finding = makeFinding();
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: null,
+      findings: [finding],
+    };
+    const map: PathMap = { projects: {} };
+    const legendSpy = vi.fn();
+
+    await resolveLeakFindings(verdict, 'ts-001', map, {
+      redactAll: true,
+      scanVerdict: () => ({ leak: false, verdictRow: '✓', recovery: null, findings: [] }),
+      printLegend: legendSpy,
+    });
+
+    expect(legendSpy).not.toHaveBeenCalled();
   });
 });
