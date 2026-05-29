@@ -29,6 +29,8 @@ import {
   findingKey,
   redactAllFindings,
 } from './commands.push.recovery.actions.ts';
+import type { Finding } from './push-gitleaks.scan.ts';
+import { scanFile } from './push-gitleaks.scan.ts';
 import { buildSessionAwareFatal, partitionFindings } from './push-gitleaks.ts';
 import type { LeakVerdict } from './push-leak-verdict.ts';
 import { NomadFatal, gitOrFatal } from './utils.ts';
@@ -51,6 +53,8 @@ export type RecoveryDeps = {
   redactAll?: boolean;
   /** Injectable prompt factory for tests (default: real readline). */
   makePrompt?: () => PromptFn;
+  /** Injectable single-file scan for redaction (default: `scanFile`). */
+  scan?: (p: string) => Finding[] | null;
 };
 
 /**
@@ -126,6 +130,7 @@ export async function resolveLeakFindings(
     nowMs = Date.now,
     redactAll = false,
     makePrompt: makePromptFn = makeRealPrompt,
+    scan = scanFile,
   } = deps;
 
   const scanVerdict = deps.scanVerdict ?? (await import('./push-leak-verdict.ts')).scanPushVerdict;
@@ -133,7 +138,7 @@ export async function resolveLeakFindings(
   let current = verdict;
 
   if (redactAll) {
-    redactAllFindings(current.findings, ts, map, nowMs);
+    redactAllFindings(current.findings, ts, map, nowMs, scan);
     gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
     const next = scanVerdict();
     if (next.leak) {
@@ -163,7 +168,7 @@ export async function resolveLeakFindings(
       throw new NomadFatal(buildSessionAwareFatal(bySession, other));
     }
 
-    dispatchActions(current.findings, actions, ts, map, nowMs);
+    dispatchActions(current.findings, actions, ts, map, nowMs, scan);
     gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
     current = scanVerdict();
   }

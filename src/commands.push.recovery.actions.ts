@@ -1,11 +1,8 @@
 /**
- * Per-finding action helpers for the push-time recovery menu. Owns the pure
- * seams (`findingKey`, `sessionIdFromFinding`, `parseAction`) and the I/O
- * action dispatchers (`applyAllow`, `applyRedact`, `applyDrop`,
- * `collectActions`, `dispatchActions`, `redactAllFindings`).
- *
- * Imported exclusively by `commands.push.recovery.ts` so the top-level module
- * stays under the 220-line cap.
+ * I/O action dispatchers for the push-time recovery menu: `applyAllow`,
+ * `applyRedact`, `collectActions`, `dispatchActions`, `redactAllFindings`.
+ * Pure seams (`findingKey`, `sessionIdFromFinding`, `parseAction`) live in
+ * `commands.push.recovery.seams.ts`.
  */
 
 import { cpSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -13,60 +10,27 @@ import { join } from 'node:path';
 
 import type { PathMap } from './config.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME } from './config.ts';
-import { applyRedactions, appendGitleaksIgnore, isRecentlyModified } from './commands.redact.ts';
-import { resolveLiveTranscript } from './commands.redact.ts';
+import {
+  applyRedactions,
+  appendGitleaksIgnore,
+  isRecentlyModified,
+  resolveLiveTranscript,
+} from './commands.redact.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
-import { SESSION_PATH } from './push-gitleaks.ts';
+import { scanFile } from './push-gitleaks.scan.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
 import { encodePath } from './utils.json.ts';
+import {
+  type FindingAction,
+  type PromptFn,
+  findingKey,
+  parseAction,
+  sessionIdFromFinding,
+} from './commands.push.recovery.seams.ts';
 
-/** Action a user can assign to one finding in the recovery menu. */
-export type FindingAction = 'redact' | 'allow' | 'drop' | 'skip';
-
-/** Prompt function: asks one question and returns the answer. */
-export type PromptFn = (prompt: string) => Promise<string>;
-
-/**
- * Build a stable key for a finding used as the actions-map key.
- *
- * @param f The gitleaks finding.
- * @returns A colon-delimited key combining file, start line, and start column.
- */
-export function findingKey(f: Finding): string {
-  return `${f.File}:${f.StartLine}:${f.StartColumn}`;
-}
-
-/**
- * Extract the session id from a finding's File path. Handles both the flat
- * `shared/projects/<logical>/<sid>.jsonl` form (SESSION_PATH) and the deeper
- * subagent form `shared/projects/<logical>/<sid>/...`.
- *
- * @param f The gitleaks finding.
- * @returns The session id, or null when the path matches neither pattern.
- */
-export function sessionIdFromFinding(f: Finding): string | null {
-  const m = SESSION_PATH.exec(f.File);
-  if (m !== null) return m[1] ?? null;
-  const sub = /^shared\/projects\/[^/]+\/([^/]+)\//.exec(f.File);
-  if (sub !== null) return sub[1] ?? null;
-  return null;
-}
-
-/**
- * Parse a raw prompt answer into a `FindingAction`. Returns `'skip'` for
- * empty, blank, or unrecognized input (D-02 default).
- *
- * @param raw The untrimmed string returned by the prompt.
- * @returns The corresponding action, defaulting to `'skip'`.
- */
-export function parseAction(raw: string): FindingAction {
-  const t = raw.trim().toLowerCase();
-  if (t === 'r' || t === 'redact') return 'redact';
-  if (t === 'a' || t === 'allow') return 'allow';
-  if (t === 'd' || t === 'drop') return 'drop';
-  return 'skip';
-}
+export type { FindingAction, PromptFn };
+export { findingKey, parseAction, sessionIdFromFinding };
 
 /** Apply the Allow action: append the finding's fingerprint to .gitleaksignore. */
 export function applyAllow(f: Finding): void {
@@ -75,16 +39,23 @@ export function applyAllow(f: Finding): void {
 
 /**
  * Apply the Redact action for one finding. Resolves the local transcript,
- * checks the live-session guard, backs up, rewrites in place (same inode),
- * and surgically copies the file back to the staged tree. Returns true on
- * success, false when the session is active or unresolvable.
+ * checks the live-session guard, re-scans the local file (without `--redact`)
+ * to obtain real secret values, backs up, rewrites in place (same inode), and
+ * surgically copies the file back to the staged tree. Returns true on success,
+ * false when the session is active, unresolvable, or the local re-scan fails.
+ *
+ * The push-verdict findings (`f`, `allFindings`) drive which sessions to act on
+ * and provide session-id extraction, but their `Match` fields come from a
+ * `--redact` scan and are masked. The local re-scan (via `scan`) runs WITHOUT
+ * `--redact` so `applyRedactions` receives the real secret values.
  *
  * @param f Trigger finding (used for session-id extraction).
- * @param allFindings Full finding set for this run (all findings for the same
- *   session are redacted in one pass to avoid multi-write).
+ * @param allFindings Full finding set for this run (used for session-id
+ *   matching; values are masked and not used for redaction).
  * @param ts Backup timestamp for `backupBeforeWrite`.
  * @param map Parsed path-map for staged-tree path resolution.
  * @param nowMs Injectable clock for the live-session mtime check.
+ * @param scan Injectable scan function for local re-scan (default: `scanFile`).
  * @returns True when the redaction was applied; false when refused or failed.
  */
 export function applyRedact(
@@ -93,6 +64,7 @@ export function applyRedact(
   ts: string,
   map: PathMap,
   nowMs: () => number,
+  scan: (p: string) => Finding[] | null = scanFile,
 ): boolean {
   const sid = sessionIdFromFinding(f);
   if (sid === null) return false;
@@ -100,13 +72,14 @@ export function applyRedact(
   if (localPath === null) return false;
   if (isRecentlyModified(statSync(localPath).mtimeMs, nowMs())) return false;
 
-  const sessionFindings = allFindings.filter((sf) => sessionIdFromFinding(sf) === sid);
+  // Re-scan without --redact to get real secret values for value-based redaction.
+  // Push-verdict findings have masked Match fields and cannot be used directly.
+  const realFindings = scan(localPath);
+  if (realFindings === null) return false;
+  if (realFindings.length === 0) return false;
+
   backupBeforeWrite(localPath, ts);
-  writeFileSync(
-    localPath,
-    applyRedactions(readFileSync(localPath, 'utf8'), sessionFindings),
-    'utf8',
-  );
+  writeFileSync(localPath, applyRedactions(readFileSync(localPath, 'utf8'), realFindings), 'utf8');
 
   for (const [logical, hostMap] of Object.entries(map.projects)) {
     const abs = hostMap[HOST];
@@ -157,6 +130,7 @@ export async function collectActions(
  * @param ts Backup timestamp.
  * @param map Parsed path-map.
  * @param nowMs Injectable clock.
+ * @param scan Injectable scan function for `applyRedact` (default: `scanFile`).
  */
 export function dispatchActions(
   findings: Finding[],
@@ -164,6 +138,7 @@ export function dispatchActions(
   ts: string,
   map: PathMap,
   nowMs: () => number,
+  scan: (p: string) => Finding[] | null = scanFile,
 ): void {
   const redactedSids = new Set<string>();
   for (const f of findings) {
@@ -180,7 +155,7 @@ export function dispatchActions(
       continue;
     }
     if (action === 'redact' && !redactedSids.has(sid)) {
-      if (applyRedact(f, findings, ts, map, nowMs)) redactedSids.add(sid);
+      if (applyRedact(f, findings, ts, map, nowMs, scan)) redactedSids.add(sid);
     }
   }
 }
@@ -195,17 +170,19 @@ export function dispatchActions(
  * @param ts Backup timestamp.
  * @param map Parsed path-map.
  * @param nowMs Injectable clock.
+ * @param scan Injectable scan function for `applyRedact` (default: `scanFile`).
  */
 export function redactAllFindings(
   findings: Finding[],
   ts: string,
   map: PathMap,
   nowMs: () => number,
+  scan: (p: string) => Finding[] | null = scanFile,
 ): void {
   const redactedSids = new Set<string>();
   for (const f of findings) {
     const sid = sessionIdFromFinding(f);
     if (sid === null || redactedSids.has(sid)) continue;
-    if (applyRedact(f, findings, ts, map, nowMs)) redactedSids.add(sid);
+    if (applyRedact(f, findings, ts, map, nowMs, scan)) redactedSids.add(sid);
   }
 }

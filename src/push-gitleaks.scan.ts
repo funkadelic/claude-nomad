@@ -29,9 +29,9 @@ export type Finding = {
   RuleID: string;
   File: string;
   StartLine: number;
-  /** 1-indexed character offset of the secret span start within the raw JSONL line. Used by span-rewrite logic to locate the secret without needing its redacted value. */
+  /** 1-indexed character offset where the secret span starts within the raw line. Display and identification metadata only; not used for redaction (which is value-based). */
   StartColumn: number;
-  /** 1-indexed inclusive end offset of the secret span within the raw JSONL line. Used by span-rewrite logic together with StartColumn. */
+  /** 1-indexed inclusive end offset of the secret span within the raw line. Display and identification metadata only; not used for redaction (which is value-based). */
   EndColumn: number;
   Match: string;
   Fingerprint: string;
@@ -134,6 +134,14 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
  * are found), or `null` when the scan itself fails (gitleaks absent, gitleaks
  * crashed, or the report is missing or unparseable).
  *
+ * Intentionally does NOT pass `--redact` so that `Finding.Match` and
+ * `Finding.Secret` carry the real secret value. Callers that need to perform
+ * value-based redaction (e.g. the push recovery `applyRedact` and `cmdRedact`)
+ * require the literal match to replace it in the transcript. The temp report
+ * file (which contains the real value) is deleted in a `finally` block on every
+ * path, and the process streams are never written on the findings path, so the
+ * real secret is never emitted to stdout/stderr.
+ *
  * Error model mirrors `scanStagedTree`: gitleaks exits non-zero when findings
  * exist (exit 1) or on an internal error (exit 2+). Exit 1 with a parseable
  * report is treated as success-with-findings. Exit 0 means clean. Any error
@@ -165,7 +173,6 @@ export function scanFile(filePath: string, forwardStreams = false): Finding[] | 
     '--no-git',
     '--source',
     filePath,
-    '--redact',
     '--report-format=json',
     `--report-path=${reportPath}`,
   ];

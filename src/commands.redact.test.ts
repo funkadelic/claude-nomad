@@ -835,4 +835,48 @@ describe('scanFile', () => {
     const findings = realScanFile(filePath);
     expect(findings).toEqual([]);
   });
+
+  /**
+   * Regression guard for the --redact masking bug: scanFile must NOT pass
+   * --redact to gitleaks, so Match carries the real secret value (not the
+   * literal string "REDACTED"). If Match were masked, applyRedactions would
+   * search for "REDACTED" in the transcript and leave the real token in place.
+   */
+  it('regression: Match is the real token (not "REDACTED") and applyRedactions removes it', async () => {
+    // Skip if gitleaks is not installed in this environment
+    const { execFileSync: realExec } = await import('node:child_process');
+    try {
+      realExec('gitleaks', ['version'], { stdio: 'ignore' });
+    } catch {
+      return; // gitleaks not available; skip
+    }
+
+    const { scanFile: realScanFile } = await import('./push-gitleaks.scan.ts');
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    const pat = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const content = `{"message":{"role":"assistant","content":"export GITHUB_TOKEN=${pat}"}}\n`;
+    const filePath = join(tmpDir, 'session.jsonl');
+    writeFileSync(filePath, content);
+
+    const findings = realScanFile(filePath);
+    expect(findings).not.toBeNull();
+    expect(findings!.length).toBeGreaterThan(0);
+
+    // Match must be the real token, not the masked placeholder
+    const match = findings![0].Match;
+    expect(match).not.toBe('REDACTED');
+    expect(match.length).toBeGreaterThan(0);
+
+    // applyRedactions must remove the secret using the real Match value
+    const redacted = applyRedactions(content, findings!);
+    expect(redacted).not.toContain(pat);
+    expect(redacted).not.toContain('ghp_');
+    // Result must still be valid JSON
+    expect(() => JSON.parse(redacted.trim()) as unknown).not.toThrow();
+    const parsed = JSON.parse(redacted.trim()) as {
+      message: { role: string; content: string };
+    };
+    expect(parsed.message.content).not.toContain(pat);
+    expect(parsed.message.content).toContain('[REDACTED:');
+  });
 });

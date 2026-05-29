@@ -1,9 +1,15 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
 import type * as redactModule from './commands.redact.ts';
 import type * as utilsModule from './utils.ts';
+import type * as utilsFsModule from './utils.fs.ts';
 import type { PathMap } from './config.ts';
+import type { Finding } from './push-gitleaks.scan.ts';
 
 // ---------------------------------------------------------------------------
 // isTTY seam
@@ -342,5 +348,173 @@ describe('resolveLeakFindings - --redact-all non-interactive batch redact', () =
         }),
       }),
     ).rejects.toThrow(NomadFatal);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRedact: scan DI
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal transcript fixture in a temp REPO_HOME and return the
+ * transcript path plus a far-future clock value.
+ */
+function makeApplyRedactFixture(testHome: string): {
+  transcriptPath: string;
+  farFuture: number;
+  map: PathMap;
+} {
+  const claudeHome = join(testHome, '.claude');
+  const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+  mkdirSync(projectsDir, { recursive: true });
+  const transcriptPath = join(projectsDir, 'sid123.jsonl');
+  writeFileSync(transcriptPath, '{"text":"real-secret-value"}\n');
+  writeFileSync(
+    join(testHome, 'path-map.json'),
+    JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+  );
+  const map: PathMap = {
+    projects: { myproject: { 'test-host': '/home/norm/git/myproject' } },
+  };
+  return { transcriptPath, farFuture: Date.now() + 10 * 60 * 1000, map };
+}
+
+describe('applyRedact: injected scan returning real findings rewrites file', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-applyredact-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('rewrites local file and returns true when scan returns real findings', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 9,
+      EndColumn: 25,
+      Match: 'REDACTED', // masked push-verdict value
+      Fingerprint: 'fp1',
+    };
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'test-rule',
+        File: transcriptPath,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 25,
+        Match: 'real-secret-value', // real value from unmasked scan
+        Fingerprint: 'fp1',
+      },
+    ];
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+
+    expect(result).toBe(true);
+    expect(backupSpy).toHaveBeenCalledOnce();
+    const written = readFileSync(transcriptPath, 'utf8');
+    expect(written).toContain('[REDACTED:test-rule]');
+    expect(written).not.toContain('real-secret-value');
+  });
+
+  it('returns false and does not mutate when scan returns null (scan failed)', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 9,
+      EndColumn: 25,
+      Match: 'REDACTED',
+      Fingerprint: 'fp1',
+    };
+    const originalContent = readFileSync(transcriptPath, 'utf8');
+
+    const result = applyRedact(
+      trigger,
+      [trigger],
+      'ts-x',
+      map,
+      () => farFuture,
+      (_p: string) => null,
+    );
+
+    expect(result).toBe(false);
+    expect(backupSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(originalContent);
+  });
+
+  it('returns false and does not mutate when scan returns [] (nothing found locally)', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 9,
+      EndColumn: 25,
+      Match: 'REDACTED',
+      Fingerprint: 'fp1',
+    };
+    const originalContent = readFileSync(transcriptPath, 'utf8');
+
+    const result = applyRedact(
+      trigger,
+      [trigger],
+      'ts-x',
+      map,
+      () => farFuture,
+      (_p: string): Finding[] => [],
+    );
+
+    expect(result).toBe(false);
+    expect(backupSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(originalContent);
   });
 });
