@@ -13,12 +13,12 @@ const SHARED_PROJECT_LOGICAL = /^shared\/projects\/([^/]+)\//;
 
 /**
  * After a successful drop, remind the operator that the unstage is per-push
- * only: the leaked secret still lives in the local transcript, so the next
- * `nomad push` re-copies it (via `remapPush`) and `nomad doctor --check-shared`
- * keeps reporting it (it scans the live `~/.claude/projects/` source, not the
- * repo index). Points at the exact live transcript when it resolves for this
- * host, or a generic `~/.claude/projects/<encoded>/<id>.jsonl` template
- * otherwise. Advisory output only; never mutates state.
+ * only: the local source still contains the secret, so the next `nomad push`
+ * re-copies it (via `remapPush`) and `nomad doctor --check-shared` keeps
+ * reporting it (it scans the live `~/.claude/projects/` source, not the repo
+ * index). Full remediation requires rotating the credential, then running
+ * `nomad redact <id>` (or scrubbing the local transcript manually). Advisory
+ * output only; never mutates state.
  *
  * @param id Already-validated session id.
  * @param matches Repo-relative paths collected by `collectMatches`.
@@ -27,10 +27,12 @@ export function reportScrubHint(id: string, matches: string[]): void {
   const live = resolveLiveTranscript(id, matches);
   const target = live ?? `~/.claude/projects/<encoded>/${id}.jsonl`;
   log(
-    'note: this only un-stages the session from the next push. The leaked secret\n' +
-      '  is still in your local transcript, so nomad push re-stages it and nomad\n' +
-      '  doctor --check-shared keeps reporting it. To remediate, rotate the\n' +
-      `  credential, then scrub ${target}`,
+    'note: this only un-stages the session from the next push.\n' +
+      '  The local source still contains the secret, so nomad push re-stages it\n' +
+      '  on the next run and nomad doctor --check-shared keeps reporting it.\n' +
+      '  To fully remediate: rotate the credential, then run:\n' +
+      `    nomad redact ${id}\n` +
+      `  (or scrub ${target} manually)`,
   );
 }
 

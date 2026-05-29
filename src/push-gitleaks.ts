@@ -40,6 +40,15 @@ export { type Finding, scanStagedTree };
 export const SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\.jsonl$/;
 
 /**
+ * Extracts the session id from a deeper subagent path of the form
+ * `shared/projects/<logical>/<id>/...`. Mirrors the `SHARED_PROJECT_LOGICAL`
+ * pattern in `commands.drop-session.scrub-hint.ts` but captures the id at
+ * path position 4 (the segment after `<logical>`). Returns null when the
+ * path does not match (truly non-session path).
+ */
+const SUBAGENT_SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\//;
+
+/**
  * Legacy fallback FATAL emitted when no finding's File matches the session
  * path pattern. Locked verbatim so existing tests covering the non-session
  * path do not regress.
@@ -106,6 +115,29 @@ export function formatOtherFinding(f: Finding): string {
   return `  ${f.File}${loc}  ${f.RuleID}`;
 }
 
+/**
+ * Build the per-finding hint line for an `Also found:` entry. When the
+ * File path matches the subagent bucket pattern
+ * `shared/projects/<logical>/<id>/...`, the session id is recovered and a
+ * `nomad drop-session`/`nomad redact` hint names it explicitly. For paths
+ * that do not match (truly non-session files), a manual-review fallback
+ * line is returned instead. Pure.
+ *
+ * @param f The other-bucket finding.
+ * @returns A hint line ready for inclusion in the FATAL message.
+ */
+export function otherFindingHint(f: Finding): string {
+  const m = SUBAGENT_SESSION_PATH.exec(f.File);
+  if (m !== null) {
+    const sid = m[1];
+    // Defensive: regex guarantees group 1 when m !== null; unreachable at runtime.
+    /* c8 ignore next */
+    if (sid === undefined) return '  Review with: git diff --cached, then unstage manually.';
+    return `  Recover with: nomad drop-session ${sid}  (or: nomad redact ${sid})`;
+  }
+  return '  Review with: git diff --cached, then unstage manually.';
+}
+
 export function buildSessionAwareFatal(
   bySession: Map<string, Map<string, number>>,
   other: Finding[],
@@ -121,12 +153,9 @@ export function buildSessionAwareFatal(
     lines.push('', `Session ${sid}:`, `  ${summary}`, `  Recover with: nomad drop-session ${sid}`);
   }
   if (other.length > 0) {
-    lines.push(
-      '',
-      'Also found:',
-      ...other.map(formatOtherFinding),
-      '  Review with: git diff --cached, then unstage manually.',
-    );
+    for (const f of other) {
+      lines.push('', 'Also found:', formatOtherFinding(f), otherFindingHint(f));
+    }
   }
   lines.push('', 'After recovery, re-run nomad push.');
   return lines.join('\n');
