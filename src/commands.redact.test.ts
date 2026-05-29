@@ -515,6 +515,52 @@ describe('cmdRedact', () => {
     expect(written).toContain('{"text":"world"}');
   });
 
+  it('backup base derives from the centralized HOME constant (not process.env.HOME ?? "~")', async () => {
+    // With HOME set to testHome, backupBeforeWrite must be called with a ts
+    // whose computed base is <testHome>/.cache/claude-nomad/backup/...
+    const claudeHome = join(testHome, '.claude');
+    const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+    mkdirSync(projectsDir, { recursive: true });
+    const transcriptPath = join(projectsDir, 'sess-homebck.jsonl');
+    writeFileSync(transcriptPath, '{"text":"hello"}\n');
+
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { myproject: { 'test-host': '/home/norm/git/myproject' } },
+      }),
+    );
+
+    // Capture the ts value that freshBackupTs receives as its base argument.
+    let capturedBase: string | undefined;
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return {
+        ...actual,
+        freshBackupTs: (base: string) => {
+          capturedBase = base;
+          return 'ts-fixed';
+        },
+        backupBeforeWrite: vi.fn(),
+      };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const farFuture = Date.now() + 10 * 60 * 1000;
+    cmdRedact(
+      {
+        id: 'sess-homebck',
+        findings: [{ StartLine: 1, Match: 'hello', RuleID: 'test-rule' }],
+      },
+      () => farFuture,
+    );
+
+    // The backup base must start with the testHome (the HOME set in beforeEach).
+    expect(capturedBase).toBeDefined();
+    expect(capturedBase!.startsWith(testHome)).toBe(true);
+    expect(capturedBase).toBe(join(testHome, '.cache', 'claude-nomad', 'backup'));
+  });
+
   it('--rule filters findings to the matching ruleId only', async () => {
     const claudeHome = join(testHome, '.claude');
     const encodedDir = '-home-norm-git-myproject';

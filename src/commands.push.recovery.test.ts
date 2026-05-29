@@ -1115,6 +1115,160 @@ describe('sessionIdFromFinding: id validation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// findingKey: includes RuleID to prevent same-location collisions
+// ---------------------------------------------------------------------------
+
+describe('findingKey: includes RuleID', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('two findings with same File/StartLine/StartColumn but different RuleID produce different keys', async () => {
+    const { findingKey } = await import('./commands.push.recovery.seams.ts');
+    const base = {
+      File: 'shared/projects/my-proj/abc123.jsonl',
+      StartLine: 5,
+      StartColumn: 10,
+      EndColumn: 20,
+      Match: 'REDACTED',
+      Fingerprint: 'fp1',
+      Description: 'test',
+    };
+    const f1 = { ...base, RuleID: 'github-pat' };
+    const f2 = { ...base, RuleID: 'generic-api-key' };
+    expect(findingKey(f1)).not.toBe(findingKey(f2));
+  });
+
+  it('two findings with same File/StartLine/StartColumn/RuleID produce the same key', async () => {
+    const { findingKey } = await import('./commands.push.recovery.seams.ts');
+    const f = makeFinding({ StartLine: 3, StartColumn: 7 });
+    expect(findingKey(f)).toBe(findingKey({ ...f }));
+  });
+
+  it('key contains the RuleID segment', async () => {
+    const { findingKey } = await import('./commands.push.recovery.seams.ts');
+    const f = makeFinding({ RuleID: 'my-rule', StartLine: 1, StartColumn: 2 });
+    expect(findingKey(f)).toContain('my-rule');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dispatchActions: drop wins at session level (drop then redact same session)
+// ---------------------------------------------------------------------------
+
+describe('dispatchActions - drop wins at session level', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-dropwins-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.doUnmock('./commands.push.recovery.actions.ts');
+    vi.doUnmock('./utils.ts');
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('./commands.push.recovery.actions.ts');
+    vi.doUnmock('./utils.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('scan is NOT invoked when drop already ran for the same session', async () => {
+    // Use the injectable `scan` DI parameter as the observable: when drop wins,
+    // applyRedact is never entered and scan is never called.
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+
+    const scanSpy = vi.fn().mockReturnValue(null);
+    const dropMock = vi.fn().mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    // Two findings for the same session (abc123): finding1 -> drop, finding2 -> redact.
+    const finding1 = makeFinding({
+      File: 'shared/projects/my-proj/abc123.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      RuleID: 'github-pat',
+    });
+    const finding2 = makeFinding({
+      File: 'shared/projects/my-proj/abc123.jsonl',
+      StartLine: 2,
+      StartColumn: 5,
+      RuleID: 'generic-api-key',
+    });
+    const actions = new Map([
+      [findingKey(finding1), 'drop' as const],
+      [findingKey(finding2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
+
+    dispatchActions([finding1, finding2], actions, 'ts-x', map, Date.now, scanSpy, dropMock);
+
+    expect(dropMock).toHaveBeenCalledOnce();
+    expect(dropMock).toHaveBeenCalledWith('abc123', map);
+    // scan must not have been invoked: drop wins, applyRedact never proceeds.
+    expect(scanSpy).not.toHaveBeenCalled();
+  });
+
+  it('allow action for a DIFFERENT session is not blocked by an earlier drop', async () => {
+    // Use the Allow action for finding2 (def456, a different session from the
+    // dropped abc123). applyAllow writes the fingerprint to .gitleaksignore
+    // without needing a local transcript, so the outcome is observable via the
+    // file system regardless of local env state.
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+
+    const dropMock = vi.fn().mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    // finding1 (sid abc123) -> drop; finding2 (different sid def456) -> allow.
+    const finding1 = makeFinding({
+      File: 'shared/projects/my-proj/abc123.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      RuleID: 'github-pat',
+      Fingerprint: 'fp-abc123',
+    });
+    const finding2 = makeFinding({
+      File: 'shared/projects/my-proj/def456.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      RuleID: 'github-pat',
+      Fingerprint: 'fp-def456',
+    });
+    const actions = new Map([
+      [findingKey(finding1), 'drop' as const],
+      [findingKey(finding2), 'allow' as const],
+    ]);
+    const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
+
+    dispatchActions([finding1, finding2], actions, 'ts-x', map, Date.now, undefined, dropMock);
+
+    expect(dropMock).toHaveBeenCalledOnce();
+    expect(dropMock).toHaveBeenCalledWith('abc123', map);
+    // Allow for def456 must have written the fingerprint to .gitleaksignore in REPO_HOME.
+    const { readFileSync: realRead, existsSync: realExists } = await import('node:fs');
+    const ignoreFile = join(testHome, '.gitleaksignore');
+    expect(realExists(ignoreFile)).toBe(true);
+    expect(realRead(ignoreFile, 'utf8')).toContain('fp-def456');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // dropSessionFromStaged: filesystem removal
 // ---------------------------------------------------------------------------
 

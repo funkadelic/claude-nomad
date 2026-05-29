@@ -15,13 +15,15 @@ export type FindingAction = 'redact' | 'allow' | 'drop' | 'skip';
 export type PromptFn = (prompt: string) => Promise<string>;
 
 /**
- * Build a stable key for a finding used as the actions-map key.
+ * Build a stable key for a finding used as the actions-map key. Includes the
+ * rule id so two findings at the same file/line/column but different rules
+ * produce distinct keys and do not collide in the actions map.
  *
  * @param f The gitleaks finding.
- * @returns A colon-delimited key combining file, start line, and start column.
+ * @returns A colon-delimited key combining file, start line, start column, and rule id.
  */
 export function findingKey(f: Finding): string {
-  return `${f.File}:${f.StartLine}:${f.StartColumn}`;
+  return `${f.File}:${f.StartLine}:${f.StartColumn}:${f.RuleID}`;
 }
 
 /** Valid session id charset: alphanumeric, hyphen, underscore (same as cmdDropSession/cmdRedact). */

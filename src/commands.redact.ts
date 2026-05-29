@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { CLAUDE_HOME, HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { applyRedactions, isRecentlyModified } from './commands.redact.core.ts';
 import { type Finding, scanFile } from './push-gitleaks.scan.ts';
 import { backupBeforeWrite, freshBackupTs } from './utils.fs.ts';
@@ -166,7 +166,7 @@ export function cmdRedact(
       return;
     }
 
-    const backupBase = join(process.env.HOME ?? '~', '.cache', 'claude-nomad', 'backup');
+    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
     const ts = freshBackupTs(backupBase);
     backupBeforeWrite(localPath, ts);
 

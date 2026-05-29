@@ -56,8 +56,10 @@ export async function collectActions(
 /**
  * Apply one finding's triaged action against local state. Extracted from
  * `dispatchActions` so each function stays under the cognitive-complexity gate.
- * `redactedSids` is mutated in place so redactions de-duplicate per session
- * across the caller's loop.
+ * `redactedSids` and `droppedSids` are mutated in place so per-session
+ * de-duplication is maintained across the caller's loop. Drop wins: once a
+ * session id appears in `droppedSids`, subsequent redact or allow actions for
+ * findings in that session are skipped.
  *
  * @param f The finding to act on.
  * @param findings Full findings list (passed to `applyRedact` for per-session redaction).
@@ -68,6 +70,7 @@ export async function collectActions(
  * @param scan Injectable scan function for `applyRedact`.
  * @param drop Injectable staged-copy remover for the Drop action.
  * @param redactedSids Set of already-redacted session ids (mutated in place).
+ * @param droppedSids Set of already-dropped session ids (mutated in place).
  */
 function dispatchOne(
   f: Finding,
@@ -79,6 +82,7 @@ function dispatchOne(
   scan: (p: string) => Finding[] | null,
   drop: (sid: string, map: PathMap) => boolean,
   redactedSids: Set<string>,
+  droppedSids: Set<string>,
 ): void {
   const action = actions.get(findingKey(f)) ?? 'skip';
   if (action === 'skip') return;
@@ -88,7 +92,9 @@ function dispatchOne(
   }
   const sid = sessionIdFromFinding(f);
   if (sid === null) return;
+  if (droppedSids.has(sid)) return;
   if (action === 'drop') {
+    droppedSids.add(sid);
     if (drop(sid, map)) {
       log(
         `dropped session ${sid} from this push (local transcript kept; the secret remains in your local copy)`,
@@ -125,8 +131,9 @@ export function dispatchActions(
   drop: (sid: string, map: PathMap) => boolean = dropSessionFromStaged,
 ): void {
   const redactedSids = new Set<string>();
+  const droppedSids = new Set<string>();
   for (const f of findings) {
-    dispatchOne(f, findings, actions, ts, map, nowMs, scan, drop, redactedSids);
+    dispatchOne(f, findings, actions, ts, map, nowMs, scan, drop, redactedSids, droppedSids);
   }
 }
 
