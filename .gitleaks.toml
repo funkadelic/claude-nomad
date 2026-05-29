@@ -38,3 +38,23 @@ paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
 ]
 condition = "AND"
+
+# Path-scoped: SonarCloud issue-listing tool output (`gh`/sonar API dumps of
+# the form `key: <20-char id>` immediately followed by `rule: <lang>:S<n>`)
+# lands in session transcripts during PR reviews. The issue key is an opaque
+# 20-char base64url identifier, not a credential, but it is shaped like a
+# generic API key and does not carry the `AY` prefix the noise allowlist
+# above keys on. Anchoring on the surrounding `key:`/`rule:` structure (via
+# regexTarget = "line") keeps this from whitelisting a bare token: a real API
+# key is never followed by `\n  rule: <lang>:S####`. `condition = "AND"` plus
+# the session-jsonl path scope double-locks it to synced transcripts.
+[[allowlists]]
+description = "claude-nomad: SonarCloud issue-listing output (key: <id> / rule: <lang>:S<n>) in synced session transcripts"
+regexTarget = "line"
+regexes = [
+    '''key:\s*[A-Za-z0-9_-]{19,24}\\n\s*rule:\s*\w+:S\d+''',
+]
+paths = [
+    '''^shared/projects/[^/]+/.*\.jsonl$''',
+]
+condition = "AND"
