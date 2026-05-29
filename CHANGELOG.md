@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/funkadelic/claude-nomad/compare/v0.29.0...v0.29.1) (2026-05-29)
+
+
+### Fixed
+
+* **doctor:** degrade gitleaks-absent probe to WARN, not FAIL ([#173](https://github.com/funkadelic/claude-nomad/issues/173)) ([320bb8a](https://github.com/funkadelic/claude-nomad/commit/320bb8a5d6f6c1f02207be8e186fe678f8e6f8bd))
+
 ## [0.29.0](https://github.com/funkadelic/claude-nomad/compare/v0.28.0...v0.29.0) (2026-05-29)
 
 
