@@ -191,8 +191,9 @@ describe('cmdDropSession (scrub-remediation hint)', () => {
     cmdDropSession('sid-LEAK');
 
     const logged = logOutput();
-    expect(logged).toContain('un-stages the session from the next push');
-    expect(logged).toContain(`scrub ${livePath}`);
+    expect(logged).toContain('local source still contains the secret');
+    expect(logged).toContain(`nomad redact sid-LEAK`);
+    expect(logged).toContain(`scrub ${livePath} manually`);
   });
 
   it('falls back to the generic template when no path-map exists', async () => {
@@ -203,7 +204,10 @@ describe('cmdDropSession (scrub-remediation hint)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     cmdDropSession('sid-A');
 
-    expect(logOutput()).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl');
+    const logged = logOutput();
+    expect(logged).toContain('local source still contains the secret');
+    expect(logged).toContain('nomad redact sid-A');
+    expect(logged).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl manually');
   });
 
   it('falls back to the generic template when the session is not mapped to this host', async () => {
@@ -215,7 +219,10 @@ describe('cmdDropSession (scrub-remediation hint)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     cmdDropSession('sid-A');
 
-    expect(logOutput()).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl');
+    const logged = logOutput();
+    expect(logged).toContain('local source still contains the secret');
+    expect(logged).toContain('nomad redact sid-A');
+    expect(logged).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl manually');
   });
 
   it('falls back to the generic template when the resolved live transcript is absent', async () => {
@@ -227,7 +234,10 @@ describe('cmdDropSession (scrub-remediation hint)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     cmdDropSession('sid-A');
 
-    expect(logOutput()).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl');
+    const logged = logOutput();
+    expect(logged).toContain('local source still contains the secret');
+    expect(logged).toContain('nomad redact sid-A');
+    expect(logged).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl manually');
   });
 
   it('falls back to the generic template when path-map.json is malformed JSON', async () => {
@@ -239,7 +249,10 @@ describe('cmdDropSession (scrub-remediation hint)', () => {
     const { cmdDropSession } = await import('./commands.drop-session.ts');
     cmdDropSession('sid-A');
 
-    expect(logOutput()).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl');
+    const logged = logOutput();
+    expect(logged).toContain('local source still contains the secret');
+    expect(logged).toContain('nomad redact sid-A');
+    expect(logged).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl manually');
     expect(process.exitCode === 1).toBe(false);
   });
 });
