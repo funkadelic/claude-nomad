@@ -14,7 +14,7 @@ export {
   appendGitleaksIgnore,
   formatFingerprint,
   isRecentlyModified,
-  redactSpan,
+  redactValue,
 } from './commands.redact.core.ts';
 
 /**
@@ -60,8 +60,7 @@ export type RedactOpts = {
    */
   findings?: readonly {
     StartLine: number;
-    StartColumn: number;
-    EndColumn: number;
+    Match: string;
     RuleID: string;
   }[];
 };
@@ -120,9 +119,7 @@ export function cmdRedact(opts: RedactOpts, nowMs: () => number = Date.now): voi
     if (dryRun) {
       log(
         `dry-run: would redact ${findings.length} finding(s) in ${localPath}\n` +
-          findings
-            .map((f) => `  line ${f.StartLine} col ${f.StartColumn}-${f.EndColumn} [${f.RuleID}]`)
-            .join('\n'),
+          findings.map((f) => `  line ${f.StartLine} [${f.RuleID}]`).join('\n'),
       );
       return;
     }

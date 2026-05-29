@@ -15,24 +15,21 @@ import type * as utilsFsModule from './utils.fs.ts';
  */
 
 // ---------------------------------------------------------------------------
-// redactSpan (pure)
+// redactValue (pure)
 // ---------------------------------------------------------------------------
 
-describe('redactSpan (pure)', () => {
-  it('replaces the span at the given 1-indexed columns', async () => {
-    const { redactSpan } = await import('./commands.redact.core.ts');
-    // "hello secret world" -- 'secret' at 0-indexed 6-11; startCol=7, endCol=12
-    const line = 'hello secret world';
-    const result = redactSpan(line, 7, 12, 'test-rule');
-    expect(result).toBe('hello [REDACTED:test-rule] world');
+describe('redactValue (pure)', () => {
+  it('replaces all occurrences of the match value in the line', async () => {
+    const { redactValue } = await import('./commands.redact.core.ts');
+    const line = 'hello secret world secret end';
+    const result = redactValue(line, 'secret', 'test-rule');
+    expect(result).toBe('hello [REDACTED:test-rule] world [REDACTED:test-rule] end');
   });
 
-  it('produces a result that JSON.parse accepts when the span is inside a JSON string', async () => {
-    const { redactSpan } = await import('./commands.redact.core.ts');
-    // Simulate a JSONL line: {"text":"my-secret-token","other":1}
-    // 'my-secret-token' at 0-indexed 9-23; startCol=10, endCol=24
+  it('produces a result that JSON.parse accepts when the match is inside a JSON string', async () => {
+    const { redactValue } = await import('./commands.redact.core.ts');
     const line = '{"text":"my-secret-token","other":1}';
-    const result = redactSpan(line, 10, 24, 'github-pat');
+    const result = redactValue(line, 'my-secret-token', 'github-pat');
     expect(() => {
       JSON.parse(result);
     }).not.toThrow();
@@ -40,17 +37,21 @@ describe('redactSpan (pure)', () => {
     expect(parsed.text).toBe('[REDACTED:github-pat]');
   });
 
-  it('handles a span at the very start of the line', async () => {
-    const { redactSpan } = await import('./commands.redact.core.ts');
-    // 'secret' at 0-indexed 0-5; startCol=1, endCol=6; 'X' is at position 6
-    const result = redactSpan('secretXrest', 1, 6, 'r1');
+  it('is a no-op when match is the empty string', async () => {
+    const { redactValue } = await import('./commands.redact.core.ts');
+    const line = 'some content here';
+    expect(redactValue(line, '', 'r1')).toBe('some content here');
+  });
+
+  it('handles a match at the very start of the line', async () => {
+    const { redactValue } = await import('./commands.redact.core.ts');
+    const result = redactValue('secretXrest', 'secret', 'r1');
     expect(result).toBe('[REDACTED:r1]Xrest');
   });
 
-  it('handles a span at the very end of the line', async () => {
-    const { redactSpan } = await import('./commands.redact.core.ts');
-    // 'secret' at 0-indexed 6-11; startCol=7, endCol=12; slice(12)=''
-    const result = redactSpan('prefixsecret', 7, 12, 'r1');
+  it('handles a match at the very end of the line', async () => {
+    const { redactValue } = await import('./commands.redact.core.ts');
+    const result = redactValue('prefixsecret', 'secret', 'r1');
     expect(result).toBe('prefix[REDACTED:r1]');
   });
 });
@@ -60,44 +61,35 @@ describe('redactSpan (pure)', () => {
 // ---------------------------------------------------------------------------
 
 describe('applyRedactions (pure)', () => {
-  it('redacts a single finding on one line', async () => {
+  it('redacts a single finding by Match value', async () => {
     const { applyRedactions } = await import('./commands.redact.core.ts');
-    // Line 2: {"k":"secret"} -- 'secret' at 0-indexed 6-11; startCol=7, endCol=12
     const content = 'line1\n{"k":"secret"}\nline3';
-    const result = applyRedactions(content, [
-      { StartLine: 2, StartColumn: 7, EndColumn: 12, RuleID: 'r1' },
-    ]);
+    const result = applyRedactions(content, [{ StartLine: 1, Match: 'secret', RuleID: 'r1' }]);
     expect(result).toBe('line1\n{"k":"[REDACTED:r1]"}\nline3');
   });
 
-  it('applies two same-line findings in descending column order (no offset drift)', async () => {
+  it('redacts two distinct Match values on the same line', async () => {
     const { applyRedactions } = await import('./commands.redact.core.ts');
-    // Line: {"a":"AAA","b":"BBB"}
-    // 'AAA' at 0-indexed positions 6-8 => StartColumn=7, EndColumn=9 (slice(9) = '","b":"BBB"}')
-    // 'BBB' at 0-indexed positions 16-18 => StartColumn=17, EndColumn=19 (slice(19) = '"}')
     const line = '{"a":"AAA","b":"BBB"}';
     const result = applyRedactions(line, [
-      { StartLine: 1, StartColumn: 7, EndColumn: 9, RuleID: 'rule-a' },
-      { StartLine: 1, StartColumn: 17, EndColumn: 19, RuleID: 'rule-b' },
+      { StartLine: 1, Match: 'AAA', RuleID: 'rule-a' },
+      { StartLine: 1, Match: 'BBB', RuleID: 'rule-b' },
     ]);
-    // Both spans must be replaced; the order of application must not corrupt either
     expect(result).toContain('[REDACTED:rule-a]');
     expect(result).toContain('[REDACTED:rule-b]');
-    // The result must still be valid JSON
-    expect(() => {
-      JSON.parse(result);
-    }).not.toThrow();
+    expect(() => JSON.parse(result) as unknown).not.toThrow();
     const parsed = JSON.parse(result) as { a: string; b: string };
     expect(parsed.a).toBe('[REDACTED:rule-a]');
     expect(parsed.b).toBe('[REDACTED:rule-b]');
   });
 
-  it('skips a finding whose StartLine is out of range', async () => {
+  it('handles an out-of-range StartLine gracefully (value is still replaced if present)', async () => {
     const { applyRedactions } = await import('./commands.redact.core.ts');
+    // Value-based redaction operates on the whole content; StartLine is not
+    // used for replacement but kept in the type for caller reference.
     const content = 'only one line';
-    const result = applyRedactions(content, [
-      { StartLine: 99, StartColumn: 1, EndColumn: 5, RuleID: 'r1' },
-    ]);
+    const result = applyRedactions(content, [{ StartLine: 99, Match: 'xyz', RuleID: 'r1' }]);
+    // 'xyz' is not in content, so unchanged
     expect(result).toBe('only one line');
   });
 
@@ -105,6 +97,105 @@ describe('applyRedactions (pure)', () => {
     const { applyRedactions } = await import('./commands.redact.core.ts');
     const content = 'unchanged content';
     expect(applyRedactions(content, [])).toBe('unchanged content');
+  });
+
+  it('skips a finding whose Match is empty (no-op guard)', async () => {
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    const content = 'some content';
+    const result = applyRedactions(content, [{ StartLine: 1, Match: '', RuleID: 'r1' }]);
+    expect(result).toBe('some content');
+  });
+
+  it('redacts the longer Match first when one is a substring of another', async () => {
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    // 'ghp_abc123' contains 'abc123'; longer must be replaced first so 'abc123'
+    // match does not consume part of 'ghp_abc123' leaving a broken token.
+    const line = 'token=ghp_abc123 other=abc123';
+    const result = applyRedactions(line, [
+      { StartLine: 1, Match: 'abc123', RuleID: 'short-rule' },
+      { StartLine: 1, Match: 'ghp_abc123', RuleID: 'long-rule' },
+    ]);
+    expect(result).toBe('token=[REDACTED:long-rule] other=[REDACTED:short-rule]');
+  });
+
+  it('redacts across multiple lines when the same value appears more than once', async () => {
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    const content = '{"a":"SECRET"}\n{"b":"SECRET"}\n';
+    const result = applyRedactions(content, [{ StartLine: 1, Match: 'SECRET', RuleID: 'r1' }]);
+    expect(result).toBe('{"a":"[REDACTED:r1]"}\n{"b":"[REDACTED:r1]"}\n');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRedactions regression: column-offset bug (github-pat in JSONL transcript)
+// ---------------------------------------------------------------------------
+
+describe('applyRedactions regression: value-based redaction preserves valid JSON', () => {
+  /**
+   * Regression for the column-offset bug where gitleaks StartColumn/EndColumn
+   * did not align to JS string indices inside long JSON-string content:
+   * the leading secret char was left behind and the closing JSON quote was
+   * consumed, producing invalid JSON.
+   */
+  it('fully removes a 40-char github-pat from a realistic JSONL transcript line', async () => {
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    const pat = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const line = `{"message":{"role":"assistant","content":"export GITHUB_TOKEN=${pat}"}}`;
+    const finding = { StartLine: 1, Match: pat, RuleID: 'github-pat' };
+    const result = applyRedactions(line, [finding]);
+
+    // (a) No part of the secret survives
+    expect(result).not.toContain('ghp_');
+    expect(result).not.toContain('0123456789abcdefghijABCDEFGHIJ012345');
+
+    // (b) Redaction token present
+    expect(result).toContain('[REDACTED:github-pat]');
+
+    // (c) Result is valid JSON and the content field is correct
+    const parsed = JSON.parse(result) as {
+      message: { role: string; content: string };
+    };
+    expect(parsed.message.content).toBe('export GITHUB_TOKEN=[REDACTED:github-pat]');
+  });
+
+  it('redacts two distinct secrets on one line and produces valid JSON', async () => {
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    const pat1 = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const pat2 = 'ghp_abcdefghijABCDEFGHIJ0123456789zyxwvu';
+    const line = `{"a":"${pat1}","b":"${pat2}"}`;
+    const result = applyRedactions(line, [
+      { StartLine: 1, Match: pat1, RuleID: 'github-pat' },
+      { StartLine: 1, Match: pat2, RuleID: 'github-pat' },
+    ]);
+    expect(result).not.toContain('ghp_');
+    expect(JSON.parse(result)).toMatchObject({
+      a: '[REDACTED:github-pat]',
+      b: '[REDACTED:github-pat]',
+    });
+  });
+
+  it('handles a Match that is a substring of another Match on the same line', async () => {
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    const full = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const sub = '0123456789abcdefghijABCDEFGHIJ012345'; // suffix of full
+    const line = `{"token":"${full}"}`;
+    const result = applyRedactions(line, [
+      { StartLine: 1, Match: full, RuleID: 'github-pat' },
+      { StartLine: 1, Match: sub, RuleID: 'generic-secret' },
+    ]);
+    // The full token should be gone; the suffix alone is now absent too (was
+    // inside the full token which was replaced first).
+    expect(result).not.toContain('ghp_');
+    expect(result).not.toContain(sub);
+    expect(() => JSON.parse(result) as unknown).not.toThrow();
+  });
+
+  it('treats an empty-Match finding as a no-op', async () => {
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    const line = '{"text":"hello"}';
+    const result = applyRedactions(line, [{ StartLine: 1, Match: '', RuleID: 'github-pat' }]);
+    expect(result).toBe('{"text":"hello"}');
+    expect(() => JSON.parse(result) as unknown).not.toThrow();
   });
 });
 
@@ -328,7 +419,7 @@ describe('cmdRedact', () => {
     cmdRedact(
       {
         id: 'session1',
-        findings: [{ StartLine: 1, StartColumn: 10, EndColumn: 14, RuleID: 'test-rule' }],
+        findings: [{ StartLine: 1, Match: 'hello', RuleID: 'test-rule' }],
       },
       () => nowMs + 1000,
     );
@@ -359,7 +450,7 @@ describe('cmdRedact', () => {
       {
         id: 'sess2',
         dryRun: true,
-        findings: [{ StartLine: 1, StartColumn: 10, EndColumn: 14, RuleID: 'test-rule' }],
+        findings: [{ StartLine: 1, Match: 'hello', RuleID: 'test-rule' }],
       },
       () => farFuture,
     );
@@ -400,12 +491,12 @@ describe('cmdRedact', () => {
     cmdRedact(
       {
         id: 'sess3',
-        findings: [{ StartLine: 1, StartColumn: 10, EndColumn: 14, RuleID: 'test-rule' }],
+        findings: [{ StartLine: 1, Match: 'hello', RuleID: 'test-rule' }],
       },
       () => farFuture,
     );
     expect(backupSpy).toHaveBeenCalledOnce();
-    // The file should be written with a redaction on line 1, col 9-14
+    // The file should be written with a redaction on line 1
     const { readFileSync: realRead } = await import('node:fs');
     const written = realRead(transcriptPath, 'utf8');
     expect(written).toContain('[REDACTED:test-rule]');
@@ -443,8 +534,8 @@ describe('cmdRedact', () => {
         id: 'sess4',
         rule: 'rule-a',
         findings: [
-          { StartLine: 1, StartColumn: 7, EndColumn: 11, RuleID: 'rule-a' },
-          { StartLine: 2, StartColumn: 7, EndColumn: 11, RuleID: 'rule-b' },
+          { StartLine: 1, Match: 'AAAAA', RuleID: 'rule-a' },
+          { StartLine: 2, Match: 'BBBBB', RuleID: 'rule-b' },
         ],
       },
       () => farFuture,

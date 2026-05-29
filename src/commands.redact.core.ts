@@ -4,63 +4,52 @@ import { join } from 'node:path';
 import { REPO_HOME } from './config.ts';
 
 /**
- * Replace one secret span in a raw JSONL line. 1-indexed startCol/endCol from
- * gitleaks `StartColumn`/`EndColumn` fields. Pure, no I/O.
+ * Replace every occurrence of a literal secret value in a raw line. Uses
+ * split/join to avoid regex escaping and to replace all occurrences. Pure,
+ * no I/O.
  *
  * The replacement token `[REDACTED:<ruleId>]` contains no JSON-special
- * characters, so the result remains valid JSON when the span sits inside a
+ * characters, so the result remains valid JSON when the value sits inside a
  * JSON string token.
  *
  * @param line Raw JSONL line text.
- * @param startCol 1-indexed start column (inclusive).
- * @param endCol 1-indexed end column (exclusive slice boundary).
+ * @param match Literal secret value to replace (empty string is a no-op).
  * @param ruleId Gitleaks rule identifier included in the replacement token.
- * @returns Line with the span replaced by `[REDACTED:<ruleId>]`.
+ * @returns Line with all occurrences of `match` replaced by `[REDACTED:<ruleId>]`.
  */
-export function redactSpan(line: string, startCol: number, endCol: number, ruleId: string): string {
-  return line.slice(0, startCol - 1) + `[REDACTED:${ruleId}]` + line.slice(endCol);
+export function redactValue(line: string, match: string, ruleId: string): string {
+  if (match === '') return line;
+  return line.split(match).join(`[REDACTED:${ruleId}]`);
 }
 
 /** Minimal finding shape consumed by `applyRedactions`. */
 export type RedactFinding = {
   StartLine: number;
-  StartColumn: number;
-  EndColumn: number;
+  Match: string;
   RuleID: string;
 };
 
 /**
- * Apply all findings for one file in memory. Groups findings by `StartLine`,
- * sorts each group descending by `StartColumn` to avoid offset drift when
- * multiple secrets appear on the same line, then rewrites each line via
- * `redactSpan`. Out-of-range `StartLine` values are silently skipped.
- * Pure, no I/O.
+ * Apply all findings for one file in memory. Replaces each finding's `Match`
+ * value globally across the whole content string (split/join, no column
+ * arithmetic). To avoid a shorter secret being a substring of a longer one
+ * causing a partial match, findings are sorted by `Match.length` descending so
+ * the longer secret is replaced first. Findings with an empty `Match` are
+ * silently skipped (a defensive guard: an empty match would otherwise inject
+ * the token between every character). Pure, no I/O.
  *
  * @param content Full file content as a single string.
  * @param findings Array of finding descriptors.
  * @returns Redacted file content.
  */
 export function applyRedactions(content: string, findings: readonly RedactFinding[]): string {
-  const byLine = new Map<number, RedactFinding[]>();
-  for (const f of findings) {
-    const group = byLine.get(f.StartLine) ?? [];
-    group.push(f);
-    byLine.set(f.StartLine, group);
+  const sorted = [...findings].sort((a, b) => b.Match.length - a.Match.length);
+  let result = content;
+  for (const f of sorted) {
+    if (f.Match === '') continue;
+    result = result.split(f.Match).join(`[REDACTED:${f.RuleID}]`);
   }
-  for (const group of byLine.values()) {
-    group.sort((a, b) => b.StartColumn - a.StartColumn);
-  }
-  const lines = content.split('\n');
-  for (const [lineNum, group] of byLine) {
-    const idx = lineNum - 1;
-    let line = lines[idx];
-    if (line === undefined) continue;
-    for (const f of group) {
-      line = redactSpan(line, f.StartColumn, f.EndColumn, f.RuleID);
-    }
-    lines[idx] = line;
-  }
-  return lines.join('\n');
+  return result;
 }
 
 /**
