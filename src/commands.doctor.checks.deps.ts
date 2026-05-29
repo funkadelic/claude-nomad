@@ -16,8 +16,14 @@ import type { SpawnSyncFn } from './gh-actions.ts';
  * informational only (D-02). Both probes always run unconditionally.
  */
 
-/** Regex to extract the first X.Y.Z version token from a string. */
-const VERSION_TOKEN = /(\d+\.\d+\.\d+)/;
+/**
+ * Regex to extract the first X.Y.Z version token from a string. Each segment
+ * is bounded (`{1,9}`) rather than `+` so the pattern is provably linear: a
+ * `--version` line never has a segment longer than a few digits, and bounding
+ * the repetition removes the super-linear backtracking an unbounded
+ * `\d+\.\d+\.\d+` carries on a degenerate all-digit input.
+ */
+const VERSION_TOKEN = /(\d{1,9}\.\d{1,9}\.\d{1,9})/;
 
 /**
  * Extract the first X.Y.Z-shaped version token from a string.
