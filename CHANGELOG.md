@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/funkadelic/claude-nomad/compare/v0.28.0...v0.29.0) (2026-05-29)
+
+
+### Added
+
+* sync hook scripts and tool support dirs across hosts ([#171](https://github.com/funkadelic/claude-nomad/issues/171)) ([e340fd2](https://github.com/funkadelic/claude-nomad/commit/e340fd221882f9107f4e10c3a64ccd7be4061a14))
+
 ## [0.28.0](https://github.com/funkadelic/claude-nomad/compare/v0.27.0...v0.28.0) (2026-05-28)
 
 
