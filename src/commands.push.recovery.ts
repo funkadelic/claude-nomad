@@ -118,13 +118,14 @@ function makeRealPrompt(): PromptFn {
  * @param ts Backup timestamp created at the start of this push run.
  * @param map Parsed `path-map.json` for session path resolution.
  * @param deps Optional dependency overrides for testing.
+ * @returns The final clean `LeakVerdict` after all findings are resolved.
  */
 export async function resolveLeakFindings(
   verdict: LeakVerdict,
   ts: string,
   map: PathMap,
   deps: RecoveryDeps = {},
-): Promise<void> {
+): Promise<LeakVerdict> {
   const {
     isTTYCheck = isTTY,
     nowMs = Date.now,
@@ -145,7 +146,7 @@ export async function resolveLeakFindings(
       const { bySession, other } = partitionFindings(next.findings);
       throw new NomadFatal(buildSessionAwareFatal(bySession, other));
     }
-    return;
+    return next;
   }
 
   if (!isTTYCheck()) {
@@ -172,4 +173,5 @@ export async function resolveLeakFindings(
     gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
     current = scanVerdict();
   }
+  return current;
 }

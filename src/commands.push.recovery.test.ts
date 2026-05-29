@@ -256,16 +256,67 @@ describe('resolveLeakFindings - TTY Allow action -> re-scan clean -> returns', (
       findings: [finding],
     };
     const map: PathMap = { projects: {} };
+    const cleanVerdict = { leak: false, verdictRow: '✓ no leaks', recovery: null, findings: [] };
 
     // User types 'a' (Allow).
-    await resolveLeakFindings(verdict, 'ts-001', map, {
+    const result = await resolveLeakFindings(verdict, 'ts-001', map, {
       isTTYCheck: () => true,
       makePrompt: () => () => Promise.resolve('a'),
-      scanVerdict: () => ({ leak: false, verdictRow: '✓', recovery: null, findings: [] }),
+      scanVerdict: () => cleanVerdict,
     });
 
     expect(appendMock).toHaveBeenCalledOnce();
     expect(appendMock).toHaveBeenCalledWith('shared/projects/my-proj/abc123.jsonl:github-pat:1');
+    expect(result.leak).toBe(false);
+    expect(result.verdictRow).toBe('✓ no leaks');
+  });
+});
+
+describe('resolveLeakFindings - TTY Redact action -> re-scan clean -> returns final verdict', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.push.recovery.actions.ts');
+    vi.doUnmock('./utils.ts');
+  });
+
+  it('returns the final clean LeakVerdict after a successful Redact', async () => {
+    vi.doMock('./commands.push.recovery.actions.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryActionsModule>();
+      return {
+        ...actual,
+        collectActions: vi.fn().mockResolvedValue(new Map([['fp1', 'redact']])),
+        dispatchActions: vi.fn(),
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const finding = makeFinding({ Fingerprint: 'fp1' });
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ gitleaks detected secrets in 1 session transcript(s)',
+      recovery: 'session-aware fatal',
+      findings: [finding],
+    };
+    const map: PathMap = { projects: {} };
+    const cleanVerdict = { leak: false, verdictRow: '✓ no leaks', recovery: null, findings: [] };
+
+    const result = await resolveLeakFindings(verdict, 'ts-001', map, {
+      isTTYCheck: () => true,
+      makePrompt: () => () => Promise.resolve('r'),
+      scanVerdict: () => cleanVerdict,
+    });
+
+    expect(result.leak).toBe(false);
+    expect(result.verdictRow).toBe('✓ no leaks');
+    expect(result.recovery).toBeNull();
   });
 });
 
@@ -305,15 +356,18 @@ describe('resolveLeakFindings - --redact-all non-interactive batch redact', () =
     };
     const map: PathMap = { projects: {} };
     const promptSpy = vi.fn(() => Promise.resolve(''));
+    const cleanVerdict = { leak: false, verdictRow: '✓ no leaks', recovery: null, findings: [] };
 
-    await resolveLeakFindings(verdict, 'ts-001', map, {
+    const result = await resolveLeakFindings(verdict, 'ts-001', map, {
       redactAll: true,
       makePrompt: () => promptSpy,
-      scanVerdict: () => ({ leak: false, verdictRow: '✓', recovery: null, findings: [] }),
+      scanVerdict: () => cleanVerdict,
     });
 
     expect(redactAllMock).toHaveBeenCalledOnce();
     expect(promptSpy).not.toHaveBeenCalled();
+    expect(result.leak).toBe(false);
+    expect(result.verdictRow).toBe('✓ no leaks');
   });
 
   it('--redact-all throws NomadFatal when re-scan still finds leaks', async () => {

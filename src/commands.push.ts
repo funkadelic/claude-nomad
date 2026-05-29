@@ -53,10 +53,10 @@ async function commitAndPush(
   redactAll: boolean,
 ): Promise<void> {
   gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
-  const verdict = scanPushVerdict();
+  let verdict = scanPushVerdict();
   if (verdict.leak) {
     renderPushTree(st, verdict);
-    await resolveLeakFindings(verdict, ts, map, { redactAll });
+    verdict = await resolveLeakFindings(verdict, ts, map, { redactAll });
   }
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
   gitOrFatal(['push'], 'git push', REPO_HOME);
