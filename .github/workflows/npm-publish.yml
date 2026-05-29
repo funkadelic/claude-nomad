@@ -83,7 +83,11 @@ jobs:
     # attempt should fire against them.
     if: ${{ !github.event.repository.private && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Must exceed the install step's retry budget (~8m of backoff sleeps, see
+    # below) plus node setup and the per-attempt npm overhead, otherwise the
+    # job is killed before it can exhaust the budget and a propagation lag
+    # surfaces as a timeout instead of the intended FAIL message.
+    timeout-minutes: 12
     steps:
       - name: Set up Node 24
         # No registry-url needed: smoke-test installs from the default npm
