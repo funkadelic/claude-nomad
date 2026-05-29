@@ -1,6 +1,9 @@
 import { green, okGlyph, warnGlyph, yellow } from './color.ts';
 import { ok, warn } from './utils.ts';
 
+/** The three originating commands that share the end-of-run summary line. */
+type SummaryVerb = 'pull' | 'push' | 'diff';
+
 /**
  * Pure phrasing core for the end-of-run summary line shared by cmdPull,
  * cmdPush, and cmdDiff. Returns the message `text` (without any status glyph)
@@ -27,7 +30,7 @@ import { ok, warn } from './utils.ts';
  * @returns `{ text, clean }` where `clean` is true on the no-warning outcome.
  */
 export function summaryText(
-  verb: 'pull' | 'push' | 'diff',
+  verb: SummaryVerb,
   unmapped: number,
   collisions = 0,
   extrasSkipped = 0,
@@ -63,7 +66,7 @@ export function summaryText(
  * @returns the rendered row string for the Summary section.
  */
 export function summaryRow(
-  verb: 'pull' | 'push' | 'diff',
+  verb: SummaryVerb,
   unmapped: number,
   collisions = 0,
   extrasSkipped = 0,
@@ -85,7 +88,7 @@ export function summaryRow(
  * contract). `cmdDiff` still calls this for its standalone summary line.
  */
 export function emitSummary(
-  verb: 'pull' | 'push' | 'diff',
+  verb: SummaryVerb,
   unmapped: number,
   collisions = 0,
   extrasSkipped = 0,

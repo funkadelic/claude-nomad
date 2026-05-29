@@ -3,21 +3,17 @@ import { join } from 'node:path';
 
 import { HOME, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
 import { listDivergingFiles } from './extras-sync.diff.ts';
-import {
-  copyExtras,
-  eachExtrasTarget,
-  loadValidatedExtras,
-  type ExtrasCounts,
-  type ValidatedExtras,
-} from './extras-sync.core.ts';
+import { eachExtrasTarget, loadValidatedExtras, type ExtrasCounts } from './extras-sync.core.ts';
 import { assertSafeLogical } from './extras-sync.guards.ts';
 import { warn } from './utils.ts';
 import { encodePath } from './utils.json.ts';
 
 // Re-export the shared primitives so existing import sites that pull them from
 // `./extras-sync.ts` (tests call `copyExtras` directly) keep working unchanged.
-export { copyExtras, eachExtrasTarget, loadValidatedExtras };
-export type { ExtrasCounts, ValidatedExtras };
+export { copyExtras } from './extras-sync.core.ts';
+export type { ValidatedExtras } from './extras-sync.core.ts';
+export { eachExtrasTarget, loadValidatedExtras };
+export type { ExtrasCounts };
 
 // The two public remap ops live in the sibling module to hold the soft
 // line-cap; re-exported here so `./extras-sync.ts` stays the public surface.
