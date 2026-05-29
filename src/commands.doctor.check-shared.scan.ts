@@ -83,10 +83,10 @@ function reportRemediation(
     const logical = logicalBySession.get(sid);
     /* c8 ignore next -- false branch is defensive; every bySession sid is keyed in logicalBySession */
     if (logical !== undefined) {
-      addItem(
-        section,
-        `  ${dim(`- rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`)}`,
+      const rotateLine = dim(
+        `- rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
       );
+      addItem(section, `  ${rotateLine}`);
     }
   }
   addItem(section, `  ${dim('- false positive? add a pattern to .gitleaks.toml')}`);
@@ -147,7 +147,8 @@ function emitDescriptionLegend(section: DoctorSection, findings: Finding[]): voi
   addItem(section, '');
   addItem(section, bold('Finding types'));
   for (const [rule, desc] of descByRule) {
-    addItem(section, `  ${red(`- [${rule}]`)}: ${dim(desc)}`);
+    const ruleLabel = red(`- [${rule}]`);
+    addItem(section, `  ${ruleLabel}: ${dim(desc)}`);
   }
 }
 
