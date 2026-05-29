@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -472,7 +480,7 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     const trigger: Finding = {
       RuleID: 'test-rule',
       File: 'shared/projects/myproject/sid123.jsonl',
@@ -512,7 +520,7 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     const trigger: Finding = {
       RuleID: 'test-rule',
       File: 'shared/projects/myproject/sid123.jsonl',
@@ -547,7 +555,7 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     const trigger: Finding = {
       RuleID: 'test-rule',
       File: 'shared/projects/myproject/sid123.jsonl',
@@ -621,7 +629,7 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
       return { ...actual, log: logSpy };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     const trigger: Finding = {
       RuleID: 'test-rule',
       File: 'shared/projects/myproject/sid123.jsonl',
@@ -663,7 +671,7 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
       return { ...actual, log: logSpy };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     const trigger: Finding = {
       RuleID: 'test-rule',
       File: 'shared/projects/myproject/sid123.jsonl',
@@ -706,7 +714,7 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
       return { ...actual, log: logSpy };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     const trigger: Finding = {
       RuleID: 'test-rule',
       File: 'shared/projects/myproject/sid123.jsonl',
@@ -748,7 +756,7 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
       return { ...actual, log: logSpy };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     const trigger: Finding = {
       RuleID: 'test-rule',
       File: 'shared/projects/myproject/sid123.jsonl',
@@ -798,7 +806,7 @@ describe('applyRedact: unresolvable session-id emits guidance message', () => {
       return { ...actual, log: logSpy };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     // File path that matches neither SESSION_PATH nor the subagent pattern.
     const trigger: Finding = {
       RuleID: 'test-rule',
@@ -827,7 +835,7 @@ describe('applyRedact: unresolvable session-id emits guidance message', () => {
       return { ...actual, log: logSpy };
     });
 
-    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
     // Valid session path so sid extracts, but NOMAD_REPO has no path-map.json
     // so resolveLiveTranscript returns null.
     const trigger: Finding = {
@@ -1062,5 +1070,202 @@ describe('resolveLeakFindings - legend emission', () => {
     });
 
     expect(legendSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dropSessionFromStaged: filesystem removal
+// ---------------------------------------------------------------------------
+
+describe('dropSessionFromStaged', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-dropstagd-'));
+    process.env.NOMAD_REPO = testHome;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+  });
+
+  it('removes the jsonl file and returns true when it exists', async () => {
+    const logical = 'my-proj';
+    const sid = 'abc123';
+    const dir = join(testHome, 'shared', 'projects', logical);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${sid}.jsonl`), 'content');
+
+    const map: PathMap = { projects: { [logical]: { host: '/some/path' } } };
+    const { dropSessionFromStaged } = await import('./commands.push.recovery.drop.ts');
+
+    const result = dropSessionFromStaged(sid, map);
+
+    expect(result).toBe(true);
+    expect(existsSync(join(dir, `${sid}.jsonl`))).toBe(false);
+  });
+
+  it('removes the subagent directory recursively when it exists', async () => {
+    const logical = 'my-proj';
+    const sid = 'abc123';
+    const projDir = join(testHome, 'shared', 'projects', logical);
+    const subDir = join(projDir, sid);
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, 'sub.jsonl'), 'subagent');
+
+    const map: PathMap = { projects: { [logical]: { host: '/some/path' } } };
+    const { dropSessionFromStaged } = await import('./commands.push.recovery.drop.ts');
+
+    const result = dropSessionFromStaged(sid, map);
+
+    expect(result).toBe(true);
+    expect(existsSync(subDir)).toBe(false);
+  });
+
+  it('returns false when map has no projects (empty map)', async () => {
+    const map: PathMap = { projects: {} };
+    const { dropSessionFromStaged } = await import('./commands.push.recovery.drop.ts');
+
+    const result = dropSessionFromStaged('abc123', map);
+
+    expect(result).toBe(false);
+  });
+
+  it('returns true and does not throw when neither jsonl nor subdir exists', async () => {
+    const logical = 'my-proj';
+    mkdirSync(join(testHome, 'shared', 'projects', logical), { recursive: true });
+    const map: PathMap = { projects: { [logical]: { host: '/some/path' } } };
+    const { dropSessionFromStaged } = await import('./commands.push.recovery.drop.ts');
+
+    expect(() => dropSessionFromStaged('no-such-sid', map)).not.toThrow();
+  });
+
+  it('never touches paths outside REPO_HOME (CLAUDE_HOME safety)', async () => {
+    const claudeProjects = join(testHome, '.claude', 'projects', 'my-proj');
+    mkdirSync(claudeProjects, { recursive: true });
+    writeFileSync(join(claudeProjects, 'abc123.jsonl'), 'local-transcript');
+
+    const logical = 'my-proj';
+    mkdirSync(join(testHome, 'shared', 'projects', logical), { recursive: true });
+    const map: PathMap = { projects: { [logical]: { host: '/some/path' } } };
+    const { dropSessionFromStaged } = await import('./commands.push.recovery.drop.ts');
+
+    dropSessionFromStaged('abc123', map);
+
+    expect(existsSync(join(claudeProjects, 'abc123.jsonl'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dispatchActions: Drop action calls dropSessionFromStaged, not cmdDropSession
+// ---------------------------------------------------------------------------
+
+describe('dispatchActions - Drop action uses dropSessionFromStaged', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.push.recovery.drop.ts');
+    vi.doUnmock('./utils.ts');
+  });
+
+  it('calls dropSessionFromStaged and logs the drop message', async () => {
+    const dropMock = vi.fn().mockReturnValue(true);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const finding = makeFinding({ File: 'shared/projects/my-proj/abc123.jsonl' });
+    const actions = new Map([[findingKey(finding), 'drop' as const]]);
+    const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
+
+    dispatchActions([finding], actions, 'ts-x', map, Date.now, undefined, dropMock);
+
+    expect(dropMock).toHaveBeenCalledOnce();
+    expect(dropMock).toHaveBeenCalledWith('abc123', map);
+    expect(logSpy).toHaveBeenCalledOnce();
+    const msg: string = logSpy.mock.calls[0][0] as string;
+    expect(msg).toContain('abc123');
+    expect(msg).toMatch(/local transcript kept/i);
+  });
+
+  it('does not log when dropSessionFromStaged returns false (empty map)', async () => {
+    const dropMock = vi.fn().mockReturnValue(false);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const finding = makeFinding({ File: 'shared/projects/my-proj/abc123.jsonl' });
+    const actions = new Map([[findingKey(finding), 'drop' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([finding], actions, 'ts-x', map, Date.now, undefined, dropMock);
+
+    expect(dropMock).toHaveBeenCalledOnce();
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveLeakFindings: Drop -> clean re-scan -> push proceeds (no NomadFatal)
+// ---------------------------------------------------------------------------
+
+describe('resolveLeakFindings - Drop action -> clean re-scan -> returns', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.push.recovery.actions.ts');
+    vi.doUnmock('./utils.ts');
+  });
+
+  it('returns a clean verdict when user drops the only finding', async () => {
+    vi.doMock('./commands.push.recovery.actions.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryActionsModule>();
+      return {
+        ...actual,
+        collectActions: vi
+          .fn()
+          .mockResolvedValue(
+            new Map([['shared/projects/my-proj/abc123.jsonl:github-pat:1', 'drop' as const]]),
+          ),
+        dispatchActions: vi.fn(),
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const finding = makeFinding({
+      File: 'shared/projects/my-proj/abc123.jsonl',
+      Fingerprint: 'shared/projects/my-proj/abc123.jsonl:github-pat:1',
+    });
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: 'session-aware fatal',
+      findings: [finding],
+    };
+    const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
+    const cleanVerdict = { leak: false, verdictRow: '✓ no leaks', recovery: null, findings: [] };
+
+    const result = await resolveLeakFindings(verdict, 'ts-001', map, {
+      isTTYCheck: () => true,
+      makePrompt: () => () => Promise.resolve('d'),
+      scanVerdict: () => cleanVerdict,
+    });
+
+    expect(result.leak).toBe(false);
+    expect(result.verdictRow).toBe('✓ no leaks');
   });
 });
