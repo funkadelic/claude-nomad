@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/funkadelic/claude-nomad/compare/v0.29.1...v0.30.0) (2026-05-29)
+
+
+### Added
+
+* **doctor:** report gh and curl presence in Version Checks ([#175](https://github.com/funkadelic/claude-nomad/issues/175)) ([5163833](https://github.com/funkadelic/claude-nomad/commit/516383301dbd9c64cfc8f1c7a654655b61c29280))
+
+
+### Changed
+
+* widen npm-publish smoke-test propagation window ([#176](https://github.com/funkadelic/claude-nomad/issues/176)) ([f8b1eef](https://github.com/funkadelic/claude-nomad/commit/f8b1eef18dcee91fb894d2036c42356f82c76f79))
+
 ## [0.29.1](https://github.com/funkadelic/claude-nomad/compare/v0.29.0...v0.29.1) (2026-05-29)
 
 
