@@ -174,3 +174,57 @@ describe('issue #111: untracked extras subtree porcelain collapse', () => {
     expect(() => enforceAllowList(status, map)).not.toThrow();
   });
 });
+
+describe('enforceAllowList sharedDirs dynamic entries', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('permits shared/hooks/foo.sh via the static PUSH_ALLOWED_STATIC prefix', async () => {
+    // shared/hooks/ was added to PUSH_ALLOWED_STATIC in plan 25-01; it is a
+    // static allow-list entry, so no sharedDirs map entry is needed.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    // Should NOT throw for shared/hooks/foo.sh
+    expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).not.toThrow();
+    // The static entry does not grant shared/hooks itself without trailing slash.
+    expect(() => enforceAllowList('M  shared/other/file.sh\0', map)).toThrow(NomadFatal);
+  });
+
+  it('permits shared/gsd/ and shared/gsd/cli.js when map.sharedDirs includes "gsd"', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['gsd'] };
+    expect(() => enforceAllowList('M  shared/gsd/cli.js\0', map)).not.toThrow();
+  });
+
+  it('does NOT add an allow entry for an invalid sharedDirs entry ("../escape")', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['../escape'] };
+    // The invalid entry is filtered out, so shared/escape/... is still rejected.
+    expect(() => enforceAllowList('M  shared/escape/file.txt\0', map)).toThrow(NomadFatal);
+  });
+
+  it('does NOT add an allow entry for a NEVER_SYNC sharedDir, and the hard-block still fires', async () => {
+    // 'todos' is in NEVER_SYNC; it must not widen the allow-list AND the
+    // NEVER_SYNC hard-block must still reject a path containing it.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['todos'] };
+    expect(() => enforceAllowList('M  shared/todos/a.md\0', map)).toThrow(NomadFatal);
+    // Verify it was the NEVER_SYNC message (not the allow-list message)
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('is in NEVER_SYNC and must never be pushed'),
+    );
+  });
+});

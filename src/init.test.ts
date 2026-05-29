@@ -58,8 +58,8 @@ describe('cmdInit empty-scaffold mode', () => {
     expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe(
       '<!-- claude-nomad shared CLAUDE.md; symlinked into ~/.claude/CLAUDE.md by nomad pull -->\n',
     );
-    // Four .gitkeep placeholders under shared/ subdirs, all empty.
-    for (const name of ['agents', 'skills', 'commands', 'rules']) {
+    // Five .gitkeep placeholders under shared/ subdirs, all empty.
+    for (const name of ['agents', 'skills', 'commands', 'rules', 'hooks']) {
       expect(readFileSync(join(repo, 'shared', name, '.gitkeep'), 'utf8')).toBe('');
     }
     // hosts/.gitkeep is also empty.

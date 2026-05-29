@@ -1,26 +1,27 @@
 import { copyFileSync, cpSync, existsSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOST, REPO_HOME, SHARED_LINKS } from './config.ts';
+import { allSharedLinks, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { die, log } from './utils.ts';
 import { writeJsonAtomic } from './utils.fs.ts';
 import { readJson } from './utils.json.ts';
 
 /**
- * Overlay `~/.claude/` SHARED_LINKS onto the freshly-written scaffold under
- * `REPO_HOME/shared/`. Regular files (`CLAUDE.md`, `my-statusline.cjs`) go
- * through `copyFileSync` so the placeholder is overwritten; directories
- * (`agents`, `skills`, `commands`, `rules`) drop their just-written
- * `.gitkeep` marker first and then go through `cpSync` with `force: false`,
- * so any unexpected pre-existing destination content (an out-of-band write
- * between the preflight check and this step) surfaces as an error. Also
- * translates `~/.claude/settings.json` (when present) into `hosts/<HOST>.json`
- * via `writeJsonAtomic`. Does NOT modify `~/.claude/`; the caller emits the
- * user-visible next-step + originals-not-removed log lines so the canonical
- * phrasing stays co-located with `cmdInit` itself.
+ * Overlay `~/.claude/` entries for every name in `allSharedLinks(map)` (the
+ * static shared-link set plus any validated `sharedDirs` entries) onto the
+ * freshly-written scaffold under `REPO_HOME/shared/`. Regular files
+ * (`CLAUDE.md`, `my-statusline.cjs`) go through `copyFileSync` so the
+ * placeholder is overwritten; directories (`agents`, `skills`, `commands`,
+ * `rules`) drop their just-written `.gitkeep` marker first and then go through
+ * `cpSync` with `force: false`, so any unexpected pre-existing destination
+ * content surfaces as an error. Also translates `~/.claude/settings.json`
+ * (when present) into `hosts/<HOST>.json` via `writeJsonAtomic`. Does NOT
+ * modify `~/.claude/`; the caller emits the user-visible next-step +
+ * originals-not-removed log lines so the canonical phrasing stays co-located
+ * with `cmdInit` itself.
  */
-export function snapshotIntoShared(): void {
-  for (const name of SHARED_LINKS) {
+export function snapshotIntoShared(map: PathMap): void {
+  for (const name of allSharedLinks(map)) {
     const src = join(CLAUDE_HOME, name);
     if (!existsSync(src)) continue;
     const dst = join(REPO_HOME, 'shared', name);

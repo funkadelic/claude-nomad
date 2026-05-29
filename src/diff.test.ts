@@ -162,6 +162,16 @@ describe('cmdDiff (offline, lockless preview)', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
+  it('tolerates a missing path-map.json (falls back to an empty project map)', async () => {
+    // No path-map.json written: cmdDiff must use the `{ projects: {} }` fallback
+    // rather than throwing, so a partially-scaffolded repo still previews.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const { cmdDiff } = await import('./diff.ts');
+    expect(() => cmdDiff()).not.toThrow();
+    expect(existsSync(join(repoUnderHome, 'path-map.json'))).toBe(false);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
   it('rethrows non-NomadFatal errors raised by computePreview unchanged', async () => {
     // Sandbox is otherwise normal; computePreview is mocked to throw a plain
     // Error so the cmdDiff catch hits its else branch (the NomadFatal arm is

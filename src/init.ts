@@ -29,7 +29,7 @@ const SHARED_CLAUDE_MD =
  * with the SHARED_LINKS contract in `src/config.ts` (those same names are
  * symlinked into `~/.claude/` on every pull).
  */
-const SHARED_KEEP_DIRS = ['agents', 'skills', 'commands', 'rules'] as const;
+const SHARED_KEEP_DIRS = ['agents', 'skills', 'commands', 'rules', 'hooks'] as const;
 
 /**
  * Pre-flight refuse-to-clobber list. If ANY of these absolute paths
@@ -112,7 +112,10 @@ export function cmdInit(
   log('created path-map.json');
 
   if (snapshot) {
-    snapshotIntoShared();
+    // In the init path, path-map.json was just written as `{ projects: {} }`
+    // (preflight refuses a pre-existing one), so sharedDirs is empty by
+    // construction. Pass the minimal map literal to satisfy the type.
+    snapshotIntoShared({ projects: {} });
     log(`snapshot staged in shared/; review, then 'nomad push' to share with other hosts.`);
     log('~/.claude/ originals were NOT removed.');
   }

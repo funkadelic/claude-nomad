@@ -6,7 +6,7 @@ import {
   buildSessionsSection,
   buildSettingsSection,
 } from './commands.push.sections.ts';
-import { HOME, HOST, REPO_HOME } from './config.ts';
+import { HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { renderTree, section, addItem } from './output-tree.ts';
@@ -16,6 +16,7 @@ import { emitSummary, summaryRow } from './summary.ts';
 import { die, fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
+import { readPathMap } from './utils.json.ts';
 
 /**
  * Run the WET (non-dry-run) pull side effects in order and render the
@@ -30,8 +31,8 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  *
  * @param ts - backup timestamp namespace shared by every WET side effect.
  */
-function applyWetPull(ts: string): void {
-  applySharedLinks(ts);
+function applyWetPull(ts: string, map: PathMap): void {
+  applySharedLinks(ts, map);
   const { label } = regenerateSettings(ts);
   const remapResult = remapPull(ts);
   const extrasResult = remapExtrasPull(ts);
@@ -133,20 +134,25 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
         : `pull on host=${HOST} (backup=${ts})`,
     );
     gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', REPO_HOME);
+    // Read path-map.json for sharedDirs/symlink threading. Falls back to a
+    // no-sharedDirs map when the file is absent (fresh-clone before init).
+    // A parse failure routes through NomadFatal -> catch -> lock release.
+    const mapPath = join(REPO_HOME, 'path-map.json');
+    const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
     // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
     // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
     // mutation (so local state is intact for byte-level comparison). The
     // function itself silently skips when no `extras` key is declared.
     divergenceCheckExtras(ts);
     if (dryRun) {
-      const previewResult = computePreview(ts);
+      const previewResult = computePreview(ts, map);
       // dryRun deliberately omits remapExtrasPull to preserve the
       // zero-mutation contract; users still see the divergence WARN above.
       // BYTE-IDENTICAL dry-run output: standalone emitSummary, no tree.
       log('dry-run complete; no mutation');
       emitSummary('pull', previewResult.unmapped);
     } else {
-      applyWetPull(ts);
+      applyWetPull(ts, map);
     }
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the

@@ -45,6 +45,7 @@ box, a personal rig and a work machine. [Get started in three steps.](#quickstar
   - [Repo layout](#repo-layout-what-claude-nomad-looks-like-on-a-configured-host)
   - [What gets synced vs. not](#what-gets-synced-vs-not)
   - [Path remapping](#path-remapping)
+  - [Shared support dirs (sharedDirs)](#shared-support-dirs-shareddirs)
   - [Per-host overrides](#per-host-overrides)
   - [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs)
 - **Getting started**
@@ -113,6 +114,7 @@ public funkadelic/claude-nomad          your private <your-username>/claude-noma
                                           │   ├── skills/
                                           │   ├── commands/
                                           │   ├── rules/
+                                          │   ├── hooks/
                                           │   ├── settings.base.json
                                           │   └── projects/
                                           ├── hosts/<hostname>.json
@@ -143,6 +145,7 @@ so a clobbered dotfile variable does not break the CLI.
 │   ├── skills/
 │   ├── commands/
 │   ├── rules/
+│   ├── hooks/                # hook scripts, symlinked into ~/.claude/hooks/
 │   ├── my-statusline.cjs     # any script you want symlinked into ~/.claude/
 │   ├── .gitignore            # defense-in-depth: blocks .claude.json, settings.local.json, *.token, *.key, *.pem, id_rsa, id_ed25519, .env, .env.*
 │   ├── projects/             # session transcripts under logical names
@@ -157,22 +160,29 @@ so a clobbered dotfile variable does not break the CLI.
 
 ## What gets synced vs. not
 
-| Category               | Items                                                                         | Behavior                                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| **Synced**             | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`.                                                    |
-| **Generated**          | `settings.json`                                                               | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull.         |
-| **Remapped**           | `projects/` session transcripts                                               | Copied with path translation per `path-map.json`.                                              |
-| **Per-project extras** | Whitelisted dirs like `.planning/`, or a root file like `CLAUDE.md`           | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
-| **Never synced**       | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs  | Per-host ephemeral state; left untouched in both directions.                                   |
-| **Auto-rehydrated**    | `~/.claude/plugins/cache/<plugin>/...`                                        | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install.              |
+| Category                | Items                                                                                   | Behavior                                                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Synced**              | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`.                                                                                                                   |
+| **Generated**           | `settings.json`                                                                         | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull.                                                                        |
+| **Remapped**            | `projects/` session transcripts                                                         | Copied with path translation per `path-map.json`.                                                                                                             |
+| **Per-project extras**  | Whitelisted dirs like `.planning/`, or a root file like `CLAUDE.md`                     | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`.                                                                |
+| **Shared support dirs** | Opt-in global `~/.claude/` dirs like a tool's `get-shit-done/`                          | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. See [Shared support dirs](#shared-support-dirs-shareddirs). |
+| **Never synced**        | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs            | Per-host ephemeral state; left untouched in both directions.                                                                                                  |
+| **Auto-rehydrated**     | `~/.claude/plugins/cache/<plugin>/...`                                                  | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install.                                                                             |
 
 Pointers and specifics:
 
-- **Synced** link names live in `SHARED_LINKS`, **whitelisted extras** names in `SUPPORTED_EXTRAS`,
-  and the full **never-synced** set in `NEVER_SYNC` (all in `src/config.ts`).
-- **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `history.jsonl`,
-  `settings.local.json` (per-host overrides), `stats-cache.json`, `todos/`, `shell-snapshots/`,
-  `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/`.
+- **Synced** link names live in `SHARED_LINKS` (and the optional `sharedDirs` field in
+  `path-map.json` -- see [Shared support dirs](#shared-support-dirs-shareddirs)), **whitelisted
+  extras** names in `SUPPORTED_EXTRAS`, and the full **never-synced** set in `NEVER_SYNC` (all in
+  `src/config.ts`).
+- **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `.credentials.json` (OAuth
+  credential store), `history.jsonl`, `settings.local.json` (per-host overrides),
+  `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,
+  `session-env/`, `statsig/`, `telemetry/`, `ide/`, plus host-local caches and runtime state
+  (`cache/`, `backups/`, `paste-cache/`, `daemon/`, `jobs/`, `tasks/`, `security/`, `sessions/`).
+  This set is also the deny-list the `sharedDirs` opt-in is checked against, so one of these names
+  cannot be symlinked into the shared repo by mistake.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 
@@ -238,6 +248,55 @@ copy and prints a per-file WARN naming anything that differs.
 
 Your existing local content is backed up under `~/.cache/claude-nomad/backup/<ts>/extras/` before
 the pull copy lands, so an unexpected overwrite is always recoverable.
+
+## Shared support dirs (sharedDirs)
+
+Some tools install a `hooks` block into `settings.json` whose commands point at scripts under
+`~/.claude/hooks/` (and sometimes a support directory such as `~/.claude/get-shit-done/`). Because
+`settings.json` is regenerated on every pull, that hook configuration travels to every host, but the
+scripts it points at did not, so hooks broke on a freshly configured host. `~/.claude/hooks/` is now
+a built-in synced link (it rides the same symlink model as `skills/` and `agents/`), so hook scripts
+travel automatically.
+
+For any other global `~/.claude/` support directory a tool needs, the optional top-level
+`sharedDirs` field in `path-map.json` opts it into the same symlink sync:
+
+```json
+{
+  "projects": {
+    "my-example-repo": {
+      "<your-mac>": "/Users/you/code/my-example-repo"
+    }
+  },
+  "sharedDirs": ["get-shit-done"]
+}
+```
+
+What this means for you: each listed name is symlinked from `shared/<name>` into `~/.claude/<name>`
+(the same model as the built-in synced links, not a copy), so editing it on any host updates the one
+shared copy. The field is additive and back-compatible: a `path-map.json` without it behaves exactly
+as before.
+
+Entries are validated before anything is linked. A name is accepted only if it is a single path
+segment (no `/`, no `..`), is not one of the never-synced names, and does not collide with a
+reserved `shared/` name (`settings.base.json`, the built-in synced links, `hooks`, `hosts`,
+`path-map.json`). An invalid entry is dropped with a warning rather than aborting the run. The
+contents still go through the same gitleaks scan as everything else on push, so do not point
+`sharedDirs` at a directory that holds credentials.
+
+First-time setup on an already-configured repo: a symlink can only form once the directory exists
+under `shared/`. On a fresh repo `nomad init --snapshot` handles this for you. To add `hooks/` (or a
+new `sharedDirs` entry) to a repo that is already set up, move it into `shared/` once on the host
+that has it, then let the normal flow take over:
+
+```bash
+$ mv ~/.claude/hooks ~/claude-nomad/shared/hooks   # one-time, on the source host
+$ nomad pull                                        # re-creates ~/.claude/hooks as a symlink
+$ nomad push                                        # shares it with your other hosts
+```
+
+`nomad pull` never writes back to the remote, so it will not seed `shared/` for you; the one-time
+move is deliberate.
 
 ## Per-host overrides
 
@@ -540,27 +599,34 @@ point under your npm prefix's `bin/`), then delete the alias line from your shel
 
 ## Commands
 
-| Command                          | Description                                                                                                                                                                                                                                                                                                                                              |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nomad init`                     | Scaffold empty `shared/`, `hosts/`, `path-map.json` on a fresh clone. Refuses to clobber existing scaffold. Auto-disables Actions on a detected private GitHub mirror (see [Privacy by default](#privacy-by-default)).                                                                                                                                   |
-| `nomad init --snapshot`          | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified. Same auto-disable behavior as `nomad init`.                                                                                                                                                      |
-| `nomad init --keep-actions`      | Skip the auto-disable. Combinable with `--snapshot`. Use when an upstream org policy already governs Actions, or you intentionally want CI on the private mirror.                                                                                                                                                                                        |
-| `nomad pull`                     | `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths, and pull opted-in per-project extras. Errors out if scaffold missing.                                                                                                                                                                                  |
-| `nomad pull --dry-run`           | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), exit without writing.                                                                                                                                                                                     |
-| `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                                                                                                                                                                                             |
-| `nomad push`                     | Export local sessions and opted-in per-project extras to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                                                                                                                                                  |
-| `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage; skip stage, commit, and push. Exits 1 if a leak is found in the preview. Nothing is written to the sync repo.                            |
-| `nomad drop-session <id>`        | Surgically unstage every `shared/projects/*/<id>.jsonl` and the sibling `shared/projects/*/<id>/` subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the local `~/.claude/projects/<encoded>/<id>.jsonl` and `<id>/` tree are preserved. See [Recovery flows](#recovery-flows).                                                   |
-| `nomad update`                   | Topology-aware upgrade to the latest upstream. Flags: `--dry-run`, `--force`, `--push-origin`. See [Upgrading the tool](#upgrading-the-tool).                                                                                                                                                                                                            |
-| `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check plus two `⚠︎`-only drift checks: gitleaks version drift and, on a private GitHub mirror, re-enabled Actions.                                    |
-| `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                                                                                                                                                                                        |
-| `nomad doctor --check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session with rotate-and-scrub guidance. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl). |
-| `nomad doctor --check-schema`    | Read-only: fetches the live Claude Code settings schema and lists any `~/.claude/settings.json` key absent from it (candidates for the hand-maintained `APP_ONLY_KEYS` list). Non-fatal and offline-tolerant: skips with a `⚠︎` when curl is missing or the schema is unreachable.                                                                        |
-| `nomad --version`                | Print the installed CLI version as bare semver to stdout; exits 0. Used by the npm-publish smoke test and useful for ad-hoc upgrade checks.                                                                                                                                                                                                              |
+| Command                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nomad init`                     | Scaffold empty `shared/`, `hosts/`, `path-map.json` on a fresh clone. Refuses to clobber existing scaffold. Auto-disables Actions on a detected private GitHub mirror (see [Privacy by default](#privacy-by-default)).                                                                                                                                                                                                                                                       |
+| `nomad init --snapshot`          | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified. Same auto-disable behavior as `nomad init`.                                                                                                                                                                                                                                                                          |
+| `nomad init --keep-actions`      | Skip the auto-disable. Combinable with `--snapshot`. Use when an upstream org policy already governs Actions, or you intentionally want CI on the private mirror.                                                                                                                                                                                                                                                                                                            |
+| `nomad pull`                     | `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths, and pull opted-in per-project extras. Errors out if scaffold missing.                                                                                                                                                                                                                                                                                                      |
+| `nomad pull --dry-run`           | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), exit without writing.                                                                                                                                                                                                                                                                                                         |
+| `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                                                                                                                                                                                                                                                                                                                 |
+| `nomad push`                     | Export local sessions and opted-in per-project extras to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                                                                                                                                                                                                                                                                      |
+| `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage; skip stage, commit, and push. Exits 1 if a leak is found in the preview. Nothing is written to the sync repo.                                                                                                                                                |
+| `nomad drop-session <id>`        | Surgically unstage every `shared/projects/*/<id>.jsonl` and the sibling `shared/projects/*/<id>/` subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the local `~/.claude/projects/<encoded>/<id>.jsonl` and `<id>/` tree are preserved. See [Recovery flows](#recovery-flows).                                                                                                                                                                       |
+| `nomad update`                   | Topology-aware upgrade to the latest upstream. Flags: `--dry-run`, `--force`, `--push-origin`. See [Upgrading the tool](#upgrading-the-tool).                                                                                                                                                                                                                                                                                                                                |
+| `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check, a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a hook command whose script under `~/.claude/` is missing on this host, plus two `⚠︎`-only drift checks: gitleaks version drift and, on a private GitHub mirror, re-enabled Actions. |
+| `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                                                                                                                                                                                                                                                                                                            |
+| `nomad doctor --check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session with rotate-and-scrub guidance. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl).                                                                                                                     |
+| `nomad doctor --check-schema`    | Read-only: fetches the live Claude Code settings schema and lists any `~/.claude/settings.json` key absent from it (candidates for the hand-maintained `APP_ONLY_KEYS` list). Non-fatal and offline-tolerant: skips with a `⚠︎` when curl is missing or the schema is unreachable.                                                                                                                                                                                            |
+| `nomad --version`                | Print the installed CLI version as bare semver to stdout; exits 0. Used by the npm-publish smoke test and useful for ad-hoc upgrade checks.                                                                                                                                                                                                                                                                                                                                  |
 
 The version-check emits ``⚠︎ claude-nomad: <local> -> <latest> (run `nomad update`)`` when the local
 install is behind the latest upstream release, and `✓ claude-nomad: <local> (latest)` when current.
 It silently skips on network failures.
+
+The Hook targets check reads the live `~/.claude/settings.json` `hooks` block and fails (`✗`, exit
+
+1. when a hook command points at a script under `~/.claude/` that is missing on this host (the
+   freshly-configured-host symptom that motivated syncing `hooks/`). It deliberately skips any
+   command it cannot resolve to a `~/.claude/` path (bare binaries like `jq`, unresolved env vars),
+   so it never false-fails on a command that does not reference a local script.
 
 Two further `⚠︎`-only drift checks run in `nomad doctor`. The gitleaks version-drift line
 `⚠︎ gitleaks: <local> -> <pinned> (...)` fires when the local gitleaks major.minor differs from the

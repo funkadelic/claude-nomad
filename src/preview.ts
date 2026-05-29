@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOST, REPO_HOME } from './config.ts';
+import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
 import { applySharedLinks } from './links.ts';
 import { remapPull } from './remap.ts';
@@ -102,13 +102,16 @@ function previewSettings(basePath: string, hostPath: string, settingsPath: strin
  *
  * Settings diff output goes through `log()` so each line gets the info-prefixed
  * prefix, keeping output channels consistent across the three sections.
+ *
+ * @param map - parsed path-map.json; callers fall back to `{ projects: {} }`
+ *   when the file is absent so the offline/fresh-clone contract holds.
  */
-export function computePreview(ts: string): { unmapped: number; collisions: number } {
+export function computePreview(ts: string, map: PathMap): { unmapped: number; collisions: number } {
   log(`would pull on host=${HOST} (dry-run; no mutation)`);
 
   // Symlinks: applySharedLinks emits its own would-create / would-auto-move
   // lines. dryRun:true is mandatory; a real call here would mutate disk.
-  applySharedLinks(ts, { dryRun: true });
+  applySharedLinks(ts, map, { dryRun: true });
 
   previewSettings(
     join(REPO_HOME, 'shared', 'settings.base.json'),
