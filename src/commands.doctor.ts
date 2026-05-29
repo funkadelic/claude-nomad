@@ -25,6 +25,7 @@ import { REPO_HOME, type PathMap } from './config.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { readJsonSafe, renderDoctor, section } from './commands.doctor.format.ts';
 import { reportGitleaksVersionCheck } from './commands.doctor.gitleaks-version.ts';
+import { reportOptionalDeps } from './commands.doctor.checks.deps.ts';
 import { reportMirrorActions } from './commands.doctor.mirror-actions.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
 
@@ -85,6 +86,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   reportVersionCheck(version);
   reportNodeEngineCheck(version);
   reportGitleaksVersionCheck(version);
+  reportOptionalDeps(version);
 
   const sharedScan = section('Shared scan');
   // Reuse the Repository-section readiness probe so reportCheckShared does not
