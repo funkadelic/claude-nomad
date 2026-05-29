@@ -56,6 +56,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
           verdictRow: actual.failRow('gitleaks detected secrets in 1 session transcript(s)'),
           recovery:
             'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry',
+          findings: [],
         })),
       };
     });
@@ -80,7 +81,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(env.lockPath)).toBe(false);
     // The one-line ✗ verdict row renders in the tree (stdout)...
@@ -144,7 +145,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    await cmdPush({ dryRun: true });
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
     expect(existsSync(env.lockPath)).toBe(false);
     // remapPush received { dryRun: true } so no host-encoded copies landed.
@@ -204,7 +205,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    await cmdPush({ dryRun: true });
     expect(previewPushLeaksMock).toHaveBeenCalledOnce();
     // The ✗ one-line verdict row renders in the tree (stdout).
     expect(logOutput(env)).toMatch(/gitleaks detected secrets in 1 session transcript/);
@@ -252,7 +253,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    await cmdPush({ dryRun: true });
     // The clean-repo early return did NOT fire: the preview ran.
     expect(previewPushLeaksMock).toHaveBeenCalledOnce();
     expect(process.exitCode).toBe(1);
@@ -296,7 +297,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    await cmdPush({ dryRun: true });
     expect(previewPushLeaksMock).toHaveBeenCalledOnce();
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
     const out = logOutput(env);
@@ -341,7 +342,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // Remove the default path-map.json the harness wrote.
     rmSync(join(env.repoUnderHome, 'path-map.json'));
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush({ dryRun: true })).not.toThrow();
+    await cmdPush({ dryRun: true });
     // No die: the lock released and exitCode stayed clean.
     expect(existsSync(env.lockPath)).toBe(false);
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);

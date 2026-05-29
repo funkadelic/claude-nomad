@@ -60,7 +60,7 @@ describe('cmdPush lock-contention skip path', () => {
       return { ...actual, acquireLock: acquireSpy };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).toThrow(/process\.exit:0/);
+    await expect(cmdPush()).rejects.toThrow(/process\.exit:0/);
     expect(acquireSpy).toHaveBeenCalledWith('push');
     expect(exitSpy).toHaveBeenCalledWith(0);
     // No real lockfile because the mock never wrote one.

@@ -62,6 +62,7 @@ box, a personal rig and a work machine. [Get started in three steps.](#quickstar
     - [`nomad drop-session <id>`](#nomad-drop-session-id)
     - [`nomad redact <session-id>`](#nomad-redact-session-id)
     - [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)
+    - [Recovery flow: push-time interactive menu](#recovery-flow-push-time-interactive-menu)
     - [`.gitleaks.toml` allowlist policy](#gitleakstoml-allowlist-policy)
   - [Cross-OS resume](#cross-os-resume)
   - [Run tests](#run-tests)
@@ -611,6 +612,7 @@ point under your npm prefix's `bin/`), then delete the alias line from your shel
 | `nomad diff`                     | Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local repo state.                                                                                                                                                                                                                                                                                                                                                                 |
 | `nomad push`                     | Export local sessions and opted-in per-project extras to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                                                                                                                                                                                                                                                                      |
 | `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage; skip stage, commit, and push. Exits 1 if a leak is found in the preview. Nothing is written to the sync repo.                                                                                                                                                |
+| `nomad push --redact-all`        | Redact all findings non-interactively (backup written first) without a TTY. Does not auto-Allow findings. After redaction re-stages and re-scans; aborts with the session-aware FATAL if any finding survives. Use this in scripts or when you are confident every finding is a real secret that should be scrubbed. See [Recovery flow: push-time interactive menu](#recovery-flow-push-time-interactive-menu).                                                             |
 | `nomad drop-session <id>`        | Surgically unstage every `shared/projects/*/<id>.jsonl` and the sibling `shared/projects/*/<id>/` subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the local `~/.claude/projects/<encoded>/<id>.jsonl` and `<id>/` tree are preserved. See [Recovery flows](#recovery-flows).                                                                                                                                                                       |
 | `nomad redact <session-id>`      | Rewrite the secret span in the local source transcript for a session, backed up to `~/.cache/claude-nomad/backup/`. Refuses to touch a session that was modified recently (potential active session). Safe to re-run. See [`nomad redact <session-id>`](#nomad-redact-session-id).                                                                                                                                                                                           |
 | `nomad redact --rule <id>`       | Limit redaction to findings of one gitleaks rule id only.                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -841,6 +843,48 @@ Two branches from here:
 
 `nomad drop-session` only acts on the staged tree of `~/claude-nomad/`. Active Claude Code sessions
 writing to the local file are not disturbed.
+
+### Recovery flow: push-time interactive menu
+
+When `nomad push` detects a secret and the process is running on an interactive TTY, it presents a
+per-finding menu instead of aborting immediately. Each finding is shown with its rule id, file, and
+line number (the secret value is never printed: the scan uses `--redact`).
+
+```text
+Finding: github-pat in shared/projects/my-proj/abc123.jsonl line 42 (session: abc123)
+  [R]edact  [A]llow  [D]rop session  [S]kip (default)
+>
+```
+
+What the actions do:
+
+- **Redact** rewrites the secret span in the LOCAL source transcript in place (same flow as
+  `nomad redact`), backs up first, then re-copies the file to the staged tree. Refuses if the
+  session was modified in the last 5 minutes (potential active session): choose Drop or Skip instead
+  and wait for the session to end.
+- **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root. Use this for
+  confirmed false positives. The fingerprint format (`file:rule:line`) is tied to the current line,
+  so if the content moves gitleaks re-prompts rather than silently suppressing a new hit.
+- **Drop session** unstages the session from the git index (same as `nomad drop-session <id>`). The
+  local file is preserved. Not durable: the next push re-copies from local unless you also redact or
+  remove the local transcript.
+- **Skip** (default on bare Enter) leaves the finding unresolved for now.
+
+After you respond to every finding, the menu applies your choices. If any finding was Skipped, the
+push aborts with the session-aware FATAL (same exit as a non-interactive push with findings). If all
+findings were resolved, the staged tree is updated and re-scanned. A clean re-scan proceeds to
+commit and push. If new findings appear after the first round of actions, the menu loops on the new
+set.
+
+On a non-TTY (CI, piped input, or scripted `nomad push`), the menu never appears and the push aborts
+with the existing session-aware FATAL unchanged.
+
+**Batch redact without a TTY:** `nomad push --redact-all` redacts every finding non-interactively
+(backup written first) without prompting and without requiring a TTY. It does not auto-Allow. After
+redaction the staged tree is re-scanned; any surviving finding aborts with the FATAL. Use this in
+scripts or when every finding is a real secret that should be scrubbed. For a single session,
+`nomad redact <session-id>` (see [`nomad redact`](#nomad-redact-session-id)) gives you per-session
+control with `--rule` and `--dry-run` options.
 
 ### `.gitleaks.toml` allowlist policy
 

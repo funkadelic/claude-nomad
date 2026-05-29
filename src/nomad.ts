@@ -76,18 +76,15 @@ try {
       break;
     }
     case 'push': {
-      // Sub-flag: `push --dry-run` runs the pre-checks and remap preview
-      // without staging, scanning, committing, or pushing. Any other argv
-      // after `push` is rejected so a typo does not silently degrade.
-      const sub = process.argv[3];
-      if (sub === undefined) {
-        cmdPush();
-      } else if (sub === '--dry-run' && process.argv.length === 4) {
-        cmdPush({ dryRun: true });
-      } else {
-        console.error('usage: nomad push [--dry-run]');
+      // Set-based flag parse so --dry-run and --redact-all can appear in any
+      // order; unknown flags show the usage line. --redact-all redacts every
+      // finding non-interactively without requiring a TTY.
+      const seen = parseFlags(process.argv, new Set(['--dry-run', '--redact-all']));
+      if (seen === null) {
+        console.error('usage: nomad push [--dry-run] [--redact-all]');
         process.exit(1);
       }
+      await cmdPush({ dryRun: seen.has('--dry-run'), redactAll: seen.has('--redact-all') });
       break;
     }
     case 'init': {

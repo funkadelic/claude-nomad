@@ -37,6 +37,8 @@ export const DEFAULT_HELP = [
   row('  push', 'Rebase, run safety checks (gitleaks, gitlinks, allow-list), commit, push.'),
   row('       --dry-run', 'Run pre-checks (rebase, gitleaks probe, gitlink scan) and preview'),
   cont('remap, without staging or pushing.'),
+  row('       --redact-all', 'Redact all findings non-interactively (backup, no prompt); no TTY'),
+  cont('required. Does not auto-Allow.'),
   '',
   row('  diff', 'Offline preview of what `pull` would change against local repo state.'),
   cont('No git pull, no lock acquired.'),
