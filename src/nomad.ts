@@ -17,6 +17,7 @@
 
 import { cmdDoctor } from './commands.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
+import { cmdRedact } from './commands.redact.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
 import { cmdUpdate } from './commands.update.ts';
@@ -168,6 +169,26 @@ try {
         process.exit(1);
       }
       cmdDropSession(id);
+      break;
+    }
+    case 'redact': {
+      // nomad redact <session-id> [--rule <rule-id>] [--dry-run]
+      // Optional flags parsed via parseFlags (rejects unknown flags). The id
+      // regex mirrors drop-session: leading `\w` prevents leading-dash ids
+      // so `nomad redact --bogus` shows usage rather than crashing.
+      const id = process.argv[3];
+      if (typeof id !== 'string' || !/^\w[\w-]{0,127}$/.test(id)) {
+        console.error('usage: nomad redact <session-id> [--rule <rule-id>] [--dry-run]');
+        process.exit(1);
+      }
+      const seen = parseFlags(process.argv, new Set(['--dry-run']));
+      const ruleIdx = process.argv.indexOf('--rule');
+      const rule = ruleIdx >= 0 ? process.argv[ruleIdx + 1] : undefined;
+      if (seen === null) {
+        console.error('usage: nomad redact <session-id> [--rule <rule-id>] [--dry-run]');
+        process.exit(1);
+      }
+      cmdRedact({ id, rule, dryRun: seen.has('--dry-run') });
       break;
     }
     default:

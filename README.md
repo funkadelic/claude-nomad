@@ -60,6 +60,7 @@ box, a personal rig and a work machine. [Get started in three steps.](#quickstar
   - [Commands](#commands)
   - [Recovery flows](#recovery-flows)
     - [`nomad drop-session <id>`](#nomad-drop-session-id)
+    - [`nomad redact <session-id>`](#nomad-redact-session-id)
     - [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)
     - [`.gitleaks.toml` allowlist policy](#gitleakstoml-allowlist-policy)
   - [Cross-OS resume](#cross-os-resume)
@@ -611,6 +612,9 @@ point under your npm prefix's `bin/`), then delete the alias line from your shel
 | `nomad push`                     | Export local sessions and opted-in per-project extras to logical names, commit (`chore: sync from <NOMAD_HOST>`), push.                                                                                                                                                                                                                                                                                                                                                      |
 | `nomad push --dry-run`           | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage; skip stage, commit, and push. Exits 1 if a leak is found in the preview. Nothing is written to the sync repo.                                                                                                                                                |
 | `nomad drop-session <id>`        | Surgically unstage every `shared/projects/*/<id>.jsonl` and the sibling `shared/projects/*/<id>/` subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the local `~/.claude/projects/<encoded>/<id>.jsonl` and `<id>/` tree are preserved. See [Recovery flows](#recovery-flows).                                                                                                                                                                       |
+| `nomad redact <session-id>`      | Rewrite the secret span in the local source transcript for a session, backed up to `~/.cache/claude-nomad/backup/`. Refuses to touch a session that was modified recently (potential active session). Safe to re-run. See [`nomad redact <session-id>`](#nomad-redact-session-id).                                                                                                                                                                                           |
+| `nomad redact --rule <id>`       | Limit redaction to findings of one gitleaks rule id only.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `nomad redact --dry-run`         | Show what `nomad redact` would change without writing anything.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `nomad update`                   | Topology-aware upgrade to the latest upstream. Flags: `--dry-run`, `--force`, `--push-origin`. See [Upgrading the tool](#upgrading-the-tool).                                                                                                                                                                                                                                                                                                                                |
 | `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check, a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a hook command whose script under `~/.claude/` is missing on this host, plus two `⚠︎`-only drift checks: gitleaks version drift and, on a private GitHub mirror, re-enabled Actions. |
 | `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                                                                                                                                                                                                                                                                                                            |
@@ -762,6 +766,38 @@ scrubbing (the exact path when `path-map.json` maps the project to the current h
 `~/.claude/projects/` source, not the staged tree, so it keeps flagging the secret until the local
 transcript is scrubbed.
 
+### `nomad redact <session-id>`
+
+Rewrites the secret span in the local source transcript at
+`~/.claude/projects/<encoded>/<session-id>.jsonl` in place, replacing each flagged span with
+`[REDACTED:<rule>]`. Before rewriting, the original transcript is backed up to
+`~/.cache/claude-nomad/backup/<timestamp>/`.
+
+```bash
+$ nomad redact <session-id>
+$ nomad redact <session-id> --rule github-pat   # one rule only
+$ nomad redact <session-id> --dry-run           # preview without writing
+```
+
+What it does: rewrites the LOCAL source transcript (not just the staged copy). This is the durable
+fix for a gitleaks finding: `nomad drop-session` only removes the staged copy, but `remapPush`
+re-copies from local on the next push, so the secret resurfaces. Redacting the local source means
+future pushes carry clean content.
+
+What it does NOT do: rotate credentials. Always rotate the secret at its provider first.
+
+Safety checks:
+
+- A session whose transcript was modified within the last 5 minutes is treated as potentially active
+  (Claude Code may still be writing to it). `nomad redact` refuses to touch it and suggests
+  `nomad drop-session` or waiting for the session to end.
+- Before every rewrite, a backup is written to `~/.cache/claude-nomad/backup/<timestamp>/`, so the
+  original content is recoverable.
+- `--dry-run` prints the planned redactions and writes nothing.
+
+This command is safe to re-run: if the span was already redacted (the replacement token is already
+present), the content is unchanged.
+
 ### Recovery flow: gitleaks FATAL on a session JSONL
 
 `nomad push` runs `gitleaks protect --staged` before commit. To catch the same findings before you
@@ -792,10 +828,12 @@ Two branches from here:
    contaminated copy from the current staged tree, but that alone is NOT durable: `remapPush` (in
    `src/remap.ts`) does a full rm-and-copy mirror of your LOCAL transcripts into `shared/projects/`
    on every push, so the next `nomad push` re-copies the un-scrubbed local file forward and
-   re-stages the same secret. The durable fix is to rotate AND scrub or remove the local transcript
-   at `~/.claude/projects/<encoded>/<sid-aaaa>.jsonl` (plus the sibling `<sid-aaaa>/` subagent
-   directory under that encoded dir, if present) so the next `remapPush` carries clean content
-   forward. Do not leave the local file un-scrubbed and expect the staged-tree drop to hold.
+   re-stages the same secret. The durable fix is to rotate AND scrub the local transcript. The
+   easiest way: `nomad redact <sid-aaaa>` (see [`nomad redact`](#nomad-redact-session-id)), which
+   rewrites the secret span in place with a backup. Alternatively, remove the local transcript at
+   `~/.claude/projects/<encoded>/<sid-aaaa>.jsonl` (plus the sibling `<sid-aaaa>/` subagent
+   directory, if present). Do not leave the local file un-scrubbed and expect the staged-tree drop
+   to hold.
 
 2. **False positive.** Add an allowlist regex to `.gitleaks.toml` at the repo root that matches the
    noise pattern but not real-secret formats, commit it, then re-run `nomad push`. The new allowlist
