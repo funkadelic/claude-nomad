@@ -16,24 +16,13 @@ import { CLAUDE_HOME, HOME } from './config.ts';
  */
 
 /**
- * Candidate token prefix patterns that indicate a path under `~/.claude`.
- * The first entry is the resolved absolute prefix (e.g. `/home/norm/.claude/`,
- * identical to `CLAUDE_HOME + '/'` since `CLAUDE_HOME = resolve(HOME, '.claude')`);
- * the rest are the literal unexpanded forms a hook command may use.
- */
-const CLAUDE_HOME_PREFIXES = [
-  `${HOME}/.claude/`,
-  '~/.claude/',
-  '$HOME/.claude/',
-  '${HOME}/.claude/',
-] as const;
-
-/**
- * Expand `~` and `$HOME`/`${HOME}` to the resolved HOME directory so the
- * resulting path can be passed to `existsSync`.
+ * Expand a leading `~`, `$HOME`, or `${HOME}` to the resolved HOME directory so
+ * the resulting path can be passed to `existsSync` and compared against the
+ * absolute `~/.claude` location. A token with no home-relative prefix (a bare
+ * binary, an already-absolute path) is returned unchanged.
  *
  * @param token - A raw path token extracted from a hook command string.
- * @returns The absolute path with the home prefix resolved.
+ * @returns The path with any leading home-relative syntax resolved to HOME.
  */
 function expandHome(token: string): string {
   return token
@@ -59,23 +48,23 @@ function stripShellPunctuation(token: string): string {
 }
 
 /**
- * Extract the first whitespace-delimited token from `command` that begins with
- * a recognisable `~/.claude` prefix. Also checks `&&`-, `;`-, and `|`-separated
- * sub-commands so compound commands like `setup.sh && jq ...` are handled, and
- * strips shell quoting so a quoted target is not read as missing.
- * Returns `null` when no such token is found (D-09: skip, never FAIL).
+ * Find the first command token that resolves to a path under `~/.claude`. Each
+ * `&&`-, `||`-, `;`-, or `|`-separated sub-command's leading token is stripped
+ * of shell quoting and home-expanded, then tested against the resolved
+ * `~/.claude` directory. Expanding first means the literal `~`, `$HOME`, and
+ * `${HOME}` forms a hook command may use all collapse to one comparison.
+ * Returns `null` when no token resolves under `~/.claude` (D-09: skip, never
+ * FAIL).
  *
  * @param command - The raw `command` string from a hook entry.
- * @returns The absolute resolved path, or `null` if none is resolvable.
+ * @returns The absolute resolved path under `~/.claude`, or `null` if none.
  */
 function resolveClaudePath(command: string): string | null {
-  const segments = command.split(/&&|\|\||;|\|/);
-  for (const segment of segments) {
+  const claudePrefix = `${CLAUDE_HOME}/`;
+  for (const segment of command.split(/&&|\|\||;|\|/)) {
     const raw = segment.trim().split(/\s+/)[0] ?? '';
-    const token = stripShellPunctuation(raw);
-    if (CLAUDE_HOME_PREFIXES.some((prefix) => token.startsWith(prefix))) {
-      return expandHome(token);
-    }
+    const expanded = expandHome(stripShellPunctuation(raw));
+    if (expanded.startsWith(claudePrefix)) return expanded;
   }
   return null;
 }
