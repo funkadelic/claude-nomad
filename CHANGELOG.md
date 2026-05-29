@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.31.0](https://github.com/funkadelic/claude-nomad/compare/v0.30.0...v0.31.0) (2026-05-29)
+
+
+### Added
+
+* **push:** interactive secret recovery on push and nomad redact ([#181](https://github.com/funkadelic/claude-nomad/issues/181)) ([4931e27](https://github.com/funkadelic/claude-nomad/commit/4931e27ba30998a02b123c71edc1315069c9181a))
+
+
+### Changed
+
+* **gitleaks:** allowlist SonarCloud issue-key tool-output noise in synced transcripts ([#179](https://github.com/funkadelic/claude-nomad/issues/179)) ([0f7d816](https://github.com/funkadelic/claude-nomad/commit/0f7d8161d4de3379cd6a4db00482f560c8b3f280))
+* **settings-drift:** author PRs via app token and make regen idempotent ([#182](https://github.com/funkadelic/claude-nomad/issues/182)) ([062397c](https://github.com/funkadelic/claude-nomad/commit/062397c565926471eccc8e75f72d1ccf2e5cc8c0))
+
 ## [0.30.0](https://github.com/funkadelic/claude-nomad/compare/v0.29.1...v0.30.0) (2026-05-29)
 
 
