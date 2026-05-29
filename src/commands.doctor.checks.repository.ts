@@ -28,10 +28,16 @@ import { gitStatusPorcelainZ } from './utils.ts';
  */
 
 /**
- * Probes for gitleaks on PATH; emits okGlyph with version, or failGlyph with
- * ENOENT vs other-error distinction (sets exitCode=1). Returns `true` when a
- * usable binary was found so the caller can skip a redundant second `version`
- * probe (e.g. the `--check-shared` Shared scan section).
+ * Probes for gitleaks on PATH. Emits okGlyph with version when found. When
+ * gitleaks is absent (ENOENT), emits warnGlyph and does NOT set exitCode:
+ * gitleaks is required for `nomad push` but is an optional dependency for the
+ * read-only doctor check, so its absence degrades to WARN per the project
+ * convention that optional-dependency absence must never affect exit code. A
+ * non-ENOENT error (broken binary, permission denied) still emits failGlyph
+ * and sets exitCode=1 because a present-but-unrunnable gitleaks is a real
+ * defect that would break `nomad push`. Returns `true` when a usable binary
+ * was found so the caller can skip a redundant second `version` probe (e.g.
+ * the `--check-shared` Shared scan section).
  */
 export function reportGitleaksProbe(section: DoctorSection): boolean {
   try {
@@ -42,11 +48,11 @@ export function reportGitleaksProbe(section: DoctorSection): boolean {
     return true;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      addItem(section, `${red(failGlyph)} gitleaks: not on PATH (required for nomad push)`);
+      addItem(section, `${yellow(warnGlyph)} gitleaks: not on PATH (required for nomad push)`);
     } else {
       addItem(section, `${red(failGlyph)} gitleaks: probe failed: ${(err as Error).message}`);
+      process.exitCode = 1;
     }
-    process.exitCode = 1;
     return false;
   }
 }
