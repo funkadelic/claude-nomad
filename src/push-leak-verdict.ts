@@ -29,11 +29,15 @@ import {
  *   via a ✗ `verdictRow` but is NOT a leak, so the dry-run path does not throw).
  * - `verdictRow`: the rendered one-line Leak scan row (glyph embedded).
  * - `recovery`: the `buildSessionAwareFatal` body on a leak, else `null`.
+ * - `findings`: the raw findings array from the scan. Non-empty on a leak verdict;
+ *   empty (`[]`) on a clean scan, scan crash, or scan error. Carries the
+ *   `StartColumn`/`EndColumn` spans that the recovery flow uses for span rewrite.
  */
 export type LeakVerdict = {
   leak: boolean;
   verdictRow: string;
   recovery: string | null;
+  findings: Finding[];
 };
 
 /** Rendered clean Leak scan row (no findings). */
@@ -71,6 +75,7 @@ function leakFound(findings: Finding[]): LeakVerdict {
     leak: true,
     verdictRow: leakVerdictRow(findings),
     recovery: buildSessionAwareFatal(bySession, other),
+    findings,
   };
 }
 
@@ -93,9 +98,12 @@ export function verdictFromFindings(findings: Finding[] | null): LeakVerdict {
       leak: false,
       verdictRow: failRow('scan failed, no parseable report'),
       recovery: null,
+      findings: [],
     };
   }
-  if (findings.length === 0) return { leak: false, verdictRow: noLeaksRow(), recovery: null };
+  if (findings.length === 0) {
+    return { leak: false, verdictRow: noLeaksRow(), recovery: null, findings: [] };
+  }
   process.exitCode = 1;
   return leakFound(findings);
 }
@@ -110,7 +118,7 @@ export function verdictFromFindings(findings: Finding[] | null): LeakVerdict {
  */
 export function verdictScanError(text: string): LeakVerdict {
   process.exitCode = 1;
-  return { leak: false, verdictRow: failRow(text), recovery: null };
+  return { leak: false, verdictRow: failRow(text), recovery: null, findings: [] };
 }
 
 /**
@@ -138,6 +146,7 @@ export function scanPushVerdict(): LeakVerdict {
         leak: true,
         verdictRow: failRow('gitleaks not found'),
         recovery: gitleaksInstallHint(),
+        findings: [],
       };
     }
     throw err;
@@ -147,8 +156,11 @@ export function scanPushVerdict(): LeakVerdict {
       leak: true,
       verdictRow: failRow('scan failed, no parseable report'),
       recovery: 'gitleaks scan failed: no parseable JSON report. Review the gitleaks output above.',
+      findings: [],
     };
   }
-  if (findings.length === 0) return { leak: false, verdictRow: noLeaksRow(), recovery: null };
+  if (findings.length === 0) {
+    return { leak: false, verdictRow: noLeaksRow(), recovery: null, findings: [] };
+  }
   return leakFound(findings);
 }

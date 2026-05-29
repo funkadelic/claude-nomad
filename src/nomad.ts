@@ -17,13 +17,14 @@
 
 import { cmdDoctor } from './commands.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
+import { cmdRedact } from './commands.redact.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
 import { cmdUpdate } from './commands.update.ts';
 import { HOME } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
-import { parseFlags } from './nomad.dispatch.ts';
+import { parseFlags, parseRedactArgs } from './nomad.dispatch.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
 import { fail, NomadFatal } from './utils.ts';
@@ -75,18 +76,15 @@ try {
       break;
     }
     case 'push': {
-      // Sub-flag: `push --dry-run` runs the pre-checks and remap preview
-      // without staging, scanning, committing, or pushing. Any other argv
-      // after `push` is rejected so a typo does not silently degrade.
-      const sub = process.argv[3];
-      if (sub === undefined) {
-        cmdPush();
-      } else if (sub === '--dry-run' && process.argv.length === 4) {
-        cmdPush({ dryRun: true });
-      } else {
-        console.error('usage: nomad push [--dry-run]');
+      // Set-based flag parse so --dry-run and --redact-all can appear in any
+      // order; unknown flags show the usage line. --redact-all redacts every
+      // finding non-interactively without requiring a TTY.
+      const seen = parseFlags(process.argv, new Set(['--dry-run', '--redact-all']));
+      if (seen === null) {
+        console.error('usage: nomad push [--dry-run] [--redact-all]');
         process.exit(1);
       }
+      await cmdPush({ dryRun: seen.has('--dry-run'), redactAll: seen.has('--redact-all') });
       break;
     }
     case 'init': {
@@ -168,6 +166,18 @@ try {
         process.exit(1);
       }
       cmdDropSession(id);
+      break;
+    }
+    case 'redact': {
+      // nomad redact <session-id> [--rule <rule-id>] [--dry-run]
+      // parseRedactArgs handles the positional id, optional --rule <value>,
+      // and optional --dry-run; returns null on any parse error.
+      const redactArgs = parseRedactArgs(process.argv);
+      if (redactArgs === null) {
+        console.error('usage: nomad redact <session-id> [--rule <rule-id>] [--dry-run]');
+        process.exit(1);
+      }
+      cmdRedact(redactArgs);
       break;
     }
     default:

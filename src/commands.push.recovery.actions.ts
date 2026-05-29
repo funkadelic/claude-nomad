@@ -1,0 +1,165 @@
+/**
+ * I/O action dispatchers for the push-time recovery menu: `applyAllow`,
+ * `applyRedact`, `collectActions`, `dispatchActions`, `redactAllFindings`.
+ * Pure seams live in `commands.push.recovery.seams.ts`; lock-free drop
+ * helper in `commands.push.recovery.drop.ts`.
+ */
+
+import type { PathMap } from './config.ts';
+import { appendGitleaksIgnore } from './commands.redact.ts';
+import { applyRedact } from './commands.push.recovery.redact.ts';
+import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
+import type { Finding } from './push-gitleaks.scan.ts';
+import { scanFile } from './push-gitleaks.scan.ts';
+import { log } from './utils.ts';
+import {
+  type FindingAction,
+  type PromptFn,
+  findingKey,
+  parseAction,
+  sessionIdFromFinding,
+} from './commands.push.recovery.seams.ts';
+
+export type { FindingAction, PromptFn };
+export { dropSessionFromStaged, findingKey, parseAction, sessionIdFromFinding };
+
+/** Apply the Allow action: append the finding's fingerprint to .gitleaksignore. */
+export function applyAllow(f: Finding): void {
+  appendGitleaksIgnore(f.Fingerprint);
+}
+
+/**
+ * Walk all findings and prompt the user for one action each. Returns a map
+ * from `findingKey` to the chosen action, defaulting to `'skip'` on empty
+ * input.
+ *
+ * @param findings The findings to present.
+ * @param prompt An injectable prompt function (one question per call).
+ * @returns Populated actions map.
+ */
+export async function collectActions(
+  findings: Finding[],
+  prompt: PromptFn,
+): Promise<Map<string, FindingAction>> {
+  const actions = new Map<string, FindingAction>();
+  for (const f of findings) {
+    const sid = sessionIdFromFinding(f);
+    const header =
+      `\nFinding: ${f.RuleID} in ${f.File} line ${f.StartLine}` +
+      (sid !== null ? ` (session: ${sid})` : '') +
+      '\n  [R]edact  [A]llow  [D]rop session  [S]kip (default)\n';
+    actions.set(findingKey(f), parseAction(await prompt(header + '> ')));
+  }
+  return actions;
+}
+
+/**
+ * Apply one finding's triaged action against local state. Extracted from
+ * `dispatchActions` so each function stays under the cognitive-complexity gate.
+ * `redactedSids` and `droppedSids` are mutated in place so per-session
+ * de-duplication is maintained across the caller's loop. Drop wins: once a
+ * session id appears in `droppedSids`, subsequent redact or allow actions for
+ * findings in that session are skipped.
+ *
+ * @param f The finding to act on.
+ * @param findings Full findings list (passed to `applyRedact` for per-session redaction).
+ * @param actions The action map returned by `collectActions`.
+ * @param ts Backup timestamp.
+ * @param map Parsed path-map.
+ * @param nowMs Injectable clock.
+ * @param scan Injectable scan function for `applyRedact`.
+ * @param drop Injectable staged-copy remover for the Drop action.
+ * @param redactedSids Set of already-redacted session ids (mutated in place).
+ * @param droppedSids Set of already-dropped session ids (mutated in place).
+ */
+function dispatchOne(
+  f: Finding,
+  findings: Finding[],
+  actions: Map<string, FindingAction>,
+  ts: string,
+  map: PathMap,
+  nowMs: () => number,
+  scan: (p: string) => Finding[] | null,
+  drop: (sid: string, map: PathMap) => boolean,
+  redactedSids: Set<string>,
+  droppedSids: Set<string>,
+): void {
+  const action = actions.get(findingKey(f)) ?? 'skip';
+  if (action === 'skip') return;
+  if (action === 'allow') {
+    applyAllow(f);
+    return;
+  }
+  const sid = sessionIdFromFinding(f);
+  if (sid === null) return;
+  if (droppedSids.has(sid)) return;
+  if (action === 'drop') {
+    droppedSids.add(sid);
+    if (drop(sid, map)) {
+      log(
+        `dropped session ${sid} from this push (local transcript kept; the secret remains in your local copy)`,
+      );
+    }
+    return;
+  }
+  if (action === 'redact' && !redactedSids.has(sid)) {
+    if (applyRedact(f, findings, ts, map, nowMs, scan)) redactedSids.add(sid);
+  }
+}
+
+/**
+ * Dispatch all non-skip actions from the triage map against local state.
+ * Redacted sessions are de-duplicated: the first finding for a given session
+ * triggers the in-place rewrite; subsequent findings for the same session are
+ * skipped (the rewrite already covered all findings in one pass).
+ *
+ * @param findings Full findings list from the current verdict.
+ * @param actions The action map returned by `collectActions`.
+ * @param ts Backup timestamp.
+ * @param map Parsed path-map.
+ * @param nowMs Injectable clock.
+ * @param scan Injectable scan function for `applyRedact` (default: `scanFile`).
+ * @param drop Injectable staged-copy remover for the Drop action (default: `dropSessionFromStaged`).
+ */
+export function dispatchActions(
+  findings: Finding[],
+  actions: Map<string, FindingAction>,
+  ts: string,
+  map: PathMap,
+  nowMs: () => number,
+  scan: (p: string) => Finding[] | null = scanFile,
+  drop: (sid: string, map: PathMap) => boolean = dropSessionFromStaged,
+): void {
+  const redactedSids = new Set<string>();
+  const droppedSids = new Set<string>();
+  for (const f of findings) {
+    dispatchOne(f, findings, actions, ts, map, nowMs, scan, drop, redactedSids, droppedSids);
+  }
+}
+
+/**
+ * Batch-redact all findings non-interactively (the `--redact-all` path).
+ * Does not require a TTY. Findings with no resolvable session id are skipped.
+ * Sessions are de-duplicated: the first finding per session triggers the
+ * rewrite.
+ *
+ * @param findings All findings from the current verdict.
+ * @param ts Backup timestamp.
+ * @param map Parsed path-map.
+ * @param nowMs Injectable clock.
+ * @param scan Injectable scan function for `applyRedact` (default: `scanFile`).
+ */
+export function redactAllFindings(
+  findings: Finding[],
+  ts: string,
+  map: PathMap,
+  nowMs: () => number,
+  scan: (p: string) => Finding[] | null = scanFile,
+): void {
+  const redactedSids = new Set<string>();
+  for (const f of findings) {
+    const sid = sessionIdFromFinding(f);
+    if (sid === null || redactedSids.has(sid)) continue;
+    if (applyRedact(f, findings, ts, map, nowMs, scan)) redactedSids.add(sid);
+  }
+}

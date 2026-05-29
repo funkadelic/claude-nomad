@@ -3,7 +3,7 @@
  * (`runGitleaksScan` in `./push-gitleaks.ts`) and the
  * `nomad doctor --check-shared` preflight (`reportCheckShared` in
  * `./commands.doctor.check-shared.ts`): the `Finding` shape, the JSON-report
- * parser `readGitleaksReport`, and `scanStagedTree`.
+ * parser `readGitleaksReport`, `scanStagedTree`, and `scanFile`.
  *
  * Split into its own module so adding the git-stage step keeps both
  * `push-gitleaks.ts` and `commands.doctor.check-shared.ts` under the 200-line
@@ -29,6 +29,10 @@ export type Finding = {
   RuleID: string;
   File: string;
   StartLine: number;
+  /** 1-indexed character offset where the secret span starts within the raw line. Display and identification metadata only; not used for redaction (which is value-based). */
+  StartColumn: number;
+  /** 1-indexed inclusive end offset of the secret span within the raw line. Display and identification metadata only; not used for redaction (which is value-based). */
+  EndColumn: number;
   Match: string;
   Fingerprint: string;
   /**
@@ -113,6 +117,73 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') throw err;
+    const report = readGitleaksReport(reportPath);
+    if (forwardStreams && report === null) {
+      if (e.stderr) process.stderr.write(e.stderr);
+      if (e.stdout) process.stdout.write(e.stdout);
+    }
+    return report;
+  } finally {
+    rmSync(reportPath, { force: true });
+  }
+}
+
+/**
+ * Scan a single non-staged file with `gitleaks detect --no-git`. Returns a
+ * `Finding[]` on success (empty when the file is clean, non-empty when secrets
+ * are found), or `null` when the scan itself fails (gitleaks absent, gitleaks
+ * crashed, or the report is missing or unparseable).
+ *
+ * Intentionally does NOT pass `--redact` so that `Finding.Match` and
+ * `Finding.Secret` carry the real secret value. Callers that need to perform
+ * value-based redaction (e.g. the push recovery `applyRedact` and `cmdRedact`)
+ * require the literal match to replace it in the transcript. The temp report
+ * file (which contains the real value) is deleted in a `finally` block on every
+ * path, and the process streams are never written on the findings path, so the
+ * real secret is never emitted to stdout/stderr.
+ *
+ * Error model mirrors `scanStagedTree`: gitleaks exits non-zero when findings
+ * exist (exit 1) or on an internal error (exit 2+). Exit 1 with a parseable
+ * report is treated as success-with-findings. Exit 0 means clean. Any error
+ * that produces no parseable report (including ENOENT for a missing binary)
+ * returns `null` rather than throwing, so callers get a clear scan-failed
+ * signal without a stack trace.
+ *
+ * `forwardStreams` (default `false`): when `true`, stderr/stdout captured on
+ * the scan-crash path (report missing or unparseable) is written to the process
+ * streams so the caller can surface it. On the findings path the streams are
+ * suppressed; the structured `Finding[]` fully describes the result.
+ *
+ * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
+ * exists, mirroring the `scanStagedTree` convention so allow-list entries apply
+ * consistently across staged and non-staged scans.
+ *
+ * @param filePath Absolute path to the file to scan.
+ * @param forwardStreams Forward gitleaks stderr/stdout to process streams on
+ *   scan-crash (report missing or unparseable). Default `false`.
+ * @returns `Finding[]` on success (possibly empty), `null` on scan error.
+ */
+export function scanFile(filePath: string, forwardStreams = false): Finding[] | null {
+  const cacheDir = join(homedir(), '.cache', 'claude-nomad');
+  mkdirSync(cacheDir, { recursive: true });
+  const reportPath = join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}.json`);
+  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
+  const args: string[] = [
+    'detect',
+    '--no-git',
+    '--source',
+    filePath,
+    '--report-format=json',
+    `--report-path=${reportPath}`,
+  ];
+  if (existsSync(tomlPath)) args.push('--config', tomlPath);
+  const opts: ExecFileSyncOptions = { stdio: ['ignore', 'pipe', 'pipe'] };
+  try {
+    execFileSync('gitleaks', args, opts);
+    return [];
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
+    if (e.code === 'ENOENT') return null;
     const report = readGitleaksReport(reportPath);
     if (forwardStreams && report === null) {
       if (e.stderr) process.stderr.write(e.stderr);

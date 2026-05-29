@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 
 import { HOME, HOST, type PathMap, REPO_HOME } from './config.ts';
 import { enforceAllowList } from './commands.push.allowlist.ts';
+import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
 import { scanPushVerdict } from './push-leak-verdict.ts';
@@ -35,27 +36,27 @@ function guardGitlinks(): void {
 }
 
 /**
- * The staged-tree leak gate + commit/push for the REAL push path. Runs
- * `scanPushVerdict` AFTER `git add -A` (sees what would push) but BEFORE commit
- * (a detection unwinds cleanly with no commit to revert). On a leak it renders
- * the tree (with the ✗ Leak scan row + Summary) so the tree precedes the
- * recovery block, then throws the recovery body as a `NomadFatal` (the catch
- * prints it and sets a non-zero exit). On a clean scan it commits, pushes, and
- * renders the tree with the `✓ no leaks` row.
+ * Staged-tree leak gate + commit/push. Stages with `git add -A`, scans, and
+ * on a leak renders the ✗ tree row then delegates to `resolveLeakFindings`
+ * (TTY interactive menu or non-TTY FATAL throw, D-01 preserved). On a clean
+ * scan commits, pushes, and renders the `✓ no leaks` row.
  *
- * @param st - The collected push state for the final tree render.
+ * @param st - Push state for the tree render.
+ * @param ts - Backup timestamp passed to the recovery flow.
+ * @param map - Parsed path-map for session path resolution.
+ * @param redactAll - When true, redact all findings non-interactively.
  */
-function commitAndPush(st: PushState): void {
-  // gitOrFatal uses execFileSync (no shell) so NOMAD_HOST cannot escape quoting.
+async function commitAndPush(
+  st: PushState,
+  ts: string,
+  map: PathMap,
+  redactAll: boolean,
+): Promise<void> {
   gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
-  const verdict = scanPushVerdict();
+  let verdict = scanPushVerdict();
   if (verdict.leak) {
     renderPushTree(st, verdict);
-    // Every `leak: true` branch of scanPushVerdict sets a non-null recovery
-    // body, so the `?? fallback` is defensively unreachable (excluded from
-    // coverage rather than contorting a test to fake an impossible state).
-    /* c8 ignore next */
-    throw new NomadFatal(verdict.recovery ?? 'gitleaks detected secrets');
+    verdict = await resolveLeakFindings(verdict, ts, map, { redactAll });
   }
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
   gitOrFatal(['push'], 'git push', REPO_HOME);
@@ -144,8 +145,9 @@ function runDryRunPreview(st: PushState, map: PathMap | null): void {
  * pre-existing violation surfaces; an empty status has nothing to classify.
  * Mirrors `cmdPull`'s `dryRun` contract.
  */
-export function cmdPush(opts: { dryRun?: boolean } = {}): void {
+export async function cmdPush(opts: { dryRun?: boolean; redactAll?: boolean } = {}): Promise<void> {
   const dryRun = opts.dryRun === true;
+  const redactAll = opts.redactAll === true;
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   const handle = acquireLock('push');
   if (handle === null) process.exit(0);
@@ -202,7 +204,7 @@ export function cmdPush(opts: { dryRun?: boolean } = {}): void {
     // dryRun skips git add / commit / push: run the read-only leak preview,
     // which prints any recovery below the rendered tree.
     if (dryRun) return runDryRunPreview(st, map);
-    commitAndPush(st);
+    await commitAndPush(st, ts, map, redactAll);
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);

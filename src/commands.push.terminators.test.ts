@@ -42,8 +42,8 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(existsSync(env.repoUnderHome)).toBe(false);
     const { cmdPush } = await import('./commands.push.ts');
     const { NomadFatal } = await import('./utils.ts');
-    expect(() => cmdPush()).toThrow(NomadFatal);
-    expect(() => cmdPush()).toThrow(/repo not cloned at/);
+    await expect(cmdPush()).rejects.toThrow(NomadFatal);
+    await expect(cmdPush()).rejects.toThrow(/repo not cloned at/);
     expect(existsSync(env.lockPath)).toBe(false);
   });
 
@@ -70,7 +70,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       }),
     }));
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(env.lockPath)).toBe(false);
     const out = errOutput(env);
@@ -115,6 +115,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
             '',
             'After recovery, re-run nomad push.',
           ].join('\n'),
+          findings: [],
         })),
       };
     });
@@ -143,7 +144,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
     );
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(env.lockPath)).toBe(false);
     // The recovery block prints below the tree via fail() (stderr, ✗ prefix).

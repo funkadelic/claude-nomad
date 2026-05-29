@@ -146,7 +146,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
   });
@@ -177,7 +177,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
   });
@@ -202,7 +202,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
     }));
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
   });
@@ -234,7 +234,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).toThrow(TypeError);
+    await expect(cmdPush()).rejects.toThrow(TypeError);
     expect(existsSync(lockPath)).toBe(false);
     vi.doUnmock('./push-leak-verdict.ts');
   });

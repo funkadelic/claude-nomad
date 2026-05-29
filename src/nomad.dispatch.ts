@@ -23,3 +23,60 @@ export function parseFlags(argv: string[], known: Set<string>): Set<string> | nu
   }
   return seen;
 }
+
+/** Parsed result from {@link parseRedactArgs}. */
+export type RedactArgs = {
+  /** Validated session id. */
+  id: string;
+  /** Optional gitleaks rule id filter passed via `--rule <id>`. */
+  rule: string | undefined;
+  /** True when `--dry-run` was present. */
+  dryRun: boolean;
+};
+
+/**
+ * Argv parser for `nomad redact <session-id> [--rule <rule-id>] [--dry-run]`.
+ *
+ * Handles a required positional id at argv[3], an optional boolean
+ * `--dry-run`, and an optional `--rule <value>` that consumes the next token.
+ * Returns `null` on any parse error: missing id, id failing the validation
+ * regex, unknown flag, `--rule` with no value or a value that looks like
+ * another flag, or a repeated flag.
+ *
+ * The id regex (`/^\w[\w-]{0,127}$/`) mirrors the `drop-session` arm: the
+ * leading `\w` prevents leading-dash ids so `nomad redact --bogus` shows
+ * usage rather than passing an invalid id to `cmdRedact`.
+ *
+ * @param argv The full process argv array (parsing starts at index 3).
+ * @returns Parsed redact arguments, or `null` on any parse error.
+ */
+export function parseRedactArgs(argv: string[]): RedactArgs | null {
+  const id = argv[3];
+  if (typeof id !== 'string' || !/^\w[\w-]{0,127}$/.test(id)) {
+    return null;
+  }
+  let rule: string | undefined;
+  let dryRun = false;
+  let sawRule = false;
+  let sawDryRun = false;
+  let i = 4;
+  while (i < argv.length) {
+    const token = argv[i];
+    if (token === '--dry-run') {
+      if (sawDryRun) return null;
+      sawDryRun = true;
+      dryRun = true;
+      i++;
+    } else if (token === '--rule') {
+      if (sawRule) return null;
+      sawRule = true;
+      const val = argv[i + 1];
+      if (val === undefined || val.startsWith('--')) return null;
+      rule = val;
+      i += 2;
+    } else {
+      return null;
+    }
+  }
+  return { id, rule, dryRun };
+}

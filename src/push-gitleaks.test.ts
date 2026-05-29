@@ -485,6 +485,8 @@ type Finding = {
   RuleID: string;
   File: string;
   StartLine: number;
+  StartColumn: number;
+  EndColumn: number;
   Match: string;
   Fingerprint: string;
 };
@@ -497,10 +499,12 @@ type BuildSessionAwareFatal = (
   other: Finding[],
 ) => string;
 type FormatOtherFinding = (f: Finding) => string;
+type OtherFindingHint = (f: Finding) => string;
 type PushGitleaksModule = {
   partitionFindings: PartitionFindings;
   buildSessionAwareFatal: BuildSessionAwareFatal;
   formatOtherFinding: FormatOtherFinding;
+  otherFindingHint: OtherFindingHint;
 };
 
 describe('partitionFindings (pure)', () => {
@@ -511,6 +515,8 @@ describe('partitionFindings (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/foo/sid-A.jsonl',
         StartLine: 12,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp1',
       },
@@ -518,6 +524,8 @@ describe('partitionFindings (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/foo/sid-A.jsonl',
         StartLine: 13,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp2',
       },
@@ -525,6 +533,8 @@ describe('partitionFindings (pure)', () => {
         RuleID: 'aws-access-token',
         File: 'shared/projects/foo/sid-A.jsonl',
         StartLine: 14,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp3',
       },
@@ -532,6 +542,8 @@ describe('partitionFindings (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/bar/sid-B.jsonl',
         StartLine: 9,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp4',
       },
@@ -553,6 +565,8 @@ describe('partitionFindings (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/CLAUDE.md',
         StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp1',
       },
@@ -560,6 +574,8 @@ describe('partitionFindings (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/foo/sid-A.jsonl',
         StartLine: 2,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp2',
       },
@@ -577,6 +593,8 @@ describe('partitionFindings (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/foo/subagents/sid.jsonl',
         StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp1',
       },
@@ -596,6 +614,8 @@ describe('buildSessionAwareFatal (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/foo/sid-A.jsonl',
         StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp1',
       },
@@ -603,6 +623,8 @@ describe('buildSessionAwareFatal (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/foo/sid-A.jsonl',
         StartLine: 2,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp2',
       },
@@ -624,6 +646,8 @@ describe('buildSessionAwareFatal (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/foo/sid-A.jsonl',
         StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp1',
       },
@@ -631,6 +655,8 @@ describe('buildSessionAwareFatal (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/bar/sid-B.jsonl',
         StartLine: 2,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp2',
       },
@@ -649,6 +675,8 @@ describe('buildSessionAwareFatal (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/projects/foo/sid-A.jsonl',
         StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp1',
       },
@@ -656,6 +684,8 @@ describe('buildSessionAwareFatal (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/CLAUDE.md',
         StartLine: 3,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp2',
       },
@@ -674,6 +704,8 @@ describe('buildSessionAwareFatal (pure)', () => {
       RuleID: 'github-pat',
       File: 'shared/projects/foo/subagents/agent-x.jsonl',
       StartLine: 208,
+      StartColumn: 1,
+      EndColumn: 10,
       Match: 'REDACTED',
       Fingerprint: 'fp',
     });
@@ -685,6 +717,8 @@ describe('buildSessionAwareFatal (pure)', () => {
     const base = {
       RuleID: 'github-pat',
       File: 'shared/CLAUDE.md',
+      StartColumn: 1,
+      EndColumn: 10,
       Match: 'REDACTED',
       Fingerprint: 'fp',
     };
@@ -697,6 +731,115 @@ describe('buildSessionAwareFatal (pure)', () => {
     );
   });
 
+  it('otherFindingHint: subagent path recovers session id with drop-session/redact hint', async () => {
+    // A subagent transcript path `shared/projects/<logical>/<id>/...` does not
+    // match SESSION_PATH (which requires a top-level `.jsonl` suffix) and lands
+    // in the `other` bucket. otherFindingHint must recover the id from path
+    // segment 4 and surface a drop-session/redact hint naming it explicitly.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const hint = otherFindingHint({
+      RuleID: 'github-pat',
+      File: 'shared/projects/proj-x/agent-id-42/subagents/sub.jsonl',
+      StartLine: 5,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    expect(hint).toContain('agent-id-42');
+    expect(hint).toContain('nomad drop-session agent-id-42');
+    expect(hint).toContain('nomad redact agent-id-42');
+  });
+
+  it('otherFindingHint: non-matching path returns manual-review fallback', async () => {
+    // A path that does not match shared/projects/<logical>/<id>/... (e.g., a
+    // top-level CLAUDE.md or a settings file) cannot yield a session id. The
+    // fallback manual-review line must be returned instead.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const hint = otherFindingHint({
+      RuleID: 'generic-api-key',
+      File: 'shared/CLAUDE.md',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    expect(hint).toContain('git diff --cached');
+    expect(hint).toContain('unstage manually');
+    expect(hint).not.toContain('nomad drop-session');
+    expect(hint).not.toContain('nomad redact');
+  });
+
+  it('buildSessionAwareFatal: subagent other-finding surfaces recovered-id hint in Also found block', async () => {
+    // A finding whose File matches the subagent bucket
+    // `shared/projects/<logical>/<id>/...` lands in `other` and must carry a
+    // drop-session/redact hint naming the recovered id, not just "unstage manually".
+    const { partitionFindings, buildSessionAwareFatal } =
+      (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const findings: Finding[] = [
+      {
+        RuleID: 'github-pat',
+        File: 'shared/projects/proj-x/sid-A.jsonl',
+        StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp1',
+      },
+      {
+        RuleID: 'github-pat',
+        File: 'shared/projects/proj-x/sid-A/subagents/agent.jsonl',
+        StartLine: 8,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp2',
+      },
+    ];
+    const { bySession, other } = partitionFindings(findings);
+    const msg = buildSessionAwareFatal(bySession, other);
+    expect(msg).toContain('Also found:');
+    expect(msg).toContain('shared/projects/proj-x/sid-A/subagents/agent.jsonl:8');
+    expect(msg).toContain('nomad drop-session sid-A');
+    expect(msg).toContain('nomad redact sid-A');
+    expect(msg).not.toContain('unstage manually');
+  });
+
+  it('buildSessionAwareFatal: non-matching other-finding keeps manual-review fallback', async () => {
+    // A finding on a path that is NOT under shared/projects/<logical>/<id>/
+    // (e.g., a shared CLAUDE.md) must still emit the manual-review fallback,
+    // since no session id can be recovered from the path.
+    const { partitionFindings, buildSessionAwareFatal } =
+      (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const findings: Finding[] = [
+      {
+        RuleID: 'generic-api-key',
+        File: 'shared/projects/proj-x/sid-A.jsonl',
+        StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp1',
+      },
+      {
+        RuleID: 'generic-api-key',
+        File: 'shared/CLAUDE.md',
+        StartLine: 5,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp2',
+      },
+    ];
+    const { bySession, other } = partitionFindings(findings);
+    const msg = buildSessionAwareFatal(bySession, other);
+    expect(msg).toContain('Also found:');
+    expect(msg).toContain('shared/CLAUDE.md:5');
+    expect(msg).toContain('git diff --cached');
+    expect(msg).toContain('unstage manually');
+  });
+
   it('non-session-only findings return the exact legacy fallback string', async () => {
     const { partitionFindings, buildSessionAwareFatal } =
       (await import('./push-gitleaks.ts')) as PushGitleaksModule;
@@ -705,6 +848,8 @@ describe('buildSessionAwareFatal (pure)', () => {
         RuleID: 'generic-api-key',
         File: 'shared/CLAUDE.md',
         StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
         Match: 'REDACTED',
         Fingerprint: 'fp1',
       },

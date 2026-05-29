@@ -180,6 +180,7 @@ export const PUSH_ALLOWED_STATIC = [
   'shared/hooks/',
   'hosts/',
   'path-map.json',
+  '.gitleaksignore', // written by nomad push Allow action (D-04)
 ] as const;
 
 /**

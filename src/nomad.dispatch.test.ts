@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { parseRedactArgs } from './nomad.dispatch.ts';
+
 // Dispatcher smoke tests for the two parseFlags-based subcommand arms
 // (`init` and `update`). Split out of nomad.test.ts to keep every file under
 // the line cap. Each test sets process.argv, doMocks the relevant command
@@ -177,5 +179,84 @@ describe('nomad.ts init dispatcher', () => {
     await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(cmdInitMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('parseRedactArgs', () => {
+  /** Build a full process.argv-shaped array for `nomad redact <tail>`. */
+  function argv(...tail: string[]): string[] {
+    return ['node', 'nomad.ts', 'redact', ...tail];
+  }
+
+  it('bare valid id returns { id, rule: undefined, dryRun: false }', () => {
+    expect(parseRedactArgs(argv('abc123'))).toStrictEqual({
+      id: 'abc123',
+      rule: undefined,
+      dryRun: false,
+    });
+  });
+
+  it('id + --dry-run returns dryRun: true', () => {
+    expect(parseRedactArgs(argv('abc123', '--dry-run'))).toStrictEqual({
+      id: 'abc123',
+      rule: undefined,
+      dryRun: true,
+    });
+  });
+
+  it('id + --rule <value> returns rule set', () => {
+    expect(parseRedactArgs(argv('abc123', '--rule', 'github-pat'))).toStrictEqual({
+      id: 'abc123',
+      rule: 'github-pat',
+      dryRun: false,
+    });
+  });
+
+  it('id + --rule + --dry-run (flags after rule) returns both set', () => {
+    expect(parseRedactArgs(argv('abc123', '--rule', 'github-pat', '--dry-run'))).toStrictEqual({
+      id: 'abc123',
+      rule: 'github-pat',
+      dryRun: true,
+    });
+  });
+
+  it('id + --dry-run + --rule (dry-run before rule) returns both set', () => {
+    expect(parseRedactArgs(argv('abc123', '--dry-run', '--rule', 'github-pat'))).toStrictEqual({
+      id: 'abc123',
+      rule: 'github-pat',
+      dryRun: true,
+    });
+  });
+
+  it('--rule with no following value returns null', () => {
+    expect(parseRedactArgs(argv('abc123', '--rule'))).toBeNull();
+  });
+
+  it('--rule followed by another --flag returns null', () => {
+    expect(parseRedactArgs(argv('abc123', '--rule', '--dry-run'))).toBeNull();
+  });
+
+  it('unknown trailing flag returns null', () => {
+    expect(parseRedactArgs(argv('abc123', '--bogus'))).toBeNull();
+  });
+
+  it('missing id (no argv[3]) returns null', () => {
+    expect(parseRedactArgs(['node', 'nomad.ts', 'redact'])).toBeNull();
+  });
+
+  it('id failing the regex (leading dash) returns null', () => {
+    expect(parseRedactArgs(argv('--bad-id'))).toBeNull();
+  });
+
+  it('id failing the regex (contains slash) returns null', () => {
+    expect(parseRedactArgs(argv('abc/def'))).toBeNull();
+  });
+
+  it('duplicate --dry-run returns null', () => {
+    expect(parseRedactArgs(argv('abc123', '--dry-run', '--dry-run'))).toBeNull();
+  });
+
+  it('duplicate --rule returns null', () => {
+    expect(parseRedactArgs(argv('abc123', '--rule', 'x', '--rule', 'y'))).toBeNull();
   });
 });
