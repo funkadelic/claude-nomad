@@ -114,6 +114,7 @@ public funkadelic/claude-nomad          your private <your-username>/claude-noma
                                           │   ├── skills/
                                           │   ├── commands/
                                           │   ├── rules/
+                                          │   ├── hooks/
                                           │   ├── settings.base.json
                                           │   └── projects/
                                           ├── hosts/<hostname>.json
@@ -144,6 +145,7 @@ so a clobbered dotfile variable does not break the CLI.
 │   ├── skills/
 │   ├── commands/
 │   ├── rules/
+│   ├── hooks/                # hook scripts, symlinked into ~/.claude/hooks/
 │   ├── my-statusline.cjs     # any script you want symlinked into ~/.claude/
 │   ├── .gitignore            # defense-in-depth: blocks .claude.json, settings.local.json, *.token, *.key, *.pem, id_rsa, id_ed25519, .env, .env.*
 │   ├── projects/             # session transcripts under logical names
@@ -158,14 +160,15 @@ so a clobbered dotfile variable does not break the CLI.
 
 ## What gets synced vs. not
 
-| Category               | Items                                                                                   | Behavior                                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| **Synced**             | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`.                                                    |
-| **Generated**          | `settings.json`                                                                         | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull.         |
-| **Remapped**           | `projects/` session transcripts                                                         | Copied with path translation per `path-map.json`.                                              |
-| **Per-project extras** | Whitelisted dirs like `.planning/`, or a root file like `CLAUDE.md`                     | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
-| **Never synced**       | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs            | Per-host ephemeral state; left untouched in both directions.                                   |
-| **Auto-rehydrated**    | `~/.claude/plugins/cache/<plugin>/...`                                                  | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install.              |
+| Category                | Items                                                                                   | Behavior                                                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Synced**              | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`.                                                                                                                   |
+| **Generated**           | `settings.json`                                                                         | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull.                                                                        |
+| **Remapped**            | `projects/` session transcripts                                                         | Copied with path translation per `path-map.json`.                                                                                                             |
+| **Per-project extras**  | Whitelisted dirs like `.planning/`, or a root file like `CLAUDE.md`                     | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`.                                                                |
+| **Shared support dirs** | Opt-in global `~/.claude/` dirs like a tool's `get-shit-done/`                          | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. See [Shared support dirs](#shared-support-dirs-shareddirs). |
+| **Never synced**        | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs            | Per-host ephemeral state; left untouched in both directions.                                                                                                  |
+| **Auto-rehydrated**     | `~/.claude/plugins/cache/<plugin>/...`                                                  | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install.                                                                             |
 
 Pointers and specifics:
 
