@@ -7,7 +7,7 @@ import { APP_ONLY_KEYS, KNOWN_SETTINGS_KEYS, SCHEMA_KEYS } from './settings-keys
  * Offline guards for the settings-keys module and its generator. No network:
  * these assert the committed arrays are already in the canonical shape the
  * generator produces (sorted case-insensitively, deduped) and that the two
- * provenance groups stay disjoint, so a real `sync-settings-keys.mjs` run
+ * provenance groups stay disjoint, so a real `sync-settings-keys.ts` run
  * against an unchanged schema is a no-op diff.
  */
 describe('settings-keys canonical shape', () => {

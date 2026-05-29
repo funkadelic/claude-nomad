@@ -99,11 +99,20 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  writeFileSync(TARGET, renderSettingsKeysFile(live, appOnly));
+  // Only write when the rendered output actually differs from disk. Writing
+  // unconditionally re-emitted the canonical header (e.g. after the script was
+  // renamed) and produced a phantom comment-only diff that the weekly workflow
+  // turned into a no-op PR every run. Idempotent write mode prevents that.
+  const next = renderSettingsKeysFile(live, appOnly);
+  if (next === source) {
+    console.log('settings schema in sync; file unchanged.');
+    return;
+  }
+  writeFileSync(TARGET, next);
   console.log(
     added.length > 0 || removed.length > 0
       ? `updated SCHEMA_KEYS (+${added.length} -${removed.length}).`
-      : 'settings schema in sync; file unchanged.',
+      : 'rewrote settings-keys.ts (formatting only; keys unchanged).',
   );
 }
 
