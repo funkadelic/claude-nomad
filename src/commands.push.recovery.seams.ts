@@ -24,19 +24,31 @@ export function findingKey(f: Finding): string {
   return `${f.File}:${f.StartLine}:${f.StartColumn}`;
 }
 
+/** Valid session id charset: alphanumeric, hyphen, underscore (same as cmdDropSession/cmdRedact). */
+const VALID_SID = /^[A-Za-z0-9_-]+$/;
+
 /**
  * Extract the session id from a finding's File path. Handles both the flat
  * `shared/projects/<logical>/<sid>.jsonl` form (SESSION_PATH) and the deeper
- * subagent form `shared/projects/<logical>/<sid>/...`.
+ * subagent form `shared/projects/<logical>/<sid>/...`. The extracted id is
+ * validated against `/^[A-Za-z0-9_-]+$/` before being returned; path-traversal
+ * segments (e.g. `..`) are rejected and cause a null return.
  *
  * @param f The gitleaks finding.
- * @returns The session id, or null when the path matches neither pattern.
+ * @returns The session id, or null when the path matches neither pattern or the
+ *   extracted id contains characters outside `[A-Za-z0-9_-]`.
  */
 export function sessionIdFromFinding(f: Finding): string | null {
   const m = SESSION_PATH.exec(f.File);
-  if (m !== null) return m[1] ?? null;
+  if (m !== null) {
+    const sid = m[1] ?? null;
+    return sid !== null && VALID_SID.test(sid) ? sid : null;
+  }
   const sub = /^shared\/projects\/[^/]+\/([^/]+)\//.exec(f.File);
-  if (sub !== null) return sub[1] ?? null;
+  if (sub !== null) {
+    const sid = sub[1] ?? null;
+    return sid !== null && VALID_SID.test(sid) ? sid : null;
+  }
   return null;
 }
 

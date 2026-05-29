@@ -1074,6 +1074,47 @@ describe('resolveLeakFindings - legend emission', () => {
 });
 
 // ---------------------------------------------------------------------------
+// sessionIdFromFinding: id validation
+// ---------------------------------------------------------------------------
+
+describe('sessionIdFromFinding: id validation', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('returns the session id for a normal UUID-style flat path', async () => {
+    const { sessionIdFromFinding } = await import('./commands.push.recovery.seams.ts');
+    const f = makeFinding({ File: 'shared/projects/my-proj/abc123-def_456.jsonl' });
+    expect(sessionIdFromFinding(f)).toBe('abc123-def_456');
+  });
+
+  it('returns null when the flat-path id segment contains ".."', async () => {
+    const { sessionIdFromFinding } = await import('./commands.push.recovery.seams.ts');
+    const f = makeFinding({ File: 'shared/projects/my-proj/../x.jsonl' });
+    expect(sessionIdFromFinding(f)).toBeNull();
+  });
+
+  it('returns null when the subagent-dir id segment contains ".."', async () => {
+    const { sessionIdFromFinding } = await import('./commands.push.recovery.seams.ts');
+    // subagent form: shared/projects/<logical>/<sid>/... -- inject ".." as sid
+    const f = makeFinding({ File: 'shared/projects/my-proj/../subagent/sub.jsonl' });
+    expect(sessionIdFromFinding(f)).toBeNull();
+  });
+
+  it('returns null for a path that matches neither known pattern', async () => {
+    const { sessionIdFromFinding } = await import('./commands.push.recovery.seams.ts');
+    const f = makeFinding({ File: 'unrecognized/path/file.txt' });
+    expect(sessionIdFromFinding(f)).toBeNull();
+  });
+
+  it('returns the session id for a valid subagent-dir path', async () => {
+    const { sessionIdFromFinding } = await import('./commands.push.recovery.seams.ts');
+    const f = makeFinding({ File: 'shared/projects/my-proj/sid-abc/sub.jsonl' });
+    expect(sessionIdFromFinding(f)).toBe('sid-abc');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // dropSessionFromStaged: filesystem removal
 // ---------------------------------------------------------------------------
 
@@ -1267,5 +1308,169 @@ describe('resolveLeakFindings - Drop action -> clean re-scan -> returns', () => 
 
     expect(result.leak).toBe(false);
     expect(result.verdictRow).toBe('✓ no leaks');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRedact: no-match in map -> returns false, emits message, no cpSync
+// ---------------------------------------------------------------------------
+
+describe('applyRedact: no map-match returns false and emits message', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-nomatch-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('./utils.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('returns false and emits refusal when local transcript resolves but no project prefix matches', async () => {
+    // path-map.json lists otherproject so resolveLiveTranscript can find the
+    // transcript. The map passed to applyRedact only has myproject, so the
+    // copy-back loop has no matching entry and must return false.
+    const claudeHome = join(testHome, '.claude');
+    const encodedDir = join(claudeHome, 'projects', '-home-norm-git-otherproject');
+    mkdirSync(encodedDir, { recursive: true });
+    const transcriptPath = join(encodedDir, 'sid-nomatch.jsonl');
+    writeFileSync(transcriptPath, '{"text":"secret"}\n');
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { otherproject: { 'test-host': '/home/norm/git/otherproject' } },
+      }),
+    );
+    // map only has myproject: the copy-back loop will find no prefix match.
+    const map: PathMap = {
+      projects: { myproject: { 'test-host': '/home/norm/git/myproject' } },
+    };
+    const farFuture = Date.now() + 10 * 60 * 1000;
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy };
+    });
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/otherproject/sid-nomatch.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-nomatch',
+    };
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'test-rule',
+        File: transcriptPath,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 15,
+        Match: 'secret',
+        Fingerprint: 'fp-nomatch',
+      },
+    ];
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+
+    expect(result).toBe(false);
+    expect(logSpy).toHaveBeenCalledOnce();
+    const msg: string = logSpy.mock.calls[0][0] as string;
+    expect(msg).toContain('sid-nomatch');
+    expect(msg).toMatch(/[Dd]rop session|[Ss]kip/);
+  });
+
+  it('prefix-collision: writes staged copy under the correct logical (foobar not foo)', async () => {
+    // Two logicals: foo -> /x/foo, foobar -> /x/foobar.
+    // The live transcript lives under foobar's encoded dir.
+    // The cpSync must target foobar, not foo.
+    const claudeHome = join(testHome, '.claude');
+    const encodedFoobar = join(claudeHome, 'projects', '-x-foobar');
+    mkdirSync(encodedFoobar, { recursive: true });
+    const transcriptPath = join(encodedFoobar, 'sid-bar.jsonl');
+    writeFileSync(transcriptPath, '{"text":"real-secret"}\n');
+
+    // Staged tree for both logicals.
+    mkdirSync(join(testHome, 'shared', 'projects', 'foo'), { recursive: true });
+    mkdirSync(join(testHome, 'shared', 'projects', 'foobar'), { recursive: true });
+
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          foo: { 'test-host': '/x/foo' },
+          foobar: { 'test-host': '/x/foobar' },
+        },
+      }),
+    );
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/x/foo' },
+        foobar: { 'test-host': '/x/foobar' },
+      },
+    };
+    const farFuture = Date.now() + 10 * 60 * 1000;
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn() };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/foobar/sid-bar.jsonl',
+      StartLine: 1,
+      StartColumn: 9,
+      EndColumn: 20,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-bar',
+    };
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'test-rule',
+        File: transcriptPath,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 20,
+        Match: 'real-secret',
+        Fingerprint: 'fp-bar',
+      },
+    ];
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+
+    expect(result).toBe(true);
+    // Staged copy must exist under foobar, not foo.
+    expect(existsSync(join(testHome, 'shared', 'projects', 'foobar', 'sid-bar.jsonl'))).toBe(true);
+    expect(existsSync(join(testHome, 'shared', 'projects', 'foo', 'sid-bar.jsonl'))).toBe(false);
   });
 });

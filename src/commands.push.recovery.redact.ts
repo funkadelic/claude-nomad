@@ -10,7 +10,7 @@
  */
 
 import { cpSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 import type { PathMap } from './config.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME } from './config.ts';
@@ -92,15 +92,22 @@ export function applyRedact(
   backupBeforeWrite(localPath, ts);
   writeFileSync(localPath, applyRedactions(readFileSync(localPath, 'utf8'), realFindings), 'utf8');
 
+  let copied = false;
   for (const [logical, hostMap] of Object.entries(map.projects)) {
     const abs = hostMap[HOST];
     if (abs === undefined) continue;
-    if (localPath.startsWith(join(CLAUDE_HOME, 'projects', encodePath(abs)))) {
+    if (localPath.startsWith(join(CLAUDE_HOME, 'projects', encodePath(abs)) + sep)) {
       cpSync(localPath, join(REPO_HOME, 'shared', 'projects', logical, `${sid}.jsonl`), {
         force: true,
       });
+      copied = true;
       break;
     }
+  }
+  if (!copied) {
+    return refuse(
+      `could not map the local transcript for session ${sid} to a staged copy; choose Drop session or Skip.`,
+    );
   }
   return true;
 }
