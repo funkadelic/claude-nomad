@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,6 +10,7 @@ import type * as utilsModule from './utils.ts';
 import type * as utilsFsModule from './utils.fs.ts';
 import type { PathMap } from './config.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
+import type { LeakVerdict } from './push-leak-verdict.ts';
 
 // ---------------------------------------------------------------------------
 // isTTY seam
@@ -570,5 +571,363 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
     expect(result).toBe(false);
     expect(backupSpy).not.toHaveBeenCalled();
     expect(readFileSync(transcriptPath, 'utf8')).toBe(originalContent);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRedact: refusal messages
+// ---------------------------------------------------------------------------
+
+describe('applyRedact: live-session refusal emits guidance message', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-applyredact-live-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('./utils.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('returns false, no mutation, and emits live-session guidance when session is live', async () => {
+    const { transcriptPath, map } = makeApplyRedactFixture(testHome);
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy };
+    });
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 9,
+      EndColumn: 25,
+      Match: 'REDACTED',
+      Fingerprint: 'fp1',
+    };
+    // nowMs() == file mtime => recently modified (live session)
+    const liveClock = () => statSync(transcriptPath).mtimeMs + 1000;
+    const originalContent = readFileSync(transcriptPath, 'utf8');
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, liveClock);
+
+    expect(result).toBe(false);
+    expect(backupSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(originalContent);
+    expect(logSpy).toHaveBeenCalledOnce();
+    const msg: string = logSpy.mock.calls[0][0] as string;
+    expect(msg).toContain('sid123');
+    expect(msg).toContain('active');
+    expect(msg).toMatch(/[Dd]rop session|[Ss]kip/);
+  });
+
+  it('returns false and emits scan-failed message when scan returns null', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy };
+    });
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 9,
+      EndColumn: 25,
+      Match: 'REDACTED',
+      Fingerprint: 'fp1',
+    };
+    const originalContent = readFileSync(transcriptPath, 'utf8');
+
+    const result = applyRedact(
+      trigger,
+      [trigger],
+      'ts-x',
+      map,
+      () => farFuture,
+      () => null,
+    );
+
+    expect(result).toBe(false);
+    expect(backupSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(originalContent);
+    expect(logSpy).toHaveBeenCalledOnce();
+    const msg: string = logSpy.mock.calls[0][0] as string;
+    expect(msg).toMatch(/re-scan.*failed|scan.*failed/i);
+    expect(msg).toMatch(/[Ss]kip|[Dd]rop/);
+  });
+
+  it('returns false and emits nothing-to-redact message when scan returns []', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy };
+    });
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 9,
+      EndColumn: 25,
+      Match: 'REDACTED',
+      Fingerprint: 'fp1',
+    };
+    const originalContent = readFileSync(transcriptPath, 'utf8');
+
+    const result = applyRedact(
+      trigger,
+      [trigger],
+      'ts-x',
+      map,
+      () => farFuture,
+      (): Finding[] => [],
+    );
+
+    expect(result).toBe(false);
+    expect(backupSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(originalContent);
+    expect(logSpy).toHaveBeenCalledOnce();
+    const msg: string = logSpy.mock.calls[0][0] as string;
+    expect(msg).toMatch(/nothing to redact/i);
+    expect(msg).toMatch(/[Ss]kip|[Dd]rop/);
+  });
+
+  it('happy path: no log message emitted on success', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn() };
+    });
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 9,
+      EndColumn: 25,
+      Match: 'REDACTED',
+      Fingerprint: 'fp1',
+    };
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'test-rule',
+        File: transcriptPath,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 25,
+        Match: 'real-secret-value',
+        Fingerprint: 'fp1',
+      },
+    ];
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+
+    expect(result).toBe(true);
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRedact: unresolvable session-id (sid === null) emits guidance message
+// ---------------------------------------------------------------------------
+
+describe('applyRedact: unresolvable session-id emits guidance message', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.ts');
+  });
+
+  it('returns false and emits transcript-not-found message when session id cannot be extracted', async () => {
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    // File path that matches neither SESSION_PATH nor the subagent pattern.
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'unrecognized/path/file.txt',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'secret',
+      Fingerprint: 'fp-unresolvable',
+    };
+    const map: PathMap = { projects: {} };
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => Date.now());
+
+    expect(result).toBe(false);
+    expect(logSpy).toHaveBeenCalledOnce();
+    const msg: string = logSpy.mock.calls[0][0] as string;
+    expect(msg).toMatch(/local transcript|session/i);
+    expect(msg).toMatch(/[Ss]kip|[Dd]rop/);
+  });
+
+  it('returns false and emits transcript-not-found message when local transcript is absent', async () => {
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.actions.ts');
+    // Valid session path so sid extracts, but NOMAD_REPO has no path-map.json
+    // so resolveLiveTranscript returns null.
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/absent-sid.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'secret',
+      Fingerprint: 'fp-absent',
+    };
+    const map: PathMap = { projects: {} };
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => Date.now());
+
+    expect(result).toBe(false);
+    expect(logSpy).toHaveBeenCalledOnce();
+    const msg: string = logSpy.mock.calls[0][0] as string;
+    expect(msg).toContain('absent-sid');
+    expect(msg).toMatch(/[Ss]kip|[Dd]rop/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveLeakFindings: live session + Redact then Skip -> FATAL
+// ---------------------------------------------------------------------------
+
+describe('resolveLeakFindings - live session + Redact then Skip aborts with NomadFatal', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-resolveleak-live-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./commands.push.recovery.actions.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('emits refusal guidance and throws NomadFatal when Redact (live) then Skip', async () => {
+    // Build fixture: transcript exists and is live.
+    const { transcriptPath, map } = makeApplyRedactFixture(testHome);
+    const liveClock = () => statSync(transcriptPath).mtimeMs + 1000;
+
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy, gitOrFatal: vi.fn() };
+    });
+
+    // scanVerdict: always returns the same live finding (re-scan still leaks).
+    const finding = makeFinding({
+      File: 'shared/projects/myproject/sid123.jsonl',
+      Fingerprint: 'shared/projects/myproject/sid123.jsonl:github-pat:1',
+    });
+    const leakVerdict: LeakVerdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: 'session-aware fatal',
+      findings: [finding],
+    };
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    // Prompt sequence: first call returns 'r' (Redact), second returns '' (Skip).
+    let promptCall = 0;
+    const makePrompt = () => () => {
+      promptCall += 1;
+      return Promise.resolve(promptCall === 1 ? 'r' : '');
+    };
+
+    await expect(
+      resolveLeakFindings(leakVerdict, 'ts-x', map, {
+        isTTYCheck: () => true,
+        nowMs: liveClock,
+        scanVerdict: () => leakVerdict,
+        makePrompt,
+        scan: () => null,
+      }),
+    ).rejects.toThrow(NomadFatal);
+
+    // The live-session refusal message was emitted during Redact.
+    expect(logSpy).toHaveBeenCalled();
+    const msgs: string[] = logSpy.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => /active|live/i.test(m))).toBe(true);
   });
 });
