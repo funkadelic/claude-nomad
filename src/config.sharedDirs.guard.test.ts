@@ -85,6 +85,16 @@ describe('isValidSharedDir (sharedDirs path-traversal and collision guard)', () 
     it('rejects "telemetry" (NEVER_SYNC segment)', () => {
       expect(isValidSharedDir('telemetry')).toBe(false);
     });
+
+    it('rejects ".credentials.json" (OAuth credential store must never sync)', () => {
+      expect(isValidSharedDir('.credentials.json')).toBe(false);
+    });
+
+    it('rejects host-local cache/runtime dirs (cache, backups, tasks)', () => {
+      expect(isValidSharedDir('cache')).toBe(false);
+      expect(isValidSharedDir('backups')).toBe(false);
+      expect(isValidSharedDir('tasks')).toBe(false);
+    });
   });
 
   describe('reserved shared/ name rejection', () => {

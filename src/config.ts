@@ -123,9 +123,13 @@ export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md'] as const;
  * Path segments that must never cross the sync boundary in either direction.
  * Defense-in-depth pair with `PUSH_ALLOWED_STATIC`: even if the allow-list
  * misses a path, anything containing one of these segments is hard-blocked.
+ * Also the deny-list the `sharedDirs` opt-in is validated against, so a user
+ * cannot symlink a host-local secret or cache into the shared repo by naming
+ * it in `path-map.json`.
  */
 export const NEVER_SYNC = new Set([
   '.claude.json',
+  '.credentials.json',
   'history.jsonl',
   'settings.local.json',
   'stats-cache.json',
@@ -138,6 +142,16 @@ export const NEVER_SYNC = new Set([
   'statsig',
   'telemetry',
   'ide',
+  // Host-local caches and runtime state: never useful to share, and named here
+  // so the sharedDirs guard rejects an accidental opt-in.
+  'cache',
+  'backups',
+  'paste-cache',
+  'daemon',
+  'jobs',
+  'tasks',
+  'security',
+  'sessions',
 ]);
 
 // Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in

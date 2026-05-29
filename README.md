@@ -176,9 +176,13 @@ Pointers and specifics:
   `path-map.json` -- see [Shared support dirs](#shared-support-dirs-shareddirs)), **whitelisted
   extras** names in `SUPPORTED_EXTRAS`, and the full **never-synced** set in `NEVER_SYNC` (all in
   `src/config.ts`).
-- **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `history.jsonl`,
-  `settings.local.json` (per-host overrides), `stats-cache.json`, `todos/`, `shell-snapshots/`,
-  `debug/`, `file-history/`, `plans/`, `session-env/`, `statsig/`, `telemetry/`, `ide/`.
+- **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `.credentials.json` (OAuth
+  credential store), `history.jsonl`, `settings.local.json` (per-host overrides),
+  `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,
+  `session-env/`, `statsig/`, `telemetry/`, `ide/`, plus host-local caches and runtime state
+  (`cache/`, `backups/`, `paste-cache/`, `daemon/`, `jobs/`, `tasks/`, `security/`, `sessions/`).
+  This set is also the deny-list the `sharedDirs` opt-in is checked against, so one of these names
+  cannot be symlinked into the shared repo by mistake.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 
