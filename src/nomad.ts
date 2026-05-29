@@ -24,7 +24,7 @@ import { cmdUpdate } from './commands.update.ts';
 import { HOME } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
-import { parseFlags } from './nomad.dispatch.ts';
+import { parseFlags, parseRedactArgs } from './nomad.dispatch.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
 import { fail, NomadFatal } from './utils.ts';
@@ -170,22 +170,14 @@ try {
     }
     case 'redact': {
       // nomad redact <session-id> [--rule <rule-id>] [--dry-run]
-      // Optional flags parsed via parseFlags (rejects unknown flags). The id
-      // regex mirrors drop-session: leading `\w` prevents leading-dash ids
-      // so `nomad redact --bogus` shows usage rather than crashing.
-      const id = process.argv[3];
-      if (typeof id !== 'string' || !/^\w[\w-]{0,127}$/.test(id)) {
+      // parseRedactArgs handles the positional id, optional --rule <value>,
+      // and optional --dry-run; returns null on any parse error.
+      const redactArgs = parseRedactArgs(process.argv);
+      if (redactArgs === null) {
         console.error('usage: nomad redact <session-id> [--rule <rule-id>] [--dry-run]');
         process.exit(1);
       }
-      const seen = parseFlags(process.argv, new Set(['--dry-run']));
-      const ruleIdx = process.argv.indexOf('--rule');
-      const rule = ruleIdx >= 0 ? process.argv[ruleIdx + 1] : undefined;
-      if (seen === null) {
-        console.error('usage: nomad redact <session-id> [--rule <rule-id>] [--dry-run]');
-        process.exit(1);
-      }
-      cmdRedact({ id, rule, dryRun: seen.has('--dry-run') });
+      cmdRedact(redactArgs);
       break;
     }
     default:
