@@ -99,7 +99,7 @@ jobs:
         # is bare semver `0.16.2`. Strip the leading `v` via shell parameter
         # expansion so the global install resolves the just-published version.
         # npm's registry CDN can lag the publish by minutes, not seconds, so
-        # poll up to ~6m with a gentle backoff (fast path still exits on the
+        # poll up to ~8m with a gentle backoff (fast path still exits on the
         # first attempt). This keeps a transient propagation race from failing
         # the workflow when the publish itself succeeded (v0.27.0 and v0.29.1
         # both tripped the old 90s budget).
@@ -116,7 +116,7 @@ jobs:
             sleep "${delay}"
             [ "${delay}" -lt 45 ] && delay=$((delay + 10))
           done
-          echo "FAIL: claude-nomad@${bare} did not propagate within ~6m" >&2
+          echo "FAIL: claude-nomad@${bare} did not propagate within ~8m" >&2
           exit 1
 
       - name: Verify --version output matches published tag
