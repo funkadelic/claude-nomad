@@ -58,8 +58,8 @@ function renderSection(s: DoctorSection): void {
   console.log(header);
   const lastContent = s.items.reduce((acc, item, j) => (item !== '' ? j : acc), -1);
   for (let j = 0; j < s.items.length; j++) {
-    if (s.items[j] !== '') console.log(`${j === lastContent ? '  └ ' : '  ├ '}${s.items[j]}`);
-    else console.log('');
+    if (s.items[j] === '') console.log('');
+    else console.log(`${j === lastContent ? '  └ ' : '  ├ '}${s.items[j]}`);
   }
 }
 
