@@ -15,6 +15,17 @@ import type { Finding } from './push-gitleaks.scan.ts';
  * `vi.doMock('node:fs')`.
  */
 
+/**
+ * Assemble a github-pat-shaped fixture token from fragments so no contiguous
+ * `ghp_<36>` literal is stored in source-controlled bytes (the gitleaks CI
+ * check scans the working tree and would flag a committed PAT-shaped literal).
+ * Mirrors the split-fragment convention in `push-gitleaks.test.ts`.
+ *
+ * @param body The 36-char token body that follows the `ghp_` prefix.
+ * @returns A `ghp_`-prefixed token assembled at runtime.
+ */
+const ghpFixture = (body: string): string => ['gh', 'p_', body].join('');
+
 // ---------------------------------------------------------------------------
 // redactValue (pure)
 // ---------------------------------------------------------------------------
@@ -140,7 +151,7 @@ describe('applyRedactions regression: value-based redaction preserves valid JSON
    */
   it('fully removes a 40-char github-pat from a realistic JSONL transcript line', async () => {
     const { applyRedactions } = await import('./commands.redact.core.ts');
-    const pat = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const pat = ghpFixture('0123456789abcdefghijABCDEFGHIJ012345');
     const line = `{"message":{"role":"assistant","content":"export GITHUB_TOKEN=${pat}"}}`;
     const finding = { StartLine: 1, Match: pat, RuleID: 'github-pat' };
     const result = applyRedactions(line, [finding]);
@@ -161,8 +172,8 @@ describe('applyRedactions regression: value-based redaction preserves valid JSON
 
   it('redacts two distinct secrets on one line and produces valid JSON', async () => {
     const { applyRedactions } = await import('./commands.redact.core.ts');
-    const pat1 = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
-    const pat2 = 'ghp_abcdefghijABCDEFGHIJ0123456789zyxwvu';
+    const pat1 = ghpFixture('0123456789abcdefghijABCDEFGHIJ012345');
+    const pat2 = ghpFixture('abcdefghijABCDEFGHIJ0123456789zyxwvu');
     const line = `{"a":"${pat1}","b":"${pat2}"}`;
     const result = applyRedactions(line, [
       { StartLine: 1, Match: pat1, RuleID: 'github-pat' },
@@ -177,7 +188,7 @@ describe('applyRedactions regression: value-based redaction preserves valid JSON
 
   it('handles a Match that is a substring of another Match on the same line', async () => {
     const { applyRedactions } = await import('./commands.redact.core.ts');
-    const full = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const full = ghpFixture('0123456789abcdefghijABCDEFGHIJ012345');
     const sub = '0123456789abcdefghijABCDEFGHIJ012345'; // suffix of full
     const line = `{"token":"${full}"}`;
     const result = applyRedactions(line, [
@@ -805,7 +816,7 @@ describe('scanFile', () => {
 
     const { scanFile: realScanFile } = await import('./push-gitleaks.scan.ts');
     // A realistic github fine-grained PAT pattern (40 hex chars after the prefix)
-    const pat = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const pat = ghpFixture('0123456789abcdefghijABCDEFGHIJ012345');
     const filePath = join(tmpDir, 'transcript.jsonl');
     writeFileSync(filePath, `{"text":"export GITHUB_TOKEN=${pat}"}\n`);
 
@@ -853,7 +864,7 @@ describe('scanFile', () => {
 
     const { scanFile: realScanFile } = await import('./push-gitleaks.scan.ts');
     const { applyRedactions } = await import('./commands.redact.core.ts');
-    const pat = 'ghp_0123456789abcdefghijABCDEFGHIJ012345';
+    const pat = ghpFixture('0123456789abcdefghijABCDEFGHIJ012345');
     const content = `{"message":{"role":"assistant","content":"export GITHUB_TOKEN=${pat}"}}\n`;
     const filePath = join(tmpDir, 'session.jsonl');
     writeFileSync(filePath, content);
