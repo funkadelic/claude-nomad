@@ -194,6 +194,17 @@ Pointers and specifics:
 > URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the plugin's
 > own per-host config.
 
+<!-- prettier-ignore -->
+> [!IMPORTANT]
+> Syncing a tool's `skills/` or `commands/` files copies the command shims, not the engine behind
+> them. If a tool keeps a binary or runtime outside `~/.claude/` (installed with `npm i -g`, a setup
+> script, and so on), nomad does not carry that part, so the synced commands appear on a new host but
+> fail until the tool itself is installed there. Install such tools once per host. For example, if you
+> sync the GSD (`get-shit-done`) skills, run `npm i -g get-shit-done-cc` on each host, pinned to the
+> version that matches your committed skills. Claude Code marketplace plugins (such as superpowers)
+> are the exception: they are listed in `enabledPlugins`, synced via `settings.base.json`, and
+> re-downloaded by Claude Code automatically, so they need no manual install.
+
 For the rationale behind these choices, see
 [What does NOT sync (deliberate trade-offs)](#what-does-not-sync-deliberate-trade-offs).
 
