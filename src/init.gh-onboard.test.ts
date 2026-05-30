@@ -246,6 +246,31 @@ describe('ensureOriginRepo', () => {
   });
 
   // -------------------------------------------------------------------------
+  // gh api user subprocess failure: NomadFatal
+  // -------------------------------------------------------------------------
+
+  it('throws NomadFatal when gh api user fails', async () => {
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const run: SpawnSyncFn = (bin, args) => {
+      const argv = Array.from(args);
+      if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
+        throw Object.assign(new Error('no origin'), { code: 128 });
+      }
+      if (bin === 'gh' && argv[0] === 'auth') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'repo') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'api') throw new Error('api user failed');
+      throw new Error(`Unexpected: ${bin} ${argv.join(' ')}`);
+    };
+    expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
+    try {
+      ensureOriginRepo('my-repo', run);
+    } catch (err) {
+      expect((err as Error).message).toContain('gh api user failed');
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // gh repo create subprocess failure: NomadFatal
   // -------------------------------------------------------------------------
 
