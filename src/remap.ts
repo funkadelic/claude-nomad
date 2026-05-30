@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
+import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { die, log } from './utils.ts';
 import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
@@ -81,6 +82,7 @@ export function remapPull(
   if (!dryRun) mkdirSync(localProjects, { recursive: true });
 
   for (const [logical, hosts] of Object.entries(map.projects)) {
+    assertSafeLogical(logical);
     const localPath = hosts[HOST];
     if (!localPath || localPath === 'TBD') {
       unmapped++;
@@ -126,6 +128,7 @@ function buildReverseMap(map: PathMap): Map<string, string> {
   const reverse = new Map<string, string>();
   const encodedPaths = new Map<string, string>();
   for (const [logical, hosts] of Object.entries(map.projects)) {
+    assertSafeLogical(logical);
     const p = hosts[HOST];
     if (!p || p === 'TBD') continue;
     const encoded = encodePath(p);

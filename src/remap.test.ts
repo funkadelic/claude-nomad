@@ -825,6 +825,121 @@ describe('remapPush source-side filter', () => {
   });
 });
 
+describe('remapPull / remapPush poisoned logical key (path-traversal guard)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-traversal-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('remapPull throws NomadFatal for a traversal key and writes nothing outside shared/projects/', async () => {
+    // The traversal guard fires at the top of the loop, before existsSync(src)
+    // or any join/copy, so no source dir is planted: planting at the traversal
+    // key would itself write outside the test sandbox.
+    const poisonedKey = '../../../../tmp/escape';
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { [poisonedKey]: { 'test-host': '/tmp/escape' } } }) + '\n',
+    );
+
+    const { remapPull } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapPull('20260530-000000')).toThrow(NomadFatal);
+
+    // No encoded dir written under ~/.claude/projects/
+    expect(existsSync(join(claudeProjects, '-tmp-escape'))).toBe(false);
+    expect(readdirSync(claudeProjects)).toEqual([]);
+  });
+
+  it('remapPull NomadFatal message names the invalid logical key', async () => {
+    const poisonedKey = '../../../../tmp/escape';
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { [poisonedKey]: { 'test-host': '/tmp/escape' } } }) + '\n',
+    );
+
+    const { remapPull } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: Error | undefined;
+    try {
+      remapPull('20260530-000000');
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect(caught?.message).toContain(poisonedKey);
+  });
+
+  it('remapPush throws NomadFatal for a traversal key via buildReverseMap', async () => {
+    // buildReverseMap iterates map.projects keys; the guard must fire before
+    // any logical is used to build the reverse lookup or reach shared/projects/.
+    const poisonedKey = '../../../../tmp/escape';
+    mkdirSync(join(claudeProjects, '-tmp-escape'), { recursive: true });
+    writeFileSync(join(claudeProjects, '-tmp-escape', 'session.jsonl'), '{"x":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { [poisonedKey]: { 'test-host': '/tmp/escape' } } }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => remapPush('20260530-000000')).toThrow(NomadFatal);
+
+    // No write made to shared/projects/
+    expect(readdirSync(sharedProjects)).toEqual([]);
+  });
+
+  it('normal logical "foo" still pulls without error (no regression)', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPull } = await import('./remap.ts');
+    expect(() => remapPull('20260530-000000')).not.toThrow();
+    expect(existsSync(join(claudeProjects, '-tmp-foo', 'a.jsonl'))).toBe(true);
+  });
+
+  it('normal logical "foo" still pushes without error (no regression)', async () => {
+    mkdirSync(join(claudeProjects, '-tmp-foo'), { recursive: true });
+    writeFileSync(join(claudeProjects, '-tmp-foo', 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    expect(() => remapPush('20260530-000000')).not.toThrow();
+    expect(existsSync(join(sharedProjects, 'foo', 'a.jsonl'))).toBe(true);
+  });
+});
+
 // Covers remap.ts line 56: `if (!existsSync(src)) continue` in remapPull.
 // Lives outside the prior describe blocks because it needs a sandbox where
 // the path-map is mapped for this host but the repo's
