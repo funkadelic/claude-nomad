@@ -15,6 +15,7 @@
  *   path-map.json            logical project name -> { host: localPath }
  */
 
+import { cmdAdopt } from './commands.adopt.ts';
 import { cmdDoctor } from './commands.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
 import { cmdRedact } from './commands.redact.ts';
@@ -123,6 +124,24 @@ try {
         force: seen.has('--force'),
         pushOrigin: seen.has('--push-origin'),
       });
+      break;
+    }
+    case 'adopt': {
+      // Required positional <name>; optional --dry-run. Any other shape
+      // (missing name, leading-dash name, two positionals, unknown flag)
+      // is a usage error. Single <name> per invocation (D-04).
+      const name = process.argv[3];
+      const sub = process.argv[4];
+      if (
+        typeof name !== 'string' ||
+        name.length === 0 ||
+        name.startsWith('-') ||
+        (sub !== undefined && (sub !== '--dry-run' || process.argv.length !== 5))
+      ) {
+        console.error('usage: nomad adopt <name> [--dry-run]');
+        process.exit(1);
+      }
+      cmdAdopt(name, { dryRun: sub === '--dry-run' });
       break;
     }
     case 'doctor':
