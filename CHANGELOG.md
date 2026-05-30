@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/funkadelic/claude-nomad/compare/v0.32.0...v0.32.1) (2026-05-30)
+
+
+### Fixed
+
+* **redact:** make applyRedactions overlap-safe ([#186](https://github.com/funkadelic/claude-nomad/issues/186)) ([8da07d1](https://github.com/funkadelic/claude-nomad/commit/8da07d1ef58b7f6596ca479a3c57863fc75f35bb))
+
 ## [0.32.0](https://github.com/funkadelic/claude-nomad/compare/v0.31.0...v0.32.0) (2026-05-30)
 
 
