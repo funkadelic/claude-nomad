@@ -19,6 +19,8 @@ type RunOpts = {
   repoCreate?: 'ok' | 'throw';
   /** Owner string returned by `gh api user --jq .login`. */
   owner?: string;
+  /** Outcome for `git init`. */
+  gitInit?: 'ok' | 'throw';
   /** Outcome for `git remote add`. */
   remoteAdd?: 'ok' | 'throw';
 };
@@ -30,6 +32,10 @@ function dispatchGit(opts: RunOpts, argv: string[]): Buffer {
       throw Object.assign(new Error('no origin'), { code: 128 });
     }
     return Buffer.from(opts.remote + '\n');
+  }
+  if (argv[0] === 'init') {
+    if (opts.gitInit === 'throw') throw new Error('git init failed');
+    return Buffer.from('');
   }
   if (argv[0] === 'remote' && argv[1] === 'add') {
     if (opts.remoteAdd === 'throw') throw new Error('remote add failed');
@@ -143,6 +149,7 @@ describe('ensureOriginRepo', () => {
       if (bin === 'gh' && argv[0] === 'auth') return Buffer.from('');
       if (bin === 'gh' && argv[0] === 'repo') return Buffer.from('');
       if (bin === 'gh' && argv[0] === 'api') return Buffer.from('octocat\n');
+      if (bin === 'git' && argv[0] === 'init') return Buffer.from('');
       if (bin === 'git' && argv[1] === 'add') return Buffer.from('');
       throw new Error(`Unexpected: ${bin} ${argv.join(' ')}`);
     };
@@ -154,6 +161,12 @@ describe('ensureOriginRepo', () => {
     const repoCreate = calls.find((c) => c.bin === 'gh' && c.argv.includes('create'));
     expect(repoCreate?.argv).toContain('--private');
     expect(repoCreate?.argv).toContain('my-config');
+    // REPO_HOME is git-init'd before the remote is added (CR-01): without this
+    // `git remote add` would fail on a brand-new directory.
+    const initIdx = calls.findIndex((c) => c.bin === 'git' && c.argv[0] === 'init');
+    const addIdx = calls.findIndex((c) => c.bin === 'git' && c.argv[1] === 'add');
+    expect(initIdx).toBeGreaterThanOrEqual(0);
+    expect(initIdx).toBeLessThan(addIdx);
     // git remote add uses the resolved owner
     const remoteAdd = calls.find((c) => c.bin === 'git' && c.argv[1] === 'add');
     expect(remoteAdd?.argv[3]).toBe('git@github.com:octocat/my-config.git');
@@ -192,10 +205,12 @@ describe('ensureOriginRepo', () => {
   });
 
   // -------------------------------------------------------------------------
-  // gh-probe-error: FATAL (same message as not-authed; cannot proceed safely)
+  // gh-probe-error: FATAL with a network-oriented message, NOT the misleading
+  // "run gh auth login" hint (an authed user on a slow network would be told to
+  // re-authenticate). Mirrors the #124 probe-error distinction.
   // -------------------------------------------------------------------------
 
-  it('throws NomadFatal with auth hint on gh-probe-error (cannot proceed safely)', async () => {
+  it('throws NomadFatal with a network hint (not auth) on gh-probe-error', async () => {
     const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
     const { NomadFatal } = await import('./utils.ts');
     const run = makeRun({ auth: 'probe-error' });
@@ -203,7 +218,9 @@ describe('ensureOriginRepo', () => {
     try {
       ensureOriginRepo('my-repo', run);
     } catch (err) {
-      expect((err as Error).message).toContain('gh auth login');
+      const msg = (err as Error).message;
+      expect(msg).toContain('could not verify gh CLI status');
+      expect(msg).not.toContain('gh auth login');
     }
   });
 
@@ -259,6 +276,7 @@ describe('ensureOriginRepo', () => {
       }
       if (bin === 'gh' && argv[0] === 'auth') return Buffer.from('');
       if (bin === 'gh' && argv[0] === 'repo') return Buffer.from('');
+      if (bin === 'git' && argv[0] === 'init') return Buffer.from('');
       if (bin === 'gh' && argv[0] === 'api') throw new Error('api user failed');
       throw new Error(`Unexpected: ${bin} ${argv.join(' ')}`);
     };
@@ -299,6 +317,56 @@ describe('ensureOriginRepo', () => {
       ensureOriginRepo('my-repo', run);
     } catch (err) {
       expect((err as Error).message).toContain('git remote add failed');
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // git init subprocess failure: NomadFatal (CR-01)
+  // -------------------------------------------------------------------------
+
+  it('throws NomadFatal when git init fails', async () => {
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const run = makeRun({ auth: 'ok', gitInit: 'throw' });
+    expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
+    try {
+      ensureOriginRepo('my-repo', run);
+    } catch (err) {
+      expect((err as Error).message).toContain('git init failed');
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Empty / null gh login: NomadFatal, no remote wired (CR-02)
+  // -------------------------------------------------------------------------
+
+  it('throws NomadFatal and skips git remote add when gh login is empty', async () => {
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const calls: string[] = [];
+    const inner = makeRun({ auth: 'ok', repoCreate: 'ok', owner: '' });
+    const run: SpawnSyncFn = (bin, args) => {
+      calls.push(`${bin} ${Array.from(args).join(' ')}`);
+      return inner(bin, args);
+    };
+    expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
+    try {
+      ensureOriginRepo('my-repo', run);
+    } catch (err) {
+      expect((err as Error).message).toContain('empty login');
+    }
+    expect(calls.some((c) => c.startsWith('git remote add'))).toBe(false);
+  });
+
+  it('throws NomadFatal when gh login is the literal "null"', async () => {
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const run = makeRun({ auth: 'ok', repoCreate: 'ok', owner: 'null' });
+    expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
+    try {
+      ensureOriginRepo('my-repo', run);
+    } catch (err) {
+      expect((err as Error).message).toContain('empty login');
     }
   });
 

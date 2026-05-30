@@ -57,8 +57,24 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
   if (ghStatus === 'gh-not-installed') {
     die('gh CLI is required for nomad init. Install: https://cli.github.com');
   }
+  if (ghStatus === 'gh-probe-error') {
+    die('could not verify gh CLI status (network issue?). Retry, or check `gh auth status`.');
+  }
   if (ghStatus !== null) {
     die('gh CLI is not authenticated. Run `gh auth login` and retry.');
+  }
+
+  // Initialize REPO_HOME as a git repo so `git remote add` below has a
+  // repository to write to. On a first host REPO_HOME is a brand-new empty
+  // directory (just mkdir'd by cmdInit); without this `git remote add` fails
+  // with "not a git repository". `git init` is idempotent: re-running on an
+  // already-initialized repo reinitializes harmlessly and leaves the branch
+  // and config untouched.
+  try {
+    run('git', ['init', '-b', 'main'], { cwd: REPO_HOME, stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    throw new NomadFatal(`git init failed: ${e.message}`);
   }
 
   // Create the private repo on GitHub.
@@ -84,6 +100,14 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
   } catch (err) {
     const e = err as NodeJS.ErrnoException;
     throw new NomadFatal(`gh api user failed: ${e.message}`);
+  }
+
+  // Guard an empty or null login: `gh api user --jq .login` yields an empty
+  // string or the literal "null" when the field is absent. Either would wire a
+  // malformed remote (git accepts any URL string) that fails confusingly only
+  // at first push, so fail fast here with a clear message instead.
+  if (owner.length === 0 || owner === 'null') {
+    throw new NomadFatal('gh api user returned an empty login; cannot wire origin remote.');
   }
 
   // Wire origin in the local git working tree.

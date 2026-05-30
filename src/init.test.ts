@@ -500,6 +500,11 @@ function dispatchGit(opts: GhRunOpts, argv: string[]): Buffer {
     }
     return Buffer.from(opts.remote + '\n');
   }
+  // git init: used by ensureOriginRepo to initialize REPO_HOME before wiring
+  // origin when it creates a new repo.
+  if (argv[0] === 'init') {
+    return Buffer.from('');
+  }
   // git remote add: used by ensureOriginRepo when it creates a new repo.
   if (argv[0] === 'remote' && argv[1] === 'add') {
     return Buffer.from('');
