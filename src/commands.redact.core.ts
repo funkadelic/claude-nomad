@@ -3,25 +3,6 @@ import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
 
-/**
- * Replace every occurrence of a literal secret value in a raw line. Uses
- * split/join to avoid regex escaping and to replace all occurrences. Pure,
- * no I/O.
- *
- * The replacement token `[REDACTED:<ruleId>]` contains no JSON-special
- * characters, so the result remains valid JSON when the value sits inside a
- * JSON string token.
- *
- * @param line Raw JSONL line text.
- * @param match Literal secret value to replace (empty string is a no-op).
- * @param ruleId Gitleaks rule identifier included in the replacement token.
- * @returns Line with all occurrences of `match` replaced by `[REDACTED:<ruleId>]`.
- */
-export function redactValue(line: string, match: string, ruleId: string): string {
-  if (match === '') return line;
-  return line.split(match).join(`[REDACTED:${ruleId}]`);
-}
-
 /** Minimal finding shape consumed by `applyRedactions`. */
 export type RedactFinding = {
   StartLine: number;
@@ -29,25 +10,94 @@ export type RedactFinding = {
   RuleID: string;
 };
 
+/** A half-open byte interval `[start, end)` derived from a `Match` value. */
+type MatchInterval = {
+  start: number;
+  end: number;
+  ruleId: string;
+};
+
 /**
- * Apply all findings for one file in memory. Replaces each finding's `Match`
- * value globally across the whole content string (split/join, no column
- * arithmetic). To avoid a shorter secret being a substring of a longer one
- * causing a partial match, findings are sorted by `Match.length` descending so
- * the longer secret is replaced first. Findings with an empty `Match` are
- * silently skipped (a defensive guard: an empty match would otherwise inject
- * the token between every character). Pure, no I/O.
+ * Locate every occurrence of each finding's `Match` value in `content` using
+ * `indexOf`. Findings with an empty `Match` are skipped. Multiple
+ * non-overlapping occurrences of the same value are each recorded as a
+ * separate interval. Offsets are value-derived, not column-derived, so they
+ * are always correct regardless of gitleaks column alignment.
+ *
+ * @param content Full file content as a single string.
+ * @param findings Array of finding descriptors.
+ * @returns Array of `{start, end, ruleId}` intervals (unmerged, unsorted).
+ */
+export function collectMatchIntervals(
+  content: string,
+  findings: readonly RedactFinding[],
+): MatchInterval[] {
+  const intervals: MatchInterval[] = [];
+  for (const f of findings) {
+    const match = f.Match;
+    if (match === '') continue;
+    let from = 0;
+    let pos = content.indexOf(match, from);
+    while (pos !== -1) {
+      intervals.push({ start: pos, end: pos + match.length, ruleId: f.RuleID });
+      from = pos + match.length;
+      pos = content.indexOf(match, from);
+    }
+  }
+  return intervals;
+}
+
+/**
+ * Sort and merge a list of (possibly overlapping or adjacent) intervals into a
+ * minimal list of non-overlapping spans. Sort order is start ascending, then
+ * end descending so that a longer interval at the same start position wins its
+ * `ruleId`. Overlapping or adjacent intervals are folded into one span that
+ * extends to the maximum end seen, keeping the first span's `ruleId`.
+ *
+ * @param intervals Unmerged intervals from `collectMatchIntervals`.
+ * @returns Sorted, merged, non-overlapping intervals.
+ */
+export function mergeIntervals(intervals: MatchInterval[]): MatchInterval[] {
+  if (intervals.length === 0) return [];
+  const sorted = [...intervals].sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged: MatchInterval[] = [{ ...sorted[0] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i];
+    const last = merged[merged.length - 1];
+    if (cur.start <= last.end) {
+      if (cur.end > last.end) last.end = cur.end;
+    } else {
+      merged.push({ ...cur });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Apply all findings for one file in memory. Collects every occurrence of each
+ * finding's `Match` value via `indexOf`, merges overlapping and adjacent spans
+ * into non-overlapping intervals, then replaces each interval right-to-left so
+ * earlier offsets remain valid. Findings with an empty `Match` are silently
+ * skipped. Returns `content` unchanged when there are no findings or no
+ * occurrences are found.
+ *
+ * The replacement token `[REDACTED:<ruleId>]` is byte-identical to the previous
+ * format. Right-to-left replacement guarantees that overlapping matches (e.g.
+ * two findings whose `Match` values share a middle span) are replaced by a
+ * single token covering the full union, leaving no fragment. Pure, no I/O.
  *
  * @param content Full file content as a single string.
  * @param findings Array of finding descriptors.
  * @returns Redacted file content.
  */
 export function applyRedactions(content: string, findings: readonly RedactFinding[]): string {
-  const sorted = [...findings].sort((a, b) => b.Match.length - a.Match.length);
+  const raw = collectMatchIntervals(content, findings);
+  if (raw.length === 0) return content;
+  const merged = mergeIntervals(raw);
   let result = content;
-  for (const f of sorted) {
-    if (f.Match === '') continue;
-    result = result.split(f.Match).join(`[REDACTED:${f.RuleID}]`);
+  for (let i = merged.length - 1; i >= 0; i--) {
+    const { start, end, ruleId } = merged[i];
+    result = result.slice(0, start) + `[REDACTED:${ruleId}]` + result.slice(end);
   }
   return result;
 }

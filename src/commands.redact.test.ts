@@ -28,44 +28,121 @@ import type { Finding } from './push-gitleaks.scan.ts';
 const ghpFixture = (body: string): string => ['gh', 'p_', body].join('');
 
 // ---------------------------------------------------------------------------
-// redactValue (pure)
+// collectMatchIntervals (pure)
 // ---------------------------------------------------------------------------
 
-describe('redactValue (pure)', () => {
-  it('replaces all occurrences of the match value in the line', async () => {
-    const { redactValue } = await import('./commands.redact.core.ts');
-    const line = 'hello secret world secret end';
-    const result = redactValue(line, 'secret', 'test-rule');
-    expect(result).toBe('hello [REDACTED:test-rule] world [REDACTED:test-rule] end');
+describe('collectMatchIntervals (pure)', () => {
+  it('returns an interval for a single occurrence', async () => {
+    const { collectMatchIntervals } = await import('./commands.redact.core.ts');
+    const result = collectMatchIntervals('hello secret world', [
+      { StartLine: 1, Match: 'secret', RuleID: 'r1' },
+    ]);
+    expect(result).toEqual([{ start: 6, end: 12, ruleId: 'r1' }]);
   });
 
-  it('produces a result that JSON.parse accepts when the match is inside a JSON string', async () => {
-    const { redactValue } = await import('./commands.redact.core.ts');
-    const line = '{"text":"my-secret-token","other":1}';
-    const result = redactValue(line, 'my-secret-token', 'github-pat');
-    expect(() => {
-      JSON.parse(result);
-    }).not.toThrow();
-    const parsed = JSON.parse(result) as { text: string };
-    expect(parsed.text).toBe('[REDACTED:github-pat]');
+  it('returns two intervals for two non-overlapping occurrences of the same value', async () => {
+    const { collectMatchIntervals } = await import('./commands.redact.core.ts');
+    const result = collectMatchIntervals('ab ab', [{ StartLine: 1, Match: 'ab', RuleID: 'r1' }]);
+    expect(result).toEqual([
+      { start: 0, end: 2, ruleId: 'r1' },
+      { start: 3, end: 5, ruleId: 'r1' },
+    ]);
   });
 
-  it('is a no-op when match is the empty string', async () => {
-    const { redactValue } = await import('./commands.redact.core.ts');
-    const line = 'some content here';
-    expect(redactValue(line, '', 'r1')).toBe('some content here');
+  it('returns empty array when Match is not present in content', async () => {
+    const { collectMatchIntervals } = await import('./commands.redact.core.ts');
+    expect(collectMatchIntervals('hello', [{ StartLine: 1, Match: 'xyz', RuleID: 'r1' }])).toEqual(
+      [],
+    );
   });
 
-  it('handles a match at the very start of the line', async () => {
-    const { redactValue } = await import('./commands.redact.core.ts');
-    const result = redactValue('secretXrest', 'secret', 'r1');
-    expect(result).toBe('[REDACTED:r1]Xrest');
+  it('skips a finding with an empty Match', async () => {
+    const { collectMatchIntervals } = await import('./commands.redact.core.ts');
+    expect(collectMatchIntervals('hello', [{ StartLine: 1, Match: '', RuleID: 'r1' }])).toEqual([]);
   });
 
-  it('handles a match at the very end of the line', async () => {
-    const { redactValue } = await import('./commands.redact.core.ts');
-    const result = redactValue('prefixsecret', 'secret', 'r1');
-    expect(result).toBe('prefix[REDACTED:r1]');
+  it('returns empty array for an empty findings list', async () => {
+    const { collectMatchIntervals } = await import('./commands.redact.core.ts');
+    expect(collectMatchIntervals('hello', [])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mergeIntervals (pure)
+// ---------------------------------------------------------------------------
+
+describe('mergeIntervals (pure)', () => {
+  it('returns empty array for empty input', async () => {
+    const { mergeIntervals } = await import('./commands.redact.core.ts');
+    expect(mergeIntervals([])).toEqual([]);
+  });
+
+  it('returns a single interval unchanged', async () => {
+    const { mergeIntervals } = await import('./commands.redact.core.ts');
+    expect(mergeIntervals([{ start: 2, end: 5, ruleId: 'r1' }])).toEqual([
+      { start: 2, end: 5, ruleId: 'r1' },
+    ]);
+  });
+
+  it('merges two overlapping intervals, keeping the first ruleId', async () => {
+    const { mergeIntervals } = await import('./commands.redact.core.ts');
+    const result = mergeIntervals([
+      { start: 0, end: 5, ruleId: 'r1' },
+      { start: 3, end: 8, ruleId: 'r2' },
+    ]);
+    expect(result).toEqual([{ start: 0, end: 8, ruleId: 'r1' }]);
+  });
+
+  it('merges adjacent (touching) intervals', async () => {
+    const { mergeIntervals } = await import('./commands.redact.core.ts');
+    const result = mergeIntervals([
+      { start: 0, end: 3, ruleId: 'r1' },
+      { start: 3, end: 6, ruleId: 'r2' },
+    ]);
+    expect(result).toEqual([{ start: 0, end: 6, ruleId: 'r1' }]);
+  });
+
+  it('does not merge non-overlapping intervals', async () => {
+    const { mergeIntervals } = await import('./commands.redact.core.ts');
+    const result = mergeIntervals([
+      { start: 0, end: 3, ruleId: 'r1' },
+      { start: 5, end: 8, ruleId: 'r2' },
+    ]);
+    expect(result).toEqual([
+      { start: 0, end: 3, ruleId: 'r1' },
+      { start: 5, end: 8, ruleId: 'r2' },
+    ]);
+  });
+
+  it('handles unsorted input (sorts before merging)', async () => {
+    const { mergeIntervals } = await import('./commands.redact.core.ts');
+    const result = mergeIntervals([
+      { start: 5, end: 8, ruleId: 'r2' },
+      { start: 0, end: 3, ruleId: 'r1' },
+    ]);
+    expect(result).toEqual([
+      { start: 0, end: 3, ruleId: 'r1' },
+      { start: 5, end: 8, ruleId: 'r2' },
+    ]);
+  });
+
+  it('longer interval at same start wins ruleId over shorter interval', async () => {
+    const { mergeIntervals } = await import('./commands.redact.core.ts');
+    const result = mergeIntervals([
+      { start: 0, end: 3, ruleId: 'short' },
+      { start: 0, end: 7, ruleId: 'long' },
+    ]);
+    expect(result).toEqual([{ start: 0, end: 7, ruleId: 'long' }]);
+  });
+
+  it('merges three mutually overlapping intervals into one', async () => {
+    const { mergeIntervals } = await import('./commands.redact.core.ts');
+    const result = mergeIntervals([
+      { start: 0, end: 5, ruleId: 'r1' },
+      { start: 2, end: 7, ruleId: 'r2' },
+      { start: 4, end: 9, ruleId: 'r3' },
+    ]);
+    expect(result).toEqual([{ start: 0, end: 9, ruleId: 'r1' }]);
   });
 });
 
@@ -136,6 +213,22 @@ describe('applyRedactions (pure)', () => {
     const content = '{"a":"SECRET"}\n{"b":"SECRET"}\n';
     const result = applyRedactions(content, [{ StartLine: 1, Match: 'SECRET', RuleID: 'r1' }]);
     expect(result).toBe('{"a":"[REDACTED:r1]"}\n{"b":"[REDACTED:r1]"}\n');
+  });
+
+  it('overlap: two findings sharing a middle span collapse to one token with no fragment', async () => {
+    const { applyRedactions } = await import('./commands.redact.core.ts');
+    // 'XYabc' and 'abcZW' share the middle 'abc'; the union 'XYabcZW' must be
+    // fully replaced with no surviving fragment ('XY' or 'ZW' adjacent to a token).
+    const content = 'XYabcZW';
+    const result = applyRedactions(content, [
+      { StartLine: 1, Match: 'XYabc', RuleID: 'rule-left' },
+      { StartLine: 1, Match: 'abcZW', RuleID: 'rule-right' },
+    ]);
+    // The entire span must be replaced by a single redaction token.
+    expect(result).not.toContain('abc');
+    expect(result).not.toContain('XY');
+    expect(result).not.toContain('ZW');
+    expect(result).toMatch(/^\[REDACTED:[^\]]+\]$/);
   });
 });
 
