@@ -165,7 +165,9 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${failGlyph} CLAUDE.md: NOT a symlink (blocks sync)`);
+    expect(out).toContain(
+      `${failGlyph} CLAUDE.md: NOT a symlink (blocks sync); run \`nomad adopt CLAUDE.md\` to fix`,
+    );
     expect(process.exitCode).toBe(1);
   });
 });
