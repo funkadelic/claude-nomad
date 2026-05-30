@@ -60,14 +60,15 @@ export function collectMatchIntervals(
 export function mergeIntervals(intervals: MatchInterval[]): MatchInterval[] {
   if (intervals.length === 0) return [];
   const sorted = [...intervals].sort((a, b) => a.start - b.start || b.end - a.end);
-  const merged: MatchInterval[] = [{ ...sorted[0] }];
+  let last = { ...sorted[0] };
+  const merged: MatchInterval[] = [last];
   for (let i = 1; i < sorted.length; i++) {
     const cur = sorted[i];
-    const last = merged[merged.length - 1];
     if (cur.start <= last.end) {
       if (cur.end > last.end) last.end = cur.end;
     } else {
-      merged.push({ ...cur });
+      last = { ...cur };
+      merged.push(last);
     }
   }
   return merged;
