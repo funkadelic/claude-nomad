@@ -893,6 +893,7 @@ describe('--config wiring (mocked child_process)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -930,9 +931,13 @@ describe('--config wiring (mocked child_process)', () => {
     expect(value?.endsWith('.gitleaks.toml')).toBe(true);
   });
 
-  it('omits --config when the toml is missing (graceful skip)', async () => {
-    // Do NOT create the toml. existsSync at the temp REPO_HOME returns false
-    // → runGitleaksScan must invoke gitleaks WITHOUT the --config flag.
+  it('omits --config when neither the repo toml nor the bundled toml exists', async () => {
+    // Mock existsSync to always return false so resolveTomlPath returns null
+    // and runGitleaksScan invokes gitleaks WITHOUT the --config flag.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
