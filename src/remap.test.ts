@@ -857,11 +857,10 @@ describe('remapPull / remapPush poisoned logical key (path-traversal guard)', ()
   });
 
   it('remapPull throws NomadFatal for a traversal key and writes nothing outside shared/projects/', async () => {
-    // Plant the poisoned logical dir in shared/projects/ so the existsSync(src)
-    // guard would pass -- the traversal check must fire before the join/copy.
+    // The traversal guard fires at the top of the loop, before existsSync(src)
+    // or any join/copy, so no source dir is planted: planting at the traversal
+    // key would itself write outside the test sandbox.
     const poisonedKey = '../../../../tmp/escape';
-    mkdirSync(join(sharedProjects, poisonedKey), { recursive: true });
-    writeFileSync(join(sharedProjects, poisonedKey, 'evil.jsonl'), '{"evil":true}\n');
     writeFileSync(
       join(repoUnderHome, 'path-map.json'),
       JSON.stringify({ projects: { [poisonedKey]: { 'test-host': '/tmp/escape' } } }) + '\n',

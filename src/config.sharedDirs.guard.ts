@@ -24,7 +24,7 @@ const SAFE_LOGICAL = /^[A-Za-z0-9._-]+$/;
 export function assertSafeLogical(logical: string): void {
   if (!SAFE_LOGICAL.test(logical) || logical === '.' || logical === '..') {
     throw new NomadFatal(
-      `invalid logical name in path-map.json extras: ${JSON.stringify(logical)} (must match [A-Za-z0-9._-]+; no path separators or '..')`,
+      `invalid logical name in path-map.json: ${JSON.stringify(logical)} (must match [A-Za-z0-9._-]+; no path separators or '..')`,
     );
   }
 }
