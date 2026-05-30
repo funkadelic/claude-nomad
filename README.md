@@ -381,8 +381,6 @@ Read these before adopting so you opt in with eyes open.
 - Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field declares the 22.22.1 floor
   and surfaces a warning on older runtimes - npm only blocks the install when `engine-strict=true`
   is configured)
-- `tsx` (ships as a runtime dependency of the published package; no separate global install
-  required)
 - Git
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) (required for `nomad push`, which exits with an
   error if it is not on PATH; `nomad doctor` also checks it against the pinned 8.30.x and warns when
@@ -455,9 +453,11 @@ $ git clone git@github.com:<your-username>/claude-nomad.git ~/claude-nomad
 export NOMAD_HOST=<your-host-label>      # any short, stable label; nomad reads this instead of os.hostname()
 ```
 
-`npm i -g claude-nomad` puts a `nomad` binary on your PATH. The bin shim is the existing
-`src/nomad.ts` entrypoint resolved through tsx (a runtime dependency); no compile step. (The Node
-version floor and the `engine-strict` caveat are in [Requirements](#requirements).)
+`npm i -g claude-nomad` puts a `nomad` binary on your PATH. The binary runs the `src/nomad.ts`
+source directly under Node's built-in type-stripping. What this means for you: there is no compile
+step, no extra transpiler to install, and nothing is fetched from the network the first time you run
+`nomad`, so the first run works offline. (The Node version floor and the `engine-strict` caveat are
+in [Requirements](#requirements).)
 
 On every additional host you repeat only steps 3-4; steps 1-2 are already done, since your private
 repo lives on the remote from step 2.
