@@ -1,6 +1,57 @@
 import { describe, expect, it } from 'vitest';
 
-import { isValidSharedDir } from './config.sharedDirs.guard.ts';
+import { assertSafeLogical, isValidSharedDir } from './config.sharedDirs.guard.ts';
+
+describe('assertSafeLogical (path-map logical key traversal guard)', () => {
+  it('accepts a well-formed alphanumeric logical name', () => {
+    expect(() => assertSafeLogical('ha-acwd')).not.toThrow();
+  });
+
+  it('accepts a logical name with dots and underscores', () => {
+    expect(() => assertSafeLogical('project.name_v2')).not.toThrow();
+  });
+
+  it('accepts a short single-word logical name', () => {
+    expect(() => assertSafeLogical('foo')).not.toThrow();
+  });
+
+  it('throws NomadFatal for "../escape" (directory traversal)', async () => {
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => assertSafeLogical('../escape')).toThrow(NomadFatal);
+  });
+
+  it('throws NomadFatal for "foo/bar" (path separator)', async () => {
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => assertSafeLogical('foo/bar')).toThrow(NomadFatal);
+  });
+
+  it('throws NomadFatal for "." (current-dir shorthand)', async () => {
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => assertSafeLogical('.')).toThrow(NomadFatal);
+  });
+
+  it('throws NomadFatal for ".." (parent-dir shorthand)', async () => {
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => assertSafeLogical('..')).toThrow(NomadFatal);
+  });
+
+  it('throws NomadFatal for empty string', async () => {
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => assertSafeLogical('')).toThrow(NomadFatal);
+  });
+
+  it('error message includes the invalid logical name', async () => {
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: Error | undefined;
+    try {
+      assertSafeLogical('../escape');
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect(caught?.message).toContain('../escape');
+  });
+});
 
 describe('isValidSharedDir (sharedDirs path-traversal and collision guard)', () => {
   describe('valid single-segment entries', () => {
