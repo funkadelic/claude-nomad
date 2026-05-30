@@ -6,6 +6,8 @@
  * into the README. Channel is stderr, exit code is 1.
  */
 
+import pkg from '../package.json' with { type: 'json' };
+
 /**
  * Column (0-indexed) at which every command and flag description starts. Sized
  * to clear the longest label (`--resume-cmd <id>`, which ends at column 24)
@@ -28,6 +30,8 @@ const row = (label: string, desc: string): string => label.padEnd(DESC_COL) + de
 const cont = (text: string): string => ' '.repeat(DESC_COL) + text;
 
 export const DEFAULT_HELP = [
+  `claude-nomad v${pkg.version}`,
+  '',
   'usage: nomad <command> [flags]',
   '',
   'Commands:',
