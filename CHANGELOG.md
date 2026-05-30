@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.3](https://github.com/funkadelic/claude-nomad/compare/v0.32.2...v0.32.3) (2026-05-30)
+
+
+### Fixed
+
+* **push:** hard-block sensitive never-sync files under extras ([#191](https://github.com/funkadelic/claude-nomad/issues/191)) ([6509387](https://github.com/funkadelic/claude-nomad/commit/6509387b5724d13e8aa2122eb99cdd80e58da2ee))
+
 ## [0.32.2](https://github.com/funkadelic/claude-nomad/compare/v0.32.1...v0.32.2) (2026-05-30)
 
 
