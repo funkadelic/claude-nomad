@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.4](https://github.com/funkadelic/claude-nomad/compare/v0.32.3...v0.32.4) (2026-05-30)
+
+
+### Fixed
+
+* **push:** honor drop-wins for allow in recovery dispatch ([#194](https://github.com/funkadelic/claude-nomad/issues/194)) ([9731ecf](https://github.com/funkadelic/claude-nomad/commit/9731ecf9b3d65a6f10fd3e7fc8e520f839640b25))
+
 ## [0.32.3](https://github.com/funkadelic/claude-nomad/compare/v0.32.2...v0.32.3) (2026-05-30)
 
 
