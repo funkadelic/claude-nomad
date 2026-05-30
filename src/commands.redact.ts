@@ -15,7 +15,6 @@ export {
   appendGitleaksIgnore,
   formatFingerprint,
   isRecentlyModified,
-  redactValue,
 } from './commands.redact.core.ts';
 
 /**
