@@ -99,7 +99,7 @@ describe('cmdDoctor node-engine check', () => {
   it('emits PASS when current node equals the engines minimum', async () => {
     setNodeVersion('v22.22.1');
     mockPackageJsonVersion('0.22.3', { node: '>=22.22.1' });
-    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -111,7 +111,7 @@ describe('cmdDoctor node-engine check', () => {
   it('emits PASS when current node is above the engines minimum', async () => {
     setNodeVersion('v24.0.0');
     mockPackageJsonVersion('0.22.3', { node: '>=22.22.1' });
-    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -123,7 +123,7 @@ describe('cmdDoctor node-engine check', () => {
   it('emits WARN (no exitCode change) when current node is below the engines minimum', async () => {
     setNodeVersion('v22.16.0');
     mockPackageJsonVersion('0.22.3', { node: '>=22.22.1' });
-    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -135,7 +135,7 @@ describe('cmdDoctor node-engine check', () => {
   it('emits NO node line when engines field is missing', async () => {
     setNodeVersion('v22.22.1');
     mockPackageJsonVersion('0.22.3', null);
-    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -147,7 +147,7 @@ describe('cmdDoctor node-engine check', () => {
   it('emits NO node line when engines.node uses unsupported range syntax', async () => {
     setNodeVersion('v22.22.1');
     mockPackageJsonVersion('0.22.3', { node: '^22.22.1' });
-    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -163,7 +163,7 @@ describe('cmdDoctor node-engine check', () => {
     // such inputs and fall through to a falsely green "satisfies" line.
     setNodeVersion('v22.0.0-rc.1');
     mockPackageJsonVersion('0.22.3', { node: '>=22.22.1' });
-    mockCurlReleases({ kind: 'json', tagName: 'v0.22.3' });
+    mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();

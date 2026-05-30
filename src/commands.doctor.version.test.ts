@@ -59,7 +59,7 @@ describe('cmdDoctor version check', () => {
 
   it('emits PASS version line when local == latest (Test A)', async () => {
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.2' });
+    mockCurlReleases({ kind: 'json', version: '0.11.2' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -72,7 +72,7 @@ describe('cmdDoctor version check', () => {
 
   it('emits WARN version line when local < latest (Test B)', async () => {
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -86,7 +86,7 @@ describe('cmdDoctor version check', () => {
 
   it('emits informational ahead-of-latest line with no PASS/WARN prefix when local > latest (Test C)', async () => {
     mockPackageJsonVersion('0.12.0');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.2' });
+    mockCurlReleases({ kind: 'json', version: '0.11.2' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -151,12 +151,12 @@ describe('cmdDoctor version check', () => {
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('emits NO version line when GitHub responds with a rate-limit payload (Test F2)', async () => {
-    // GitHub's anon API limit is 60 req/h; over the limit it returns a
-    // valid JSON body with `message` but no `tag_name`. `fetchLatestTag`
-    // must treat that as a silent skip rather than emit PASS/WARN.
+  it('emits NO version line when npm registry responds with no version field (Test F2)', async () => {
+    // The npm registry could return a valid JSON body with no `version` field
+    // (e.g. an unexpected shape). `fetchLatestVersion` must treat that as a
+    // silent skip rather than emit PASS/WARN.
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'rate_limited' });
+    mockCurlReleases({ kind: 'no_version' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -167,11 +167,26 @@ describe('cmdDoctor version check', () => {
     expect(process.exitCode === 1).toBe(false);
   });
 
+  it('emits NO version line when npm registry returns a pre-release version (Test F3)', async () => {
+    // A pre-release tag like `1.2.3-dev` fails STRICT_SEMVER; `fetchLatestVersion`
+    // must gate on the regex and return null so the version line is silently
+    // skipped rather than emitting a spurious drift warning.
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', version: '1.2.3-dev' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toContain('claude-nomad: 0.11.2');
+    expect(out).not.toContain('ahead of latest release');
+    expect(process.exitCode === 1).toBe(false);
+  });
+
   it('refetches when cache is stale beyond the 1h TTL (Test G)', async () => {
     // Pre-seed a STALE cache (2h old). The TTL gate must reject it and the
     // mock curl response must drive the diagnostic. If the gate were
     // broken (e.g. > vs <), the WARN line below would carry the stale
-    // tag `0.10.0` instead of the fresh `0.11.3`.
+    // version `0.10.0` instead of the fresh `0.11.3`.
     const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(
@@ -179,7 +194,7 @@ describe('cmdDoctor version check', () => {
       JSON.stringify({ checked_at: Date.now() - 2 * 60 * 60 * 1000, latest: '0.10.0' }),
     );
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -195,7 +210,7 @@ describe('cmdDoctor version check', () => {
     // check. With no local version to compare against, the helper must
     // skip silently rather than emit PASS/WARN or set exitCode.
     mockPackageJsonVersion('');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -203,6 +218,77 @@ describe('cmdDoctor version check', () => {
     expect(out).not.toContain(`${okGlyph} version`);
     expect(out).not.toContain(`${warnGlyph} version`);
     expect(out).not.toMatch(/claude-nomad: \d/);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('emits NO version line when package.json is missing / throws (Test I)', async () => {
+    // Drives the catch branch of `readLocalVersion`. When the file is
+    // absent the helper must return null and the version line must be
+    // silently omitted without setting exitCode.
+    mockPackageJsonVersion(null);
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toMatch(/claude-nomad: \d/);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('treats cache with malformed checked_at as a miss and fetches fresh (Test J)', async () => {
+    // Drives the `!Number.isFinite(parsed.checked_at)` branch in `loadCache`.
+    // A cache entry with a non-finite checked_at must be ignored; the fresh
+    // fetch must drive the diagnostic instead.
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'version-check.json'),
+      JSON.stringify({ checked_at: 'not-a-number', latest: '0.9.0' }),
+    );
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', version: '0.11.2' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${okGlyph} claude-nomad: 0.11.2 (latest)`);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('treats cache with invalid latest semver as a miss and fetches fresh (Test K)', async () => {
+    // Drives the `!STRICT_SEMVER.test(parsed.latest)` branch in `loadCache`.
+    // A cache entry with a non-semver latest string must be ignored; the fresh
+    // fetch drives the diagnostic.
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'version-check.json'),
+      JSON.stringify({ checked_at: Date.now(), latest: 'not-semver' }),
+    );
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', version: '0.11.2' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${okGlyph} claude-nomad: 0.11.2 (latest)`);
+    expect(process.exitCode === 1).toBe(false);
+  });
+
+  it('treats cache with malformed JSON as a miss and fetches fresh (Test L)', async () => {
+    // Drives the catch branch of `loadCache`. A cache file containing
+    // invalid JSON must be treated as a miss; the fresh fetch drives the
+    // diagnostic.
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(join(cacheDir, 'version-check.json'), 'not-valid-json');
+    mockPackageJsonVersion('0.11.2');
+    mockCurlReleases({ kind: 'json', version: '0.11.2' });
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${okGlyph} claude-nomad: 0.11.2 (latest)`);
     expect(process.exitCode === 1).toBe(false);
   });
 });

@@ -66,7 +66,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
       JSON.stringify({ checked_at: 'not-a-number', latest: '0.10.0' }),
     );
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -86,7 +86,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
       JSON.stringify({ checked_at: Date.now(), latest: 'not-semver' }),
     );
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -101,7 +101,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     // helper must swallow the error and skip silently rather than crash
     // doctor or set exitCode.
     mockPackageJsonVersion(null);
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -120,7 +120,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(join(cacheDir, 'version-check.json'), '{ this is not valid json');
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -129,11 +129,11 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('accepts a tag_name without the leading `v` prefix (Test M)', async () => {
-    // GitHub usually returns `tag_name: "v0.11.3"`, but the field is
-    // freeform; covers the `startsWith('v')` falsy branch in fetchLatestTag.
+  it('correctly reports drift when npm version is bare semver (Test M)', async () => {
+    // The npm registry `version` field is always bare semver (no leading `v`).
+    // Confirms the fetch parses it correctly and emits the WARN drift line.
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', tagName: '0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -142,11 +142,12 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('emits NO version line when tag_name is not strict semver (Test N)', async () => {
-    // `tag_name: "beta"` is a string but not MAJOR.MINOR.PATCH.
-    // `fetchLatestTag` must reject it and produce a silent skip.
+  it('emits NO version line when npm version field is not strict semver (Test N)', async () => {
+    // A non-MAJOR.MINOR.PATCH version string (e.g. `"beta"`) must be
+    // rejected by the STRICT_SEMVER gate in `fetchLatestVersion`, producing
+    // a silent skip.
     mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', tagName: 'beta' });
+    mockCurlReleases({ kind: 'json', version: 'beta' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -162,7 +163,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     // for the comparison; an exotic local (e.g. `nightly`) yields no
     // prefix match and must short-circuit to silence.
     mockPackageJsonVersion('nightly');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.3' });
+    mockCurlReleases({ kind: 'json', version: '0.11.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
@@ -179,7 +180,7 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     // would emit a false PASS against an identical `latest`. The anchored
     // regex now requires `-`, `+`, or end-of-string after the patch.
     mockPackageJsonVersion('0.11.2foo');
-    mockCurlReleases({ kind: 'json', tagName: 'v0.11.2' });
+    mockCurlReleases({ kind: 'json', version: '0.11.2' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
