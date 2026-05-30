@@ -25,7 +25,7 @@ import { cmdUpdate } from './commands.update.ts';
 import { HOME } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
-import { parseFlags, parseRedactArgs } from './nomad.dispatch.ts';
+import { parseFlags, parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
 import { fail, NomadFatal } from './utils.ts';
@@ -89,15 +89,20 @@ try {
       break;
     }
     case 'init': {
-      // Set-based parse so flag order does not matter and duplicates are
-      // rejected. Unknown flags hit the same usage-error pattern as other
-      // subcommands.
-      const seen = parseFlags(process.argv, new Set(['--snapshot', '--keep-actions']));
-      if (seen === null) {
-        console.error('usage: nomad init [--snapshot] [--keep-actions]');
+      // parseInitArgs handles boolean flags (--snapshot, --keep-actions) and
+      // the value-bearing --repo <name>. Returns null on any parse error:
+      // unknown flag, duplicate, --repo with no value or a value starting with
+      // '--'.
+      const initArgs = parseInitArgs(process.argv);
+      if (initArgs === null) {
+        console.error('usage: nomad init [--snapshot] [--keep-actions] [--repo <name>]');
         process.exit(1);
       }
-      cmdInit({ snapshot: seen.has('--snapshot'), keepActions: seen.has('--keep-actions') });
+      cmdInit({
+        snapshot: initArgs.snapshot,
+        keepActions: initArgs.keepActions,
+        repoName: initArgs.repoName,
+      });
       break;
     }
     case 'diff':

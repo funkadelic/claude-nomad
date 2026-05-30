@@ -47,9 +47,16 @@ export const DEFAULT_HELP = [
   row('  diff', 'Offline preview of what `pull` would change against local repo state.'),
   cont('No git pull, no lock acquired.'),
   '',
-  row('  init', 'Scaffold an empty ~/claude-nomad/ repo (shared/, hosts/, path-map).'),
+  row(
+    '  init',
+    'Create a private GitHub repo via gh (if none exists), scaffold shared/, hosts/, path-map.',
+  ),
   row('       --snapshot', 'Overlay the current ~/.claude/ into shared/ as the initial seed.'),
   row('       --keep-actions', 'Skip auto-disabling GitHub Actions on the private mirror.'),
+  row(
+    '       --repo <name>',
+    'Name for the new GitHub repo (default: claude-nomad-config). No-op when origin exists.',
+  ),
   '',
   row('  doctor', 'Read-only health check (symlinks, host file, path-map,'),
   cont('gitleaks, gitlinks).'),

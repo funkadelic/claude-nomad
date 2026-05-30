@@ -29,6 +29,23 @@ function joinedLog(logSpy: LogSpy): string {
   return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
 }
 
+/**
+ * A minimal SpawnSyncFn that simulates `git remote get-url origin` returning
+ * an existing remote URL, making `ensureOriginRepo` a no-op. All other
+ * subprocess calls throw so any unexpected git/gh invocation surfaces as a
+ * test failure. `maybeDisableMirrorActions` calls `readOriginRemote` too; the
+ * non-GitHub URL ensures it silently skips.
+ */
+function makeOriginExistsRun(): SpawnSyncFn {
+  return (bin, args) => {
+    const argv = Array.from(args);
+    if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
+      return Buffer.from('https://not-github.example.com/owner/repo.git\n');
+    }
+    throw new Error(`Unexpected subprocess in scaffold test: ${bin} ${argv.join(' ')}`);
+  };
+}
+
 describe('cmdInit empty-scaffold mode', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -52,7 +69,7 @@ describe('cmdInit empty-scaffold mode', () => {
 
   it('writes the documented scaffold files into a fresh REPO_HOME', async () => {
     const { cmdInit } = await import('./init.ts');
-    cmdInit();
+    cmdInit({ run: makeOriginExistsRun() });
     const repo = join(env.testHome, 'claude-nomad');
     // CLAUDE.md with the documented HTML comment line.
     expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe(
@@ -74,7 +91,7 @@ describe('cmdInit empty-scaffold mode', () => {
 
   it('emits a final log line that ends with "init complete"', async () => {
     const { cmdInit } = await import('./init.ts');
-    cmdInit();
+    cmdInit({ run: makeOriginExistsRun() });
     const out = joinedLog(env.logSpy);
     // The final summary line. Phrasing is implementation choice; the literal
     // tail `init complete` is the contractual marker per the plan's behavior 2.
@@ -87,9 +104,10 @@ describe('cmdInit empty-scaffold mode', () => {
     writeFileSync(join(repo, 'shared', 'settings.base.json'), '{"model":"opus"}\n');
     const { cmdInit } = await import('./init.ts');
     const { NomadFatal } = await import('./utils.ts');
-    expect(() => cmdInit()).toThrow(NomadFatal);
+    const run = makeOriginExistsRun();
+    expect(() => cmdInit({ run })).toThrow(NomadFatal);
     try {
-      cmdInit();
+      cmdInit({ run });
     } catch (err) {
       const msg = (err as Error).message;
       expect(msg).toContain('already initialized');
@@ -105,14 +123,23 @@ describe('cmdInit empty-scaffold mode', () => {
     mkdirSync(join(repo, 'shared'), { recursive: true });
     const { cmdInit } = await import('./init.ts');
     const { NomadFatal } = await import('./utils.ts');
-    expect(() => cmdInit()).toThrow(NomadFatal);
+    const run = makeOriginExistsRun();
+    expect(() => cmdInit({ run })).toThrow(NomadFatal);
     try {
-      cmdInit();
+      cmdInit({ run });
     } catch (err) {
       const msg = (err as Error).message;
       expect(msg).toContain('already initialized');
       expect(msg).toContain(join(repo, 'shared'));
     }
+  });
+
+  it('passes repoName through to ensureOriginRepo (no-op when origin exists)', async () => {
+    // When origin already exists, the custom repoName is accepted but ignored by
+    // ensureOriginRepo (D-09 idempotency). Scaffold still completes normally.
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ run: makeOriginExistsRun(), repoName: 'my-custom-repo' });
+    expect(joinedLog(env.logSpy)).toMatch(/init complete$/);
   });
 });
 
@@ -300,7 +327,7 @@ describe('cmdInit snapshot mode', () => {
       myStatusline: 'module.exports = () => "x";\n',
     });
     const { cmdInit } = await import('./init.ts');
-    cmdInit({ snapshot: true });
+    cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     const repo = join(env.testHome, 'claude-nomad');
     expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe('# real claude md\n');
     expect(readFileSync(join(repo, 'shared', 'agents', 'foo.md'), 'utf8')).toBe('foo body\n');
@@ -322,7 +349,7 @@ describe('cmdInit snapshot mode', () => {
       settings: JSON.stringify({ model: 'opus', permissions: { allow: ['fs:read'] } }) + '\n',
     });
     const { cmdInit } = await import('./init.ts');
-    cmdInit({ snapshot: true });
+    cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     const repo = join(env.testHome, 'claude-nomad');
     const hostFile = readFileSync(join(repo, 'hosts', 'test-host.json'), 'utf8');
     // writeJsonAtomic produces 2-space indent + trailing newline.
@@ -337,7 +364,7 @@ describe('cmdInit snapshot mode', () => {
   it('omits hosts/<HOST>.json when ~/.claude/settings.json is absent and keeps the .gitkeep marker', async () => {
     seedClaudeHome(env.testHome, { claudeMd: '# x\n' });
     const { cmdInit } = await import('./init.ts');
-    cmdInit({ snapshot: true });
+    cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     const repo = join(env.testHome, 'claude-nomad');
     expect(existsSync(join(repo, 'hosts', 'test-host.json'))).toBe(false);
     expect(readFileSync(join(repo, 'hosts', '.gitkeep'), 'utf8')).toBe('');
@@ -366,7 +393,7 @@ describe('cmdInit snapshot mode', () => {
       settings: readFileSync(join(claudeDir, 'settings.json'), 'utf8'),
     };
     const { cmdInit } = await import('./init.ts');
-    cmdInit({ snapshot: true });
+    cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     const after = {
       claudeMd: readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8'),
       agent: readFileSync(join(claudeDir, 'agents', 'a.md'), 'utf8'),
@@ -386,7 +413,7 @@ describe('cmdInit snapshot mode', () => {
     const { NomadFatal } = await import('./utils.ts');
     let caught: Error | undefined;
     try {
-      cmdInit({ snapshot: true });
+      cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     } catch (err) {
       caught = err as Error;
     }
@@ -397,7 +424,7 @@ describe('cmdInit snapshot mode', () => {
   it('emits the documented next-step hint and originals-not-removed log lines', async () => {
     seedClaudeHome(env.testHome, { claudeMd: '# x\n' });
     const { cmdInit } = await import('./init.ts');
-    cmdInit({ snapshot: true });
+    cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
       "snapshot staged in shared/; review, then 'nomad push' to share with other hosts.",
@@ -413,7 +440,7 @@ describe('cmdInit snapshot mode', () => {
     // guard against the snapshot branch leaking into plain init.
     seedClaudeHome(env.testHome, { claudeMd: '# would-be-snapshotted\n' });
     const { cmdInit } = await import('./init.ts');
-    cmdInit();
+    cmdInit({ run: makeOriginExistsRun() });
     const repo = join(env.testHome, 'claude-nomad');
     expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe(
       '<!-- claude-nomad shared CLAUDE.md; symlinked into ~/.claude/CLAUDE.md by nomad pull -->\n',
@@ -426,7 +453,7 @@ describe('cmdInit snapshot mode', () => {
     // the scaffold is still complete; matches the behavior plain init has.
     seedClaudeHome(env.testHome, { agents: { 'x.md': 'x\n' } });
     const { cmdInit } = await import('./init.ts');
-    cmdInit({ snapshot: true });
+    cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     const repo = join(env.testHome, 'claude-nomad');
     expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe(
       '<!-- claude-nomad shared CLAUDE.md; symlinked into ~/.claude/CLAUDE.md by nomad pull -->\n',
@@ -439,7 +466,7 @@ describe('cmdInit snapshot mode', () => {
     const { NomadFatal } = await import('./utils.ts');
     let caught: Error | undefined;
     try {
-      cmdInit({ snapshot: true });
+      cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     } catch (err) {
       caught = err as Error;
     }
@@ -466,11 +493,18 @@ type GhRunOpts = {
 };
 
 /** Dispatch the `git` bin call for makeGhRun. */
-function dispatchGit(opts: GhRunOpts): Buffer {
-  if (opts.remoteThrows === true || opts.remote === undefined) {
-    throw Object.assign(new Error('no remote'), { code: 128 });
+function dispatchGit(opts: GhRunOpts, argv: string[]): Buffer {
+  if (argv[0] === 'remote' && argv[1] === 'get-url') {
+    if (opts.remoteThrows === true || opts.remote === undefined) {
+      throw Object.assign(new Error('no remote'), { code: 128 });
+    }
+    return Buffer.from(opts.remote + '\n');
   }
-  return Buffer.from(opts.remote + '\n');
+  // git remote add: used by ensureOriginRepo when it creates a new repo.
+  if (argv[0] === 'remote' && argv[1] === 'add') {
+    return Buffer.from('');
+  }
+  throw new Error(`Unexpected git argv: ${argv.join(' ')}`);
 }
 
 /** Simulate `gh auth status` outcomes. */
@@ -495,17 +529,27 @@ function dispatchGhStatus(opts: GhRunOpts): Buffer {
   return Buffer.from('');
 }
 
+/** Handle `gh repo view` for isRepoPrivate. */
+function dispatchGhView(opts: GhRunOpts): Buffer {
+  if (opts.isPrivateThrows === true) throw new Error('api error');
+  return Buffer.from(JSON.stringify({ isPrivate: opts.isPrivate }));
+}
+
+/** Handle `gh api .../actions/permissions --jq .enabled` for isActionsEnabled. */
+function dispatchGhActionsEnabled(opts: GhRunOpts): Buffer {
+  if (opts.actionsEnabledThrows === true) throw new Error('api error');
+  return Buffer.from(opts.actionsEnabled ? 'true\n' : 'false\n');
+}
+
 /** Dispatch the `gh` bin call for makeGhRun. */
 function dispatchGh(opts: GhRunOpts, argv: string[]): Buffer {
   if (argv.includes('status')) return dispatchGhStatus(opts);
-  if (argv.includes('view')) {
-    if (opts.isPrivateThrows === true) throw new Error('api error');
-    return Buffer.from(JSON.stringify({ isPrivate: opts.isPrivate }));
-  }
-  if (argv.includes('--jq')) {
-    if (opts.actionsEnabledThrows === true) throw new Error('api error');
-    return Buffer.from(opts.actionsEnabled ? 'true\n' : 'false\n');
-  }
+  // gh repo create: used by ensureOriginRepo on the create path.
+  if (argv[0] === 'repo' && argv[1] === 'create') return Buffer.from('');
+  // gh api user --jq .login: used by ensureOriginRepo to resolve owner.
+  if (argv[0] === 'api' && argv[1] === 'user') return Buffer.from('test-owner\n');
+  if (argv.includes('view')) return dispatchGhView(opts);
+  if (argv.includes('--jq')) return dispatchGhActionsEnabled(opts);
   if (argv.includes('PUT')) {
     if (opts.disable === 'throw') throw new Error('disable failed');
     return Buffer.from('');
@@ -516,11 +560,13 @@ function dispatchGh(opts: GhRunOpts, argv: string[]): Buffer {
 /**
  * Build a SpawnSyncFn mock that dispatches on (bin, args) to simulate
  * different gh/git subprocess outcomes for maybeDisableMirrorActions paths.
+ * Handles ensureOriginRepo subprocesses (repo create, api user, remote add)
+ * so those can proceed without interfering with maybeDisableMirrorActions.
  */
 function makeGhRun(opts: GhRunOpts): SpawnSyncFn {
   return (bin, args) => {
     const argv = Array.from(args);
-    if (bin === 'git') return dispatchGit(opts);
+    if (bin === 'git') return dispatchGit(opts, argv);
     if (bin === 'gh') return dispatchGh(opts, argv);
     throw new Error(`Unexpected subprocess: ${bin} ${argv.join(' ')}`);
   };
@@ -547,7 +593,10 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
-  it('skips silently when git remote get-url throws (no remote configured)', async () => {
+  it('skips silently when git remote get-url always throws (ensureOriginRepo creates, maybeDisableMirrorActions skips)', async () => {
+    // When remoteThrows is set, ensureOriginRepo sees no origin -> auth ok ->
+    // creates a repo (no-op in the fake runner). Then maybeDisableMirrorActions
+    // probes for origin again (same run -> still throws) -> silently skips.
     const { cmdInit } = await import('./init.ts');
     cmdInit({ run: makeGhRun({ remoteThrows: true }) });
     expect(joinedLog(env.logSpy)).toContain('init complete');
@@ -559,6 +608,8 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
     const runSpy = vi.fn<SpawnSyncFn>(baseRun);
     cmdInit({ run: runSpy });
     expect(joinedLog(env.logSpy)).toContain('init complete');
+    // ensureOriginRepo probe returns a non-GitHub URL -> returns immediately.
+    // maybeDisableMirrorActions gets the same non-GitHub URL -> skips (no gh calls).
     const ghCalls = runSpy.mock.calls.filter(([bin]) => bin === 'gh');
     expect(ghCalls).toHaveLength(0);
   });
@@ -666,12 +717,19 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
 
   it('suppresses all gh activity when keepActions is true', async () => {
     const calls: string[] = [];
-    const run: SpawnSyncFn = (bin) => {
-      calls.push(bin);
-      return Buffer.from('');
+    const run: SpawnSyncFn = (bin, args) => {
+      const argv = Array.from(args);
+      calls.push(`${bin} ${argv.join(' ')}`);
+      // git remote get-url: simulate existing origin so ensureOriginRepo is a no-op.
+      if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
+        return Buffer.from('https://not-github.example.com/owner/repo.git\n');
+      }
+      throw new Error(`Unexpected: ${bin} ${argv.join(' ')}`);
     };
     const { cmdInit } = await import('./init.ts');
     cmdInit({ keepActions: true, run });
-    expect(calls).toHaveLength(0);
+    // Only the ensureOriginRepo probe fires; no gh calls.
+    const ghCalls = calls.filter((c) => c.startsWith('gh'));
+    expect(ghCalls).toHaveLength(0);
   });
 });

@@ -24,6 +24,101 @@ export function parseFlags(argv: string[], known: Set<string>): Set<string> | nu
   return seen;
 }
 
+/** Parsed result from {@link parseInitArgs}. */
+export type InitArgs = {
+  /** True when `--snapshot` was present. */
+  snapshot: boolean;
+  /** True when `--keep-actions` was present. */
+  keepActions: boolean;
+  /** Optional repo name supplied via `--repo <name>`. */
+  repoName: string | undefined;
+};
+
+/**
+ * Extract the value following a `--flag <value>` pair. Returns the value
+ * string on success, or `null` when the next token is missing or starts with
+ * `--` (which would indicate the flag was supplied without a value).
+ */
+function extractFlagValue(argv: string[], i: number): string | null {
+  const val = argv[i + 1];
+  if (val === undefined || val.startsWith('--')) return null;
+  return val;
+}
+
+/** Internal state threaded through the parseInitArgs loop. */
+type InitParseState = {
+  snapshot: boolean;
+  keepActions: boolean;
+  repoName: string | undefined;
+  sawSnapshot: boolean;
+  sawKeepActions: boolean;
+  sawRepo: boolean;
+};
+
+/**
+ * Apply one token from the init argv to the parse state. Returns `true` on
+ * success or `false` when the token is invalid (unknown flag, duplicate, or
+ * `--repo` with no valid value). Advances `i` by mutation via the returned
+ * increment: 1 for boolean flags, 2 for `--repo <value>`.
+ */
+function applyInitToken(
+  argv: string[],
+  i: number,
+  st: InitParseState,
+): { ok: boolean; advance: number } {
+  const token = argv[i];
+  if (token === '--snapshot') {
+    if (st.sawSnapshot) return { ok: false, advance: 0 };
+    st.sawSnapshot = true;
+    st.snapshot = true;
+    return { ok: true, advance: 1 };
+  }
+  if (token === '--keep-actions') {
+    if (st.sawKeepActions) return { ok: false, advance: 0 };
+    st.sawKeepActions = true;
+    st.keepActions = true;
+    return { ok: true, advance: 1 };
+  }
+  if (token === '--repo') {
+    if (st.sawRepo) return { ok: false, advance: 0 };
+    st.sawRepo = true;
+    const val = extractFlagValue(argv, i);
+    if (val === null) return { ok: false, advance: 0 };
+    st.repoName = val;
+    return { ok: true, advance: 2 };
+  }
+  return { ok: false, advance: 0 };
+}
+
+/**
+ * Argv parser for `nomad init [--snapshot] [--keep-actions] [--repo <name>]`.
+ *
+ * Handles boolean `--snapshot` and `--keep-actions` flags plus an optional
+ * value-bearing `--repo <name>`. Returns `null` on any parse error: unknown
+ * flag, duplicate flag, `--repo` with no value, or `--repo` whose value
+ * starts with `--`.
+ *
+ * @param argv The full process argv array (parsing starts at index 3).
+ * @returns Parsed init arguments, or `null` on any parse error.
+ */
+export function parseInitArgs(argv: string[]): InitArgs | null {
+  const st: InitParseState = {
+    snapshot: false,
+    keepActions: false,
+    repoName: undefined,
+    sawSnapshot: false,
+    sawKeepActions: false,
+    sawRepo: false,
+  };
+  let i = 3;
+  while (i < argv.length) {
+    const { ok, advance } = applyInitToken(argv, i, st);
+    if (!ok) return null;
+    i += advance;
+  }
+  return { snapshot: st.snapshot, keepActions: st.keepActions, repoName: st.repoName };
+}
+
 /** Parsed result from {@link parseRedactArgs}. */
 export type RedactArgs = {
   /** Validated session id. */
