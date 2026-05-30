@@ -83,13 +83,16 @@ type DispatchCtx = {
 function dispatchOne(f: Finding, ctx: DispatchCtx): void {
   const action = ctx.actions.get(findingKey(f)) ?? 'skip';
   if (action === 'skip') return;
+  const sid = sessionIdFromFinding(f);
+  // Drop wins: a dropped session short-circuits every later action for it,
+  // including allow, so a stale fingerprint is never written for content that
+  // was held back from the push.
+  if (sid !== null && ctx.droppedSids.has(sid)) return;
   if (action === 'allow') {
     applyAllow(f);
     return;
   }
-  const sid = sessionIdFromFinding(f);
   if (sid === null) return;
-  if (ctx.droppedSids.has(sid)) return;
   if (action === 'drop') {
     ctx.droppedSids.add(sid);
     if (ctx.drop(sid, ctx.map)) {

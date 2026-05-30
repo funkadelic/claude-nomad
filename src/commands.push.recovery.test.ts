@@ -1266,6 +1266,46 @@ describe('dispatchActions - drop wins at session level', () => {
     expect(realExists(ignoreFile)).toBe(true);
     expect(realRead(ignoreFile, 'utf8')).toContain('fp-def456');
   });
+
+  it('allow action for the SAME session is skipped after a drop (drop wins)', async () => {
+    // finding1 (abc123) -> drop; finding2 (SAME session abc123) -> allow. Drop
+    // wins, so applyAllow must NOT write finding2's fingerprint even though its
+    // action is allow.
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+
+    const dropMock = vi.fn().mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const finding1 = makeFinding({
+      File: 'shared/projects/my-proj/abc123.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      RuleID: 'github-pat',
+      Fingerprint: 'fp-drop-abc',
+    });
+    const finding2 = makeFinding({
+      File: 'shared/projects/my-proj/abc123.jsonl',
+      StartLine: 2,
+      StartColumn: 1,
+      RuleID: 'generic-api-key',
+      Fingerprint: 'fp-allow-abc',
+    });
+    const actions = new Map([
+      [findingKey(finding1), 'drop' as const],
+      [findingKey(finding2), 'allow' as const],
+    ]);
+    const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
+
+    dispatchActions([finding1, finding2], actions, 'ts-x', map, Date.now, undefined, dropMock);
+
+    expect(dropMock).toHaveBeenCalledWith('abc123', map);
+    // Drop wins: the allow for the same dropped session must NOT write a fingerprint.
+    const { existsSync: realExists, readFileSync: realRead } = await import('node:fs');
+    const ignoreFile = join(testHome, '.gitleaksignore');
+    if (realExists(ignoreFile)) {
+      expect(realRead(ignoreFile, 'utf8')).not.toContain('fp-allow-abc');
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
