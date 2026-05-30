@@ -38,61 +38,54 @@ describe('nomad.ts update dispatcher', () => {
     process.argv = originalArgv;
   });
 
-  it('routes `nomad update` to cmdUpdate({}) with all flags false', async () => {
+  it('routes bare `nomad update` to cmdUpdate() with no args', async () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update'];
     await import('./nomad.ts');
     expect(cmdUpdateMock).toHaveBeenCalledTimes(1);
-    expect(cmdUpdateMock).toHaveBeenCalledWith({
-      dryRun: false,
-      force: false,
-      pushOrigin: false,
-    });
+    expect(cmdUpdateMock).toHaveBeenCalledWith();
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('routes `nomad update --dry-run --force --push-origin` to cmdUpdate with all flags set', async () => {
+  it('rejects `nomad update --dry-run` with usage line and exitCode=1', async () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
-    process.argv = ['node', 'nomad.ts', 'update', '--dry-run', '--force', '--push-origin'];
-    await import('./nomad.ts');
-    expect(cmdUpdateMock).toHaveBeenCalledWith({
-      dryRun: true,
-      force: true,
-      pushOrigin: true,
-    });
-  });
-
-  it('routes `nomad update --force` to cmdUpdate({ force: true, ... })', async () => {
-    const cmdUpdateMock = vi.fn();
-    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
-    process.argv = ['node', 'nomad.ts', 'update', '--force'];
-    await import('./nomad.ts');
-    expect(cmdUpdateMock).toHaveBeenCalledWith({
-      dryRun: false,
-      force: true,
-      pushOrigin: false,
-    });
-  });
-
-  it('rejects `nomad update --bogus` with the canonical usage line and exitCode=1', async () => {
-    const cmdUpdateMock = vi.fn();
-    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
-    process.argv = ['node', 'nomad.ts', 'update', '--bogus'];
+    process.argv = ['node', 'nomad.ts', 'update', '--dry-run'];
     await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
   });
 
-  it('rejects `nomad update --dry-run --dry-run` (duplicate flag) with exitCode=1', async () => {
+  it('rejects `nomad update --force` with usage line and exitCode=1', async () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
-    process.argv = ['node', 'nomad.ts', 'update', '--dry-run', '--dry-run'];
+    process.argv = ['node', 'nomad.ts', 'update', '--force'];
     await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
+  });
+
+  it('rejects `nomad update --push-origin` with usage line and exitCode=1', async () => {
+    const cmdUpdateMock = vi.fn();
+    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    process.argv = ['node', 'nomad.ts', 'update', '--push-origin'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdUpdateMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
+  });
+
+  it('rejects `nomad update bogus` with usage line and exitCode=1', async () => {
+    const cmdUpdateMock = vi.fn();
+    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    process.argv = ['node', 'nomad.ts', 'update', 'bogus'];
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    expect(cmdUpdateMock).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
   });
 });
 

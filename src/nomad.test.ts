@@ -119,10 +119,12 @@ describe('nomad.ts push dispatcher', () => {
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--dry-run'));
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--snapshot'));
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--resume-cmd'));
-    // The update subcommand and its flags must appear in the default help so
-    // a cold `nomad` invocation surfaces the new command without docs.
+    // The update subcommand must appear in the default help so a cold `nomad`
+    // invocation surfaces it. It accepts no flags.
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('update'));
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('--push-origin'));
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Update the claude-nomad CLI to the latest npm release'),
+    );
     // drop-session is the operator-side recovery half of the gitleaks-on-
     // session-JSONL flow; surface it in DEFAULT_HELP alongside the other
     // subcommands so a cold `nomad` invocation discovers it.

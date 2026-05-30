@@ -116,19 +116,13 @@ try {
       cmdDiff();
       break;
     case 'update': {
-      // Set-based parse so flag order does not matter and duplicates are
-      // rejected (`--dry-run --dry-run` is a typo, not a no-op). Unknown
-      // flags hit the same usage-error pattern as other subcommands.
-      const seen = parseFlags(process.argv, new Set(['--dry-run', '--force', '--push-origin']));
-      if (seen === null) {
-        console.error('usage: nomad update [--dry-run] [--force] [--push-origin]');
+      // No flags accepted; any extra argv is a usage error (same length-check
+      // pattern as the --version arm).
+      if (process.argv.length !== 3) {
+        console.error('usage: nomad update');
         process.exit(1);
       }
-      cmdUpdate({
-        dryRun: seen.has('--dry-run'),
-        force: seen.has('--force'),
-        pushOrigin: seen.has('--push-origin'),
-      });
+      cmdUpdate();
       break;
     }
     case 'adopt': {
