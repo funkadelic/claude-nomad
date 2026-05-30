@@ -119,7 +119,10 @@ function classifySharedLink(name: string, p: string): { line: string; fail: bool
     return { line: `${red(failGlyph)} ${name}: could not stat (${String(code)})`, fail: true };
   }
   if (!stat.isSymbolicLink()) {
-    return { line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync)`, fail: true };
+    return {
+      line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync); run \`nomad adopt ${name}\` to fix`,
+      fail: true,
+    };
   }
   return classifySymlinkTarget(name, p);
 }

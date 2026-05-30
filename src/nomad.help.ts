@@ -62,6 +62,13 @@ export const DEFAULT_HELP = [
   ),
   '',
   row(
+    '  adopt <name>',
+    'Move a pre-existing ~/.claude/<name> dir into shared/<name>, recreate the',
+  ),
+  cont('symlink, and stage for push. <name> must be in SHARED_LINKS or sharedDirs.'),
+  row('       --dry-run', 'Preview backup, move, and git-add without writing.'),
+  '',
+  row(
     '  redact <session-id>',
     'Rewrite the secret span in the local source transcript for a session,',
   ),
