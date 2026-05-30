@@ -1,4 +1,10 @@
-import { NEVER_SYNC, PUSH_ALLOWED_STATIC, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import {
+  ALWAYS_NEVER_SYNC,
+  NEVER_SYNC,
+  PUSH_ALLOWED_STATIC,
+  SUPPORTED_EXTRAS,
+  type PathMap,
+} from './config.ts';
 import { isValidSharedDir } from './config.sharedDirs.guard.ts';
 import { fail, NomadFatal } from './utils.ts';
 
@@ -22,17 +28,18 @@ function isAllowed(path: string, allowed: readonly string[]): boolean {
 }
 
 /**
- * True when any path segment matches a `NEVER_SYNC` entry (hard-block list).
- * Scope exception (Pitfall 6): paths beginning with `shared/extras/` are
- * exempt. The segment list was authored against `~/.claude/` semantics for
- * ephemeral Claude Code state (`todos/`, `shell-snapshots/`, etc.); inside
- * the extras tree, `.planning/todos/` is a meaningful GSD-managed path. The
- * narrowed scope preserves the original hard-block for all other surface.
+ * True when any path segment matches a hard-block entry. Outside the extras
+ * tree the full `NEVER_SYNC` set applies. Inside `shared/extras/` only the
+ * `ALWAYS_NEVER_SYNC` subset applies (Pitfall 6): the broader set was authored
+ * against `~/.claude/` semantics for ephemeral state, so `.planning/todos/` and
+ * similar legitimate GSD content must pass, but genuinely-sensitive host-local
+ * files (`.credentials.json`, `settings.local.json`, `.claude.json`, ...) stay
+ * blocked even when nested inside a synced extras dir.
  */
 function isNeverSync(path: string): boolean {
-  if (path.startsWith('shared/extras/')) return false;
+  const blockSet = path.startsWith('shared/extras/') ? ALWAYS_NEVER_SYNC : NEVER_SYNC;
   for (const segment of path.split('/')) {
-    if (NEVER_SYNC.has(segment)) return true;
+    if (blockSet.has(segment)) return true;
   }
   return false;
 }

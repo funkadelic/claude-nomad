@@ -106,18 +106,27 @@ export function allSharedLinks(map: PathMap): string[] {
 }
 
 /**
- * Whitelist of names allowed in `path-map.json`'s top-level `extras` field.
- * Each entry is either a directory name (e.g. `.planning`) OR a single
- * root-level file name (e.g. `CLAUDE.md`); both are validated the same way
- * and copied verbatim under `shared/extras/<logical>/<name>`. Gates the
- * named-extras opt-in mechanism: only entries appearing in this list are
- * eligible for sync. Widening to include `.notes`, `.scratch`, `AGENTS.md`,
- * etc. is a one-line edit here with no schema migration required (the field
- * is additive on the consumer side). Mirrors `SHARED_LINKS` in shape and
- * intent: a short, append-only `as const` tuple that downstream callers
- * narrow against.
+ * Whitelist of names allowed in the `extras` field of `path-map.json`. Each
+ * entry is a directory (e.g. `.planning`) or root-level file (`CLAUDE.md`)
+ * copied under `shared/extras/<logical>/<name>`. Only listed names are
+ * eligible for sync; widening is a one-line edit with no migration required.
  */
 export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md'] as const;
+
+/**
+ * Credential and host-config file names blocked even under `shared/extras/`,
+ * where the broader `NEVER_SYNC` segment scan is narrowed to avoid
+ * false-blocking ephemeral dir names (`todos`, `plans`, etc.) inside synced
+ * `.planning/` trees (Pitfall 6). Strict subset of `NEVER_SYNC`; doctor
+ * display and sharedDirs guard use the full set.
+ */
+export const ALWAYS_NEVER_SYNC = new Set([
+  '.claude.json',
+  '.credentials.json',
+  'settings.local.json',
+  'history.jsonl',
+  'stats-cache.json',
+]);
 
 /**
  * Path segments that must never cross the sync boundary in either direction.
@@ -142,8 +151,7 @@ export const NEVER_SYNC = new Set([
   'statsig',
   'telemetry',
   'ide',
-  // Host-local caches and runtime state: never useful to share, and named here
-  // so the sharedDirs guard rejects an accidental opt-in.
+  // Host-local caches and runtime state (sharedDirs guard also rejects these).
   'cache',
   'backups',
   'paste-cache',

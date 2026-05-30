@@ -161,6 +161,16 @@ describe('SHARED_LINKS includes hooks', () => {
   });
 });
 
+describe('ALWAYS_NEVER_SYNC subset invariant', () => {
+  it('every member of ALWAYS_NEVER_SYNC is also in NEVER_SYNC', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    for (const name of config.ALWAYS_NEVER_SYNC) {
+      expect(config.NEVER_SYNC.has(name)).toBe(true);
+    }
+  });
+});
+
 describe('allSharedLinks', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
