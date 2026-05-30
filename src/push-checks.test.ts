@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as cpModule from 'node:child_process';
+import type * as fsModule from 'node:fs';
 import type * as osModule from 'node:os';
 
 describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
@@ -121,6 +122,7 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -188,6 +190,56 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     expect(probeGitleaks()).toBe('v8.30.1');
     expect(capturedArgs).toContain('--config');
     expect(capturedArgs).toContain(join(repoHome, '.gitleaks.toml'));
+  });
+
+  it('probeGitleaks passes --config <bundled> when REPO_HOME toml absent but bundled exists', async () => {
+    // First existsSync call (REPO_HOME toml) -> false; second (bundled) -> true.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true),
+      };
+    });
+    let capturedArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          capturedArgs = args ?? [];
+          return Buffer.from('v8.30.1\n');
+        }),
+      };
+    });
+    const { probeGitleaks } = await import('./push-checks.ts');
+    expect(probeGitleaks()).toBe('v8.30.1');
+    expect(capturedArgs).toContain('--config');
+    const configIdx = (capturedArgs as string[]).indexOf('--config');
+    const configPath = (capturedArgs as string[])[configIdx + 1];
+    expect(configPath).toMatch(/\.gitleaks\.toml$/);
+    expect(configPath).not.toBe(join(testHome, 'claude-nomad', '.gitleaks.toml'));
+  });
+
+  it('probeGitleaks omits --config when neither toml copy exists', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    let capturedArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          capturedArgs = args ?? [];
+          return Buffer.from('v8.30.1\n');
+        }),
+      };
+    });
+    const { probeGitleaks } = await import('./push-checks.ts');
+    expect(probeGitleaks()).toBe('v8.30.1');
+    expect(capturedArgs).not.toContain('--config');
   });
 
   it('probeGitleaks throws NomadFatal with "gitleaks --version failed" on non-ENOENT errors', async () => {

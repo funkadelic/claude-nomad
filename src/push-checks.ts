@@ -18,11 +18,12 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, type Dirent } from 'node:fs';
+import { readdirSync, type Dirent } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
+import { resolveTomlPath } from './push-gitleaks.scan.ts';
 import { NomadFatal } from './utils.ts';
 
 /**
@@ -114,18 +115,19 @@ export function findGitlinks(dir: string): string[] {
  * ENOENT; throws NomadFatal with the error message on any other failure.
  * Used by `cmdPush` (top-of-flow probe) and `cmdDoctor` (read-only).
  *
- * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
- * exists at call time. `gitleaks version` ignores the flag empirically on
- * 8.30.1, so the wiring here is conservative: symmetric with
- * `runGitleaksScan` and surfaces a malformed toml early if a future gitleaks
- * version starts parsing the config on the `version` subcommand. When the
- * toml is missing (e.g., fresh clone predating the allowlist) the flag is
- * omitted entirely; behavior reverts silently to the default gitleaks ruleset.
+ * Passes `--config <toml>` resolved via the two-tier `resolveTomlPath` lookup
+ * (REPO_HOME copy first, then the package-bundled copy). `gitleaks version`
+ * ignores the flag empirically on 8.30.1, so the wiring is conservative:
+ * symmetric with `runGitleaksScan` and surfaces a malformed toml early if a
+ * future gitleaks version starts parsing the config on the `version`
+ * subcommand. Omits the flag when neither copy exists; behavior reverts to the
+ * default ruleset. Throws NomadFatal with the install hint on ENOENT; throws
+ * NomadFatal with the error message on any other failure.
  */
 export function probeGitleaks(): string {
-  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
+  const toml = resolveTomlPath();
   const args: string[] = ['version'];
-  if (existsSync(tomlPath)) args.push('--config', tomlPath);
+  if (toml !== null) args.push('--config', toml);
   try {
     return execFileSync('gitleaks', args, { stdio: ['ignore', 'pipe', 'pipe'] })
       .toString()
