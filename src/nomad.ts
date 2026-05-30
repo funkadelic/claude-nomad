@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --disable-warning=ExperimentalWarning
 /**
  * claude-nomad: Claude Code config sync wrapper over a private Git repo.
  *
