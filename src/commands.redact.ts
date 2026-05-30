@@ -153,7 +153,8 @@ export function cmdRedact(
     }
 
     if (findings.length === 0) {
-      log(`no findings${rule !== undefined ? ` for rule ${rule}` : ''} in session ${id}`);
+      const ruleClause = rule === undefined ? '' : ` for rule ${rule}`;
+      log(`no findings${ruleClause} in session ${id}`);
       return;
     }
 
