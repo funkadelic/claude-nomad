@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.2](https://github.com/funkadelic/claude-nomad/compare/v0.32.1...v0.32.2) (2026-05-30)
+
+
+### Fixed
+
+* **remap:** reject path-traversal in path-map logical keys ([#190](https://github.com/funkadelic/claude-nomad/issues/190)) ([1526fbb](https://github.com/funkadelic/claude-nomad/commit/1526fbbbb7c6beb258d882c1c26cd45447ab226b))
+
+
+### Changed
+
+* **sonar:** source projectVersion from package.json at scan time ([#188](https://github.com/funkadelic/claude-nomad/issues/188)) ([c00dd6a](https://github.com/funkadelic/claude-nomad/commit/c00dd6a5135a8753d56cf4165cf5b9782c9bde3e))
+
 ## [0.32.1](https://github.com/funkadelic/claude-nomad/compare/v0.32.0...v0.32.1) (2026-05-30)
 
 
