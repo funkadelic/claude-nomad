@@ -16,9 +16,25 @@ import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { REPO_HOME } from './config.ts';
 import { nowTimestamp } from './utils.fs.ts';
+
+/**
+ * Two-tier `.gitleaks.toml` lookup: returns `REPO_HOME/.gitleaks.toml` when
+ * present, else the package-bundled copy resolved via `import.meta.url`
+ * (always current with the installed binary, critical for standalone repos
+ * that have no git update path for the allowlist), else `null`. Callers omit
+ * `--config` on a `null` return so gitleaks uses its default ruleset; scanning
+ * is never disabled. Exported for reuse in `push-checks.ts` `probeGitleaks`.
+ */
+export function resolveTomlPath(): string | null {
+  const repoToml = join(REPO_HOME, '.gitleaks.toml');
+  if (existsSync(repoToml)) return repoToml;
+  const bundled = fileURLToPath(new URL('../.gitleaks.toml', import.meta.url));
+  return existsSync(bundled) ? bundled : null;
+}
 
 /**
  * Subset of gitleaks 8.x JSON report fields the parser consumes. The
@@ -74,9 +90,10 @@ export function readGitleaksReport(reportPath: string): Finding[] | null {
  * In `repoDir`, runs `git init` then `git add -A` (no commit, no user identity:
  * `git add` does not require one), writes the gitleaks JSON report to a
  * collision-resistant path under `~/.cache/claude-nomad/`, and invokes
- * `gitleaks protect --staged`. Conditionally passes `--config
- * <REPO_HOME>/.gitleaks.toml` when that file exists at call time (missing toml
- * = silent fallback to the default ruleset). Returns `[]` on a clean exit, the
+ * `gitleaks protect --staged`. Passes `--config <toml>` resolved via the
+ * two-tier lookup in `resolveTomlPath` (REPO_HOME copy first, then the
+ * package-bundled copy); omits the flag when neither exists so gitleaks uses its
+ * default ruleset. Returns `[]` on a clean exit, the
  * parsed `Finding[]` on a non-zero exit with a readable report, or `null` when
  * the report is missing or unparseable (the scan-failed signal). The temp
  * report file is removed in a `finally` on every path. ENOENT (gitleaks or git
@@ -98,7 +115,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   const reportPath = join(cacheDir, `gitleaks-${nowTimestamp()}-${process.pid}.json`);
-  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
+  const toml = resolveTomlPath();
   const args: string[] = [
     'protect',
     '--staged',
@@ -107,7 +124,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     '--report-format=json',
     `--report-path=${reportPath}`,
   ];
-  if (existsSync(tomlPath)) args.push('--config', tomlPath);
+  if (toml !== null) args.push('--config', toml);
   const opts: ExecFileSyncOptions = { cwd: repoDir, stdio: ['ignore', 'pipe', 'pipe'] };
   try {
     execFileSync('git', ['init', '-q'], opts);
@@ -154,9 +171,10 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
  * streams so the caller can surface it. On the findings path the streams are
  * suppressed; the structured `Finding[]` fully describes the result.
  *
- * Conditionally passes `--config <REPO_HOME>/.gitleaks.toml` when that file
- * exists, mirroring the `scanStagedTree` convention so allow-list entries apply
- * consistently across staged and non-staged scans.
+ * Passes `--config <toml>` resolved via `resolveTomlPath` (REPO_HOME copy
+ * first, then the package-bundled copy), mirroring the `scanStagedTree`
+ * convention so allow-list entries apply consistently across staged and
+ * non-staged scans. Omits the flag when neither copy exists.
  *
  * @param filePath Absolute path to the file to scan.
  * @param forwardStreams Forward gitleaks stderr/stdout to process streams on
@@ -167,7 +185,7 @@ export function scanFile(filePath: string, forwardStreams = false): Finding[] | 
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   const reportPath = join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}.json`);
-  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
+  const toml = resolveTomlPath();
   const args: string[] = [
     'detect',
     '--no-git',
@@ -176,7 +194,7 @@ export function scanFile(filePath: string, forwardStreams = false): Finding[] | 
     '--report-format=json',
     `--report-path=${reportPath}`,
   ];
-  if (existsSync(tomlPath)) args.push('--config', tomlPath);
+  if (toml !== null) args.push('--config', toml);
   const opts: ExecFileSyncOptions = { stdio: ['ignore', 'pipe', 'pipe'] };
   try {
     execFileSync('gitleaks', args, opts);
