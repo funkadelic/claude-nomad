@@ -32,14 +32,6 @@ export const CLAUDE_HOME = resolve(HOME, '.claude');
 export const REPO_HOME = process.env.NOMAD_REPO || resolve(HOME, 'claude-nomad');
 
 /**
- * Upstream GitHub repository slug for the release-version check in
- * `nomad doctor`. Hardcoded for the same reason `REPO_HOME` is hardcoded:
- * the deployed sync target is canonical for this CLI. Source of truth for
- * the `GET /repos/<slug>/releases/latest` call in `reportVersionCheck`.
- */
-export const UPSTREAM_REPO_SLUG = 'funkadelic/claude-nomad';
-
-/**
  * The official Claude Code settings JSON schema. Source of truth for
  * `SCHEMA_KEYS` (kept current by `scripts/sync-settings-keys.ts`) and the
  * on-demand `nomad doctor --check-schema` reporter, which fetches it live to
