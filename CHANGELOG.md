@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.0](https://github.com/funkadelic/claude-nomad/compare/v0.31.0...v0.32.0) (2026-05-30)
+
+
+### Added
+
+* **adopt:** add nomad adopt for pre-existing local dirs ([#185](https://github.com/funkadelic/claude-nomad/issues/185)) ([251d5b7](https://github.com/funkadelic/claude-nomad/commit/251d5b71569315cbcf6ae073e29faecb4dbe5aa2))
+
+
+### Documentation
+
+* **readme:** note synced skills carry shims, not the tool engine ([#183](https://github.com/funkadelic/claude-nomad/issues/183)) ([695ba02](https://github.com/funkadelic/claude-nomad/commit/695ba029a92f397a1469ca1cf5f782e0b5bcecac))
+
 ## [0.31.0](https://github.com/funkadelic/claude-nomad/compare/v0.30.0...v0.31.0) (2026-05-29)
 
 
