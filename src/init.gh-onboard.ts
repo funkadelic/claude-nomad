@@ -2,8 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import { REPO_HOME } from './config.ts';
 import { ghAuthStatus, readOriginRemote, type SpawnSyncFn } from './gh-actions.ts';
-import { NomadFatal } from './utils.ts';
-import { die, log } from './utils.ts';
+import { die, log, NomadFatal } from './utils.ts';
 
 /**
  * Default private GitHub repository name used by `ensureOriginRepo` when no
@@ -77,15 +76,22 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
     throw new NomadFatal(`git init failed: ${e.message}`);
   }
 
-  // Create the private repo on GitHub.
+  // Create the private repo on GitHub. When the repo already exists on the
+  // account, gh exits non-zero; treat that as a no-op and fall through to wire
+  // origin rather than failing (D-09 idempotency: a prior run may have created
+  // the repo but died before `git remote add`). Any other failure is fatal.
   try {
     run('gh', ['repo', 'create', repoName, '--private'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 5_000,
     });
   } catch (err) {
-    const e = err as NodeJS.ErrnoException;
-    throw new NomadFatal(`gh repo create failed: ${e.message}`);
+    const e = err as NodeJS.ErrnoException & { stderr?: Buffer | string };
+    const detail = String(e.stderr ?? '') + e.message;
+    if (!/already exists/i.test(detail)) {
+      throw new NomadFatal(`gh repo create failed: ${e.message}`);
+    }
+    log(`repo ${repoName} already exists on your account; reusing it and wiring origin`);
   }
 
   // Resolve the authenticated user's login for the remote URL.

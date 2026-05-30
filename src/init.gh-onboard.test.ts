@@ -15,8 +15,8 @@ type RunOpts = {
   remote?: string;
   /** Outcome for `gh auth status`. */
   auth?: 'ok' | 'not-installed' | 'not-authed' | 'probe-error';
-  /** Outcome for `gh repo create`. */
-  repoCreate?: 'ok' | 'throw';
+  /** Outcome for `gh repo create` (`exists` simulates a name-already-taken failure). */
+  repoCreate?: 'ok' | 'throw' | 'exists';
   /** Owner string returned by `gh api user --jq .login`. */
   owner?: string;
   /** Outcome for `git init`. */
@@ -64,6 +64,11 @@ function dispatchGh(opts: RunOpts, argv: string[]): Buffer {
   if (argv[0] === 'auth') return dispatchGhAuth(opts);
   if (argv[0] === 'repo' && argv[1] === 'create') {
     if (opts.repoCreate === 'throw') throw new Error('repo create failed');
+    if (opts.repoCreate === 'exists') {
+      throw Object.assign(new Error('Command failed'), {
+        stderr: Buffer.from('GraphQL: Name already exists on this account (createRepository)'),
+      });
+    }
     return Buffer.from('');
   }
   if (argv[0] === 'api' && argv[1] === 'user') {
@@ -286,6 +291,23 @@ describe('ensureOriginRepo', () => {
     } catch (err) {
       expect((err as Error).message).toContain('gh api user failed');
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // gh repo create "already exists": idempotent, still wires origin (D-09)
+  // -------------------------------------------------------------------------
+
+  it('reuses an existing repo and still wires origin when gh repo create reports it exists', async () => {
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    const calls: { bin: string; argv: string[] }[] = [];
+    const inner = makeRun({ auth: 'ok', repoCreate: 'exists', owner: 'octocat' });
+    const run: SpawnSyncFn = (bin, args) => {
+      calls.push({ bin, argv: Array.from(args) });
+      return inner(bin, args);
+    };
+    expect(() => ensureOriginRepo('my-config', run)).not.toThrow();
+    const remoteAdd = calls.find((c) => c.bin === 'git' && c.argv[1] === 'add');
+    expect(remoteAdd?.argv[3]).toBe('git@github.com:octocat/my-config.git');
   });
 
   // -------------------------------------------------------------------------
