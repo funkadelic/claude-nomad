@@ -139,6 +139,16 @@ describe('isNeverSync: extras scope', () => {
     ).not.toThrow();
   });
 
+  it('returns false for shared/extras/<logical>/.planning/plans/... paths (Pitfall 6 regression)', async () => {
+    // `plans` is in NEVER_SYNC but is legitimate GSD content inside .planning/;
+    // it must remain allowed under shared/extras/ after narrowing the exemption.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.planning/plans/x.md\0', map),
+    ).not.toThrow();
+  });
+
   it('still hard-blocks NEVER_SYNC segments outside shared/extras/ (regression guard)', async () => {
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
@@ -156,5 +166,72 @@ describe('isNeverSync: extras scope', () => {
       expect.stringContaining('shared/projects/foo/todos/file.md is in NEVER_SYNC'),
     );
     vi.restoreAllMocks();
+  });
+});
+
+// ALWAYS_NEVER_SYNC enforcement: genuinely-sensitive host-local files must be
+// hard-blocked even when nested under shared/extras/, where the broader NEVER_SYNC
+// exemption would otherwise let them through. The narrowed exemption keeps
+// ephemeral dir-name segments (todos, plans, etc.) allowed under extras while
+// refusing to pass credential and host-config files.
+describe('isNeverSync: ALWAYS_NEVER_SYNC enforced under extras', () => {
+  let errorSpy: MockInstance<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Shared fixture: a map with .planning declared for logical `foo`. */
+  const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
+
+  it('hard-blocks .credentials.json nested under shared/extras/', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.planning/.credentials.json\0', map),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('hard-blocks settings.local.json nested under shared/extras/', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.planning/settings.local.json\0', map),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('hard-blocks .claude.json nested under shared/extras/', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => enforceAllowList('A  shared/extras/foo/.planning/.claude.json\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('hard-blocks history.jsonl nested under shared/extras/', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => enforceAllowList('A  shared/extras/foo/.planning/history.jsonl\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('hard-blocks stats-cache.json nested under shared/extras/', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.planning/stats-cache.json\0', map),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
   });
 });
