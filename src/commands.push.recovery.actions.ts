@@ -46,7 +46,7 @@ export async function collectActions(
     const sid = sessionIdFromFinding(f);
     const header =
       `\nFinding: ${f.RuleID} in ${f.File} line ${f.StartLine}` +
-      (sid !== null ? ` (session: ${sid})` : '') +
+      (sid === null ? '' : ` (session: ${sid})`) +
       '\n  [R]edact  [A]llow  [D]rop session  [S]kip (default)\n';
     actions.set(findingKey(f), parseAction(await prompt(header + '> ')));
   }
@@ -54,56 +54,57 @@ export async function collectActions(
 }
 
 /**
+ * Loop-invariant context for `dispatchOne`, built once by `dispatchActions`
+ * before iterating findings. Bundling these keeps `dispatchOne` to two
+ * parameters. The `redactedSids` and `droppedSids` sets are mutated in place so
+ * per-session de-duplication is maintained across the caller's loop.
+ */
+type DispatchCtx = {
+  findings: Finding[];
+  actions: Map<string, FindingAction>;
+  ts: string;
+  map: PathMap;
+  nowMs: () => number;
+  scan: (p: string) => Finding[] | null;
+  drop: (sid: string, map: PathMap) => boolean;
+  redactedSids: Set<string>;
+  droppedSids: Set<string>;
+};
+
+/**
  * Apply one finding's triaged action against local state. Extracted from
  * `dispatchActions` so each function stays under the cognitive-complexity gate.
- * `redactedSids` and `droppedSids` are mutated in place so per-session
- * de-duplication is maintained across the caller's loop. Drop wins: once a
- * session id appears in `droppedSids`, subsequent redact or allow actions for
- * findings in that session are skipped.
+ * Drop wins: once a session id appears in `ctx.droppedSids`, subsequent redact
+ * or allow actions for findings in that session are skipped.
  *
  * @param f The finding to act on.
- * @param findings Full findings list (passed to `applyRedact` for per-session redaction).
- * @param actions The action map returned by `collectActions`.
- * @param ts Backup timestamp.
- * @param map Parsed path-map.
- * @param nowMs Injectable clock.
- * @param scan Injectable scan function for `applyRedact`.
- * @param drop Injectable staged-copy remover for the Drop action.
- * @param redactedSids Set of already-redacted session ids (mutated in place).
- * @param droppedSids Set of already-dropped session ids (mutated in place).
+ * @param ctx Loop-invariant dispatch context (see `DispatchCtx`).
  */
-function dispatchOne(
-  f: Finding,
-  findings: Finding[],
-  actions: Map<string, FindingAction>,
-  ts: string,
-  map: PathMap,
-  nowMs: () => number,
-  scan: (p: string) => Finding[] | null,
-  drop: (sid: string, map: PathMap) => boolean,
-  redactedSids: Set<string>,
-  droppedSids: Set<string>,
-): void {
-  const action = actions.get(findingKey(f)) ?? 'skip';
+function dispatchOne(f: Finding, ctx: DispatchCtx): void {
+  const action = ctx.actions.get(findingKey(f)) ?? 'skip';
   if (action === 'skip') return;
+  const sid = sessionIdFromFinding(f);
+  // Drop wins: a dropped session short-circuits every later action for it,
+  // including allow, so a stale fingerprint is never written for content that
+  // was held back from the push.
+  if (sid !== null && ctx.droppedSids.has(sid)) return;
   if (action === 'allow') {
     applyAllow(f);
     return;
   }
-  const sid = sessionIdFromFinding(f);
   if (sid === null) return;
-  if (droppedSids.has(sid)) return;
   if (action === 'drop') {
-    droppedSids.add(sid);
-    if (drop(sid, map)) {
+    ctx.droppedSids.add(sid);
+    if (ctx.drop(sid, ctx.map)) {
       log(
         `dropped session ${sid} from this push (local transcript kept; the secret remains in your local copy)`,
       );
     }
     return;
   }
-  if (action === 'redact' && !redactedSids.has(sid)) {
-    if (applyRedact(f, findings, ts, map, nowMs, scan)) redactedSids.add(sid);
+  if (action === 'redact' && !ctx.redactedSids.has(sid)) {
+    if (applyRedact(f, ctx.findings, ctx.ts, ctx.map, ctx.nowMs, ctx.scan))
+      ctx.redactedSids.add(sid);
   }
 }
 
@@ -130,10 +131,19 @@ export function dispatchActions(
   scan: (p: string) => Finding[] | null = scanFile,
   drop: (sid: string, map: PathMap) => boolean = dropSessionFromStaged,
 ): void {
-  const redactedSids = new Set<string>();
-  const droppedSids = new Set<string>();
+  const ctx: DispatchCtx = {
+    findings,
+    actions,
+    ts,
+    map,
+    nowMs,
+    scan,
+    drop,
+    redactedSids: new Set<string>(),
+    droppedSids: new Set<string>(),
+  };
   for (const f of findings) {
-    dispatchOne(f, findings, actions, ts, map, nowMs, scan, drop, redactedSids, droppedSids);
+    dispatchOne(f, ctx);
   }
 }
 
