@@ -206,6 +206,16 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(errOutput(env)).toBe('');
   });
 
+  // readMapIfPresent fallback: a missing path-map.json yields an empty map and
+  // a SHARED_LINKS name still passes the membership check (covers the absent branch)
+  it('tolerates a missing path-map.json for a SHARED_LINKS name', async () => {
+    rmSync(join(env.repoHome, 'path-map.json'));
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(diffCached(env)).toBe('');
+    expect(errOutput(env)).toBe('');
+  });
+
   // V-06: already a symlink -> no-op with "already adopted" message
   it('is a no-op when ~/.claude/<name> is already a symlink', async () => {
     addSharedDir(env, 'my-dir');
@@ -224,7 +234,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
   });
 
-  // V-05: absent from CLAUDE_HOME -> no-op, non-zero exit
+  // V-05: absent from CLAUDE_HOME -> no-op, exit 0 (nothing to adopt is not an error)
   it('is a no-op when ~/.claude/<name> does not exist', async () => {
     // Use "hooks" (SHARED_LINKS member) but don't create it under claudeHome
     const { cmdAdopt } = await import('./commands.adopt.ts');
@@ -240,6 +250,26 @@ describe('cmdAdopt (precondition matrix)', () => {
     addSharedDir(env, 'my-dir');
     mkdirSync(join(env.claudeHome, 'my-dir'), { recursive: true });
     mkdirSync(join(env.repoHome, 'shared', 'my-dir'), { recursive: true });
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-dir')).toThrow('exit:1');
+    const out = errOutput(env);
+    expect(out).toContain('would clobber');
+    expect(diffCached(env)).toBe('');
+  });
+
+  // V-07 (dangling target): a broken symlink at shared/<name> must still be
+  // refused. existsSync follows links and reports false for a dangling link,
+  // so the clobber guard uses an lstat-based check; otherwise cpSync would
+  // throw an opaque non-NomadFatal error on the dangling destination.
+  it('refuses when shared/<name> is a dangling symlink (would clobber)', async () => {
+    addSharedDir(env, 'my-dir');
+    mkdirSync(join(env.claudeHome, 'my-dir'), { recursive: true });
+    mkdirSync(join(env.repoHome, 'shared'), { recursive: true });
+    symlinkSync(
+      join(env.repoHome, 'shared', 'nonexistent'),
+      join(env.repoHome, 'shared', 'my-dir'),
+    );
 
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('my-dir')).toThrow('exit:1');
@@ -377,6 +407,7 @@ describe('cmdAdopt (happy path and move sequence)', () => {
 
     // Planned action lines printed
     const out = logOutput(env);
+    expect(out).toContain('would backup');
     expect(out).toContain('would move');
     expect(out).toContain('would stage');
   });

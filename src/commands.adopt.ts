@@ -14,6 +14,25 @@ import { readPathMap } from './utils.json.ts';
 export const ADOPT_PUSH_HINT = 'run `nomad push` to share with other hosts';
 
 /**
+ * lstat-based existence check that, unlike `existsSync`, does NOT follow
+ * symlinks: a dangling symlink at `p` returns true. Used for the clobber
+ * guard so an existing (even broken) `shared/<name>` link is refused rather
+ * than fed to `cpSync`, which would otherwise throw an opaque non-NomadFatal
+ * error on a dangling-symlink destination.
+ *
+ * @param p Absolute path to probe.
+ * @returns True when any entry (file, dir, or symlink) exists at `p`.
+ */
+function lexists(p: string): boolean {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Read `path-map.json` if present; fall back to an empty map when absent.
  * Adopt reads sharedDirs for membership only; it never writes path-map.json.
  *
@@ -137,7 +156,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     log(`${name}: already adopted (already a symlink)`);
     return;
   }
-  if (existsSync(sharedTarget)) {
+  if (lexists(sharedTarget)) {
     fail(`${name}: shared/${name} already exists; would clobber. Remove it first.`);
     process.exit(1);
   }
@@ -152,12 +171,13 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     return;
   }
 
+  /* c8 ignore start -- catch is defensive: performAdoptMove only throws on a git/fs fault */
   try {
     performAdoptMove(name, linkPath, sharedTarget);
   } catch (err) {
-    /* c8 ignore next 3 */
     if (!(err instanceof NomadFatal)) throw err;
     fail(err.message);
     process.exitCode = 1;
   }
+  /* c8 ignore stop */
 }
