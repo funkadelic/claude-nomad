@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.0](https://github.com/funkadelic/claude-nomad/compare/v0.32.4...v0.33.0) (2026-05-30)
+
+
+### Added
+
+* **dist:** run bin under node native type-stripping, drop tsx ([#198](https://github.com/funkadelic/claude-nomad/issues/198)) ([79b437d](https://github.com/funkadelic/claude-nomad/commit/79b437d8fee69d4f0f25394de9236f7c67289291))
+* **help:** show CLI version at the top of default help ([#196](https://github.com/funkadelic/claude-nomad/issues/196)) ([f095d35](https://github.com/funkadelic/claude-nomad/commit/f095d354273122bc530aac5f486fdb9ad771341e))
+
 ## [0.32.4](https://github.com/funkadelic/claude-nomad/compare/v0.32.3...v0.32.4) (2026-05-30)
 
 
