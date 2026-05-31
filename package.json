@@ -19,10 +19,10 @@
   },
   "license": "MIT",
   "bin": {
-    "nomad": "./src/nomad.ts"
+    "nomad": "./dist/nomad.mjs"
   },
   "files": [
-    "src/",
+    "dist/",
     "shared/.gitignore",
     ".gitleaks.toml",
     "README.md",
@@ -37,6 +37,7 @@
     "push": "node src/nomad.ts push",
     "doctor": "node src/nomad.ts doctor",
     "update": "bash scripts/update.sh",
+    "build": "node scripts/build.mjs",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
@@ -45,7 +46,8 @@
     "lint:md": "markdownlint-cli2",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && node scripts/verify-tarball.cjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build && node scripts/verify-tarball.cjs",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -67,6 +69,8 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.6",
+    "diff": "^9.0.0",
+    "esbuild": "^0.28.0",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-sonarjs": "^4.0.3",
@@ -74,13 +78,10 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.5",
     "markdownlint-cli2": "^0.22.1",
+    "picocolors": "^1.1.1",
     "prettier": "^3.8.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4",
     "vitest": "^4.1.6"
-  },
-  "dependencies": {
-    "diff": "^9.0.0",
-    "picocolors": "^1.1.1"
   }
 }

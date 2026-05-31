@@ -13,11 +13,14 @@
 //      tarball reports (one entry per package); we read reports[0].files.
 //   3. Assert every REQUIRED path is present (LICENSE, README.md,
 //      CHANGELOG.md, package.json, shared/.gitignore, .gitleaks.toml, and
-//      at least one src/*.ts file).
+//      the compiled bin dist/nomad.mjs).
 //   4. Assert no path matches the FORBIDDEN regex (.planning, .github,
 //      tests, node_modules, scripts, hosts, install.sh, tsconfig.json,
-//      vitest.config.ts). This is how the verifier confirms it has NOT
-//      itself leaked into the tarball (scripts/ is forbidden).
+//      vitest.config.ts, src). This is how the verifier confirms it has NOT
+//      itself leaked into the tarball (scripts/ is forbidden) and, critically,
+//      that raw TypeScript under src/ is never shipped: Node refuses to
+//      type-strip files under node_modules, so a published src/*.ts bin
+//      crashes on global install.
 //
 // Exit codes:
 //   0 on a healthy whitelist.
@@ -41,12 +44,11 @@ const REQUIRED_EXACT = [
   'package.json',
   'shared/.gitignore',
   '.gitleaks.toml',
+  'dist/nomad.mjs',
 ];
 
-const REQUIRED_PATTERN = /^src\/.+\.ts$/;
-
 const FORBIDDEN =
-  /^(\.planning|\.github|tests|node_modules|scripts|hosts|install\.sh|tsconfig\.json|vitest\.config\.ts)(?:\/|$)/;
+  /^(\.planning|\.github|tests|node_modules|scripts|hosts|install\.sh|tsconfig\.json|vitest\.config\.ts|src)(?:\/|$)/;
 
 let raw;
 try {
@@ -82,9 +84,6 @@ if (
 const paths = reports[0].files.filter((f) => f && typeof f.path === 'string').map((f) => f.path);
 
 const requiredMissing = REQUIRED_EXACT.filter((p) => !paths.includes(p));
-if (!paths.some((p) => REQUIRED_PATTERN.test(p))) {
-  requiredMissing.push('src/*.ts (no source TS files matched)');
-}
 
 const forbiddenPresent = paths.filter((p) => FORBIDDEN.test(p));
 
