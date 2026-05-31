@@ -13,7 +13,7 @@ import { fail, log } from './utils.ts';
 const TS_SHAPE = /^\d{8}-\d{6}(-\d+)?$/;
 
 /** Duration token grammar accepted by `parseDuration` (e.g. `14d`, `24h`, `30m`). */
-const DURATION_RE = /^(\d+)(d|h|m)$/;
+const DURATION_RE = /^(\d+)([dhm])$/;
 
 /** Millisecond factor per duration unit letter. */
 const UNIT_MS: Record<string, number> = { d: 86_400_000, h: 3_600_000, m: 60_000 };

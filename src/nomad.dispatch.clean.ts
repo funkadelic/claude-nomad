@@ -54,7 +54,7 @@ function applyOlderThan(argv: string[], i: number, st: CleanParseState): TokenRe
 function applyKeep(argv: string[], i: number, st: CleanParseState): TokenResult {
   if (st.keep !== undefined) return REJECT;
   const val = extractFlagValue(argv, i);
-  const n = val === null ? NaN : Number(val);
+  const n = val === null ? Number.NaN : Number(val);
   if (!Number.isInteger(n) || n < 0) return REJECT;
   st.keep = n;
   return { ok: true, advance: 2 };
