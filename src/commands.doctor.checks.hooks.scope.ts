@@ -123,8 +123,12 @@ function classifySource(src: string): ModuleType | 'unknown' {
   const code = stripCommentsAndStrings(src);
   const cjs =
     /\brequire\s*\(/.test(code) || /\bmodule\.exports\b/.test(code) || /\bexports\.\w/.test(code);
+  // Leading whitespace uses `[^\S\r\n]` (not `\s`) so `^...` under /m cannot span
+  // newlines and backtrack across the file from every line start (super-linear).
   const esm =
-    /^\s*import\s/m.test(code) || /^\s*export\s/m.test(code) || /\bimport\.meta\b/.test(code);
+    /^[^\S\r\n]*import\s/m.test(code) ||
+    /^[^\S\r\n]*export\s/m.test(code) ||
+    /\bimport\.meta\b/.test(code);
   if (cjs && !esm) return 'cjs';
   if (esm && !cjs) return 'esm';
   if (cjs && esm) return 'cjs';

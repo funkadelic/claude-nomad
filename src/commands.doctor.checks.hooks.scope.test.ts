@@ -219,6 +219,20 @@ describe('reportHookScopeCheck', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('classifies a whitespace-heavy ESM hook quickly (no super-linear backtracking)', async () => {
+    // ReDoS guard: the old /^\s*import\s/m spanned newlines and backtracked across
+    // the whole file from every line start, taking ~16s on this input (which would
+    // trip the test timeout). The [^\S\r\n] anchor keeps it linear and instant.
+    const wsBody = `${' '.repeat(50)}\n`.repeat(20000) + 'export const a = 1;\n';
+    buildHookTree(env.testHome, {
+      hooksType: 'commonjs',
+      files: { 'big.js': wsBody },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${warnGlyph} hooks/big.js`);
+    expect(process.exitCode).toBe(0);
+  });
+
   it('emits a dim info skip when ~/.claude/hooks is absent', async () => {
     const { out } = await runCheck();
     expect(out).toContain(`${infoGlyph} no ~/.claude/hooks; skipping module-scope check`);
