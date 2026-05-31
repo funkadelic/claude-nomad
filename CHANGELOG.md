@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.1](https://github.com/funkadelic/claude-nomad/compare/v0.34.0...v0.34.1) (2026-05-31)
+
+
+### Fixed
+
+* **dist:** bundle bin to dist/nomad.mjs so global install works ([#202](https://github.com/funkadelic/claude-nomad/issues/202)) ([146813b](https://github.com/funkadelic/claude-nomad/commit/146813b16e67f8168fa4550b40db4ac6dc3238ec))
+
 ## [0.34.0](https://github.com/funkadelic/claude-nomad/compare/v0.33.0...v0.34.0) (2026-05-31)
 
 
