@@ -40,6 +40,13 @@ const VERSION_TOKEN = /(\d{1,9}\.\d{1,9}\.\d{1,9})/;
 const PROBE_TIMEOUT_MS = 3_000;
 
 /**
+ * User-facing label for the HTTP fetcher dependency row. Single source of truth
+ * for the `curl or wget` capability phrasing so the three fetcher rows (two OK
+ * variants and the WARN variant) cannot drift apart on a copy edit.
+ */
+const FETCHER_LABEL = 'HTTP fetcher (curl or wget)';
+
+/**
  * Extract the first X.Y.Z-shaped version token from a string.
  *
  * @param line - A single line of --version output (already trimmed).
@@ -95,13 +102,13 @@ function reportFetcherRow(section: DoctorSection, run: SpawnSyncFn): void {
   const wget = probeOptionalDep('wget', run);
 
   if (curl.status === 'present') {
-    addItem(section, `${green(okGlyph)} HTTP fetcher (curl or wget): ${curl.version ?? 'present'}`);
+    addItem(section, `${green(okGlyph)} ${FETCHER_LABEL}: ${curl.version ?? 'present'}`);
   } else if (wget.status === 'present') {
-    addItem(section, `${green(okGlyph)} HTTP fetcher (curl or wget): ${wget.version ?? 'present'}`);
+    addItem(section, `${green(okGlyph)} ${FETCHER_LABEL}: ${wget.version ?? 'present'}`);
   } else {
     addItem(
       section,
-      `${yellow(warnGlyph)} HTTP fetcher (curl or wget): not installed (optional; needed for release-version staleness check + nomad doctor --check-schema)`,
+      `${yellow(warnGlyph)} ${FETCHER_LABEL}: not installed (optional; needed for release-version staleness check + nomad doctor --check-schema)`,
     );
   }
 }
