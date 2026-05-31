@@ -161,8 +161,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toContain(`${okGlyph} version`);
-    expect(out).not.toContain(`${warnGlyph} version`);
+    expect(out).not.toContain('claude-nomad:');
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -215,8 +214,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toContain(`${okGlyph} version`);
-    expect(out).not.toContain(`${warnGlyph} version`);
+    expect(out).not.toContain('claude-nomad:');
     expect(out).not.toMatch(/claude-nomad: \d/);
     expect(process.exitCode === 1).toBe(false);
   });
