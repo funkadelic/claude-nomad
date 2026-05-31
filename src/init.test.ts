@@ -344,6 +344,19 @@ describe('cmdInit snapshot mode', () => {
     expect(existsSync(join(repo, 'shared', 'skills', '.gitkeep'))).toBe(false);
   });
 
+  it('snapshotIntoShared copies a directory shared-link when the destination carries no .gitkeep', async () => {
+    // Drive snapshotIntoShared directly, bypassing the cmdInit scaffold that
+    // always writes a .gitkeep first. With no scaffold the destination
+    // shared/agents/ has no .gitkeep, so the `existsSync(gk)` guard takes its
+    // false branch (skip the rmSync) before cpSync copies the source in. That
+    // branch is unreachable through cmdInit, which seeds the marker every time.
+    seedClaudeHome(env.testHome, { agents: { 'foo.md': 'foo body\n' } });
+    const { snapshotIntoShared } = await import('./init.snapshot.ts');
+    snapshotIntoShared({ projects: {} });
+    const repo = join(env.testHome, 'claude-nomad');
+    expect(readFileSync(join(repo, 'shared', 'agents', 'foo.md'), 'utf8')).toBe('foo body\n');
+  });
+
   it('writes the verbatim settings.json into hosts/<HOST>.json via writeJsonAtomic', async () => {
     seedClaudeHome(env.testHome, {
       settings: JSON.stringify({ model: 'opus', permissions: { allow: ['fs:read'] } }) + '\n',
