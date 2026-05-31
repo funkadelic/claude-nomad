@@ -19,11 +19,13 @@ export const CLAUDE_HOME = resolve(HOME, '.claude');
 
 /**
  * Host-local backup cache root (`~/.cache/claude-nomad/backup`). Single
- * source of truth for the backup root: every reader (`pull`, `push`, `diff`)
- * and every writer (`backupBeforeWrite`, `backupRepoWrite`,
- * `backupExtrasWrite`, `divergenceCheckExtras`, `cmdAdopt`, `cmdRedact`)
- * references this constant. Lives under `~/.cache`, outside the synced
- * `~/.claude` tree; `nomad clean --backups` prunes it.
+ * source of truth for the backup root. The snapshot writers
+ * (`backupBeforeWrite`, `backupRepoWrite`, `backupExtrasWrite`,
+ * `divergenceCheckExtras`, `cmdAdopt`, `cmdRedact`) write per-run `<ts>`
+ * subdirs here; the snapshot callers (`pull`, `push`, `diff`) and the
+ * management surfaces (`nomad clean --backups` pruning, the doctor backups
+ * check) read from it. Lives under `~/.cache`, outside the synced `~/.claude`
+ * tree.
  */
 export const BACKUP_BASE = join(HOME, '.cache', 'claude-nomad', 'backup');
 
