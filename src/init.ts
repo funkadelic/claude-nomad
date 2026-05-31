@@ -11,6 +11,7 @@ import {
   readOriginRemote,
   type SpawnSyncFn,
 } from './gh-actions.ts';
+import { DEFAULT_REPO_NAME, ensureOriginRepo } from './init.gh-onboard.ts';
 import { snapshotIntoShared } from './init.snapshot.ts';
 import { die, log } from './utils.ts';
 import { writeJsonAtomic } from './utils.fs.ts';
@@ -60,6 +61,13 @@ function preflightConflict(repoHome: string): string | null {
  * `{"projects":{}}`. No auto-commit; no lock (no concurrent-mutator surface
  * on a fresh target).
  *
+ * When no `origin` remote exists in REPO_HOME, a private GitHub repository is
+ * created via `gh` and wired as `origin` before scaffolding (D-06/D-07). The
+ * repo name defaults to {@link DEFAULT_REPO_NAME} but can be overridden with
+ * `opts.repoName`. `gh` is a hard prerequisite on this path and its absence or
+ * unauthenticated state results in a NomadFatal (D-08). When `origin` already
+ * exists the step is a no-op (D-09 idempotency).
+ *
  * When `opts.snapshot` is true, the user's current `~/.claude/` SHARED_LINKS
  * are overlaid onto `shared/` and `~/.claude/settings.json` (if present) is
  * translated into `hosts/<HOST>.json`. The placeholder `shared/CLAUDE.md`
@@ -70,15 +78,25 @@ function preflightConflict(repoHome: string): string | null {
  * partial state is unsafe to merge with.
  */
 export function cmdInit(
-  opts: { snapshot?: boolean; keepActions?: boolean; run?: SpawnSyncFn } = {},
+  opts: { snapshot?: boolean; keepActions?: boolean; repoName?: string; run?: SpawnSyncFn } = {},
 ): void {
   const snapshot = opts.snapshot === true;
   const keepActions = opts.keepActions === true;
+
+  // Create REPO_HOME, then refuse to clobber an already-initialized tree BEFORE
+  // any onboarding side effects. ensureOriginRepo can create a GitHub repo and
+  // wire a remote, so the conflict guard must run first: otherwise a re-init on
+  // an already-scaffolded REPO_HOME that lacks an origin would create a stray
+  // private repo and wire it, then abort with "already initialized".
+  mkdirSync(REPO_HOME, { recursive: true });
 
   const conflict = preflightConflict(REPO_HOME);
   if (conflict !== null) {
     die(`already initialized; refusing to clobber ${conflict}`);
   }
+
+  // Wire the backing GitHub repo. Idempotent when origin already exists (D-09).
+  ensureOriginRepo(opts.repoName ?? DEFAULT_REPO_NAME, opts.run);
 
   // Create the directory structure first so the subsequent file writes have
   // a parent. `recursive: true` is a no-op when the dir already exists, but

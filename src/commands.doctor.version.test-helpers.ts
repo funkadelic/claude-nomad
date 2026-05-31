@@ -4,17 +4,17 @@ import type * as fsModule from 'node:fs';
 import { vi } from 'vitest';
 
 /**
- * True when `arg` parses as a URL whose host is exactly `api.github.com`.
- * Used by the curl mock to identify the GitHub releases API call without
- * a substring check on the URL (which CodeQL flags as
+ * True when `arg` parses as a URL whose host is exactly `registry.npmjs.org`.
+ * Used by the curl mock to identify the npm registry call without a substring
+ * check on the URL (which CodeQL flags as
  * `js/incomplete-url-substring-sanitization`).
  *
  * @param arg The candidate URL string.
- * @returns Whether the host is `api.github.com`.
+ * @returns Whether the host is `registry.npmjs.org`.
  */
-export function isGithubApiUrl(arg: string): boolean {
+export function isNpmRegistryUrl(arg: string): boolean {
   try {
-    return new URL(arg).hostname === 'api.github.com';
+    return new URL(arg).hostname === 'registry.npmjs.org';
   } catch {
     return false;
   }
@@ -60,12 +60,12 @@ export function mockPackageJsonVersion(
 }
 
 /**
- * Mock `node:child_process` so the curl call to the GitHub releases API
- * returns a deterministic response. Behaviors:
- *   - `{ kind: 'json', tagName }`: return a buffer of `{"tag_name":"<tag>"}`
- *   - `{ kind: 'rate_limited' }`: return a GitHub rate-limit JSON payload
- *     (no `tag_name`), so `fetchLatestTag` parses cleanly but finds no tag
- *     and falls through to the silent-skip path.
+ * Mock `node:child_process` so the curl call to the npm registry returns a
+ * deterministic response. Behaviors:
+ *   - `{ kind: 'json', version }`: return a buffer of `{"version":"<ver>"}`
+ *   - `{ kind: 'no_version' }`: return a JSON payload with no `version` field,
+ *     so `fetchLatestVersion` parses cleanly but finds no version and falls
+ *     through to the silent-skip path.
  *   - `{ kind: 'garbage' }`: return a non-JSON buffer (forces parse failure)
  *   - `{ kind: 'throw' }`: throw with the given error code (default ENOENT
  *     so the offline-skip path looks like curl-missing).
@@ -76,8 +76,8 @@ export function mockPackageJsonVersion(
  */
 export function mockCurlReleases(
   response:
-    | { kind: 'json'; tagName: string }
-    | { kind: 'rate_limited' }
+    | { kind: 'json'; version: string }
+    | { kind: 'no_version' }
     | { kind: 'garbage' }
     | { kind: 'throw'; code?: string },
 ): void {
@@ -91,7 +91,7 @@ export function mockCurlReleases(
           args: readonly string[],
           opts?: Parameters<typeof cpModule.execFileSync>[2],
         ) => {
-          if (bin === 'curl' && args.some(isGithubApiUrl)) {
+          if (bin === 'curl' && args.some(isNpmRegistryUrl)) {
             if (response.kind === 'throw') {
               const err = new Error(
                 `curl mocked: ${response.code ?? 'ENOENT'}`,
@@ -102,12 +102,10 @@ export function mockCurlReleases(
             if (response.kind === 'garbage') {
               return Buffer.from('not-json-at-all');
             }
-            if (response.kind === 'rate_limited') {
-              return Buffer.from(
-                JSON.stringify({ message: 'API rate limit exceeded for 127.0.0.1.' }),
-              );
+            if (response.kind === 'no_version') {
+              return Buffer.from(JSON.stringify({ name: 'claude-nomad' }));
             }
-            return Buffer.from(JSON.stringify({ tag_name: response.tagName }));
+            return Buffer.from(JSON.stringify({ version: response.version }));
           }
           if (bin === 'gitleaks' && args[0] === 'version') {
             return Buffer.from('v8.18.2\n');

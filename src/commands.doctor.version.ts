@@ -5,17 +5,17 @@ import { fileURLToPath } from 'node:url';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { HOME, UPSTREAM_REPO_SLUG } from './config.ts';
+import { HOME } from './config.ts';
 
 /**
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads
- * the local `package.json.version`, compares it to the latest release tag on
- * the upstream GitHub repo (cached 1h, 3s curl timeout), and emits one of:
+ * the local `package.json.version`, compares it to the latest published version
+ * on the npm registry (cached 1h, 3s curl timeout), and emits one of:
  *   - `✓ claude-nomad: <local> (latest)` when local == latest
  *   - `⚠︎ claude-nomad: <local> -> <latest>` when local < latest
  *   - `ℹ︎ claude-nomad: <local> (ahead of latest release <latest>)` when local > latest
  * Every failure path (offline, curl missing, non-2xx, malformed JSON, missing
- * `tag_name`, missing/unreadable package.json) is a SILENT skip; this module
+ * `version`, missing/unreadable package.json) is a SILENT skip; this module
  * never sets `process.exitCode` and never writes to stderr.
  */
 
@@ -85,7 +85,7 @@ function readLocalVersion(): string | null {
  * Load the cached latest-tag entry. Returns the parsed entry when the file
  * exists, parses cleanly, and matches the expected shape (`checked_at` finite
  * number, `latest` strict-semver string); any failure surfaces as `null` so
- * the caller falls through to `fetchLatestTag`. Treating malformed cache as a
+ * the caller falls through to `fetchLatestVersion`. Treating malformed cache as a
  * miss is the safer default than crashing or surfacing the error.
  */
 function loadCache(): CacheEntry | null {
@@ -121,29 +121,26 @@ function saveCache(latest: string): void {
 }
 
 /**
- * Fetch the latest release tag from the upstream GitHub releases API. Uses
+ * Fetch the latest published version from the npm registry. Uses
  * `execFileSync('curl', ...)` rather than `node:https` because curl honors
  * system proxies and respects the `-m` timeout reliably. curl is optional, not
  * a hard dependency: this is its only consumer, so a host without curl simply
  * skips the version line. 3-second timeout, fail-fast on non-2xx (`-f`), silent
  * (`-s`), follow redirects (`-L`). Returns `null` on ANY failure path (curl
- * missing from PATH, a missing `tag_name` field, or a tag that fails
- * strict-semver validation after the leading `v` strip). Release tags ship as
- * `v<semver>` per `release-please-config.json`'s `include-v-in-tag: true`.
+ * missing from PATH, a missing or non-string `version` field, or a version that
+ * fails strict-semver validation). The npm registry `version` field is already
+ * bare semver (no leading `v` strip needed).
  */
-function fetchLatestTag(): string | null {
+function fetchLatestVersion(): string | null {
   try {
-    const url = `https://api.github.com/repos/${UPSTREAM_REPO_SLUG}/releases/latest`;
-    const raw = execFileSync(
-      'curl',
-      ['-fsSL', '-m', '3', '-H', 'Accept: application/vnd.github+json', url],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    ).toString();
-    const parsed = JSON.parse(raw) as { tag_name?: unknown };
-    if (typeof parsed.tag_name !== 'string') return null;
-    const tag = parsed.tag_name.startsWith('v') ? parsed.tag_name.slice(1) : parsed.tag_name;
-    if (!STRICT_SEMVER.test(tag)) return null;
-    return tag;
+    const url = 'https://registry.npmjs.org/claude-nomad/latest';
+    const raw = execFileSync('curl', ['-fsSL', '-m', '3', url], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    const parsed = JSON.parse(raw) as { version?: unknown };
+    if (typeof parsed.version !== 'string') return null;
+    if (!STRICT_SEMVER.test(parsed.version)) return null;
+    return parsed.version;
   } catch {
     return null;
   }
@@ -174,7 +171,7 @@ export function reportVersionCheck(section: DoctorSection): void {
     latest = cached.latest;
   }
   if (latest === null) {
-    latest = fetchLatestTag();
+    latest = fetchLatestVersion();
     if (latest === null) return;
     saveCache(latest);
   }

@@ -5,12 +5,75 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as cpModule from 'node:child_process';
+import type * as fsModule from 'node:fs';
+
+/**
+ * Unit tests for `resolveTomlPath`: the three-branch two-tier lookup (repo
+ * copy present, repo absent + bundled present, both absent). Uses existsSync
+ * mocking to control filesystem outcomes independently of the dev environment.
+ */
+describe('resolveTomlPath (two-tier toml lookup)', () => {
+  let originalNomadRepo: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:fs');
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+  });
+
+  it('returns the REPO_HOME path when the repo copy exists', async () => {
+    process.env.NOMAD_REPO = '/fake/repo';
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn((p: unknown) => String(p).endsWith('.gitleaks.toml')),
+      };
+    });
+    const { resolveTomlPath } = await import('./push-gitleaks.scan.ts');
+    expect(resolveTomlPath()).toBe('/fake/repo/.gitleaks.toml');
+  });
+
+  it('returns the bundled path when repo copy is absent but bundled exists', async () => {
+    process.env.NOMAD_REPO = '/fake/repo';
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        // First call (REPO_HOME toml) -> false, second call (bundled) -> true.
+        existsSync: vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true),
+      };
+    });
+    const { resolveTomlPath } = await import('./push-gitleaks.scan.ts');
+    const result = resolveTomlPath();
+    expect(result).not.toBeNull();
+    expect(result).toMatch(/\.gitleaks\.toml$/);
+    // Must NOT be the repo copy.
+    expect(result).not.toBe('/fake/repo/.gitleaks.toml');
+  });
+
+  it('returns null when neither repo copy nor bundled copy exists', async () => {
+    process.env.NOMAD_REPO = '/fake/repo';
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    const { resolveTomlPath } = await import('./push-gitleaks.scan.ts');
+    expect(resolveTomlPath()).toBeNull();
+  });
+});
 
 /**
  * Mock-based coverage for `scanFile`'s error and stream-forwarding branches.
  * The integration tests in `commands.redact.test.ts` exercise the real-gitleaks
  * happy path; these cover the paths that need a synthesized failure: ENOENT,
- * the unparseable-report stream forwarding, and the `--config` toml branch.
+ * the unparseable-report stream forwarding, and the `--config` toml branches.
  */
 describe('scanFile (mocked child_process)', () => {
   let originalHome: string | undefined;
@@ -34,6 +97,7 @@ describe('scanFile (mocked child_process)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
@@ -41,7 +105,13 @@ describe('scanFile (mocked child_process)', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('returns [] on a clean scan and omits --config when no .gitleaks.toml exists', async () => {
+  it('returns [] on a clean scan and omits --config when neither toml exists', async () => {
+    // Mock existsSync to always return false so neither REPO_HOME nor bundled
+    // copy is found, ensuring --config is omitted and the scan still runs.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
     let seenArgs: readonly string[] = [];
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
@@ -75,6 +145,36 @@ describe('scanFile (mocked child_process)', () => {
     expect(scanFile('/some/file.jsonl')).toEqual([]);
     expect(seenArgs).toContain('--config');
     expect(seenArgs).toContain(join(process.env.NOMAD_REPO!, '.gitleaks.toml'));
+  });
+
+  it('passes --config <bundled> when REPO_HOME toml absent but bundled exists', async () => {
+    // Repo copy absent (existsSync first call false), bundled present (second true).
+    // The cache dir mkdirSync still needs to work, so only intercept existsSync.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true),
+      };
+    });
+    let seenArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          seenArgs = args ?? [];
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanFile } = await import('./push-gitleaks.scan.ts');
+    expect(scanFile('/some/file.jsonl')).toEqual([]);
+    expect(seenArgs).toContain('--config');
+    const configIdx = (seenArgs as string[]).indexOf('--config');
+    const configPath = (seenArgs as string[])[configIdx + 1];
+    expect(configPath).toMatch(/\.gitleaks\.toml$/);
+    expect(configPath).not.toBe(join(process.env.NOMAD_REPO!, '.gitleaks.toml'));
   });
 
   it('returns null when gitleaks is absent (ENOENT)', async () => {
@@ -189,5 +289,208 @@ describe('scanFile (mocked child_process)', () => {
         Buffer.isBuffer(c[0]) && c[0].toString().includes('crash-stdout-diagnostic'),
     );
     expect(forwarded).toBe(true);
+  });
+});
+
+/**
+ * Mock-based coverage for `scanStagedTree`'s resolveTomlPath wiring.
+ * Exercises the `toml !== null` branch (--config passed) and the null branch
+ * (--config omitted, scan still runs) introduced by the two-tier lookup.
+ */
+describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => {
+  let originalHome: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-scan-staged-mock-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_REPO = join(testHome, 'repo');
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('passes --config when resolveTomlPath returns a path (toml !== null branch)', async () => {
+    // REPO_HOME toml exists -> resolveTomlPath returns it -> --config is added.
+    mkdirSync(process.env.NOMAD_REPO!, { recursive: true });
+    writeFileSync(join(process.env.NOMAD_REPO!, '.gitleaks.toml'), '# allowlist\n');
+    let seenArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          seenArgs = args ?? [];
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(scanStagedTree(testHome)).toEqual([]);
+    expect(seenArgs).toContain('--config');
+    expect(seenArgs).toContain(join(process.env.NOMAD_REPO!, '.gitleaks.toml'));
+  });
+
+  it('omits --config when resolveTomlPath returns null (neither toml exists)', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    let seenArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          seenArgs = args ?? [];
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(scanStagedTree(testHome)).toEqual([]);
+    expect(seenArgs).not.toContain('--config');
+  });
+
+  it('re-throws ENOENT from the catch block (git or gitleaks absent)', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          const err = new Error('not found') as NodeJS.ErrnoException;
+          err.code = 'ENOENT';
+          throw err;
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(() => scanStagedTree(testHome)).toThrow(/not found/);
+  });
+
+  it('returns parsed findings from the catch block on non-zero gitleaks exit', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
+          if (flag === undefined) {
+            // git init / git add: succeed silently.
+            return Buffer.from('');
+          }
+          // gitleaks protect call: write report and throw exit-1.
+          const reportPath = flag.slice('--report-path='.length);
+          mkdirSync(dirname(reportPath), { recursive: true });
+          writeFileSync(
+            reportPath,
+            JSON.stringify([
+              {
+                RuleID: 'generic-api-key',
+                File: 'shared/foo.ts',
+                StartLine: 1,
+                StartColumn: 1,
+                EndColumn: 9,
+                Match: 'secret',
+                Fingerprint: 'fp1',
+              },
+            ]),
+          );
+          const err = new Error('detected') as NodeJS.ErrnoException & { status?: number };
+          err.status = 1;
+          throw err;
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    const result = scanStagedTree(testHome);
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(1);
+  });
+
+  it('forwards stderr on the staged-scan crash path when forwardStreams=true', async () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          if ((args ?? []).some((a) => a.startsWith('--report-path='))) {
+            const err = new Error('crash') as NodeJS.ErrnoException & {
+              status?: number;
+              stderr?: Buffer;
+            };
+            err.status = 2;
+            err.stderr = Buffer.from('staged-crash-stderr');
+            throw err;
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(scanStagedTree(testHome, true)).toBeNull();
+    const forwarded = stderrSpy.mock.calls.some(
+      (c: unknown[]) => Buffer.isBuffer(c[0]) && c[0].toString().includes('staged-crash-stderr'),
+    );
+    expect(forwarded).toBe(true);
+    stderrSpy.mockRestore();
+  });
+
+  it('forwards stdout on the staged-scan crash path when forwardStreams=true', async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          if ((args ?? []).some((a) => a.startsWith('--report-path='))) {
+            const err = new Error('crash') as NodeJS.ErrnoException & {
+              status?: number;
+              stdout?: Buffer;
+            };
+            err.status = 2;
+            err.stdout = Buffer.from('staged-crash-stdout');
+            throw err;
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(scanStagedTree(testHome, true)).toBeNull();
+    const forwarded = stdoutSpy.mock.calls.some(
+      (c: unknown[]) => Buffer.isBuffer(c[0]) && c[0].toString().includes('staged-crash-stdout'),
+    );
+    expect(forwarded).toBe(true);
+    stdoutSpy.mockRestore();
   });
 });
