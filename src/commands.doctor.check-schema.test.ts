@@ -42,7 +42,9 @@ function mockCurlSchema(
             if (bin === 'wget') {
               // wget is only reached if curl threw; in non-throw cases curl
               // returns first and wget is never invoked.
+              /* c8 ignore start */
               throw new Error(`wget fallback unexpectedly reached in non-throw case`);
+              /* c8 ignore stop */
             }
             if (response.kind === 'garbage') return Buffer.from('not-json');
             if (response.kind === 'no-properties')

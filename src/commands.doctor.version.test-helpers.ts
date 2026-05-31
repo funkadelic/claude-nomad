@@ -116,7 +116,9 @@ export function mockCurlReleases(
             // handled above for both binaries, this path only fires in success
             // cases where curl returned first. Make wget unreachable in that
             // scenario by throwing (if reached, it means curl did not return).
+            /* c8 ignore start */
             throw new Error(`wget fallback unexpectedly reached in non-throw case`);
+            /* c8 ignore stop */
           }
           if (bin === 'gitleaks' && args[0] === 'version') {
             return Buffer.from('v8.18.2\n');
