@@ -38,8 +38,12 @@ export type InitArgs = {
  * Extract the value following a `--flag <value>` pair. Returns the value
  * string on success, or `null` when the next token is missing or starts with
  * `--` (which would indicate the flag was supplied without a value).
+ *
+ * @param argv The full process argv array.
+ * @param i Index of the flag token; the value is read from `i + 1`.
+ * @returns The value token, or `null` when absent or itself a `--` flag.
  */
-function extractFlagValue(argv: string[], i: number): string | null {
+export function extractFlagValue(argv: string[], i: number): string | null {
   const val = argv[i + 1];
   if (val === undefined || val.startsWith('--')) return null;
   return val;
