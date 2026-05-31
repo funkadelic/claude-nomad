@@ -54,9 +54,10 @@ function applyOlderThan(argv: string[], i: number, st: CleanParseState): TokenRe
 function applyKeep(argv: string[], i: number, st: CleanParseState): TokenResult {
   if (st.keep !== undefined) return REJECT;
   const val = extractFlagValue(argv, i);
-  const n = val === null ? Number.NaN : Number(val);
-  if (!Number.isInteger(n) || n < 0) return REJECT;
-  st.keep = n;
+  // Require a pure base-10 digit run: Number() would coerce '' to 0 (delete all),
+  // and accept '1e3'/'0x10'/'3.0'. Reject all of those for a destructive flag.
+  if (val === null || !/^\d+$/.test(val)) return REJECT;
+  st.keep = Number(val);
   return { ok: true, advance: 2 };
 }
 

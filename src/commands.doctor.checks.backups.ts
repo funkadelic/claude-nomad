@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { warnGlyph, yellow } from './color.ts';
@@ -39,20 +39,28 @@ const DOCTOR_BACKUP_SIZE_WARN_MB = 200;
 const BYTES_PER_MB = 1024 * 1024;
 
 /**
- * Sum the on-disk size (in bytes) of every regular-file entry directly inside a
- * single backup `<ts>` directory. A single shallow `readdirSync` keeps the walk
- * flat (one level) so the helper stays well under the cognitive-complexity gate
- * while still reflecting the bulk of a backup dir's footprint. Unreadable
- * entries are skipped rather than thrown on (doctor is read-only and tolerant).
+ * Recursively sum the on-disk size (in bytes) of every regular file under a
+ * backup `<ts>` directory. Backups of directories (e.g. `agents/`, `skills/`)
+ * are copied in with their subtrees, so a flat one-level walk would undercount
+ * them to near zero; the recursion reflects the real footprint. Uses `lstat`
+ * and never descends symlinks, so the walk cannot loop, and unreadable entries
+ * are skipped rather than thrown on (doctor is read-only and tolerant).
  *
- * @param dir - Absolute path to a single `<ts>` backup directory.
- * @returns Total size in bytes of the dir's immediate file children.
+ * @param dir - Absolute path to a backup directory (or a nested subdir).
+ * @returns Total size in bytes of every regular file beneath `dir`.
  */
 function dirSizeBytes(dir: string): number {
   let bytes = 0;
   for (const entry of safeReaddir(dir)) {
-    const st = statSync(join(dir, entry), { throwIfNoEntry: false });
-    if (st?.isFile()) bytes += st.size;
+    const full = join(dir, entry);
+    const st = lstatSync(full, { throwIfNoEntry: false });
+    /* c8 ignore start */
+    // Entry vanished between readdir and lstat (TOCTOU): skip, never throw.
+    if (!st) continue;
+    /* c8 ignore stop */
+    if (st.isSymbolicLink()) continue;
+    if (st.isDirectory()) bytes += dirSizeBytes(full);
+    else bytes += st.size;
   }
   return bytes;
 }

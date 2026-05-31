@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   openSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -81,8 +82,7 @@ describe('reportBackupsCheck', () => {
     makeBackupDir('20260101-000001');
     makeBackupDir('20260101-000002');
     makeSizedBackup('20260101-000003', 250 * 1024 * 1024);
-    // A nested subdir inside a backup dir is a non-file entry and must be
-    // skipped by the size walk (not summed, not thrown on).
+    // An empty nested subdir is walked (recursively) and contributes 0.
     mkdirSync(join(testRoot, '20260101-000003', 'nested'), { recursive: true });
     const s = section('Version Checks');
     reportBackupsCheck(s, testRoot);
@@ -90,6 +90,39 @@ describe('reportBackupsCheck', () => {
     expect(s.items[0]).toContain(warnGlyph);
     expect(s.items[0]).toContain('3 dirs');
     expect(s.items[0]).toContain('nomad clean --backups');
+  });
+
+  it('sums files in nested subdirs (directory backups are not undercounted)', () => {
+    // The big file sits one level DOWN inside the backup dir, as a directory
+    // backup (e.g. agents/) would. A flat one-level walk would miss it and the
+    // size row would never fire; the recursive walk must still trip it.
+    makeBackupDir('20260101-000001');
+    const nested = join(testRoot, '20260101-000001', 'agents');
+    mkdirSync(nested, { recursive: true });
+    const fd = openSync(join(nested, 'big.bin'), 'w');
+    ftruncateSync(fd, 250 * 1024 * 1024);
+    closeSync(fd);
+    const s = section('Version Checks');
+    reportBackupsCheck(s, testRoot);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain(warnGlyph);
+    expect(s.items[0]).toContain('nomad clean --backups');
+  });
+
+  it('skips symlinks in the size walk (no follow, no throw)', () => {
+    // A symlink inside a backup dir must be skipped (lstat, never followed), so
+    // a link to a huge file does not inflate the figure or loop.
+    makeBackupDir('20260101-000001');
+    const huge = join(testRoot, 'huge-target.bin');
+    const fd = openSync(huge, 'w');
+    ftruncateSync(fd, 500 * 1024 * 1024);
+    closeSync(fd);
+    symlinkSync(huge, join(testRoot, '20260101-000001', 'link.bin'));
+    const s = section('Version Checks');
+    expect(() => reportBackupsCheck(s, testRoot)).not.toThrow();
+    // One small dir, only a symlink inside it: under both thresholds, no row.
+    expect(s.items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
   });
 
   it('is silent when under both the count and size thresholds', () => {

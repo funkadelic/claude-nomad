@@ -71,6 +71,15 @@ describe('parseCleanArgs', () => {
     expect(parseCleanArgs(argv(['--backups', '--keep', '-1']))).toBeNull();
   });
 
+  it('rejects non-decimal --keep tokens Number() would coerce', () => {
+    // '' -> 0 (delete all), and 1e3/0x10/3.0 would otherwise slip through.
+    expect(parseCleanArgs(argv(['--backups', '--keep', '']))).toBeNull();
+    expect(parseCleanArgs(argv(['--backups', '--keep', '1e3']))).toBeNull();
+    expect(parseCleanArgs(argv(['--backups', '--keep', '0x10']))).toBeNull();
+    expect(parseCleanArgs(argv(['--backups', '--keep', '3.0']))).toBeNull();
+    expect(parseCleanArgs(argv(['--backups', '--keep', ' 5']))).toBeNull();
+  });
+
   it('returns null on duplicate flags', () => {
     expect(parseCleanArgs(argv(['--backups', '--backups']))).toBeNull();
     expect(parseCleanArgs(argv(['--backups', '--dry-run', '--dry-run']))).toBeNull();
