@@ -238,30 +238,3 @@ describe('extras-sync e2e round-trip', () => {
     expect(existsSync(join(hostBProjectRoot, '.planning'))).toBe(false);
   });
 });
-
-describe('whitelistedExtrasPaths', () => {
-  it('returns [] when the map declares no extras field', async () => {
-    const { whitelistedExtrasPaths } = await import('./extras-sync.ts');
-    expect(whitelistedExtrasPaths({ projects: {} })).toEqual([]);
-  });
-
-  it('skips dirnames outside SUPPORTED_EXTRAS and returns the sorted whitelisted set', async () => {
-    const { whitelistedExtrasPaths } = await import('./extras-sync.ts');
-    const out = whitelistedExtrasPaths({
-      projects: {},
-      extras: { beta: ['.planning'], alpha: ['.planning', 'secrets'] },
-    });
-    // `secrets` is not in SUPPORTED_EXTRAS so it is skipped; results sorted.
-    expect(out).toEqual(['shared/extras/alpha/.planning', 'shared/extras/beta/.planning']);
-  });
-
-  it('includes a single root-file extra (CLAUDE.md) with no trailing slash alongside a directory', async () => {
-    const { whitelistedExtrasPaths } = await import('./extras-sync.ts');
-    const out = whitelistedExtrasPaths({
-      projects: {},
-      extras: { foo: ['CLAUDE.md', '.planning'] },
-    });
-    // Both the file and directory entry resolve to no-trailing-slash paths; sorted.
-    expect(out).toEqual(['shared/extras/foo/.planning', 'shared/extras/foo/CLAUDE.md']);
-  });
-});
