@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
+import { NPM_REGISTRY_LATEST_URL } from './config.ts';
 import { fetchUrl } from './http-fetch.ts';
 
 /**
@@ -78,8 +79,7 @@ function readLocalVersion(): string | null {
  */
 function fetchLatestVersion(): string | null {
   try {
-    const url = 'https://registry.npmjs.org/claude-nomad/latest';
-    const raw = fetchUrl(url);
+    const raw = fetchUrl(NPM_REGISTRY_LATEST_URL);
     if (raw === null) return null;
     const parsed = JSON.parse(raw) as { version?: unknown };
     if (typeof parsed.version !== 'string') return null;

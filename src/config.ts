@@ -49,6 +49,14 @@ export const REPO_HOME = process.env.NOMAD_REPO || resolve(HOME, 'claude-nomad')
 export const SETTINGS_SCHEMA_URL = 'https://json.schemastore.org/claude-code-settings.json';
 
 /**
+ * npm registry endpoint for the latest published `claude-nomad` release. Fetched
+ * live by `nomad doctor`'s soft release-version check (`fetchLatestVersion`) to
+ * compare the local `package.json.version` against the latest upstream tag. The
+ * `version` field in the response is already bare semver (no leading `v`).
+ */
+export const NPM_REGISTRY_LATEST_URL = 'https://registry.npmjs.org/claude-nomad/latest';
+
+/**
  * Pinned gitleaks version. Single source of truth for the gitleaks pin used by
  * `nomad doctor`'s version-drift check (`reportGitleaksVersionCheck`), which
  * WARNs when the host's installed gitleaks major.minor diverges from this
