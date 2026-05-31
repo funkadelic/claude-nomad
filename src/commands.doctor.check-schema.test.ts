@@ -8,13 +8,15 @@ import { failGlyph, infoGlyph, okGlyph, warnGlyph } from './color.ts';
 import { type Env, makeDoctorEnv, restoreEnv } from './commands.doctor.checks.test-helpers.ts';
 
 /**
- * Deterministic curl mock for the settings-schema fetch inside
- * `commands.doctor.check-schema.ts`. `json` returns a schema whose
- * `properties` holds the given keys; `no-properties` returns valid JSON
- * lacking a properties object; `garbage` returns non-JSON; `throw` simulates
- * a missing/offline curl. All other execFileSync calls fall through.
+ * Deterministic fetcher mock for the settings-schema fetch inside
+ * `commands.doctor.check-schema.ts`. Intercepts both `curl` (primary) and
+ * `wget` (fallback) so curl-throws cases never reach a real binary.
+ * `json` returns a schema whose `properties` holds the given keys;
+ * `no-properties` returns valid JSON lacking a properties object; `garbage`
+ * returns non-JSON; `throw` simulates both binaries missing/offline.
+ * All other execFileSync calls fall through.
  *
- * @param response The curl behavior to simulate.
+ * @param response The HTTP fetcher behavior to simulate.
  */
 function mockCurlSchema(
   response:
@@ -33,8 +35,15 @@ function mockCurlSchema(
           args: readonly string[],
           opts?: Parameters<typeof cpModule.execFileSync>[2],
         ) => {
-          if (bin === 'curl') {
-            if (response.kind === 'throw') throw new Error('curl mocked offline');
+          // Intercept curl (primary) and wget (fallback) to keep the mock
+          // deterministic regardless of which binary fetchUrl tries.
+          if (bin === 'curl' || bin === 'wget') {
+            if (response.kind === 'throw') throw new Error(`${bin} mocked offline`);
+            if (bin === 'wget') {
+              // wget is only reached if curl threw; in non-throw cases curl
+              // returns first and wget is never invoked.
+              throw new Error(`wget fallback unexpectedly reached in non-throw case`);
+            }
             if (response.kind === 'garbage') return Buffer.from('not-json');
             if (response.kind === 'no-properties')
               return Buffer.from(JSON.stringify({ title: 'x' }));
