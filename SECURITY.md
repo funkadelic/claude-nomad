@@ -27,11 +27,12 @@ become risks if the sync repo is shared with others or is ever compromised. They
 as accepted trade-offs rather than defended in code.
 
 - **The secret-scanning configuration lives in the synced repo.** Push-time and CI gitleaks runs
-  read `.gitleaks.toml` (and honor `.gitleaksignore`) from the repo root, and those files are
-  themselves synced. Anyone who can write to the repo can therefore weaken or disable secret
-  detection for every host that pulls or pushes. This is inherent to letting users curate their own
-  allowlist and "Allow" individual findings; keep write access to the repo as tightly held as the
-  secrets the scan is meant to protect.
+  read `.gitleaks.toml`, an optional additive `.gitleaks.overlay.toml`, and `.gitleaksignore` from
+  the repo root, and those files are themselves synced. Anyone who can write to the repo can
+  therefore weaken or disable secret detection for every host that pulls or pushes. This is inherent
+  to letting users curate their own allowlist (and layer extra entries via the overlay) and "Allow"
+  individual findings; keep write access to the repo as tightly held as the secrets the scan is
+  meant to protect.
 
 - **`nomad update` runs `npm install` in the local checkout.** Updating executes the dependency
   tree's lifecycle scripts, so a compromised upstream repo (or a malicious dependency) can run code
