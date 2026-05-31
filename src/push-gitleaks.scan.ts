@@ -142,7 +142,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     }
     return report;
   } finally {
-    if (tempPath !== null) rmSync(tempPath, { force: true });
+    if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
     rmSync(reportPath, { force: true });
   }
 }
@@ -211,7 +211,7 @@ export function scanFile(filePath: string, forwardStreams = false): Finding[] | 
     }
     return report;
   } finally {
-    if (tempPath !== null) rmSync(tempPath, { force: true });
+    if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
     rmSync(reportPath, { force: true });
   }
 }

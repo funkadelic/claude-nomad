@@ -139,7 +139,7 @@ export function probeGitleaks(): string {
     if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
     throw new NomadFatal(`gitleaks --version failed: ${e.message}`);
   } finally {
-    if (tempPath !== null) rmSync(tempPath, { force: true });
+    if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
   }
 }
 

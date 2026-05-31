@@ -267,6 +267,7 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     const { probeGitleaks } = await import('./push-checks.ts');
     expect(probeGitleaks()).toBe('v8.30.1');
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      recursive: true,
       force: true,
     });
   });
@@ -303,6 +304,7 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     const { probeGitleaks } = await import('./push-checks.ts');
     expect(() => probeGitleaks()).toThrow(/gitleaks --version failed/);
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      recursive: true,
       force: true,
     });
   });

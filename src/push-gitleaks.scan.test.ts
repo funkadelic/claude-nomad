@@ -591,6 +591,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
     expect(scanStagedTree(testHome)).toEqual([]);
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      recursive: true,
       force: true,
     });
   });
@@ -603,6 +604,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     // gitleaks exits non-zero with no report -> null; temp must still be cleaned.
     expect(scanStagedTree(testHome)).toBeNull();
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      recursive: true,
       force: true,
     });
   });
@@ -614,6 +616,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     const { scanFile } = await import('./push-gitleaks.scan.ts');
     expect(scanFile('/some/file.jsonl')).toEqual([]);
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      recursive: true,
       force: true,
     });
   });
@@ -625,6 +628,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     const { scanFile } = await import('./push-gitleaks.scan.ts');
     expect(scanFile('/some/file.jsonl')).toBeNull();
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      recursive: true,
       force: true,
     });
   });

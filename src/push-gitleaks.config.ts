@@ -12,13 +12,12 @@
  * `utils.fs.ts`, and `utils.ts`, so there is no cycle.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
 import { resolveTomlPath } from './push-gitleaks.scan.ts';
-import { nowTimestamp } from './utils.fs.ts';
 import { NomadFatal, warn } from './utils.ts';
 
 /**
@@ -28,15 +27,25 @@ import { NomadFatal, warn } from './utils.ts';
  *     precedence, bundled-base absent, or the D-04 generation-failure fallback);
  *     `path` is whatever `resolveTomlPath` would return (possibly `null`).
  *   - `tempPath: string` -> an overlay was merged into a generated temp config;
- *     `path` equals `tempPath` and the caller MUST remove `tempPath` in a
+ *     `tempPath` is the private temp DIRECTORY holding it, `path` is the config
+ *     file inside that directory, and the caller MUST remove `tempPath`
+ *     recursively (`rmSync(tempPath, { recursive: true, force: true })`) in a
  *     `finally` once gitleaks has run.
  */
 export type TomlConfigResult =
   | { path: string | null; tempPath: null }
   | { path: string; tempPath: string };
 
-/** Regex matching an `[extend]` table header at the start of a line (D-05). */
-const OVERLAY_EXTEND_RE = /^\s*\[extend\]/m;
+/**
+ * Regex matching an `[extend]` definition at the start of a line (D-05). Covers
+ * every TOML-equivalent form so the guard cannot be bypassed by whitespace or
+ * key syntax: the table header `[extend]` with optional inner whitespace
+ * (`[ extend ]`), the dotted-key form (`extend.path = ...`), and the inline-table
+ * form (`extend = { ... }`). All three load the `extend` table in gitleaks' TOML
+ * parser and would build the depth-3 chain that silently drops the default
+ * ruleset, so all three must fail LOUD.
+ */
+const OVERLAY_EXTEND_RE = /^\s*(?:\[\s*extend\s*\]|extend\s*[.=])/m;
 
 /**
  * Read the overlay body and write the generated temp config that chains it onto
@@ -47,20 +56,27 @@ const OVERLAY_EXTEND_RE = /^\s*\[extend\]/m;
  * never swallowed by the D-04 fallback catch.
  *
  * The temp body is `[extend]\npath = <bundled abs path JSON>\n\n<overlay body>`,
- * written to `tmpdir()` with mode 0o600 under a `nowTimestamp() + pid` name. The
- * `[extend] path` is the ABSOLUTE bundled path (D-02, Pitfall 1) because the
- * scan CWD is uncontrolled at the `scanFile` and `probeGitleaks` sites.
+ * written as `config.toml` inside a private directory created atomically with
+ * `mkdtempSync` (mode 0o700) under `tmpdir()` with a `nomad-gitleaks-cfg-` prefix
+ * (CWE-377: the private dir plus the `wx` exclusive-create flag defeat a
+ * symlink-redirect in the world-writable temp dir). The config file is written
+ * mode 0o600. The `[extend] path` is the ABSOLUTE bundled path (D-02, Pitfall 1)
+ * because the scan CWD is uncontrolled at the `scanFile` and `probeGitleaks` sites.
  *
- * @param overlayPath Absolute path to `REPO_HOME/.gitleaks.overlay.toml`.
+ * @param overlayBody The already-read overlay body (read once by the caller so a
+ *   single buffer is both guarded and spliced, closing the guard/build TOCTOU).
  * @param bundled Absolute path to the bundled `.gitleaks.toml` (from `resolveTomlPath`).
- * @returns The absolute path to the generated temp config.
+ * @returns The generated temp directory and the config file path inside it.
  */
-function buildOverlayTempConfig(overlayPath: string, bundled: string): string {
-  const overlayBody = readFileSync(overlayPath, 'utf8');
+function buildOverlayTempConfig(
+  overlayBody: string,
+  bundled: string,
+): { configPath: string; tempPath: string } {
   const tempBody = `[extend]\npath = ${JSON.stringify(bundled)}\n\n${overlayBody}`;
-  const tempPath = join(tmpdir(), `nomad-gitleaks-cfg-${nowTimestamp()}-${process.pid}.toml`);
-  writeFileSync(tempPath, tempBody, { mode: 0o600 });
-  return tempPath;
+  const tempPath = mkdtempSync(join(tmpdir(), 'nomad-gitleaks-cfg-'));
+  const configPath = join(tempPath, 'config.toml');
+  writeFileSync(configPath, tempBody, { mode: 0o600, flag: 'wx' });
+  return { configPath, tempPath };
 }
 
 /**
@@ -102,6 +118,7 @@ function buildOverlayTempConfig(overlayPath: string, bundled: string): string {
  */
 export function resolveTomlConfig(): TomlConfigResult {
   const overlayPath = join(REPO_HOME, '.gitleaks.overlay.toml');
+  const repoToml = join(REPO_HOME, '.gitleaks.toml');
   const bundled = resolveTomlPath();
   if (!existsSync(overlayPath)) {
     return { path: bundled, tempPath: null };
@@ -109,7 +126,7 @@ export function resolveTomlConfig(): TomlConfigResult {
   // S-01: a full REPO_HOME/.gitleaks.toml wins outright; resolveTomlPath returns
   // it before the bundled copy, so compare to detect that case and short-circuit
   // before generating a temp (keeps the chain at the safe depth-2 max).
-  if (bundled === join(REPO_HOME, '.gitleaks.toml')) {
+  if (bundled === repoToml) {
     warn(
       '.gitleaks.overlay.toml ignored: REPO_HOME/.gitleaks.toml takes precedence (full manual control)',
     );
@@ -119,20 +136,23 @@ export function resolveTomlConfig(): TomlConfigResult {
   if (bundled === null) {
     return { path: null, tempPath: null };
   }
-  // D-05: validate the overlay BEFORE the D-04 fallback try so this NomadFatal is
-  // never swallowed by the generation-failure catch below.
-  const overlayBody = readFileSync(overlayPath, 'utf8');
-  if (OVERLAY_EXTEND_RE.test(overlayBody)) {
-    throw new NomadFatal(
-      '.gitleaks.overlay.toml must not contain an [extend] block; it is generated automatically. Remove the [extend] section and retry.',
-    );
-  }
-  // D-04: any temp-generation I/O failure falls back to the bundled base so the
-  // scan still runs with the full bundled allowlist (never null, never thrown).
+  // D-04: any overlay-read or temp-generation I/O failure falls back to the
+  // bundled base so the scan still runs with the full bundled allowlist (never
+  // null, never thrown). The overlay is read ONCE here and the same buffer is
+  // both guarded and spliced, closing the guard-vs-build TOCTOU. The D-05
+  // [extend] NomadFatal is re-thrown from the catch so it is never swallowed by
+  // this fallback.
   try {
-    const tempPath = buildOverlayTempConfig(overlayPath, bundled);
-    return { path: tempPath, tempPath };
+    const overlayBody = readFileSync(overlayPath, 'utf8');
+    if (OVERLAY_EXTEND_RE.test(overlayBody)) {
+      throw new NomadFatal(
+        '.gitleaks.overlay.toml must not contain an [extend] block; it is generated automatically. Remove the [extend] section and retry.',
+      );
+    }
+    const { configPath, tempPath } = buildOverlayTempConfig(overlayBody, bundled);
+    return { path: configPath, tempPath };
   } catch (err) {
+    if (err instanceof NomadFatal) throw err;
     warn(
       `.gitleaks.overlay.toml merge failed (${(err as Error).message}); falling back to the bundled allowlist`,
     );
