@@ -59,6 +59,7 @@ box, a personal rig and a work machine. [Get started in three steps.](#quickstar
 - **Reference**
   - [Commands](#commands)
   - [Recovery flows](#recovery-flows)
+    - [Pruning old backups](#pruning-old-backups)
     - [`nomad drop-session <id>`](#nomad-drop-session-id)
     - [`nomad redact <session-id>`](#nomad-redact-session-id)
     - [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)
@@ -562,6 +563,7 @@ to this host.
 | `nomad redact <session-id>`      | Rewrite the secret span in the local source transcript for a session, backed up to `~/.cache/claude-nomad/backup/`. Refuses to touch a session that was modified recently (potential active session). Safe to re-run. See [`nomad redact <session-id>`](#nomad-redact-session-id).                                                                                                                                                                                           |
 | `nomad redact --rule <id>`       | Limit redaction to findings of one gitleaks rule id only.                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `nomad redact --dry-run`         | Show what `nomad redact` would change without writing anything.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `nomad clean --backups`          | Delete old backup snapshots under `~/.cache/claude-nomad/backup/`. By default removes snapshots older than 14 days; pass `--older-than <dur>` (e.g. `7d`, `24h`) to change the age, or `--keep <N>` to keep the N newest and delete the rest (the two flags cannot be combined). Always preview with `--dry-run` first. See [Pruning old backups](#pruning-old-backups).                                                                                                     |
 | `nomad update`                   | Update the `nomad` CLI binary from npm (`npm update -g claude-nomad`). Does NOT pull your sync data; run `nomad pull` separately for that. See [Upgrading the CLI](#upgrading-the-cli).                                                                                                                                                                                                                                                                                      |
 | `nomad doctor`                   | Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗` sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness check, a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a hook command whose script under `~/.claude/` is missing on this host, plus two `⚠︎`-only drift checks: gitleaks version drift and, on a private GitHub mirror, re-enabled Actions. |
 | `nomad doctor --resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session (see [Cross-OS resume](#cross-os-resume)).                                                                                                                                                                                                                                                                                                                                                            |
@@ -669,6 +671,35 @@ preview stays easy to scan; only a real `nomad pull` prints the tree above. `nom
 unchanged.
 
 ## Recovery flows
+
+### Pruning old backups
+
+Every `nomad pull` and `nomad push` keeps you safe by copying any file it is about to overwrite into
+a timestamped snapshot under `~/.cache/claude-nomad/backup/<ts>/`. That is what makes an unexpected
+overwrite recoverable, but the snapshots are never deleted automatically, so over many syncs the
+folder slowly grows. It lives in your local cache and is never synced to the shared repo, so
+cleaning it up is purely local disk housekeeping.
+
+`nomad clean --backups` prunes those snapshots. **Always run it with `--dry-run` first** so you can
+see exactly which snapshots it would delete before anything is removed:
+
+```bash
+$ nomad clean --backups --dry-run   # list what would be deleted, remove nothing
+$ nomad clean --backups             # delete snapshots older than 14 days (the default)
+```
+
+You choose what counts as "old" in one of two ways (you cannot use both at once):
+
+- `--older-than <duration>` deletes snapshots older than the given age. The duration is a number
+  plus a unit: `d` for days, `h` for hours, `m` for minutes (for example `7d`, `24h`, `30m`). With
+  no retention flag at all, the default is `--older-than 14d`.
+- `--keep <N>` keeps the `N` most recent snapshots and deletes the rest, regardless of age.
+
+`nomad clean` only ever touches the timestamped snapshot directories directly inside the backup
+folder; it never follows symlinks out of it and never removes the backup folder itself. As a gentle
+reminder, `nomad doctor` shows a `⚠︎` warning when the backup folder grows past roughly 20 snapshots
+or 200 MB, nudging you to run `nomad clean --backups`. That warning is informational only and never
+changes the doctor exit code.
 
 ### `nomad drop-session <id>`
 

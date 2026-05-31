@@ -18,6 +18,7 @@ import {
   reportRebaseClean,
   reportRemote,
 } from './commands.doctor.checks.repository.ts';
+import { reportBackupsCheck } from './commands.doctor.checks.backups.ts';
 import { reportCheckSchema } from './commands.doctor.check-schema.ts';
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportHookScopeCheck } from './commands.doctor.checks.hooks.scope.ts';
@@ -89,6 +90,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   reportNodeEngineCheck(version);
   reportGitleaksVersionCheck(version);
   reportOptionalDeps(version);
+  reportBackupsCheck(version);
 
   const sharedScan = section('Shared scan');
   // Reuse the Repository-section readiness probe so reportCheckShared does not
