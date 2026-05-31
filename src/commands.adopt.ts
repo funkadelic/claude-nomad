@@ -1,7 +1,7 @@
 import { cpSync, existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOME, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
+import { BACKUP_BASE, CLAUDE_HOME, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
 import { isValidSharedDir } from './config.sharedDirs.guard.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
@@ -84,8 +84,7 @@ function isValidAdoptName(name: string): boolean {
  * @param sharedTarget Absolute path of the destination (`REPO_HOME/shared/<name>`).
  */
 function performAdoptMove(name: string, linkPath: string, sharedTarget: string): void {
-  const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
-  const ts = freshBackupTs(backupBase);
+  const ts = freshBackupTs(BACKUP_BASE);
 
   // D-00c: backup before any mutation
   backupBeforeWrite(linkPath, ts);
@@ -163,8 +162,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
 
   // D-00d: dry-run preview -- branch before any mutation
   if (dryRun) {
-    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
-    const ts = freshBackupTs(backupBase);
+    const ts = freshBackupTs(BACKUP_BASE);
     log(`would backup: ${linkPath} -> backup/${ts}/${name}`);
     log(`would move: ${linkPath} -> shared/${name}`);
     log(`would stage: shared/${name}`);
