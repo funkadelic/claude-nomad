@@ -1,16 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { HOME } from './config.ts';
 
 /**
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads
  * the local `package.json.version`, compares it to the latest published version
- * on the npm registry (cached 1h, 3s curl timeout), and emits one of:
+ * on the npm registry (3s curl timeout, fetched fresh each run), and emits one of:
  *   - `✓ claude-nomad: <local> (latest)` when local == latest
  *   - `⚠︎ claude-nomad: <local> -> <latest>` when local < latest
  *   - `ℹ︎ claude-nomad: <local> (ahead of latest release <latest>)` when local > latest
@@ -18,15 +16,6 @@ import { HOME } from './config.ts';
  * `version`, missing/unreadable package.json) is a SILENT skip; this module
  * never sets `process.exitCode` and never writes to stderr.
  */
-
-/** Absolute path to the cached latest-tag entry. Sits under HOME so tests that
- * override `process.env.HOME` get a sandboxed cache for free. */
-const CACHE_PATH = join(HOME, '.cache', 'claude-nomad', 'version-check.json');
-
-/** Cache TTL in milliseconds. Matches GitHub's 1-hour anonymous rate-limit
- * reset window: long enough to collapse `nomad doctor` debugging bursts into a
- * single fetch, short enough that new releases surface within the same day. */
-const CACHE_TTL_MS = 60 * 60 * 1000;
 
 /** Strict-semver regex used to gate both the local version and the latest tag
  * fed into `compareSemver`. Pre-release suffixes like `-dev` are rejected at
@@ -39,10 +28,6 @@ const STRICT_SEMVER = /^\d+\.\d+\.\d+$/;
  * `1.2.3.4` that would otherwise be silently truncated to `1.2.3` and yield
  * a false PASS against an identical `latest`. */
 const STRICT_SEMVER_PREFIX = /^(\d+\.\d+\.\d+)(?:[-+]|$)/;
-
-/** Shape of the on-disk cache entry. Both fields are validated structurally
- * in `loadCache` before use (typeof + finiteness + regex). */
-type CacheEntry = { checked_at: number; latest: string };
 
 /**
  * Strict triple-segment semver comparison: returns -1 when `a < b`, 0 when
@@ -82,45 +67,6 @@ function readLocalVersion(): string | null {
 }
 
 /**
- * Load the cached latest-tag entry. Returns the parsed entry when the file
- * exists, parses cleanly, and matches the expected shape (`checked_at` finite
- * number, `latest` strict-semver string); any failure surfaces as `null` so
- * the caller falls through to `fetchLatestVersion`. Treating malformed cache as a
- * miss is the safer default than crashing or surfacing the error.
- */
-function loadCache(): CacheEntry | null {
-  try {
-    if (!existsSync(CACHE_PATH)) return null;
-    const parsed = JSON.parse(readFileSync(CACHE_PATH, 'utf8')) as Partial<CacheEntry>;
-    if (typeof parsed.checked_at !== 'number' || !Number.isFinite(parsed.checked_at)) {
-      return null;
-    }
-    if (typeof parsed.latest !== 'string' || !STRICT_SEMVER.test(parsed.latest)) {
-      return null;
-    }
-    return { checked_at: parsed.checked_at, latest: parsed.latest };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Persist the latest tag plus a `Date.now()` stamp to the cache file. Errors
- * (read-only filesystem, missing parent dir despite `mkdirSync`, etc.) are
- * swallowed so a cache-write failure never breaks `nomad doctor` output.
- */
-function saveCache(latest: string): void {
-  try {
-    mkdirSync(dirname(CACHE_PATH), { recursive: true });
-    writeFileSync(CACHE_PATH, JSON.stringify({ checked_at: Date.now(), latest }));
-  } catch {
-    // Silent on cache-write failure (locked design): the user-facing
-    // diagnostic still emits; the cost is one extra network round-trip on
-    // the next invocation.
-  }
-}
-
-/**
  * Fetch the latest published version from the npm registry. Uses
  * `execFileSync('curl', ...)` rather than `node:https` because curl honors
  * system proxies and respects the `-m` timeout reliably. curl is optional, not
@@ -154,7 +100,7 @@ function fetchLatestVersion(): string | null {
  * - `⚠︎ claude-nomad: <local> -> <latest> (run \`nomad update\`)` when the local version is behind
  * - `ℹ︎ claude-nomad: <local> (ahead of latest release <latest>)` when the local version is ahead
  *
- * Any failure to read the local version, retrieve or parse the latest release, or use the cache results in no output and does not change `process.exitCode`.
+ * Any failure to read the local version, or retrieve or parse the latest release, results in no output and does not change `process.exitCode`.
  */
 export function reportVersionCheck(section: DoctorSection): void {
   const local = readLocalVersion();
@@ -165,16 +111,8 @@ export function reportVersionCheck(section: DoctorSection): void {
   const localPure = STRICT_SEMVER_PREFIX.exec(local)?.[1] ?? null;
   if (localPure === null) return;
 
-  let latest: string | null = null;
-  const cached = loadCache();
-  if (cached !== null && Date.now() - cached.checked_at < CACHE_TTL_MS) {
-    latest = cached.latest;
-  }
-  if (latest === null) {
-    latest = fetchLatestVersion();
-    if (latest === null) return;
-    saveCache(latest);
-  }
+  const latest = fetchLatestVersion();
+  if (latest === null) return;
 
   const cmp = compareSemver(localPure, latest);
   if (cmp === 0) {
