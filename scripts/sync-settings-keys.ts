@@ -3,7 +3,8 @@
 // published schema) are preserved verbatim. No args rewrites the file; --check
 // prints drift and exits non-zero without writing. Network failure exits 2 in
 // both modes (never a silent pass). The weekly settings-schema-drift workflow
-// runs the write mode and opens a PR when SCHEMA_KEYS changes. Run via tsx.
+// runs the write mode and opens a PR when SCHEMA_KEYS changes. Run with
+// `node scripts/sync-settings-keys.ts` (native type-stripping; no tsx).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
