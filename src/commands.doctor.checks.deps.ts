@@ -29,6 +29,17 @@ import type { SpawnSyncFn } from './gh-actions.ts';
 const VERSION_TOKEN = /(\d{1,9}\.\d{1,9}\.\d{1,9})/;
 
 /**
+ * Node-level timeout for a `bin --version` presence probe. Mirrors the bounded
+ * subprocess convention in `gh-actions.ts` (GH_TIMEOUT_MS) so a wedged binary
+ * on a stalled filesystem (NFS, FUSE, a wrapper shim) cannot hang the
+ * synchronous `cmdDoctor`. 3s matches the HTTP fetcher's 3s intent. A timeout
+ * kill surfaces as a thrown non-ENOENT error, which the probe's `catch` already
+ * maps to `{ status: 'present', version: null }`, preserving the no-exitCode
+ * contract.
+ */
+const PROBE_TIMEOUT_MS = 3_000;
+
+/**
  * Extract the first X.Y.Z-shaped version token from a string.
  *
  * @param line - A single line of --version output (already trimmed).
@@ -53,7 +64,10 @@ type DepProbeResult = { status: 'present'; version: string | null } | { status: 
  */
 function probeOptionalDep(bin: string, run: SpawnSyncFn): DepProbeResult {
   try {
-    const firstLine = run(bin, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const firstLine = run(bin, ['--version'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: PROBE_TIMEOUT_MS,
+    })
       .toString()
       .split('\n')[0]
       .trim();
