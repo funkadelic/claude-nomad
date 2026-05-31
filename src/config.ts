@@ -1,5 +1,5 @@
 import { homedir, hostname } from 'node:os';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { isValidSharedDir } from './config.sharedDirs.guard.ts';
 import { warn } from './utils.ts';
@@ -16,6 +16,15 @@ export const HOME = homedir();
 
 /** Absolute path to the user's Claude Code config directory (`~/.claude`). */
 export const CLAUDE_HOME = resolve(HOME, '.claude');
+
+/**
+ * Host-local backup cache root (`~/.cache/claude-nomad/backup`). `pull`,
+ * `push`, and `diff` snapshot clobbered files into a per-run `<ts>` subdir
+ * here. It lives under `~/.cache`, outside the synced `~/.claude` tree, so it
+ * never crosses the sync boundary. Consolidates the formerly triplicated
+ * `pull`/`push`/`diff` inline path; `nomad clean --backups` prunes it.
+ */
+export const BACKUP_BASE = join(HOME, '.cache', 'claude-nomad', 'backup');
 
 /**
  * Absolute path to the local checkout of the private sync repo. Reads

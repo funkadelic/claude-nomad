@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { HOME, HOST, type PathMap, REPO_HOME } from './config.ts';
+import { BACKUP_BASE, HOST, type PathMap, REPO_HOME } from './config.ts';
 import { enforceAllowList } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
@@ -160,8 +160,7 @@ export async function cmdPush(opts: { dryRun?: boolean; redactAll?: boolean } = 
     // under dryRun too so the network round-trip mirrors a real push.
     rebaseBeforePush();
     // Collision-resistant ts for remapPush's pre-copy snapshot of repo-side state.
-    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
-    const ts = freshBackupTs(backupBase);
+    const ts = freshBackupTs(BACKUP_BASE);
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
     const remap = remapPush(ts, { dryRun });

@@ -6,7 +6,7 @@ import {
   buildSessionsSection,
   buildSettingsSection,
 } from './commands.push.sections.ts';
-import { HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { BACKUP_BASE, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { renderTree, section, addItem } from './output-tree.ts';
@@ -110,15 +110,14 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
     // Collision-resistant ts: nowTimestamp() is second-resolution, so two
     // pulls in the same wall-clock second would share `ts` and the second's
     // backupBeforeWrite calls (cpSync force:false) would silently no-op.
-    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
-    const ts = freshBackupTs(backupBase);
+    const ts = freshBackupTs(BACKUP_BASE);
     if (!dryRun) {
       // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
       // (out of disk, permission denied), die() throws (NomadFatal) and the
       // outer catch logs + sets exitCode, then finally releases the lock.
       // Skipped under dryRun: no backups are written, and an empty
       // backup-root dir would pollute the cache.
-      const backupRoot = join(backupBase, ts);
+      const backupRoot = join(BACKUP_BASE, ts);
       try {
         mkdirSync(backupRoot, { recursive: true });
       } catch (err) {

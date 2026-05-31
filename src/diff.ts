@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { HOME, REPO_HOME, type PathMap } from './config.ts';
+import { BACKUP_BASE, REPO_HOME, type PathMap } from './config.ts';
 import { computePreview } from './preview.ts';
 import { emitSummary } from './summary.ts';
 import { die, fail, NomadFatal } from './utils.ts';
@@ -34,8 +34,7 @@ import { readPathMap } from './utils.json.ts';
 export function cmdDiff(): void {
   try {
     if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
-    const backupBase = join(HOME, '.cache', 'claude-nomad', 'backup');
-    const ts = freshBackupTs(backupBase);
+    const ts = freshBackupTs(BACKUP_BASE);
     // Preview log lines reference `ts` so output stays consistent with
     // pull --dry-run; the backup root itself is intentionally NOT created.
     // Read the map tolerantly (offline-safe: fall back to no-sharedDirs when

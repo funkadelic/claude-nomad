@@ -15,6 +15,7 @@
  */
 
 import { cmdAdopt } from './commands.adopt.ts';
+import { cmdClean } from './commands.clean.ts';
 import { cmdDoctor } from './commands.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
 import { cmdRedact } from './commands.redact.ts';
@@ -24,6 +25,7 @@ import { cmdUpdate } from './commands.update.ts';
 import { HOME } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
+import { parseCleanArgs } from './nomad.dispatch.clean.ts';
 import { parseFlags, parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
@@ -143,13 +145,10 @@ try {
       break;
     }
     case 'doctor':
-      // Sub-flags: `doctor --resume-cmd <session-id>` dispatches to the
-      // read-only sidecar that prints `cd <abspath> && claude --resume <id>`;
-      // `doctor --check-shared` (no positional) appends the gitleaks preflight
-      // scan of the transcripts a push would stage; `doctor --check-schema`
-      // (no positional) appends the live settings-schema check. Bare `doctor`
-      // runs the plain read-only health check. Any other shape (unknown flag,
-      // extra positional, a scan flag with trailing args) is a usage error.
+      // Sub-flags: `--resume-cmd <id>` prints the resume command; bare
+      // `--check-shared` / `--check-schema` append the gitleaks preflight scan
+      // and the live settings-schema check; bare `doctor` runs the read-only
+      // health check. Any other shape is a usage error.
       if (process.argv[3] === undefined) {
         cmdDoctor();
       } else if (process.argv[3] === '--check-shared' && process.argv.length === 4) {
@@ -171,12 +170,9 @@ try {
       }
       break;
     case 'drop-session': {
-      // Single positional argv; cmdDropSession revalidates id at entry as
-      // defense-in-depth (the function may be called from non-argv paths
-      // in tests). The argv regex mirrors the function-entry allowlist
-      // (`[\w-]`) but additionally rejects ids starting with `-`
-      // so a typo like `nomad drop-session --bogus` shows the usage line,
-      // not a FATAL. The length bound matches cmdDropSession.
+      // Single positional argv; cmdDropSession revalidates the id at entry.
+      // The argv regex mirrors that allowlist but rejects leading-dash ids so
+      // `nomad drop-session --bogus` shows usage rather than a FATAL.
       const id = process.argv[3];
       if (process.argv.length !== 4 || typeof id !== 'string' || !/^\w[\w-]{0,127}$/.test(id)) {
         console.error('usage: nomad drop-session <id>');
@@ -186,7 +182,6 @@ try {
       break;
     }
     case 'redact': {
-      // nomad redact <session-id> [--rule <rule-id>] [--dry-run]
       // parseRedactArgs handles the positional id, optional --rule <value>,
       // and optional --dry-run; returns null on any parse error.
       const redactArgs = parseRedactArgs(process.argv);
@@ -195,6 +190,17 @@ try {
         process.exit(1);
       }
       cmdRedact(redactArgs);
+      break;
+    }
+    case 'clean': {
+      // parseCleanArgs requires --backups and rejects --older-than + --keep
+      // together; cmdClean re-enforces that exclusion as defense-in-depth.
+      const cleanArgs = parseCleanArgs(process.argv);
+      if (cleanArgs === null) {
+        console.error('usage: nomad clean --backups [--dry-run] [--older-than <dur> | --keep <N>]');
+        process.exit(1);
+      }
+      cmdClean(cleanArgs);
       break;
     }
     default:
