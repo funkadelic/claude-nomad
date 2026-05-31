@@ -37,9 +37,20 @@ function makeBackupDir(name: string): void {
 }
 
 /**
- * Create a `<ts>` backup dir holding a single sparse file of `sizeBytes`,
- * written via `ftruncate` so the apparent size is large without consuming the
- * bytes on disk (keeps the size-threshold test fast).
+ * Create a sparse file of `sizeBytes` at `path` via `ftruncate`, so the apparent
+ * size is large without consuming the bytes on disk (keeps size tests fast).
+ *
+ * @param path - Absolute file path to create.
+ * @param sizeBytes - Apparent size to truncate the file to.
+ */
+function makeSparseFile(path: string, sizeBytes: number): void {
+  const fd = openSync(path, 'w');
+  ftruncateSync(fd, sizeBytes);
+  closeSync(fd);
+}
+
+/**
+ * Create a `<ts>` backup dir holding a single sparse file of `sizeBytes`.
  *
  * @param name - The `<ts>` directory name to create.
  * @param sizeBytes - Apparent size of the sparse file to place inside it.
@@ -47,9 +58,7 @@ function makeBackupDir(name: string): void {
 function makeSizedBackup(name: string, sizeBytes: number): void {
   const dir = join(testRoot, name);
   mkdirSync(dir, { recursive: true });
-  const fd = openSync(join(dir, 'snapshot.bin'), 'w');
-  ftruncateSync(fd, sizeBytes);
-  closeSync(fd);
+  makeSparseFile(join(dir, 'snapshot.bin'), sizeBytes);
 }
 
 beforeEach(() => {
@@ -99,9 +108,7 @@ describe('reportBackupsCheck', () => {
     makeBackupDir('20260101-000001');
     const nested = join(testRoot, '20260101-000001', 'agents');
     mkdirSync(nested, { recursive: true });
-    const fd = openSync(join(nested, 'big.bin'), 'w');
-    ftruncateSync(fd, 250 * 1024 * 1024);
-    closeSync(fd);
+    makeSparseFile(join(nested, 'big.bin'), 250 * 1024 * 1024);
     const s = section('Version Checks');
     reportBackupsCheck(s, testRoot);
     expect(s.items).toHaveLength(1);
@@ -114,9 +121,7 @@ describe('reportBackupsCheck', () => {
     // a link to a huge file does not inflate the figure or loop.
     makeBackupDir('20260101-000001');
     const huge = join(testRoot, 'huge-target.bin');
-    const fd = openSync(huge, 'w');
-    ftruncateSync(fd, 500 * 1024 * 1024);
-    closeSync(fd);
+    makeSparseFile(huge, 500 * 1024 * 1024);
     symlinkSync(huge, join(testRoot, '20260101-000001', 'link.bin'));
     const s = section('Version Checks');
     expect(() => reportBackupsCheck(s, testRoot)).not.toThrow();
