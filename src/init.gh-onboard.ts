@@ -22,6 +22,14 @@ function isValidRepoName(name: string): boolean {
 }
 
 /**
+ * Timeout for the network-bound `gh` calls in the onboarding create flow. These
+ * hit the GitHub API (repo creation, user lookup) and may also refresh auth, so
+ * a tight bound risks a false NomadFatal on a slow link. Generous on purpose:
+ * this is a one-time, user-initiated step, not the soft doctor version probe.
+ */
+const GH_NETWORK_TIMEOUT_MS = 30_000;
+
+/**
  * Ensure REPO_HOME has a GitHub `origin` remote. When one already exists the
  * function is a no-op (D-09 idempotency). When none exists, a new private
  * repository named `repoName` is created via `gh repo create`, the owner is
@@ -83,7 +91,7 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
   try {
     run('gh', ['repo', 'create', repoName, '--private'], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 5_000,
+      timeout: GH_NETWORK_TIMEOUT_MS,
     });
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer | string };
@@ -99,7 +107,7 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
   try {
     owner = run('gh', ['api', 'user', '--jq', '.login'], {
       stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 5_000,
+      timeout: GH_NETWORK_TIMEOUT_MS,
     })
       .toString()
       .trim();
