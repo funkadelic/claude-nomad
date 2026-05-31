@@ -8,6 +8,7 @@ truth, so this guide stays short and points at them rather than restating values
 ## Table of contents
 
 - [Development setup](#development-setup)
+- [Dependency management](#dependency-management)
 - [Branch naming](#branch-naming)
 - [Commit messages](#commit-messages)
 - [Pull requests](#pull-requests)
@@ -38,6 +39,40 @@ npm run lint
 npm run typecheck
 npm run test
 ```
+
+## Dependency management
+
+The policy below is already encoded in the configs; this section records the reasoning so it does
+not have to be reverse-engineered from them.
+
+- **Ranges express intent, the lockfile guarantees installs.** Dependencies in
+  [`package.json`](package.json) use caret (`^`) ranges to state compatibility intent, while the
+  committed [`package-lock.json`](package-lock.json) is the single source of reproducible installs.
+  CI and the documented setup use `npm ci`, which installs the locked tree exactly and fails if the
+  lockfile and manifest disagree. Always commit the lockfile changes that an install produces.
+- **Dependabot drives updates.** [`.github/dependabot.yml`](.github/dependabot.yml) opens weekly
+  update PRs for both the `npm` and `github-actions` ecosystems, so bumps are reviewed rather than
+  applied by hand. To keep the noise down it batches updates into grouped PRs and routes the commit
+  prefixes (`deps` / `deps-dev`) through release-please so the bumps land under the changelog's
+  Dependencies section.
+- **`@types/node` majors are held back on purpose.** The config ignores `@types/node` major bumps so
+  the type surface stays pinned to the lowest supported runtime. Letting it float would let a
+  newer-Node-only API typecheck cleanly and then crash at runtime on the supported floor.
+- **Hard pins are reserved for behavior-sensitive externals that are not npm range deps.** Two cases
+  are pinned exactly rather than ranged: the gitleaks version, kept as a single
+  `GITLEAKS_PINNED_VERSION` in [`src/config.ts`](src/config.ts) and mirrored in both workflow YAMLs,
+  with [`src/config.gitleaks-pin.test.ts`](src/config.gitleaks-pin.test.ts) asserting the three stay
+  in lockstep so a CI bump that misses the constant fails the suite; and first-party GitHub Actions,
+  which are SHA-pinned for supply-chain integrity (Dependabot still proposes the bumps).
+- **Do not exact-pin runtime dependencies in `package.json`.** claude-nomad is published to npm, so
+  pinning a runtime dependency to an exact version blocks consumers from deduping it against their
+  own tree and adds upgrade-PR churn that the committed lockfile already makes unnecessary. Pin in
+  the lockfile (automatic), not in the manifest ranges.
+
+One grouping choice is deliberate and worth stating: Dependabot groups dev-dependency `minor` and
+`patch` updates and production `patch` updates into single PRs, but a production `minor` update
+arrives as its own PR. Production minors are the likeliest to carry behavior change, so they get
+individual review while the lower-risk batches stay consolidated.
 
 ## Branch naming
 
