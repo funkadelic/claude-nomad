@@ -60,19 +60,20 @@ export function mockPackageJsonVersion(
 }
 
 /**
- * Mock `node:child_process` so the curl call to the npm registry returns a
- * deterministic response. Behaviors:
+ * Mock `node:child_process` so the HTTP fetcher call to the npm registry
+ * returns a deterministic response. Intercepts both `curl` (primary) and `wget`
+ * (fallback) so curl-throws cases do not reach a real binary. Behaviors:
  *   - `{ kind: 'json', version }`: return a buffer of `{"version":"<ver>"}`
  *   - `{ kind: 'no_version' }`: return a JSON payload with no `version` field,
  *     so `fetchLatestVersion` parses cleanly but finds no version and falls
  *     through to the silent-skip path.
  *   - `{ kind: 'garbage' }`: return a non-JSON buffer (forces parse failure)
  *   - `{ kind: 'throw' }`: throw with the given error code (default ENOENT
- *     so the offline-skip path looks like curl-missing).
+ *     so the offline-skip path looks like both-binary-missing).
  * The gitleaks probe is always answered with a fake version so it does not
  * pollute `process.exitCode` on dev hosts that lack the binary.
  *
- * @param response The deterministic curl behavior to simulate.
+ * @param response The deterministic fetcher behavior to simulate.
  */
 export function mockCurlReleases(
   response:
@@ -91,21 +92,33 @@ export function mockCurlReleases(
           args: readonly string[],
           opts?: Parameters<typeof cpModule.execFileSync>[2],
         ) => {
-          if (bin === 'curl' && args.some(isNpmRegistryUrl)) {
+          // Intercept curl (primary) and wget (fallback) for the npm registry
+          // fetch so curl-throws cases never reach a real binary.
+          if ((bin === 'curl' || bin === 'wget') && args.some(isNpmRegistryUrl)) {
             if (response.kind === 'throw') {
               const err = new Error(
-                `curl mocked: ${response.code ?? 'ENOENT'}`,
+                `${bin} mocked: ${response.code ?? 'ENOENT'}`,
               ) as NodeJS.ErrnoException;
               err.code = response.code ?? 'ENOENT';
               throw err;
             }
-            if (response.kind === 'garbage') {
-              return Buffer.from('not-json-at-all');
+            if (bin === 'curl') {
+              // curl is the primary path; if kind is not 'throw', serve the response.
+              if (response.kind === 'garbage') {
+                return Buffer.from('not-json-at-all');
+              }
+              if (response.kind === 'no_version') {
+                return Buffer.from(JSON.stringify({ name: 'claude-nomad' }));
+              }
+              return Buffer.from(JSON.stringify({ version: response.version }));
             }
-            if (response.kind === 'no_version') {
-              return Buffer.from(JSON.stringify({ name: 'claude-nomad' }));
-            }
-            return Buffer.from(JSON.stringify({ version: response.version }));
+            // wget fallback: only reached if curl threw, but since throw is
+            // handled above for both binaries, this path only fires in success
+            // cases where curl returned first. Make wget unreachable in that
+            // scenario by throwing (if reached, it means curl did not return).
+            /* c8 ignore start */
+            throw new Error(`wget fallback unexpectedly reached in non-throw case`);
+            /* c8 ignore stop */
           }
           if (bin === 'gitleaks' && args[0] === 'version') {
             return Buffer.from('v8.18.2\n');

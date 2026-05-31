@@ -6,14 +6,17 @@ import type { SpawnSyncFn } from './gh-actions.ts';
 
 /**
  * Optional-dependency presence reporter for `nomad doctor`. Probes for `gh`
- * and `curl` (both optional CLIs used by nomad features) and emits one row
- * per binary in the Version Checks section:
+ * and the HTTP fetcher (curl or wget, whichever is present) and emits one row
+ * per dependency group in the Version Checks section:
  *   - present with parsed version: `okGlyph gh: X.Y.Z`
  *   - present but version unparseable: `okGlyph gh: present`
  *   - not installed (ENOENT): `warnGlyph gh: not installed (optional; ...)`
  *
+ * The HTTP fetcher row shows OK when at least one of curl or wget is present,
+ * and WARN only when both are absent.
+ *
  * This reporter MUST NOT set `process.exitCode`: absent optional deps are
- * informational only (D-02). Both probes always run unconditionally.
+ * informational only (D-02). All probes always run unconditionally.
  */
 
 /**
@@ -24,6 +27,24 @@ import type { SpawnSyncFn } from './gh-actions.ts';
  * `\d+\.\d+\.\d+` carries on a degenerate all-digit input.
  */
 const VERSION_TOKEN = /(\d{1,9}\.\d{1,9}\.\d{1,9})/;
+
+/**
+ * Node-level timeout for a `bin --version` presence probe. Mirrors the bounded
+ * subprocess convention in `gh-actions.ts` (GH_TIMEOUT_MS) so a wedged binary
+ * on a stalled filesystem (NFS, FUSE, a wrapper shim) cannot hang the
+ * synchronous `cmdDoctor`. 3s matches the HTTP fetcher's 3s intent. A timeout
+ * kill surfaces as a thrown non-ENOENT error, which the probe's `catch` already
+ * maps to `{ status: 'present', version: null }`, preserving the no-exitCode
+ * contract.
+ */
+const PROBE_TIMEOUT_MS = 3_000;
+
+/**
+ * User-facing label for the HTTP fetcher dependency row. Single source of truth
+ * for the `curl or wget` capability phrasing so the three fetcher rows (two OK
+ * variants and the WARN variant) cannot drift apart on a copy edit.
+ */
+const FETCHER_LABEL = 'HTTP fetcher (curl or wget)';
 
 /**
  * Extract the first X.Y.Z-shaped version token from a string.
@@ -50,7 +71,10 @@ type DepProbeResult = { status: 'present'; version: string | null } | { status: 
  */
 function probeOptionalDep(bin: string, run: SpawnSyncFn): DepProbeResult {
   try {
-    const firstLine = run(bin, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const firstLine = run(bin, ['--version'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: PROBE_TIMEOUT_MS,
+    })
       .toString()
       .split('\n')[0]
       .trim();
@@ -66,10 +90,35 @@ function probeOptionalDep(bin: string, run: SpawnSyncFn): DepProbeResult {
 }
 
 /**
- * Emit presence rows for the optional `gh` and `curl` CLIs into the given
- * doctor section. Each row shows the binary's install status and version (if
- * parseable). Absent binaries emit a WARN naming the features they enable.
- * Never sets `process.exitCode` (D-02): both deps are optional.
+ * Emit a single HTTP fetcher row for the given section. Shows OK (with the
+ * present binary's version) when curl or wget is available, and WARN only when
+ * both are absent. curl is preferred when both are present.
+ *
+ * @param section - The Version Checks section to append the row to.
+ * @param run - Injectable subprocess runner; defaults to `execFileSync`.
+ */
+function reportFetcherRow(section: DoctorSection, run: SpawnSyncFn): void {
+  const curl = probeOptionalDep('curl', run);
+  const wget = probeOptionalDep('wget', run);
+
+  if (curl.status === 'present') {
+    addItem(section, `${green(okGlyph)} ${FETCHER_LABEL}: ${curl.version ?? 'present'}`);
+  } else if (wget.status === 'present') {
+    addItem(section, `${green(okGlyph)} ${FETCHER_LABEL}: ${wget.version ?? 'present'}`);
+  } else {
+    addItem(
+      section,
+      `${yellow(warnGlyph)} ${FETCHER_LABEL}: not installed (optional; needed for release-version staleness check + nomad doctor --check-schema)`,
+    );
+  }
+}
+
+/**
+ * Emit presence rows for the optional `gh` CLI and the HTTP fetcher (curl or
+ * wget) into the given doctor section. Each row shows the dependency's install
+ * status and version (if parseable). Absent dependencies emit a WARN naming
+ * the features they enable. Never sets `process.exitCode` (D-02): both deps
+ * are optional.
  *
  * @param section - The Version Checks section to append rows to.
  * @param run - Injectable subprocess runner; defaults to `execFileSync`.
@@ -85,13 +134,5 @@ export function reportOptionalDeps(section: DoctorSection, run: SpawnSyncFn = ex
     );
   }
 
-  const curl = probeOptionalDep('curl', run);
-  if (curl.status === 'present') {
-    addItem(section, `${green(okGlyph)} curl: ${curl.version ?? 'present'}`);
-  } else {
-    addItem(
-      section,
-      `${yellow(warnGlyph)} curl: not installed (optional; needed for release-version staleness check + nomad doctor --check-schema)`,
-    );
-  }
+  reportFetcherRow(section, run);
 }

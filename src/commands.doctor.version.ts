@@ -1,20 +1,22 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
+import { NPM_REGISTRY_LATEST_URL } from './config.ts';
+import { fetchUrl } from './http-fetch.ts';
 
 /**
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads
  * the local `package.json.version`, compares it to the latest published version
- * on the npm registry (3s curl timeout, fetched fresh each run), and emits one of:
+ * on the npm registry (3s timeout via curl or wget, fetched fresh each run),
+ * and emits one of:
  *   - `✓ claude-nomad: <local> (latest)` when local == latest
  *   - `⚠︎ claude-nomad: <local> -> <latest>` when local < latest
  *   - `ℹ︎ claude-nomad: <local> (ahead of latest release <latest>)` when local > latest
- * Every failure path (offline, curl missing, non-2xx, malformed JSON, missing
- * `version`, missing/unreadable package.json) is a SILENT skip; this module
- * never sets `process.exitCode` and never writes to stderr.
+ * Every failure path (offline, curl or wget missing, non-2xx, malformed JSON,
+ * missing `version`, missing/unreadable package.json) is a SILENT skip; this
+ * module never sets `process.exitCode` and never writes to stderr.
  */
 
 /** Strict-semver regex used to gate both the local version and the latest tag
@@ -67,22 +69,18 @@ function readLocalVersion(): string | null {
 }
 
 /**
- * Fetch the latest published version from the npm registry. Uses
- * `execFileSync('curl', ...)` rather than `node:https` because curl honors
- * system proxies and respects the `-m` timeout reliably. curl is optional, not
- * a hard dependency: this is its only consumer, so a host without curl simply
- * skips the version line. 3-second timeout, fail-fast on non-2xx (`-f`), silent
- * (`-s`), follow redirects (`-L`). Returns `null` on ANY failure path (curl
- * missing from PATH, a missing or non-string `version` field, or a version that
- * fails strict-semver validation). The npm registry `version` field is already
- * bare semver (no leading `v` strip needed).
+ * Fetch the latest published version from the npm registry via the shared HTTP
+ * fetcher (curl or wget). The fetcher is optional: a host with neither binary
+ * simply skips the version line. 3-second timeout per binary, fail-fast on
+ * non-2xx. Returns `null` on ANY failure path (curl or wget missing from PATH,
+ * a missing or non-string `version` field, or a version that fails
+ * strict-semver validation). The npm registry `version` field is already bare
+ * semver (no leading `v` strip needed).
  */
 function fetchLatestVersion(): string | null {
   try {
-    const url = 'https://registry.npmjs.org/claude-nomad/latest';
-    const raw = execFileSync('curl', ['-fsSL', '-m', '3', url], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).toString();
+    const raw = fetchUrl(NPM_REGISTRY_LATEST_URL);
+    if (raw === null) return null;
     const parsed = JSON.parse(raw) as { version?: unknown };
     if (typeof parsed.version !== 'string') return null;
     if (!STRICT_SEMVER.test(parsed.version)) return null;
