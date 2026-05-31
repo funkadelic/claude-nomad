@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.34.0](https://github.com/funkadelic/claude-nomad/compare/v0.33.0...v0.34.0) (2026-05-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* `nomad update` no longer self-updates via git/fork (it runs only `npm update -g claude-nomad`) and the `--push-origin` flag is removed. `nomad init` now requires the GitHub CLI (`gh`) on first-host setup when REPO_HOME has no `origin` remote.
+
+### Added
+
+* **push:** gitleaks allowlist base+overlay merge ([#201](https://github.com/funkadelic/claude-nomad/issues/201)) ([f6f2e8c](https://github.com/funkadelic/claude-nomad/commit/f6f2e8c62ef868b33f560170ddd8c60122eac4cb))
+* standalone-repo onboarding as the default, retire fork model ([#199](https://github.com/funkadelic/claude-nomad/issues/199)) ([8d38df9](https://github.com/funkadelic/claude-nomad/commit/8d38df909c36eeda085f8d4eb78e706c4ad2f115))
+
 ## [0.33.0](https://github.com/funkadelic/claude-nomad/compare/v0.32.4...v0.33.0) (2026-05-30)
 
 
