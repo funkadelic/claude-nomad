@@ -76,12 +76,15 @@ box, a personal rig and a work machine. [Get started in three steps.](#quickstar
 $ npm i -g claude-nomad
 
 # 2. Create your private sync repo and scaffold it. nomad init uses gh to
-#    create the repo, wire origin, disable Actions, and push the scaffold.
+#    create the repo, wire origin, and disable Actions, then scaffolds locally.
 $ nomad init                   # prompts for a repo name (default: claude-nomad-config)
 $ nomad init --repo my-config  # non-interactive: use this name, no prompt
 
 # 3. Add a stable host label to ~/.zshrc or ~/.bashrc, then reload.
 export NOMAD_HOST=<your-host-label>
+
+# 4. Publish the scaffold to your private repo.
+$ nomad push
 ```
 
 **Each additional host:**
@@ -861,8 +864,10 @@ regexes = [
 File location: `.gitleaks.toml` ships bundled with the CLI binary. At runtime both `probeGitleaks`
 (in `src/push-checks.ts`) and `runGitleaksScan` (in `src/push-gitleaks.ts`) try
 `<REPO_HOME>/.gitleaks.toml` first and fall back to the package-bundled copy when the repo-level
-file is absent. This means the allowlist always tracks the installed binary version; running
-`nomad update` (to get the latest CLI) is enough to receive allowlist updates.
+file is absent. So when you have no repo-level copy the allowlist tracks the installed binary, and
+running `nomad update` (to get the latest CLI) is enough to receive allowlist updates. If you do
+place a `<REPO_HOME>/.gitleaks.toml`, it takes precedence and `nomad update` will not change it; you
+maintain that file yourself.
 
 Editing: amend `.gitleaks.toml` in this repo, open a PR, and merge to `main`. Use TOML literal
 strings (triple single quotes, `'''regex'''`) for new regex entries so backslashes do not need
