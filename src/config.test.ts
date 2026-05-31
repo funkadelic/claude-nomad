@@ -155,6 +155,16 @@ describe('SHARED_LINKS includes hooks', () => {
     expect(config.PUSH_ALLOWED_STATIC).toContain('shared/hooks/');
   });
 
+  it('PUSH_ALLOWED_STATIC includes ".gitleaks.overlay.toml" as an exact name', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    // Exact membership (not a trailing-slash prefix entry), consistent with the
+    // sibling root-level `.gitleaksignore` entry. Pins the push allow-list so the
+    // user-owned overlay file can be staged by nomad push.
+    expect(config.PUSH_ALLOWED_STATIC).toContain('.gitleaks.overlay.toml');
+    expect(config.PUSH_ALLOWED_STATIC).not.toContain('.gitleaks.overlay.toml/');
+  });
+
   it('PathMap accepts optional sharedDirs field', () => {
     // Load-bearing typecheck: if sharedDirs is removed from PathMap this file fails to compile.
     expect(_withSharedDirs.sharedDirs).toEqual(['get-shit-done']);

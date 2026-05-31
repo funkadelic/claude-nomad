@@ -181,6 +181,7 @@ export const PUSH_ALLOWED_STATIC = [
   'hosts/',
   'path-map.json',
   '.gitleaksignore', // written by nomad push Allow action (D-04)
+  '.gitleaks.overlay.toml', // user-owned gitleaks allowlist overlay layered on the bundled base
 ] as const;
 
 /**
