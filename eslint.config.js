@@ -69,6 +69,20 @@ export default tseslint.config(
     },
   },
   {
+    // ESM helper scripts (e.g. scripts/build.mjs) live outside the tsconfig
+    // project graph; disable the typescript-eslint project service for them so
+    // the parser does not reject a .mjs file the tsconfig does not enumerate.
+    files: ['**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      sourceType: 'module',
+      globals: { ...globals.node },
+      parserOptions: {
+        projectService: false,
+      },
+    },
+  },
+  {
     files: ['src/**/*.test.ts'],
     rules: { 'max-lines': 'off' },
   },

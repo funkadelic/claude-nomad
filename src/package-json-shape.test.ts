@@ -31,12 +31,23 @@ describe('package.json shape', () => {
     expect(missing).toEqual([]);
   });
 
-  it('declares bin.nomad pointing at ./src/nomad.ts', () => {
-    // SPEC §2: the `nomad` bin resolves to the existing TS entrypoint; the
-    // `#!/usr/bin/env node` shebang runs it directly under Node native
-    // type-stripping (no tsx, no compile step).
+  it('declares bin.nomad pointing at the compiled ./dist/nomad.mjs bundle', () => {
+    // The `nomad` bin resolves to the esbuild-bundled, plain-JS artifact under
+    // dist/, NOT raw src/*.ts: Node refuses to type-strip files under
+    // node_modules, so a published .ts bin crashes on every `npm i -g`.
     const bin = pkg.bin as Record<string, unknown> | undefined;
-    expect(bin?.nomad).toBe('./src/nomad.ts');
+    expect(bin?.nomad).toBe('./dist/nomad.mjs');
+  });
+
+  it('ships the compiled bundle and builds it before pack/publish', () => {
+    // files ships dist/ (the self-contained bundle), never raw src/; and a
+    // build step produces it ahead of packing so the tarball is never stale.
+    const files = pkg.files as string[] | undefined;
+    expect(files).toContain('dist/');
+    expect(files).not.toContain('src/');
+    const scripts = pkg.scripts as Record<string, unknown> | undefined;
+    expect(typeof scripts?.build).toBe('string');
+    expect(scripts?.prepack as string).toContain('build');
   });
 
   it('does NOT ship tsx in dependencies or devDependencies', () => {
