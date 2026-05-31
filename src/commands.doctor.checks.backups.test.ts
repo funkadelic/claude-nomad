@@ -45,8 +45,11 @@ function makeBackupDir(name: string): void {
  */
 function makeSparseFile(path: string, sizeBytes: number): void {
   const fd = openSync(path, 'w');
-  ftruncateSync(fd, sizeBytes);
-  closeSync(fd);
+  try {
+    ftruncateSync(fd, sizeBytes);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
