@@ -118,4 +118,15 @@ describe('reportBackupsCheck', () => {
     expect(s.items).toHaveLength(0);
     expect(process.exitCode).toBeUndefined();
   });
+
+  it('degrades to no row and no throw when the backup root is unreadable', () => {
+    // existsSync passes but readdirSync throws (root is a file, not a dir):
+    // the tolerant reader must keep the read-only doctor from crashing.
+    const s = section('Version Checks');
+    const fileRoot = join(testRoot, 'backup-is-a-file');
+    writeFileSync(fileRoot, 'x');
+    expect(() => reportBackupsCheck(s, fileRoot)).not.toThrow();
+    expect(s.items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
+  });
 });

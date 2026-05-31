@@ -21,8 +21,8 @@ export const CLAUDE_HOME = resolve(HOME, '.claude');
  * Host-local backup cache root (`~/.cache/claude-nomad/backup`). `pull`,
  * `push`, and `diff` snapshot clobbered files into a per-run `<ts>` subdir
  * here. The `'backups'` segment is in `NEVER_SYNC`, so it never crosses the
- * sync boundary. Single source of truth for the formerly triplicated inline
- * computation; `nomad clean --backups` prunes it.
+ * sync boundary. Consolidates the formerly triplicated `pull`/`push`/`diff`
+ * inline path; `nomad clean --backups` prunes it.
  */
 export const BACKUP_BASE = join(HOME, '.cache', 'claude-nomad', 'backup');
 

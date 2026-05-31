@@ -13,6 +13,22 @@ import { BACKUP_BASE } from './config.ts';
  */
 const TS_SHAPE = /^\d{8}-\d{6}(-\d+)?$/;
 
+/**
+ * Tolerantly list a directory's entries, degrading to `[]` on any error so an
+ * unreadable backup root or `<ts>` subdir never throws out of the read-only
+ * doctor run (which `cmdDoctor` would not catch).
+ *
+ * @param dir - Absolute directory path to enumerate.
+ * @returns The entry names, or `[]` on error.
+ */
+function safeReaddir(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
 /** Count threshold above which the backups WARN row fires (dir count). */
 const DOCTOR_BACKUP_COUNT_WARN = 20;
 
@@ -34,7 +50,7 @@ const BYTES_PER_MB = 1024 * 1024;
  */
 function dirSizeBytes(dir: string): number {
   let bytes = 0;
-  for (const entry of readdirSync(dir)) {
+  for (const entry of safeReaddir(dir)) {
     const st = statSync(join(dir, entry), { throwIfNoEntry: false });
     if (st?.isFile()) bytes += st.size;
   }
@@ -68,7 +84,7 @@ function totalSizeMb(backupBase: string, dirs: string[]): number {
  */
 export function reportBackupsCheck(section: DoctorSection, backupBase: string = BACKUP_BASE): void {
   if (!existsSync(backupBase)) return;
-  const dirs = readdirSync(backupBase).filter((n) => TS_SHAPE.test(n));
+  const dirs = safeReaddir(backupBase).filter((n) => TS_SHAPE.test(n));
   const count = dirs.length;
   const sizeMb = totalSizeMb(backupBase, dirs);
   if (count > DOCTOR_BACKUP_COUNT_WARN || sizeMb > DOCTOR_BACKUP_SIZE_WARN_MB) {
