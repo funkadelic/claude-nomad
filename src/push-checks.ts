@@ -18,12 +18,12 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, type Dirent } from 'node:fs';
+import { readdirSync, rmSync, type Dirent } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
-import { resolveTomlPath } from './push-gitleaks.scan.ts';
+import { resolveTomlConfig } from './push-gitleaks.config.ts';
 import { NomadFatal } from './utils.ts';
 
 /**
@@ -115,17 +115,19 @@ export function findGitlinks(dir: string): string[] {
  * ENOENT; throws NomadFatal with the error message on any other failure.
  * Used by `cmdPush` (top-of-flow probe) and `cmdDoctor` (read-only).
  *
- * Passes `--config <toml>` resolved via the two-tier `resolveTomlPath` lookup
- * (REPO_HOME copy first, then the package-bundled copy). `gitleaks version`
- * ignores the flag empirically on 8.30.1, so the wiring is conservative:
- * symmetric with `runGitleaksScan` and surfaces a malformed toml early if a
- * future gitleaks version starts parsing the config on the `version`
- * subcommand. Omits the flag when neither copy exists; behavior reverts to the
- * default ruleset. Throws NomadFatal with the install hint on ENOENT; throws
- * NomadFatal with the error message on any other failure.
+ * Passes `--config <toml>` resolved via `resolveTomlConfig`, which applies the
+ * user-owned `.gitleaks.overlay.toml` allowlist on top of the bundled base (or
+ * delegates to the two-tier `resolveTomlPath` lookup when no overlay exists).
+ * `gitleaks version` ignores the flag empirically on 8.30.1, so the wiring is
+ * conservative: symmetric with `runGitleaksScan` and surfaces a malformed toml
+ * early if a future gitleaks version starts parsing the config on the `version`
+ * subcommand. Omits the flag when no config resolves; behavior reverts to the
+ * default ruleset. When the overlay merge generates a temp config its `tempPath`
+ * is removed in the `finally` on every path. Throws NomadFatal with the install
+ * hint on ENOENT; throws NomadFatal with the error message on any other failure.
  */
 export function probeGitleaks(): string {
-  const toml = resolveTomlPath();
+  const { path: toml, tempPath } = resolveTomlConfig();
   const args: string[] = ['version'];
   if (toml !== null) args.push('--config', toml);
   try {
@@ -136,6 +138,8 @@ export function probeGitleaks(): string {
     const e = err as NodeJS.ErrnoException;
     if (e.code === 'ENOENT') throw new NomadFatal(gitleaksInstallHint());
     throw new NomadFatal(`gitleaks --version failed: ${e.message}`);
+  } finally {
+    if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
   }
 }
 
