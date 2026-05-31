@@ -87,24 +87,21 @@ function effectiveType(hookPath: string): ModuleType | null {
  * a comment or `"export"` in a string. A single left-to-right alternation pass
  * is used so a `//` inside a string literal (e.g. a URL) is consumed by the
  * string branch rather than mistaken for a line comment that swallows the rest
- * of the line. A small regex pass is sufficient for a doctor WARN; full
- * tokenization is overkill, so a stray quote inside a regex literal can still
- * desync the scan (an accepted false-negative: the worst case is a missed hint).
+ * of the line. A small regex pass is sufficient for a doctor WARN; the string
+ * matchers do not track escapes and a stray quote in a regex literal can desync
+ * the scan (accepted false-negatives: the worst case is a missed hint).
  *
  * @param src - Raw hook source bytes.
  * @returns Source with comments and string/template literals removed.
  */
 function stripCommentsAndStrings(src: string): string {
-  return src.replace(
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g,
-    (match) => {
-      const open = match[0];
-      if (open === "'") return "''";
-      if (open === '"') return '""';
-      if (open === '`') return '``';
-      return ' ';
-    },
-  );
+  return src.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|'[^']*'|"[^"]*"|`[^`]*`/g, (match) => {
+    const open = match[0];
+    if (open === "'") return "''";
+    if (open === '"') return '""';
+    if (open === '`') return '``';
+    return ' ';
+  });
 }
 
 /**
