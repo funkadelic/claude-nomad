@@ -83,16 +83,20 @@ export function cmdInit(
   const snapshot = opts.snapshot === true;
   const keepActions = opts.keepActions === true;
 
-  // Ensure REPO_HOME exists before git remote add needs a cwd, then wire the
-  // backing GitHub repo. ensureOriginRepo is idempotent when origin already
-  // exists (D-09), so this is safe to call before the scaffold conflict guard.
+  // Create REPO_HOME, then refuse to clobber an already-initialized tree BEFORE
+  // any onboarding side effects. ensureOriginRepo can create a GitHub repo and
+  // wire a remote, so the conflict guard must run first: otherwise a re-init on
+  // an already-scaffolded REPO_HOME that lacks an origin would create a stray
+  // private repo and wire it, then abort with "already initialized".
   mkdirSync(REPO_HOME, { recursive: true });
-  ensureOriginRepo(opts.repoName ?? DEFAULT_REPO_NAME, opts.run);
 
   const conflict = preflightConflict(REPO_HOME);
   if (conflict !== null) {
     die(`already initialized; refusing to clobber ${conflict}`);
   }
+
+  // Wire the backing GitHub repo. Idempotent when origin already exists (D-09).
+  ensureOriginRepo(opts.repoName ?? DEFAULT_REPO_NAME, opts.run);
 
   // Create the directory structure first so the subsequent file writes have
   // a parent. `recursive: true` is a no-op when the dir already exists, but
