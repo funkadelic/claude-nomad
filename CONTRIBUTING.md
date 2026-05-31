@@ -1,7 +1,7 @@
 # Contributing to claude-nomad
 
 Thanks for your interest in improving claude-nomad. It is a small TypeScript CLI, and the
-contributor workflow is deliberately lightweight: clone, install, make a change behind the four
+contributor workflow is deliberately lightweight: clone, install, make a change behind the five
 gates, and open a pull request. The machine-enforced configs (linked throughout) are the source of
 truth, so this guide stays short and points at them rather than restating values that could drift.
 
@@ -27,17 +27,18 @@ npm ci
 `npm ci` runs the `prepare` script, which initializes husky so the git hooks are active on a fresh
 clone. Two hooks then fire automatically on `git commit`:
 
-- [`.husky/pre-commit`](.husky/pre-commit) runs `lint-staged` (eslint and prettier on the staged
-  files).
+- [`.husky/pre-commit`](.husky/pre-commit) runs `lint-staged`: eslint and prettier on staged `*.ts`,
+  markdownlint and prettier on staged `*.md`, and prettier on staged JSON/JS.
 - [`.husky/commit-msg`](.husky/commit-msg) runs commitlint against the commit message.
 
-Before opening a PR, run the four gates locally:
+Before opening a PR, run the five gates locally:
 
 ```bash
 npm run format
 npm run lint
 npm run typecheck
 npm run test
+npm run lint:md
 ```
 
 ## Dependency management
