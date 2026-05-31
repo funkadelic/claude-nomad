@@ -91,13 +91,14 @@ export function readGitleaksReport(reportPath: string): Finding[] | null {
  * In `repoDir`, runs `git init` then `git add -A` (no commit, no user identity:
  * `git add` does not require one), writes the gitleaks JSON report to a
  * collision-resistant path under `~/.cache/claude-nomad/`, and invokes
- * `gitleaks protect --staged`. Passes `--config <toml>` resolved via the
- * two-tier lookup in `resolveTomlPath` (REPO_HOME copy first, then the
- * package-bundled copy); omits the flag when neither exists so gitleaks uses its
+ * `gitleaks protect --staged`. Passes `--config <toml>` resolved via
+ * `resolveTomlConfig`, which layers a user-owned `.gitleaks.overlay.toml` on the
+ * two-tier `resolveTomlPath` base by generating a temp `[extend]` config (removed
+ * in the `finally`); omits the flag when no base exists so gitleaks uses its
  * default ruleset. Returns `[]` on a clean exit, the
  * parsed `Finding[]` on a non-zero exit with a readable report, or `null` when
- * the report is missing or unparseable (the scan-failed signal). The temp
- * report file is removed in a `finally` on every path. ENOENT (gitleaks or git
+ * the report is missing or unparseable (the scan-failed signal). The temp report
+ * file and any generated overlay temp-config are removed in a `finally` on every path. ENOENT (gitleaks or git
  * absent) is re-thrown, not swallowed, so each caller keeps its own
  * missing-binary handling (push -> install-hint FATAL; doctor -> scan-failed
  * FAIL row). All calls use `execFileSync` argv-array form (no shell), the
@@ -173,10 +174,11 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
  * streams so the caller can surface it. On the findings path the streams are
  * suppressed; the structured `Finding[]` fully describes the result.
  *
- * Passes `--config <toml>` resolved via `resolveTomlPath` (REPO_HOME copy
- * first, then the package-bundled copy), mirroring the `scanStagedTree`
- * convention so allow-list entries apply consistently across staged and
- * non-staged scans. Omits the flag when neither copy exists.
+ * Passes `--config <toml>` resolved via `resolveTomlConfig` (the
+ * `.gitleaks.overlay.toml` merge over the two-tier `resolveTomlPath` base, with a
+ * generated temp config cleaned up in the `finally`), mirroring the
+ * `scanStagedTree` convention so allow-list entries apply consistently across
+ * staged and non-staged scans. Omits the flag when no base config exists.
  *
  * @param filePath Absolute path to the file to scan.
  * @param forwardStreams Forward gitleaks stderr/stdout to process streams on
