@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { HOME, REPO_HOME } from './config.ts';
+import { BACKUP_BASE, REPO_HOME } from './config.ts';
 import { listDivergingFiles } from './extras-sync.diff.ts';
 import { eachExtrasTarget, loadValidatedExtras, type ExtrasCounts } from './extras-sync.core.ts';
 import { warn } from './utils.ts';
@@ -35,7 +35,7 @@ export function divergenceCheckExtras(ts: string): void {
   if (v === null) return;
 
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
-  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'extras');
+  const backupRoot = join(BACKUP_BASE, ts, 'extras');
   for (const { logical, localRoot, dirname } of eachExtrasTarget(v, counts)) {
     const local = join(localRoot, dirname);
     const repo = join(REPO_HOME, 'shared', 'extras', logical, dirname);

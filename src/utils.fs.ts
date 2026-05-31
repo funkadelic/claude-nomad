@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
-import { CLAUDE_HOME, HOME } from './config.ts';
+import { BACKUP_BASE, CLAUDE_HOME } from './config.ts';
 import { encodePath } from './utils.json.ts';
 import { die, log } from './utils.ts';
 
@@ -91,14 +91,14 @@ export function ensureSymlink(linkPath: string, target: string): void {
 }
 
 /**
- * Snapshot `absPath` into `~/.cache/claude-nomad/backup/<ts>/<rel>` before destructive write.
+ * Snapshot `absPath` into `BACKUP_BASE/<ts>/<rel>` before destructive write.
  * No-op if source missing or outside CLAUDE_HOME. Recursive for directories.
  */
 export function backupBeforeWrite(absPath: string, ts: string): void {
   if (!existsSync(absPath)) return;
   const rel = relative(CLAUDE_HOME, absPath);
   if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts);
+  const backupRoot = join(BACKUP_BASE, ts);
   const dst = join(backupRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
@@ -114,7 +114,7 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
   if (!existsSync(absPath)) return;
   const rel = relative(repoHome, absPath);
   if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'repo');
+  const backupRoot = join(BACKUP_BASE, ts, 'repo');
   const dst = join(backupRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
@@ -145,7 +145,7 @@ export function backupExtrasWrite(absPath: string, ts: string, projectRoot: stri
   if (!existsSync(absPath)) return;
   const rel = relative(projectRoot, absPath);
   if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(HOME, '.cache', 'claude-nomad', 'backup', ts, 'extras');
+  const backupRoot = join(BACKUP_BASE, ts, 'extras');
   const dst = join(backupRoot, encodePath(projectRoot), rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
