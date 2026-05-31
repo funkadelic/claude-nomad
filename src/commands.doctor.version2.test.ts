@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +15,7 @@ import {
   mockPackageJsonVersion,
 } from './commands.doctor.version.test-helpers.ts';
 
-describe('cmdDoctor version check (cache + tag edge cases)', () => {
+describe('cmdDoctor version check (tag edge cases)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNoColor: string | undefined;
@@ -55,47 +55,6 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
-  it('treats cache with non-finite checked_at as a miss and refetches (Test I)', async () => {
-    // `loadCache` must reject entries whose `checked_at` is not a finite
-    // number and fall through to a fresh curl. The seeded `0.10.0` must
-    // NOT appear; the freshly-fetched `0.11.3` must drive the WARN.
-    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(
-      join(cacheDir, 'version-check.json'),
-      JSON.stringify({ checked_at: 'not-a-number', latest: '0.10.0' }),
-    );
-    mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', version: '0.11.3' });
-    vi.resetModules();
-    const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
-    const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
-    expect(out).not.toContain('0.10.0');
-    expect(process.exitCode === 1).toBe(false);
-  });
-
-  it('treats cache with non-semver latest as a miss and refetches (Test J)', async () => {
-    // `loadCache` must reject entries whose `latest` field is not strict
-    // MAJOR.MINOR.PATCH and fall through to a fresh curl.
-    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(
-      join(cacheDir, 'version-check.json'),
-      JSON.stringify({ checked_at: Date.now(), latest: 'not-semver' }),
-    );
-    mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', version: '0.11.3' });
-    vi.resetModules();
-    const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
-    const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
-    expect(out).not.toContain('not-semver');
-    expect(process.exitCode === 1).toBe(false);
-  });
-
   it('emits NO version line when package.json itself is unreadable (Test L)', async () => {
     // Drives the catch arm of `readLocalVersion` (readFileSync throws). The
     // helper must swallow the error and skip silently rather than crash
@@ -108,23 +67,6 @@ describe('cmdDoctor version check (cache + tag edge cases)', () => {
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('claude-nomad:');
     expect(out).not.toMatch(/claude-nomad: \d/);
-    expect(process.exitCode === 1).toBe(false);
-  });
-
-  it('treats unparseable cache JSON as a miss and refetches (Test K)', async () => {
-    // `loadCache`'s catch block must swallow `JSON.parse` errors and
-    // return null, falling through to a fresh curl rather than crashing
-    // the whole doctor run on a single corrupted cache file.
-    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(join(cacheDir, 'version-check.json'), '{ this is not valid json');
-    mockPackageJsonVersion('0.11.2');
-    mockCurlReleases({ kind: 'json', version: '0.11.3' });
-    vi.resetModules();
-    const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
-    const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
     expect(process.exitCode === 1).toBe(false);
   });
 

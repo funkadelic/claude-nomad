@@ -56,7 +56,7 @@ jobs:
         run: npm ci
 
       - name: Regenerate SCHEMA_KEYS from the live schema
-        run: npx tsx scripts/sync-settings-keys.ts
+        run: node scripts/sync-settings-keys.ts
 
       - name: Open or update a PR when SCHEMA_KEYS drifted
         env:
