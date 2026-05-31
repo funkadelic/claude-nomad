@@ -494,3 +494,158 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
     stdoutSpy.mockRestore();
   });
 });
+
+/**
+ * Temp-config cleanup wiring: when an overlay exists, `resolveTomlConfig`
+ * generates a temp config and `scanStagedTree` / `scanFile` MUST remove it via
+ * `rmSync(tempPath, { force: true })` in their `finally`, on both the clean
+ * (success) path and the gitleaks-non-zero (failure) path. The no-overlay path
+ * (tempPath null) must NOT rmSync a temp config.
+ */
+describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
+  let originalHome: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-scan-cleanup-'));
+    process.env.HOME = testHome;
+    repoHome = join(testHome, 'repo');
+    process.env.NOMAD_REPO = repoHome;
+    mkdirSync(repoHome, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Mock node:fs so an overlay exists (no full repo toml, bundled present), and
+   * capture rmSync calls. existsSync: repo toml absent, overlay present, all else
+   * present (bundled + cache dir checks). readFileSync used for the overlay body.
+   */
+  function mockFsWithOverlay(rmSyncSpy: ReturnType<typeof vi.fn>): void {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn((p: unknown) => {
+          const s = String(p);
+          if (s === join(repoHome, '.gitleaks.toml')) return false;
+          if (s.endsWith('.gitleaks.overlay.toml')) return true;
+          return true;
+        }),
+        readFileSync: vi.fn((p: unknown, enc?: unknown) => {
+          if (String(p).endsWith('.gitleaks.overlay.toml')) {
+            return '[[allowlists]]\nregexes = ["MY_TOKEN"]\n';
+          }
+          return actual.readFileSync(p as fsModule.PathOrFileDescriptor, enc as never);
+        }),
+        rmSync: rmSyncSpy.mockImplementation(actual.rmSync),
+      };
+    });
+  }
+
+  function mockExecOk(): void {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+  }
+
+  function mockExecGitleaksFails(): void {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          if ((args ?? []).some((a) => a.startsWith('--report-path='))) {
+            const err = new Error('crash') as NodeJS.ErrnoException & { status?: number };
+            err.status = 2;
+            throw err;
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+  }
+
+  it('scanStagedTree removes the temp config on the success path', async () => {
+    const rmSyncSpy = vi.fn();
+    mockFsWithOverlay(rmSyncSpy);
+    mockExecOk();
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(scanStagedTree(testHome)).toEqual([]);
+    expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      force: true,
+    });
+  });
+
+  it('scanStagedTree removes the temp config on the failure path', async () => {
+    const rmSyncSpy = vi.fn();
+    mockFsWithOverlay(rmSyncSpy);
+    mockExecGitleaksFails();
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    // gitleaks exits non-zero with no report -> null; temp must still be cleaned.
+    expect(scanStagedTree(testHome)).toBeNull();
+    expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      force: true,
+    });
+  });
+
+  it('scanFile removes the temp config on the success path', async () => {
+    const rmSyncSpy = vi.fn();
+    mockFsWithOverlay(rmSyncSpy);
+    mockExecOk();
+    const { scanFile } = await import('./push-gitleaks.scan.ts');
+    expect(scanFile('/some/file.jsonl')).toEqual([]);
+    expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      force: true,
+    });
+  });
+
+  it('scanFile removes the temp config on the failure path', async () => {
+    const rmSyncSpy = vi.fn();
+    mockFsWithOverlay(rmSyncSpy);
+    mockExecGitleaksFails();
+    const { scanFile } = await import('./push-gitleaks.scan.ts');
+    expect(scanFile('/some/file.jsonl')).toBeNull();
+    expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      force: true,
+    });
+  });
+
+  it('no-overlay path does NOT rmSync a temp config (tempPath null)', async () => {
+    // No overlay file; only the report file is removed, never a nomad-gitleaks-cfg temp.
+    const rmSyncSpy = vi.fn();
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn().mockReturnValue(false),
+        rmSync: rmSyncSpy.mockImplementation(actual.rmSync),
+      };
+    });
+    mockExecOk();
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(scanStagedTree(testHome)).toEqual([]);
+    const cleanedTemp = rmSyncSpy.mock.calls.some(
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('nomad-gitleaks-cfg'),
+    );
+    expect(cleanedTemp).toBe(false);
+  });
+});

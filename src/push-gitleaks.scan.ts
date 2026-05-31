@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { REPO_HOME } from './config.ts';
+import { resolveTomlConfig } from './push-gitleaks.config.ts';
 import { nowTimestamp } from './utils.fs.ts';
 
 /**
@@ -115,7 +116,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   const reportPath = join(cacheDir, `gitleaks-${nowTimestamp()}-${process.pid}.json`);
-  const toml = resolveTomlPath();
+  const { path: toml, tempPath } = resolveTomlConfig();
   const args: string[] = [
     'protect',
     '--staged',
@@ -141,6 +142,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     }
     return report;
   } finally {
+    if (tempPath !== null) rmSync(tempPath, { force: true });
     rmSync(reportPath, { force: true });
   }
 }
@@ -185,7 +187,7 @@ export function scanFile(filePath: string, forwardStreams = false): Finding[] | 
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   const reportPath = join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}.json`);
-  const toml = resolveTomlPath();
+  const { path: toml, tempPath } = resolveTomlConfig();
   const args: string[] = [
     'detect',
     '--no-git',
@@ -209,6 +211,7 @@ export function scanFile(filePath: string, forwardStreams = false): Finding[] | 
     }
     return report;
   } finally {
+    if (tempPath !== null) rmSync(tempPath, { force: true });
     rmSync(reportPath, { force: true });
   }
 }

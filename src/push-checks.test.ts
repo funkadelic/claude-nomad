@@ -242,6 +242,71 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     expect(capturedArgs).not.toContain('--config');
   });
 
+  it('probeGitleaks removes the overlay temp config in finally on success', async () => {
+    // An overlay exists (no full repo toml, bundled present) so resolveTomlConfig
+    // generates a temp config; probeGitleaks must remove it via rmSync in finally.
+    const rmSyncSpy = vi.fn();
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn((p: unknown) => {
+          const s = String(p);
+          if (s === join(testHome, 'claude-nomad', '.gitleaks.toml')) return false;
+          if (s.endsWith('.gitleaks.overlay.toml')) return true;
+          return true;
+        }),
+        readFileSync: vi.fn(() => '[[allowlists]]\nregexes = ["MY_TOKEN"]\n'),
+        rmSync: rmSyncSpy.mockImplementation(actual.rmSync),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('v8.30.1\n')) };
+    });
+    const { probeGitleaks } = await import('./push-checks.ts');
+    expect(probeGitleaks()).toBe('v8.30.1');
+    expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      force: true,
+    });
+  });
+
+  it('probeGitleaks removes the overlay temp config in finally even when execFileSync throws', async () => {
+    // Same overlay routing, but gitleaks errors (EACCES). The temp must still be
+    // cleaned up in finally before the NomadFatal propagates.
+    const rmSyncSpy = vi.fn();
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn((p: unknown) => {
+          const s = String(p);
+          if (s === join(testHome, 'claude-nomad', '.gitleaks.toml')) return false;
+          if (s.endsWith('.gitleaks.overlay.toml')) return true;
+          return true;
+        }),
+        readFileSync: vi.fn(() => '[[allowlists]]\nregexes = ["MY_TOKEN"]\n'),
+        rmSync: rmSyncSpy.mockImplementation(actual.rmSync),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          const err = new Error('permission denied') as NodeJS.ErrnoException;
+          err.code = 'EACCES';
+          throw err;
+        }),
+      };
+    });
+    const { probeGitleaks } = await import('./push-checks.ts');
+    expect(() => probeGitleaks()).toThrow(/gitleaks --version failed/);
+    expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      force: true,
+    });
+  });
+
   it('probeGitleaks throws NomadFatal with "gitleaks --version failed" on non-ENOENT errors', async () => {
     // Distinguish line 119 from the ENOENT branch (line 118). EACCES means
     // the binary exists but the spawn was denied; the message MUST be the
