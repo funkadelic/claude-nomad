@@ -187,6 +187,38 @@ describe('reportHookScopeCheck', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('does not let a // inside a double-quoted string swallow a later export', async () => {
+    // WR-01 regression: comment-stripping must not run ahead of string-stripping,
+    // or the // inside "http://x" eats the rest of the line and hides the export.
+    buildHookTree(env.testHome, {
+      hooksType: 'commonjs',
+      files: { 'url.js': 'const u = "http://example.com";\nexport const ok = u;\n' },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${warnGlyph} hooks/url.js`);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('strips single-quoted strings so a quoted marker is not miscounted', async () => {
+    buildHookTree(env.testHome, {
+      rootType: 'module',
+      files: { 'sq.js': "const y = require('y');\nmodule.exports = y;\n" },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${warnGlyph} hooks/sq.js`);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('strips backtick template literals so a templated marker is ignored', async () => {
+    buildHookTree(env.testHome, {
+      hooksType: 'commonjs',
+      files: { 'tpl.js': 'const s = `nothing to require here`;\nexport const a = 1;\n' },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${warnGlyph} hooks/tpl.js`);
+    expect(process.exitCode).toBe(0);
+  });
+
   it('emits a dim info skip when ~/.claude/hooks is absent', async () => {
     const { out } = await runCheck();
     expect(out).toContain(`${infoGlyph} no ~/.claude/hooks; skipping module-scope check`);
