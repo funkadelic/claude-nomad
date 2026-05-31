@@ -64,6 +64,7 @@ box, a personal rig and a work machine. [Get started in three steps.](#quickstar
     - [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)
     - [Recovery flow: push-time interactive menu](#recovery-flow-push-time-interactive-menu)
     - [`.gitleaks.toml` allowlist policy](#gitleakstoml-allowlist-policy)
+      - [Customizing the allowlist with an overlay](#customizing-the-allowlist-with-an-overlay)
   - [Cross-OS resume](#cross-os-resume)
   - [Run tests](#run-tests)
 
@@ -868,6 +869,51 @@ file is absent. So when you have no repo-level copy the allowlist tracks the ins
 running `nomad update` (to get the latest CLI) is enough to receive allowlist updates. If you do
 place a `<REPO_HOME>/.gitleaks.toml`, it takes precedence and `nomad update` will not change it; you
 maintain that file yourself.
+
+#### Customizing the allowlist with an overlay
+
+What this means for you: if you only want to allow a couple of extra patterns of your own (say, an
+internal tool that emits a structured token that keeps tripping the scan), you do not have to copy
+the whole bundled allowlist into your sync repo and keep it in step by hand. Instead, drop a small
+`<REPO_HOME>/.gitleaks.overlay.toml` containing only your extra `[[allowlists]]` tables (and
+optionally `[[rules]]`). nomad layers your entries on top of the bundled allowlist at scan time, so
+the shipped Sonar / gitleaks / npm-audit / coverage noise allows stay in effect, the gitleaks
+default ruleset stays in effect, and your additions are appended to all of them.
+
+Why this is better than a full `.gitleaks.toml`: a full repo-level `.gitleaks.toml` replaces the
+bundled allowlist outright, so the shipped noise allows are lost and `nomad update` can no longer
+refresh them (you own that file). The overlay is additive instead: it never drops the bundled base,
+and because the base still ships with the CLI, `nomad update` keeps the base current while your
+overlay rides on top.
+
+How it works, briefly: on `nomad push`, when the overlay is present, nomad generates a throwaway
+config that extends the bundled `.gitleaks.toml` (which itself extends the gitleaks default),
+appends your overlay body, scans with that combined config, then deletes the throwaway file. The
+merge is gitleaks' own `[extend]` append, so your allowlist entries add to the shipped and default
+ones rather than replacing them.
+
+Two rules to keep in mind:
+
+- Your overlay must NOT contain its own `[extend]` block. nomad writes the `[extend]` line for you;
+  if the overlay includes one, the push aborts with a clear error rather than scanning with a config
+  you did not intend.
+- If you keep BOTH a full `<REPO_HOME>/.gitleaks.toml` AND an overlay, the full `.gitleaks.toml`
+  wins and the overlay is ignored (a full repo toml means you have taken complete manual control).
+  Pick one approach: the overlay for additive tweaks, or a full `.gitleaks.toml` for total control.
+
+Example `<REPO_HOME>/.gitleaks.overlay.toml` (note: no `[extend]` block):
+
+```toml
+[[allowlists]]
+description = "my-org: internal build-token noise"
+regexes = [
+    '''BUILDTOK-[A-Za-z0-9]{24}''',
+]
+```
+
+The overlay file is push-allowed (it is an exact-name entry in `PUSH_ALLOWED_STATIC` in
+`src/config.ts`, alongside `.gitleaksignore`), so you can commit `.gitleaks.overlay.toml` to your
+sync repo and it travels to your other hosts on the next `nomad pull`.
 
 Editing: amend `.gitleaks.toml` in this repo, open a PR, and merge to `main`. Use TOML literal
 strings (triple single quotes, `'''regex'''`) for new regex entries so backslashes do not need
