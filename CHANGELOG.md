@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.35.0](https://github.com/funkadelic/claude-nomad/compare/v0.34.1...v0.35.0) (2026-05-31)
+
+
+### Added
+
+* **clean:** prune old backups via nomad clean --backups ([#207](https://github.com/funkadelic/claude-nomad/issues/207)) ([ed9149d](https://github.com/funkadelic/claude-nomad/commit/ed9149d549fa87122238ddc7deb3c402555f62a6))
+* **doctor:** warn on ESM/CommonJS hook module-scope mismatch ([#206](https://github.com/funkadelic/claude-nomad/issues/206)) ([451a3c3](https://github.com/funkadelic/claude-nomad/commit/451a3c380bb4fc0cb6d6bf6fc2e51c69ca20c159))
+
+
+### Changed
+
+* remove dead code left by recent refactors ([#204](https://github.com/funkadelic/claude-nomad/issues/204)) ([c956f29](https://github.com/funkadelic/claude-nomad/commit/c956f291653141512ddc96fbca66d9512dab1377))
+
 ## [0.34.1](https://github.com/funkadelic/claude-nomad/compare/v0.34.0...v0.34.1) (2026-05-31)
 
 
