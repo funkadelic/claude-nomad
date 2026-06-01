@@ -48,7 +48,7 @@ const REQUIRED_EXACT = [
 ];
 
 const FORBIDDEN =
-  /^(\.planning|\.github|tests|node_modules|scripts|hosts|install\.sh|tsconfig\.json|vitest\.config\.ts|src)(?:\/|$)/;
+  /^(\.planning|\.github|tests|node_modules|scripts|hosts|install\.sh|tsconfig\.json|vitest\.config\.ts|src|docs-site)(?:\/|$)/;
 
 let raw;
 try {
