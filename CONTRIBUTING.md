@@ -1,13 +1,14 @@
 # Contributing to claude-nomad
 
 Thanks for your interest in improving claude-nomad. It is a small TypeScript CLI, and the
-contributor workflow is deliberately lightweight: clone, install, make a change behind the four
+contributor workflow is deliberately lightweight: clone, install, make a change behind the five
 gates, and open a pull request. The machine-enforced configs (linked throughout) are the source of
 truth, so this guide stays short and points at them rather than restating values that could drift.
 
 ## Table of contents
 
 - [Development setup](#development-setup)
+- [Dependency management](#dependency-management)
 - [Branch naming](#branch-naming)
 - [Commit messages](#commit-messages)
 - [Pull requests](#pull-requests)
@@ -26,18 +27,53 @@ npm ci
 `npm ci` runs the `prepare` script, which initializes husky so the git hooks are active on a fresh
 clone. Two hooks then fire automatically on `git commit`:
 
-- [`.husky/pre-commit`](.husky/pre-commit) runs `lint-staged` (eslint and prettier on the staged
-  files).
+- [`.husky/pre-commit`](.husky/pre-commit) runs `lint-staged`: eslint and prettier on staged `*.ts`,
+  markdownlint and prettier on staged `*.md`, and prettier on staged JSON/JS.
 - [`.husky/commit-msg`](.husky/commit-msg) runs commitlint against the commit message.
 
-Before opening a PR, run the four gates locally:
+Before opening a PR, run the five gates locally:
 
 ```bash
 npm run format
 npm run lint
 npm run typecheck
 npm run test
+npm run lint:md
 ```
+
+## Dependency management
+
+The policy below is already encoded in the configs; this section records the reasoning so it does
+not have to be reverse-engineered from them.
+
+- **Ranges express intent, the lockfile guarantees installs.** Dependencies in
+  [`package.json`](package.json) use caret (`^`) ranges to state compatibility intent, while the
+  committed [`package-lock.json`](package-lock.json) is the single source of reproducible installs.
+  CI and the documented setup use `npm ci`, which installs the locked tree exactly and fails if the
+  lockfile and manifest disagree. Always commit the lockfile changes that an install produces.
+- **Dependabot drives updates.** [`.github/dependabot.yml`](.github/dependabot.yml) opens weekly
+  update PRs for both the `npm` and `github-actions` ecosystems, so bumps are reviewed rather than
+  applied by hand. To keep the noise down it batches updates into grouped PRs and routes the commit
+  prefixes (`deps` / `deps-dev`) through release-please so the bumps land under the changelog's
+  Dependencies section.
+- **`@types/node` majors are held back on purpose.** The config ignores `@types/node` major bumps so
+  the type surface stays pinned to the lowest supported runtime. Letting it float would let a
+  newer-Node-only API typecheck cleanly and then crash at runtime on the supported floor.
+- **Hard pins are reserved for behavior-sensitive externals that are not npm range deps.** Two cases
+  are pinned exactly rather than ranged: the gitleaks version, kept as a single
+  `GITLEAKS_PINNED_VERSION` in [`src/config.ts`](src/config.ts) and mirrored in both workflow YAMLs,
+  with [`src/config.gitleaks-pin.test.ts`](src/config.gitleaks-pin.test.ts) asserting the three stay
+  in lockstep so a CI bump that misses the constant fails the suite; and first-party GitHub Actions,
+  which are SHA-pinned for supply-chain integrity (Dependabot still proposes the bumps).
+- **Do not exact-pin runtime dependencies in `package.json`.** claude-nomad is published to npm, so
+  pinning a runtime dependency to an exact version blocks consumers from deduping it against their
+  own tree and adds upgrade-PR churn that the committed lockfile already makes unnecessary. Pin in
+  the lockfile (automatic), not in the manifest ranges.
+
+One grouping choice is deliberate and worth stating: Dependabot groups dev-dependency `minor` and
+`patch` updates and production `patch` updates into single PRs, but a production `minor` update
+arrives as its own PR. Production minors are the likeliest to carry behavior change, so they get
+individual review while the lower-risk batches stay consolidated.
 
 ## Branch naming
 
