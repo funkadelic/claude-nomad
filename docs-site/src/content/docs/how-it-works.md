@@ -1,0 +1,268 @@
+---
+title: How it works
+description: The mechanics behind claude-nomad path remapping, settings merge, and sync behavior.
+---
+
+## Overview
+
+**claude-nomad** is a **tool**, not a config store. You install the CLI globally
+(`npm i -g claude-nomad`) and keep a separate **private** Git repo that holds only your config:
+`CLAUDE.md`, agents, skills, settings, session transcripts. No tool source code lives in that repo.
+
+```text
+your private <your-username>/claude-nomad-config
+  ├── shared/                 (your config, synced to every host)
+  │   ├── CLAUDE.md
+  │   ├── agents/
+  │   ├── skills/
+  │   ├── commands/
+  │   ├── rules/
+  │   ├── hooks/
+  │   ├── settings.base.json
+  │   └── projects/
+  ├── hosts/<hostname>.json
+  └── path-map.json
+```
+
+`nomad init` creates this repo for you (via `gh`) and scaffolds the directory structure in one
+step. Every host after the first installs the CLI, clones your private data repo to
+`~/claude-nomad/`, and runs `nomad pull` to sync.
+
+By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config.ts`). Developers
+working from an alternate checkout can `export NOMAD_REPO=/path/to/repo` to point the CLI at their
+working tree without symlink gymnastics; `nomad doctor` surfaces an active override via a trailing
+`(NOMAD_REPO)` annotation on the repo-state line. Empty `NOMAD_REPO` falls through to the default,
+so a clobbered dotfile variable does not break the CLI.
+
+## Repo layout
+
+What `~/claude-nomad/` looks like on a configured host:
+
+```text
+~/claude-nomad/
+├── shared/                   # synced to every machine
+│   ├── CLAUDE.md
+│   ├── settings.base.json    # baseline settings
+│   ├── agents/
+│   ├── skills/
+│   ├── commands/
+│   ├── rules/
+│   ├── hooks/                # hook scripts, symlinked into ~/.claude/hooks/
+│   ├── my-statusline.cjs     # any script you want symlinked into ~/.claude/
+│   ├── .gitignore            # blocks .claude.json, settings.local.json, *.token,
+│   │                         # *.key, *.pem, id_rsa, id_ed25519, .env, .env.*
+│   ├── projects/             # session transcripts under logical names
+│   └── extras/               # opt-in per-project content
+├── hosts/
+│   ├── <your-mac>.json       # patches merged over settings.base.json
+│   ├── <your-wsl-host>.json
+│   └── <your-nuc>.json
+└── path-map.json             # logical project -> per-host absolute path
+```
+
+## What gets synced vs. not
+
+| Category | Items | Behavior |
+| -------- | ----- | -------- |
+| **Synced** | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`. |
+| **Generated** | `settings.json` | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull. |
+| **Remapped** | `projects/` session transcripts | Copied with path translation per `path-map.json`. |
+| **Per-project extras** | Whitelisted dirs like `.planning/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
+| **Shared support dirs** | Opt-in global `~/.claude/` dirs like a tool's `get-shit-done/` | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. |
+| **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
+| **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
+
+Pointers and specifics:
+
+- **Synced** link names live in `SHARED_LINKS` (and the optional `sharedDirs` field in
+  `path-map.json`), **whitelisted extras** names in `SUPPORTED_EXTRAS`, and the full
+  **never-synced** set in `NEVER_SYNC` (all in `src/config.ts`).
+- **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `.credentials.json` (OAuth
+  credential store), `history.jsonl`, `settings.local.json` (per-host overrides),
+  `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,
+  `session-env/`, `statsig/`, `telemetry/`, `ide/`, plus host-local caches and runtime state
+  (`cache/`, `backups/`, `paste-cache/`, `daemon/`, `jobs/`, `tasks/`, `security/`,
+  `sessions/`). This set is also the deny-list the `sharedDirs` opt-in is checked against, so
+  one of these names cannot be symlinked into the shared repo by mistake.
+- **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
+  overwritten.
+
+> [!NOTE]
+> Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
+> URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the
+> plugin's own per-host config.
+
+> [!IMPORTANT]
+> Syncing a tool's `skills/` or `commands/` files copies the command shims, not the engine
+> behind them. If a tool keeps a binary or runtime outside `~/.claude/` (installed with
+> `npm i -g`, a setup script, and so on), nomad does not carry that part, so the synced
+> commands appear on a new host but fail until the tool itself is installed there. Install such
+> tools once per host. For example, if you sync the GSD (`get-shit-done`) skills, run
+> `npm i -g get-shit-done-cc` on each host, pinned to the version that matches your committed
+> skills. Claude Code marketplace plugins (such as superpowers) are the exception: they are
+> listed in `enabledPlugins`, synced via `settings.base.json`, and re-downloaded by Claude Code
+> automatically, so they need no manual install.
+
+## Path remapping
+
+The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-path>/` where the
+encoded path is the absolute path with `/` replaced by `-`. So the same logical project ends up in
+different directories on each host.
+
+`path-map.json` defines logical names and where the repo lives on each host. The optional `extras`
+block opts a project into syncing whitelisted directories (or a single root file) at its root:
+
+```json
+{
+  "projects": {
+    "my-example-repo": {
+      "<your-mac>": "/Users/you/code/my-example-repo",
+      "<your-wsl-host>": "/home/you/code/my-example-repo",
+      "<your-nuc>": "TBD"
+    }
+  },
+  "extras": {
+    "my-example-repo": [".planning", "CLAUDE.md"]
+  }
+}
+```
+
+> [!IMPORTANT]
+> The host-label keys must match whatever you set `NOMAD_HOST=` to on each host. Mismatched
+> labels silently skip remap, so sessions land in the wrong host's encoded dir.
+
+Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries
+cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the
+real path when you bring up that host.
+
+On `push`, sessions in `~/.claude/projects/-Users-you-code-my-example-repo/` get copied to
+`shared/projects/my-example-repo/`. On `nomad pull` on another machine, they get copied to that
+host's encoded path. `claude --resume` then finds them.
+
+The `extras` block is additive and back-compatible: legacy `path-map.json` files without it keep
+working unchanged. Each value is an array of directory or root-file names (e.g. `.planning`,
+`CLAUDE.md`) checked against `SUPPORTED_EXTRAS` in `src/config.ts`; anything outside that
+whitelist is skipped with a log line, so an unrecognized name cannot widen the sync surface.
+
+On `nomad push`, opted-in content at `<localRoot>/<name>` (a directory subtree or a single file)
+is copied to `shared/extras/<logical>/<name>` and goes through the same staged-tree gitleaks scan
+as everything else. On `nomad pull`, the reverse copy runs after `git pull --rebase`, and just
+before it overwrites your working tree a divergence check compares the incoming content against
+your local copy and prints a per-file WARN naming anything that differs.
+
+Your existing local content is backed up under `~/.cache/claude-nomad/backup/<ts>/extras/` before
+the pull copy lands, so an unexpected overwrite is always recoverable.
+
+## Shared support dirs (sharedDirs)
+
+Some tools install a `hooks` block into `settings.json` whose commands point at scripts under
+`~/.claude/hooks/` (and sometimes a support directory such as `~/.claude/get-shit-done/`). Because
+`settings.json` is regenerated on every pull, that hook configuration travels to every host, but
+the scripts it points at did not, so hooks broke on a freshly configured host. `~/.claude/hooks/`
+is now a built-in synced link (it rides the same symlink model as `skills/` and `agents/`), so
+hook scripts travel automatically.
+
+For any other global `~/.claude/` support directory a tool needs, the optional top-level
+`sharedDirs` field in `path-map.json` opts it into the same symlink sync:
+
+```json
+{
+  "projects": {
+    "my-example-repo": {
+      "<your-mac>": "/Users/you/code/my-example-repo"
+    }
+  },
+  "sharedDirs": ["get-shit-done"]
+}
+```
+
+What this means for you: each listed name is symlinked from `shared/<name>` into
+`~/.claude/<name>` (the same model as the built-in synced links, not a copy), so editing it on
+any host updates the one shared copy. The field is additive and back-compatible: a `path-map.json`
+without it behaves exactly as before.
+
+Entries are validated before anything is linked. A name is accepted only if it is a single path
+segment (no `/`, no `..`), is not one of the never-synced names, and does not collide with a
+reserved `shared/` name (`settings.base.json`, the built-in synced links, `hooks`, `hosts`,
+`path-map.json`). An invalid entry is dropped with a warning rather than aborting the run. The
+contents still go through the same gitleaks scan as everything else on push, so do not point
+`sharedDirs` at a directory that holds credentials.
+
+First-time setup on an already-configured repo: a symlink can only form once the directory exists
+under `shared/`. On a fresh repo `nomad init --snapshot` handles this for you. To add `hooks/` (or
+a new `sharedDirs` entry) to a repo that is already set up, move it into `shared/` once on the
+host that has it, then let the normal flow take over:
+
+```bash
+$ mv ~/.claude/hooks ~/claude-nomad/shared/hooks   # one-time, on the source host
+$ nomad pull                                        # re-creates ~/.claude/hooks as a symlink
+$ nomad push                                        # shares it with your other hosts
+```
+
+`nomad pull` never writes back to the remote, so it will not seed `shared/` for you; the
+one-time move is deliberate.
+
+## Per-host overrides
+
+`settings.base.json` holds portable defaults (model, permissions, plugins).
+`hosts/<NOMAD_HOST>.json` holds machine-specific patches. They're deep-merged on every pull
+(scalars override, objects merge recursively, arrays replace). Keys that used to be
+force-marked per-host because they embedded absolute paths (`statusLine.command`, `hooks`) can
+live in `settings.base.json` if you write the commands with `$HOME` (e.g.
+`"command": "node \"$HOME/.claude/my-statusline.cjs\""`); Claude Code runs them through a shell
+so shell expansion applies. Reserve per-host files for truly machine-specific values (env, MCP
+URLs, host-only model overrides).
+
+`shared/settings.base.json`:
+
+```json
+{
+  "model": "claude-sonnet-4-6",
+  "permissions": { "allow": ["Bash(npm run *)", "Bash(git status)"] }
+}
+```
+
+`hosts/<your-other-host>.json`:
+
+```json
+{
+  "model": "claude-opus-4-8",
+  "env": { "OLLAMA_HOST": "http://localhost:11434" }
+}
+```
+
+Results on `your-other-host`: opus 4.8, the local Ollama env var, plus the shared permissions
+array.
+
+> [!CAUTION]
+> Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
+> `nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file
+> in the repo instead.
+
+`nomad doctor` warns when `settings.json` carries a top-level key it does not recognize (a cue
+that Claude Code added a setting). The recognized set is kept current against Claude Code's
+published settings schema by a weekly automated PR in the public repo, so a periodic
+`nomad update` (to get the latest CLI) is what keeps that warning quiet on your hosts. To check
+your own `settings.json` against the live schema on demand, run `nomad doctor --check-schema`.
+
+## What does NOT sync (deliberate trade-offs)
+
+Read these before adopting so you opt in with eyes open.
+
+- **Last-write-wins on conflicts.** Git surfaces them on merge; no field-level JSON merging.
+- **Manual push/pull.** No file watcher. Shell hooks recommended.
+- **OAuth doesn't sync.** You'll log in once per host. Intentional.
+- **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are
+  left alone.
+- **Extras are opt-in and whitelisted.** Projects without an `extras` entry in `path-map.json`
+  are unaffected. Names (a directory or a single root file) outside `SUPPORTED_EXTRAS` are
+  skipped with a `skip ... not in SUPPORTED_EXTRAS` log line so an unrecognized name cannot widen
+  the sync surface. Unsafe path-map values (path-traversal in `logical` keys, non-absolute or
+  unnormalized `localRoot` values) abort the run before any file is touched, so a malformed entry
+  fails loudly instead of corrupting state.
+- **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so
+  Claude Code's picker's `cd ... && claude --resume <id>` line fails on a different host. Use
+  `nomad doctor --resume-cmd <id>` for a host-local equivalent (see [Usage](/usage/)). The
+  sidecar approach preserves transcript byte-equality.
+- **Empty directories don't survive sync.** Git doesn't track empty dirs; `nomad doctor` reports
+  them as `missing` (benign). Drop a `.gitkeep` to force materialization.
