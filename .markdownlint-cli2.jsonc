@@ -7,5 +7,5 @@
   // a markdownlint-cli v1 feature that cli2 does not read; exclusions live here.
   "globs": ["**/*.md"],
   "gitignore": true,
-  "ignores": ["CHANGELOG.md"],
+  "ignores": ["CHANGELOG.md", "docs-site/**"],
 }

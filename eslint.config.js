@@ -6,7 +6,14 @@ import sonarjs from 'eslint-plugin-sonarjs';
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/**', 'coverage/**', 'dist/**', '.planning/**', '.claude/**'],
+    ignores: [
+      'node_modules/**',
+      'coverage/**',
+      'dist/**',
+      '.planning/**',
+      '.claude/**',
+      'docs-site/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
