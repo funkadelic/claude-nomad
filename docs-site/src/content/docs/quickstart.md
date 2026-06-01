@@ -80,8 +80,8 @@ Actions policy).
 ## Setup: first host in detail
 
 `nomad init` creates the private repo via `gh`, wires it as `origin`, disables Actions, scaffolds
-the directory layout, and pushes. The `gh` CLI must be installed and authenticated before you run
-it.
+the directory layout. You then run `nomad push` to publish. The `gh` CLI must be installed and
+authenticated before you run it.
 
 ```bash
 # Install the CLI.
