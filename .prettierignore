@@ -9,3 +9,4 @@ package-lock.json
 /path-map.json
 # Owned by release-please; format drifts on every release.
 CHANGELOG.md
+docs-site/
