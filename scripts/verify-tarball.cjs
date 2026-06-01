@@ -16,7 +16,7 @@
 //      the compiled bin dist/nomad.mjs).
 //   4. Assert no path matches the FORBIDDEN regex (.planning, .github,
 //      tests, node_modules, scripts, hosts, install.sh, tsconfig.json,
-//      vitest.config.ts, src). This is how the verifier confirms it has NOT
+//      vitest.config.ts, src, docs-site). This is how the verifier confirms it has NOT
 //      itself leaked into the tarball (scripts/ is forbidden) and, critically,
 //      that raw TypeScript under src/ is never shipped: Node refuses to
 //      type-strip files under node_modules, so a published src/*.ts bin
@@ -61,9 +61,25 @@ try {
   process.exit(1);
 }
 
+// npm can prepend notice lines to stdout on some publish paths, so a raw
+// JSON.parse is fragile. Salvage the JSON array between the first '[' and the
+// last ']' when a direct parse fails.
+function parseNpmPackJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf('[');
+    const end = text.lastIndexOf(']');
+    if (start !== -1 && end > start) {
+      return JSON.parse(text.slice(start, end + 1));
+    }
+    throw new Error('no JSON array found in npm pack output');
+  }
+}
+
 let reports;
 try {
-  reports = JSON.parse(raw);
+  reports = parseNpmPackJson(raw);
 } catch (err) {
   process.stderr.write(`verify-tarball: FAIL\n  could not parse npm pack JSON: ${err.message}\n`);
   process.exit(1);
