@@ -68,10 +68,13 @@ function parseNpmPackJson(text) {
   try {
     return JSON.parse(text);
   } catch {
-    const start = text.indexOf('[');
+    // The --json array begins at the start of its own line, so anchor on that
+    // (rather than the first '[') to skip any prepended notice line that itself
+    // contains brackets.
+    const startMatch = text.match(/^\s*\[/m);
     const end = text.lastIndexOf(']');
-    if (start !== -1 && end > start) {
-      return JSON.parse(text.slice(start, end + 1));
+    if (startMatch && end > startMatch.index) {
+      return JSON.parse(text.slice(startMatch.index, end + 1));
     }
     throw new Error('no JSON array found in npm pack output');
   }
