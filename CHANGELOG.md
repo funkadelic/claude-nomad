@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.36.0](https://github.com/funkadelic/claude-nomad/compare/v0.35.0...v0.36.0) (2026-06-01)
+
+
+### Added
+
+* **doctor:** require an HTTP fetcher (curl or wget) for the version check ([#210](https://github.com/funkadelic/claude-nomad/issues/210)) ([96b5a53](https://github.com/funkadelic/claude-nomad/commit/96b5a532e688cca9acebb1c6780d4106b2f21f5b))
+
+
+### Changed
+
+* **backup:** route backup-path writers through BACKUP_BASE ([#211](https://github.com/funkadelic/claude-nomad/issues/211)) ([7033c29](https://github.com/funkadelic/claude-nomad/commit/7033c29c9af76db029f44d0f1717ea1831ba122e))
+* **tests:** label the test matrix jobs with the Node version ([#208](https://github.com/funkadelic/claude-nomad/issues/208)) ([3ada7e1](https://github.com/funkadelic/claude-nomad/commit/3ada7e12f38fc43f517842435b46c967c9312b25))
+
+
+### Documentation
+
+* **hero:** add hooks/, align glyph + terminal, tighten spacing ([#213](https://github.com/funkadelic/claude-nomad/issues/213)) ([d0bf93f](https://github.com/funkadelic/claude-nomad/commit/d0bf93f93fb21f65b8c5893b70bacbbf05d8ebe6))
+* refresh contributor and user docs for recent changes ([#212](https://github.com/funkadelic/claude-nomad/issues/212)) ([d909097](https://github.com/funkadelic/claude-nomad/commit/d9090977fdf445316128ca9a0fefdec966105b58))
+
 ## [0.35.0](https://github.com/funkadelic/claude-nomad/compare/v0.34.1...v0.35.0) (2026-05-31)
 
 
