@@ -53,15 +53,9 @@ describe('parsePushArgs - boolean flags', () => {
     });
   });
 
-  it('--dry-run --redact-all is accepted (orthogonal flags)', async () => {
+  it('--dry-run --redact-all returns null (a dry-run resolves nothing)', async () => {
     const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
-    const result = parsePushArgs(['node', 'nomad.ts', 'push', '--dry-run', '--redact-all']);
-    expect(result).toEqual({
-      dryRun: true,
-      redactAll: true,
-      allowAll: false,
-      allowRule: undefined,
-    });
+    expect(parsePushArgs(['node', 'nomad.ts', 'push', '--dry-run', '--redact-all'])).toBeNull();
   });
 
   it('unknown flag returns null', async () => {
@@ -104,6 +98,27 @@ describe('parsePushArgs - --allow <rule> value flag', () => {
   it('--allow with a value starting with -- returns null', async () => {
     const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
     expect(parsePushArgs(['node', 'nomad.ts', 'push', '--allow', '--other-flag'])).toBeNull();
+  });
+
+  it('--allow with a single-dash value returns null (leading-dash guard)', async () => {
+    const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
+    expect(parsePushArgs(['node', 'nomad.ts', 'push', '--allow', '-x'])).toBeNull();
+  });
+
+  it('--allow with a value containing invalid characters returns null', async () => {
+    const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
+    expect(parsePushArgs(['node', 'nomad.ts', 'push', '--allow', 'rule id'])).toBeNull();
+    expect(parsePushArgs(['node', 'nomad.ts', 'push', '--allow', 'a/b'])).toBeNull();
+  });
+
+  it('--allow accepts a well-formed rule id with underscores and hyphens', async () => {
+    const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
+    expect(parsePushArgs(['node', 'nomad.ts', 'push', '--allow', 'generic_api-key'])).toEqual({
+      dryRun: false,
+      redactAll: false,
+      allowAll: false,
+      allowRule: 'generic_api-key',
+    });
   });
 
   it('duplicate --allow returns null', async () => {

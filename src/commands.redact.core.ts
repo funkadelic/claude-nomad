@@ -146,11 +146,10 @@ export function isRecentlyModified(
  * @returns True when the fingerprint is valid and safe to append.
  */
 export function isValidFingerprint(fingerprint: string): boolean {
+  // The regex `[^\r\n]+` on the trimmed value already requires at least one
+  // non-newline character, so it subsumes a separate non-empty-after-trim check.
   return (
-    fingerprint.length > 0 &&
-    fingerprint.length <= 512 &&
-    /^[^\r\n]+$/.test(fingerprint.trim()) &&
-    fingerprint.trim().length > 0
+    fingerprint.length > 0 && fingerprint.length <= 512 && /^[^\r\n]+$/.test(fingerprint.trim())
   );
 }
 

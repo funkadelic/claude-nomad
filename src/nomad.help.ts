@@ -43,12 +43,14 @@ export const DEFAULT_HELP = [
   cont('remap, without staging or pushing.'),
   row('       --redact-all', 'Redact all findings non-interactively (backup, no prompt); no TTY'),
   cont('required. Does not auto-Allow. Mutually exclusive with --allow*.'),
+  cont('Cannot combine with --dry-run.'),
   row(
     '       --allow <rule>',
     'Allow (append .gitleaksignore fingerprint for) findings matching a gitleaks',
   ),
   cont('rule id, then re-scan; proceeds only when no finding survives. No TTY'),
   cont('required. Never skips the scan. Mutually exclusive with --redact-all/--allow-all.'),
+  cont('Cannot combine with --dry-run.'),
   row(
     '       --allow-all',
     'Allow every current finding non-interactively, then re-scan; proceeds only',

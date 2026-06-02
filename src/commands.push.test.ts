@@ -98,6 +98,20 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
     const { cmdPush } = await import('./commands.push.ts');
     await expect(cmdPush({ dryRun: true, allowRule: 'github-pat' })).rejects.toThrow(DieError);
   });
+
+  it('throws (via die) when --dry-run and --redact-all are both set', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        die: (msg: string) => {
+          throw new DieError(msg);
+        },
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ dryRun: true, redactAll: true })).rejects.toThrow(DieError);
+  });
 });
 
 // cmdPush integration: the `remapExtrasPush` call lands between `remapPush`

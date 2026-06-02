@@ -1,11 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
-import type * as redactModule from './commands.redact.ts';
+import type * as redactModule from './commands.redact.core.ts';
 import type * as utilsModule from './utils.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 
@@ -222,6 +222,79 @@ describe('resolveLeakFindings - allowAll non-interactive path', () => {
       }),
     ).rejects.toThrow(NomadFatal);
   });
+
+  it('restores a pre-existing .gitleaksignore when the re-scan still leaks (WR-03)', async () => {
+    // Real allowAllFindings (no mock) so the fingerprint is actually written,
+    // then the surviving-leak abort must roll the file back to its prior state.
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const ignPath = join(testHome, '.gitleaksignore');
+    const original = 'pre-existing:rule:1\n';
+    writeFileSync(ignPath, original, 'utf8');
+
+    const finding = makeFinding();
+    const verdict = { leak: true, verdictRow: '✗ leak', recovery: null, findings: [finding] };
+
+    await expect(
+      resolveLeakFindings(
+        verdict,
+        'ts-001',
+        { projects: {} },
+        {
+          allowAll: true,
+          scanVerdict: () => ({
+            leak: true,
+            verdictRow: '✗ still leaking',
+            recovery: 'still leaking',
+            findings: [finding],
+          }),
+        },
+      ),
+    ).rejects.toThrow(NomadFatal);
+
+    // The eagerly-written allow entry is rolled back; only the prior content remains.
+    expect(readFileSync(ignPath, 'utf8')).toBe(original);
+  });
+
+  it('leaves no .gitleaksignore behind when the re-scan still leaks and none existed (WR-03)', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const ignPath = join(testHome, '.gitleaksignore');
+    expect(existsSync(ignPath)).toBe(false);
+
+    const finding = makeFinding();
+    const verdict = { leak: true, verdictRow: '✗ leak', recovery: null, findings: [finding] };
+
+    await expect(
+      resolveLeakFindings(
+        verdict,
+        'ts-001',
+        { projects: {} },
+        {
+          allowAll: true,
+          scanVerdict: () => ({
+            leak: true,
+            verdictRow: '✗ still leaking',
+            recovery: 'still leaking',
+            findings: [finding],
+          }),
+        },
+      ),
+    ).rejects.toThrow(NomadFatal);
+
+    // No allowlist file is left on disk for a push that never happened.
+    expect(existsSync(ignPath)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -402,12 +475,12 @@ describe('allowAllFindings - calls appendGitleaksIgnore for each finding', () =>
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.redact.ts');
+    vi.doUnmock('./commands.redact.core.ts');
   });
 
   it('calls appendGitleaksIgnore with each finding Fingerprint', async () => {
     const appendMock = vi.fn();
-    vi.doMock('./commands.redact.ts', async (importOriginal) => {
+    vi.doMock('./commands.redact.core.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: appendMock };
     });

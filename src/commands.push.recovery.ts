@@ -17,6 +17,8 @@
  * advisory cap.
  */
 
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import type { PathMap } from './config.ts';
@@ -131,6 +133,37 @@ function applyThenRescan(scanVerdict: () => LeakVerdict, repoHome: string): Leak
   return next;
 }
 
+/**
+ * Snapshot `.gitleaksignore`, run `append` (which writes the allow entries),
+ * then re-stage and re-scan via {@link applyThenRescan}. When the re-scan still
+ * reports a leak the push aborts; the eagerly-written allow entries are rolled
+ * back to the pre-append state so an aborted push leaves no allowlist lines in
+ * the working tree (the secret was held back AND nothing the user did not
+ * confirm is committed by a later push). Used by the `--allow-all` and
+ * `--allow <rule>` paths.
+ *
+ * @param append Writes the allow fingerprints for the chosen mode.
+ * @param scanVerdict Injectable scan function.
+ * @param repoHome Repository root path for the ignore file and `git add -A`.
+ * @returns The clean `LeakVerdict` after re-staging and re-scanning.
+ */
+function allowThenRescan(
+  append: () => void,
+  scanVerdict: () => LeakVerdict,
+  repoHome: string,
+): LeakVerdict {
+  const ignPath = join(repoHome, '.gitleaksignore');
+  const before = existsSync(ignPath) ? readFileSync(ignPath, 'utf8') : null;
+  append();
+  try {
+    return applyThenRescan(scanVerdict, repoHome);
+  } catch (err) {
+    if (before === null) rmSync(ignPath, { force: true });
+    else writeFileSync(ignPath, before, 'utf8');
+    throw err;
+  }
+}
+
 /** Build the real-TTY readline-based prompt function (one interface per call). */
 function makeRealPrompt(): PromptFn {
   return async (prompt: string) => {
@@ -192,16 +225,18 @@ export async function resolveLeakFindings(
   }
 
   if (allowAll) {
-    allowAllFindings(current.findings);
-    return applyThenRescan(scanVerdict, REPO_HOME);
+    return allowThenRescan(() => allowAllFindings(current.findings), scanVerdict, REPO_HOME);
   }
 
   if (allowRule !== undefined) {
-    const matched = allowFindingsByRule(current.findings, allowRule);
-    if (matched === 0) {
-      log(`no findings matched rule ${allowRule}; re-scanning`);
-    }
-    return applyThenRescan(scanVerdict, REPO_HOME);
+    return allowThenRescan(
+      () => {
+        const matched = allowFindingsByRule(current.findings, allowRule);
+        if (matched === 0) log(`no findings matched rule ${allowRule}; re-scanning`);
+      },
+      scanVerdict,
+      REPO_HOME,
+    );
   }
 
   if (!isTTYCheck()) {

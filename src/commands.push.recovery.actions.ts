@@ -7,7 +7,7 @@
  */
 
 import type { PathMap } from './config.ts';
-import { appendGitleaksIgnore } from './commands.redact.ts';
+import { appendGitleaksIgnore } from './commands.redact.core.ts';
 import { applyRedact } from './commands.push.recovery.redact.ts';
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
 import type { Finding } from './push-gitleaks.scan.ts';

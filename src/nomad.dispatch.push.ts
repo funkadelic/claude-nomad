@@ -40,8 +40,18 @@ function applyBool(seen: boolean, set: () => void): TokenResult {
 }
 
 /**
+ * Gitleaks rule-id shape: a leading alphanumeric/underscore then any of
+ * alphanumeric, underscore, or hyphen. Anchoring the first character to a
+ * non-hyphen rejects leading-dash values (e.g. `-x`) the way the drop-session
+ * and redact arms reject leading-dash positionals, while still accepting real
+ * rule ids like `generic-api-key`.
+ */
+const RULE_ID_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+
+/**
  * Apply the `--allow <rule>` value flag to the parse state. Rejects a
- * duplicate or a missing/flag-shaped value.
+ * duplicate, a missing/flag-shaped value, or a value that is not a
+ * well-formed gitleaks rule id (see {@link RULE_ID_RE}).
  *
  * @param argv The full process argv array.
  * @param i Index of the `--allow` token.
@@ -51,7 +61,7 @@ function applyBool(seen: boolean, set: () => void): TokenResult {
 function applyAllow(argv: string[], i: number, st: PushParseState): TokenResult {
   if (st.allowRule !== undefined) return REJECT;
   const val = extractFlagValue(argv, i);
-  if (val === null) return REJECT;
+  if (val === null || !RULE_ID_RE.test(val)) return REJECT;
   st.allowRule = val;
   return { ok: true, advance: 2 };
 }
@@ -85,13 +95,12 @@ function applyPushToken(argv: string[], i: number, st: PushParseState): TokenRes
  * [--allow-all]`.
  *
  * `--redact-all`, `--allow-all`, and `--allow <rule>` are mutually exclusive
- * resolution modes. Combining any two of them is a parse error. Combining
- * `--allow-all` or `--allow <rule>` with `--dry-run` is also a parse error
- * because a dry-run performs no mutations and cannot resolve anything.
+ * resolution modes. Combining any two of them is a parse error. Combining ANY
+ * resolution mode (including `--redact-all`) with `--dry-run` is also a parse
+ * error because a dry-run performs no mutations and cannot resolve anything.
  *
  * Returns `null` on any parse error: unknown flag, duplicate, a value flag
- * with no value or a value that starts with `--`, or a mutually-exclusive
- * combination.
+ * with no value or a non-rule-id value, or a mutually-exclusive combination.
  *
  * @param argv The full process argv array (parsing starts at index 3).
  * @returns Parsed push arguments, or `null` on any parse error.
@@ -110,12 +119,13 @@ export function parsePushArgs(argv: string[]): PushArgs | null {
     i += advance;
   }
   const hasAllow = st.allowAll || st.allowRule !== undefined;
+  const wantsResolution = st.redactAll || hasAllow;
   // Mutual exclusivity: resolution modes conflict with each other.
   if (st.redactAll && hasAllow) return null;
   if (st.allowAll && st.allowRule !== undefined) return null;
-  // --allow* with --dry-run: a dry-run resolves nothing, so this combination
-  // is meaningless and rejected as a usage error.
-  if (st.dryRun && hasAllow) return null;
+  // Any resolution mode with --dry-run: a dry-run resolves nothing, so the
+  // combination is meaningless and rejected as a usage error.
+  if (st.dryRun && wantsResolution) return null;
   return {
     dryRun: st.dryRun,
     redactAll: st.redactAll,
