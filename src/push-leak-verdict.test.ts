@@ -78,6 +78,16 @@ describe('push-leak-verdict: pure row + verdict builders', () => {
     expect(row).toContain('gitleaks detected secrets in 3 session transcript(s)');
   });
 
+  it('leakVerdictRow dedupes duplicate findings before counting sessions (count consistency)', async () => {
+    // Defect #4: duplicate findings (same Fingerprint) must not inflate the
+    // session count in the verdict row. Three copies of the same session finding
+    // must report 1 session, not 3.
+    const { leakVerdictRow } = await import('./push-leak-verdict.ts');
+    const f = sessionFinding('sid-dup');
+    const row = leakVerdictRow([f, f, f]);
+    expect(row).toContain('gitleaks detected secrets in 1 session transcript(s)');
+  });
+
   it('verdictFromFindings(null) is a non-leak scan-failed verdict and sets exitCode 1', async () => {
     const { verdictFromFindings } = await import('./push-leak-verdict.ts');
     const v = verdictFromFindings(null);

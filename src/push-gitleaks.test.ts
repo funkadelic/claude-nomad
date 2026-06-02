@@ -860,6 +860,122 @@ describe('buildSessionAwareFatal (pure)', () => {
       'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry',
     );
   });
+
+  it('otherFindingHint: memory/*.md path returns manual-review hint, NOT drop-session memory', async () => {
+    // Defect #3: SUBAGENT_SESSION_PATH previously matched memory/notes.md and
+    // captured "memory" as the session id, emitting a useless `drop-session memory`
+    // hint. The fixed regex only emits a drop-session hint for genuine .jsonl
+    // transcripts nested under a session directory.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const hint = otherFindingHint({
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/my-proj/memory/notes.md',
+      StartLine: 5,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    expect(hint).toContain('git diff --cached');
+    expect(hint).toContain('unstage manually');
+    expect(hint).not.toContain('drop-session memory');
+    expect(hint).not.toContain('redact memory');
+    expect(hint).not.toContain('nomad drop-session');
+  });
+
+  it('otherFindingHint: non-.jsonl file under a session dir gets manual-review hint', async () => {
+    // A non-transcript file under a session dir (e.g. some-other.txt) must not
+    // yield a drop-session hint because redact/drop operate on transcripts only.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const hint = otherFindingHint({
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/my-proj/abc123/some-other.txt',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    expect(hint).toContain('git diff --cached');
+    expect(hint).toContain('unstage manually');
+    expect(hint).not.toContain('nomad drop-session');
+  });
+
+  it('dedupeFindings: empty-Fingerprint findings dedup by File:RuleID:StartLine:StartColumn', async () => {
+    // The fallback key path (Fingerprint === '') must be exercised for 100%
+    // branch coverage on findingIdentityKey.
+    const { partitionFindings } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const base = {
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/proj/sid.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: '',
+    };
+    // Two identical findings with empty Fingerprint must collapse to one session entry.
+    const { bySession } = partitionFindings([base, base]);
+    expect(bySession.size).toBe(1);
+    const counts = bySession.get('sid');
+    expect(counts?.get('generic-api-key')).toBe(1);
+  });
+
+  it('dedupeFindings: 3 identical findings (same Fingerprint) collapse to one entry', async () => {
+    // Defect #4: duplicate findings in the `other` bucket previously printed the
+    // same `Also found:` row multiple times. dedupeFindings collapses them
+    // before partitioning so only one entry appears.
+    const { partitionFindings, buildSessionAwareFatal } =
+      (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const f: Finding = {
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/my-proj/memory/notes.md',
+      StartLine: 5,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-dup',
+    };
+    const session: Finding = {
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/my-proj/sid-A.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-session',
+    };
+    // Three identical duplicates of f, plus one session finding.
+    const { bySession, other } = partitionFindings([f, f, f, session]);
+    // After dedup, there must be exactly one other entry.
+    expect(other.length).toBe(1);
+    const msg = buildSessionAwareFatal(bySession, other);
+    // The `Also found:` block appears exactly once.
+    const alsoCount = (msg.match(/Also found:/g) ?? []).length;
+    expect(alsoCount).toBe(1);
+  });
+
+  it('dedupeFindings: duplicate session findings collapse to one session block', async () => {
+    // Duplicate findings on the same session (same Fingerprint) must not
+    // produce inflated per-RuleID counts or repeated session blocks.
+    const { partitionFindings } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const f: Finding = {
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/my-proj/sid-A.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-same',
+    };
+    const { bySession } = partitionFindings([f, f, f]);
+    // All three are the same finding; after dedup only one session block.
+    expect(bySession.size).toBe(1);
+    const counts = bySession.get('sid-A');
+    expect(counts).toBeDefined();
+    // Count must be 1, not 3.
+    expect(counts?.get('generic-api-key')).toBe(1);
+  });
 });
 
 // --config wiring: pass --config <REPO_HOME>/.gitleaks.toml when the file
