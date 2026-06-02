@@ -35,13 +35,13 @@ function collectFiles(dir: string, out: string[]): void {
     if (lst.isSymbolicLink()) continue;
     if (lst.isDirectory()) {
       collectFiles(abs, out);
-    } else {
-      // Must be a regular file after filtering out symlinks and directories.
-      // Special entries (sockets, FIFOs, devices) are excluded by the isFile guard.
-      /* c8 ignore start */
-      if (lst.isFile()) out.push(abs);
-      /* c8 ignore stop */
+      continue;
     }
+    // Must be a regular file after filtering out symlinks and directories.
+    // Special entries (sockets, FIFOs, devices) are excluded by the isFile guard.
+    /* c8 ignore start */
+    if (lst.isFile()) out.push(abs);
+    /* c8 ignore stop */
   }
 }
 
@@ -63,7 +63,7 @@ function collectFiles(dir: string, out: string[]): void {
 export function listSubtreeFiles(sessionDir: string): string[] {
   const out: string[] = [];
   collectFiles(sessionDir, out);
-  return out.sort();
+  return out.sort((a, b) => a.localeCompare(b));
 }
 
 /**

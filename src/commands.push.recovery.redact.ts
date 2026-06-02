@@ -45,17 +45,15 @@ import { sessionIdFromFinding } from './commands.push.recovery.seams.ts';
  * A secret in `tool-results/*.txt` (or any other subtree file) is therefore
  * caught and scrubbed before the staged copy is written.
  *
- * The push-verdict findings (`f`, `allFindings`) drive which sessions to act
- * on and provide session-id extraction, but their `Match` fields come from a
- * `--redact` scan and are masked. The local re-scan (via `scan`) runs WITHOUT
- * `--redact` so `applyRedactions` receives the real secret values.
+ * The trigger finding `f` provides session-id extraction, but its `Match`
+ * field comes from a `--redact` scan and is masked. The local re-scan (via
+ * `scan`) runs WITHOUT `--redact` so `applyRedactions` receives the real
+ * secret values.
  *
  * Path-traversal defense: each logical key is validated via `assertSafeLogical`
  * before any filesystem join, mirroring the guard in `remap.ts`.
  *
  * @param f Trigger finding (used for session-id extraction).
- * @param allFindings Full finding set for this run (used for session-id
- *   matching; values are masked and not used for redaction).
  * @param ts Backup timestamp for `backupBeforeWrite`.
  * @param map Parsed path-map for staged-tree path resolution.
  * @param nowMs Injectable clock for the live-session mtime check.
@@ -64,7 +62,6 @@ import { sessionIdFromFinding } from './commands.push.recovery.seams.ts';
  */
 export function applyRedact(
   f: Finding,
-  allFindings: Finding[],
   ts: string,
   map: PathMap,
   nowMs: () => number,
@@ -153,6 +150,5 @@ export function applyRedact(
     );
   }
 
-  void allFindings; // drive session-id extraction only; masked Match values not used for redaction
   return true;
 }

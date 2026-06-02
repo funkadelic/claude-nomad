@@ -67,9 +67,9 @@ const LEGACY_FATAL =
  * @returns A string key that uniquely identifies the finding span.
  */
 function findingIdentityKey(f: Finding): string {
-  return f.Fingerprint !== ''
-    ? f.Fingerprint
-    : `${f.File}:${f.RuleID}:${f.StartLine}:${f.StartColumn}`;
+  return f.Fingerprint === ''
+    ? `${f.File}:${f.RuleID}:${f.StartLine}:${f.StartColumn}`
+    : f.Fingerprint;
 }
 
 /**

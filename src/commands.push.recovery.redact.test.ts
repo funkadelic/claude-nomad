@@ -139,7 +139,7 @@ describe('applyRedact: subagent-only secret is redacted and whole subtree is sta
       return [];
     };
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
 
     expect(result).toBe(true);
     // agent-2 must have been redacted.
@@ -222,7 +222,7 @@ describe('applyRedact: live-session guard fires on newest subagent mtime', () =>
     // Clock is 1 second after the agent file's mtime -> within 5-minute threshold.
     const liveClock = () => statSync(agentPath).mtimeMs + 1000;
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, liveClock);
+    const result = applyRedact(trigger, 'ts-x', map, liveClock);
 
     expect(result).toBe(false);
     expect(backupSpy).not.toHaveBeenCalled();
@@ -311,7 +311,7 @@ describe('applyRedact: .meta.json is copied as-is and never carries [REDACTED:',
       return [];
     };
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
     expect(result).toBe(true);
 
     // .meta.json is copied alongside the subagents dir.
@@ -411,9 +411,9 @@ describe('applyRedact: assertSafeLogical rejects an unsafe logical key', () => {
     };
 
     const farFuture = Date.now() + 10 * 60 * 1000;
-    expect(() =>
-      applyRedact(trigger, [trigger], 'ts-x', unsafeMap, () => farFuture, fakeScan),
-    ).toThrow(NomadFatal);
+    expect(() => applyRedact(trigger, 'ts-x', unsafeMap, () => farFuture, fakeScan)).toThrow(
+      NomadFatal,
+    );
   });
 });
 
@@ -499,7 +499,7 @@ describe('applyRedact: clean agent file does not abort the whole operation', () 
       return [];
     };
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
     expect(result).toBe(true);
     // Main is rewritten.
     const mainContent = readFileSync(transcriptPath, 'utf8');
@@ -596,7 +596,7 @@ describe('applyRedact: no subagents dir - works as before (main only)', () => {
       return [];
     };
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
     expect(result).toBe(true);
     const mainContent = readFileSync(transcriptPath, 'utf8');
     expect(mainContent).toContain('[REDACTED:test-rule]');
@@ -688,7 +688,7 @@ describe('applyRedact: secret in tool-results/*.txt is staged as scrubbed', () =
       return [];
     };
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
 
     expect(result).toBe(true);
     // Local tool-results file must have been redacted.
@@ -769,7 +769,7 @@ describe('applyRedact: live guard fires when tool-results file is within 5 minut
     // Clock is 1 second after the tool-results file's mtime -> within threshold.
     const liveClock = () => statSync(toolFilePath).mtimeMs + 1000;
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, liveClock);
+    const result = applyRedact(trigger, 'ts-x', map, liveClock);
 
     expect(result).toBe(false);
     expect(backupSpy).not.toHaveBeenCalled();
@@ -843,7 +843,6 @@ describe('applyRedact: scan null on main file returns false (existing behavior p
     // Scan always returns null.
     const result = applyRedact(
       trigger,
-      [trigger],
       'ts-x',
       map,
       () => farFuture,
@@ -905,7 +904,7 @@ describe('applyRedact: branch coverage', () => {
       Match: 'REDACTED',
       Fingerprint: 'fp',
     };
-    const result = applyRedact(trigger, [trigger], 'ts', map, () => Date.now() + 999999);
+    const result = applyRedact(trigger, 'ts', map, () => Date.now() + 999999);
     expect(result).toBe(false);
   });
 
@@ -923,7 +922,7 @@ describe('applyRedact: branch coverage', () => {
       Match: 'REDACTED',
       Fingerprint: 'fp',
     };
-    const result = applyRedact(trigger, [trigger], 'ts', map, () => Date.now() + 999999);
+    const result = applyRedact(trigger, 'ts', map, () => Date.now() + 999999);
     expect(result).toBe(false);
   });
 
@@ -955,7 +954,6 @@ describe('applyRedact: branch coverage', () => {
     // Scan returns [] for all files.
     const result = applyRedact(
       trigger,
-      [trigger],
       'ts-x',
       map,
       () => farFuture,
@@ -1005,7 +1003,7 @@ describe('applyRedact: branch coverage', () => {
       },
     ];
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', noHostMap, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', noHostMap, () => farFuture, fakeScan);
     // abs is undefined for this host -> the project is skipped -> !copied -> false.
     expect(result).toBe(false);
   });
@@ -1051,7 +1049,7 @@ describe('applyRedact: branch coverage', () => {
       },
     ];
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', otherMap, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', otherMap, () => farFuture, fakeScan);
     expect(result).toBe(false);
   });
 });
