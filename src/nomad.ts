@@ -15,6 +15,7 @@
  */
 
 import { cmdAdopt } from './commands.adopt.ts';
+import { cmdAllow } from './commands.allow.ts';
 import { cmdClean } from './commands.clean.ts';
 import { cmdDoctor } from './commands.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
@@ -27,6 +28,7 @@ import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
 import { parseFlags, parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
+import { parseAllowArgs } from './nomad.dispatch.allow.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
 import { fail, NomadFatal } from './utils.ts';
@@ -190,6 +192,17 @@ try {
         process.exit(1);
       }
       cmdRedact(redactArgs);
+      break;
+    }
+    case 'allow': {
+      // parseAllowArgs collects one or more positional fingerprints from
+      // argv[3]+; returns null when none are given or any starts with '-'.
+      const allowArgs = parseAllowArgs(process.argv);
+      if (allowArgs === null) {
+        console.error('usage: nomad allow <fingerprint> [<fingerprint>...]');
+        process.exit(1);
+      }
+      cmdAllow(allowArgs);
       break;
     }
     case 'clean': {

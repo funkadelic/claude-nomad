@@ -87,6 +87,13 @@ export const DEFAULT_HELP = [
   row('       --rule <id>', 'Limit redaction to one gitleaks rule id.'),
   row('       --dry-run', 'Show what would change without writing.'),
   '',
+  row(
+    '  allow <fingerprint>...',
+    'Record a gitleaks false positive: append one or more fingerprints to',
+  ),
+  cont('REPO_HOME/.gitleaksignore without the interactive recovery menu.'),
+  cont('Idempotent: a fingerprint already present is silently skipped.'),
+  '',
   row('  update', 'Update the claude-nomad CLI to the latest npm release.'),
   '',
   row('  clean', 'Prune old backup snapshots under ~/.cache/claude-nomad/backup/.'),
