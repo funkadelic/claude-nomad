@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.38.1](https://github.com/funkadelic/claude-nomad/compare/v0.38.0...v0.38.1) (2026-06-02)
+
+
+### Fixed
+
+* **docs:** base-qualify internal links so they resolve under /claude-nomad ([#222](https://github.com/funkadelic/claude-nomad/issues/222)) ([8cff369](https://github.com/funkadelic/claude-nomad/commit/8cff3691687d07eb4c0f54f9f7fdbf680342c2e4))
+
+
+### Changed
+
+* adopt fallow analyzer config ([#227](https://github.com/funkadelic/claude-nomad/issues/227)) ([ebf7ca0](https://github.com/funkadelic/claude-nomad/commit/ebf7ca0aa05510fa9edde5f408e951b7bfec05ab))
+* break import cycles and trim unused exports ([#225](https://github.com/funkadelic/claude-nomad/issues/225)) ([1808539](https://github.com/funkadelic/claude-nomad/commit/180853964c1d09153b3c9e1272255e2a753bd6d3))
+* **tests:** don't cancel in-progress push:main coverage runs ([#226](https://github.com/funkadelic/claude-nomad/issues/226)) ([3164283](https://github.com/funkadelic/claude-nomad/commit/31642839a5be85e3e9a966411bf5b839226616e8))
+
+
+### Documentation
+
+* document ALWAYS_NEVER_SYNC credential hard-block in docs-site ([#224](https://github.com/funkadelic/claude-nomad/issues/224)) ([8904a4a](https://github.com/funkadelic/claude-nomad/commit/8904a4a8685f555e399dd394b825018e2055d373))
+
 ## [0.38.0](https://github.com/funkadelic/claude-nomad/compare/v0.37.0...v0.38.0) (2026-06-02)
 
 
