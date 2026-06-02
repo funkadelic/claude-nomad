@@ -67,8 +67,10 @@ $ nomad pull
 Your private sync repo must stay private. Session transcripts contain the full text of your
 conversations. `nomad init` disables Actions on the new repo as soon as it is created, via the
 GitHub API call `gh api -X PUT repos/<owner>/<repo>/actions/permissions -F enabled=false`. What
-this means for you: CI workflows (which could echo transcript content into build logs) are turned
-off on your private data repo automatically; you do not need to remember to do it.
+this means for you: the repo `nomad init` creates ships no workflows of its own, so this is a
+precaution, not a fix for a known problem. It guarantees that no CI (which could echo transcript
+content into build logs) can ever run against your private data repo, even if a workflow file is
+added later; you do not need to remember to do it.
 
 Pass `--keep-actions` to skip the disable step (for example, when your org already enforces an
 Actions policy).

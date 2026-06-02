@@ -15,10 +15,12 @@ import {
 /**
  * Drift check appended to the Repository section of `nomad doctor`. WARNs (never
  * FAILs, never sets `process.exitCode`) when the origin remote is a private
- * GitHub mirror that is gh-authed with Actions re-enabled, the quiet failure
- * mode where Actions get turned back on after `nomad init` auto-disabled them
- * (via the GitHub web UI or a stray `gh` call) and the mirror starts firing its
- * workflows on every push again.
+ * GitHub repo that is gh-authed with Actions re-enabled, the quiet drift where
+ * Actions get turned back on after `nomad init` auto-disabled them (via the
+ * GitHub web UI or a stray `gh` call). On a standalone settings repo this is
+ * defense-in-depth rather than load-bearing (the repo ships no workflows to
+ * fire), but it holds private session transcripts, so the check nudges the user
+ * to keep Actions off as a precaution.
  *
  * Reuses the five `gh-actions.ts` primitives unchanged (no new gh wrapper) and
  * clones the `cmdInit` auto-disable gate ORDER, but strips every tip-log and

@@ -146,11 +146,14 @@ export function cmdInit(
 }
 
 /**
- * Best-effort hook that disables GitHub Actions on the user's private mirror
- * after a fresh `nomad init`. The private mirror is a settings store, not a
- * CI target; leaving Actions enabled there causes the mirror-pushed workflows
- * (release-please, npm-publish, etc.) to fire on every `nomad push`, which is
- * pure noise.
+ * Best-effort hook that disables GitHub Actions on the user's private repo
+ * after a fresh `nomad init`. The repo is a settings store that holds full
+ * session transcripts, not a CI target, so this is a defense-in-depth step:
+ * the standalone repo ships no workflow files of its own, but disabling Actions
+ * guarantees none can ever run against private content even if a workflow file
+ * is later added by hand. Cheap and idempotent. (Under the retired fork model
+ * the repo inherited the upstream CI workflows, so disabling was load-bearing;
+ * on a `gh repo create` standalone repo it is precautionary.)
  *
  * Silently no-ops when: the repo is not a git repo, the origin remote is not
  * GitHub, the origin is public (not a private mirror), `gh` CLI is missing,
