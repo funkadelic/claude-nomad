@@ -87,7 +87,7 @@ function totalSizeMb(backupBase: string, dirs: string[]): number {
  * op). Never mutates the exit status: this is a nudge, not a gate, mirroring
  * `reportOptionalDeps` / `reportVersionCheck`.
  *
- * @param section - The Version Checks section to append the WARN row to.
+ * @param section - The Nomad Version section to append the WARN row to.
  * @param backupBase - Backup root to inspect (overridable for tests; defaults to `BACKUP_BASE`).
  */
 export function reportBackupsCheck(section: DoctorSection, backupBase: string = BACKUP_BASE): void {

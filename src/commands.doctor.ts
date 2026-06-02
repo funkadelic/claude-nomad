@@ -85,12 +85,14 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   reportRebaseClean(repository);
   reportActionsDrift(repository);
 
-  const version = section('Version Checks');
-  reportVersionCheck(version);
-  reportNodeEngineCheck(version);
-  reportGitleaksVersionCheck(version);
-  reportOptionalDeps(version);
-  reportBackupsCheck(version);
+  const nomadVersion = section('Nomad Version');
+  reportVersionCheck(nomadVersion);
+  reportBackupsCheck(nomadVersion);
+
+  const depVersions = section('Dependency Versions');
+  reportNodeEngineCheck(depVersions);
+  reportGitleaksVersionCheck(depVersions);
+  reportOptionalDeps(depVersions);
 
   const sharedScan = section('Shared scan');
   // Reuse the Repository-section readiness probe so reportCheckShared does not
@@ -103,7 +105,8 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   if (opts.checkSchema === true) reportCheckSchema(schemaScan);
 
   renderDoctor([
-    version,
+    nomadVersion,
+    depVersions,
     host,
     links,
     hooksScan,

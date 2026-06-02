@@ -80,7 +80,7 @@ describe('reportBackupsCheck', () => {
     for (let i = 0; i < 21; i++) {
       makeBackupDir(`20260101-0000${String(i).padStart(2, '0')}`);
     }
-    const s = section('Version Checks');
+    const s = section('Nomad Version');
     reportBackupsCheck(s, testRoot);
     expect(s.items).toHaveLength(1);
     expect(s.items[0]).toContain(warnGlyph);
@@ -96,7 +96,7 @@ describe('reportBackupsCheck', () => {
     makeSizedBackup('20260101-000003', 250 * 1024 * 1024);
     // An empty nested subdir is walked (recursively) and contributes 0.
     mkdirSync(join(testRoot, '20260101-000003', 'nested'), { recursive: true });
-    const s = section('Version Checks');
+    const s = section('Nomad Version');
     reportBackupsCheck(s, testRoot);
     expect(s.items).toHaveLength(1);
     expect(s.items[0]).toContain(warnGlyph);
@@ -112,7 +112,7 @@ describe('reportBackupsCheck', () => {
     const nested = join(testRoot, '20260101-000001', 'agents');
     mkdirSync(nested, { recursive: true });
     makeSparseFile(join(nested, 'big.bin'), 250 * 1024 * 1024);
-    const s = section('Version Checks');
+    const s = section('Nomad Version');
     reportBackupsCheck(s, testRoot);
     expect(s.items).toHaveLength(1);
     expect(s.items[0]).toContain(warnGlyph);
@@ -126,7 +126,7 @@ describe('reportBackupsCheck', () => {
     const huge = join(testRoot, 'huge-target.bin');
     makeSparseFile(huge, 500 * 1024 * 1024);
     symlinkSync(huge, join(testRoot, '20260101-000001', 'link.bin'));
-    const s = section('Version Checks');
+    const s = section('Nomad Version');
     expect(() => reportBackupsCheck(s, testRoot)).not.toThrow();
     // One small dir, only a symlink inside it: under both thresholds, no row.
     expect(s.items).toHaveLength(0);
@@ -138,7 +138,7 @@ describe('reportBackupsCheck', () => {
     makeSizedBackup('20260101-000002', 1024 * 1024); // 1 MB, ignores non-ts siblings below
     mkdirSync(join(testRoot, 'not-a-backup'), { recursive: true });
     writeFileSync(join(testRoot, 'stray.txt'), 'x');
-    const s = section('Version Checks');
+    const s = section('Nomad Version');
     reportBackupsCheck(s, testRoot);
     expect(s.items).toHaveLength(0);
   });
@@ -147,13 +147,13 @@ describe('reportBackupsCheck', () => {
     for (let i = 0; i < 21; i++) {
       makeBackupDir(`20260101-0000${String(i).padStart(2, '0')}`);
     }
-    const s = section('Version Checks');
+    const s = section('Nomad Version');
     reportBackupsCheck(s, testRoot);
     expect(process.exitCode).toBeUndefined();
   });
 
   it('no-ops with no row and no throw when the backup root is absent', () => {
-    const s = section('Version Checks');
+    const s = section('Nomad Version');
     const missing = join(testRoot, 'does-not-exist');
     expect(() => reportBackupsCheck(s, missing)).not.toThrow();
     expect(s.items).toHaveLength(0);
@@ -163,7 +163,7 @@ describe('reportBackupsCheck', () => {
   it('degrades to no row and no throw when the backup root is unreadable', () => {
     // existsSync passes but readdirSync throws (root is a file, not a dir):
     // the tolerant reader must keep the read-only doctor from crashing.
-    const s = section('Version Checks');
+    const s = section('Nomad Version');
     const fileRoot = join(testRoot, 'backup-is-a-file');
     writeFileSync(fileRoot, 'x');
     expect(() => reportBackupsCheck(s, fileRoot)).not.toThrow();
