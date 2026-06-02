@@ -6,10 +6,10 @@ hero:
   tagline: Sync your Claude Code config across machines.
   actions:
     - text: Quickstart
-      link: /quickstart/
+      link: /claude-nomad/quickstart/
       icon: right-arrow
     - text: Commands reference
-      link: /commands/
+      link: /claude-nomad/commands/
       variant: minimal
 ---
 
