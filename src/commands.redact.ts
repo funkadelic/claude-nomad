@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { BACKUP_BASE, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { applyRedactions, isRecentlyModified } from './commands.redact.core.ts';
+import { listSubagentTranscripts, newestSubtreeMtimeMs } from './commands.redact.subtree.ts';
 import { type Finding, scanFile } from './push-gitleaks.scan.ts';
 import { backupBeforeWrite, freshBackupTs } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
@@ -68,17 +69,8 @@ export type RedactOpts = {
 };
 
 /**
- * Resolve the findings list for a redact operation. When `rawFindings` is
- * provided (push-time recovery), returns them filtered by `rule`. When
- * `rawFindings` is undefined (standalone `nomad redact`), calls `scan` on the
- * local transcript and returns the findings filtered by `rule`, or `null` when
- * the scan itself fails (gitleaks absent or crashed).
- *
- * @param localPath Absolute path to the local transcript.
- * @param rawFindings Pre-supplied findings or undefined to trigger a scan.
- * @param rule Optional rule-id filter applied after findings are resolved.
- * @param scan Injectable scan function (default: `scanFile`).
- * @returns Filtered findings array, or `null` when scan fails.
+ * Return findings filtered by `rule`. Uses `rawFindings` when provided
+ * (push-time recovery path), else calls `scan`; returns null on scan failure.
  */
 function resolveRedactFindings(
   localPath: string,
@@ -91,24 +83,58 @@ function resolveRedactFindings(
   return source.filter((f) => rule === undefined || f.RuleID === rule);
 }
 
+/** @internal shared finding shape */
+type FileFinding = { StartLine: number; Match: string; RuleID: string };
+
 /**
- * Non-interactive redaction of a session transcript's secret spans. Rewrites
- * the LOCAL source transcript at `~/.claude/projects/<encoded>/<id>.jsonl` in
- * place (same inode) after backing it up via `backupBeforeWrite`. Refuses to
- * touch a transcript whose mtime is within the live-session threshold (D-06).
+ * Redact the main transcript and every subagent transcript. Resolves findings
+ * for each agent via `resolveRedactFindings` (honoring `rule`); silently skips
+ * agents whose scan returns null or []. Returns total finding count across all
+ * files; backs up and rewrites each dirty file unless `dryRun` is true.
  *
- * When `opts.findings` is provided, uses it directly (push-time recovery flow).
- * When `opts.findings` is omitted, scans the local transcript with gitleaks
- * detect via the injected `scan` function. A scan failure (null return) is
- * reported as a distinct error rather than silently treated as "no findings".
+ * @param mainPath Absolute path to the main `<sid>.jsonl`.
+ * @param mainFindings Pre-resolved findings for the main file.
+ * @param agentPaths Absolute paths to each `agent-*.jsonl`.
+ * @param rule Optional rule-id filter for agent scans.
+ * @param ts Backup timestamp for `backupBeforeWrite`.
+ * @param scan Injectable scan function.
+ * @param dryRun When true, skip writes and return the count only.
+ * @returns Total finding count across the whole subtree.
+ */
+function redactLiveSubtree(
+  mainPath: string,
+  mainFindings: readonly FileFinding[],
+  agentPaths: string[],
+  rule: string | undefined,
+  ts: string,
+  scan: (p: string) => Finding[] | null,
+  dryRun: boolean,
+): number {
+  const dirty: { path: string; findings: readonly FileFinding[] }[] = [];
+  if (mainFindings.length > 0) dirty.push({ path: mainPath, findings: mainFindings });
+  for (const agentPath of agentPaths) {
+    const found = resolveRedactFindings(agentPath, undefined, rule, scan);
+    if (found !== null && found.length > 0) dirty.push({ path: agentPath, findings: found });
+  }
+  const total = dirty.reduce((n, e) => n + e.findings.length, 0);
+  if (dryRun || total === 0) return total;
+  for (const { path: filePath, findings } of dirty) {
+    backupBeforeWrite(filePath, ts);
+    writeFileSync(filePath, applyRedactions(readFileSync(filePath, 'utf8'), findings), 'utf8');
+  }
+  return total;
+}
+
+/**
+ * Non-interactive redaction of a session transcript. Rewrites the main
+ * `<id>.jsonl` and every `subagents/agent-*.jsonl` in the same session
+ * directory after backing each up. Refuses live sessions (mtime guard
+ * evaluated across the whole subtree). Agent files are always scanned;
+ * `opts.findings` drives only the main file (push-time recovery path).
  *
- * Validates `id` before any path resolution or lock acquisition. Uses
- * `acquireLock('redact')` with the standard `try/catch(NomadFatal)/finally
- * releaseLock` shape.
- *
- * @param opts Redact options: session id, optional rule filter, optional dry-run, optional findings.
- * @param nowMs Injectable clock for live-session detection (tests inject a fixed value).
- * @param scan Injectable single-file scan function (tests inject a fake; default: `scanFile`).
+ * @param opts Session id, optional rule filter, optional dry-run, optional pre-supplied findings.
+ * @param nowMs Injectable clock (default: `Date.now`).
+ * @param scan Injectable scan function (default: `scanFile`).
  */
 export function cmdRedact(
   opts: RedactOpts,
@@ -133,8 +159,11 @@ export function cmdRedact(
       return;
     }
 
-    const mtimeMs = statSync(localPath).mtimeMs;
-    if (isRecentlyModified(mtimeMs, nowMs())) {
+    // Live-session guard: evaluate across the whole subtree (main + subagents).
+    const sessionDir = join(dirname(localPath), id);
+    const agentPaths = listSubagentTranscripts(sessionDir);
+    const subtreeMtime = newestSubtreeMtimeMs(localPath, agentPaths, (p) => statSync(p).mtimeMs);
+    if (isRecentlyModified(subtreeMtime, nowMs())) {
       log(
         `session ${id} was modified recently and may be active.\n` +
           '  Refusing to rewrite a potentially live transcript.\n' +
@@ -145,14 +174,25 @@ export function cmdRedact(
       return;
     }
 
-    const findings = resolveRedactFindings(localPath, rawFindings, rule, scan);
-    if (findings === null) {
+    const mainFindings = resolveRedactFindings(localPath, rawFindings, rule, scan);
+    if (mainFindings === null) {
       fail(`gitleaks scan failed for session ${id} (is gitleaks installed?)`);
       process.exitCode = 1;
       return;
     }
 
-    if (findings.length === 0) {
+    const ts = freshBackupTs(BACKUP_BASE);
+    const totalCount = redactLiveSubtree(
+      localPath,
+      mainFindings,
+      agentPaths,
+      rule,
+      ts,
+      scan,
+      dryRun,
+    );
+
+    if (totalCount === 0) {
       const ruleClause = rule === undefined ? '' : ` for rule ${rule}`;
       log(`no findings${ruleClause} in session ${id}`);
       return;
@@ -160,19 +200,13 @@ export function cmdRedact(
 
     if (dryRun) {
       log(
-        `dry-run: would redact ${findings.length} finding(s) in ${localPath}\n` +
-          findings.map((f) => `  line ${f.StartLine} [${f.RuleID}]`).join('\n'),
+        `dry-run: would redact ${totalCount} finding(s) in ${localPath}\n` +
+          mainFindings.map((f) => `  line ${f.StartLine} [${f.RuleID}]`).join('\n'),
       );
       return;
     }
 
-    const ts = freshBackupTs(BACKUP_BASE);
-    backupBeforeWrite(localPath, ts);
-
-    const original = readFileSync(localPath, 'utf8');
-    const redacted = applyRedactions(original, findings);
-    writeFileSync(localPath, redacted, 'utf8');
-    log(`redacted ${findings.length} finding(s) in ${localPath} (backup: ${ts})`);
+    log(`redacted ${totalCount} finding(s) in ${localPath} (backup: ${ts})`);
   } catch (err) {
     /* c8 ignore next 3 */
     if (!(err instanceof NomadFatal)) {
