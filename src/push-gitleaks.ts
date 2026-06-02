@@ -26,7 +26,6 @@ import { NomadFatal } from './utils.ts';
 // keep both this module and commands.doctor.check-shared.ts under the 200-line
 // cap) so existing `from './push-gitleaks.ts'` import sites stay unchanged and
 // push + the --check-shared preflight share one scan mechanism.
-export { readGitleaksReport } from './push-gitleaks.scan.ts';
 export { type Finding, scanStagedTree };
 
 /**
@@ -86,7 +85,7 @@ function findingIdentityKey(f: Finding): string {
  * @param findings The raw findings array from the scanner.
  * @returns A new array with duplicate findings removed.
  */
-export function dedupeFindings(findings: Finding[]): Finding[] {
+function dedupeFindings(findings: Finding[]): Finding[] {
   const seen = new Set<string>();
   const result: Finding[] = [];
   for (const f of findings) {
@@ -145,6 +144,8 @@ export function partitionFindings(findings: Finding[]): {
  * 1-indexed) drops the `:<line>` suffix rather than emit a confusing
  * `:undefined` / `:0`.
  */
+// Exported only for direct unit tests (dynamic import in push-gitleaks.test.ts).
+// fallow-ignore-next-line unused-export
 export function formatOtherFinding(f: Finding): string {
   const loc = Number.isInteger(f.StartLine) && f.StartLine > 0 ? `:${f.StartLine}` : '';
   return `  ${f.File}${loc}  ${f.RuleID}`;
@@ -161,6 +162,8 @@ export function formatOtherFinding(f: Finding): string {
  * @param f The other-bucket finding.
  * @returns A hint line ready for inclusion in the FATAL message.
  */
+// Exported only for direct unit tests (dynamic import in push-gitleaks.test.ts).
+// fallow-ignore-next-line unused-export
 export function otherFindingHint(f: Finding): string {
   const m = SUBAGENT_SESSION_PATH.exec(f.File);
   if (m !== null) {

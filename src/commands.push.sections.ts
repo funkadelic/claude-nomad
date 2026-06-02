@@ -30,7 +30,7 @@ import { summaryRow } from './summary.ts';
  *   `'not in path-map (run nomad doctor to list)'` or `'extras skipped'`).
  * @returns The rendered ℹ︎ count row, or `null` when `n` is `0`.
  */
-export function collapsedSkipRow(n: number, noun: string): string | null {
+function collapsedSkipRow(n: number, noun: string): string | null {
   if (n <= 0) return null;
   return `${dim(infoGlyph)} ${n} ${noun}`;
 }

@@ -22,10 +22,10 @@ import {
 } from './commands.push.recovery.seams.ts';
 
 export type { FindingAction, PromptFn };
-export { dropSessionFromStaged, findingKey, parseAction, sessionIdFromFinding };
+export { findingKey, parseAction };
 
 /** Apply the Allow action: append the finding's fingerprint to .gitleaksignore. */
-export function applyAllow(f: Finding): void {
+function applyAllow(f: Finding): void {
   appendGitleaksIgnore(f.Fingerprint);
 }
 

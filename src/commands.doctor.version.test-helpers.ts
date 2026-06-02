@@ -12,7 +12,7 @@ import { vi } from 'vitest';
  * @param arg The candidate URL string.
  * @returns Whether the host is `registry.npmjs.org`.
  */
-export function isNpmRegistryUrl(arg: string): boolean {
+function isNpmRegistryUrl(arg: string): boolean {
   try {
     return new URL(arg).hostname === 'registry.npmjs.org';
   } catch {
