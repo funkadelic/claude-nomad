@@ -51,7 +51,7 @@ export type Finding = {
  * the failure path must NOT cascade into a parse-error stack trace; the
  * caller falls back to the legacy FATAL string in that case.
  */
-export function readGitleaksReport(reportPath: string): Finding[] | null {
+function readGitleaksReport(reportPath: string): Finding[] | null {
   try {
     const raw = readFileSync(reportPath, 'utf8');
     const parsed: unknown = JSON.parse(raw);

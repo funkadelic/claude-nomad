@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import { parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
 
-// Dispatcher smoke tests for the parseFlags-based and parseInitArgs-based
-// subcommand arms (`init` and `update`). Split out of nomad.test.ts to keep
+// Dispatcher smoke tests for the `init` and `update` subcommand arms (the
+// parseInitArgs / parseRedactArgs paths). Split out of nomad.test.ts to keep
 // every file under the line cap. Each test sets process.argv, doMocks the
 // relevant command module, stubs process.exit to throw, then dynamically
 // imports ./nomad.ts (the unchanged SUT path) to trigger the dispatch. The

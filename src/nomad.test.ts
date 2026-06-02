@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 // modules, stubs process.exit, then dynamically imports ./nomad.ts to trigger
 // the dispatch. The dispatcher suite is split by subcommand group across
 // nomad.test.ts (push + bare help + --version), nomad.dispatch.test.ts
-// (init + update, the parseFlags-based arms), and nomad.doctor-drop.test.ts
+// (init + update arms), and nomad.doctor-drop.test.ts
 // (doctor + drop-session). Every file keeps `await import('./nomad.ts')` as
 // the SUT path and the command-module doMock targets unchanged.
 

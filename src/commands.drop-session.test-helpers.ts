@@ -37,7 +37,7 @@ export type Env = {
  *
  * @param repoUnderHome Absolute path to the temp `claude-nomad/` repo root.
  */
-export function initRepo(repoUnderHome: string): void {
+function initRepo(repoUnderHome: string): void {
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repoUnderHome });
   execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
     cwd: repoUnderHome,

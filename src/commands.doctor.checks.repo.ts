@@ -33,9 +33,9 @@ import { classifyRepoState, reasonForPartial } from './init.classify.ts';
  * false because the default fallback fires. Reads `process.env.NOMAD_REPO`
  * directly so a set-but-empty value is distinguishable from "set to the
  * default path"; reading via the imported `REPO_HOME` constant cannot make
- * that distinction. Exposed for `reportRepoState`; not for general use.
+ * that distinction. Module-private helper for `reportRepoState`.
  */
-export function isOverrideActive(): boolean {
+function isOverrideActive(): boolean {
   return Boolean(process.env.NOMAD_REPO);
 }
 
