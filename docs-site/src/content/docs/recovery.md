@@ -215,10 +215,11 @@ interactive menu, all without requiring a TTY:
 
 All three write to the same `.gitleaksignore` file described in the
 [.gitleaks.toml allowlist policy](#gitleakstoml-allowlist-policy) section. The allowlist never
-skips the re-scan: the decision to proceed or abort is always the re-scan result. `--allow-all`
-and `--allow <rule>` are mutually exclusive with `--redact-all` and with each other; neither can
-be combined with `--dry-run` (a dry-run resolves nothing). See [Commands](/commands/) for the
-full flag reference.
+skips the re-scan: the decision to proceed or abort is always the re-scan result. If the re-scan
+still reports a leak, the push aborts AND the entries the `--allow*` run just wrote are rolled
+back, so an aborted push leaves no allowlist lines behind. `--redact-all`, `--allow-all`, and
+`--allow <rule>` are mutually exclusive with each other, and none of them can be combined with
+`--dry-run` (a dry-run resolves nothing). See [Commands](/commands/) for the full flag reference.
 
 ## .gitleaks.toml allowlist policy
 
