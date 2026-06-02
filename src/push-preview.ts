@@ -16,13 +16,13 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { dim, infoGlyph } from './color.ts';
-import { CLAUDE_HOME, HOST, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
-import { assertSafeLogical } from './extras-sync.guards.ts';
+import { CLAUDE_HOME, HOST, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { copyExtras } from './extras-sync.ts';
 import { copyDirJsonlOnly } from './remap.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './push-leak-verdict.ts';
@@ -143,6 +143,10 @@ export function previewPushLeaks(map: PathMap): LeakVerdict {
     const extrasCount = stageExtras(tmpRoot, map);
     if (sessionCount + extrasCount === 0) {
       return { leak: false, verdictRow: NOTHING_TO_SCAN_ROW, recovery: null, findings: [] };
+    }
+    const ignoreFile = join(REPO_HOME, '.gitleaksignore');
+    if (existsSync(ignoreFile)) {
+      copyFileSync(ignoreFile, join(tmpRoot, '.gitleaksignore'));
     }
     let findings: ReturnType<typeof scanStagedTree>;
     try {

@@ -60,7 +60,6 @@ export async function collectActions(
  * per-session de-duplication is maintained across the caller's loop.
  */
 type DispatchCtx = {
-  findings: Finding[];
   actions: Map<string, FindingAction>;
   ts: string;
   map: PathMap;
@@ -103,8 +102,7 @@ function dispatchOne(f: Finding, ctx: DispatchCtx): void {
     return;
   }
   if (action === 'redact' && !ctx.redactedSids.has(sid)) {
-    if (applyRedact(f, ctx.findings, ctx.ts, ctx.map, ctx.nowMs, ctx.scan))
-      ctx.redactedSids.add(sid);
+    if (applyRedact(f, ctx.ts, ctx.map, ctx.nowMs, ctx.scan)) ctx.redactedSids.add(sid);
   }
 }
 
@@ -132,7 +130,6 @@ export function dispatchActions(
   drop: (sid: string, map: PathMap) => boolean = dropSessionFromStaged,
 ): void {
   const ctx: DispatchCtx = {
-    findings,
     actions,
     ts,
     map,
@@ -170,6 +167,6 @@ export function redactAllFindings(
   for (const f of findings) {
     const sid = sessionIdFromFinding(f);
     if (sid === null || redactedSids.has(sid)) continue;
-    if (applyRedact(f, findings, ts, map, nowMs, scan)) redactedSids.add(sid);
+    if (applyRedact(f, ts, map, nowMs, scan)) redactedSids.add(sid);
   }
 }

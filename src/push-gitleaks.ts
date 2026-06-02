@@ -40,13 +40,14 @@ export { type Finding, scanStagedTree };
 export const SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\.jsonl$/;
 
 /**
- * Extracts the session id from a deeper subagent path of the form
- * `shared/projects/<logical>/<id>/...`. Mirrors the `SHARED_PROJECT_LOGICAL`
- * pattern in `commands.drop-session.scrub-hint.ts` but captures the id at
- * path position 4 (the segment after `<logical>`). Returns null when the
- * path does not match (truly non-session path).
+ * Extracts the session id from a subagent TRANSCRIPT path of the form
+ * `shared/projects/<logical>/<id>/.../<file>.jsonl`. The nested entry MUST end
+ * in `.jsonl` to distinguish a genuine subagent transcript from non-transcript
+ * paths under the same directory (e.g. `memory/notes.md`, `README`).
+ * Requiring `.jsonl` prevents "memory" from being captured as a session id when
+ * the path is `shared/projects/<logical>/memory/notes.md`.
  */
-const SUBAGENT_SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\//;
+const SUBAGENT_SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\/.*\.jsonl$/;
 
 /**
  * Legacy fallback FATAL emitted when no finding's File matches the session
@@ -57,17 +58,63 @@ const LEGACY_FATAL =
   'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry';
 
 /**
+ * Build a stable identity key for a finding used by `dedupeFindings`.
+ * Prefers a non-empty `Fingerprint` (gitleaks-generated, unique per distinct
+ * secret span) and falls back to `File:RuleID:StartLine:StartColumn` when the
+ * Fingerprint is missing, non-string, or empty. The report is parsed from
+ * untyped gitleaks JSON, so the runtime type guard prevents a missing/null
+ * Fingerprint from collapsing distinct findings into one key (undercounting).
+ *
+ * @param f The finding to key.
+ * @returns A string key that uniquely identifies the finding span.
+ */
+function findingIdentityKey(f: Finding): string {
+  const fp = f.Fingerprint;
+  return typeof fp === 'string' && fp.length > 0
+    ? fp
+    : `${f.File}:${f.RuleID}:${f.StartLine}:${f.StartColumn}`;
+}
+
+/**
+ * Deduplicate a findings array, preserving first-seen order.
+ * Collapses findings by `Fingerprint` when non-empty, otherwise by
+ * `File:RuleID:StartLine:StartColumn`. Applied at the entry point of
+ * `partitionFindings` so every consumer (report builder and verdict row)
+ * operates on the same stable set, eliminating the dry-run vs real-push
+ * count divergence and the repeated `Also found:` rows.
+ *
+ * @param findings The raw findings array from the scanner.
+ * @returns A new array with duplicate findings removed.
+ */
+export function dedupeFindings(findings: Finding[]): Finding[] {
+  const seen = new Set<string>();
+  const result: Finding[] = [];
+  for (const f of findings) {
+    const key = findingIdentityKey(f);
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(f);
+    }
+  }
+  return result;
+}
+
+/**
  * Group findings by extracted session id, counting per RuleID, with
- * non-session paths routed to the `other` bucket. Pure: no side effects,
- * no environment reads.
+ * non-session paths routed to the `other` bucket. Deduplicates findings
+ * before partitioning (via `dedupeFindings`) so both the `bySession` counts
+ * and the `other` list reflect the distinct set, keeping the report-builder
+ * header count and the `leakVerdictRow` count consistent across the dry-run
+ * and real-push paths. Pure: no side effects, no environment reads.
  */
 export function partitionFindings(findings: Finding[]): {
   bySession: Map<string, Map<string, number>>;
   other: Finding[];
 } {
+  const deduped = dedupeFindings(findings);
   const bySession = new Map<string, Map<string, number>>();
   const other: Finding[] = [];
-  for (const f of findings) {
+  for (const f of deduped) {
     const m = SESSION_PATH.exec(f.File);
     if (m === null) {
       other.push(f);
@@ -89,18 +136,6 @@ export function partitionFindings(findings: Finding[]): {
   return { bySession, other };
 }
 
-/**
- * Build the FATAL message body. Returns the legacy fallback string when
- * `bySession` is empty (no session matches); otherwise composes the
- * multi-section message: `gitleaks detected secrets in N session
- * transcript(s).` header, one block per affected session with a
- * `Recover with: nomad drop-session <id>` line, an optional `Also found:`
- * block for non-session paths, and a trailing `After recovery, re-run
- * nomad push.` line. The header carries a single clarifying note that the
- * drop also clears any sibling subagent transcript directory for the
- * session, since those nested paths route to the `other` bucket and are
- * not listed per-session. Pure.
- */
 /**
  * Render one `Also found:` row for a non-session ("other"-bucket) finding as
  * `  <File>:<StartLine>  <RuleID>`, where the line number is the manual-scrub
@@ -138,6 +173,22 @@ export function otherFindingHint(f: Finding): string {
   return '  Review with: git diff --cached, then unstage manually.';
 }
 
+/**
+ * Build the FATAL message body. Returns the legacy fallback string when
+ * `bySession` is empty (no session matches); otherwise composes the
+ * multi-section message: `gitleaks detected secrets in N session
+ * transcript(s).` header, one block per affected session with a
+ * `Recover with: nomad drop-session <id>` line, an optional `Also found:`
+ * block for non-session paths, and a trailing `After recovery, re-run
+ * nomad push.` line. The header carries a single clarifying note that the
+ * drop also clears any sibling subagent transcript directory for the
+ * session, since those nested paths route to the `other` bucket and are
+ * not listed per-session. Pure.
+ *
+ * @param bySession - Map of session id to per-RuleID counts (from `partitionFindings`).
+ * @param other - Non-session findings for the `Also found:` block.
+ * @returns The formatted FATAL message string.
+ */
 export function buildSessionAwareFatal(
   bySession: Map<string, Map<string, number>>,
   other: Finding[],
@@ -153,8 +204,9 @@ export function buildSessionAwareFatal(
     lines.push('', `Session ${sid}:`, `  ${summary}`, `  Recover with: nomad drop-session ${sid}`);
   }
   if (other.length > 0) {
+    lines.push('', 'Also found:');
     for (const f of other) {
-      lines.push('', 'Also found:', formatOtherFinding(f), otherFindingHint(f));
+      lines.push(formatOtherFinding(f), otherFindingHint(f));
     }
   }
   lines.push('', 'After recovery, re-run nomad push.');

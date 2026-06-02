@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1081,6 +1081,18 @@ describe('resolveLiveTranscript: branch and error coverage', () => {
     const { resolveLiveTranscript } = await import('./commands.redact.ts');
     expect(resolveLiveTranscript('abc123')).toBeNull();
   });
+
+  it('returns null when the host entry exists but the transcript file does not exist on disk', async () => {
+    // The project has an entry for the current host, but the transcript file
+    // is absent from the filesystem. existsSync(live) returns false -> null.
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+    const { resolveLiveTranscript } = await import('./commands.redact.ts');
+    // 'no-such-session' does not exist in the temp fs, so existsSync returns false.
+    expect(resolveLiveTranscript('no-such-session')).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1180,5 +1192,384 @@ describe('cmdRedact: branch and error coverage', () => {
     );
     const printed = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(printed).toContain('some-other-rule');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdRedact: subagent coverage
+// ---------------------------------------------------------------------------
+
+describe('cmdRedact: subagent-only secret is redacted', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-redact-subagent-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('redacts agent-1.jsonl when only the subagent has findings; count is non-zero', async () => {
+    // Build main transcript (clean) + session dir with a subagent.
+    const claudeHome = join(testHome, '.claude');
+    const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+    mkdirSync(projectsDir, { recursive: true });
+    const transcriptPath = join(projectsDir, 'sess-agent.jsonl');
+    writeFileSync(transcriptPath, '{"text":"clean-main"}\n');
+
+    const sessionDir = join(projectsDir, 'sess-agent');
+    const subagentsDir = join(sessionDir, 'subagents');
+    mkdirSync(subagentsDir, { recursive: true });
+    const agentPath = join(subagentsDir, 'agent-1.jsonl');
+    writeFileSync(agentPath, '{"text":"my-secret-value"}\n');
+
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const farFuture = Date.now() + 10 * 60 * 1000;
+
+    // Main scan returns []; agent scan returns a finding.
+    const fakeScan = (p: string): Finding[] => {
+      if (p === agentPath) {
+        return [
+          {
+            RuleID: 'agent-secret',
+            StartLine: 1,
+            Match: 'my-secret-value',
+            StartColumn: 9,
+            EndColumn: 25,
+            File: p,
+            Fingerprint: 'fp-agent',
+          },
+        ];
+      }
+      return [];
+    };
+
+    cmdRedact({ id: 'sess-agent' }, () => farFuture, fakeScan);
+
+    // Agent file must have been redacted.
+    const { readFileSync: realRead } = await import('node:fs');
+    const agentContent = realRead(agentPath, 'utf8');
+    expect(agentContent).toContain('[REDACTED:agent-secret]');
+    expect(agentContent).not.toContain('my-secret-value');
+    // Backup must have been called for the agent file.
+    expect(backupSpy).toHaveBeenCalledOnce();
+    expect(backupSpy.mock.calls[0][0]).toBe(agentPath);
+  });
+
+  it('live-session guard fires when newest subtree file is within 5 minutes', async () => {
+    const claudeHome = join(testHome, '.claude');
+    const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+    mkdirSync(projectsDir, { recursive: true });
+    const transcriptPath = join(projectsDir, 'sess-live.jsonl');
+    writeFileSync(transcriptPath, '{"text":"main"}\n');
+
+    const sessionDir = join(projectsDir, 'sess-live');
+    const subagentsDir = join(sessionDir, 'subagents');
+    mkdirSync(subagentsDir, { recursive: true });
+    const agentPath = join(subagentsDir, 'agent-1.jsonl');
+    writeFileSync(agentPath, '{"text":"agent"}\n');
+
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    // Clock is 1 second after the agent file's mtime -> within 5-minute threshold.
+    const liveClock = () => statSync(agentPath).mtimeMs + 1000;
+
+    cmdRedact(
+      { id: 'sess-live', findings: [{ StartLine: 1, Match: 'agent', RuleID: 'r' }] },
+      liveClock,
+    );
+
+    // File must be unchanged (refusal, no write).
+    const { readFileSync: realRead } = await import('node:fs');
+    expect(realRead(transcriptPath, 'utf8')).toBe('{"text":"main"}\n');
+  });
+
+  it('--rule filter applies to subagent findings', async () => {
+    const claudeHome = join(testHome, '.claude');
+    const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+    mkdirSync(projectsDir, { recursive: true });
+    const transcriptPath = join(projectsDir, 'sess-rule-agent.jsonl');
+    writeFileSync(transcriptPath, '{"text":"clean"}\n');
+
+    const sessionDir = join(projectsDir, 'sess-rule-agent');
+    const subagentsDir = join(sessionDir, 'subagents');
+    mkdirSync(subagentsDir, { recursive: true });
+    const agentPath = join(subagentsDir, 'agent-1.jsonl');
+    writeFileSync(agentPath, '{"a":"AAAAA","b":"BBBBB"}\n');
+
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const farFuture = Date.now() + 10 * 60 * 1000;
+
+    const fakeScan = (p: string): Finding[] => {
+      if (p === agentPath) {
+        return [
+          {
+            RuleID: 'rule-a',
+            StartLine: 1,
+            Match: 'AAAAA',
+            StartColumn: 5,
+            EndColumn: 9,
+            File: p,
+            Fingerprint: 'fp-a',
+          },
+          {
+            RuleID: 'rule-b',
+            StartLine: 1,
+            Match: 'BBBBB',
+            StartColumn: 15,
+            EndColumn: 19,
+            File: p,
+            Fingerprint: 'fp-b',
+          },
+        ];
+      }
+      return [];
+    };
+
+    cmdRedact({ id: 'sess-rule-agent', rule: 'rule-a' }, () => farFuture, fakeScan);
+
+    const { readFileSync: realRead } = await import('node:fs');
+    const agentContent = realRead(agentPath, 'utf8');
+    // Only rule-a finding should be redacted.
+    expect(agentContent).toContain('[REDACTED:rule-a]');
+    expect(agentContent).not.toContain('[REDACTED:rule-b]');
+    expect(agentContent).toContain('BBBBB');
+  });
+
+  it('clean agent (scan []) is skipped and does not prevent main-file redaction', async () => {
+    const claudeHome = join(testHome, '.claude');
+    const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+    mkdirSync(projectsDir, { recursive: true });
+    const transcriptPath = join(projectsDir, 'sess-clean-agent.jsonl');
+    writeFileSync(transcriptPath, '{"text":"main-secret"}\n');
+
+    // Create session dir with a CLEAN agent.
+    const sessionDir = join(projectsDir, 'sess-clean-agent');
+    const subagentsDir = join(sessionDir, 'subagents');
+    mkdirSync(subagentsDir, { recursive: true });
+    const agentPath = join(subagentsDir, 'agent-1.jsonl');
+    writeFileSync(agentPath, '{"text":"clean"}\n');
+
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const farFuture = Date.now() + 10 * 60 * 1000;
+
+    // Main has a finding; agent scan returns [] (clean).
+    const fakeScan = (p: string): Finding[] => {
+      if (p === transcriptPath) {
+        return [
+          {
+            RuleID: 'main-rule',
+            StartLine: 1,
+            Match: 'main-secret',
+            StartColumn: 9,
+            EndColumn: 20,
+            File: p,
+            Fingerprint: 'fp-main',
+          },
+        ];
+      }
+      // agent-1.jsonl returns [] -- exercises the found !== null && found.length === 0 branch
+      return [];
+    };
+
+    cmdRedact({ id: 'sess-clean-agent' }, () => farFuture, fakeScan);
+
+    const { readFileSync: realRead } = await import('node:fs');
+    // Main is rewritten.
+    const mainContent = realRead(transcriptPath, 'utf8');
+    expect(mainContent).toContain('[REDACTED:main-rule]');
+    // Agent is unchanged (clean scan).
+    expect(realRead(agentPath, 'utf8')).toBe('{"text":"clean"}\n');
+    // Backup was called once (main only).
+    expect(backupSpy).toHaveBeenCalledOnce();
+    expect(backupSpy.mock.calls[0][0]).toBe(transcriptPath);
+  });
+
+  it('redacts tool-results/x.txt when only that file has findings', async () => {
+    const claudeHome = join(testHome, '.claude');
+    const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+    mkdirSync(projectsDir, { recursive: true });
+    const transcriptPath = join(projectsDir, 'sess-toolresult.jsonl');
+    writeFileSync(transcriptPath, '{"text":"clean-main"}\n');
+
+    const sessionDir = join(projectsDir, 'sess-toolresult');
+    const toolResultsDir = join(sessionDir, 'tool-results');
+    mkdirSync(toolResultsDir, { recursive: true });
+    const toolFilePath = join(toolResultsDir, 'x.txt');
+    writeFileSync(toolFilePath, 'output with tool-secret-value\n');
+
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const farFuture = Date.now() + 10 * 60 * 1000;
+
+    const fakeScan = (p: string): Finding[] => {
+      if (p === toolFilePath) {
+        return [
+          {
+            RuleID: 'tool-rule',
+            StartLine: 1,
+            Match: 'tool-secret-value',
+            StartColumn: 13,
+            EndColumn: 29,
+            File: p,
+            Fingerprint: 'fp-tool',
+          },
+        ];
+      }
+      return [];
+    };
+
+    cmdRedact({ id: 'sess-toolresult' }, () => farFuture, fakeScan);
+
+    const { readFileSync: realRead } = await import('node:fs');
+    const toolContent = realRead(toolFilePath, 'utf8');
+    expect(toolContent).toContain('[REDACTED:tool-rule]');
+    expect(toolContent).not.toContain('tool-secret-value');
+    expect(backupSpy).toHaveBeenCalledOnce();
+    expect(backupSpy.mock.calls[0][0]).toBe(toolFilePath);
+  });
+
+  it('dry-run lists every dirty file path and finding lines, not just main', async () => {
+    const claudeHome = join(testHome, '.claude');
+    const projectsDir = join(claudeHome, 'projects', '-home-norm-git-myproject');
+    mkdirSync(projectsDir, { recursive: true });
+    const transcriptPath = join(projectsDir, 'sess-dry-multi.jsonl');
+    writeFileSync(transcriptPath, '{"text":"clean-main"}\n');
+
+    const sessionDir = join(projectsDir, 'sess-dry-multi');
+    const subagentsDir = join(sessionDir, 'subagents');
+    mkdirSync(subagentsDir, { recursive: true });
+    const agentPath = join(subagentsDir, 'agent-1.jsonl');
+    writeFileSync(agentPath, '{"text":"agent-secret"}\n');
+
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
+    });
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const farFuture = Date.now() + 10 * 60 * 1000;
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const fakeScan = (p: string): Finding[] => {
+      if (p === agentPath) {
+        return [
+          {
+            RuleID: 'agent-rule',
+            StartLine: 1,
+            Match: 'agent-secret',
+            StartColumn: 9,
+            EndColumn: 21,
+            File: p,
+            Fingerprint: 'fp-agent',
+          },
+        ];
+      }
+      return [];
+    };
+
+    cmdRedact({ id: 'sess-dry-multi', dryRun: true }, () => farFuture, fakeScan);
+
+    const printed = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    // Dry-run output must mention the agent file path, not just main.
+    expect(printed).toContain('agent-1.jsonl');
+    expect(printed).toContain('agent-rule');
+    // The main transcript path should NOT appear (it's clean).
+    expect(printed).not.toContain('sess-dry-multi.jsonl');
+  });
+
+  it('"no findings" message fires only when main AND all agents are clean', async () => {
+    const { transcriptPath, farFuture } = makeTestTranscript(
+      testHome,
+      'sess-allclean',
+      '{"text":"clean"}\n',
+    );
+    // The session dir and subagents do not exist -> agents list is empty.
+    expect(transcriptPath).toContain('sess-allclean');
+
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    // Scan returns [] for every path (both main and non-existent agents).
+    cmdRedact(
+      { id: 'sess-allclean' },
+      () => farFuture,
+      () => [],
+    );
+
+    const printed = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('no findings');
+    expect(printed).toContain('sess-allclean');
   });
 });

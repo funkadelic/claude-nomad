@@ -681,6 +681,113 @@ describe('previewPushLeaks: path-traversal guard (fail-closed before copy)', () 
 });
 
 // ---------------------------------------------------------------------------
+// .gitleaksignore staging parity tests.
+// ---------------------------------------------------------------------------
+
+describe('previewPushLeaks: gitleaksignore staging parity', () => {
+  let env: PreviewEnv;
+
+  beforeEach(() => {
+    env = makePreviEnv();
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    teardownPreviewEnv(env);
+  });
+
+  it('copies REPO_HOME/.gitleaksignore into tmpRoot before scanning when the file exists', async () => {
+    // Write a .gitleaksignore into the temp repo (REPO_HOME).
+    writeFileSync(join(env.repoUnderHome, '.gitleaksignore'), '# test allowlist\n');
+
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+
+    // Capture the tmpRoot that scanStagedTree receives and assert the ignore
+    // file is present at that point (before the finally removes the tree).
+    let ignorePresentDuringScan = false;
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+          ignorePresentDuringScan = existsSync(join(dir, '.gitleaksignore'));
+          return [];
+        }),
+      };
+    });
+
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    previewPushLeaks(map);
+
+    expect(ignorePresentDuringScan).toBe(true);
+  });
+
+  it('does not throw and runs normally when REPO_HOME/.gitleaksignore is absent', async () => {
+    // No .gitleaksignore in REPO_HOME; previewPushLeaks must not error.
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+
+    let scanCalled = false;
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((): scanModule.Finding[] | null => {
+          scanCalled = true;
+          return [];
+        }),
+      };
+    });
+
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    expect(() => previewPushLeaks(map)).not.toThrow();
+    expect(scanCalled).toBe(true);
+  });
+
+  it('removes the copied .gitleaksignore with the tmpRoot in the finally', async () => {
+    // Write a .gitleaksignore into the temp repo (REPO_HOME).
+    writeFileSync(join(env.repoUnderHome, '.gitleaksignore'), '# test allowlist\n');
+
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+
+    // Capture tmpRoot to verify it was cleaned up, including the copied file.
+    let capturedTmpRoot = '';
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+          capturedTmpRoot = dir;
+          return [];
+        }),
+      };
+    });
+
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    previewPushLeaks(map);
+
+    // After previewPushLeaks returns, the entire tmpRoot (and the copied file
+    // inside it) must be gone.
+    expect(capturedTmpRoot).not.toBe('');
+    expect(existsSync(join(capturedTmpRoot, '.gitleaksignore'))).toBe(false);
+    expect(existsSync(capturedTmpRoot)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Real-gitleaks integration tests (skipped when gitleaks is not on PATH).
 // ---------------------------------------------------------------------------
 

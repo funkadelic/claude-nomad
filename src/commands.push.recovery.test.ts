@@ -502,7 +502,7 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
       },
     ];
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
 
     expect(result).toBe(true);
     expect(backupSpy).toHaveBeenCalledOnce();
@@ -534,7 +534,6 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
 
     const result = applyRedact(
       trigger,
-      [trigger],
       'ts-x',
       map,
       () => farFuture,
@@ -569,7 +568,6 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
 
     const result = applyRedact(
       trigger,
-      [trigger],
       'ts-x',
       map,
       () => farFuture,
@@ -643,7 +641,7 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
     const liveClock = () => statSync(transcriptPath).mtimeMs + 1000;
     const originalContent = readFileSync(transcriptPath, 'utf8');
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, liveClock);
+    const result = applyRedact(trigger, 'ts-x', map, liveClock);
 
     expect(result).toBe(false);
     expect(backupSpy).not.toHaveBeenCalled();
@@ -685,7 +683,6 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
 
     const result = applyRedact(
       trigger,
-      [trigger],
       'ts-x',
       map,
       () => farFuture,
@@ -728,7 +725,6 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
 
     const result = applyRedact(
       trigger,
-      [trigger],
       'ts-x',
       map,
       () => farFuture,
@@ -778,7 +774,7 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
       },
     ];
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
 
     expect(result).toBe(true);
     expect(logSpy).not.toHaveBeenCalled();
@@ -819,7 +815,7 @@ describe('applyRedact: unresolvable session-id emits guidance message', () => {
     };
     const map: PathMap = { projects: {} };
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => Date.now());
+    const result = applyRedact(trigger, 'ts-x', map, () => Date.now());
 
     expect(result).toBe(false);
     expect(logSpy).toHaveBeenCalledOnce();
@@ -849,7 +845,7 @@ describe('applyRedact: unresolvable session-id emits guidance message', () => {
     };
     const map: PathMap = { projects: {} };
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => Date.now());
+    const result = applyRedact(trigger, 'ts-x', map, () => Date.now());
 
     expect(result).toBe(false);
     expect(logSpy).toHaveBeenCalledOnce();
@@ -1593,7 +1589,7 @@ describe('applyRedact: no map-match returns false and emits message', () => {
       },
     ];
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
 
     expect(result).toBe(false);
     expect(logSpy).toHaveBeenCalledOnce();
@@ -1660,7 +1656,7 @@ describe('applyRedact: no map-match returns false and emits message', () => {
       },
     ];
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
 
     expect(result).toBe(true);
     // Staged copy must exist under foobar, not foo.
@@ -1994,7 +1990,7 @@ describe('applyRedact - copy-back loop skips a project with no entry for this ho
       },
     ];
 
-    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+    const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
     expect(result).toBe(false);
     expect(logSpy).toHaveBeenCalledOnce();
   });
