@@ -17,6 +17,7 @@ export default defineConfig({
       ],
       sidebar: [
         { label: 'Overview', link: '/' },
+        { label: 'Who is this for', link: '/who-is-this-for/' },
         { label: 'Quickstart', link: '/quickstart/' },
         { label: 'How it works', link: '/how-it-works/' },
         { label: 'Usage', link: '/usage/' },
