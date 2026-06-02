@@ -13,6 +13,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "starlight-links-validator": "^0.24.0"
   }
 }

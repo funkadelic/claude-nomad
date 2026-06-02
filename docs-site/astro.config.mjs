@@ -3,6 +3,10 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import mdx from '@astrojs/mdx';
 import remarkGfm from 'remark-gfm';
+import starlightLinksValidator from 'starlight-links-validator';
+
+// Absolute URL of the social-card image (served from public/og.png under base).
+const OG_IMAGE = 'https://funkadelic.github.io/claude-nomad/og.png';
 
 export default defineConfig({
   site: 'https://funkadelic.github.io',
@@ -11,6 +15,19 @@ export default defineConfig({
     starlight({
       title: 'claude-nomad',
       customCss: ['./src/styles/theme.css'],
+      favicon: '/favicon.svg',
+      lastUpdated: true,
+      editLink: {
+        baseUrl: 'https://github.com/funkadelic/claude-nomad/edit/main/docs-site/',
+      },
+      plugins: [starlightLinksValidator()],
+      head: [
+        { tag: 'meta', attrs: { property: 'og:image', content: OG_IMAGE } },
+        { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
+        { tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
+        { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
+        { tag: 'meta', attrs: { name: 'twitter:image', content: OG_IMAGE } },
+      ],
       social: [
         {
           icon: 'github',
