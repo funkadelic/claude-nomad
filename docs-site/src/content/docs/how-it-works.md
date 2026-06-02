@@ -87,21 +87,23 @@ Pointers and specifics:
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 
-> [!NOTE]
-> Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
-> URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the
-> plugin's own per-host config.
+:::note
+Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
+URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the
+plugin's own per-host config.
+:::
 
-> [!IMPORTANT]
-> Syncing a tool's `skills/` or `commands/` files copies the command shims, not the engine
-> behind them. If a tool keeps a binary or runtime outside `~/.claude/` (installed with
-> `npm i -g`, a setup script, and so on), nomad does not carry that part, so the synced
-> commands appear on a new host but fail until the tool itself is installed there. Install such
-> tools once per host. For example, if you sync the GSD (`get-shit-done`) skills, run
-> `npm i -g get-shit-done-cc` on each host, pinned to the version that matches your committed
-> skills. Claude Code marketplace plugins (such as superpowers) are the exception: they are
-> listed in `enabledPlugins`, synced via `settings.base.json`, and re-downloaded by Claude Code
-> automatically, so they need no manual install.
+:::note[Important]
+Syncing a tool's `skills/` or `commands/` files copies the command shims, not the engine
+behind them. If a tool keeps a binary or runtime outside `~/.claude/` (installed with
+`npm i -g`, a setup script, and so on), nomad does not carry that part, so the synced
+commands appear on a new host but fail until the tool itself is installed there. Install such
+tools once per host. For example, if you sync the GSD (`get-shit-done`) skills, run
+`npm i -g get-shit-done-cc` on each host, pinned to the version that matches your committed
+skills. Claude Code marketplace plugins (such as superpowers) are the exception: they are
+listed in `enabledPlugins`, synced via `settings.base.json`, and re-downloaded by Claude Code
+automatically, so they need no manual install.
+:::
 
 ## Path remapping
 
@@ -127,9 +129,10 @@ block opts a project into syncing whitelisted directories (or a single root file
 }
 ```
 
-> [!IMPORTANT]
-> The host-label keys must match whatever you set `NOMAD_HOST=` to on each host. Mismatched
-> labels silently skip remap, so sessions land in the wrong host's encoded dir.
+:::note[Important]
+The host-label keys must match whatever you set `NOMAD_HOST=` to on each host. Mismatched
+labels silently skip remap, so sessions land in the wrong host's encoded dir.
+:::
 
 Use the literal string `"TBD"` for hosts you haven't onboarded yet; `remapPull` skips TBD entries
 cleanly instead of creating an orphan `~/.claude/projects/TBD/`. Replace each `"TBD"` with the
@@ -234,10 +237,11 @@ URLs, host-only model overrides).
 Results on `your-other-host`: opus 4.8, the local Ollama env var, plus the shared permissions
 array.
 
-> [!CAUTION]
-> Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
-> `nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file
-> in the repo instead.
+:::danger
+Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on every
+`nomad pull` from base + host, so your edits will be clobbered. Edit the base or host file
+in the repo instead.
+:::
 
 `nomad doctor` warns when `settings.json` carries a top-level key it does not recognize (a cue
 that Claude Code added a setting). The recognized set is kept current against Claude Code's

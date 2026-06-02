@@ -73,9 +73,10 @@ off on your private data repo automatically; you do not need to remember to do i
 Pass `--keep-actions` to skip the disable step (for example, when your org already enforces an
 Actions policy).
 
-> [!WARNING]
-> If you ever make the repo public, your session transcripts (which include conversation content)
-> become world-readable. **Keep it private.**
+:::caution
+If you ever make the repo public, your session transcripts (which include conversation content)
+become world-readable. **Keep it private.**
+:::
 
 ## Setup: first host in detail
 
