@@ -41,15 +41,17 @@ repo state.
 
 ## `push`
 
-`nomad push [--dry-run] [--redact-all]`
+`nomad push [--dry-run] [--redact-all] [--allow <rule>] [--allow-all]`
 
 Export local sessions and opted-in per-project extras to logical names, commit
 (`chore: sync from <NOMAD_HOST>`), push.
 
-| Flag           | Description                                                                                                                                                                                                                                                       |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--dry-run`    | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage. Exits 1 if a leak is found. Nothing is written.    |
-| `--redact-all` | Redact all findings non-interactively (backup written first) without a TTY. Does not auto-Allow findings. After redaction re-stages and re-scans; aborts with the session-aware FATAL if any finding survives. See [Recovery flows](/recovery/).                  |
+| Flag               | Description                                                                                                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--dry-run`        | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage. Exits 1 if a leak is found. Nothing is written.    |
+| `--redact-all`     | Redact all findings non-interactively (backup written first) without a TTY. Does not auto-Allow findings. After redaction re-stages and re-scans; aborts with the session-aware FATAL if any finding survives. Mutually exclusive with `--allow*`. See [Recovery flows](/recovery/). |
+| `--allow <rule>`   | Append the fingerprint of every finding whose gitleaks rule id matches `<rule>` to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow-all`; cannot combine with `--dry-run`. See [Recovery flows](/recovery/). |
+| `--allow-all`      | Append the fingerprint of every current finding to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow`; cannot combine with `--dry-run`. See [Recovery flows](/recovery/). |
 
 ## `drop-session`
 
@@ -86,6 +88,24 @@ to touch a session that was modified recently (potential active session). Safe t
 | ------------- | ----------------------------------------------------- |
 | `--rule <id>` | Limit redaction to findings of one gitleaks rule id only. |
 | `--dry-run`   | Show what `nomad redact` would change without writing anything. |
+
+## `allow`
+
+`nomad allow <fingerprint>...`
+
+Append one or more gitleaks fingerprints to `<REPO_HOME>/.gitleaksignore` without going through a
+push cycle. Use this to pre-record confirmed false positives so the next `nomad push` does not
+prompt for them. Fingerprints come from a previous `nomad push` finding report or a
+`nomad doctor --check-shared` scan; the format is `file:rule:line` (the opaque string gitleaks
+emits, shown in the scan output).
+
+Idempotent: a fingerprint already present in `.gitleaksignore` is silently skipped. An invalid
+fingerprint (empty, containing a newline, or over 512 characters) causes the command to exit 1 on
+the first bad value; valid fingerprints before it are still written. No flags are accepted.
+
+See [Recovery flows](/recovery/) for the non-interactive push allow paths
+(`nomad push --allow <rule>` and `nomad push --allow-all`), which record fingerprints AND
+re-scan in a single step.
 
 ## `clean`
 
