@@ -2,6 +2,9 @@
   "name": "claude-nomad-docs",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build": "astro build",
     "preview": "astro preview",
@@ -13,6 +16,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "starlight-links-validator": "^0.24.0"
   }
 }
