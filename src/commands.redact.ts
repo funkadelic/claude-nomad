@@ -14,15 +14,6 @@ import { encodePath, readJson } from './utils.json.ts';
 import { die, fail, log, NomadFatal } from './utils.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
-export type { RedactFinding } from './commands.redact.core.ts';
-export {
-  applyRedactions,
-  appendGitleaksIgnore,
-  formatFingerprint,
-  isRecentlyModified,
-  isValidFingerprint,
-} from './commands.redact.core.ts';
-
 /**
  * Resolve a session id to the live local transcript path on this host via
  * `path-map.json`. Returns the absolute path when it exists on disk, or `null`

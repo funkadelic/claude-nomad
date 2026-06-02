@@ -26,7 +26,6 @@ import { NomadFatal } from './utils.ts';
 // keep both this module and commands.doctor.check-shared.ts under the 200-line
 // cap) so existing `from './push-gitleaks.ts'` import sites stay unchanged and
 // push + the --check-shared preflight share one scan mechanism.
-export { readGitleaksReport } from './push-gitleaks.scan.ts';
 export { type Finding, scanStagedTree };
 
 /**
