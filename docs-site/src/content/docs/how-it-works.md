@@ -86,6 +86,10 @@ Pointers and specifics:
   one of these names cannot be symlinked into the shared repo by mistake.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
+- **Credentials stay blocked even inside synced extras.** A strict subset of the never-synced set
+  (`.claude.json`, `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`)
+  is hard-blocked even when nested inside an opted-in `shared/extras/<logical>/` tree, so a secret
+  file dropped under a synced `.planning/` directory can never ride through the extras gate.
 
 :::note
 Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
