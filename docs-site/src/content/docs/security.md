@@ -46,7 +46,11 @@ documented here as accepted trade-offs rather than defended in code.
 - **The sync repo is a trust boundary for pulling hosts.** Content pulled from the repo (session
   transcripts, settings overrides, symlinked shared directories) is applied to `~/.claude/` on
   every host. Path-map keys and host paths are validated against traversal before any filesystem
-  write, but the broader principle holds: a host trusts whatever the repo contains.
+  write, and a strict subset of credential and host-config files (`.claude.json`,
+  `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`) is hard-blocked
+  from crossing the sync boundary even when nested inside an opted-in `shared/extras/` tree, so a
+  secret dropped under a synced `.planning/` directory cannot ride through. But the broader
+  principle holds: a host trusts whatever the repo contains.
 
 Under the intended single-user model none of these is exploitable by a remote party; they matter
 only for multi-user repos or a repo compromise, which are out of scope for the default deployment.
