@@ -139,7 +139,7 @@ export function cmdInit(
   }
 
   if (!keepActions) {
-    maybeDisableMirrorActions(REPO_HOME, opts.run);
+    maybeDisableRepoActions(REPO_HOME, opts.run);
   }
 
   log('init complete');
@@ -156,11 +156,11 @@ export function cmdInit(
  * on a `gh repo create` standalone repo it is precautionary.)
  *
  * Silently no-ops when: the repo is not a git repo, the origin remote is not
- * GitHub, the origin is public (not a private mirror), `gh` CLI is missing,
+ * GitHub, the origin is public (not a private repo), `gh` CLI is missing,
  * or `gh` is not authed. Prints a tip on the last two so the user can finish
  * the step manually. Suppress entirely with `nomad init --keep-actions`.
  */
-function maybeDisableMirrorActions(repoHome: string, run?: SpawnSyncFn): void {
+function maybeDisableRepoActions(repoHome: string, run?: SpawnSyncFn): void {
   let remote: string;
   try {
     remote = readOriginRemote(repoHome, run);
@@ -173,13 +173,13 @@ function maybeDisableMirrorActions(repoHome: string, run?: SpawnSyncFn): void {
   const ghStatus = ghAuthStatus(run);
   if (ghStatus === 'gh-not-installed') {
     log(
-      `tip: install gh CLI and run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' to disable Actions on your private mirror.`,
+      `tip: install gh CLI and run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' to disable Actions on your private repo.`,
     );
     return;
   }
   if (ghStatus === 'gh-not-authed') {
     log(
-      `tip: run 'gh auth login' then 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' to disable Actions on your private mirror.`,
+      `tip: run 'gh auth login' then 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' to disable Actions on your private repo.`,
     );
     return;
   }
@@ -214,7 +214,7 @@ function maybeDisableMirrorActions(repoHome: string, run?: SpawnSyncFn): void {
 
   try {
     disableActions(ref, run);
-    log(`disabled GitHub Actions on private mirror ${ref.owner}/${ref.repo}`);
+    log(`disabled GitHub Actions on private repo ${ref.owner}/${ref.repo}`);
   } catch {
     log(
       `could not auto-disable Actions on ${ref.owner}/${ref.repo}; run 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false' manually.`,

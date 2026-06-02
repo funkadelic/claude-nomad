@@ -52,7 +52,7 @@ export const DEFAULT_HELP = [
     'Create a private GitHub repo via gh (if none exists), scaffold shared/, hosts/, path-map.',
   ),
   row('       --snapshot', 'Overlay the current ~/.claude/ into shared/ as the initial seed.'),
-  row('       --keep-actions', 'Skip auto-disabling GitHub Actions on the private mirror.'),
+  row('       --keep-actions', 'Skip auto-disabling GitHub Actions on the private repo.'),
   row(
     '       --repo <name>',
     'Name for the new GitHub repo (default: claude-nomad-config). No-op when origin exists.',
