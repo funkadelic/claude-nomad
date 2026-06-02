@@ -24,6 +24,8 @@ export function cmdAllow(fingerprints: string[]): void {
       fail(`invalid fingerprint: ${fp}`);
       process.exit(1);
     }
+  }
+  for (const fp of fingerprints) {
     appendGitleaksIgnore(fp);
     log(`allowed: ${fp}`);
   }

@@ -172,8 +172,10 @@ function isAlreadyPresent(line: string, lines: string[]): boolean {
  * sanitized fingerprint is already present, ensuring no duplicate lines are
  * ever written. When the file does not exist it is created with exactly one
  * line and no leading blank. Empty or whitespace-only fingerprints are silently
- * skipped (never written). The fingerprint is passed through `formatFingerprint`
- * to strip embedded newlines before any comparison or write.
+ * skipped (never written). When the existing file does not end in a newline a
+ * separating newline is written first, so a trailing-newline-less file cannot
+ * fuse two fingerprints onto one line. The fingerprint is passed through
+ * `formatFingerprint` to strip embedded newlines before any comparison or write.
  *
  * @param fingerprint Raw fingerprint from `Finding.Fingerprint`.
  */
@@ -181,11 +183,10 @@ export function appendGitleaksIgnore(fingerprint: string): void {
   const sanitized = fingerprint.replace(/[\r\n]/g, '').trim();
   if (sanitized.length === 0) return;
   const ignPath = join(REPO_HOME, '.gitleaksignore');
-  const existing = existsSync(ignPath)
-    ? readFileSync(ignPath, 'utf8')
-        .split('\n')
-        .filter((l) => l.length > 0)
-    : [];
+  const raw = existsSync(ignPath) ? readFileSync(ignPath, 'utf8') : '';
+  const existing = raw.split('\n').filter((l) => l.length > 0);
   if (isAlreadyPresent(sanitized, existing)) return;
-  appendFileSync(ignPath, formatFingerprint(sanitized), 'utf8');
+  const needsLeadingNewline = raw.length > 0 && !raw.endsWith('\n');
+  const prefix = needsLeadingNewline ? '\n' : '';
+  appendFileSync(ignPath, prefix + formatFingerprint(sanitized), 'utf8');
 }

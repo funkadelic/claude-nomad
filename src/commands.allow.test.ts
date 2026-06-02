@@ -113,7 +113,7 @@ describe('cmdAllow', () => {
     }
   });
 
-  it('does not append subsequent fingerprints after an invalid one', async () => {
+  it('writes nothing when any fingerprint in the batch is invalid', async () => {
     const exitSpy = vi
       .spyOn(process, 'exit')
       .mockImplementation((_code?: string | number | null) => {
@@ -122,8 +122,8 @@ describe('cmdAllow', () => {
     const { cmdAllow } = await import('./commands.allow.ts');
     const ignPath = join(env.repoHome, '.gitleaksignore');
 
-    // First fingerprint is valid but second is invalid; pre-seed the file so
-    // we can assert the invalid one was not written (and the first was).
+    // A valid fingerprint precedes an invalid one; the batch validates fully
+    // before any write, so a single bad value blocks the entire batch.
     writeFileSync(ignPath, '', 'utf8');
 
     expect(() => cmdAllow(['a:b:1', 'bad\nvalue', 'c:d:2'])).toThrow('process.exit called');
@@ -131,9 +131,8 @@ describe('cmdAllow', () => {
     const lines = readFileSync(ignPath, 'utf8')
       .split('\n')
       .filter((l) => l.length > 0);
-    // a:b:1 was valid and appended before the bad value was reached.
-    expect(lines).toContain('a:b:1');
-    // c:d:2 was never reached because the invalid value caused exit.
+    // Validate-all-then-write: neither valid value is written when one is bad.
+    expect(lines).not.toContain('a:b:1');
     expect(lines).not.toContain('c:d:2');
 
     exitSpy.mockRestore();

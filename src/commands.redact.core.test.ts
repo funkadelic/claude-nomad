@@ -147,4 +147,19 @@ describe('appendGitleaksIgnore', () => {
     const ignPath = join(env.repoHome, '.gitleaksignore');
     expect(existsSync(ignPath)).toBe(false);
   });
+
+  it('does not fuse onto a file that lacks a trailing newline', async () => {
+    const { appendGitleaksIgnore: append } = await import('./commands.redact.core.ts');
+    const ignPath = join(env.repoHome, '.gitleaksignore');
+    // A hand-edited file with no trailing newline must not fuse the two
+    // fingerprints onto one line (which would de-activate both ignore entries).
+    writeFileSync(ignPath, 'a:b:1', 'utf8');
+
+    append('c:d:2');
+
+    const content = readFileSync(ignPath, 'utf8');
+    const lines = content.split('\n').filter((l) => l.length > 0);
+    expect(lines).toEqual(['a:b:1', 'c:d:2']);
+    expect(content).toBe('a:b:1\nc:d:2\n');
+  });
 });
