@@ -11,7 +11,13 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded in-progress runs for PRs and manual dispatches, but never
+  # for push:main. A push:main run uploads the coverage baseline Codecov diffs
+  # every PR against; cancelling it (e.g. a release PR squashed in right behind
+  # a feature PR, sharing the refs/heads/main group) leaves main with no base
+  # report and silently stops Codecov from posting on subsequent PRs. push:main
+  # runs instead queue and all complete.
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   test:
