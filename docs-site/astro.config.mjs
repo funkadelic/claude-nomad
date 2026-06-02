@@ -8,6 +8,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'claude-nomad',
+      customCss: ['./src/styles/theme.css'],
       social: [
         {
           icon: 'github',
