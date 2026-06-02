@@ -1,4 +1,4 @@
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
@@ -134,12 +134,58 @@ export function isRecentlyModified(
 }
 
 /**
- * Append one sanitized fingerprint line to `REPO_HOME/.gitleaksignore`. The
- * fingerprint is passed through `formatFingerprint` to strip embedded newlines
- * before the append.
+ * Return true when `fingerprint` is a well-formed gitleaks fingerprint that is
+ * safe to append to `.gitleaksignore`. Rejects: empty or whitespace-only
+ * values, values containing `\r` or `\n` (newline-injection guard), and
+ * over-length values (cap at 512 characters). Accepts any non-empty, non-blank
+ * text within the length limit that contains no embedded newlines, which covers
+ * the `file:rule:line` opaque shape that gitleaks fingerprints carry. Returns a
+ * boolean, never throws.
+ *
+ * @param fingerprint Candidate fingerprint string.
+ * @returns True when the fingerprint is valid and safe to append.
+ */
+export function isValidFingerprint(fingerprint: string): boolean {
+  return (
+    fingerprint.length > 0 &&
+    fingerprint.length <= 512 &&
+    /^[^\r\n]+$/.test(fingerprint.trim()) &&
+    fingerprint.trim().length > 0
+  );
+}
+
+/**
+ * Return true when `line` (already trimmed) is already present among `lines`.
+ * Extracted to keep `appendGitleaksIgnore` under the cognitive-complexity gate.
+ *
+ * @param line Sanitized fingerprint without the trailing newline.
+ * @param lines Existing lines from the ignore file.
+ * @returns True when the line is already present.
+ */
+function isAlreadyPresent(line: string, lines: string[]): boolean {
+  return lines.includes(line);
+}
+
+/**
+ * Append one sanitized fingerprint line to `REPO_HOME/.gitleaksignore`,
+ * idempotently. Reads existing lines first and skips the write when the
+ * sanitized fingerprint is already present, ensuring no duplicate lines are
+ * ever written. When the file does not exist it is created with exactly one
+ * line and no leading blank. Empty or whitespace-only fingerprints are silently
+ * skipped (never written). The fingerprint is passed through `formatFingerprint`
+ * to strip embedded newlines before any comparison or write.
  *
  * @param fingerprint Raw fingerprint from `Finding.Fingerprint`.
  */
 export function appendGitleaksIgnore(fingerprint: string): void {
-  appendFileSync(join(REPO_HOME, '.gitleaksignore'), formatFingerprint(fingerprint), 'utf8');
+  const sanitized = fingerprint.replace(/[\r\n]/g, '').trim();
+  if (sanitized.length === 0) return;
+  const ignPath = join(REPO_HOME, '.gitleaksignore');
+  const existing = existsSync(ignPath)
+    ? readFileSync(ignPath, 'utf8')
+        .split('\n')
+        .filter((l) => l.length > 0)
+    : [];
+  if (isAlreadyPresent(sanitized, existing)) return;
+  appendFileSync(ignPath, formatFingerprint(sanitized), 'utf8');
 }

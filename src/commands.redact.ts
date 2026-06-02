@@ -20,6 +20,7 @@ export {
   appendGitleaksIgnore,
   formatFingerprint,
   isRecentlyModified,
+  isValidFingerprint,
 } from './commands.redact.core.ts';
 
 /**
