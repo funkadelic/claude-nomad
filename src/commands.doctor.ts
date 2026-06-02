@@ -85,25 +85,28 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   reportRebaseClean(repository);
   reportActionsDrift(repository);
 
-  const version = section('Version Checks');
-  reportVersionCheck(version);
-  reportNodeEngineCheck(version);
-  reportGitleaksVersionCheck(version);
-  reportOptionalDeps(version);
-  reportBackupsCheck(version);
+  const nomadVersion = section('Nomad Version');
+  reportVersionCheck(nomadVersion);
+  reportBackupsCheck(nomadVersion);
+
+  const depVersions = section('Dependency Versions');
+  reportNodeEngineCheck(depVersions);
+  reportGitleaksVersionCheck(depVersions);
+  reportOptionalDeps(depVersions);
 
   const sharedScan = section('Shared scan');
   // Reuse the Repository-section readiness probe so reportCheckShared does not
   // re-spawn gitleaks for its own readiness on a --check-shared run; it still
-  // probes standalone when called without a prior result. (The Version-section
-  // drift check above spawns `gitleaks version` separately, by design.)
+  // probes standalone when called without a prior result. (The Dependency
+  // Versions drift check above spawns `gitleaks version` separately, by design.)
   if (opts.checkShared === true) reportCheckShared(sharedScan, gitleaksReady);
 
   const schemaScan = section('Schema scan');
   if (opts.checkSchema === true) reportCheckSchema(schemaScan);
 
   renderDoctor([
-    version,
+    nomadVersion,
+    depVersions,
     host,
     links,
     hooksScan,

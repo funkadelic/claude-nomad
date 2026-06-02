@@ -145,7 +145,7 @@ describe('reportOptionalDeps', () => {
     const fetcherRow = s.items.find((item) => item.includes('HTTP fetcher'));
     expect(fetcherRow).toBeDefined();
     expect(fetcherRow).toContain(okGlyph);
-    expect(fetcherRow).toContain('8.5.0');
+    expect(fetcherRow).toContain('curl 8.5.0');
     expect(fetcherRow).not.toContain(warnGlyph);
     expect(process.exitCode).toBeUndefined();
   });
@@ -162,7 +162,7 @@ describe('reportOptionalDeps', () => {
     const fetcherRow = s.items.find((item) => item.includes('HTTP fetcher'));
     expect(fetcherRow).toBeDefined();
     expect(fetcherRow).toContain(okGlyph);
-    expect(fetcherRow).toContain('1.21.4');
+    expect(fetcherRow).toContain('wget 1.21.4');
     expect(fetcherRow).not.toContain(warnGlyph);
     expect(process.exitCode).toBeUndefined();
   });
@@ -237,7 +237,7 @@ describe('reportOptionalDeps', () => {
     const fetcherRow = s.items.find((item) => item.includes('HTTP fetcher'));
     expect(fetcherRow).toBeDefined();
     expect(fetcherRow).toContain(okGlyph);
-    expect(fetcherRow).toContain('present');
+    expect(fetcherRow).toContain('wget (present)');
     expect(fetcherRow).not.toContain(warnGlyph);
     expect(process.exitCode).toBeUndefined();
   });
@@ -254,7 +254,7 @@ describe('reportOptionalDeps', () => {
     const fetcherRow = s.items.find((item) => item.includes('HTTP fetcher'));
     expect(fetcherRow).toBeDefined();
     expect(fetcherRow).toContain(okGlyph);
-    expect(fetcherRow).toContain('8.5.0');
+    expect(fetcherRow).toContain('curl 8.5.0');
     expect(fetcherRow).not.toContain('1.21.4');
     expect(process.exitCode).toBeUndefined();
   });

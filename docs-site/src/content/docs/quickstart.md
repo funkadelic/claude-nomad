@@ -24,8 +24,9 @@ description: Install and configure claude-nomad in four steps.
   the version-staleness check (`nomad doctor` latest-release line) and
   `nomad doctor --check-schema`. curl is tried first and wget is the fallback, so either one works.
   The checks soft-skip (no error, no exit-code change) when neither is present, so the rest of the
-  CLI works without it; `nomad doctor` shows a single "HTTP fetcher (curl or wget)" row that is OK
-  when either is installed and warns only when both are absent.
+  CLI works without it; `nomad doctor` shows a single "HTTP fetcher" row that names the binary in
+  use (for example `HTTP fetcher: curl 8.5.0`) when either is installed, and warns only when both
+  are absent.
 
 ## First host (once, ever)
 
