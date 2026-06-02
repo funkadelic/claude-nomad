@@ -24,6 +24,8 @@ import { REPO_HOME } from './config.ts';
 import {
   type FindingAction,
   type PromptFn,
+  allowAllFindings,
+  allowFindingsByRule,
   collectActions,
   dispatchActions,
   findingKey,
@@ -33,7 +35,7 @@ import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { buildSessionAwareFatal, partitionFindings } from './push-gitleaks.ts';
 import type { LeakVerdict } from './push-leak-verdict.ts';
-import { NomadFatal, gitOrFatal } from './utils.ts';
+import { NomadFatal, gitOrFatal, log } from './utils.ts';
 
 export type { FindingAction };
 
@@ -51,6 +53,10 @@ export type RecoveryDeps = {
   nowMs?: () => number;
   /** When true, redact all findings without prompting; no TTY required. */
   redactAll?: boolean;
+  /** When true, allow (append to .gitleaksignore) all findings without prompting; no TTY required. */
+  allowAll?: boolean;
+  /** When set, allow only findings whose RuleID matches this value; no TTY required. */
+  allowRule?: string;
   /** Injectable prompt factory for tests (default: real readline). */
   makePrompt?: () => PromptFn;
   /** Injectable single-file scan for redaction (default: `scanFile`). */
@@ -105,6 +111,26 @@ export function printRecoveryLegend(print: (line: string) => void = console.log)
   print('');
 }
 
+/**
+ * Re-stage the working tree and run the scan verdict. Throws `NomadFatal` when
+ * the re-scan still reports a leak; returns the clean verdict otherwise. Used by
+ * all non-interactive resolution modes (`--redact-all`, `--allow-all`,
+ * `--allow <rule>`) so the re-stage + re-scan sequence is not duplicated.
+ *
+ * @param scanVerdict Injectable scan function.
+ * @param repoHome Repository root path for `git add -A`.
+ * @returns The clean `LeakVerdict` after re-staging and re-scanning.
+ */
+function applyThenRescan(scanVerdict: () => LeakVerdict, repoHome: string): LeakVerdict {
+  gitOrFatal(['add', '-A'], 'git add', repoHome);
+  const next = scanVerdict();
+  if (next.leak) {
+    const { bySession, other } = partitionFindings(next.findings);
+    throw new NomadFatal(buildSessionAwareFatal(bySession, other));
+  }
+  return next;
+}
+
 /** Build the real-TTY readline-based prompt function (one interface per call). */
 function makeRealPrompt(): PromptFn {
   return async (prompt: string) => {
@@ -149,6 +175,8 @@ export async function resolveLeakFindings(
     isTTYCheck = isTTY,
     nowMs = Date.now,
     redactAll = false,
+    allowAll = false,
+    allowRule,
     makePrompt: makePromptFn = makeRealPrompt,
     scan = scanFile,
     printLegend = printRecoveryLegend,
@@ -160,13 +188,20 @@ export async function resolveLeakFindings(
 
   if (redactAll) {
     redactAllFindings(current.findings, ts, map, nowMs, scan);
-    gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
-    const next = scanVerdict();
-    if (next.leak) {
-      const { bySession, other } = partitionFindings(next.findings);
-      throw new NomadFatal(buildSessionAwareFatal(bySession, other));
+    return applyThenRescan(scanVerdict, REPO_HOME);
+  }
+
+  if (allowAll) {
+    allowAllFindings(current.findings);
+    return applyThenRescan(scanVerdict, REPO_HOME);
+  }
+
+  if (allowRule !== undefined) {
+    const matched = allowFindingsByRule(current.findings, allowRule);
+    if (matched === 0) {
+      log(`no findings matched rule ${allowRule}; re-scanning`);
     }
-    return next;
+    return applyThenRescan(scanVerdict, REPO_HOME);
   }
 
   if (!isTTYCheck()) {
