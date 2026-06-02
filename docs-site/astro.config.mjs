@@ -15,6 +15,11 @@ export default defineConfig({
           label: 'GitHub',
           href: 'https://github.com/funkadelic/claude-nomad',
         },
+        {
+          icon: 'npm',
+          label: 'npm',
+          href: 'https://www.npmjs.com/package/claude-nomad',
+        },
       ],
       sidebar: [
         { label: 'Overview', link: '/' },
