@@ -40,13 +40,13 @@ function applyBool(seen: boolean, set: () => void): TokenResult {
 }
 
 /**
- * Gitleaks rule-id shape: a leading alphanumeric/underscore then any of
- * alphanumeric, underscore, or hyphen. Anchoring the first character to a
- * non-hyphen rejects leading-dash values (e.g. `-x`) the way the drop-session
- * and redact arms reject leading-dash positionals, while still accepting real
- * rule ids like `generic-api-key`.
+ * Gitleaks rule-id shape: a leading word character (`\w`, i.e. alphanumeric or
+ * underscore) then any of word character or hyphen. Anchoring the first
+ * character to a non-hyphen rejects leading-dash values (e.g. `-x`) the way the
+ * drop-session and redact arms reject leading-dash positionals, while still
+ * accepting real rule ids like `generic-api-key`.
  */
-const RULE_ID_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+const RULE_ID_RE = /^\w[\w-]*$/;
 
 /**
  * Apply the `--allow <rule>` value flag to the parse state. Rejects a

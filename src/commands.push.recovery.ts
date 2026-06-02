@@ -17,7 +17,7 @@
  * advisory cap.
  */
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
@@ -153,7 +153,14 @@ function allowThenRescan(
   repoHome: string,
 ): LeakVerdict {
   const ignPath = join(repoHome, '.gitleaksignore');
-  const before = existsSync(ignPath) ? readFileSync(ignPath, 'utf8') : null;
+  // Snapshot atomically: a read failure (missing file) means there is nothing
+  // to restore, avoiding an existsSync check-then-read race on the file.
+  let before: string | null;
+  try {
+    before = readFileSync(ignPath, 'utf8');
+  } catch {
+    before = null;
+  }
   append();
   try {
     return applyThenRescan(scanVerdict, repoHome);

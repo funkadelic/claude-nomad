@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { REPO_HOME } from './config.ts';
@@ -182,7 +182,14 @@ export function appendGitleaksIgnore(fingerprint: string): void {
   const sanitized = fingerprint.replace(/[\r\n]/g, '').trim();
   if (sanitized.length === 0) return;
   const ignPath = join(REPO_HOME, '.gitleaksignore');
-  const raw = existsSync(ignPath) ? readFileSync(ignPath, 'utf8') : '';
+  // Read atomically: attempt the read and treat any failure (missing file) as
+  // empty, rather than an existsSync check-then-read that races on the file.
+  let raw: string;
+  try {
+    raw = readFileSync(ignPath, 'utf8');
+  } catch {
+    raw = '';
+  }
   const existing = raw.split('\n').filter((l) => l.length > 0);
   if (isAlreadyPresent(sanitized, existing)) return;
   const needsLeadingNewline = raw.length > 0 && !raw.endsWith('\n');
