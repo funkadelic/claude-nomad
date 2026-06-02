@@ -120,6 +120,21 @@ describe('allowFindingsByRule - appends only matching RuleID fingerprints', () =
     expect(content).not.toContain('fp-no-match');
   });
 
+  it('duplicate matched fingerprints collapse to one line; count reflects findings matched', async () => {
+    const { allowFindingsByRule } = await import('./commands.push.recovery.actions.ts');
+    const findings = [
+      makeFinding({ RuleID: 'github-pat', Fingerprint: 'fp-dup' }),
+      makeFinding({ RuleID: 'github-pat', Fingerprint: 'fp-dup' }),
+      makeFinding({ RuleID: 'other-rule', Fingerprint: 'fp-other' }),
+    ];
+    const count = allowFindingsByRule(findings, 'github-pat');
+    const content = readFileSync(join(testHome, '.gitleaksignore'), 'utf8');
+    // count is matched findings (2), even though idempotent append writes one line.
+    expect(count).toBe(2);
+    expect(content.split('\n').filter((l) => l === 'fp-dup')).toHaveLength(1);
+    expect(content).not.toContain('fp-other');
+  });
+
   it('is a no-op-with-count-zero when no findings match the rule', async () => {
     const { allowFindingsByRule } = await import('./commands.push.recovery.actions.ts');
     const findings = [makeFinding({ RuleID: 'other-rule', Fingerprint: 'fp-other' })];

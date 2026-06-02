@@ -99,9 +99,9 @@ prompt for them. Fingerprints come from a previous `nomad push` finding report o
 `nomad doctor --check-shared` scan; the format is `file:rule:line` (the opaque string gitleaks
 emits, shown in the scan output).
 
-Idempotent: a fingerprint already present in `.gitleaksignore` is silently skipped. An invalid
-fingerprint (empty, containing a newline, or over 512 characters) causes the command to exit 1 on
-the first bad value; valid fingerprints before it are still written. No flags are accepted.
+Idempotent: a fingerprint already present in `.gitleaksignore` is silently skipped. All inputs are
+validated up front: a single invalid fingerprint (empty, containing a newline, or over 512
+characters) aborts the whole command with exit 1 and writes nothing. No flags are accepted.
 
 See [Recovery flows](/recovery/) for the non-interactive push allow paths
 (`nomad push --allow <rule>` and `nomad push --allow-all`), which record fingerprints AND

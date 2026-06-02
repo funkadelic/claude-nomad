@@ -70,6 +70,11 @@ describe('isValidFingerprint', () => {
     expect(isValidFingerprint('path/to/file.jsonl:generic-api-key:42\rinjected')).toBe(false);
   });
 
+  it('returns false for a value with only a trailing newline (not stripped before the guard)', () => {
+    expect(isValidFingerprint('path/to/file.jsonl:generic-api-key:42\n')).toBe(false);
+    expect(isValidFingerprint('path/to/file.jsonl:generic-api-key:42\r\n')).toBe(false);
+  });
+
   it('returns true for a long but well-formed fingerprint within the 512-char cap', () => {
     const fp = 'shared/projects/my-long-project-name/session-transcript.jsonl:generic-api-key:9999';
     expect(fp.length).toBeLessThanOrEqual(512);

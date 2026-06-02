@@ -137,19 +137,20 @@ export function isRecentlyModified(
  * Return true when `fingerprint` is a well-formed gitleaks fingerprint that is
  * safe to append to `.gitleaksignore`. Rejects: empty or whitespace-only
  * values, values containing `\r` or `\n` (newline-injection guard), and
- * over-length values (cap at 512 characters). Accepts any non-empty, non-blank
- * text within the length limit that contains no embedded newlines, which covers
- * the `file:rule:line` opaque shape that gitleaks fingerprints carry. Returns a
+ * over-length values (cap at 512 characters). Accepts any non-blank text within
+ * the length limit that contains no `\r` or `\n` anywhere, which covers the
+ * `file:rule:line` opaque shape that gitleaks fingerprints carry. Returns a
  * boolean, never throws.
  *
  * @param fingerprint Candidate fingerprint string.
  * @returns True when the fingerprint is valid and safe to append.
  */
 export function isValidFingerprint(fingerprint: string): boolean {
-  // The regex `[^\r\n]+` on the trimmed value already requires at least one
-  // non-newline character, so it subsumes a separate non-empty-after-trim check.
+  // Test the RAW value for CR/LF: trim() would strip a trailing newline and let
+  // it slip past, so the non-blank check uses trim() while the newline guard
+  // runs against the untrimmed value.
   return (
-    fingerprint.length > 0 && fingerprint.length <= 512 && /^[^\r\n]+$/.test(fingerprint.trim())
+    fingerprint.trim().length > 0 && fingerprint.length <= 512 && /^[^\r\n]+$/.test(fingerprint)
   );
 }
 

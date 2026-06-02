@@ -49,13 +49,15 @@ export function allowAllFindings(findings: Finding[]): void {
  * Batch-allow findings whose `RuleID` matches `ruleId` (the `--allow <rule>`
  * path). Appends matching fingerprints to `.gitleaksignore` via the idempotent
  * `appendGitleaksIgnore`. Non-matching findings are untouched. Returns the
- * count of fingerprints appended so the caller can emit a no-op notice when
- * zero findings matched. No re-scan: the caller is responsible for re-staging
- * and re-scanning after this call.
+ * count of findings matched so the caller can emit a no-op notice when zero
+ * findings matched. Because `appendGitleaksIgnore` is idempotent, the matched
+ * count may exceed the number of new lines actually written (duplicates are
+ * skipped). No re-scan: the caller is responsible for re-staging and re-scanning
+ * after this call.
  *
  * @param findings All findings from the current verdict.
  * @param ruleId The gitleaks rule id to match against `Finding.RuleID`.
- * @returns Number of fingerprints appended (0 when no findings matched).
+ * @returns Number of findings matched (0 when no findings matched).
  */
 export function allowFindingsByRule(findings: Finding[], ruleId: string): number {
   let count = 0;
