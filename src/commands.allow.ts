@@ -23,7 +23,8 @@ export function cmdAllow(fingerprints: string[]): void {
     if (!isValidFingerprint(fp)) {
       // Escape CR/LF so an invalid multi-line value cannot split the diagnostic
       // across lines (the value is rejected, never written).
-      fail(`invalid fingerprint: ${fp.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}`);
+      const shown = fp.replaceAll('\r', String.raw`\r`).replaceAll('\n', String.raw`\n`);
+      fail(`invalid fingerprint: ${shown}`);
       process.exit(1);
     }
   }
