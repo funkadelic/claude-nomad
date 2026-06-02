@@ -118,7 +118,7 @@ export NOMAD_HOST=<your-host-label>   # add to ~/.zshrc or ~/.bashrc
 or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, `macbook`,
 `homelab-nuc`). `nomad doctor` reports the resolved host so you can confirm.
 
-Edit `path-map.json` to add your logical projects (see [How it works](/how-it-works/)), then:
+Edit `path-map.json` to add your logical projects (see [How it works](/claude-nomad/how-it-works/)), then:
 
 ```bash
 $ nomad doctor                # read-only state check; reports host, repo state, every check as
@@ -136,7 +136,7 @@ $ nomad pull                  # apply on another host (or this one after a remot
 mutating.
 
 If the destination host already has populated `~/.claude/{CLAUDE.md, agents/, ...}`, the first
-`nomad pull` will refuse to overwrite real files. See [Usage](/usage/) for the safe migration
+`nomad pull` will refuse to overwrite real files. See [Usage](/claude-nomad/usage/) for the safe migration
 flow.
 
 ## Setup: each additional host in detail

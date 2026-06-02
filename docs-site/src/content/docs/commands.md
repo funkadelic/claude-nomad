@@ -13,7 +13,7 @@ full invocation, and lists any flags in its own table.
 Create a private GitHub repo via `gh`, wire it as `origin`, disable Actions, scaffold `shared/`,
 `hosts/`, `path-map.json`, and push. Prompts for a repo name (default: `claude-nomad-config`). `gh`
 must be installed and authenticated; exits with FATAL otherwise. Refuses to clobber existing
-scaffold. See [Quickstart](/quickstart/) for privacy details.
+scaffold. See [Quickstart](/claude-nomad/quickstart/) for privacy details.
 
 | Flag             | Description                                                                                                                                                                            |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -49,9 +49,9 @@ Export local sessions and opted-in per-project extras to logical names, commit
 | Flag               | Description                                                                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--dry-run`        | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage. Exits 1 if a leak is found. Nothing is written.    |
-| `--redact-all`     | Redact all findings non-interactively (backup written first) without a TTY. Does not auto-Allow findings. After redaction re-stages and re-scans; aborts with the session-aware FATAL if any finding survives. Mutually exclusive with `--allow*`; cannot combine with `--dry-run`. See [Recovery flows](/recovery/). |
-| `--allow <rule>`   | Append the fingerprint of every finding whose gitleaks rule id matches `<rule>` to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow-all`; cannot combine with `--dry-run`. See [Recovery flows](/recovery/). |
-| `--allow-all`      | Append the fingerprint of every current finding to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow`; cannot combine with `--dry-run`. See [Recovery flows](/recovery/). |
+| `--redact-all`     | Redact all findings non-interactively (backup written first) without a TTY. Does not auto-Allow findings. After redaction re-stages and re-scans; aborts with the session-aware FATAL if any finding survives. Mutually exclusive with `--allow*`; cannot combine with `--dry-run`. See [Recovery flows](/claude-nomad/recovery/). |
+| `--allow <rule>`   | Append the fingerprint of every finding whose gitleaks rule id matches `<rule>` to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow-all`; cannot combine with `--dry-run`. See [Recovery flows](/claude-nomad/recovery/). |
+| `--allow-all`      | Append the fingerprint of every current finding to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow`; cannot combine with `--dry-run`. See [Recovery flows](/claude-nomad/recovery/). |
 
 ## `drop-session`
 
@@ -60,7 +60,7 @@ Export local sessions and opted-in per-project extras to logical names, commit
 Surgically unstage every `shared/projects/*/<id>.jsonl` and the sibling `shared/projects/*/<id>/`
 subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the local
 `~/.claude/projects/<encoded>/<id>.jsonl` and `<id>/` tree are preserved. See
-[Recovery flows](/recovery/).
+[Recovery flows](/claude-nomad/recovery/).
 
 ## `adopt`
 
@@ -82,7 +82,7 @@ editor, so it never writes `path-map.json` itself.
 Rewrite the secret span across a session's local source transcripts (the main transcript plus any
 subagent transcripts under `<session-id>/`), backed up to `~/.cache/claude-nomad/backup/`. Refuses
 to touch a session that was modified recently (potential active session). Safe to re-run. See
-[Recovery flows](/recovery/).
+[Recovery flows](/claude-nomad/recovery/).
 
 | Flag          | Description                                            |
 | ------------- | ----------------------------------------------------- |
@@ -103,7 +103,7 @@ Idempotent: a fingerprint already present in `.gitleaksignore` is silently skipp
 validated up front: a single invalid fingerprint (empty, containing a newline, or over 512
 characters) aborts the whole command with exit 1 and writes nothing. No flags are accepted.
 
-See [Recovery flows](/recovery/) for the non-interactive push allow paths
+See [Recovery flows](/claude-nomad/recovery/) for the non-interactive push allow paths
 (`nomad push --allow <rule>` and `nomad push --allow-all`), which record fingerprints AND
 re-scan in a single step.
 
@@ -113,7 +113,7 @@ re-scan in a single step.
 
 Delete old backup snapshots under `~/.cache/claude-nomad/backup/`. The `--backups` flag is required.
 By default (no retention flag) removes snapshots older than 14 days. Always preview with `--dry-run`
-first. See [Recovery flows](/recovery/).
+first. See [Recovery flows](/claude-nomad/recovery/).
 
 | Flag                | Description                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------- |
@@ -127,7 +127,7 @@ first. See [Recovery flows](/recovery/).
 `nomad update`
 
 Update the `nomad` CLI binary from npm (`npm update -g claude-nomad`). Does NOT pull your sync data;
-run `nomad pull` separately for that. See [Usage](/usage/).
+run `nomad pull` separately for that. See [Usage](/claude-nomad/usage/).
 
 ## `doctor`
 
@@ -143,8 +143,8 @@ an ESM/CommonJS hook-scope mismatch; and a Node-engine floor check.
 
 | Flag                | Description                                                                                                                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session. See [Usage](/usage/).                                                                                         |
-| `--check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flows](/recovery/). |
+| `--resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session. See [Usage](/claude-nomad/usage/).                                                                                         |
+| `--check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flows](/claude-nomad/recovery/). |
 | `--check-schema`    | Read-only: fetches the live Claude Code settings schema and lists any `~/.claude/settings.json` key absent from it. Non-fatal and offline-tolerant: skips with a `⚠︎` when neither curl nor wget is available or the schema is unreachable. |
 
 ### Output details
@@ -164,7 +164,7 @@ rule and allowlist behavior tracks the minor line, so a patch-only difference st
 and is silent when gitleaks is not on PATH. The Actions-drift line (carrying a
 `gh api -X PUT repos/<owner>/<repo>/actions/permissions -F enabled=false` remediation hint) fires
 when origin is a private GitHub repo that is gh-authed with Actions re-enabled, complementing
-the auto-disable that runs on `nomad init` (see [Quickstart](/quickstart/)); it is silent on every
+the auto-disable that runs on `nomad init` (see [Quickstart](/claude-nomad/quickstart/)); it is silent on every
 prerequisite miss (non-GitHub origin, `gh` unauthed, public repo, or Actions already off).
 
 ## Global flags

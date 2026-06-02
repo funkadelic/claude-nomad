@@ -266,7 +266,7 @@ Read these before adopting so you opt in with eyes open.
   fails loudly instead of corrupting state.
 - **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so
   Claude Code's picker's `cd ... && claude --resume <id>` line fails on a different host. Use
-  `nomad doctor --resume-cmd <id>` for a host-local equivalent (see [Usage](/usage/)). The
+  `nomad doctor --resume-cmd <id>` for a host-local equivalent (see [Usage](/claude-nomad/usage/)). The
   sidecar approach preserves transcript byte-equality.
 - **Empty directories don't survive sync.** Git doesn't track empty dirs; `nomad doctor` reports
   them as `missing` (benign). Drop a `.gitkeep` to force materialization.
