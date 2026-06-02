@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.37.0](https://github.com/funkadelic/claude-nomad/compare/v0.36.0...v0.37.0) (2026-06-02)
+
+
+### Added
+
+* **docs:** create documentation site  ([#216](https://github.com/funkadelic/claude-nomad/issues/216)) ([6b9a2b0](https://github.com/funkadelic/claude-nomad/commit/6b9a2b0ae8658f6770aaeb779da1b8d8c18bf18c))
+
+
+### Fixed
+
+* **docs:** base-qualify landing page hero links ([#217](https://github.com/funkadelic/claude-nomad/issues/217)) ([67f279c](https://github.com/funkadelic/claude-nomad/commit/67f279cf66073986a5d51192403fa568e10cdd00))
+* **push:** close gitleaks leak-recovery coverage gaps ([#218](https://github.com/funkadelic/claude-nomad/issues/218)) ([2e6b53c](https://github.com/funkadelic/claude-nomad/commit/2e6b53c86ce0d76c88da7d7d8ad8f33a2fed4c37))
+
+
+### Changed
+
+* **deps-dev:** bump the dev-dependencies group with 7 updates ([#214](https://github.com/funkadelic/claude-nomad/issues/214)) ([41c48d1](https://github.com/funkadelic/claude-nomad/commit/41c48d1e74ff02377046cdb8e7b165a762e1c242))
+
+
+### Documentation
+
+* docs-site accuracy, theming, and fork-era terminology cleanup ([#219](https://github.com/funkadelic/claude-nomad/issues/219)) ([a50c9a4](https://github.com/funkadelic/claude-nomad/commit/a50c9a4c2e2c7df268eef25421c506d8f5da1681))
+
 ## [0.36.0](https://github.com/funkadelic/claude-nomad/compare/v0.35.0...v0.36.0) (2026-06-01)
 
 
