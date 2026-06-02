@@ -42,8 +42,8 @@ This is the ongoing case. The two commands become part of your routine, the same
 claude-nomad is not a backup tool and not a general dotfiles manager. It syncs Claude Code state
 specifically, and it is deliberate about what leaves your machine: credentials and ephemeral
 per-host state never sync, only an explicit allow-list of paths is pushed, and everything that does
-go up is secret-scanned before it leaves. See [Security](/security/) for the full picture.
+go up is secret-scanned before it leaves. See [Security](/claude-nomad/security/) for the full picture.
 
 If you only ever use Claude Code on a single machine and never plan to move, you do not need this.
 
-Ready to set up? Head to the [Quickstart](/quickstart/).
+Ready to set up? Head to the [Quickstart](/claude-nomad/quickstart/).

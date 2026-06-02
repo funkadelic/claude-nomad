@@ -56,13 +56,13 @@ only for multi-user repos or a repo compromise, which are out of scope for the d
 This policy is a thin entry point; the security posture itself is documented in the rest of the
 docs rather than restated here:
 
-- [Quickstart: Privacy by default](/quickstart/): Actions auto-disabled on your private repo as a
+- [Quickstart: Privacy by default](/claude-nomad/quickstart/): Actions auto-disabled on your private repo as a
   precaution (it ships no workflows of its own) and the warning about flipping the repo public.
-- [How it works: What does NOT sync](/how-it-works/): what stays host-local, including OAuth
+- [How it works: What does NOT sync](/claude-nomad/how-it-works/): what stays host-local, including OAuth
   tokens and ephemeral state.
-- [Recovery flows: .gitleaks.toml allowlist policy](/recovery/): allowlist rationale and
+- [Recovery flows: .gitleaks.toml allowlist policy](/claude-nomad/recovery/): allowlist rationale and
   customization.
 
 Secrets are scanned by gitleaks locally on push, and in CI on pull requests via
 `.github/workflows/gitleaks.yml`. The repo-root `.gitleaks.toml` allowlist and its rationale are
-described under [Recovery flows](/recovery/).
+described under [Recovery flows](/claude-nomad/recovery/).

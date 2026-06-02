@@ -219,7 +219,7 @@ skips the re-scan: the decision to proceed or abort is always the re-scan result
 still reports a leak, the push aborts AND the entries the `--allow*` run just wrote are rolled
 back, so an aborted push leaves no allowlist lines behind. `--redact-all`, `--allow-all`, and
 `--allow <rule>` are mutually exclusive with each other, and none of them can be combined with
-`--dry-run` (a dry-run resolves nothing). See [Commands](/commands/) for the full flag reference.
+`--dry-run` (a dry-run resolves nothing). See [Commands](/claude-nomad/commands/) for the full flag reference.
 
 ## .gitleaks.toml allowlist policy
 
