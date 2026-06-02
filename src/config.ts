@@ -140,39 +140,11 @@ export const ALWAYS_NEVER_SYNC = new Set([
   'stats-cache.json',
 ]);
 
-/**
- * Path segments that must never cross the sync boundary in either direction.
- * Defense-in-depth pair with `PUSH_ALLOWED_STATIC`: even if the allow-list
- * misses a path, anything containing one of these segments is hard-blocked.
- * Also the deny-list the `sharedDirs` opt-in is validated against, so a user
- * cannot symlink a host-local secret or cache into the shared repo by naming
- * it in `path-map.json`.
- */
-export const NEVER_SYNC = new Set([
-  '.claude.json',
-  '.credentials.json',
-  'history.jsonl',
-  'settings.local.json',
-  'stats-cache.json',
-  'todos',
-  'shell-snapshots',
-  'debug',
-  'file-history',
-  'plans',
-  'session-env',
-  'statsig',
-  'telemetry',
-  'ide',
-  // Host-local caches and runtime state (sharedDirs guard also rejects these).
-  'cache',
-  'backups',
-  'paste-cache',
-  'daemon',
-  'jobs',
-  'tasks',
-  'security',
-  'sessions',
-]);
+// Path segments that must never cross the sync boundary. Defined in
+// ./config.never-sync.ts (a dependency-free leaf) so config.sharedDirs.guard.ts
+// can import it without importing config.ts (which would re-form a cycle);
+// re-exported here so existing `from './config.ts'` imports keep resolving.
+export { NEVER_SYNC } from './config.never-sync.ts';
 
 // Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in
 // this set trigger a `nomad doctor` WARN. Defined in ./settings-keys.ts so the

@@ -1,4 +1,4 @@
-import { NEVER_SYNC } from './config.ts';
+import { NEVER_SYNC } from './config.never-sync.ts';
 import { NomadFatal } from './utils.ts';
 
 /**

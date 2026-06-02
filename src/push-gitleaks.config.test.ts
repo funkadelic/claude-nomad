@@ -55,7 +55,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
       return { ...actual, writeFileSync: vi.fn(actual.writeFileSync).mockImplementation(writeSpy) };
     });
     const { resolveTomlConfig } = await import('./push-gitleaks.config.ts');
-    const { resolveTomlPath } = await import('./push-gitleaks.scan.ts');
+    const { resolveTomlPath } = await import('./push-gitleaks.config.ts');
     const result = resolveTomlConfig();
     expect(result.path).toBe(resolveTomlPath());
     expect(result.path).toBe(join(repoHome, '.gitleaks.toml'));
@@ -94,7 +94,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
       };
     });
     const { resolveTomlConfig } = await import('./push-gitleaks.config.ts');
-    const { resolveTomlPath } = await import('./push-gitleaks.scan.ts');
+    const { resolveTomlPath } = await import('./push-gitleaks.config.ts');
     const bundled = resolveTomlPath()!;
     const result = resolveTomlConfig();
     // tempPath is the private temp DIRECTORY; path is the config file inside it.
@@ -249,7 +249,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
       };
     });
     const { resolveTomlConfig } = await import('./push-gitleaks.config.ts');
-    const { resolveTomlPath } = await import('./push-gitleaks.scan.ts');
+    const { resolveTomlPath } = await import('./push-gitleaks.config.ts');
     const bundledPath = resolveTomlPath()!;
     const result = resolveTomlConfig();
     expect(result.path).toBe(bundledPath);
@@ -284,5 +284,67 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     const { resolveTomlConfig } = await import('./push-gitleaks.config.ts');
     const { NomadFatal } = await import('./utils.ts');
     expect(() => resolveTomlConfig()).toThrow(NomadFatal);
+  });
+});
+
+/**
+ * Unit tests for `resolveTomlPath`: the three-branch two-tier lookup (repo
+ * copy present, repo absent + bundled present, both absent). Uses existsSync
+ * mocking to control filesystem outcomes independently of the dev environment.
+ */
+describe('resolveTomlPath (two-tier toml lookup)', () => {
+  let originalNomadRepo: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:fs');
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+  });
+
+  it('returns the REPO_HOME path when the repo copy exists', async () => {
+    process.env.NOMAD_REPO = '/fake/repo';
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn((p: unknown) => String(p).endsWith('.gitleaks.toml')),
+      };
+    });
+    const { resolveTomlPath } = await import('./push-gitleaks.config.ts');
+    expect(resolveTomlPath()).toBe('/fake/repo/.gitleaks.toml');
+  });
+
+  it('returns the bundled path when repo copy is absent but bundled exists', async () => {
+    process.env.NOMAD_REPO = '/fake/repo';
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        // First call (REPO_HOME toml) -> false, second call (bundled) -> true.
+        existsSync: vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true),
+      };
+    });
+    const { resolveTomlPath } = await import('./push-gitleaks.config.ts');
+    const result = resolveTomlPath();
+    expect(result).not.toBeNull();
+    expect(result).toMatch(/\.gitleaks\.toml$/);
+    // Must NOT be the repo copy.
+    expect(result).not.toBe('/fake/repo/.gitleaks.toml');
+  });
+
+  it('returns null when neither repo copy nor bundled copy exists', async () => {
+    process.env.NOMAD_REPO = '/fake/repo';
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    const { resolveTomlPath } = await import('./push-gitleaks.config.ts');
+    expect(resolveTomlPath()).toBeNull();
   });
 });

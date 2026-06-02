@@ -3,22 +3,37 @@
  * user-owned `REPO_HOME/.gitleaks.overlay.toml` allowlist ON TOP of the
  * package-bundled `.gitleaks.toml` via a generated temp `[extend]` chain.
  *
- * Split out of `push-gitleaks.scan.ts` (which keeps the two-tier
- * `resolveTomlPath` lookup) so the overlay-merge logic, its `[extend]` guard,
- * and the D-04 generation-failure fallback live under the source-line cap
- * without crowding the scan primitives. Dependency flows one way
+ * Owns both tiers of gitleaks `--config` resolution: the two-tier
+ * `resolveTomlPath` base lookup and the `resolveTomlConfig` overlay merge built
+ * on top of it. Co-locating them here (rather than importing `resolveTomlPath`
+ * from `push-gitleaks.scan.ts`) keeps the dependency one-directional
  * (`push-gitleaks.scan.ts` + `push-checks.ts` -> this module); this module
- * imports only `config.ts`, `push-gitleaks.scan.ts` (for `resolveTomlPath`),
- * `utils.fs.ts`, and `utils.ts`, so there is no cycle.
+ * imports only `config.ts`, `utils.fs.ts`, and `utils.ts`, so there is no cycle.
  */
 
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { REPO_HOME } from './config.ts';
-import { resolveTomlPath } from './push-gitleaks.scan.ts';
 import { NomadFatal, warn } from './utils.ts';
+
+/**
+ * Two-tier `.gitleaks.toml` lookup: returns `REPO_HOME/.gitleaks.toml` when
+ * present, else the package-bundled copy resolved via `import.meta.url`
+ * (always current with the installed binary, critical for standalone repos
+ * that have no git update path for the allowlist), else `null`. Callers omit
+ * `--config` on a `null` return so gitleaks uses its default ruleset; scanning
+ * is never disabled. Used by `resolveTomlConfig` below and by `push-checks.ts`
+ * `probeGitleaks`.
+ */
+export function resolveTomlPath(): string | null {
+  const repoToml = join(REPO_HOME, '.gitleaks.toml');
+  if (existsSync(repoToml)) return repoToml;
+  const bundled = fileURLToPath(new URL('../.gitleaks.toml', import.meta.url));
+  return existsSync(bundled) ? bundled : null;
+}
 
 /**
  * Result of `resolveTomlConfig`. A discriminated union (TYPE, not enum or

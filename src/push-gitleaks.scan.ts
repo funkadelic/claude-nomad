@@ -7,35 +7,18 @@
  *
  * Split into its own module so adding the git-stage step keeps both
  * `push-gitleaks.ts` and `commands.doctor.check-shared.ts` under the 200-line
- * cap. `push-gitleaks.ts` re-exports all three so existing import sites are
- * unaffected. Dependency flows one way (`push-gitleaks.ts` -> this module);
- * this module imports only `config.ts` and `utils.ts`, so there is no cycle.
+ * cap. `push-gitleaks.ts` re-exports these so existing import sites are
+ * unaffected. Dependency flows one way (`push-gitleaks.ts` -> this module, and
+ * this module -> `push-gitleaks.config.ts` for `resolveTomlConfig`); no cycle.
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-import { REPO_HOME } from './config.ts';
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
 import { nowTimestamp } from './utils.fs.ts';
-
-/**
- * Two-tier `.gitleaks.toml` lookup: returns `REPO_HOME/.gitleaks.toml` when
- * present, else the package-bundled copy resolved via `import.meta.url`
- * (always current with the installed binary, critical for standalone repos
- * that have no git update path for the allowlist), else `null`. Callers omit
- * `--config` on a `null` return so gitleaks uses its default ruleset; scanning
- * is never disabled. Exported for reuse in `push-checks.ts` `probeGitleaks`.
- */
-export function resolveTomlPath(): string | null {
-  const repoToml = join(REPO_HOME, '.gitleaks.toml');
-  if (existsSync(repoToml)) return repoToml;
-  const bundled = fileURLToPath(new URL('../.gitleaks.toml', import.meta.url));
-  return existsSync(bundled) ? bundled : null;
-}
 
 /**
  * Subset of gitleaks 8.x JSON report fields the parser consumes. The
