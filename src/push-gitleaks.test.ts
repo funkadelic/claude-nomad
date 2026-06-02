@@ -921,6 +921,27 @@ describe('buildSessionAwareFatal (pure)', () => {
     expect(counts?.get('generic-api-key')).toBe(1);
   });
 
+  it('dedupeFindings: findings with a missing Fingerprint fall back to the composite key and stay distinct', async () => {
+    // The report is parsed from untyped gitleaks JSON via `as Finding[]`, so a
+    // finding can arrive with no Fingerprint at runtime. The type guard must
+    // route those to the composite fallback key rather than collapsing every
+    // such finding under one undefined key (which would undercount leaks).
+    const { partitionFindings } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    // Two DISTINCT findings (different lines), both with Fingerprint absent.
+    const a = {
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/proj/sid.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+    } as unknown as Finding;
+    const b = { ...a, StartLine: 7 };
+    const { bySession } = partitionFindings([a, b]);
+    // Distinct spans must not collapse: two findings on the same session/rule.
+    expect(bySession.get('sid')?.get('generic-api-key')).toBe(2);
+  });
+
   it('dedupeFindings: 3 identical findings (same Fingerprint) collapse to one entry', async () => {
     // Defect #4: duplicate findings in the `other` bucket previously printed the
     // same `Also found:` row multiple times. dedupeFindings collapses them

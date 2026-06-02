@@ -59,17 +59,20 @@ const LEGACY_FATAL =
 
 /**
  * Build a stable identity key for a finding used by `dedupeFindings`.
- * Prefers the non-empty `Fingerprint` field (gitleaks-generated, unique per
- * distinct secret span) and falls back to `File:RuleID:StartLine:StartColumn`
- * when the Fingerprint is absent or empty.
+ * Prefers a non-empty `Fingerprint` (gitleaks-generated, unique per distinct
+ * secret span) and falls back to `File:RuleID:StartLine:StartColumn` when the
+ * Fingerprint is missing, non-string, or empty. The report is parsed from
+ * untyped gitleaks JSON, so the runtime type guard prevents a missing/null
+ * Fingerprint from collapsing distinct findings into one key (undercounting).
  *
  * @param f The finding to key.
  * @returns A string key that uniquely identifies the finding span.
  */
 function findingIdentityKey(f: Finding): string {
-  return f.Fingerprint === ''
-    ? `${f.File}:${f.RuleID}:${f.StartLine}:${f.StartColumn}`
-    : f.Fingerprint;
+  const fp = f.Fingerprint;
+  return typeof fp === 'string' && fp.length > 0
+    ? fp
+    : `${f.File}:${f.RuleID}:${f.StartLine}:${f.StartColumn}`;
 }
 
 /**
