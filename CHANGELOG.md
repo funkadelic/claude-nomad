@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/funkadelic/claude-nomad/compare/v0.37.0...v0.38.0) (2026-06-02)
+
+
+### Added
+
+* non-interactive gitleaks allowlist (nomad allow, push --allow/--allow-all) ([#220](https://github.com/funkadelic/claude-nomad/issues/220)) ([c6cc5eb](https://github.com/funkadelic/claude-nomad/commit/c6cc5ebec5dd15cd1aba74dd3627d18c39c8b8c4))
+
 ## [0.37.0](https://github.com/funkadelic/claude-nomad/compare/v0.36.0...v0.37.0) (2026-06-02)
 
 
