@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.39.0](https://github.com/funkadelic/claude-nomad/compare/v0.38.1...v0.39.0) (2026-06-02)
+
+
+### Added
+
+* **doctor:** group version checks into Nomad + Dependency sections ([#228](https://github.com/funkadelic/claude-nomad/issues/228)) ([08e8bf7](https://github.com/funkadelic/claude-nomad/commit/08e8bf79a730f1e7f025a1c2ad9dd406f586b05e))
+
+
+### Documentation
+
+* **how-it-works:** render repo-layout trees with FileTree ([#229](https://github.com/funkadelic/claude-nomad/issues/229)) ([b52de15](https://github.com/funkadelic/claude-nomad/commit/b52de152416ac5dabb650a1970b53a3b45262396))
+
 ## [0.38.1](https://github.com/funkadelic/claude-nomad/compare/v0.38.0...v0.38.1) (2026-06-02)
 
 
