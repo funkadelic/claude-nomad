@@ -77,10 +77,12 @@ transcript is scrubbed.
 
 ## nomad redact
 
-Rewrites the secret span in the local source transcript at
-`~/.claude/projects/<encoded>/<session-id>.jsonl` in place, replacing each flagged span with
-`[REDACTED:<rule>]`. Before rewriting, the original transcript is backed up to
-`~/.cache/claude-nomad/backup/<timestamp>/`.
+Rewrites the secret span in the local source transcripts for a session in place, replacing each
+flagged span with `[REDACTED:<rule>]`. This covers the whole session subtree: the main transcript
+at `~/.claude/projects/<encoded>/<session-id>.jsonl` and every nested file under
+`~/.claude/projects/<encoded>/<session-id>/` (subagent transcripts, tool results), so a secret that
+lives only in a subagent transcript is redacted too. Before rewriting, the original files are
+backed up to `~/.cache/claude-nomad/backup/<timestamp>/`.
 
 ```bash
 $ nomad redact <session-id>
@@ -97,9 +99,10 @@ What it does NOT do: rotate credentials. Always rotate the secret at its provide
 
 Safety checks:
 
-- A session whose transcript was modified within the last 5 minutes is treated as potentially
-  active (Claude Code may still be writing to it). `nomad redact` refuses to touch it and suggests
-  `nomad drop-session` or waiting for the session to end.
+- A session is treated as potentially active (Claude Code may still be writing to it) when any
+  file in its subtree (main transcript or any nested subagent file) was modified within the last
+  5 minutes. `nomad redact` refuses to touch it and suggests `nomad drop-session` or waiting for
+  the session to end.
 - Before every rewrite, a backup is written to `~/.cache/claude-nomad/backup/<timestamp>/`, so
   the original content is recoverable.
 - `--dry-run` prints the planned redactions and writes nothing.
