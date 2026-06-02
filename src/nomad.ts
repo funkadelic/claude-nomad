@@ -27,8 +27,9 @@ import { HOME } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
-import { parseFlags, parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
+import { parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
 import { parseAllowArgs } from './nomad.dispatch.allow.ts';
+import { parsePushArgs } from './nomad.dispatch.push.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
 import { fail, NomadFatal } from './utils.ts';
@@ -80,15 +81,23 @@ try {
       break;
     }
     case 'push': {
-      // Set-based flag parse so --dry-run and --redact-all can appear in any
-      // order; unknown flags show the usage line. --redact-all redacts every
-      // finding non-interactively without requiring a TTY.
-      const seen = parseFlags(process.argv, new Set(['--dry-run', '--redact-all']));
-      if (seen === null) {
-        console.error('usage: nomad push [--dry-run] [--redact-all]');
+      // Value-aware parse: --dry-run / --redact-all are boolean; --allow <rule>
+      // is value-bearing; --allow-all is boolean. --redact-all, --allow-all, and
+      // --allow are mutually exclusive resolution modes; --allow* + --dry-run is
+      // also rejected (a dry-run resolves nothing).
+      const pushArgs = parsePushArgs(process.argv);
+      if (pushArgs === null) {
+        console.error(
+          'usage: nomad push [--dry-run] [--redact-all] [--allow <rule>] [--allow-all]',
+        );
         process.exit(1);
       }
-      await cmdPush({ dryRun: seen.has('--dry-run'), redactAll: seen.has('--redact-all') });
+      await cmdPush({
+        dryRun: pushArgs.dryRun,
+        redactAll: pushArgs.redactAll,
+        allowAll: pushArgs.allowAll,
+        allowRule: pushArgs.allowRule,
+      });
       break;
     }
     case 'init': {

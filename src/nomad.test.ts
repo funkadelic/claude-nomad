@@ -51,7 +51,12 @@ describe('nomad.ts push dispatcher', () => {
     process.argv = ['node', 'nomad.ts', 'push'];
     await import('./nomad.ts');
     expect(cmdPushMock).toHaveBeenCalledTimes(1);
-    expect(cmdPushMock).toHaveBeenCalledWith({ dryRun: false, redactAll: false });
+    expect(cmdPushMock).toHaveBeenCalledWith({
+      dryRun: false,
+      redactAll: false,
+      allowAll: false,
+      allowRule: undefined,
+    });
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
@@ -61,7 +66,12 @@ describe('nomad.ts push dispatcher', () => {
     process.argv = ['node', 'nomad.ts', 'push', '--dry-run'];
     await import('./nomad.ts');
     expect(cmdPushMock).toHaveBeenCalledTimes(1);
-    expect(cmdPushMock).toHaveBeenCalledWith({ dryRun: true, redactAll: false });
+    expect(cmdPushMock).toHaveBeenCalledWith({
+      dryRun: true,
+      redactAll: false,
+      allowAll: false,
+      allowRule: undefined,
+    });
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
