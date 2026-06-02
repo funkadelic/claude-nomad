@@ -12,7 +12,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: pages
+  # Key by ref so PR validation builds run concurrently while pushes to a given
+  # branch (main deploys) stay singleton, instead of all contending for one group.
+  group: pages-${{ github.head_ref || github.ref }}
   cancel-in-progress: false
 
 jobs:
