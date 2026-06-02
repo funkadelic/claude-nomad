@@ -3,26 +3,31 @@ title: How it works
 description: The mechanics behind claude-nomad path remapping, settings merge, and sync behavior.
 ---
 
+import { FileTree } from '@astrojs/starlight/components';
+
 ## Overview
 
 **claude-nomad** is a **tool**, not a config store. You install the CLI globally
 (`npm i -g claude-nomad`) and keep a separate **private** Git repo that holds only your config:
 `CLAUDE.md`, agents, skills, settings, session transcripts. No tool source code lives in that repo.
 
-```text
-your private <your-username>/claude-nomad-config
-  ├── shared/                 (your config, synced to every host)
-  │   ├── CLAUDE.md
-  │   ├── agents/
-  │   ├── skills/
-  │   ├── commands/
-  │   ├── rules/
-  │   ├── hooks/
-  │   ├── settings.base.json
-  │   └── projects/
-  ├── hosts/<hostname>.json
-  └── path-map.json
-```
+<FileTree>
+
+- claude-nomad-config/ your private config repo
+  - shared/ your config, synced to every host
+    - CLAUDE.md
+    - agents/
+    - skills/
+    - commands/
+    - rules/
+    - hooks/
+    - settings.base.json
+    - projects/
+  - hosts/
+    - \<hostname>.json
+  - path-map.json
+
+</FileTree>
 
 `nomad init` creates this repo for you (via `gh`) and scaffolds the directory structure in one
 step. Every host after the first installs the CLI, clones your private data repo to
@@ -38,27 +43,28 @@ so a clobbered dotfile variable does not break the CLI.
 
 What `~/claude-nomad/` looks like on a configured host:
 
-```text
-~/claude-nomad/
-├── shared/                   # synced to every machine
-│   ├── CLAUDE.md
-│   ├── settings.base.json    # baseline settings
-│   ├── agents/
-│   ├── skills/
-│   ├── commands/
-│   ├── rules/
-│   ├── hooks/                # hook scripts, symlinked into ~/.claude/hooks/
-│   ├── my-statusline.cjs     # any script you want symlinked into ~/.claude/
-│   ├── .gitignore            # blocks .claude.json, settings.local.json, *.token,
-│   │                         # *.key, *.pem, id_rsa, id_ed25519, .env, .env.*
-│   ├── projects/             # session transcripts under logical names
-│   └── extras/               # opt-in per-project content
-├── hosts/
-│   ├── <your-mac>.json       # patches merged over settings.base.json
-│   ├── <your-wsl-host>.json
-│   └── <your-nuc>.json
-└── path-map.json             # logical project -> per-host absolute path
-```
+<FileTree>
+
+- claude-nomad/
+  - shared/ synced to every machine
+    - CLAUDE.md
+    - settings.base.json baseline settings
+    - agents/
+    - skills/
+    - commands/
+    - rules/
+    - hooks/ hook scripts, symlinked into ~/.claude/hooks/
+    - my-statusline.cjs any script you want symlinked into ~/.claude/
+    - .gitignore blocks `.claude.json`, `settings.local.json`, `*.token`, `*.key`, `*.pem`, `id_rsa`, `id_ed25519`, `.env`, `.env.*`
+    - projects/ session transcripts under logical names
+    - extras/ opt-in per-project content
+  - hosts/
+    - \<your-mac>.json patches merged over settings.base.json
+    - \<your-wsl-host>.json
+    - \<your-nuc>.json
+  - path-map.json logical project -> per-host absolute path
+
+</FileTree>
 
 ## What gets synced vs. not
 
