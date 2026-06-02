@@ -133,7 +133,7 @@ describe('reportOptionalDeps', () => {
     expect(ghRow).toBeDefined();
     expect(ghRow).toContain(warnGlyph);
     expect(ghRow).toContain('nomad init');
-    expect(ghRow).toContain('mirror-Actions');
+    expect(ghRow).toContain('Actions-drift');
     expect(process.exitCode).toBeUndefined();
   });
 

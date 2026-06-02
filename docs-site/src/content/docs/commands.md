@@ -117,7 +117,7 @@ Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail
 sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness
 check, a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a hook command
 whose script under `~/.claude/` is missing on this host, plus a set of `⚠︎`-only checks: gitleaks
-version drift; on a private GitHub mirror, re-enabled Actions; optional-dependency presence (`gh`
+version drift; on a private GitHub repo, re-enabled Actions; optional-dependency presence (`gh`
 and the curl-or-wget HTTP fetcher); a backups-cache size/count nudge toward `nomad clean --backups`;
 an ESM/CommonJS hook-scope mismatch; and a Node-engine floor check.
 
@@ -141,9 +141,9 @@ so it never false-fails on a command that does not reference a local script.
 Two further warning-only drift checks run in `nomad doctor`. The gitleaks version-drift line fires
 when the local gitleaks major.minor differs from the CI-pinned `GITLEAKS_PINNED_VERSION` (gitleaks
 rule and allowlist behavior tracks the minor line, so a patch-only difference stays as a pass),
-and is silent when gitleaks is not on PATH. The mirror-Actions line (carrying a
+and is silent when gitleaks is not on PATH. The Actions-drift line (carrying a
 `gh api -X PUT repos/<owner>/<repo>/actions/permissions -F enabled=false` remediation hint) fires
-when origin is a private GitHub mirror that is gh-authed with Actions re-enabled, complementing
+when origin is a private GitHub repo that is gh-authed with Actions re-enabled, complementing
 the auto-disable that runs on `nomad init` (see [Quickstart](/quickstart/)); it is silent on every
 prerequisite miss (non-GitHub origin, `gh` unauthed, public repo, or Actions already off).
 

@@ -41,7 +41,7 @@ import {
  * @param section - The Repository section to append the WARN line to.
  * @param run - Injectable subprocess runner; defaults to `execFileSync`.
  */
-export function reportMirrorActions(section: DoctorSection, run: SpawnSyncFn = execFileSync): void {
+export function reportActionsDrift(section: DoctorSection, run: SpawnSyncFn = execFileSync): void {
   // Gate 1: origin remote. Throws on no remote / non-repo -> silent skip.
   let remote: string;
   try {
@@ -63,7 +63,7 @@ export function reportMirrorActions(section: DoctorSection, run: SpawnSyncFn = e
   const auth = ghAuthStatus(run);
   if (auth === 'gh-not-installed' || auth === 'gh-not-authed') return;
 
-  // Gate 4: private mirror. A public repo, or a probe that throws, is a skip.
+  // Gate 4: private repo. A public repo, or a probe that throws, is a skip.
   let isPrivate: boolean;
   try {
     isPrivate = isRepoPrivate(ref, run);
@@ -81,10 +81,10 @@ export function reportMirrorActions(section: DoctorSection, run: SpawnSyncFn = e
   }
   if (!enabled) return;
 
-  // All gates passed: the private mirror has Actions re-enabled. Emit the
+  // All gates passed: the private repo has Actions re-enabled. Emit the
   // single yellow WARN with the exact disable command as the remediation hint.
   addItem(
     section,
-    `${yellow(warnGlyph)} mirror Actions: enabled on private mirror ${ref.owner}/${ref.repo} (re-disable with 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false')`,
+    `${yellow(warnGlyph)} Actions: enabled on private repo ${ref.owner}/${ref.repo} (re-disable with 'gh api -X PUT repos/${ref.owner}/${ref.repo}/actions/permissions -F enabled=false')`,
   );
 }
