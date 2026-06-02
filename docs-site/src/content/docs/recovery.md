@@ -198,6 +198,29 @@ the FATAL. Use this in scripts or when every finding is a real secret that shoul
 a single session, `nomad redact <session-id>` gives you per-session control with `--rule` and
 `--dry-run` options.
 
+**Non-interactive allowlist:** three paths let you record false positives and proceed without the
+interactive menu, all without requiring a TTY:
+
+- `nomad push --allow <rule>` appends the fingerprints of every finding whose gitleaks rule id
+  matches `<rule>` to `<REPO_HOME>/.gitleaksignore`, re-stages, and re-scans. Proceeds only when
+  no finding survives the re-scan. Use this when you know a specific rule is producing noise
+  (for example `generic-api-key`) but want to keep other rules active. If no finding matches the
+  rule, a notice is logged and the re-scan still runs.
+- `nomad push --allow-all` appends the fingerprints of ALL current findings to
+  `.gitleaksignore`, re-stages, and re-scans. Proceeds only when the re-scan is clean. Use this
+  to clear a batch of known false positives in one shot.
+- `nomad allow <fingerprint>...` records specific fingerprints in `.gitleaksignore` ahead of a
+  push, without triggering a push cycle. The fingerprint is the `file:rule:line` string shown in
+  the scan output.
+
+All three write to the same `.gitleaksignore` file described in the
+[.gitleaks.toml allowlist policy](#gitleakstoml-allowlist-policy) section. The allowlist never
+skips the re-scan: the decision to proceed or abort is always the re-scan result. If the re-scan
+still reports a leak, the push aborts AND the entries the `--allow*` run just wrote are rolled
+back, so an aborted push leaves no allowlist lines behind. `--redact-all`, `--allow-all`, and
+`--allow <rule>` are mutually exclusive with each other, and none of them can be combined with
+`--dry-run` (a dry-run resolves nothing). See [Commands](/commands/) for the full flag reference.
+
 ## .gitleaks.toml allowlist policy
 
 `gitleaks protect` runs against the staged tree on every `nomad push` and can flag

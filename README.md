@@ -57,6 +57,21 @@ $ nomad pull     # apply config to ~/.claude/
 $ nomad push     # publish local changes (sessions, settings)
 ```
 
+When `nomad push` detects a potential secret, it drops into an interactive menu (TTY) or aborts with
+a recovery hint (non-TTY/CI). Three non-interactive recovery paths are available without the menu:
+
+- `nomad push --redact-all` -- scrub every finding from the local transcript in place, then push.
+- `nomad push --allow <rule>` -- record findings matching one gitleaks rule id as false positives
+  (appends their fingerprints to `.gitleaksignore`), then re-scan and push.
+- `nomad push --allow-all` -- record every current finding as a false positive, then re-scan and
+  push.
+- `nomad allow <fingerprint>...` -- pre-record specific fingerprints in `.gitleaksignore` without
+  going through a push cycle.
+
+All allow paths always re-scan after writing the allowlist; a surviving finding still aborts the
+push. See [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/) for the full
+decision tree.
+
 ## Requirements
 
 - Node.js 22.22.1 or newer (24 LTS recommended)
@@ -75,6 +90,6 @@ version-staleness check and `nomad doctor --check-schema`. The CLI works without
   walkthrough, migrating an existing `~/.claude/`
 - [Commands reference](https://funkadelic.github.io/claude-nomad/commands/) -- all CLI flags
 - [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/) -- backups, drop-session,
-  redact, gitleaks allowlist
+  redact, gitleaks allowlist, non-interactive allow
 - [Contributing](https://funkadelic.github.io/claude-nomad/contributing/)
 - [Security policy](https://funkadelic.github.io/claude-nomad/security/)

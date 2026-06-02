@@ -45,18 +45,22 @@ function guardGitlinks(): void {
  * @param ts - Backup timestamp passed to the recovery flow.
  * @param map - Parsed path-map for session path resolution.
  * @param redactAll - When true, redact all findings non-interactively.
+ * @param allowAll - When true, allow all findings non-interactively.
+ * @param allowRule - When set, allow only findings matching this rule id.
  */
 async function commitAndPush(
   st: PushState,
   ts: string,
   map: PathMap,
   redactAll: boolean,
+  allowAll: boolean,
+  allowRule: string | undefined,
 ): Promise<void> {
   gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
   let verdict = scanPushVerdict();
   if (verdict.leak) {
     renderPushTree(st, verdict);
-    verdict = await resolveLeakFindings(verdict, ts, map, { redactAll });
+    verdict = await resolveLeakFindings(verdict, ts, map, { redactAll, allowAll, allowRule });
   }
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
   gitOrFatal(['push'], 'git push', REPO_HOME);
@@ -145,9 +149,53 @@ function runDryRunPreview(st: PushState, map: PathMap | null): void {
  * pre-existing violation surfaces; an empty status has nothing to classify.
  * Mirrors `cmdPull`'s `dryRun` contract.
  */
-export async function cmdPush(opts: { dryRun?: boolean; redactAll?: boolean } = {}): Promise<void> {
+/**
+ * Defense-in-depth guard for push resolution-mode mutual exclusivity.
+ * The argv parser already enforces these, but `cmdPush` re-checks as a
+ * second gate (mirroring `cmdClean`'s `--older-than`/`--keep` precedent).
+ * Calls `die()` on any conflicting combination: two resolution modes together,
+ * or any resolution mode (including `--redact-all`) combined with `--dry-run`
+ * (a dry-run resolves nothing).
+ *
+ * @param dryRun True when `--dry-run` was passed.
+ * @param redactAll True when `--redact-all` was passed.
+ * @param allowAll True when `--allow-all` was passed.
+ * @param allowRule Rule id from `--allow <rule>`, or undefined.
+ */
+function guardResolutionModeConflicts(
+  dryRun: boolean,
+  redactAll: boolean,
+  allowAll: boolean,
+  allowRule: string | undefined,
+): void {
+  const hasAllow = allowAll || allowRule !== undefined;
+  const wantsResolution = redactAll || hasAllow;
+  if (redactAll && hasAllow) {
+    die('--redact-all, --allow-all, and --allow are mutually exclusive resolution modes');
+  }
+  if (allowAll && allowRule !== undefined) {
+    die('--redact-all, --allow-all, and --allow are mutually exclusive resolution modes');
+  }
+  if (dryRun && wantsResolution) {
+    die(
+      '--redact-all, --allow-all, and --allow cannot be combined with --dry-run (dry-run resolves nothing)',
+    );
+  }
+}
+
+export async function cmdPush(
+  opts: {
+    dryRun?: boolean;
+    redactAll?: boolean;
+    allowAll?: boolean;
+    allowRule?: string;
+  } = {},
+): Promise<void> {
   const dryRun = opts.dryRun === true;
   const redactAll = opts.redactAll === true;
+  const allowAll = opts.allowAll === true;
+  const allowRule = opts.allowRule;
+  guardResolutionModeConflicts(dryRun, redactAll, allowAll, allowRule);
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   const handle = acquireLock('push');
   if (handle === null) process.exit(0);
@@ -203,7 +251,7 @@ export async function cmdPush(opts: { dryRun?: boolean; redactAll?: boolean } = 
     // dryRun skips git add / commit / push: run the read-only leak preview,
     // which prints any recovery below the rendered tree.
     if (dryRun) return runDryRunPreview(st, map);
-    await commitAndPush(st, ts, map, redactAll);
+    await commitAndPush(st, ts, map, redactAll, allowAll, allowRule);
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);

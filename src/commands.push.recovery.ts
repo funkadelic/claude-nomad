@@ -17,6 +17,8 @@
  * advisory cap.
  */
 
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import type { PathMap } from './config.ts';
@@ -24,6 +26,8 @@ import { REPO_HOME } from './config.ts';
 import {
   type FindingAction,
   type PromptFn,
+  allowAllFindings,
+  allowFindingsByRule,
   collectActions,
   dispatchActions,
   findingKey,
@@ -33,7 +37,7 @@ import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { buildSessionAwareFatal, partitionFindings } from './push-gitleaks.ts';
 import type { LeakVerdict } from './push-leak-verdict.ts';
-import { NomadFatal, gitOrFatal } from './utils.ts';
+import { NomadFatal, gitOrFatal, log } from './utils.ts';
 
 export type { FindingAction };
 
@@ -51,6 +55,10 @@ export type RecoveryDeps = {
   nowMs?: () => number;
   /** When true, redact all findings without prompting; no TTY required. */
   redactAll?: boolean;
+  /** When true, allow (append to .gitleaksignore) all findings without prompting; no TTY required. */
+  allowAll?: boolean;
+  /** When set, allow only findings whose RuleID matches this value; no TTY required. */
+  allowRule?: string;
   /** Injectable prompt factory for tests (default: real readline). */
   makePrompt?: () => PromptFn;
   /** Injectable single-file scan for redaction (default: `scanFile`). */
@@ -105,6 +113,64 @@ export function printRecoveryLegend(print: (line: string) => void = console.log)
   print('');
 }
 
+/**
+ * Re-stage the working tree and run the scan verdict. Throws `NomadFatal` when
+ * the re-scan still reports a leak; returns the clean verdict otherwise. Used by
+ * all non-interactive resolution modes (`--redact-all`, `--allow-all`,
+ * `--allow <rule>`) so the re-stage + re-scan sequence is not duplicated.
+ *
+ * @param scanVerdict Injectable scan function.
+ * @param repoHome Repository root path for `git add -A`.
+ * @returns The clean `LeakVerdict` after re-staging and re-scanning.
+ */
+function applyThenRescan(scanVerdict: () => LeakVerdict, repoHome: string): LeakVerdict {
+  gitOrFatal(['add', '-A'], 'git add', repoHome);
+  const next = scanVerdict();
+  if (next.leak) {
+    const { bySession, other } = partitionFindings(next.findings);
+    throw new NomadFatal(buildSessionAwareFatal(bySession, other));
+  }
+  return next;
+}
+
+/**
+ * Snapshot `.gitleaksignore`, run `append` (which writes the allow entries),
+ * then re-stage and re-scan via {@link applyThenRescan}. When the re-scan still
+ * reports a leak the push aborts; the eagerly-written allow entries are rolled
+ * back to the pre-append state so an aborted push leaves no allowlist lines in
+ * the working tree (the secret was held back AND nothing the user did not
+ * confirm is committed by a later push). Used by the `--allow-all` and
+ * `--allow <rule>` paths.
+ *
+ * @param append Writes the allow fingerprints for the chosen mode.
+ * @param scanVerdict Injectable scan function.
+ * @param repoHome Repository root path for the ignore file and `git add -A`.
+ * @returns The clean `LeakVerdict` after re-staging and re-scanning.
+ */
+function allowThenRescan(
+  append: () => void,
+  scanVerdict: () => LeakVerdict,
+  repoHome: string,
+): LeakVerdict {
+  const ignPath = join(repoHome, '.gitleaksignore');
+  // Snapshot atomically: a read failure (missing file) means there is nothing
+  // to restore, avoiding an existsSync check-then-read race on the file.
+  let before: string | null;
+  try {
+    before = readFileSync(ignPath, 'utf8');
+  } catch {
+    before = null;
+  }
+  append();
+  try {
+    return applyThenRescan(scanVerdict, repoHome);
+  } catch (err) {
+    if (before === null) rmSync(ignPath, { force: true });
+    else writeFileSync(ignPath, before, 'utf8');
+    throw err;
+  }
+}
+
 /** Build the real-TTY readline-based prompt function (one interface per call). */
 function makeRealPrompt(): PromptFn {
   return async (prompt: string) => {
@@ -149,6 +215,8 @@ export async function resolveLeakFindings(
     isTTYCheck = isTTY,
     nowMs = Date.now,
     redactAll = false,
+    allowAll = false,
+    allowRule,
     makePrompt: makePromptFn = makeRealPrompt,
     scan = scanFile,
     printLegend = printRecoveryLegend,
@@ -160,13 +228,22 @@ export async function resolveLeakFindings(
 
   if (redactAll) {
     redactAllFindings(current.findings, ts, map, nowMs, scan);
-    gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
-    const next = scanVerdict();
-    if (next.leak) {
-      const { bySession, other } = partitionFindings(next.findings);
-      throw new NomadFatal(buildSessionAwareFatal(bySession, other));
-    }
-    return next;
+    return applyThenRescan(scanVerdict, REPO_HOME);
+  }
+
+  if (allowAll) {
+    return allowThenRescan(() => allowAllFindings(current.findings), scanVerdict, REPO_HOME);
+  }
+
+  if (allowRule !== undefined) {
+    return allowThenRescan(
+      () => {
+        const matched = allowFindingsByRule(current.findings, allowRule);
+        if (matched === 0) log(`no findings matched rule ${allowRule}; re-scanning`);
+      },
+      scanVerdict,
+      REPO_HOME,
+    );
   }
 
   if (!isTTYCheck()) {

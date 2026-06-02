@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
-import type * as redactModule from './commands.redact.ts';
+import type * as redactModule from './commands.redact.core.ts';
 import type * as utilsModule from './utils.ts';
 import type * as utilsFsModule from './utils.fs.ts';
 import type { PathMap } from './config.ts';
@@ -239,13 +239,13 @@ describe('resolveLeakFindings - TTY Allow action -> re-scan clean -> returns', (
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.redact.ts');
+    vi.doUnmock('./commands.redact.core.ts');
     vi.doUnmock('./utils.ts');
   });
 
   it('calls appendGitleaksIgnore with the fingerprint and returns when re-scan is clean', async () => {
     const appendMock = vi.fn();
-    vi.doMock('./commands.redact.ts', async (importOriginal) => {
+    vi.doMock('./commands.redact.core.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: appendMock };
     });

@@ -1,12 +1,13 @@
 /**
  * I/O action dispatchers for the push-time recovery menu: `applyAllow`,
- * `applyRedact`, `collectActions`, `dispatchActions`, `redactAllFindings`.
+ * `applyRedact`, `collectActions`, `dispatchActions`, `redactAllFindings`,
+ * `allowAllFindings`, `allowFindingsByRule`.
  * Pure seams live in `commands.push.recovery.seams.ts`; lock-free drop
  * helper in `commands.push.recovery.drop.ts`.
  */
 
 import type { PathMap } from './config.ts';
-import { appendGitleaksIgnore } from './commands.redact.ts';
+import { appendGitleaksIgnore } from './commands.redact.core.ts';
 import { applyRedact } from './commands.push.recovery.redact.ts';
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
@@ -26,6 +27,47 @@ export { dropSessionFromStaged, findingKey, parseAction, sessionIdFromFinding };
 /** Apply the Allow action: append the finding's fingerprint to .gitleaksignore. */
 export function applyAllow(f: Finding): void {
   appendGitleaksIgnore(f.Fingerprint);
+}
+
+/**
+ * Batch-allow all findings non-interactively (the `--allow-all` path). Appends
+ * every finding's `Fingerprint` to `.gitleaksignore` via the idempotent
+ * `appendGitleaksIgnore`. Duplicate fingerprints across findings collapse to one
+ * line because `appendGitleaksIgnore` skips fingerprints already present.
+ * Does not require a TTY. No re-scan: the caller is responsible for re-staging
+ * and re-scanning after this call.
+ *
+ * @param findings All findings from the current verdict.
+ */
+export function allowAllFindings(findings: Finding[]): void {
+  for (const f of findings) {
+    appendGitleaksIgnore(f.Fingerprint);
+  }
+}
+
+/**
+ * Batch-allow findings whose `RuleID` matches `ruleId` (the `--allow <rule>`
+ * path). Appends matching fingerprints to `.gitleaksignore` via the idempotent
+ * `appendGitleaksIgnore`. Non-matching findings are untouched. Returns the
+ * count of findings matched so the caller can emit a no-op notice when zero
+ * findings matched. Because `appendGitleaksIgnore` is idempotent, the matched
+ * count may exceed the number of new lines actually written (duplicates are
+ * skipped). No re-scan: the caller is responsible for re-staging and re-scanning
+ * after this call.
+ *
+ * @param findings All findings from the current verdict.
+ * @param ruleId The gitleaks rule id to match against `Finding.RuleID`.
+ * @returns Number of findings matched (0 when no findings matched).
+ */
+export function allowFindingsByRule(findings: Finding[], ruleId: string): number {
+  let count = 0;
+  for (const f of findings) {
+    if (f.RuleID === ruleId) {
+      appendGitleaksIgnore(f.Fingerprint);
+      count++;
+    }
+  }
+  return count;
 }
 
 /**

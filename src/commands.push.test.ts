@@ -8,6 +8,112 @@ import { makePushEnv, teardownPushEnv, type PushEnv } from './commands.push.test
 import type * as pushChecksModule from './push-checks.ts';
 import type * as utilsModule from './utils.ts';
 
+// ---------------------------------------------------------------------------
+// cmdPush: defense-in-depth mutual-exclusivity guard
+// ---------------------------------------------------------------------------
+
+class DieError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = 'DieError';
+  }
+}
+
+describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.ts');
+  });
+
+  it('throws (via die) when --redact-all and --allow-all are both set', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        die: (msg: string) => {
+          throw new DieError(msg);
+        },
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ redactAll: true, allowAll: true })).rejects.toThrow(DieError);
+  });
+
+  it('throws (via die) when --redact-all and --allow <rule> are both set', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        die: (msg: string) => {
+          throw new DieError(msg);
+        },
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ redactAll: true, allowRule: 'github-pat' })).rejects.toThrow(DieError);
+  });
+
+  it('throws (via die) when --allow-all and --allow <rule> are both set', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        die: (msg: string) => {
+          throw new DieError(msg);
+        },
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ allowAll: true, allowRule: 'github-pat' })).rejects.toThrow(DieError);
+  });
+
+  it('throws (via die) when --dry-run and --allow-all are both set', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        die: (msg: string) => {
+          throw new DieError(msg);
+        },
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ dryRun: true, allowAll: true })).rejects.toThrow(DieError);
+  });
+
+  it('throws (via die) when --dry-run and --allow <rule> are both set', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        die: (msg: string) => {
+          throw new DieError(msg);
+        },
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ dryRun: true, allowRule: 'github-pat' })).rejects.toThrow(DieError);
+  });
+
+  it('throws (via die) when --dry-run and --redact-all are both set', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        die: (msg: string) => {
+          throw new DieError(msg);
+        },
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ dryRun: true, redactAll: true })).rejects.toThrow(DieError);
+  });
+});
+
 // cmdPush integration: the `remapExtrasPush` call lands between `remapPush`
 // and `findGitlinks` so the produced `shared/extras/...` paths are visible to
 // the allow-list classification on the resulting `git status`. The integration
