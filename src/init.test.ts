@@ -33,7 +33,7 @@ function joinedLog(logSpy: LogSpy): string {
  * A minimal SpawnSyncFn that simulates `git remote get-url origin` returning
  * an existing remote URL, making `ensureOriginRepo` a no-op. All other
  * subprocess calls throw so any unexpected git/gh invocation surfaces as a
- * test failure. `maybeDisableMirrorActions` calls `readOriginRemote` too; the
+ * test failure. `maybeDisableRepoActions` calls `readOriginRemote` too; the
  * non-GitHub URL ensures it silently skips.
  */
 function makeOriginExistsRun(): SpawnSyncFn {
@@ -490,7 +490,7 @@ describe('cmdInit snapshot mode', () => {
 });
 
 // ---------------------------------------------------------------------------
-// maybeDisableMirrorActions (exercised via cmdInit opts.run)
+// maybeDisableRepoActions (exercised via cmdInit opts.run)
 // ---------------------------------------------------------------------------
 
 /** Opts shared by the git and gh dispatch helpers for makeGhRun. */
@@ -577,9 +577,9 @@ function dispatchGh(opts: GhRunOpts, argv: string[]): Buffer {
 
 /**
  * Build a SpawnSyncFn mock that dispatches on (bin, args) to simulate
- * different gh/git subprocess outcomes for maybeDisableMirrorActions paths.
+ * different gh/git subprocess outcomes for maybeDisableRepoActions paths.
  * Handles ensureOriginRepo subprocesses (repo create, api user, remote add)
- * so those can proceed without interfering with maybeDisableMirrorActions.
+ * so those can proceed without interfering with maybeDisableRepoActions.
  */
 function makeGhRun(opts: GhRunOpts): SpawnSyncFn {
   return (bin, args) => {
@@ -590,7 +590,7 @@ function makeGhRun(opts: GhRunOpts): SpawnSyncFn {
   };
 }
 
-describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
+describe('maybeDisableRepoActions (via cmdInit opts.run)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let env: { testHome: string; logSpy: LogSpy };
@@ -611,9 +611,9 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
-  it('skips silently when git remote get-url always throws (ensureOriginRepo creates, maybeDisableMirrorActions skips)', async () => {
+  it('skips silently when git remote get-url always throws (ensureOriginRepo creates, maybeDisableRepoActions skips)', async () => {
     // When remoteThrows is set, ensureOriginRepo sees no origin -> auth ok ->
-    // creates a repo (no-op in the fake runner). Then maybeDisableMirrorActions
+    // creates a repo (no-op in the fake runner). Then maybeDisableRepoActions
     // probes for origin again (same run -> still throws) -> silently skips.
     const { cmdInit } = await import('./init.ts');
     cmdInit({ run: makeGhRun({ remoteThrows: true }) });
@@ -627,7 +627,7 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
     cmdInit({ run: runSpy });
     expect(joinedLog(env.logSpy)).toContain('init complete');
     // ensureOriginRepo probe returns a non-GitHub URL -> returns immediately.
-    // maybeDisableMirrorActions gets the same non-GitHub URL -> skips (no gh calls).
+    // maybeDisableRepoActions gets the same non-GitHub URL -> skips (no gh calls).
     const ghCalls = runSpy.mock.calls.filter(([bin]) => bin === 'gh');
     expect(ghCalls).toHaveLength(0);
   });
@@ -716,7 +716,7 @@ describe('maybeDisableMirrorActions (via cmdInit opts.run)', () => {
         disable: 'ok',
       }),
     });
-    expect(joinedLog(env.logSpy)).toContain('disabled GitHub Actions on private mirror');
+    expect(joinedLog(env.logSpy)).toContain('disabled GitHub Actions on private repo');
   });
 
   it('logs manual-run tip when disableActions throws', async () => {

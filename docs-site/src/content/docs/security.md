@@ -14,8 +14,8 @@ agreement on triage or fix timelines.
 ## Reporting a vulnerability
 
 Report suspected vulnerabilities privately through GitHub's "Report a vulnerability" form. The
-link below always targets the public upstream repository, even if you are reading this file inside
-your own private mirror, so a report reaches the maintainer rather than your clone:
+link below always targets the public upstream repository, so your report reaches the maintainer
+even when you are viewing this page from a fork or a local checkout:
 
 <https://github.com/funkadelic/claude-nomad/security/advisories/new>
 
@@ -56,9 +56,8 @@ only for multi-user repos or a repo compromise, which are out of scope for the d
 This policy is a thin entry point; the security posture itself is documented in the rest of the
 docs rather than restated here:
 
-- [Quickstart: Privacy by default](/quickstart/): the two-layer CI defense (workflows skip on
-  private repos, Actions auto-disabled on a private mirror) and the warning about flipping a
-  mirror public.
+- [Quickstart: Privacy by default](/quickstart/): Actions auto-disabled on your private repo as a
+  precaution (it ships no workflows of its own) and the warning about flipping the repo public.
 - [How it works: What does NOT sync](/how-it-works/): what stays host-local, including OAuth
   tokens and ephemeral state.
 - [Recovery flows: .gitleaks.toml allowlist policy](/recovery/): allowlist rationale and

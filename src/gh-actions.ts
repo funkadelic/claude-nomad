@@ -2,7 +2,7 @@ import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 
 /**
  * GitHub repo owner/name pair parsed from a remote URL. Used by
- * `cmdInit`'s auto-disable hook and `nomad doctor`'s mirror-Actions check.
+ * `cmdInit`'s auto-disable hook and `nomad doctor`'s Actions-drift check.
  */
 export type GhRepoRef = { owner: string; repo: string };
 

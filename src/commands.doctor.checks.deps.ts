@@ -130,7 +130,7 @@ export function reportOptionalDeps(section: DoctorSection, run: SpawnSyncFn = ex
   } else {
     addItem(
       section,
-      `${yellow(warnGlyph)} gh: not installed (optional; needed for nomad init Actions auto-disable + mirror-Actions drift check)`,
+      `${yellow(warnGlyph)} gh: not installed (optional; needed for nomad init Actions auto-disable + the Actions-drift check)`,
     );
   }
 

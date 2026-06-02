@@ -1,0 +1,40 @@
+/*
+ * claude-nomad Starlight theme.
+ * Palette sampled from docs/hero.svg: green accent (#61c554 / #7cc34f) on a
+ * near-black, faintly green-tinted neutral scale, off-white text (#f4f4f2).
+ * Overrides Starlight's accent and gray custom properties for both color modes.
+ */
+
+/* Dark mode (default): light text on near-black, green accent. */
+:root {
+  --sl-color-accent-low: #163418;
+  --sl-color-accent: #61c554;
+  --sl-color-accent-high: #bce4a4;
+
+  --sl-color-white: #f4f4f2;
+  --sl-color-gray-1: #e7eae6;
+  --sl-color-gray-2: #c3c8c2;
+  --sl-color-gray-3: #939892;
+  --sl-color-gray-4: #5c625b;
+  --sl-color-gray-5: #383d37;
+  --sl-color-gray-6: #23281f;
+  --sl-color-gray-7: #141710;
+  --sl-color-black: #0a0d0c;
+}
+
+/* Light mode: dark text on off-white, a deeper green for contrast. */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #c9e7b9;
+  --sl-color-accent: #3f8a33;
+  --sl-color-accent-high: #14300f;
+
+  --sl-color-white: #0f1311;
+  --sl-color-gray-1: #1b1f19;
+  --sl-color-gray-2: #3a3f38;
+  --sl-color-gray-3: #5c625b;
+  --sl-color-gray-4: #8a8f8a;
+  --sl-color-gray-5: #b8bdb8;
+  --sl-color-gray-6: #d7dad4;
+  --sl-color-gray-7: #eef0ec;
+  --sl-color-black: #f4f4f2;
+}

@@ -8,15 +8,22 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'claude-nomad',
+      customCss: ['./src/styles/theme.css'],
       social: [
         {
           icon: 'github',
           label: 'GitHub',
           href: 'https://github.com/funkadelic/claude-nomad',
         },
+        {
+          icon: 'npm',
+          label: 'npm',
+          href: 'https://www.npmjs.com/package/claude-nomad',
+        },
       ],
       sidebar: [
         { label: 'Overview', link: '/' },
+        { label: 'Who is this for', link: '/who-is-this-for/' },
         { label: 'Quickstart', link: '/quickstart/' },
         { label: 'How it works', link: '/how-it-works/' },
         { label: 'Usage', link: '/usage/' },

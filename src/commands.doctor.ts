@@ -28,7 +28,7 @@ import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { readJsonSafe, renderDoctor, section } from './commands.doctor.format.ts';
 import { reportGitleaksVersionCheck } from './commands.doctor.gitleaks-version.ts';
 import { reportOptionalDeps } from './commands.doctor.checks.deps.ts';
-import { reportMirrorActions } from './commands.doctor.mirror-actions.ts';
+import { reportActionsDrift } from './commands.doctor.actions-drift.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
 
 /**
@@ -83,7 +83,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   reportGitlinks(repository);
   reportRemote(repository);
   reportRebaseClean(repository);
-  reportMirrorActions(repository);
+  reportActionsDrift(repository);
 
   const version = section('Version Checks');
   reportVersionCheck(version);
