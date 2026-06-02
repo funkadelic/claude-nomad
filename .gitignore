@@ -17,3 +17,4 @@ coverage/
 docs-site/dist/
 docs-site/node_modules/
 docs-site/.astro/
+.fallow/
