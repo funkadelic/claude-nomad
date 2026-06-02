@@ -1,11 +1,15 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { BACKUP_BASE, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { applyRedactions, isRecentlyModified } from './commands.redact.core.ts';
-import { listSubagentTranscripts, newestSubtreeMtimeMs } from './commands.redact.subtree.ts';
+import { isRecentlyModified } from './commands.redact.core.ts';
+import {
+  applySubtreeRedactions,
+  listSubtreeFiles,
+  newestSubtreeMtimeMs,
+} from './commands.redact.subtree.ts';
 import { type Finding, scanFile } from './push-gitleaks.scan.ts';
-import { backupBeforeWrite, freshBackupTs } from './utils.fs.ts';
+import { freshBackupTs } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
 import { die, fail, log, NomadFatal } from './utils.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -83,54 +87,12 @@ function resolveRedactFindings(
   return source.filter((f) => rule === undefined || f.RuleID === rule);
 }
 
-/** @internal shared finding shape */
-type FileFinding = { StartLine: number; Match: string; RuleID: string };
-
-/**
- * Redact the main transcript and every subagent transcript. Resolves findings
- * for each agent via `resolveRedactFindings` (honoring `rule`); silently skips
- * agents whose scan returns null or []. Returns total finding count across all
- * files; backs up and rewrites each dirty file unless `dryRun` is true.
- *
- * @param mainPath Absolute path to the main `<sid>.jsonl`.
- * @param mainFindings Pre-resolved findings for the main file.
- * @param agentPaths Absolute paths to each `agent-*.jsonl`.
- * @param rule Optional rule-id filter for agent scans.
- * @param ts Backup timestamp for `backupBeforeWrite`.
- * @param scan Injectable scan function.
- * @param dryRun When true, skip writes and return the count only.
- * @returns Total finding count across the whole subtree.
- */
-function redactLiveSubtree(
-  mainPath: string,
-  mainFindings: readonly FileFinding[],
-  agentPaths: string[],
-  rule: string | undefined,
-  ts: string,
-  scan: (p: string) => Finding[] | null,
-  dryRun: boolean,
-): number {
-  const dirty: { path: string; findings: readonly FileFinding[] }[] = [];
-  if (mainFindings.length > 0) dirty.push({ path: mainPath, findings: mainFindings });
-  for (const agentPath of agentPaths) {
-    const found = resolveRedactFindings(agentPath, undefined, rule, scan);
-    if (found !== null && found.length > 0) dirty.push({ path: agentPath, findings: found });
-  }
-  const total = dirty.reduce((n, e) => n + e.findings.length, 0);
-  if (dryRun || total === 0) return total;
-  for (const { path: filePath, findings } of dirty) {
-    backupBeforeWrite(filePath, ts);
-    writeFileSync(filePath, applyRedactions(readFileSync(filePath, 'utf8'), findings), 'utf8');
-  }
-  return total;
-}
-
 /**
  * Non-interactive redaction of a session transcript. Rewrites the main
- * `<id>.jsonl` and every `subagents/agent-*.jsonl` in the same session
- * directory after backing each up. Refuses live sessions (mtime guard
- * evaluated across the whole subtree). Agent files are always scanned;
- * `opts.findings` drives only the main file (push-time recovery path).
+ * `<id>.jsonl` and every file under `<id>/` (subagents/, tool-results/, etc.)
+ * after backing each up. Refuses live sessions (mtime guard evaluated across
+ * the whole subtree). Subtree files are always scanned; `opts.findings` drives
+ * only the main file (push-time recovery path).
  *
  * @param opts Session id, optional rule filter, optional dry-run, optional pre-supplied findings.
  * @param nowMs Injectable clock (default: `Date.now`).
@@ -159,10 +121,10 @@ export function cmdRedact(
       return;
     }
 
-    // Live-session guard: evaluate across the whole subtree (main + subagents).
+    // Live-session guard: evaluate across the whole subtree (main + all files under <id>/).
     const sessionDir = join(dirname(localPath), id);
-    const agentPaths = listSubagentTranscripts(sessionDir);
-    const subtreeMtime = newestSubtreeMtimeMs(localPath, agentPaths, (p) => statSync(p).mtimeMs);
+    const subtreeFiles = listSubtreeFiles(sessionDir);
+    const subtreeMtime = newestSubtreeMtimeMs(localPath, subtreeFiles, (p) => statSync(p).mtimeMs);
     if (isRecentlyModified(subtreeMtime, nowMs())) {
       log(
         `session ${id} was modified recently and may be active.\n` +
@@ -182,10 +144,10 @@ export function cmdRedact(
     }
 
     const ts = freshBackupTs(BACKUP_BASE);
-    const totalCount = redactLiveSubtree(
+    const { total: totalCount, dirty } = applySubtreeRedactions(
       localPath,
       mainFindings,
-      agentPaths,
+      subtreeFiles,
       rule,
       ts,
       scan,
@@ -199,10 +161,10 @@ export function cmdRedact(
     }
 
     if (dryRun) {
-      log(
-        `dry-run: would redact ${totalCount} finding(s) in ${localPath}\n` +
-          mainFindings.map((f) => `  line ${f.StartLine} [${f.RuleID}]`).join('\n'),
-      );
+      const lines = dirty
+        .flatMap((e) => e.findings.map((f) => `  ${e.path}  line ${f.StartLine} [${f.RuleID}]`))
+        .join('\n');
+      log(`dry-run: would redact ${totalCount} finding(s) in session ${id}\n${lines}`);
       return;
     }
 

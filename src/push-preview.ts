@@ -22,7 +22,7 @@ import { join } from 'node:path';
 
 import { dim, infoGlyph } from './color.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
-import { assertSafeLogical } from './extras-sync.guards.ts';
+import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { copyExtras } from './extras-sync.ts';
 import { copyDirJsonlOnly } from './remap.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './push-leak-verdict.ts';

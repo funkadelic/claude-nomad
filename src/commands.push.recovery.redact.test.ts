@@ -605,6 +605,179 @@ describe('applyRedact: no subagents dir - works as before (main only)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// applyRedact: secret in tool-results/*.txt is redacted (CR-01 regression)
+// ---------------------------------------------------------------------------
+
+describe('applyRedact: secret in tool-results/*.txt is staged as scrubbed', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-toolresults-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('staged tool-results/x.txt does not contain the secret after applyRedact', async () => {
+    const { projectsDir, transcriptPath, sessionDir, farFuture, map } =
+      makeSubtreeFixture(testHome);
+
+    // Main transcript is clean; secret is ONLY in tool-results/x.txt.
+    writeFileSync(transcriptPath, '{"text":"main-clean"}\n');
+
+    const toolResultsDir = join(sessionDir, 'tool-results');
+    mkdirSync(toolResultsDir, { recursive: true });
+    const toolFilePath = join(toolResultsDir, 'x.txt');
+    writeFileSync(toolFilePath, 'output containing real-secret-value\n');
+
+    const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
+    mkdirSync(stagedProjectDir, { recursive: true });
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+
+    // Trigger finding points at the tool file in the staged tree.
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: `shared/projects/myproject/sid123/tool-results/x.txt`,
+      StartLine: 1,
+      StartColumn: 10,
+      EndColumn: 25,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-tool',
+    };
+
+    // Main scan returns []; tool-results file scan returns a finding.
+    const fakeScan = (p: string): Finding[] => {
+      if (p === toolFilePath) {
+        return [
+          {
+            RuleID: 'test-rule',
+            File: p,
+            StartLine: 1,
+            StartColumn: 10,
+            EndColumn: 25,
+            Match: 'real-secret-value',
+            Fingerprint: 'fp-tool',
+          },
+        ];
+      }
+      return [];
+    };
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, () => farFuture, fakeScan);
+
+    expect(result).toBe(true);
+    // Local tool-results file must have been redacted.
+    expect(readFileSync(toolFilePath, 'utf8')).toContain('[REDACTED:test-rule]');
+    expect(readFileSync(toolFilePath, 'utf8')).not.toContain('real-secret-value');
+    // The staged copy of tool-results/x.txt must NOT contain the secret.
+    const stagedToolFile = join(stagedProjectDir, 'sid123', 'tool-results', 'x.txt');
+    expect(existsSync(stagedToolFile)).toBe(true);
+    const stagedContent = readFileSync(stagedToolFile, 'utf8');
+    expect(stagedContent).toContain('[REDACTED:test-rule]');
+    expect(stagedContent).not.toContain('real-secret-value');
+    void projectsDir;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRedact: live guard fires when tool-results file is within 5 minutes
+// ---------------------------------------------------------------------------
+
+describe('applyRedact: live guard fires when tool-results file is within 5 minutes', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-toolresults-live-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('./utils.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('returns false and writes nothing when tool-results file is within 5 minutes', async () => {
+    const { transcriptPath, sessionDir, map } = makeSubtreeFixture(testHome);
+    writeFileSync(transcriptPath, '{"text":"main"}\n');
+
+    const toolResultsDir = join(sessionDir, 'tool-results');
+    mkdirSync(toolResultsDir, { recursive: true });
+    const toolFilePath = join(toolResultsDir, 'x.txt');
+    writeFileSync(toolFilePath, 'active output\n');
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+
+    const trigger: Finding = {
+      RuleID: 'test-rule',
+      File: 'shared/projects/myproject/sid123/tool-results/x.txt',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-live',
+    };
+
+    const originalContent = readFileSync(transcriptPath, 'utf8');
+    // Clock is 1 second after the tool-results file's mtime -> within threshold.
+    const liveClock = () => statSync(toolFilePath).mtimeMs + 1000;
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', map, liveClock);
+
+    expect(result).toBe(false);
+    expect(backupSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(originalContent);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // applyRedact: scan null on main file -> returns false
 // ---------------------------------------------------------------------------
 
@@ -681,5 +854,204 @@ describe('applyRedact: scan null on main file returns false (existing behavior p
     expect(backupSpy).not.toHaveBeenCalled();
     expect(readFileSync(transcriptPath, 'utf8')).toBe(originalContent);
     expect(logSpy).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRedact: branch coverage for sid=null, localPath=null, nothing to redact,
+// and no matching project
+// ---------------------------------------------------------------------------
+
+describe('applyRedact: branch coverage', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-branch-cov-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('./utils.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('returns false when sessionIdFromFinding returns null (finding has no session id)', async () => {
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+    const map: PathMap = { projects: {} };
+    // A finding whose File does not contain a recognizable session id pattern.
+    const trigger: Finding = {
+      RuleID: 'r',
+      File: 'shared/projects',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    };
+    const result = applyRedact(trigger, [trigger], 'ts', map, () => Date.now() + 999999);
+    expect(result).toBe(false);
+  });
+
+  it('returns false when the local transcript cannot be resolved (no path-map)', async () => {
+    // NOMAD_REPO exists but has no path-map.json -> resolveLiveTranscript returns null.
+    writeFileSync(join(testHome, 'placeholder'), '');
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+    const map: PathMap = { projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } };
+    const trigger: Finding = {
+      RuleID: 'r',
+      File: 'shared/projects/myproject/sid-no-transcript.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    };
+    const result = applyRedact(trigger, [trigger], 'ts', map, () => Date.now() + 999999);
+    expect(result).toBe(false);
+  });
+
+  it('returns false when all files are clean (nothing to redact)', async () => {
+    const { transcriptPath, sessionDir, farFuture, map } = makeSubtreeFixture(testHome);
+    writeFileSync(transcriptPath, '{"text":"clean"}\n');
+    mkdirSync(join(sessionDir, 'subagents'), { recursive: true });
+    writeFileSync(join(sessionDir, 'subagents', 'agent-1.jsonl'), '{"text":"clean"}\n');
+
+    const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
+    mkdirSync(stagedProjectDir, { recursive: true });
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+    const trigger: Finding = {
+      RuleID: 'r',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    };
+
+    // Scan returns [] for all files.
+    const result = applyRedact(
+      trigger,
+      [trigger],
+      'ts-x',
+      map,
+      () => farFuture,
+      () => [],
+    );
+    expect(result).toBe(false);
+  });
+
+  it('skips a project that has no entry for the current host', async () => {
+    const { transcriptPath, sessionDir, farFuture } = makeSubtreeFixture(testHome);
+    writeFileSync(transcriptPath, '{"text":"real-secret-value"}\n');
+    mkdirSync(join(sessionDir, 'subagents'), { recursive: true });
+
+    const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
+    mkdirSync(stagedProjectDir, { recursive: true });
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+
+    // A map where the only project has a different host (no 'test-host' entry).
+    const noHostMap: PathMap = {
+      projects: { myproject: { 'other-host': '/home/other/git/myproject' } },
+    };
+    const trigger: Finding = {
+      RuleID: 'r',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    };
+
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'r',
+        File: _p,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 25,
+        Match: 'real-secret-value',
+        Fingerprint: 'fp',
+      },
+    ];
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', noHostMap, () => farFuture, fakeScan);
+    // abs is undefined for this host -> the project is skipped -> !copied -> false.
+    expect(result).toBe(false);
+  });
+
+  it('returns false when the local path does not match any project in the map', async () => {
+    const { transcriptPath, sessionDir, farFuture } = makeSubtreeFixture(testHome);
+    writeFileSync(transcriptPath, '{"text":"real-secret-value"}\n');
+    mkdirSync(join(sessionDir, 'subagents'), { recursive: true });
+
+    const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
+    mkdirSync(stagedProjectDir, { recursive: true });
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { applyRedact } = await import('./commands.push.recovery.redact.ts');
+
+    // Map that points to a DIFFERENT host path - won't match localPath.
+    const otherMap: PathMap = {
+      projects: { myproject: { 'test-host': '/some/other/path' } },
+    };
+    const trigger: Finding = {
+      RuleID: 'r',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    };
+
+    const fakeScan = (_p: string): Finding[] => [
+      {
+        RuleID: 'r',
+        File: _p,
+        StartLine: 1,
+        StartColumn: 9,
+        EndColumn: 25,
+        Match: 'real-secret-value',
+        Fingerprint: 'fp',
+      },
+    ];
+
+    const result = applyRedact(trigger, [trigger], 'ts-x', otherMap, () => farFuture, fakeScan);
+    expect(result).toBe(false);
   });
 });
