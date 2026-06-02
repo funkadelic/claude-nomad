@@ -31,6 +31,28 @@ import { log } from './utils.ts';
 import { sessionIdFromFinding } from './commands.push.recovery.seams.ts';
 
 /**
+ * Resolve the staged `shared/projects/<logical>` destination dir for a local
+ * transcript path, or null when no mapped host entry matches. Validates every
+ * logical key via `assertSafeLogical` as it walks (a poisoned `..`/separator
+ * key fails closed with NomadFatal before any caller mutates local state).
+ *
+ * @param localPath Absolute path to the live `<sid>.jsonl` transcript.
+ * @param map Parsed path-map.
+ * @returns The staged project dir, or null when the path maps to no host.
+ */
+function resolveStagedDir(localPath: string, map: PathMap): string | null {
+  for (const [logical, hostMap] of Object.entries(map.projects)) {
+    assertSafeLogical(logical);
+    const abs = hostMap[HOST];
+    if (abs === undefined) continue;
+    if (localPath.startsWith(join(CLAUDE_HOME, 'projects', encodePath(abs)) + sep)) {
+      return join(REPO_HOME, 'shared', 'projects', logical);
+    }
+  }
+  return null;
+}
+
+/**
  * Apply the Redact action for one finding. Resolves the local transcript,
  * checks the live-session guard across the WHOLE subtree (main + every file
  * under `<sid>/`), re-scans each file in the subtree without `--redact` to
@@ -101,6 +123,17 @@ export function applyRedact(
     );
   }
 
+  // Preflight the staged destination BEFORE mutating any local file. Resolving
+  // the mapping first means an unmapped session or a poisoned logical key
+  // (assertSafeLogical throws) fails closed without having rewritten local
+  // transcripts. resolveStagedDir validates every logical key as it walks.
+  const stagedProjectDir = resolveStagedDir(localPath, map);
+  if (stagedProjectDir === null) {
+    return refuse(
+      `could not map the local transcript for session ${sid} to a staged copy; choose Drop session or Skip.`,
+    );
+  }
+
   // Re-scan main file first; a null return means gitleaks itself failed.
   const mainFindings = scan(localPath);
   if (mainFindings === null) {
@@ -125,29 +158,12 @@ export function applyRedact(
     );
   }
 
-  // Copy the whole session subtree back to the staged tree.
-  let copied = false;
-  for (const [logical, hostMap] of Object.entries(map.projects)) {
-    assertSafeLogical(logical);
-    const abs = hostMap[HOST];
-    if (abs === undefined) continue;
-    if (localPath.startsWith(join(CLAUDE_HOME, 'projects', encodePath(abs)) + sep)) {
-      const stagedProjectDir = join(REPO_HOME, 'shared', 'projects', logical);
-      // Copy main <sid>.jsonl.
-      mkdirSync(stagedProjectDir, { recursive: true });
-      cpSync(localPath, join(stagedProjectDir, `${sid}.jsonl`), { force: true });
-      // Copy the <sid>/ session dir (contains subagents/, tool-results/, etc.) if present.
-      if (existsSync(sessionDir)) {
-        cpSync(sessionDir, join(stagedProjectDir, sid), { force: true, recursive: true });
-      }
-      copied = true;
-      break;
-    }
-  }
-  if (!copied) {
-    return refuse(
-      `could not map the local transcript for session ${sid} to a staged copy; choose Drop session or Skip.`,
-    );
+  // Copy the whole session subtree back to the (already validated) staged tree.
+  mkdirSync(stagedProjectDir, { recursive: true });
+  cpSync(localPath, join(stagedProjectDir, `${sid}.jsonl`), { force: true });
+  // Copy the <sid>/ session dir (contains subagents/, tool-results/, etc.) if present.
+  if (existsSync(sessionDir)) {
+    cpSync(sessionDir, join(stagedProjectDir, sid), { force: true, recursive: true });
   }
 
   return true;

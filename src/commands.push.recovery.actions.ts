@@ -60,7 +60,6 @@ export async function collectActions(
  * per-session de-duplication is maintained across the caller's loop.
  */
 type DispatchCtx = {
-  findings: Finding[];
   actions: Map<string, FindingAction>;
   ts: string;
   map: PathMap;
@@ -131,7 +130,6 @@ export function dispatchActions(
   drop: (sid: string, map: PathMap) => boolean = dropSessionFromStaged,
 ): void {
   const ctx: DispatchCtx = {
-    findings,
     actions,
     ts,
     map,
