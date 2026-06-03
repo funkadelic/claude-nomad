@@ -57,6 +57,69 @@ describe('renderTree blank-line and elbow handling', () => {
   });
 });
 
+describe('raw section rendering', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders raw items as two-space-indented lines with no tree connectors', () => {
+    const s = section('settings.json', true);
+    addItem(s, '--- a');
+    addItem(s, '+++ b');
+    // A space-prefixed diff context line: the two-space indent prepends, so
+    // the rendered line is `  ` + ` unchanged` = `   unchanged` (three spaces).
+    addItem(s, ' unchanged');
+    const lines = captureLog(() => renderTree([s]));
+    expect(lines).toEqual(['settings.json', '  --- a', '  +++ b', '   unchanged']);
+    // No ├ or └ connectors.
+    expect(lines.some((l) => l.includes('├') || l.includes('└'))).toBe(false);
+  });
+
+  it('raw header prints verbatim even when an item contains the fail glyph', () => {
+    const s = section('settings.json', true);
+    addItem(s, '✗ something bad');
+    const lines = captureLog(() => renderTree([s]));
+    // Header must NOT get the `✗ ` prefix.
+    expect(lines[0]).toBe('settings.json');
+  });
+
+  it('raw empty-string items render as true blank lines', () => {
+    const s = section('Diff', true);
+    addItem(s, 'line1');
+    addItem(s, '');
+    addItem(s, 'line2');
+    const lines = captureLog(() => renderTree([s]));
+    expect(lines).toEqual(['Diff', '  line1', '', '  line2']);
+  });
+
+  it('empty raw section is still skipped by renderTree', () => {
+    const raw = section('Raw', true);
+    const normal = section('Normal');
+    addItem(normal, 'item');
+    const lines = captureLog(() => renderTree([raw, normal]));
+    expect(lines.some((l) => l.includes('Raw'))).toBe(false);
+    expect(lines).toEqual(['Normal', '  └ item']);
+  });
+
+  it('non-raw section (default) rendering stays byte-identical', () => {
+    const s = section('Header');
+    addItem(s, 'first');
+    addItem(s, 'second');
+    const lines = captureLog(() => renderTree([s]));
+    expect(lines).toEqual(['Header', '  ├ first', '  └ second']);
+  });
+
+  it('section(header) and section(header, false) produce identical non-raw output', () => {
+    const s1 = section('H');
+    addItem(s1, 'x');
+    const s2 = section('H', false);
+    addItem(s2, 'x');
+    const lines1 = captureLog(() => renderTree([s1]));
+    const lines2 = captureLog(() => renderTree([s2]));
+    expect(lines1).toEqual(lines2);
+  });
+});
+
 describe('renderDoctor alias', () => {
   afterEach(() => {
     vi.restoreAllMocks();
