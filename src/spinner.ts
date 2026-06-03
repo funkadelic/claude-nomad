@@ -178,12 +178,15 @@ export function startSpinner(label: string, deps: SpinnerDeps = {}): SpinnerHand
     const dl = doneLabel ?? label;
     const elapsed = now() - startMs;
     if (animate && !degraded && worker !== null) {
+      // Stop the worker BEFORE the main thread writes the final line, so a
+      // late frame can never land after the success/clear output. pause is a
+      // graceful clearInterval; terminate is the hard guarantee.
       worker.postMessage({ type: 'pause' });
+      worker.terminate();
+      worker = null;
       // \r\x1b[K: carriage return + erase to end of line (clears the frame).
       if (success) writeAnimatedDone(out, dl, elapsed, ttyCheck());
       else out.write('\r\x1b[K');
-      worker.terminate();
-      worker = null;
     } else if (success) {
       writePlainDone(out, dl, elapsed);
     }
