@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { resolveWorkerPath, startSpinner } from './spinner.ts';
+import { resolveWorkerPath, startSpinner, withSpinner } from './spinner.ts';
 import type { SpinnerDeps, SpinnerWorker } from './spinner.ts';
 
 // ---------------------------------------------------------------------------
@@ -478,5 +478,39 @@ describe('startSpinner elapsed formatting', () => {
     });
     h.succeed();
     expect(capturedOutput(out)).toContain('5.5s');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// withSpinner wrapper
+// ---------------------------------------------------------------------------
+
+describe('withSpinner', () => {
+  /** Plain (non-TTY) deps with a capturing out stream. */
+  function plainDeps(): SpinnerDeps & { out: ReturnType<typeof makeOut> } {
+    const out = makeOut();
+    return { isTTYCheck: () => false, env: {}, out, now: makeClock() };
+  }
+
+  it('returns the wrapped value and writes a done line on success', () => {
+    const deps = plainDeps();
+    const result = withSpinner('Syncing sessions', () => 42, deps);
+    expect(result).toBe(42);
+    expect(capturedOutput(deps.out)).toContain('Syncing sessions done (1.2s)');
+  });
+
+  it('rethrows and writes no done line when fn throws (finally aborts cleanly)', () => {
+    const deps = plainDeps();
+    expect(() =>
+      withSpinner(
+        'Syncing sessions',
+        () => {
+          throw new Error('copy failed');
+        },
+        deps,
+      ),
+    ).toThrow('copy failed');
+    // Aborted: only the start line, no success "done" line.
+    expect(capturedOutput(deps.out)).toBe('Syncing sessions...\n');
   });
 });

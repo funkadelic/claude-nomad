@@ -178,12 +178,15 @@ export function startSpinner(label: string, deps: SpinnerDeps = {}): SpinnerHand
     const dl = doneLabel ?? label;
     const elapsed = now() - startMs;
     if (animate && !degraded && worker !== null) {
+      // Stop the worker BEFORE the main thread writes the final line, so a
+      // late frame can never land after the success/clear output. pause is a
+      // graceful clearInterval; terminate is the hard guarantee.
       worker.postMessage({ type: 'pause' });
+      worker.terminate();
+      worker = null;
       // \r\x1b[K: carriage return + erase to end of line (clears the frame).
       if (success) writeAnimatedDone(out, dl, elapsed, ttyCheck());
       else out.write('\r\x1b[K');
-      worker.terminate();
-      worker = null;
     } else if (success) {
       writePlainDone(out, dl, elapsed);
     }
@@ -193,4 +196,26 @@ export function startSpinner(label: string, deps: SpinnerDeps = {}): SpinnerHand
     succeed: (doneLabel?: string) => finalize(true, doneLabel),
     stop: () => finalize(false),
   };
+}
+
+/**
+ * Run `fn` wrapped in a progress spinner: start the spinner, call `fn`, mark
+ * success on a normal return, and stop the spinner in a `finally` so a thrown
+ * error still clears the line (without a success glyph) and propagates
+ * unchanged. The success glyph is shown only when `fn` returns.
+ *
+ * @param label Short description of the step (e.g., "Syncing sessions").
+ * @param fn The synchronous, event-loop-blocking work to run.
+ * @param deps Optional injected dependencies (forwarded to `startSpinner`).
+ * @returns Whatever `fn` returns.
+ */
+export function withSpinner<T>(label: string, fn: () => T, deps?: SpinnerDeps): T {
+  const sp = startSpinner(label, deps);
+  try {
+    const result = fn();
+    sp.succeed();
+    return result;
+  } finally {
+    sp.stop();
+  }
 }

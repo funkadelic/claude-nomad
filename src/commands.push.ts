@@ -10,7 +10,7 @@ import { scanPushVerdict } from './push-leak-verdict.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { previewPushLeaks } from './push-preview.ts';
 import { remapPush } from './remap.ts';
-import { startSpinner } from './spinner.ts';
+import { withSpinner } from './spinner.ts';
 import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
@@ -37,37 +37,6 @@ function guardGitlinks(): void {
 }
 
 /**
- * Run gitleaks scan wrapped in a progress spinner. The spinner is stopped in a
- * `finally` block so it clears even when `scanPushVerdict` throws a NomadFatal.
- *
- * @returns The scan verdict.
- */
-function runScan() {
-  const sp = startSpinner('Scanning for secrets');
-  try {
-    const verdict = scanPushVerdict();
-    sp.succeed();
-    return verdict;
-  } finally {
-    sp.stop();
-  }
-}
-
-/**
- * Run `git push` wrapped in a progress spinner. The spinner is stopped in a
- * `finally` block so it clears even when `gitOrFatal` throws a NomadFatal.
- */
-function runPush() {
-  const sp = startSpinner('Pushing');
-  try {
-    gitOrFatal(['push'], 'git push', REPO_HOME);
-    sp.succeed();
-  } finally {
-    sp.stop();
-  }
-}
-
-/**
  * Staged-tree leak gate + commit/push. Stages with `git add -A`, scans, and
  * on a leak renders the ✗ tree row then delegates to `resolveLeakFindings`
  * (TTY interactive menu or non-TTY FATAL throw, D-01 preserved). On a clean
@@ -89,13 +58,13 @@ async function commitAndPush(
   allowRule: string | undefined,
 ): Promise<void> {
   gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
-  let verdict = runScan();
+  let verdict = withSpinner('Scanning for secrets', scanPushVerdict);
   if (verdict.leak) {
     renderPushTree(st, verdict);
     verdict = await resolveLeakFindings(verdict, ts, map, { redactAll, allowAll, allowRule });
   }
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
-  runPush();
+  withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', REPO_HOME));
   renderPushTree(st, verdict);
 }
 
@@ -238,23 +207,19 @@ export async function cmdPush(
     // Rebase BEFORE any local mutation: surfaces remote conflicts against the
     // user's committed state, not against in-flight remapPush copies. Runs
     // under dryRun too so the network round-trip mirrors a real push.
-    const rebaseSp = startSpinner('Rebasing onto origin');
-    try {
-      rebaseBeforePush();
-      rebaseSp.succeed();
-    } finally {
-      rebaseSp.stop();
-    }
+    withSpinner('Rebasing onto origin', rebaseBeforePush);
     // Collision-resistant ts for remapPush's pre-copy snapshot of repo-side state.
     const ts = freshBackupTs(BACKUP_BASE);
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
-    const remap = remapPush(ts, { dryRun });
+    // Wrapped in a spinner: the recursive cpSync session copy is the longest
+    // blocking step in a push and otherwise shows no progress.
+    const remap = withSpinner('Syncing sessions', () => remapPush(ts, { dryRun }));
     // remapExtrasPush lands between remapPush and findGitlinks so the
     // produced `shared/extras/<logical>/<dirname>/` paths are visible to
     // both the gitlink walk and the downstream allow-list classification.
     // dryRun is forwarded so a preview push reports the same skipped count.
-    const extras = remapExtrasPush(ts, { dryRun });
+    const extras = withSpinner('Syncing extras', () => remapExtrasPush(ts, { dryRun }));
     const st: PushState = { dryRun, remap, extras };
     guardGitlinks();
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()
