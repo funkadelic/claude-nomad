@@ -197,3 +197,25 @@ export function startSpinner(label: string, deps: SpinnerDeps = {}): SpinnerHand
     stop: () => finalize(false),
   };
 }
+
+/**
+ * Run `fn` wrapped in a progress spinner: start the spinner, call `fn`, mark
+ * success on a normal return, and stop the spinner in a `finally` so a thrown
+ * error still clears the line (without a success glyph) and propagates
+ * unchanged. The success glyph is shown only when `fn` returns.
+ *
+ * @param label Short description of the step (e.g., "Syncing sessions").
+ * @param fn The synchronous, event-loop-blocking work to run.
+ * @param deps Optional injected dependencies (forwarded to `startSpinner`).
+ * @returns Whatever `fn` returns.
+ */
+export function withSpinner<T>(label: string, fn: () => T, deps?: SpinnerDeps): T {
+  const sp = startSpinner(label, deps);
+  try {
+    const result = fn();
+    sp.succeed();
+    return result;
+  } finally {
+    sp.stop();
+  }
+}

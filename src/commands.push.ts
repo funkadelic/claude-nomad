@@ -10,7 +10,7 @@ import { scanPushVerdict } from './push-leak-verdict.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { previewPushLeaks } from './push-preview.ts';
 import { remapPush } from './remap.ts';
-import { startSpinner } from './spinner.ts';
+import { startSpinner, withSpinner } from './spinner.ts';
 import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
@@ -249,12 +249,14 @@ export async function cmdPush(
     const ts = freshBackupTs(BACKUP_BASE);
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
-    const remap = remapPush(ts, { dryRun });
+    // Wrapped in a spinner: the recursive cpSync session copy is the longest
+    // blocking step in a push and otherwise shows no progress.
+    const remap = withSpinner('Syncing sessions', () => remapPush(ts, { dryRun }));
     // remapExtrasPush lands between remapPush and findGitlinks so the
     // produced `shared/extras/<logical>/<dirname>/` paths are visible to
     // both the gitlink walk and the downstream allow-list classification.
     // dryRun is forwarded so a preview push reports the same skipped count.
-    const extras = remapExtrasPush(ts, { dryRun });
+    const extras = withSpinner('Syncing extras', () => remapExtrasPush(ts, { dryRun }));
     const st: PushState = { dryRun, remap, extras };
     guardGitlinks();
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()
