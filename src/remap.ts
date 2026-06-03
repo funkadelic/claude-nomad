@@ -47,8 +47,33 @@ export function copyDirJsonlOnly(src: string, dst: string): void {
   });
 }
 
-/** Event emitted by `remapPull` when `onPreview` is provided under dryRun. */
-export type RemapPullPreviewEvent = { dst: string; src: string };
+/**
+ * Event emitted by `remapPull` when `onPreview` is provided under dryRun.
+ * `overwrite` is a per-project would-overwrite; `note` is a one-off status
+ * message (e.g. the degenerate early return when there is nothing to remap).
+ */
+export type RemapPullPreviewEvent =
+  | { kind: 'overwrite'; dst: string; src: string }
+  | { kind: 'note'; text: string };
+
+/**
+ * Deliver a dry-run preview event to `onPreview` when present (the glyph-free
+ * tree path), else fall back to the `ℹ︎`-prefixed `log(fallback)` line for
+ * direct callers. Keeping this branch in one helper keeps `remapPull` under
+ * the cognitive-complexity gate.
+ *
+ * @param onPreview Optional structured sink supplied by `computePreview`.
+ * @param event Structured event delivered to `onPreview`.
+ * @param fallback Plain message logged when `onPreview` is absent.
+ */
+function emitPreview(
+  onPreview: ((e: RemapPullPreviewEvent) => void) | undefined,
+  event: RemapPullPreviewEvent,
+  fallback: string,
+): void {
+  if (onPreview) onPreview(event);
+  else log(fallback);
+}
 
 /**
  * Pull: copy from repo's logical project names into local path-encoded dirs.
@@ -59,14 +84,14 @@ export type RemapPullPreviewEvent = { dst: string; src: string };
  * `dryRun`. The arrays let cmdPull render a grouped tree; the wet path no longer
  * logs per-project `pulled X -> Y` / `skip ...` inline. The dry-run path KEEPS
  * its `would overwrite:` line because `computePreview` renders those as the
- * Projects section of `nomad diff` and the dry-run pull preview. The degenerate
- * early-return `log(...)` (not a per-project skip) is preserved.
+ * Projects section of `nomad diff` and the dry-run pull preview.
  *
  * `opts.onPreview`: optional structured-event sink for the dry-run preview.
- * When provided, the would-overwrite events are delivered as
- * `RemapPullPreviewEvent` objects INSTEAD of the `log(...)` lines. When absent,
- * the `log(...)` fallback is used unchanged so direct-call tests continue to
- * pass.
+ * When provided, both the per-project `overwrite` events AND the degenerate
+ * early-return `note` (nothing to remap) are delivered as
+ * `RemapPullPreviewEvent` objects INSTEAD of the `log(...)` lines, so the diff
+ * tree stays glyph-free. When absent, the `log(...)` fallback is used unchanged
+ * so direct-call tests continue to pass.
  *
  * @param ts - backup timestamp namespace.
  * @param opts.dryRun - when `true`, collect `wouldPull` and log would-overwrite.
@@ -83,7 +108,8 @@ export function remapPull(
   const mapPath = join(REPO_HOME, 'path-map.json');
   const repoProjects = join(REPO_HOME, 'shared', 'projects');
   if (!existsSync(mapPath) || !existsSync(repoProjects)) {
-    log('no path-map or repo projects dir; skipping session remap');
+    const text = 'no path-map or repo projects dir; skipping session remap';
+    emitPreview(opts.onPreview, { kind: 'note', text }, text);
     return { unmapped: 0, pulled, wouldPull };
   }
 
@@ -103,11 +129,11 @@ export function remapPull(
     const dst = join(localProjects, encodePath(localPath));
     if (dryRun) {
       wouldPull.push(logical);
-      if (opts.onPreview) {
-        opts.onPreview({ dst, src });
-      } else {
-        log(`would overwrite: ${dst} (from ${src})`);
-      }
+      emitPreview(
+        opts.onPreview,
+        { kind: 'overwrite', dst, src },
+        `would overwrite: ${dst} (from ${src})`,
+      );
       continue;
     }
     // Snapshot prior encoded-path-dir state BEFORE copyDir overwrites it.

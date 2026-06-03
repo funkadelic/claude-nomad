@@ -12,6 +12,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { RemapPullPreviewEvent } from './remap.ts';
+
 describe('remapPull (integration)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -304,14 +306,14 @@ describe('remapPull onPreview structured sink', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('calls onPreview with { dst, src } and does NOT call log() for would-overwrite', async () => {
+  it('calls onPreview with an overwrite event and does NOT call log() for would-overwrite', async () => {
     mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
     writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
     writeFileSync(
       join(repoUnderHome, 'path-map.json'),
       JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
     );
-    const events: unknown[] = [];
+    const events: RemapPullPreviewEvent[] = [];
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
     });
@@ -321,11 +323,41 @@ describe('remapPull onPreview structured sink', () => {
       onPreview: (e) => events.push(e),
     });
     expect(events.length).toBe(1);
-    const ev = events[0] as { dst: string; src: string };
+    const ev = events[0];
+    expect(ev.kind).toBe('overwrite');
+    if (ev.kind !== 'overwrite') throw new Error('expected overwrite event');
     expect(ev.dst).toContain('-tmp-foo');
     expect(ev.src).toContain('foo');
     const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(logLines).not.toContain('would overwrite:');
+  });
+
+  it('emits a note event (not a log line) when there is nothing to remap', async () => {
+    // No path-map.json present -> remapPull takes the degenerate early return.
+    const events: RemapPullPreviewEvent[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { remapPull } = await import('./remap.ts');
+    remapPull('ts3', { dryRun: true, onPreview: (e) => events.push(e) });
+    expect(events.length).toBe(1);
+    const ev = events[0];
+    expect(ev.kind).toBe('note');
+    if (ev.kind !== 'note') throw new Error('expected note event');
+    expect(ev.text).toContain('skipping session remap');
+    const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logLines).not.toContain('skipping session remap');
+  });
+
+  it('falls back to log() for the nothing-to-remap note when onPreview is absent', async () => {
+    // No path-map.json: early return logs the note with no onPreview sink.
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const { remapPull } = await import('./remap.ts');
+    remapPull('ts4', { dryRun: true });
+    expect(logs.join('\n')).toContain('no path-map or repo projects dir; skipping session remap');
   });
 
   it('falls back to log() for would-overwrite when onPreview is absent', async () => {

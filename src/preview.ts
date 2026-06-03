@@ -98,11 +98,15 @@ function formatLinkRow(e: LinkPreviewEvent): string {
 }
 
 /**
- * Format a remap pull preview event as a Sessions section row.
- * Shows the destination path basename (the encoded dir name).
+ * Format a remap pull preview event as a Sessions section row. An `overwrite`
+ * event renders `overwrite  <dst> (from <src>)`; a `note` event (e.g. nothing
+ * to remap) renders its text verbatim. Either way the row is glyph-free.
+ *
+ * @param e The structured event emitted by `remapPull` under dry-run.
+ * @returns The rendered Sessions row text.
  */
-function formatOverwriteRow(e: RemapPullPreviewEvent): string {
-  return `overwrite  ${e.dst} (from ${e.src})`;
+function formatSessionRow(e: RemapPullPreviewEvent): string {
+  return e.kind === 'overwrite' ? `overwrite  ${e.dst} (from ${e.src})` : e.text;
 }
 
 /**
@@ -185,7 +189,7 @@ export function computePreview(
   const sessions = section('Sessions');
   const remapResult = remapPull(ts, {
     dryRun: true,
-    onPreview: (e) => addItem(sessions, formatOverwriteRow(e)),
+    onPreview: (e) => addItem(sessions, formatSessionRow(e)),
   });
 
   // Summary section.

@@ -219,6 +219,30 @@ describe('computePreview orchestration', () => {
     expect(joined).toContain('Summary');
   });
 
+  it('renders the nothing-to-remap note as a glyph-free Sessions row (no path-map.json)', async () => {
+    // No path-map.json on disk -> remapPull early-returns; the note must show
+    // up as a Sessions tree row, not a bare ℹ︎ line floating above the tree.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} });
+
+    const joined = logs.join('\n');
+    // No info glyph anywhere on the surface.
+    expect(joined).not.toContain('ℹ');
+    // The note appears under a Sessions section as a tree row (└ connector).
+    expect(joined).toContain('Sessions');
+    expect(joined).toContain('skipping session remap');
+    const noteLine = logs.find((l) => l.includes('skipping session remap'));
+    expect(noteLine).toBeDefined();
+    expect(noteLine).toMatch(/[├└]/);
+  });
+
   it('does NOT emit ℹ︎ anywhere on this surface', async () => {
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
