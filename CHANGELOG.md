@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.40.0](https://github.com/funkadelic/claude-nomad/compare/v0.39.0...v0.40.0) (2026-06-03)
+
+
+### Added
+
+* **spinner:** animate long-running operations ([#233](https://github.com/funkadelic/claude-nomad/issues/233)) ([e6755c3](https://github.com/funkadelic/claude-nomad/commit/e6755c3e5e86b52cbc5f996e9c5aee9d79da4574))
+
+
+### Changed
+
+* **docs-site:** build gate, link validation, and page metadata ([#231](https://github.com/funkadelic/claude-nomad/issues/231)) ([d4ad8ec](https://github.com/funkadelic/claude-nomad/commit/d4ad8ec0c414a91153a584156ccee2b32d824360))
+
 ## [0.39.0](https://github.com/funkadelic/claude-nomad/compare/v0.38.1...v0.39.0) (2026-06-02)
 
 
