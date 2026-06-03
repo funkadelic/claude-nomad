@@ -21,7 +21,7 @@
 
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { Worker as WorkerType } from 'node:worker_threads';
+import { Worker } from 'node:worker_threads';
 
 import { green, okGlyph } from './color.ts';
 import { isTTY } from './commands.push.recovery.ts';
@@ -118,13 +118,7 @@ export function resolveWorkerPath(
 /* c8 ignore start */
 /** Build the real worker factory (lazily, on first animated start). */
 function makeRealWorker(): SpinnerWorker {
-  // Dynamic require so tests can mock without the module-level import being
-  // resolved at load time.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
-  const workerMod = require('node:worker_threads');
-  const { Worker } = workerMod as { Worker: typeof WorkerType };
-  const workerPath = resolveWorkerPath();
-  return new Worker(workerPath);
+  return new Worker(resolveWorkerPath());
 }
 /* c8 ignore stop */
 
