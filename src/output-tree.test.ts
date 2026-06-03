@@ -120,6 +120,21 @@ describe('raw section rendering', () => {
   });
 });
 
+describe('sectionFailed header prefix', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('adds the red fail-glyph prefix to the header when any item contains the fail glyph', () => {
+    const s = section('Checks');
+    addItem(s, '✗ something failed');
+    const lines = captureLog(() => renderTree([s]));
+    // The header receives the `✗ ` prefix when sectionFailed is true.
+    expect(lines[0]).toContain('✗');
+    expect(lines[0]).toContain('Checks');
+  });
+});
+
 describe('renderDoctor alias', () => {
   afterEach(() => {
     vi.restoreAllMocks();
