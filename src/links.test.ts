@@ -444,6 +444,108 @@ describe('applySharedLinks dry-run', () => {
   });
 });
 
+describe('applySharedLinks onPreview structured sink', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-onpreview-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('calls onPreview with create event and does NOT call log() for create', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+    // No pre-existing ~/.claude/CLAUDE.md so only create fires, not auto-move.
+    const events: unknown[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks(
+      'ts1',
+      { projects: {} },
+      {
+        dryRun: true,
+        onPreview: (e) => events.push(e),
+      },
+    );
+    const createEvents = events.filter((e) => (e as { kind: string }).kind === 'create');
+    expect(createEvents.length).toBeGreaterThan(0);
+    // log() must NOT have been called for the create line when onPreview is set.
+    const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logLines).not.toContain('would create symlink:');
+  });
+
+  it('calls onPreview with auto-move event and does NOT call log() for auto-move', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+    const events: unknown[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks(
+      'ts2',
+      { projects: {} },
+      {
+        dryRun: true,
+        onPreview: (e) => events.push(e),
+      },
+    );
+    const moveEvents = events.filter((e) => (e as { kind: string }).kind === 'auto-move');
+    expect(moveEvents.length).toBeGreaterThan(0);
+    expect((moveEvents[0] as { from: string }).from).toContain('CLAUDE.md');
+    expect((moveEvents[0] as { to: string }).to).toContain('backup/ts2/CLAUDE.md');
+    const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logLines).not.toContain('would auto-move non-symlink:');
+  });
+
+  it('falls back to log() for create when onPreview is absent', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('ts3', { projects: {} }, { dryRun: true });
+    expect(logs.join('\n')).toContain('would create symlink:');
+  });
+
+  it('falls back to log() for auto-move when onPreview is absent', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('ts4', { projects: {} }, { dryRun: true });
+    expect(logs.join('\n')).toContain('would auto-move non-symlink:');
+  });
+});
+
 describe('applySharedLinks sharedDirs support', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;

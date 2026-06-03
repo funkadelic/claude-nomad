@@ -47,6 +47,9 @@ export function copyDirJsonlOnly(src: string, dst: string): void {
   });
 }
 
+/** Event emitted by `remapPull` when `onPreview` is provided under dryRun. */
+export type RemapPullPreviewEvent = { dst: string; src: string };
+
 /**
  * Pull: copy from repo's logical project names into local path-encoded dirs.
  *
@@ -59,12 +62,19 @@ export function copyDirJsonlOnly(src: string, dst: string): void {
  * Projects section of `nomad diff` and the dry-run pull preview. The degenerate
  * early-return `log(...)` (not a per-project skip) is preserved.
  *
+ * `opts.onPreview`: optional structured-event sink for the dry-run preview.
+ * When provided, the would-overwrite events are delivered as
+ * `RemapPullPreviewEvent` objects INSTEAD of the `log(...)` lines. When absent,
+ * the `log(...)` fallback is used unchanged so direct-call tests continue to
+ * pass.
+ *
  * @param ts - backup timestamp namespace.
  * @param opts.dryRun - when `true`, collect `wouldPull` and log would-overwrite.
+ * @param opts.onPreview - structured event sink used by computePreview.
  */
 export function remapPull(
   ts: string,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; onPreview?: (e: RemapPullPreviewEvent) => void } = {},
 ): { unmapped: number; pulled: string[]; wouldPull: string[] } {
   const dryRun = opts.dryRun === true;
   let unmapped = 0;
@@ -92,12 +102,12 @@ export function remapPull(
     if (!existsSync(src)) continue;
     const dst = join(localProjects, encodePath(localPath));
     if (dryRun) {
-      // KEEP this would-overwrite log: computePreview (backing both `nomad
-      // diff` and the dry-run pull preview) renders these lines as its
-      // Projects section, so removing them regresses that output. The grouped
-      // tree is built only on the WET path, which consumes `pulled` instead.
       wouldPull.push(logical);
-      log(`would overwrite: ${dst} (from ${src})`);
+      if (opts.onPreview) {
+        opts.onPreview({ dst, src });
+      } else {
+        log(`would overwrite: ${dst} (from ${src})`);
+      }
       continue;
     }
     // Snapshot prior encoded-path-dir state BEFORE copyDir overwrites it.

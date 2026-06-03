@@ -6,6 +6,36 @@ import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
 
+/** Event emitted by `applySharedLinks` when `onPreview` is provided. */
+export type LinkPreviewEvent =
+  | { kind: 'create'; from: string; to: string }
+  | { kind: 'auto-move'; from: string; to: string };
+
+type LinkOpts = { dryRun?: boolean; onPreview?: (e: LinkPreviewEvent) => void };
+
+/** Emit a dry-run auto-move event via onPreview or fall back to log(). */
+function emitAutoMove(
+  onPreview: LinkOpts['onPreview'],
+  linkPath: string,
+  ts: string,
+  name: string,
+): void {
+  if (onPreview) {
+    onPreview({ kind: 'auto-move', from: linkPath, to: `backup/${ts}/${name}` });
+  } else {
+    log(`would auto-move non-symlink: ${linkPath} -> backup/${ts}/${name}`);
+  }
+}
+
+/** Emit a dry-run create event via onPreview or fall back to log(). */
+function emitCreate(onPreview: LinkOpts['onPreview'], from: string, to: string): void {
+  if (onPreview) {
+    onPreview({ kind: 'create', from, to });
+  } else {
+    log(`would create symlink: ${from} -> ${to}`);
+  }
+}
+
 /**
  * Symlink every name in `allSharedLinks(map)` (the static shared-link set
  * plus any validated `sharedDirs` entries from `path-map.json`) from the
@@ -17,13 +47,18 @@ import { deepMerge, readJson } from './utils.json.ts';
  * silently deleted. `sharedDirs` entries route through the identical two-pass
  * logic (refuse-non-symlink / backup / dryRun-log behavior is unchanged).
  *
- * `opts.dryRun` (default `false`): when `true`, no disk mutation occurs. The
- * function logs `would auto-move non-symlink:` and `would create symlink:`
- * lines describing the would-be effect and returns. Backwards-compatible: a
- * call with no opts arg or with `dryRun: false` keeps the prior mutating
- * behavior.
+ * `opts.dryRun` (default `false`): when `true`, no disk mutation occurs.
+ *
+ * `opts.onPreview`: optional structured-event sink for the dry-run surface.
+ * When provided, the would-be auto-move and would-be create events are
+ * delivered as `LinkPreviewEvent` objects INSTEAD of the `log(...)` lines.
+ * When absent, the `log(...)` fallback is used unchanged so direct-call tests
+ * continue to pass.
+ *
+ * Backwards-compatible: a call with no opts arg or with `dryRun: false` keeps
+ * the prior mutating behavior.
  */
-export function applySharedLinks(ts: string, map: PathMap, opts: { dryRun?: boolean } = {}): void {
+export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}): void {
   const dryRun = opts.dryRun === true;
   // Derive once: allSharedLinks emits a WARN per invalid sharedDirs entry, so
   // calling it per loop would double every such warning in a single run.
@@ -35,7 +70,7 @@ export function applySharedLinks(ts: string, map: PathMap, opts: { dryRun?: bool
     if (lstatSync(linkPath).isSymbolicLink()) continue;
     if (!existsSync(target)) continue;
     if (dryRun) {
-      log(`would auto-move non-symlink: ${linkPath} -> backup/${ts}/${name}`);
+      emitAutoMove(opts.onPreview, linkPath, ts, name);
       continue;
     }
     backupBeforeWrite(linkPath, ts);
@@ -45,7 +80,7 @@ export function applySharedLinks(ts: string, map: PathMap, opts: { dryRun?: bool
     const target = join(REPO_HOME, 'shared', name);
     if (!existsSync(target)) continue;
     if (dryRun) {
-      log(`would create symlink: ${join(CLAUDE_HOME, name)} -> ${target}`);
+      emitCreate(opts.onPreview, join(CLAUDE_HOME, name), target);
       continue;
     }
     ensureSymlink(join(CLAUDE_HOME, name), target);

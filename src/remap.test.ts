@@ -273,6 +273,78 @@ describe('remapPull dry-run and unmapped count', () => {
   });
 });
 
+describe('remapPull onPreview structured sink', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-onpreview-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('calls onPreview with { dst, src } and does NOT call log() for would-overwrite', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const events: unknown[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { remapPull } = await import('./remap.ts');
+    remapPull('ts1', {
+      dryRun: true,
+      onPreview: (e) => events.push(e),
+    });
+    expect(events.length).toBe(1);
+    const ev = events[0] as { dst: string; src: string };
+    expect(ev.dst).toContain('-tmp-foo');
+    expect(ev.src).toContain('foo');
+    const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logLines).not.toContain('would overwrite:');
+  });
+
+  it('falls back to log() for would-overwrite when onPreview is absent', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const { remapPull } = await import('./remap.ts');
+    remapPull('ts2', { dryRun: true });
+    expect(logs.join('\n')).toContain('would overwrite:');
+  });
+});
+
 describe('remapPush dry-run and unmapped count', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
