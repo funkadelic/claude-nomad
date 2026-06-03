@@ -12,7 +12,7 @@ import { applySharedLinks, regenerateSettings } from './links.ts';
 import { renderTree, section, addItem } from './output-tree.ts';
 import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
-import { startSpinner } from './spinner.ts';
+import { withSpinner } from './spinner.ts';
 import { emitSummary, summaryRow } from './summary.ts';
 import { die, fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
@@ -35,14 +35,7 @@ import { readPathMap } from './utils.json.ts';
 function applyWetPull(ts: string, map: PathMap): void {
   applySharedLinks(ts, map);
   const { label } = regenerateSettings(ts);
-  const syncSp = startSpinner('Syncing sessions');
-  let remapResult: ReturnType<typeof remapPull>;
-  try {
-    remapResult = remapPull(ts);
-    syncSp.succeed();
-  } finally {
-    syncSp.stop();
-  }
+  const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
   const extrasResult = remapExtrasPull(ts);
   // Combine session-unmapped and extras-unmapped into one user-visible count;
   // from the operator's perspective both mean "couldn't sync this for the
