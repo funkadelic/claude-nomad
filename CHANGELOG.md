@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.41.0](https://github.com/funkadelic/claude-nomad/compare/v0.40.0...v0.41.0) (2026-06-03)
+
+
+### Added
+
+* **diff:** render diff and pull --dry-run as a glyph-free tree ([#236](https://github.com/funkadelic/claude-nomad/issues/236)) ([6cf1aff](https://github.com/funkadelic/claude-nomad/commit/6cf1aff60f7ac5710c990fb303c6408c0b07ff66))
+* **spinner:** animate remap sync, fix stray frames ([#234](https://github.com/funkadelic/claude-nomad/issues/234)) ([5a71563](https://github.com/funkadelic/claude-nomad/commit/5a715637c8ab43ab2d536353f55512abe15cfdd3))
+
 ## [0.40.0](https://github.com/funkadelic/claude-nomad/compare/v0.39.0...v0.40.0) (2026-06-03)
 
 
