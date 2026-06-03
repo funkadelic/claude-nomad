@@ -18,17 +18,30 @@ import { build } from 'esbuild';
 import { chmodSync } from 'node:fs';
 
 const outfile = 'dist/nomad.mjs';
+const workerOutfile = 'dist/nomad.worker.mjs';
 
-await build({
-  entryPoints: ['src/nomad.ts'],
-  bundle: true,
-  platform: 'node',
-  format: 'esm',
-  target: 'node22',
-  outfile,
-  banner: { js: '#!/usr/bin/env node' },
-  logLevel: 'info',
-});
+await Promise.all([
+  build({
+    entryPoints: ['src/nomad.ts'],
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node22',
+    outfile,
+    banner: { js: '#!/usr/bin/env node' },
+    logLevel: 'info',
+  }),
+  // Worker entry point: no shebang banner (it is a worker module, not a bin).
+  build({
+    entryPoints: ['src/spinner.worker.ts'],
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node22',
+    outfile: workerOutfile,
+    logLevel: 'info',
+  }),
+]);
 
 // npm sets the executable bit on bin entries at install time, but set it here
 // too so a locally built dist/nomad.mjs is runnable without reinstalling.

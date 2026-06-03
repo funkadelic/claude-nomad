@@ -16,6 +16,9 @@ export default defineConfig({
         // Tests would mock process.exit and assert dispatch routing, which
         // duplicates what each cmd* function already covers behaviorally.
         'src/nomad.ts',
+        // worker_threads entry point: animation loop driven by postMessage.
+        // Cannot be unit-instrumented without a real worker context.
+        'src/spinner.worker.ts',
       ],
       reporter: ['text', 'html', 'lcov', 'json-summary'],
     },
