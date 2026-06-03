@@ -45,6 +45,7 @@ const REQUIRED_EXACT = [
   'shared/.gitignore',
   '.gitleaks.toml',
   'dist/nomad.mjs',
+  'dist/nomad.worker.mjs',
 ];
 
 const FORBIDDEN =
