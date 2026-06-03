@@ -57,6 +57,11 @@ $ nomad pull     # apply config to ~/.claude/
 $ nomad push     # publish local changes (sessions, settings)
 ```
 
+During `nomad push` and `nomad pull`, long-running steps (rebase, secret scan, git push, session
+sync) show an animated progress indicator on an interactive terminal so the CLI does not look hung.
+In CI and when output is piped, only plain text lines are printed, with no ANSI control codes, so
+log output remains grep-stable.
+
 When `nomad push` detects a potential secret, it drops into an interactive menu (TTY) or aborts with
 a recovery hint (non-TTY/CI). Three non-interactive recovery paths are available without the menu:
 
