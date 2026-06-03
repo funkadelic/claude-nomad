@@ -17,6 +17,11 @@ import type { SpinnerDeps, SpinnerWorker } from './spinner.ts';
 // Fake helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Build a fake output stream that accumulates everything written to it.
+ *
+ * @returns A `{ write }` sink whose captured text is read via `capturedOutput`.
+ */
 function makeOut(): { write: (s: string) => void; captured: string } {
   const buf = { captured: '' };
   return {
@@ -30,10 +35,22 @@ function makeOut(): { write: (s: string) => void; captured: string } {
   } as unknown as { write: (s: string) => void; captured: string };
 }
 
+/**
+ * Read the accumulated text written to a {@link makeOut} fake stream.
+ *
+ * @param out The fake stream returned by `makeOut`.
+ * @returns Everything written so far, concatenated.
+ */
 function capturedOutput(out: ReturnType<typeof makeOut>): string {
   return (out as unknown as { _captured: string })._captured;
 }
 
+/**
+ * Build a fake `SpinnerWorker` that records messages and call counts.
+ *
+ * @returns The fake `worker` (with `messages`, `terminateCalled`,
+ *   `terminateCount`, `unrefCalled` introspection) and a `factory` that returns it.
+ */
 function makeWorkerFake(): {
   worker: SpinnerWorker & {
     messages: unknown[];
@@ -120,6 +137,12 @@ describe('resolveWorkerPath', () => {
 // ---------------------------------------------------------------------------
 
 describe('startSpinner (non-TTY plain path)', () => {
+  /**
+   * Build deps forcing the plain (non-TTY) path with a capturing out stream.
+   *
+   * @param envOverride Optional process env override (default: empty).
+   * @returns Spinner deps plus the capturing `out` stream.
+   */
   function makePlainDeps(envOverride: NodeJS.ProcessEnv = {}): SpinnerDeps & {
     out: ReturnType<typeof makeOut>;
   } {
@@ -197,6 +220,11 @@ describe('startSpinner (non-TTY plain path)', () => {
 // ---------------------------------------------------------------------------
 
 describe('startSpinner (TTY animated path)', () => {
+  /**
+   * Build deps forcing the TTY animated path with a fake worker and out stream.
+   *
+   * @returns Spinner deps plus the capturing `out` stream and the `fakeWorker`.
+   */
   function makeAnimatedDeps(): SpinnerDeps & {
     out: ReturnType<typeof makeOut>;
     fakeWorker: ReturnType<typeof makeWorkerFake>['worker'];
@@ -339,6 +367,11 @@ describe('startSpinner (TTY animated path)', () => {
 // ---------------------------------------------------------------------------
 
 describe('startSpinner (worker-spawn failure degraded path)', () => {
+  /**
+   * Build deps whose worker factory throws, to exercise the degraded fallback.
+   *
+   * @returns Spinner deps with a throwing `makeWorker` and a capturing `out`.
+   */
   function makeFailingWorkerDeps(): SpinnerDeps & { out: ReturnType<typeof makeOut> } {
     const out = makeOut();
     return {

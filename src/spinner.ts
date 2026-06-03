@@ -164,9 +164,14 @@ export function startSpinner(label: string, deps: SpinnerDeps = {}): SpinnerHand
     writePlainStart(out, label);
   }
 
-  // Finalize once. `success` controls whether a done line / success glyph is
-  // emitted; a `stop()` after a thrown call passes `false` so no check mark
-  // appears. Either way the worker is paused and terminated exactly once.
+  /**
+   * Finalize the spinner exactly once. `success` controls whether a done line /
+   * success glyph is emitted; a `stop()` after a thrown call passes `false` so
+   * no check mark appears. Either way the worker is paused and terminated once.
+   *
+   * @param success Whether to emit the success glyph / done line.
+   * @param doneLabel Optional override label for the done line (default: start label).
+   */
   function finalize(success: boolean, doneLabel?: string): void {
     if (finalized) return;
     finalized = true;
