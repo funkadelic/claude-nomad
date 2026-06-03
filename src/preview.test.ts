@@ -16,10 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * Recursively snapshot `{ relativePath: fileContent }` for every regular
  * file under `root`. Used to assert that computePreview does NOT mutate any
  * file under `~/.claude/` or `~/.cache/claude-nomad/backup/` between calls.
- * Returns an empty object when `root` does not exist (the dry-run path may
- * intentionally not create the cache dir). Reads directly via readFileSync
- * and recurses on EISDIR instead of stat-then-read so the helper has no
- * check-then-use pattern between sibling fs calls.
+ * Returns an empty object when `root` does not exist.
  */
 function snapshotTree(root: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -63,8 +60,6 @@ describe('diffJsonStrings', () => {
     expect(out).toContain('sonnet');
     expect(out).toContain('opus');
     // Under NO_COLOR the prefixes must be literal characters, not ANSI escapes.
-    // Picocolors degrades color helpers to identity, so the output has no
-    // ANSI CSI prefix (the control byte 0x1b followed by `[`).
     // eslint-disable-next-line no-control-regex
     expect(out).not.toMatch(/\x1b\[/);
   });
@@ -87,8 +82,6 @@ describe('diffJsonStrings', () => {
   });
 
   it('add-only: adds a new key without emitting undefined artifacts', async () => {
-    // jsdiff added branch: current is shorter than next; the extra entries in
-    // next must appear as + lines and never contain the string 'undefined'.
     const current = JSON.stringify({}, null, 2);
     const next = JSON.stringify({ a: 1, b: 2 }, null, 2);
     const { diffJsonStrings } = await import('./preview.ts');
@@ -100,8 +93,6 @@ describe('diffJsonStrings', () => {
   });
 
   it('remove-only: removes a key without emitting undefined artifacts', async () => {
-    // jsdiff removed branch: current is longer than next; the removed entries
-    // must appear as - lines and never contain the string 'undefined'.
     const current = JSON.stringify({ a: 1, b: 2 }, null, 2);
     const next = JSON.stringify({}, null, 2);
     const { diffJsonStrings } = await import('./preview.ts');
@@ -113,26 +104,17 @@ describe('diffJsonStrings', () => {
   });
 
   it('mid-document insertion: unchanged tail appears as context, not a -/+ cascade', async () => {
-    // The core LCS behavior test. Inserting a key between two existing keys
-    // must not cascade -/+ pairs for every following line. The closing brace
-    // and any tail lines must appear exactly once as space-prefixed context
-    // lines, not duplicated as removed-then-added pairs.
     const current = JSON.stringify({ a: 1, c: 3 }, null, 2);
     const next = JSON.stringify({ a: 1, b: 2, c: 3 }, null, 2);
     const { diffJsonStrings } = await import('./preview.ts');
     const out = diffJsonStrings(current, next);
     const outputLines = out.split('\n');
 
-    // The inserted key must appear as a + line (JSON.stringify indents with 2
-    // spaces, so the line is `+  "b": 2,`).
     expect(out).toContain('+  "b": 2,');
 
-    // The unchanged tail (closing brace line) must appear exactly once as a
-    // space-prefixed context line, not duplicated as -/+ pairs.
     const closingBraceLines = outputLines.filter((l) => l === ' }');
     expect(closingBraceLines.length).toBe(1);
 
-    // No removed (-) line for the closing brace.
     expect(out).not.toContain('-}');
   });
 });
@@ -179,11 +161,10 @@ describe('computePreview orchestration', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('emits structured preview lines covering symlinks, settings diff, and projects', async () => {
-    // Sandbox: shared/CLAUDE.md exists, ~/.claude/CLAUDE.md is a real (non-symlink)
-    // file (would-auto-move surface). settings.base.json differs from the existing
-    // settings.json by one key. path-map maps `foo` -> /tmp/foo on this host with
-    // a single file under shared/projects/foo/.
+  it('renders a glyph-free tree with Symlinks, settings.json, Sessions, and Summary sections', async () => {
+    // Sandbox: shared/CLAUDE.md exists, ~/.claude/CLAUDE.md is a real file
+    // (triggers auto-move). settings.base.json differs by one key. path-map
+    // maps foo -> /tmp/foo with a file under shared/projects/foo/.
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local\n');
     writeFileSync(
@@ -210,15 +191,200 @@ describe('computePreview orchestration', () => {
     computePreview('20260516-000000', { projects: {} });
 
     const joined = logs.join('\n');
-    // Symlink section: would-create OR would-auto-move
-    expect(joined).toMatch(/would create symlink:|would auto-move non-symlink:/);
-    // Settings diff section: a - line containing "sonnet" and a + line with "opus"
+
+    // No ℹ︎ glyph anywhere on the preview surface.
+    expect(joined).not.toContain('ℹ');
+
+    // Symlinks section header.
+    expect(joined).toContain('Symlinks');
+    // auto-move row (non-symlink CLAUDE.md triggers it).
+    expect(joined).toContain('auto-move');
+    // create row (every shared link).
+    expect(joined).toContain('create');
+
+    // settings.json section header present.
+    expect(joined).toContain('settings.json');
+    // Raw diff block: - line with sonnet, + line with opus.
     expect(joined).toContain('-');
     expect(joined).toContain('+');
     expect(joined).toContain('sonnet');
     expect(joined).toContain('opus');
-    // Projects section: would-overwrite line for the foo entry
-    expect(joined).toMatch(/would overwrite: .*-tmp-foo/);
+
+    // Sessions section header.
+    expect(joined).toContain('Sessions');
+    // overwrite row for foo.
+    expect(joined).toContain('overwrite');
+
+    // Summary section header present.
+    expect(joined).toContain('Summary');
+  });
+
+  it('renders the nothing-to-remap note as a glyph-free Sessions row (no path-map.json)', async () => {
+    // No path-map.json on disk -> remapPull early-returns; the note must show
+    // up as a Sessions tree row, not a bare ℹ︎ line floating above the tree.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} });
+
+    const joined = logs.join('\n');
+    // No info glyph anywhere on the surface.
+    expect(joined).not.toContain('ℹ');
+    // The note appears under a Sessions section as a tree row (└ connector).
+    expect(joined).toContain('Sessions');
+    expect(joined).toContain('skipping session remap');
+    const noteLine = logs.find((l) => l.includes('skipping session remap'));
+    expect(noteLine).toBeDefined();
+    expect(noteLine).toMatch(/[├└]/);
+  });
+
+  it('does NOT emit ℹ︎ anywhere on this surface', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} });
+
+    expect(logs.join('\n')).not.toContain('ℹ');
+  });
+
+  it('verb "diff" produces "summary: clean" (or unmapped on diff) in Summary row', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'diff');
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('summary:');
+    // Clean case: no unmapped entries.
+    expect(joined).toContain('summary: clean');
+  });
+
+  it('verb "pull" produces "summary: clean" row in Summary', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(logs.join('\n')).toContain('summary: clean');
+  });
+
+  it('Summary row shows "unmapped on diff" when verb is diff and unmapped > 0', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedProjects, 'bar'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'bar', 'b.jsonl'), '{"b":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { bar: { 'test-host': 'TBD' } } }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'diff');
+
+    expect(logs.join('\n')).toContain('unmapped on diff');
+  });
+
+  it('settings.json section is omitted when diff is empty and no notes', async () => {
+    // Pre-write settings.json to the SAME pretty-printed shape computePreview
+    // will compute; no notes expected either.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'opus' }, null, 2) + '\n',
+    );
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} });
+
+    // The section header should NOT appear when both diff and notes are empty.
+    const joined = logs.join('\n');
+    expect(joined).not.toContain('settings.json');
+  });
+
+  it('settings.json section is present with note when base is missing', async () => {
+    // No settings.base.json; computePreview must NOT throw and must show
+    // the locked skip note.
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    const result = computePreview('20260516-000000', { projects: {} });
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('settings.json');
+    expect(joined).toContain('section skipped (base or current missing)');
+    expect(result).toEqual({ unmapped: 0, collisions: 0 });
+  });
+
+  it('settings.json section shows malformed-host note without throwing', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(hostsDir, 'test-host.json'), '{ malformed json');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const { computePreview } = await import('./preview.ts');
+    expect(() => computePreview('20260516-000000', { projects: {} })).not.toThrow();
+    // The malformed-host note may appear in the settings.json section.
+    // (No diff since host was ignored and merged == base == same as no-file case)
+    expect(logs.join('\n')).toContain('malformed hosts/test-host.json; ignoring overrides');
+  });
+
+  it('settings.json section shows malformed-current note without throwing', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(claudeDir, 'settings.json'), '{ malformed json');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const { computePreview } = await import('./preview.ts');
+    expect(() => computePreview('20260516-000000', { projects: {} })).not.toThrow();
+    expect(logs.join('\n')).toContain('malformed; skipping diff');
   });
 
   it('does NOT mutate any file under ~/.claude/ or ~/.cache/claude-nomad/backup/', async () => {
@@ -240,10 +406,6 @@ describe('computePreview orchestration', () => {
     const cacheRoot = join(testHome, '.cache', 'claude-nomad');
     const backupRoot = join(cacheRoot, 'backup');
     const beforeCache = snapshotTree(cacheRoot);
-    // snapshotTree captures file contents only, so an accidental empty-dir
-    // create would slip past it. Capture directory existence too so we
-    // catch any new ~/.cache/claude-nomad/ or backup/ directory the dry-run
-    // path creates as a side effect.
     const cacheExistedBefore = existsSync(cacheRoot);
     const backupExistedBefore = existsSync(backupRoot);
 
@@ -256,7 +418,6 @@ describe('computePreview orchestration', () => {
     expect(afterCache).toEqual(beforeCache);
     expect(existsSync(cacheRoot)).toBe(cacheExistedBefore);
     expect(existsSync(backupRoot)).toBe(backupExistedBefore);
-    // Specifically: the per-run backup dir must not exist.
     expect(existsSync(join(cacheRoot, 'backup', '20260516-000000'))).toBe(false);
   });
 
@@ -283,10 +444,8 @@ describe('computePreview orchestration', () => {
     expect(result.collisions).toBe(0);
   });
 
-  it('skips the settings section with the locked phrasing when shared/settings.base.json is missing', async () => {
-    // No settings.base.json. Plus a missing settings.json on the host side.
-    // computePreview must tolerate this (offline-safe per cmdDiff contract):
-    // no die, no throw; emit the locked skip phrasing and continue.
+  it('Summary row appears exactly once in the output', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
 
     const logs: string[] = [];
@@ -295,19 +454,17 @@ describe('computePreview orchestration', () => {
     });
 
     const { computePreview } = await import('./preview.ts');
-    const result = computePreview('20260516-000000', { projects: {} });
+    computePreview('20260516-000000', { projects: {} });
 
-    const joined = logs.join('\n');
-    expect(joined).toContain('settings.json: section skipped (base or current missing)');
-    expect(result).toEqual({ unmapped: 0, collisions: 0 });
+    const summaryLines = logs.filter((l) => l.includes('summary:'));
+    expect(summaryLines.length).toBe(1);
   });
 
-  it('emits a no-changes line when the merged settings are byte-identical to current', async () => {
+  it('settings section raw diff block has native +/- prefixes with no tree connectors in diff lines', async () => {
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
-    // Pre-write settings.json to the SAME pretty-printed shape computePreview will compute.
     writeFileSync(
       join(claudeDir, 'settings.json'),
-      JSON.stringify({ model: 'opus' }, null, 2) + '\n',
+      JSON.stringify({ model: 'sonnet' }, null, 2) + '\n',
     );
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
 
@@ -319,44 +476,15 @@ describe('computePreview orchestration', () => {
     const { computePreview } = await import('./preview.ts');
     computePreview('20260516-000000', { projects: {} });
 
-    expect(logs.join('\n')).toContain('settings.json: no changes');
-  });
-
-  it('does not die on malformed settings.json; logs a skip-diff message instead', async () => {
-    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
-    writeFileSync(join(claudeDir, 'settings.json'), '{ malformed json');
-    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
-
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-      logs.push(args.map(String).join(' '));
-    });
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-    const { computePreview } = await import('./preview.ts');
-    expect(() => computePreview('20260516-000000', { projects: {} })).not.toThrow();
-    expect(logs.join('\n')).toContain('settings.json: malformed; skipping diff');
-  });
-
-  it('does not die on malformed hosts/<HOST>.json; logs an ignore-overrides message instead', async () => {
-    // Base parses fine but the per-host override file is malformed. Without
-    // the tolerance branch, readJson throws SyntaxError and the dry-run
-    // crashes before users see the rest of the preview. Expect a single
-    // canonical message and continued execution.
-    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
-    writeFileSync(join(hostsDir, 'test-host.json'), '{ malformed json');
-    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
-
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-      logs.push(args.map(String).join(' '));
-    });
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-    const { computePreview } = await import('./preview.ts');
-    expect(() => computePreview('20260516-000000', { projects: {} })).not.toThrow();
-    expect(logs.join('\n')).toContain(
-      'settings.json: malformed hosts/test-host.json; ignoring overrides',
+    const joined = logs.join('\n');
+    // The diff lines carry the native leading space/+/- character (indented
+    // by two spaces from the raw section).
+    expect(joined).toMatch(/ {2}---/);
+    expect(joined).toMatch(/ {2}\+\+\+/);
+    // The raw settings section items must NOT have tree connectors.
+    const diffLines = logs.filter(
+      (l) => l.startsWith('  ') && (l.includes('---') || l.includes('+++')),
     );
+    expect(diffLines.some((l) => l.includes('├') || l.includes('└'))).toBe(false);
   });
 });

@@ -13,7 +13,7 @@ import { renderTree, section, addItem } from './output-tree.ts';
 import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
 import { withSpinner } from './spinner.ts';
-import { emitSummary, summaryRow } from './summary.ts';
+import { summaryRow } from './summary.ts';
 import { die, fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -83,13 +83,11 @@ function applyWetPull(ts: string, map: PathMap): void {
  * and `git pull --rebase` still runs (so concurrent invocations cannot race
  * and the user sees the same network round-trip as a real pull).
  * `divergenceCheckExtras` still fires (read-only by design). Then
- * `computePreview` runs in place of the four mutating steps. The per-run
- * backup directory under `~/.cache/claude-nomad/backup/<ts>/` is
- * intentionally NOT created (no backups are written under dryRun and an
- * empty dir would pollute the cache). The dry-run path is BYTE-IDENTICAL:
- * it keeps the `pulling on host=... (backup=...; dry-run)` header, the
- * `computePreview` adjacent diff, its standalone `emitSummary`, and the
- * `dry-run complete; no mutation` line; it does NOT build the tree.
+ * `computePreview` runs in place of the four mutating steps and renders the
+ * full glyph-free tree (Symlinks / settings.json / Sessions / Summary) via
+ * `renderTree`. The per-run backup directory under
+ * `~/.cache/claude-nomad/backup/<ts>/` is intentionally NOT created (no
+ * backups are written under dryRun and an empty dir would pollute the cache).
  *
  * Any `NomadFatal` thrown along the way is caught here so the `finally` block
  * releases the lock before exit (a raw `process.exit()` would skip `finally`
@@ -145,12 +143,12 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
     // function itself silently skips when no `extras` key is declared.
     divergenceCheckExtras(ts);
     if (dryRun) {
-      const previewResult = computePreview(ts, map);
+      // computePreview renders the full tree including the Summary row with
+      // verb='pull'; no separate emitSummary call (it would duplicate the row).
       // dryRun deliberately omits remapExtrasPull to preserve the
       // zero-mutation contract; users still see the divergence WARN above.
-      // BYTE-IDENTICAL dry-run output: standalone emitSummary, no tree.
+      computePreview(ts, map, 'pull');
       log('dry-run complete; no mutation');
-      emitSummary('pull', previewResult.unmapped);
     } else {
       applyWetPull(ts, map);
     }

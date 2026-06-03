@@ -3,10 +3,14 @@ import { join } from 'node:path';
 
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
-import { applySharedLinks } from './links.ts';
-import { remapPull } from './remap.ts';
-import { log } from './utils.ts';
+import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
+import { addItem, renderTree, section } from './output-tree.ts';
+import { type RemapPullPreviewEvent, remapPull } from './remap.ts';
+import { summaryRow } from './summary.ts';
 import { deepMerge, readJson } from './utils.json.ts';
+
+/** Verb variants that appear in the Summary row of the preview tree. */
+type PreviewVerb = 'pull' | 'diff';
 
 /**
  * LCS line diff for two pre-stringified JSON documents via jsdiff. Returns a
@@ -34,9 +38,8 @@ export function diffJsonStrings(currentJsonText: string, newJsonText: string): s
 
 /**
  * Read JSON from `path` returning the parsed object, or `null` on any
- * filesystem or parse failure. Used by computePreview's tolerant settings
- * read so a malformed settings.json on a fresh-clone host does not abort
- * the preview surface.
+ * filesystem or parse failure. Used by previewSettings's tolerant read so a
+ * malformed settings.json on a fresh-clone host does not abort the preview.
  */
 function readJsonOrNull(path: string): Record<string, unknown> | null {
   if (!existsSync(path)) return null;
@@ -48,79 +51,152 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
 }
 
 /**
- * Emit the settings.json section of the dry-run preview. Reads base, host
- * overrides, and current settings; logs a unified diff or a skip message.
+ * Compute the settings.json diff and any edge-case notes without logging.
+ * Returns `{ diff, notes }` where `diff` is the unified diff string (`''`
+ * when no changes) and `notes` holds human-readable skip/warning messages:
+ *   - `'section skipped (base or current missing)'` when base is absent
+ *   - `'malformed hosts/<HOST>.json; ignoring overrides'` for a bad host file
+ *   - `'malformed; skipping diff'` when current settings.json is unreadable
  *
- * Extracted from `computePreview` to reduce cognitive complexity: the nested
- * base-null / malformed-host / malformed-current branches each add score.
+ * When `diff` is `''` and `notes` is empty, the settings section is omitted
+ * by the caller.
  */
-function previewSettings(basePath: string, hostPath: string, settingsPath: string): void {
+function previewSettings(
+  basePath: string,
+  hostPath: string,
+  settingsPath: string,
+): { diff: string; notes: string[] } {
   const base = readJsonOrNull(basePath);
   if (base === null) {
-    log('settings.json: section skipped (base or current missing)');
-    return;
+    return { diff: '', notes: ['section skipped (base or current missing)'] };
   }
-  // Tolerate a malformed hosts/<HOST>.json: log once and fall back to no overrides.
+  const notes: string[] = [];
   const hostOverrides = readJsonOrNull(hostPath);
   if (hostOverrides === null && existsSync(hostPath)) {
-    log(`settings.json: malformed hosts/${HOST}.json; ignoring overrides`);
+    notes.push(`malformed hosts/${HOST}.json; ignoring overrides`);
   }
   const merged = deepMerge(base, hostOverrides ?? {});
   const current = readJsonOrNull(settingsPath);
   if (current === null && existsSync(settingsPath)) {
-    log('settings.json: malformed; skipping diff');
-    return;
+    return { diff: '', notes: [...notes, 'malformed; skipping diff'] };
   }
   const diff = diffJsonStrings(
     JSON.stringify(current ?? {}, null, 2),
     JSON.stringify(merged, null, 2),
   );
-  if (diff === '') {
-    log('settings.json: no changes');
-  } else {
-    log('settings.json:');
-    for (const line of diff.split('\n')) log(line);
+  return { diff, notes };
+}
+
+/**
+ * Format a link preview event as a Symlinks section row.
+ * Examples:
+ *   `create    ~/.claude/CLAUDE.md -> /home/user/claude-nomad/shared/CLAUDE.md`
+ *   `auto-move ~/.claude/CLAUDE.md -> backup/20260516-000000/CLAUDE.md`
+ */
+function formatLinkRow(e: LinkPreviewEvent): string {
+  return `${e.kind}  ${e.from} -> ${e.to}`;
+}
+
+/**
+ * Format a remap pull preview event as a Sessions section row. An `overwrite`
+ * event renders `overwrite  <dst> (from <src>)`; a `note` event (e.g. nothing
+ * to remap) renders its text verbatim. Either way the row is glyph-free.
+ *
+ * @param e The structured event emitted by `remapPull` under dry-run.
+ * @returns The rendered Sessions row text.
+ */
+function formatSessionRow(e: RemapPullPreviewEvent): string {
+  return e.kind === 'overwrite' ? `overwrite  ${e.dst} (from ${e.src})` : e.text;
+}
+
+/**
+ * Build the settings.json raw DoctorSection from a previewSettings result.
+ * Returns a section with items when there is a diff or notes to show;
+ * returns an empty-items section (skipped by renderTree) when both are absent.
+ */
+function buildSettingsSectionForPreview(result: { diff: string; notes: string[] }) {
+  const s = section('settings.json', true);
+  if (result.diff !== '') {
+    for (const line of result.diff.split('\n')) {
+      addItem(s, line);
+    }
   }
+  for (const note of result.notes) {
+    addItem(s, `note: ${note}`);
+  }
+  return s;
 }
 
 /**
  * Orchestrate the dry-run preview across all three sync modalities:
- * symlinks (via applySharedLinks dry-run), settings.json (via deepMerge +
- * diffJsonStrings; we do NOT call regenerateSettings dry-run because that
- * emits a "would write" intent line that duplicates the unified diff
- * produced here), and projects (via remapPull dry-run).
+ * symlinks (via applySharedLinks onPreview), settings.json (via deepMerge +
+ * diffJsonStrings), and projects (via remapPull onPreview). Renders a
+ * glyph-free doctor-style grouped tree:
  *
- * Returns `{ unmapped, collisions }` aggregated from remapPull. Collisions
- * is always 0 in this slice; a future slice wires path-encoding collision
- * detection through.
+ *   `would pull on host=<HOST> (dry-run; no mutation)`
+ *   (blank line)
+ *   Symlinks
+ *     create  <from> -> <to>
+ *     ...
+ *   settings.json        <- RAW section, omitted when no changes
+ *     --- ~/.claude/settings.json
+ *     +++ would write
+ *     ...
+ *   Sessions
+ *     overwrite  <dst> (from <src>)
+ *     ...
+ *   Summary
+ *     <summaryRow(verb, unmapped)>
+ *
+ * Returns `{ unmapped, collisions }` aggregated from remapPull.
+ * `collisions` is always 0 in this slice.
  *
  * Tolerant by design: missing `shared/settings.base.json` and malformed
- * `~/.claude/settings.json` both emit a single log line and continue rather
- * than throw. This supports `cmdDiff`'s offline-safe contract, where the
- * preview may run against a partially-scaffolded repo (e.g. right after a
- * fresh clone before `nomad init`).
+ * `~/.claude/settings.json` both produce a note in the settings section and
+ * continue rather than throw. This supports `cmdDiff`'s offline-safe contract.
  *
- * Settings diff output goes through `log()` so each line gets the info-prefixed
- * prefix, keeping output channels consistent across the three sections.
- *
+ * @param ts - backup timestamp (used by applySharedLinks/remapPull for log
+ *   phrasing; no backup dir is created under dryRun).
  * @param map - parsed path-map.json; callers fall back to `{ projects: {} }`
- *   when the file is absent so the offline/fresh-clone contract holds.
+ *   when the file is absent.
+ * @param verb - 'diff' for cmdDiff, 'pull' for pull --dry-run. Defaults to
+ *   'pull' so existing callers compile unchanged.
  */
-export function computePreview(ts: string, map: PathMap): { unmapped: number; collisions: number } {
-  log(`would pull on host=${HOST} (dry-run; no mutation)`);
+export function computePreview(
+  ts: string,
+  map: PathMap,
+  verb: PreviewVerb = 'pull',
+): { unmapped: number; collisions: number } {
+  console.log(`would pull on host=${HOST} (dry-run; no mutation)`);
+  console.log('');
 
-  // Symlinks: applySharedLinks emits its own would-create / would-auto-move
-  // lines. dryRun:true is mandatory; a real call here would mutate disk.
-  applySharedLinks(ts, map, { dryRun: true });
+  // Symlinks section.
+  const links = section('Symlinks');
+  applySharedLinks(ts, map, {
+    dryRun: true,
+    onPreview: (e) => addItem(links, formatLinkRow(e)),
+  });
 
-  previewSettings(
+  // settings.json section (raw, omitted when diff='' and no notes).
+  const settingsResult = previewSettings(
     join(REPO_HOME, 'shared', 'settings.base.json'),
     join(REPO_HOME, 'hosts', `${HOST}.json`),
     join(CLAUDE_HOME, 'settings.json'),
   );
+  const settingsSection = buildSettingsSectionForPreview(settingsResult);
 
-  // Projects: remapPull emits its own would-overwrite lines and returns the
-  // skipped count.
-  const remapResult = remapPull(ts, { dryRun: true });
+  // Sessions section.
+  const sessions = section('Sessions');
+  const remapResult = remapPull(ts, {
+    dryRun: true,
+    onPreview: (e) => addItem(sessions, formatSessionRow(e)),
+  });
+
+  // Summary section.
+  const summary = section('Summary');
+  addItem(summary, summaryRow(verb, remapResult.unmapped));
+
+  renderTree([links, settingsSection, sessions, summary]);
+
   return { unmapped: remapResult.unmapped, collisions: 0 };
 }

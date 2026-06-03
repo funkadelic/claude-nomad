@@ -9,11 +9,20 @@ import { failGlyph, red } from './color.ts';
 const FAIL_GLYPH_BARE = '✗';
 
 /**
- * Tree-style output builder shared by `cmdDoctor`, `cmdPush`, and `cmdPull`.
- * Callers build an ordered list of `DoctorSection`s, push pre-rendered
- * plain-text items into the relevant section, then call `renderTree`
- * (aliased `renderDoctor` for doctor's call site) to emit a Claude Code
- * `/doctor`-style tree (`Header` / `  ├ item` / `  └ last`) on stdout.
+ * Tree-style output builder shared by `cmdDoctor`, `cmdPush`, `cmdPull`, and
+ * `computePreview` (dry-run / diff surface). Callers build an ordered list of
+ * `DoctorSection`s, push pre-rendered plain-text items into the relevant
+ * section, then call `renderTree` (aliased `renderDoctor` for doctor's call
+ * site) to emit a Claude Code `/doctor`-style tree (`Header` / `  ├ item` /
+ * `  └ last`) on stdout.
+ *
+ * Two rendering modes controlled by the optional `raw` flag on `DoctorSection`:
+ *   - `raw: false` (default) renders the standard tree with `├`/`└` connectors
+ *     and a `✗ ` fail-glyph prefix on the header when any item contains the
+ *     fail glyph. Behavior is byte-identical to the prior implementation.
+ *   - `raw: true` renders each item as `  ${item}` (two-space indent, no
+ *     connector). The header prints verbatim with no fail-glyph prefix. Used
+ *     by the settings.json diff block in the dry-run/diff preview.
  *
  * Color and status glyphs (okGlyph/warnGlyph/failGlyph/infoGlyph) already
  * live inside the item text; this module never re-colors or re-tokenizes.
@@ -27,11 +36,18 @@ const FAIL_GLYPH_BARE = '✗';
 export type DoctorSection = {
   header: string;
   items: string[];
+  /** When `true`, items render as `  ${item}` with no tree connectors or glyph prefix. */
+  raw?: boolean;
 };
 
-/** Construct an empty section with the given header. */
-export function section(header: string): DoctorSection {
-  return { header, items: [] };
+/**
+ * Construct an empty section with the given header.
+ *
+ * @param header - section heading printed verbatim.
+ * @param raw - when `true`, items render indented with no tree connectors.
+ */
+export function section(header: string, raw = false): DoctorSection {
+  return { header, items: [], raw };
 }
 
 /** Append one rendered line to a section. */
@@ -48,12 +64,27 @@ function sectionFailed(s: DoctorSection): boolean {
   return s.items.some((line) => line.includes(failGlyph));
 }
 
+/** Emit raw items: two-space indent, no connectors, no glyph prefix. */
+function renderRawItems(items: string[]): void {
+  for (const item of items) {
+    console.log(item === '' ? '' : `  ${item}`);
+  }
+}
+
 /**
  * Render one section: a (possibly fail-glyph-prefixed) header followed by its
  * items as a tree. Empty-string items print as true blank lines; the `└` elbow
  * attaches to the last non-empty item so a trailing blank cannot strand it.
+ *
+ * When `s.raw` is `true`, the header prints verbatim (no fail-glyph prefix)
+ * and items render as `  ${item}` with no tree connectors.
  */
 function renderSection(s: DoctorSection): void {
+  if (s.raw) {
+    console.log(s.header);
+    renderRawItems(s.items);
+    return;
+  }
   const header = sectionFailed(s) ? `${red(FAIL_GLYPH_BARE)} ${s.header}` : s.header;
   console.log(header);
   const lastContent = s.items.reduce((acc, item, j) => (item === '' ? acc : j), -1);

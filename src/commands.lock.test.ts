@@ -20,7 +20,6 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   let repoUnderHome: string;
   let lockPath: string;
   let logSpy: LogSpy;
-  let errSpy: LogSpy;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -34,7 +33,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     mkdirSync(join(testHome, '.claude'), { recursive: true });
     vi.resetModules();
     // Suppress noisy fatal output during the test.
-    errSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+    vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */
     });
     vi.spyOn(process.stderr, 'write').mockImplementation((_chunk) => true);
@@ -50,11 +49,6 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
    */
   function logOutput(): string {
     return logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
-  }
-
-  /** Sibling of `logOutput` for `console.error` (warn/fail glyph output). */
-  function errOutput(): string {
-    return errSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
   }
 
   afterEach(() => {
@@ -367,10 +361,9 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull({ dryRun: true });
-    // `dry-run complete; no mutation` goes through log() (stdout); the
-    // summary is now an unmapped-style warn() (stderr), so check each
-    // stream independently.
-    expect(errOutput()).toContain('⚠︎ summary: 1 unmapped on pull (run nomad doctor to list)');
+    // computePreview renders the Summary row via renderTree -> console.log
+    // (logOutput). `dry-run complete; no mutation` also goes through log().
+    expect(logOutput()).toContain('1 unmapped on pull (run nomad doctor to list)');
     expect(logOutput()).toContain('dry-run complete; no mutation');
   });
 

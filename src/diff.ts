@@ -3,7 +3,6 @@ import { join } from 'node:path';
 
 import { BACKUP_BASE, REPO_HOME, type PathMap } from './config.ts';
 import { computePreview } from './preview.ts';
-import { emitSummary } from './summary.ts';
 import { die, fail, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
@@ -41,8 +40,9 @@ export function cmdDiff(): void {
     // path-map.json is absent from a partially-scaffolded repo).
     const mapPath = join(REPO_HOME, 'path-map.json');
     const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
-    const result = computePreview(ts, map);
-    emitSummary('diff', result.unmapped);
+    // computePreview renders the full tree including the Summary row; no
+    // separate emitSummary call needed (it would print a duplicate).
+    computePreview(ts, map, 'diff');
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);

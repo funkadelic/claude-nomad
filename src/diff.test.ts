@@ -203,7 +203,8 @@ describe('cmdDiff (offline, lockless preview)', () => {
   it('emits the unmapped-on-diff summary line when path-map has unmapped entries', async () => {
     // Two path-map entries that have no host mapping for `test-host`.
     // remapPull's dry-run branch (driven by computePreview) increments
-    // `unmapped` for each, so the summary line reports `2 unmapped on diff`.
+    // `unmapped` for each, so the Summary tree row reports `2 unmapped on diff`.
+    // The row renders via summaryRow -> renderTree -> console.log (logOutput).
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     mkdirSync(join(sharedDir, 'projects', 'logical-a'), { recursive: true });
     mkdirSync(join(sharedDir, 'projects', 'logical-b'), { recursive: true });
@@ -218,23 +219,39 @@ describe('cmdDiff (offline, lockless preview)', () => {
     );
     const { cmdDiff } = await import('./diff.ts');
     cmdDiff();
-    expect(errOutput()).toContain('⚠︎ summary: 2 unmapped on diff (run nomad doctor to list)');
+    expect(logOutput()).toContain('2 unmapped on diff (run nomad doctor to list)');
+    // Summary goes through renderTree (stdout / logOutput), not emitSummary (stderr).
+    expect(errOutput()).not.toContain('summary:');
   });
 
   it('emits the clean summary line on a fully-mapped repo', async () => {
     // Empty path-map -> remapPull's loop never increments unmapped.
+    // Clean summary renders via summaryRow inside renderTree (console.log).
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     const { cmdDiff } = await import('./diff.ts');
     cmdDiff();
-    expect(logOutput()).toMatch(/✓ +summary: clean/);
+    expect(logOutput()).toMatch(/summary: clean/);
+    // No duplicate in stderr.
+    expect(errOutput()).not.toContain('summary:');
   });
 
-  it('emits the summary line as the LAST log line of cmdDiff', async () => {
-    // The summary line is the terminator; nothing should follow it. Mirrors
-    // the "summary after pull complete" assertion on cmdPull but stronger:
-    // the diff verb has no `dry-run complete` log line, so the summary must
-    // be the literal last line in the output.
+  it('Summary row appears exactly ONCE in the output (no double-print)', async () => {
+    // computePreview renders Summary via renderTree; removing the old
+    // emitSummary call ensures the row is printed exactly once.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    const { cmdDiff } = await import('./diff.ts');
+    cmdDiff();
+    const summaryLines = logOutput()
+      .split('\n')
+      .filter((l) => l.includes('summary:'));
+    expect(summaryLines.length).toBe(1);
+  });
+
+  it('emits the summary line as the LAST non-blank log line of cmdDiff', async () => {
+    // The tree summary item is the terminator; the diff verb has no
+    // `dry-run complete` log line after it.
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     const { cmdDiff } = await import('./diff.ts');
@@ -245,5 +262,19 @@ describe('cmdDiff (offline, lockless preview)', () => {
     expect(lines.length).toBeGreaterThan(0);
     const lastLine = lines[lines.length - 1];
     expect(lastLine).toContain('summary:');
+  });
+
+  it('no ℹ︎ glyph appears in cmdDiff tree sections when repo is fully scaffolded', async () => {
+    // A fully-scaffolded sandbox: settings.base.json, shared/projects/ dir,
+    // and path-map.json so remapPull enters the project loop rather than the
+    // early-return log path. The tree sections (Symlinks, Sessions, Summary,
+    // settings.json) must contain no ℹ︎ glyph.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedDir, 'projects'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    const { cmdDiff } = await import('./diff.ts');
+    cmdDiff();
+    expect(logOutput()).not.toContain('ℹ');
+    expect(errOutput()).not.toContain('ℹ');
   });
 });
