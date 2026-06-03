@@ -39,6 +39,7 @@ function applyWetPull(ts: string, map: PathMap): void {
   let remapResult: ReturnType<typeof remapPull>;
   try {
     remapResult = remapPull(ts);
+    syncSp.succeed();
   } finally {
     syncSp.stop();
   }

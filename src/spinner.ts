@@ -50,19 +50,20 @@ export type SpinnerDeps = {
 /** Handle returned by `startSpinner`. */
 export type SpinnerHandle = {
   /**
-   * Stop the spinner. Clears animated line on TTY, writes done line, terminates
-   * worker. On the plain (non-TTY) path writes `"<label> done (elapsed)"`.
-   *
-   * @param doneLabel Optional override label for the done line (default: start label).
-   */
-  stop(doneLabel?: string): void;
-  /**
-   * Alias for `stop(doneLabel)`. Exists so callers can express success intent
-   * without a separate succeed/stop distinction.
+   * Finalize with success: clears the animated line and writes
+   * `"<glyph> <label> (elapsed)"` on TTY, or `"<label> done (elapsed)"` on the
+   * plain path, then terminates the worker. Idempotent.
    *
    * @param doneLabel Optional override label for the done line (default: start label).
    */
   succeed(doneLabel?: string): void;
+  /**
+   * Idempotent cleanup, safe to call unconditionally in a `finally`. If
+   * `succeed` already ran it is a no-op; otherwise (the wrapped call threw) it
+   * clears the animated line WITHOUT a success glyph and terminates the worker,
+   * so a failed step never shows a check mark. The original error propagates.
+   */
+  stop(): void;
 };
 
 /** Format elapsed milliseconds as `"1.2s"`. */
@@ -144,6 +145,7 @@ export function startSpinner(label: string, deps: SpinnerDeps = {}): SpinnerHand
 
   let worker: SpinnerWorker | null = null;
   let degraded = false;
+  let finalized = false;
 
   if (animate) {
     /* c8 ignore start */
@@ -162,18 +164,28 @@ export function startSpinner(label: string, deps: SpinnerDeps = {}): SpinnerHand
     writePlainStart(out, label);
   }
 
-  function stop(doneLabel?: string): void {
+  // Finalize once. `success` controls whether a done line / success glyph is
+  // emitted; a `stop()` after a thrown call passes `false` so no check mark
+  // appears. Either way the worker is paused and terminated exactly once.
+  function finalize(success: boolean, doneLabel?: string): void {
+    if (finalized) return;
+    finalized = true;
     const dl = doneLabel ?? label;
     const elapsed = now() - startMs;
     if (animate && !degraded && worker !== null) {
       worker.postMessage({ type: 'pause' });
-      writeAnimatedDone(out, dl, elapsed, ttyCheck());
+      // \r\x1b[K: carriage return + erase to end of line (clears the frame).
+      if (success) writeAnimatedDone(out, dl, elapsed, ttyCheck());
+      else out.write('\r\x1b[K');
       worker.terminate();
       worker = null;
-    } else {
+    } else if (success) {
       writePlainDone(out, dl, elapsed);
     }
   }
 
-  return { stop, succeed: stop };
+  return {
+    succeed: (doneLabel?: string) => finalize(true, doneLabel),
+    stop: () => finalize(false),
+  };
 }

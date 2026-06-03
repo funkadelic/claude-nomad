@@ -35,20 +35,29 @@ function capturedOutput(out: ReturnType<typeof makeOut>): string {
 }
 
 function makeWorkerFake(): {
-  worker: SpinnerWorker & { messages: unknown[]; terminateCalled: boolean; unrefCalled: boolean };
+  worker: SpinnerWorker & {
+    messages: unknown[];
+    terminateCalled: boolean;
+    terminateCount: number;
+    unrefCalled: boolean;
+  };
   factory: () => SpinnerWorker;
 } {
   const messages: unknown[] = [];
-  let terminateCalled = false;
+  let terminateCount = 0;
   let unrefCalled = false;
   const worker: SpinnerWorker & {
     messages: unknown[];
     terminateCalled: boolean;
+    terminateCount: number;
     unrefCalled: boolean;
   } = {
     messages,
     get terminateCalled() {
-      return terminateCalled;
+      return terminateCount > 0;
+    },
+    get terminateCount() {
+      return terminateCount;
     },
     get unrefCalled() {
       return unrefCalled;
@@ -57,13 +66,18 @@ function makeWorkerFake(): {
       messages.push(msg);
     },
     terminate() {
-      terminateCalled = true;
+      terminateCount += 1;
     },
     unref() {
       unrefCalled = true;
     },
   };
   return { worker, factory: () => worker };
+}
+
+/** Count occurrences of {type:'pause'} messages posted to a fake worker. */
+function pauseCount(messages: unknown[]): number {
+  return messages.filter((m) => (m as { type?: string })?.type === 'pause').length;
 }
 
 /** Fixed clock returning increasing times. */
@@ -124,28 +138,29 @@ describe('startSpinner (non-TTY plain path)', () => {
     expect(capturedOutput(deps.out)).toBe('Pushing...\n');
   });
 
-  it('writes "<label> done (Xs)" on stop, no control codes', () => {
+  it('writes "<label> done (Xs)" on succeed, no control codes', () => {
     const deps = makePlainDeps();
     const h = startSpinner('Rebasing onto origin', deps);
-    h.stop();
+    h.succeed();
     const out = capturedOutput(deps.out);
     expect(out).toContain('Rebasing onto origin done (1.2s)');
     expect(out.includes('\x1b')).toBe(false);
     expect(out.includes('\r')).toBe(false);
   });
 
-  it('uses doneLabel override when provided to stop()', () => {
-    const deps = makePlainDeps();
-    const h = startSpinner('Scanning', deps);
-    h.stop('Done scanning');
-    expect(capturedOutput(deps.out)).toContain('Done scanning done (1.2s)');
-  });
-
-  it('succeed() is an alias for stop()', () => {
+  it('stop() without succeed writes no done line (abort path)', () => {
     const deps = makePlainDeps();
     const h = startSpinner('Pushing', deps);
-    h.succeed();
-    expect(capturedOutput(deps.out)).toContain('Pushing done (');
+    h.stop();
+    // Only the start line was written; an aborted step shows no "done".
+    expect(capturedOutput(deps.out)).toBe('Pushing...\n');
+  });
+
+  it('uses doneLabel override when provided to succeed()', () => {
+    const deps = makePlainDeps();
+    const h = startSpinner('Scanning', deps);
+    h.succeed('Done scanning');
+    expect(capturedOutput(deps.out)).toContain('Done scanning done (1.2s)');
   });
 
   it('plain path when CI is set, even if isTTYCheck returns true', () => {
@@ -158,7 +173,7 @@ describe('startSpinner (non-TTY plain path)', () => {
     };
     const h = startSpinner('Pushing', deps);
     expect(capturedOutput(out)).toBe('Pushing...\n');
-    h.stop();
+    h.succeed();
     expect(capturedOutput(out)).toContain('Pushing done (');
     expect(capturedOutput(out).includes('\x1b')).toBe(false);
   });
@@ -210,7 +225,25 @@ describe('startSpinner (TTY animated path)', () => {
     expect(deps.fakeWorker.unrefCalled).toBe(true);
   });
 
-  it('posts {type:"pause"} and clears line on stop()', () => {
+  it('posts {type:"pause"} and clears line on succeed()', () => {
+    const deps = makeAnimatedDeps();
+    const h = startSpinner('Pushing', deps);
+    h.succeed();
+    expect(deps.fakeWorker.messages).toContainEqual({ type: 'pause' });
+    const out = capturedOutput(deps.out);
+    expect(out).toContain('\r');
+    expect(out.includes('\x1b[K')).toBe(true);
+  });
+
+  it('writes glyph + label + elapsed on succeed()', () => {
+    const deps = makeAnimatedDeps();
+    const h = startSpinner('Pushing', deps);
+    h.succeed();
+    const out = capturedOutput(deps.out);
+    expect(out).toMatch(/Pushing \(1\.2s\)/);
+  });
+
+  it('stop() without succeed clears the line but writes no glyph/elapsed (abort)', () => {
     const deps = makeAnimatedDeps();
     const h = startSpinner('Pushing', deps);
     h.stop();
@@ -218,21 +251,27 @@ describe('startSpinner (TTY animated path)', () => {
     const out = capturedOutput(deps.out);
     expect(out).toContain('\r');
     expect(out.includes('\x1b[K')).toBe(true);
-  });
-
-  it('writes glyph + label + elapsed on stop()', () => {
-    const deps = makeAnimatedDeps();
-    const h = startSpinner('Pushing', deps);
-    h.stop();
-    const out = capturedOutput(deps.out);
-    expect(out).toMatch(/Pushing \(1\.2s\)/);
-  });
-
-  it('calls worker.terminate() on stop()', () => {
-    const deps = makeAnimatedDeps();
-    const h = startSpinner('Pushing', deps);
-    h.stop();
+    // No success line: neither the label-with-elapsed nor a glyph.
+    expect(out).not.toMatch(/\(1\.2s\)/);
     expect(deps.fakeWorker.terminateCalled).toBe(true);
+  });
+
+  it('calls worker.terminate() on succeed()', () => {
+    const deps = makeAnimatedDeps();
+    const h = startSpinner('Pushing', deps);
+    h.succeed();
+    expect(deps.fakeWorker.terminateCalled).toBe(true);
+  });
+
+  it('succeed() then stop() is idempotent: one pause, one terminate, no extra output', () => {
+    const deps = makeAnimatedDeps();
+    const h = startSpinner('Pushing', deps);
+    h.succeed();
+    const afterSucceed = capturedOutput(deps.out);
+    h.stop();
+    expect(capturedOutput(deps.out)).toBe(afterSucceed);
+    expect(pauseCount(deps.fakeWorker.messages)).toBe(1);
+    expect(deps.fakeWorker.terminateCount).toBe(1);
   });
 
   it('writes no start line on animated path (worker owns animation)', () => {
@@ -282,14 +321,14 @@ describe('startSpinner (TTY animated path)', () => {
     const { factory } = makeWorkerFake();
     let callCount = 0;
     const h = startSpinner('Pushing', {
-      // Returns true on start (to go into animated path), false on stop
+      // Returns true on start (to go into animated path), false at finalize time
       isTTYCheck: () => callCount++ === 0,
       env: {},
       out,
       makeWorker: factory,
       now: makeClock(),
     });
-    h.stop();
+    h.succeed();
     const result = capturedOutput(out);
     expect(result).toContain('Pushing (1.2s)');
   });
@@ -319,13 +358,21 @@ describe('startSpinner (worker-spawn failure degraded path)', () => {
     expect(capturedOutput(deps.out)).toBe('Pushing...\n');
   });
 
-  it('writes plain done line on stop() after spawn failure', () => {
+  it('writes plain done line on succeed() after spawn failure', () => {
     const deps = makeFailingWorkerDeps();
     const h = startSpinner('Pushing', deps);
-    h.stop();
+    h.succeed();
     const out = capturedOutput(deps.out);
     expect(out).toContain('Pushing done (1.2s)');
     expect(out.includes('\x1b')).toBe(false);
+  });
+
+  it('stop() after spawn failure writes no done line (abort, plain)', () => {
+    const deps = makeFailingWorkerDeps();
+    const h = startSpinner('Pushing', deps);
+    h.stop();
+    // Degraded to plain start; an aborted step adds no "done" line.
+    expect(capturedOutput(deps.out)).toBe('Pushing...\n');
   });
 
   it('does not throw from startSpinner on spawn failure', () => {
@@ -357,7 +404,7 @@ describe('startSpinner (default dep fallbacks)', () => {
     process.env.CI = '1';
     try {
       const h = startSpinner('DefaultTest');
-      h.stop();
+      h.succeed();
     } finally {
       stderrAny.write = origWrite;
       if (origCI === undefined) {
@@ -384,7 +431,7 @@ describe('startSpinner elapsed formatting', () => {
       out,
       now: makeClock(1000, 100),
     });
-    h.stop();
+    h.succeed();
     expect(capturedOutput(out)).toContain('0.1s');
   });
 
@@ -396,7 +443,7 @@ describe('startSpinner elapsed formatting', () => {
       out,
       now: makeClock(1000, 5500),
     });
-    h.stop();
+    h.succeed();
     expect(capturedOutput(out)).toContain('5.5s');
   });
 });

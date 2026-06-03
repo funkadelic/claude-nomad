@@ -45,7 +45,9 @@ function guardGitlinks(): void {
 function runScan() {
   const sp = startSpinner('Scanning for secrets');
   try {
-    return scanPushVerdict();
+    const verdict = scanPushVerdict();
+    sp.succeed();
+    return verdict;
   } finally {
     sp.stop();
   }
@@ -59,8 +61,9 @@ function runPush() {
   const sp = startSpinner('Pushing');
   try {
     gitOrFatal(['push'], 'git push', REPO_HOME);
-  } finally {
     sp.succeed();
+  } finally {
+    sp.stop();
   }
 }
 
@@ -238,6 +241,7 @@ export async function cmdPush(
     const rebaseSp = startSpinner('Rebasing onto origin');
     try {
       rebaseBeforePush();
+      rebaseSp.succeed();
     } finally {
       rebaseSp.stop();
     }
