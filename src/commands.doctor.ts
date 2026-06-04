@@ -31,6 +31,7 @@ import { reportGitleaksVersionCheck } from './commands.doctor.gitleaks-version.t
 import { reportOptionalDeps } from './commands.doctor.checks.deps.ts';
 import { reportActionsDrift } from './commands.doctor.actions-drift.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
+import { buildVerdictSection } from './commands.doctor.verdict.ts';
 
 /**
  * Read-only health check for the nomad install on the current host. Each
@@ -51,7 +52,7 @@ import { reportVersionCheck } from './commands.doctor.version.ts';
  * keys absent from it. Also OFF by default (it needs the network).
  */
 export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean } = {}): void {
-  const host = section('Host');
+  const host = section('Environment');
   reportHostAndPaths(host);
   reportRepoState(host);
 
@@ -89,7 +90,9 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
 
   const nomadVersion = section('Nomad Version');
   reportVersionCheck(nomadVersion);
-  reportBackupsCheck(nomadVersion);
+
+  const housekeeping = section('Housekeeping');
+  reportBackupsCheck(housekeeping);
 
   const depVersions = section('Dependency Versions');
   reportNodeEngineCheck(depVersions);
@@ -106,7 +109,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   const schemaScan = section('Schema scan');
   if (opts.checkSchema === true) reportCheckSchema(schemaScan);
 
-  renderDoctor([
+  const body = [
     nomadVersion,
     depVersions,
     host,
@@ -116,7 +119,9 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
     pathMap,
     neverSync,
     repository,
+    housekeeping,
     sharedScan,
     schemaScan,
-  ]);
+  ];
+  renderDoctor([...body, buildVerdictSection(body)]);
 }

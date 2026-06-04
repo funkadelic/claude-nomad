@@ -83,17 +83,17 @@ describe('cmdDoctor version check (tag edge cases)', () => {
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('emits NO version line when npm version field is not strict semver (Test N)', async () => {
+  it('emits the skip line when npm version field is not strict semver (Test N)', async () => {
     // A non-MAJOR.MINOR.PATCH version string (e.g. `"beta"`) must be
-    // rejected by the STRICT_SEMVER gate in `fetchLatestVersion`, producing
-    // a silent skip.
+    // rejected by the STRICT_SEMVER gate in `fetchLatestVersion`, surfacing
+    // as the informational skip line.
     mockPackageJsonVersion('0.11.2');
     mockCurlReleases({ kind: 'json', version: 'beta' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toContain('claude-nomad:');
+    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });

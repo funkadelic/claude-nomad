@@ -101,36 +101,35 @@ describe('cmdDoctor version check', () => {
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('emits NO version line when curl is offline / throws (Test D)', async () => {
+  it('emits the skip line when curl is offline / throws (Test D)', async () => {
     mockPackageJsonVersion('0.11.2');
     mockCurlReleases({ kind: 'throw', code: 'ENOENT' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    // Silent-skip means zero `claude-nomad:` output. We assert on the substring
-    // rather than the full line so a future addition (e.g. dim-blue debug
-    // hint) would still be caught by this test.
-    expect(out).not.toContain('claude-nomad: 0.11.2');
+    // Fetch failure is no longer a silent skip: an informational line says
+    // WHY there is no verdict, so "no line" cannot be misread as "current".
+    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('emits NO version line when curl returns malformed JSON (Test F)', async () => {
+  it('emits the skip line when curl returns malformed JSON (Test F)', async () => {
     mockPackageJsonVersion('0.11.2');
     mockCurlReleases({ kind: 'garbage' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    // Malformed-response is one of the silent-skip paths; doctor must
-    // emit no version-related line and must not flip exitCode.
-    expect(out).not.toContain('claude-nomad: 0.11.2');
+    // Malformed response surfaces as the informational skip line and must
+    // not flip exitCode.
+    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('emits NO version line when npm registry responds with no version field (Test F2)', async () => {
+  it('emits the skip line when npm registry responds with no version field (Test F2)', async () => {
     // The npm registry could return a valid JSON body with no `version` field
     // (e.g. an unexpected shape). `fetchLatestVersion` must treat that as a
     // silent skip rather than emit PASS/WARN.
@@ -140,12 +139,12 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toContain('claude-nomad:');
+    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
 
-  it('emits NO version line when npm registry returns a pre-release version (Test F3)', async () => {
+  it('emits the skip line when npm registry returns a pre-release version (Test F3)', async () => {
     // A pre-release tag like `1.2.3-dev` fails STRICT_SEMVER; `fetchLatestVersion`
     // must gate on the regex and return null so the version line is silently
     // skipped rather than emitting a spurious drift warning.
@@ -155,7 +154,7 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).not.toContain('claude-nomad: 0.11.2');
+    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });

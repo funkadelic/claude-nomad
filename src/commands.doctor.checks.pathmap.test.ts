@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -51,6 +51,39 @@ describe('cmdDoctor path-encoding collision detection', () => {
     // is silent and that no NEW exitCode-setting condition fires from THIS
     // describe's setup.
     expect(joinedLog(env.logSpy)).not.toContain('path-encoding collision');
+  });
+
+  it('lists local project dirs missing from the path-map as nested rows under an unmapped header', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    // One local dir matches foo's encoding for this host; one is unmapped.
+    mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-foo'), { recursive: true });
+    mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-stray'), { recursive: true });
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('Unmapped local projects (not synced): 1');
+    expect(out).toContain('└ -srv-stray');
+    // The mapped dir does not appear in the unmapped list.
+    expect(out).not.toContain('├ -srv-foo');
+  });
+
+  it('omits the unmapped header entirely when every local project dir is mapped', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-foo'), { recursive: true });
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toContain('Unmapped local projects');
   });
 
   it('renders each mapped project as a nested connector row under a glyph-free header', async () => {

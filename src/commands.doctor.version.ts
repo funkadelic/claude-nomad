@@ -110,7 +110,15 @@ export function reportVersionCheck(section: DoctorSection): void {
   if (localPure === null) return;
 
   const latest = fetchLatestVersion();
-  if (latest === null) return;
+  if (latest === null) {
+    // A silent skip is indistinguishable from "current"; say why the line
+    // carries no verdict instead of vanishing. Informational only.
+    addItem(
+      section,
+      `${dim(infoGlyph)} claude-nomad: ${local} (version check skipped: registry unreachable)`,
+    );
+    return;
+  }
 
   const cmp = compareSemver(localPure, latest);
   if (cmp === 0) {

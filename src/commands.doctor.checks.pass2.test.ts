@@ -135,7 +135,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     expect(out).toContain(`${warnGlyph} claude home:`);
   });
 
-  it('does NOT decorate the Host section header with ✘ when only CLAUDE_HOME is absent', async () => {
+  it('does NOT decorate the Environment section header with ✘ when only CLAUDE_HOME is absent', async () => {
     // Regression guard: a missing ~/.claude/ is informational. reportRepoState
     // owns the empty-repo FAIL via process.exitCode; reportHostAndPaths must
     // use warnGlyph (not failGlyph) so sectionFailed stays calm and the Host
@@ -150,9 +150,9 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     const out = joinedLog(env.logSpy);
     // The claude-home line carries the WARN glyph...
     expect(out).toContain(`${warnGlyph} claude home:`);
-    // ...and the Host section header is NOT prefixed with the failed-section glyph.
-    expect(out).toMatch(/^Host$/m);
-    expect(out).not.toMatch(/✘ Host/);
+    // ...and the Environment section header is NOT prefixed with the failed-section glyph.
+    expect(out).toMatch(/^Environment$/m);
+    expect(out).not.toMatch(/✘ Environment/);
   });
 
   it('emits tree-style section headers and bullet prefixes (Claude /doctor style)', async () => {
@@ -162,7 +162,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     // Section headers print without prefix or indent.
-    expect(out).toMatch(/^Host$/m);
+    expect(out).toMatch(/^Environment$/m);
     expect(out).toMatch(/^Shared links$/m);
     expect(out).toMatch(/^Settings$/m);
     expect(out).toMatch(/^Path map$/m);

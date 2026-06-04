@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { okGlyph, warnGlyph } from './color.ts';
+import { failGlyph, okGlyph, warnGlyph } from './color.ts';
 import {
   type Env,
   joinedLog,
@@ -99,14 +99,20 @@ describe('cmdDoctor explicit PASS tokens', () => {
     expect(out).toContain(`${okGlyph} path-encoding: no collisions`);
   });
 
-  it('prepends PASS to the gitleaks version line when gitleaks is present', async () => {
+  it('emits exactly one gitleaks row (Dependency Versions) when gitleaks is present', async () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${okGlyph} gitleaks:`);
-    expect(out).toMatch(/v\d+\.\d+/);
+    // The Repository presence probe is silent on success; only the Dependency
+    // Versions drift check may print a gitleaks row (it stays silent when the
+    // probed version string is not strict semver, as with this mock's
+    // `v8.18.2`). Either way: never two rows, never a WARN/FAIL from the probe.
+    const body = out.split('Summary')[0];
+    expect(body.match(/gitleaks:/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(out).not.toContain(`${failGlyph} gitleaks`);
+    expect(out).not.toContain('gitleaks: not on PATH');
   });
 
   it('emits PASS gitlink scan when shared/ contains no nested .git entries', async () => {
