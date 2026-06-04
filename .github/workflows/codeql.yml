@@ -82,6 +82,12 @@ jobs:
           # to silence the v3 deprecation warning.
           build-mode: none
           queries: security-and-quality
+          # Keep the scanner out of the docs site, matching the docs-site
+          # exclusions in sonar-project.properties, eslint.config.js, and
+          # codecov.yml.
+          config: |
+            paths-ignore:
+              - docs-site
 
       - name: Perform CodeQL analysis
         if: steps.gate.outputs.skip != 'true'

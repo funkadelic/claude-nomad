@@ -14,6 +14,11 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'claude-nomad',
+      components: {
+        // Renders the header brand as the hero's ">_ nomad" wordmark; the
+        // config title above stays the plain string used in page metadata.
+        SiteTitle: './src/components/SiteTitle.astro',
+      },
       customCss: ['./src/styles/theme.css'],
       favicon: '/favicon.svg',
       lastUpdated: true,
@@ -48,6 +53,7 @@ export default defineConfig({
         { label: 'Usage', link: '/usage/' },
         { label: 'Commands', link: '/commands/' },
         { label: 'Recovery flows', link: '/recovery/' },
+        { label: 'FAQ', link: '/faq/' },
         { label: 'Contributing', link: '/contributing/' },
         { label: 'Security', link: '/security/' },
         { label: 'Changelog', link: '/changelog/' },
