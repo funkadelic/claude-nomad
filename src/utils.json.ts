@@ -67,7 +67,7 @@ export function sortKeysDeep(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeysDeep);
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
+    for (const key of Object.keys(value).sort((a, b) => a.localeCompare(b, 'en'))) {
       out[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
     }
     return out;
