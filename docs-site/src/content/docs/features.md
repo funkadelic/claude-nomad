@@ -86,6 +86,11 @@ any shared config would be lost. See the
 
 `nomad init` creates the private GitHub repo, scaffolds it, and disables GitHub Actions on it so
 no CI ever runs against your conversation history; `--snapshot` seeds it from the machine you are
-on. `nomad adopt` brings an existing project under sync, `nomad update` upgrades the CLI in
-place, and everything **claude-nomad** manages in `~/.claude/` is plain files and symlinks: stop
-using the tool and your setup keeps working as-is.
+on. `nomad adopt` brings an existing project under sync, and `nomad update` upgrades the CLI in
+place.
+
+Leaving is just as transparent: everything **claude-nomad** manages in `~/.claude/` is plain
+files and symlinks, with no proprietary format to export from. Transcripts and `settings.json`
+are real files that keep working untouched; the shared config (agents, skills, commands, hooks)
+is symlinked into the sync repo checkout, so to fully walk away, copy those links to real files
+(`cp -rL`) before deleting the checkout, then uninstall the CLI.
