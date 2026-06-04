@@ -22,6 +22,11 @@
   --sl-color-black: #0a0d0c;
 }
 
+/* Terminal-prompt brand glyph, the exact green of docs/hero.svg's brand-stroke. */
+.prompt-glyph {
+  color: #7cc34f;
+}
+
 /* Light mode: dark text on off-white, a deeper green for contrast. */
 :root[data-theme='light'] {
   --sl-color-accent-low: #c9e7b9;

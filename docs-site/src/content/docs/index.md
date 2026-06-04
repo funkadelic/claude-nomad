@@ -3,6 +3,7 @@ title: claude-nomad
 description: Sync your Claude Code config across machines.
 template: splash
 hero:
+  title: '<span class="prompt-glyph">&gt;_</span> nomad'
   tagline: Sync your Claude Code config across machines.
   actions:
     - text: Quickstart

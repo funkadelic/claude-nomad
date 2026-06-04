@@ -1,0 +1,30 @@
+---
+// Replaces Starlight's SiteTitle so the header brand matches the hero image:
+// a green ">_" prompt glyph followed by "nomad". Link target and base styles
+// mirror the stock component; only the inner markup differs.
+const { siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+  <span translate="no" aria-label="claude-nomad">
+    <span class="prompt-glyph" aria-hidden="true">&gt;_</span> nomad
+  </span>
+</a>
+
+<style>
+  @layer starlight.core {
+    .site-title {
+      align-items: center;
+      gap: var(--sl-nav-gap);
+      font-size: var(--sl-text-h4);
+      font-weight: 600;
+      color: var(--sl-color-text-accent);
+      text-decoration: none;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    span {
+      overflow: hidden;
+    }
+  }
+</style>
