@@ -7,7 +7,14 @@ import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
 import { addItem, renderTree, section } from './output-tree.ts';
 import { type RemapPullPreviewEvent, remapPull } from './remap.ts';
 import { summaryRow } from './summary.ts';
-import { deepMerge, readJson } from './utils.json.ts';
+import { deepMerge, readJson, sortKeysDeep } from './utils.json.ts';
+
+/**
+ * Note emitted when the only settings.json delta is key relocation: the raw
+ * stringifications differ but their canonical (sorted-key) forms are equal.
+ */
+const CANONICAL_ORDER_NOTE =
+  'settings.json will be rewritten in canonical key order; no value changes';
 
 /** Verb variants that appear in the Summary row of the preview tree. */
 type PreviewVerb = 'pull' | 'diff';
@@ -60,8 +67,16 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  *
  * When `diff` is `''` and `notes` is empty, the settings section is omitted
  * by the caller.
+ *
+ * Both sides are canonicalized via `sortKeysDeep` before diffing so a pure key
+ * relocation collapses to an empty diff instead of a removed-then-readded
+ * cascade; when that happens the `CANONICAL_ORDER_NOTE` is appended so the user
+ * still sees that settings.json will be rewritten in sorted-key order.
+ * Display-only: the write path (`regenerateSettings`) is untouched.
+ *
+ * Exported for direct unit testing without the full computePreview harness.
  */
-function previewSettings(
+export function previewSettings(
   basePath: string,
   hostPath: string,
   settingsPath: string,
@@ -80,10 +95,12 @@ function previewSettings(
   if (current === null && existsSync(settingsPath)) {
     return { diff: '', notes: [...notes, 'malformed; skipping diff'] };
   }
+  const rawEqual = JSON.stringify(current ?? {}, null, 2) === JSON.stringify(merged, null, 2);
   const diff = diffJsonStrings(
-    JSON.stringify(current ?? {}, null, 2),
-    JSON.stringify(merged, null, 2),
+    JSON.stringify(sortKeysDeep(current ?? {}), null, 2),
+    JSON.stringify(sortKeysDeep(merged), null, 2),
   );
+  if (diff === '' && !rawEqual) notes.push(CANONICAL_ORDER_NOTE);
   return { diff, notes };
 }
 
