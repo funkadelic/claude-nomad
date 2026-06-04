@@ -29,6 +29,7 @@ import { cmdInit } from './init.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
 import { parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
 import { parseAllowArgs } from './nomad.dispatch.allow.ts';
+import { parsePullArgs } from './nomad.dispatch.pull.ts';
 import { parsePushArgs } from './nomad.dispatch.push.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
@@ -66,18 +67,15 @@ try {
       console.log(pkg.version);
       break;
     case 'pull': {
-      // Sub-flag: `pull --dry-run` runs the full pull flow (lock + git pull)
-      // in preview mode without mutating ~/.claude/. Any other argv after
-      // `pull` is rejected so a typo does not silently degrade to a real pull.
-      const sub = process.argv[3];
-      if (sub === undefined) {
-        cmdPull();
-      } else if (sub === '--dry-run' && process.argv.length === 4) {
-        cmdPull({ dryRun: true });
-      } else {
-        console.error('usage: nomad pull [--dry-run]');
+      // parsePullArgs handles --dry-run and --force-remote; rejects duplicates,
+      // unknown tokens, and the --dry-run + --force-remote combination
+      // (a dry-run mutates nothing; recovery mutates).
+      const pullArgs = parsePullArgs(process.argv);
+      if (pullArgs === null) {
+        console.error('usage: nomad pull [--dry-run] [--force-remote]');
         process.exit(1);
       }
+      cmdPull({ dryRun: pullArgs.dryRun, forceRemote: pullArgs.forceRemote });
       break;
     }
     case 'push': {

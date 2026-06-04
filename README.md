@@ -77,6 +77,12 @@ All allow paths always re-scan after writing the allowlist; a surviving finding 
 push. See [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/) for the full
 decision tree.
 
+If a previous `nomad pull` left the sync repo stuck mid-rebase or mid-merge, run
+`nomad pull --force-remote` to auto-recover. It aborts the in-progress operation, parks stranded
+commits on a `nomad/stranded-<ts>` branch, and resets to `origin/main`, then re-pulls. It refuses if
+any stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json), so
+config you care about is never silently discarded.
+
 ## Requirements
 
 - Node.js 22.22.1 or newer (24 LTS recommended)

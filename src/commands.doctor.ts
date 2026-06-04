@@ -16,6 +16,7 @@ import {
   reportGitleaksProbe,
   reportGitlinks,
   reportRebaseClean,
+  reportRebaseState,
   reportRemote,
 } from './commands.doctor.checks.repository.ts';
 import { reportBackupsCheck } from './commands.doctor.checks.backups.ts';
@@ -83,6 +84,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   reportGitlinks(repository);
   reportRemote(repository);
   reportRebaseClean(repository);
+  reportRebaseState(repository);
   reportActionsDrift(repository);
 
   const nomadVersion = section('Nomad Version');

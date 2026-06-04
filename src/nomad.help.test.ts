@@ -18,4 +18,16 @@ describe('DEFAULT_HELP version header', () => {
   it('still includes doctor subcommand (prepend did not displace content)', () => {
     expect(DEFAULT_HELP).toContain('doctor');
   });
+
+  it('contains --force-remote row under pull', () => {
+    expect(DEFAULT_HELP).toContain('--force-remote');
+  });
+
+  it('--force-remote row describes wedge recovery', () => {
+    expect(DEFAULT_HELP).toMatch(/--force-remote.*[Rr]ecover/);
+  });
+
+  it('--force-remote row mentions nomad/stranded-<ts>', () => {
+    expect(DEFAULT_HELP).toContain('nomad/stranded-');
+  });
 });

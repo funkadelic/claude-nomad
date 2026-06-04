@@ -23,14 +23,15 @@ scaffold. See [Quickstart](/claude-nomad/quickstart/) for privacy details.
 
 ## `pull`
 
-`nomad pull [--dry-run]`
+`nomad pull [--dry-run] [--force-remote]`
 
 `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths,
 and pull opted-in per-project extras. Errors out if scaffold missing.
 
-| Flag        | Description                                                                                                                                                  |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--dry-run` | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), no writes.    |
+| Flag             | Description                                                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), no writes.                                                                            |
+| `--force-remote` | Recover from a wedged repo (stuck mid-rebase or mid-merge): abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull. Refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). Cannot combine with `--dry-run`. |
 
 ## `diff`
 
@@ -136,7 +137,9 @@ run `nomad pull` separately for that. See [Usage](/claude-nomad/usage/).
 Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗`
 sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness
 check, a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a hook command
-whose script under `~/.claude/` is missing on this host, plus a set of `⚠︎`-only checks: gitleaks
+whose script under `~/.claude/` is missing on this host, a wedged-repo check that fails (`✗`,
+exit 1) when the sync repo is stuck mid-rebase or mid-merge from a previous failed pull (the line
+carries a `nomad pull --force-remote` recovery hint), plus a set of `⚠︎`-only checks: gitleaks
 version drift; on a private GitHub repo, re-enabled Actions; optional-dependency presence (`gh`
 and the curl-or-wget HTTP fetcher); a backups-cache size/count nudge toward `nomad clean --backups`;
 an ESM/CommonJS hook-scope mismatch; and a Node-engine floor check.
