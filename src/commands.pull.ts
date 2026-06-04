@@ -14,6 +14,7 @@ import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
+import { detectWedge } from './commands.pull.wedge.ts';
 import { die, fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -52,6 +53,25 @@ function applyWetPull(ts: string, map: PathMap): void {
     buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
     summary,
   ]);
+}
+
+/**
+ * Die with an actionable message if `REPO_HOME` is wedged mid-rebase or
+ * mid-merge. Called inside the `cmdPull` try block so `NomadFatal` propagates
+ * to the existing catch and the lock is released in `finally`. No-op when the
+ * repo is clean.
+ *
+ * @param repo Absolute path to `REPO_HOME`.
+ */
+function dieIfWedged(repo: string): void {
+  const wedge = detectWedge(repo);
+  if (wedge === null) return;
+  const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
+  die(
+    `repo is ${state} from a previous failed pull; ` +
+      `run 'nomad pull --force-remote' to auto-recover, ` +
+      `or resolve manually (see FAQ: "Every pull fails with unmerged files")`,
+  );
 }
 
 /**
@@ -110,6 +130,10 @@ export function cmdPull(opts: { dryRun?: boolean } = {}): void {
     // pulls in the same wall-clock second would share `ts` and the second's
     // backupBeforeWrite calls (cpSync force:false) would silently no-op.
     const ts = freshBackupTs(BACKUP_BASE);
+    // Preflight: refuse early if REPO_HOME is stuck mid-rebase or mid-merge.
+    // dieIfWedged throws NomadFatal (via die()), caught below so the finally
+    // block releases the lock. No backup dir or git pull runs before this check.
+    dieIfWedged(REPO_HOME);
     if (!dryRun) {
       // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
       // (out of disk, permission denied), die() throws (NomadFatal) and the

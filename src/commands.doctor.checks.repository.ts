@@ -16,6 +16,7 @@ import {
 } from './color.ts';
 import { REPO_HOME } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
+import { detectWedge } from './commands.pull.wedge.ts';
 import { findGitlinks } from './push-checks.ts';
 import { gitStatusPorcelainZ } from './utils.ts';
 
@@ -108,4 +109,33 @@ export function reportRebaseClean(section: DoctorSection): void {
     // when the directory is absent) and reportRepoState ('empty' FAIL when
     // the scaffold is absent). Swallowing here avoids double-reporting.
   }
+}
+
+/**
+ * FAILs (sets `process.exitCode = 1`) when `REPO_HOME` is wedged mid-rebase
+ * or mid-merge. A wedged repo blocks every subsequent `nomad pull`; the FAIL
+ * line points at `nomad pull --force-remote` for auto-recovery. On a clean
+ * repo, emits nothing (no-news-good-news, matching `reportRebaseClean`).
+ *
+ * Wraps the `detectWedge` probe in try/catch and swallows errors so a
+ * missing or non-git `REPO_HOME` does not double-report alongside the
+ * `reportRepoState` FAIL that already surfaces that condition.
+ */
+export function reportRebaseState(section: DoctorSection): void {
+  try {
+    const wedge = detectWedge(REPO_HOME);
+    if (wedge !== null) {
+      const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
+      addItem(
+        section,
+        `${red(failGlyph)} repo is ${state}: run 'nomad pull --force-remote' to auto-recover`,
+      );
+      process.exitCode = 1;
+    }
+    /* c8 ignore start */
+  } catch {
+    // detectWedge failure on a missing or non-repo REPO_HOME is already
+    // surfaced by reportRepoState. Swallowing avoids double-reporting.
+  }
+  /* c8 ignore stop */
 }
