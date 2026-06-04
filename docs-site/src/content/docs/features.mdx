@@ -1,0 +1,99 @@
+---
+title: Features
+description: Everything claude-nomad does, grouped by what it means for you.
+---
+
+import pkg from '../../../../package.json';
+
+A tour of everything **claude-nomad** does, current as of <code>v{pkg.version}</code>. The first
+two sections
+are the reason the tool exists; the rest is the safety net and day-to-day tooling around them.
+
+## Sessions follow you across machines
+
+Claude Code stores every conversation in a folder named after the project's absolute file path.
+The same project usually lives at a different path on each machine (`/Users/you/project` on a
+Mac, `/home/you/project` on Linux), so a transcript copied verbatim is invisible to
+`claude --resume` on the other host.
+
+**claude-nomad** fixes this with path remapping: a small `path-map.json` file in your sync repo
+records where each project lives on each machine, and every pull rewrites the transcripts for the
+host you are on. Start a conversation on your desktop, `nomad push`, `nomad pull` on your laptop,
+and `claude --resume` picks it up as if it never left. See
+[How it works](/claude-nomad/how-it-works/) for the mechanics.
+
+## One shared setup, per-machine exceptions
+
+Your agents, skills, slash commands, rules, hooks, statusline, and global `CLAUDE.md` live once
+in the sync repo and are linked into `~/.claude/` on every host. Edit a skill anywhere and every
+machine gets it on the next pull.
+
+Settings are smarter than a straight copy: every pull regenerates `~/.claude/settings.json` by
+merging a shared base file with a per-host override file. One machine can run a different model,
+point at a different MCP URL, or set extra environment variables without forking the rest of your
+setup. Scalars and objects merge; arrays and `null` replace. Because the file is regenerated on
+every pull, host-specific edits belong in the override file, not in `~/.claude/settings.json`
+itself.
+
+## What syncs, and what never does
+
+Sync is allow-list driven: only paths **claude-nomad** knows about ever leave the machine.
+Credentials, OAuth state, MCP runtime state, shell history, and per-host local settings are on a
+hard never-sync list (the authoritative list is `NEVER_SYNC` in `src/config.ts`) and are blocked
+even when they appear nested inside a directory you opted into syncing. Projects not listed in
+`path-map.json` are left alone in both directions.
+
+## Opt-in per-project extras
+
+Beyond transcripts, a project can opt in to syncing named extras such as its `.planning/`
+directory or a project-level `CLAUDE.md`. Only whitelisted names are eligible, and projects that
+do not opt in are untouched. See [Usage](/claude-nomad/usage/) for how to opt a project in.
+
+## Every push is secret-scanned
+
+Conversation transcripts can contain pasted API keys, tokens, and passwords. Before anything is
+published, `nomad push` scans the exact files about to leave the machine with
+[gitleaks](https://github.com/gitleaks/gitleaks) and aborts on any hit. When something is found,
+an interactive menu lets you **redact** the secret in place, **allow** a false positive, **drop**
+the session from the push, or **skip** and decide later. There is also a standalone
+`nomad redact` for transcripts already committed, `nomad drop-session` to pull a session out of a
+pending push, and an overlay file for your own allowlist entries. See
+[Recovery flows](/claude-nomad/recovery/) and [Security](/claude-nomad/security/) for the full
+story.
+
+## Preview before you trust it
+
+`nomad diff` shows, offline and without locks, what a pull would change. `--dry-run` on both
+`pull` and `push` prints the full plan (symlink moves, settings diff, transcript overwrites)
+without writing anything. Nothing has to be taken on faith.
+
+## One command tells you what is wrong
+
+`nomad doctor` is a read-only health check covering the things that actually break: a sync repo
+stuck mid-rebase, hook references pointing at scripts missing on this host, version drift between
+your install and the latest release, gitleaks drift against CI, and a backup cache that needs
+pruning. Each failing line carries a fix hint, and extra flags go deeper:
+`--check-shared` secret-scans what a push would publish, `--check-schema` validates your settings
+against the live Claude Code schema. See [Commands](/claude-nomad/commands/) for every check.
+
+## Self-healing sync, with backups
+
+Every file a pull or push would overwrite is copied into a timestamped local backup first, and
+`nomad clean --backups` prunes old snapshots when they pile up. If a conflicted pull ever leaves
+the sync repo wedged mid-rebase, `nomad pull --force-remote` recovers automatically: it parks
+your stranded commits on a branch, resets to the shared state, and re-pulls, refusing entirely if
+any shared config would be lost. See the
+[FAQ](/claude-nomad/faq/) for the recovery walkthrough.
+
+## Easy on, easy off
+
+`nomad init` creates the private GitHub repo, scaffolds it, and disables GitHub Actions on it so
+no CI ever runs against your conversation history; `--snapshot` seeds it from the machine you are
+on. `nomad adopt` brings an existing project under sync, and `nomad update` upgrades the CLI in
+place.
+
+Leaving is just as transparent: everything **claude-nomad** manages in `~/.claude/` is plain
+files and symlinks, with no proprietary format to export from. Transcripts and `settings.json`
+are real files that keep working untouched; the shared config (agents, skills, commands, hooks)
+is symlinked into the sync repo checkout, so to fully walk away, copy those links to real files
+(`cp -rL`) before deleting the checkout, then uninstall the CLI.

@@ -21,6 +21,29 @@ survives different file paths and your secrets never ride along.
 
 **Full documentation: <https://funkadelic.github.io/claude-nomad/>**
 
+## Features
+
+- **Sessions follow you across machines.** Start a conversation on your desktop, run
+  `claude --resume` on your laptop, and it is there. claude-nomad rewrites the machine-specific file
+  paths Claude Code embeds in every transcript, so history survives projects living at different
+  paths on different hosts.
+- **One shared setup, per-machine exceptions.** Agents, skills, slash commands, rules, hooks, and
+  your `CLAUDE.md` live in one place and follow you everywhere. Settings merge a shared base with a
+  per-host override, so one machine can run a different model or MCP URL without forking the rest.
+- **Every push is secret-scanned.** Only an explicit allow-list of paths ever leaves the machine,
+  credentials never sync, and gitleaks scans the exact files about to be published. The push aborts
+  on any hit, with an interactive menu to redact, allow, or drop the finding.
+- **Preview before you trust it.** `nomad diff` shows offline what a pull would change, and
+  `--dry-run` on pull and push prints the plan without writing anything.
+- **One command tells you what is wrong.** `nomad doctor` is a read-only health check: wedged sync
+  repo, broken hook references, version drift, oversized backup cache, each with a fix hint.
+- **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
+  recovers a sync repo stuck mid-rebase while parking your stranded work on a branch, refusing
+  entirely if shared config is at risk.
+
+See the [full feature tour](https://funkadelic.github.io/claude-nomad/features/) for the rest:
+opt-in per-project sync, transcript redaction, backup pruning, and more.
+
 ## Quickstart
 
 **First host** (once, ever):
