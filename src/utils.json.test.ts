@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { deepMerge, encodePath } from './utils.json.ts';
+import { deepMerge, encodePath, sortKeysDeep } from './utils.json.ts';
 
 /**
  * JSON/string helper coverage, split off from utils.test.ts to mirror the
@@ -41,6 +41,47 @@ describe('deepMerge', () => {
     const target: Record<string, unknown> = { model: 'sonnet' };
     const merged = deepMerge(target, { model: null });
     expect(merged.model).toBeNull();
+  });
+});
+
+describe('sortKeysDeep', () => {
+  it('sorts plain object keys lexicographically', () => {
+    expect(Object.keys(sortKeysDeep({ b: 1, a: 2 }) as object)).toEqual(['a', 'b']);
+  });
+
+  it('sorts nested object keys recursively', () => {
+    const sorted = sortKeysDeep({ outer: { z: 1, a: 2 } }) as { outer: object };
+    expect(Object.keys(sorted.outer)).toEqual(['a', 'z']);
+  });
+
+  it('preserves array element order while sorting keys inside elements', () => {
+    const input = {
+      items: [
+        { b: 1, a: 2 },
+        { d: 3, c: 4 },
+      ],
+    };
+    const sorted = sortKeysDeep(input) as { items: object[] };
+    expect(Object.keys(sorted.items[0])).toEqual(['a', 'b']);
+    expect(Object.keys(sorted.items[1])).toEqual(['c', 'd']);
+    // Order preserved: first element still has the 'a'/'b' keys.
+    expect(sorted.items[0]).toEqual({ a: 2, b: 1 });
+  });
+
+  it('returns an array of scalars unchanged in original order', () => {
+    expect(sortKeysDeep([3, 1, 2])).toEqual([3, 1, 2]);
+  });
+
+  it('passes scalars and null through as-is', () => {
+    expect(sortKeysDeep('s')).toBe('s');
+    expect(sortKeysDeep(7)).toBe(7);
+    expect(sortKeysDeep(null)).toBeNull();
+  });
+
+  it('stringifies value-equal objects identically regardless of input key order', () => {
+    const a = sortKeysDeep({ model: 'opus', hooks: {}, statusLine: 1 });
+    const b = sortKeysDeep({ statusLine: 1, hooks: {}, model: 'opus' });
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });
 
