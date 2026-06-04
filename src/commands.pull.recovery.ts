@@ -191,7 +191,7 @@ export function freshStrandedBranch(repo: string): string {
  * @param mode   Current wedge state ('rebase' or 'merge').
  * @param repo   Absolute path to REPO_HOME.
  */
-export function recoverForceRemote(mode: WedgeMode, repo: string): void {
+export function recoverForceRemote(mode: NonNullable<WedgeMode>, repo: string): void {
   // Step 1: abort the in-progress operation (must match the verb to the mode).
   if (mode === 'merge') {
     gitOrFatal(['merge', '--abort'], 'git merge --abort', repo);
