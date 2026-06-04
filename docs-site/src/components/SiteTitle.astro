@@ -6,7 +6,7 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
 ---
 
 <a href={siteTitleHref} class="site-title sl-flex">
-  <span translate="no" aria-label="claude-nomad">
+  <span translate="no" aria-label="claude-nomad" class="wordmark">
     <span class="prompt-glyph" aria-hidden="true">&gt;_</span> nomad
   </span>
 </a>
@@ -25,6 +25,11 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
     }
     span {
       overflow: hidden;
+    }
+    /* Match the hero wordmark: off-white "nomad" (#f4f4f2 via --sl-color-white)
+       next to the green prompt glyph. */
+    .wordmark {
+      color: var(--sl-color-white);
     }
   }
 </style>
