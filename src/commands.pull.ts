@@ -15,6 +15,7 @@ import { remapPull } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
 import { detectWedge } from './commands.pull.wedge.ts';
+import { recoverForceRemote } from './commands.pull.recovery.ts';
 import { die, fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -56,16 +57,26 @@ function applyWetPull(ts: string, map: PathMap): void {
 }
 
 /**
- * Die with an actionable message if `REPO_HOME` is wedged mid-rebase or
- * mid-merge. Called inside the `cmdPull` try block so `NomadFatal` propagates
- * to the existing catch and the lock is released in `finally`. No-op when the
- * repo is clean.
+ * Handle the wedge state detected in `REPO_HOME`. If `forceRemote` is set,
+ * delegate to the recovery orchestrator (`recoverForceRemote`) which aborts
+ * the in-progress rebase/merge, runs a safety diff, parks stranded commits,
+ * and resets to `origin/main`. Without `forceRemote`, die with an actionable
+ * message pointing at `--force-remote` and the FAQ.
  *
- * @param repo Absolute path to `REPO_HOME`.
+ * Called inside the `cmdPull` try block so any `NomadFatal` thrown (by `die`
+ * or by `recoverForceRemote`) propagates to the existing catch and the lock
+ * is released in `finally`. No-op when the repo is clean (wedge is `null`).
+ *
+ * @param repo        Absolute path to `REPO_HOME`.
+ * @param forceRemote Whether `--force-remote` was passed.
  */
-function dieIfWedged(repo: string): void {
+function handleWedge(repo: string, forceRemote: boolean): void {
   const wedge = detectWedge(repo);
   if (wedge === null) return;
+  if (forceRemote) {
+    recoverForceRemote(wedge, repo);
+    return;
+  }
   const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
   die(
     `repo is ${state} from a previous failed pull; ` +
@@ -109,12 +120,21 @@ function dieIfWedged(repo: string): void {
  * `~/.cache/claude-nomad/backup/<ts>/` is intentionally NOT created (no
  * backups are written under dryRun and an empty dir would pollute the cache).
  *
+ * `opts.forceRemote` (default `false`): when `true` and the repo is wedged
+ * mid-rebase or mid-merge, routes to `recoverForceRemote` instead of dying.
+ * Recovery aborts the in-progress operation, safety-diffs stranded and dirty
+ * tracked changes against `origin/main`, refuses (listing paths) if any
+ * touch synced config, otherwise parks stranded commits on
+ * `nomad/stranded-<ts>` and resets hard to `origin/main`, then falls through
+ * to the normal pull. Cannot combine with `--dry-run`.
+ *
  * Any `NomadFatal` thrown along the way is caught here so the `finally` block
  * releases the lock before exit (a raw `process.exit()` would skip `finally`
  * and leak the lock, see `NomadFatal` JSDoc). Non-fatal errors rethrow.
  */
 export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}): void {
   const dryRun = opts.dryRun === true;
+  const forceRemote = opts.forceRemote === true;
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   // Fire the init-hint FATAL BEFORE acquireLock so an
   // unscaffolded repo never creates a lock file. Keyed off the same signal
@@ -130,10 +150,12 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
     // pulls in the same wall-clock second would share `ts` and the second's
     // backupBeforeWrite calls (cpSync force:false) would silently no-op.
     const ts = freshBackupTs(BACKUP_BASE);
-    // Preflight: refuse early if REPO_HOME is stuck mid-rebase or mid-merge.
-    // dieIfWedged throws NomadFatal (via die()), caught below so the finally
+    // Preflight: handle REPO_HOME stuck mid-rebase or mid-merge. With
+    // --force-remote, handleWedge delegates to recoverForceRemote (aborts,
+    // safety-diffs, parks stranded commits, resets to origin/main). Without
+    // it, handleWedge throws NomadFatal (via die()). Either way, the finally
     // block releases the lock. No backup dir or git pull runs before this check.
-    dieIfWedged(REPO_HOME);
+    handleWedge(REPO_HOME, forceRemote);
     if (!dryRun) {
       // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
       // (out of disk, permission denied), die() throws (NomadFatal) and the

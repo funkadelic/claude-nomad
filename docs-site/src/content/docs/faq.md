@@ -91,7 +91,15 @@ fatal: Exiting because of an unresolved conflict.
 
 This means a **previous** pull's rebase hit a conflict and was never resolved, leaving your sync
 repo (`~/claude-nomad/`) stuck mid-rebase. Every pull since then has died on the same wall.
-Recovery is manual but quick:
+
+**Automated recovery (recommended):** `nomad pull --force-remote` automates the sequence below.
+It aborts the in-progress rebase or merge, safety-diffs stranded commits and dirty tracked
+changes against `origin/main`, parks stranded commits on a `nomad/stranded-<ts>` branch, resets
+hard to `origin/main`, and re-pulls. If any stranded or dirty tracked changes touch synced config
+(shared/, hosts/, path-map.json), it refuses and lists the at-risk paths so nothing config-related
+is silently discarded. The parking branch stays in the repo as a recoverable ref.
+
+**Manual fallback** (use if `--force-remote` refuses due to synced-config changes):
 
 ```bash
 $ cd ~/claude-nomad

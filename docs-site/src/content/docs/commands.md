@@ -23,14 +23,15 @@ scaffold. See [Quickstart](/claude-nomad/quickstart/) for privacy details.
 
 ## `pull`
 
-`nomad pull [--dry-run]`
+`nomad pull [--dry-run] [--force-remote]`
 
 `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths,
 and pull opted-in per-project extras. Errors out if scaffold missing.
 
-| Flag        | Description                                                                                                                                                  |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--dry-run` | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), no writes.    |
+| Flag             | Description                                                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), no writes.                                                                            |
+| `--force-remote` | Recover from a wedged repo (stuck mid-rebase or mid-merge): abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull. Refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). Cannot combine with `--dry-run`. |
 
 ## `diff`
 
