@@ -71,29 +71,109 @@ export function classifyTouched(touched: string[]): { synced: string[]; toolSour
 }
 
 /**
- * Parse `git status --porcelain=v1 -z` output into tracked and untracked paths.
+ * Parse raw `git status --porcelain=v1 -z` output into tracked and untracked
+ * paths. Pure function (no I/O), split out for testability.
+ *
  * Each NUL-terminated record has a 2-char XY status followed by a space and
  * the path. `??` marks untracked files; everything else is tracked.
+ *
+ * Rename and copy records (XY beginning with `R` or `C`) span TWO
+ * NUL-separated fields: the new-name field followed by the old-name field
+ * (which carries no XY prefix). Both paths are classified as tracked, and the
+ * old-name field is consumed so it is not misread as its own record (which
+ * would corrupt the path and could let a renamed synced-config path evade the
+ * safety gate).
+ *
+ * @param raw Raw stdout from `git status --porcelain=v1 -z`.
+ * @returns Object with `tracked` and `untracked` path arrays.
+ */
+export function parsePorcelainZ(raw: string): { tracked: string[]; untracked: string[] } {
+  const tracked: string[] = [];
+  const untracked: string[] = [];
+  if (!raw) return { tracked, untracked };
+  const records = raw.split('\0');
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    if (record.length < 3) continue;
+    const xy = record.slice(0, 2);
+    const filePath = record.slice(3);
+    if (xy === '??') {
+      untracked.push(filePath);
+      continue;
+    }
+    tracked.push(filePath);
+    if (xy.startsWith('R') || xy.startsWith('C')) {
+      const src = records[i + 1];
+      if (src) {
+        tracked.push(src);
+        i++;
+      }
+    }
+  }
+  return { tracked, untracked };
+}
+
+/**
+ * Read and parse the repo's dirty working-tree state via porcelain `-z`.
  *
  * @param repo Absolute path to the repository root.
  * @returns Object with `tracked` and `untracked` path arrays.
  */
 function parseDirtyPaths(repo: string): { tracked: string[]; untracked: string[] } {
-  const raw = gitStatusPorcelainZ(repo);
-  const tracked: string[] = [];
-  const untracked: string[] = [];
-  if (!raw) return { tracked, untracked };
-  const records = raw.split('\0').filter((r) => r.length >= 3);
-  for (const record of records) {
-    const xy = record.slice(0, 2);
-    const filePath = record.slice(3);
-    if (xy === '??') {
-      untracked.push(filePath);
-    } else {
-      tracked.push(filePath);
+  return parsePorcelainZ(gitStatusPorcelainZ(repo));
+}
+
+/**
+ * Assemble the human-readable recovery summary line. Pure function (no I/O),
+ * split out so both the with-stranded-commits and empty-range arms are
+ * directly testable.
+ *
+ * @param branchName  Parking branch the stranded commits were moved to.
+ * @param strandedLog Raw `git log --oneline origin/main..<branch>` output.
+ * @param untracked   Untracked paths preserved across the reset.
+ * @returns The semicolon-joined summary string passed to `log`.
+ */
+export function buildRecoverySummary(
+  branchName: string,
+  strandedLog: string,
+  untracked: readonly string[],
+): string {
+  const strandedLines = strandedLog
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => `  ${l}`)
+    .join('\n');
+  const parts: string[] = [`parked stranded commits on ${branchName}`];
+  if (strandedLines) parts.push(`stranded:\n${strandedLines}`);
+  if (untracked.length > 0) parts.push(`untracked files preserved: ${untracked.join(', ')}`);
+  parts.push('continuing with normal pull');
+  return parts.join('; ');
+}
+
+/**
+ * Pick a parking-branch name that does not already exist. `nowTimestamp()` is
+ * second-resolution, so two `--force-remote` recoveries in the same wall-clock
+ * second would collide; probe `git rev-parse --verify` on each candidate ref
+ * and append a `-N` suffix until one is free. Preserves the fail-closed
+ * property (the branch is created before any reset) without the spurious abort.
+ *
+ * @param repo Absolute path to the repository root.
+ * @returns A `nomad/stranded-<ts>[-N]` ref name not currently in use.
+ */
+export function freshStrandedBranch(repo: string): string {
+  const base = `nomad/stranded-${nowTimestamp()}`;
+  const exists = (name: string): boolean => {
+    try {
+      gitCapture(['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], repo);
+      return true;
+    } catch {
+      return false;
     }
-  }
-  return { tracked, untracked };
+  };
+  if (!exists(base)) return base;
+  let n = 1;
+  while (exists(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
 }
 
 /**
@@ -133,9 +213,11 @@ export function recoverForceRemote(mode: WedgeMode, repo: string): void {
   /* c8 ignore stop */
 
   // Step 3: safety diff.
-  // Committed paths: two-dot diff gives the literal tree diff (conservative).
-  const committedRaw = gitCapture(['diff', '--name-only', 'origin/main', 'HEAD'], repo);
-  const committedTouched = committedRaw.split('\n').filter(Boolean);
+  // Committed paths: two-arg tree diff gives the literal tree diff
+  // (conservative). `-z` is required so non-ASCII paths are emitted raw
+  // (NUL-delimited, never quoted/escaped) and match the synced-config prefix.
+  const committedRaw = gitCapture(['diff', '--name-only', '-z', 'origin/main', 'HEAD'], repo);
+  const committedTouched = committedRaw.split('\0').filter(Boolean);
 
   // Dirty tracked paths: porcelain -z, exclude untracked entries.
   const { tracked: dirtyTracked, untracked } = parseDirtyPaths(repo);
@@ -153,7 +235,7 @@ export function recoverForceRemote(mode: WedgeMode, repo: string): void {
   }
 
   // Step 4: park stranded commits BEFORE reset (data-safety invariant).
-  const branchName = `nomad/stranded-${nowTimestamp()}`;
+  const branchName = freshStrandedBranch(repo);
   gitOrFatal(['branch', branchName, 'HEAD'], 'park stranded commits', repo);
 
   // Step 5: reset hard to origin/main.
@@ -161,16 +243,5 @@ export function recoverForceRemote(mode: WedgeMode, repo: string): void {
 
   // Log a summary for the user.
   const strandedLog = gitCapture(['log', '--oneline', `origin/main..${branchName}`], repo);
-  const strandedLines = strandedLog
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => `  ${l}`)
-    .join('\n');
-  const parts: string[] = [`parked stranded commits on ${branchName}`];
-  /* c8 ignore start */
-  if (strandedLines) parts.push(`stranded:\n${strandedLines}`);
-  /* c8 ignore stop */
-  if (untracked.length > 0) parts.push(`untracked files preserved: ${untracked.join(', ')}`);
-  parts.push('continuing with normal pull');
-  log(parts.join('; '));
+  log(buildRecoverySummary(branchName, strandedLog, untracked));
 }

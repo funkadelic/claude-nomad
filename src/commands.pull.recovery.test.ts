@@ -8,7 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 /** vi.spyOn(console, 'log') return type shorthand. */
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
-import { classifyTouched, gitCapture, recoverForceRemote } from './commands.pull.recovery.ts';
+import {
+  buildRecoverySummary,
+  classifyTouched,
+  freshStrandedBranch,
+  gitCapture,
+  parsePorcelainZ,
+  recoverForceRemote,
+} from './commands.pull.recovery.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -430,6 +437,228 @@ describe('recoverForceRemote - synced-config refusal (committed paths)', () => {
     // No parking branch should have been created.
     const branches = gitCapture(['branch', '--list', 'nomad/stranded-*'], local);
     expect(branches.trim()).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recoverForceRemote - non-ASCII synced-config path (committed diff -z)
+// ---------------------------------------------------------------------------
+
+describe('recoverForceRemote - non-ASCII synced-config refusal (committed paths)', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-recovery-unicode-'));
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('refuses when a stranded commit touches a non-ASCII synced-config path', async () => {
+    const origin = join(tmp, 'origin.git');
+    const local = join(tmp, 'local');
+    mkdirSync(origin, { recursive: true });
+
+    execFileSync('git', ['init', '-q', '-b', 'main', '--bare'], { cwd: origin });
+    const seed = join(tmp, 'seed');
+    mkdirSync(seed, { recursive: true });
+    initRepo(seed);
+    writeFileSync(join(seed, 'base.ts'), 'v1\n');
+    execFileSync('git', ['add', 'base.ts'], { cwd: seed });
+    execFileSync('git', ['commit', '-q', '-m', 'base'], { cwd: seed });
+    execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: seed });
+    execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: seed });
+
+    execFileSync('git', ['clone', '-q', origin, local]);
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: local });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: local });
+
+    // Advance origin to force a rebase conflict on base.ts.
+    const other = join(tmp, 'other');
+    execFileSync('git', ['clone', '-q', origin, other]);
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: other });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: other });
+    makeCommit(other, 'base.ts', 'remote-base\n', 'remote base change');
+    execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: other });
+
+    // Local stranded commit touches a synced-config file with a UTF-8 name.
+    // git diff --name-only (without -z) would emit this double-quoted with
+    // octal escapes, defeating the startsWith('shared/') gate.
+    const unicodeName = 'shared/rules/résumé.md';
+    mkdirSync(join(local, 'shared', 'rules'), { recursive: true });
+    writeFileSync(join(local, unicodeName), 'config\n');
+    execFileSync('git', ['add', '--', unicodeName], { cwd: local });
+    execFileSync('git', ['commit', '-q', '-m', 'unicode config commit'], { cwd: local });
+    makeCommit(local, 'base.ts', 'local-base\n', 'local base change');
+
+    execFileSync('git', ['fetch', '-q', 'origin'], { cwd: local });
+    try {
+      execFileSync('git', ['rebase', 'origin/main'], {
+        cwd: local,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch {
+      /* expected conflict */
+    }
+
+    const { NomadFatal } = await import('./utils.ts');
+    let thrown: unknown;
+    try {
+      recoverForceRemote('rebase', local);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(NomadFatal);
+    expect((thrown as Error).message).toContain(unicodeName);
+
+    // No parking branch created (refusal happened before park step).
+    const branches = gitCapture(['branch', '--list', 'nomad/stranded-*'], local);
+    expect(branches.trim()).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePorcelainZ - rename/copy record handling
+// ---------------------------------------------------------------------------
+
+describe('parsePorcelainZ - rename and copy records', () => {
+  /**
+   * Build a real `git status --porcelain=v1 -z` payload containing a staged
+   * rename, then assert both the new- and old-name fields are classified as
+   * tracked. A naive one-token-per-record parser misreads the bare old-name
+   * field (e.g. `red/secret.md` from `shared/secret.md`), which would let a
+   * renamed synced-config path evade the safety gate.
+   */
+  it('classifies both sides of a real staged rename as tracked', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'nomad-porcelain-rename-'));
+    try {
+      initRepo(tmp);
+      mkdirSync(join(tmp, 'shared'), { recursive: true });
+      writeFileSync(join(tmp, 'shared', 'secret.md'), 'config\n');
+      execFileSync('git', ['add', '.'], { cwd: tmp });
+      execFileSync('git', ['commit', '-q', '-m', 'base'], { cwd: tmp });
+
+      // Stage a rename: porcelain emits `R  tool.ts\0shared/secret.md\0`.
+      execFileSync('git', ['mv', join('shared', 'secret.md'), 'tool.ts'], { cwd: tmp });
+      const raw = execFileSync('git', ['status', '--porcelain=v1', '-z'], { cwd: tmp }).toString();
+
+      const { tracked, untracked } = parsePorcelainZ(raw);
+      // Both the destination and the original synced-config source are tracked,
+      // and the source is the intact path (not the corrupted `red/secret.md`).
+      expect(tracked).toContain('tool.ts');
+      expect(tracked).toContain('shared/secret.md');
+      expect(tracked).not.toContain('red/secret.md');
+      expect(untracked).toHaveLength(0);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('classifies the synced-config side of a rename so classifyTouched flags it', () => {
+    // R record: destination is tool-source, source is synced config.
+    const raw = 'R  tool.ts\0shared/rules/secret.md\0';
+    const { tracked } = parsePorcelainZ(raw);
+    const { synced } = classifyTouched(tracked);
+    expect(synced).toContain('shared/rules/secret.md');
+  });
+
+  it('handles copy (C) records the same way as renames', () => {
+    const raw = 'C  copy.ts\0hosts/myhost.json\0';
+    const { tracked } = parsePorcelainZ(raw);
+    expect(tracked).toEqual(expect.arrayContaining(['copy.ts', 'hosts/myhost.json']));
+  });
+
+  it('tolerates a rename record missing its source field', () => {
+    // Truncated payload: R record whose trailing source field is empty.
+    const raw = 'R  tool.ts\0';
+    const { tracked } = parsePorcelainZ(raw);
+    expect(tracked).toEqual(['tool.ts']);
+  });
+
+  it('partitions plain modified and untracked records', () => {
+    const raw = ' M src/a.ts\0?? scratch.txt\0';
+    const { tracked, untracked } = parsePorcelainZ(raw);
+    expect(tracked).toEqual(['src/a.ts']);
+    expect(untracked).toEqual(['scratch.txt']);
+  });
+
+  it('returns empty arrays for empty input', () => {
+    expect(parsePorcelainZ('')).toEqual({ tracked: [], untracked: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// freshStrandedBranch - collision-resistant parking-branch naming
+// ---------------------------------------------------------------------------
+
+describe('freshStrandedBranch', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-freshbranch-'));
+    initRepo(tmp);
+    makeCommit(tmp, 'base.ts', 'v1\n', 'base');
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('returns a nomad/stranded-<ts> name when none exists yet', () => {
+    const name = freshStrandedBranch(tmp);
+    expect(name).toMatch(/^nomad\/stranded-\d{8}-\d{6}$/);
+  });
+
+  it('appends a -N suffix when the timestamped name is already taken', () => {
+    // Pre-create the exact base name the next call will generate, forcing the
+    // collision path. Two recoveries in the same wall-clock second hit this.
+    const base = freshStrandedBranch(tmp);
+    execFileSync('git', ['branch', base, 'HEAD'], { cwd: tmp });
+
+    const next = freshStrandedBranch(tmp);
+    expect(next).toBe(`${base}-1`);
+
+    // A further collision bumps to -2.
+    execFileSync('git', ['branch', next, 'HEAD'], { cwd: tmp });
+    expect(freshStrandedBranch(tmp)).toBe(`${base}-2`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildRecoverySummary - both stranded-range arms and untracked handling
+// ---------------------------------------------------------------------------
+
+describe('buildRecoverySummary', () => {
+  it('includes a stranded section when the log range is non-empty', () => {
+    const summary = buildRecoverySummary(
+      'nomad/stranded-20260604-100000',
+      'abc1234 local commit\ndef5678 another',
+      [],
+    );
+    expect(summary).toContain('parked stranded commits on nomad/stranded-20260604-100000');
+    expect(summary).toContain('stranded:\n  abc1234 local commit\n  def5678 another');
+    expect(summary).toContain('continuing with normal pull');
+  });
+
+  it('omits the stranded section when the log range is empty', () => {
+    const summary = buildRecoverySummary('nomad/stranded-x', '', []);
+    expect(summary).toMatch(/parked stranded commits on nomad\/stranded-x/);
+    expect(summary).not.toMatch(/stranded:/);
+    expect(summary).toContain('continuing with normal pull');
+  });
+
+  it('appends preserved untracked files when present', () => {
+    const summary = buildRecoverySummary('nomad/stranded-y', '', ['a.txt', 'b.txt']);
+    expect(summary).toContain('untracked files preserved: a.txt, b.txt');
   });
 });
 
