@@ -4,6 +4,57 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { listDivergingFiles } from './extras-sync.diff.ts';
+
+describe('listDivergingFiles real-path output (git --name-status)', () => {
+  let localDir: string;
+  let repoDir: string;
+
+  beforeEach(() => {
+    localDir = mkdtempSync(join(tmpdir(), 'nomad-diff-local-'));
+    repoDir = mkdtempSync(join(tmpdir(), 'nomad-diff-repo-'));
+  });
+
+  afterEach(() => {
+    rmSync(localDir, { recursive: true, force: true });
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('returns the plain real path for a content-modified file (no /dev/null, no side suffix)', () => {
+    writeFileSync(join(localDir, 'mod.txt'), 'local contents\n');
+    writeFileSync(join(repoDir, 'mod.txt'), 'repo contents\n');
+    const result = listDivergingFiles(localDir, repoDir);
+    expect(result.some((line) => line.includes('mod.txt'))).toBe(true);
+    expect(result.some((line) => line.includes('/dev/null'))).toBe(false);
+    expect(result.some((line) => line.includes('(local only)'))).toBe(false);
+    expect(result.some((line) => line.includes('(repo only)'))).toBe(false);
+  });
+
+  it('labels a local-only file with (local only) and never emits /dev/null', () => {
+    writeFileSync(join(localDir, 'localonly.txt'), 'only local\n');
+    const result = listDivergingFiles(localDir, repoDir);
+    expect(
+      result.some((line) => line.includes('localonly.txt') && line.endsWith('(local only)')),
+    ).toBe(true);
+    expect(result.some((line) => line.includes('/dev/null'))).toBe(false);
+  });
+
+  it('labels a repo-only file with (repo only) and never emits /dev/null', () => {
+    writeFileSync(join(repoDir, 'repoonly.txt'), 'only repo\n');
+    const result = listDivergingFiles(localDir, repoDir);
+    expect(
+      result.some((line) => line.includes('repoonly.txt') && line.endsWith('(repo only)')),
+    ).toBe(true);
+    expect(result.some((line) => line.includes('/dev/null'))).toBe(false);
+  });
+
+  it('returns [] for identical directories', () => {
+    writeFileSync(join(localDir, 'same.txt'), 'identical\n');
+    writeFileSync(join(repoDir, 'same.txt'), 'identical\n');
+    expect(listDivergingFiles(localDir, repoDir)).toEqual([]);
+  });
+});
+
 describe('divergenceCheckExtras git-diff failure modes (listDivergingFiles)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
