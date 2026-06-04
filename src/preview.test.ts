@@ -124,8 +124,10 @@ describe('previewSettings canonicalization', () => {
   let basePath: string;
   let hostPath: string;
   let settingsPath: string;
+  let originalNoColor: string | undefined;
 
   beforeEach(() => {
+    originalNoColor = process.env.NO_COLOR;
     process.env.NO_COLOR = '1';
     testDir = mkdtempSync(join(tmpdir(), 'nomad-previewsettings-'));
     basePath = join(testDir, 'settings.base.json');
@@ -135,7 +137,8 @@ describe('previewSettings canonicalization', () => {
   });
 
   afterEach(() => {
-    delete process.env.NO_COLOR;
+    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
     rmSync(testDir, { recursive: true, force: true });
   });
 
