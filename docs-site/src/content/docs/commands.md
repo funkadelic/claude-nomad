@@ -137,7 +137,9 @@ run `nomad pull` separately for that. See [Usage](/claude-nomad/usage/).
 Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗`
 sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness
 check, a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a hook command
-whose script under `~/.claude/` is missing on this host, plus a set of `⚠︎`-only checks: gitleaks
+whose script under `~/.claude/` is missing on this host, a wedged-repo check that fails (`✗`,
+exit 1) when the sync repo is stuck mid-rebase or mid-merge from a previous failed pull (the line
+carries a `nomad pull --force-remote` recovery hint), plus a set of `⚠︎`-only checks: gitleaks
 version drift; on a private GitHub repo, re-enabled Actions; optional-dependency presence (`gh`
 and the curl-or-wget HTTP fetcher); a backups-cache size/count nudge toward `nomad clean --backups`;
 an ESM/CommonJS hook-scope mismatch; and a Node-engine floor check.
