@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.42.0](https://github.com/funkadelic/claude-nomad/compare/v0.41.0...v0.42.0) (2026-06-04)
+
+
+### Added
+
+* **pull:** add --force-remote recovery for wedged repos ([#241](https://github.com/funkadelic/claude-nomad/issues/241)) ([3425bc4](https://github.com/funkadelic/claude-nomad/commit/3425bc44e7a0c83335f5c170401619ff07ef0592))
+
+
+### Fixed
+
+* **preview:** drop /dev/null lines and key-order diff noise ([#237](https://github.com/funkadelic/claude-nomad/issues/237)) ([2a3271c](https://github.com/funkadelic/claude-nomad/commit/2a3271c637f467a07c64c4fd8c381dd042c10e9c))
+
+
+### Documentation
+
+* **faq:** add FAQ ([#240](https://github.com/funkadelic/claude-nomad/issues/240)) ([9150c97](https://github.com/funkadelic/claude-nomad/commit/9150c97a4f760dbb7ca3fd5a59657a3f34838aac))
+* **faq:** add FAQ page with push-then-pull order of operations ([#239](https://github.com/funkadelic/claude-nomad/issues/239)) ([a0198ac](https://github.com/funkadelic/claude-nomad/commit/a0198ac1b77b87bbeef4f2dd3d11678ed58cb376))
+
 ## [0.41.0](https://github.com/funkadelic/claude-nomad/compare/v0.40.0...v0.41.0) (2026-06-03)
 
 
