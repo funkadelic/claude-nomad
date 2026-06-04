@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, okGlyph } from './color.ts';
+import { failGlyph, infoGlyph, okGlyph } from './color.ts';
 import { type PathMap } from './config.ts';
 import {
   type Env,
@@ -51,6 +51,26 @@ describe('cmdDoctor path-encoding collision detection', () => {
     // is silent and that no NEW exitCode-setting condition fires from THIS
     // describe's setup.
     expect(joinedLog(env.logSpy)).not.toContain('path-encoding collision');
+  });
+
+  it('renders each mapped project as a nested connector row under a glyph-free header', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+        bar: { 'other-host': '/srv/bar' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Header drops the info glyph; child rows nest one tree level deeper with
+    // their own connectors and no glyph. The parent stream continues (the
+    // path-encoding row follows), so the child gutter carries the pipe.
+    expect(out).toContain('├ Mapped projects for test-host: 1');
+    expect(out).not.toContain(`${infoGlyph} mapped projects`);
+    expect(out).toContain('  │   └ foo -> /srv/foo');
+    expect(out).not.toContain('bar ->');
   });
 
   // Collisions cause silent data loss in remap, so doctor emits FAIL (not

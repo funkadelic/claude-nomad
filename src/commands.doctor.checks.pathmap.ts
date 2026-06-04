@@ -3,7 +3,12 @@ import { join } from 'node:path';
 
 import { blue, cyan, dim, failGlyph, green, infoGlyph, okGlyph, red } from './color.ts';
 import { HOST, NEVER_SYNC, REPO_HOME, type PathMap } from './config.ts';
-import { addItem, readJsonSafe, type DoctorSection } from './commands.doctor.format.ts';
+import {
+  addChildItem,
+  addItem,
+  readJsonSafe,
+  type DoctorSection,
+} from './commands.doctor.format.ts';
 import { encodePath } from './utils.json.ts';
 
 /**
@@ -13,15 +18,12 @@ import { encodePath } from './utils.json.ts';
  * `process.exitCode = 1`. Read-only: FAIL lines stay on stdout.
  */
 
-/** Emits the mapped-projects header for the current host and one indented child line per mapped project. */
+/** Emits the mapped-projects header for the current host and one nested child row per mapped project. */
 function reportMappedProjects(section: DoctorSection, map: PathMap): void {
   const mapped = Object.entries(map.projects).filter(([, hosts]) => hosts[HOST]);
-  addItem(
-    section,
-    `${dim(infoGlyph)} mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`,
-  );
+  addItem(section, `Mapped projects for ${cyan(HOST)}: ${dim(String(mapped.length))}`);
   for (const [name, hosts] of mapped) {
-    addItem(section, `      ${name} -> ${blue(hosts[HOST])}`);
+    addChildItem(section, `${name} -> ${blue(hosts[HOST])}`);
   }
 }
 

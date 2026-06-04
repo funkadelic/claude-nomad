@@ -2,7 +2,7 @@ import { failGlyph, red } from './color.ts';
 import { addItem, type DoctorSection } from './output-tree.ts';
 import { readJson } from './utils.json.ts';
 
-export { section, addItem, renderDoctor, type DoctorSection } from './output-tree.ts';
+export { section, addItem, addChildItem, renderDoctor, type DoctorSection } from './output-tree.ts';
 
 /**
  * Tolerant JSON reader for `cmdDoctor`. Doctor reads three JSON files

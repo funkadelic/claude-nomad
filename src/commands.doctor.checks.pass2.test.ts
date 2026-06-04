@@ -81,7 +81,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     // is conveyed via the gutter glyph), so they are intentionally absent
     // from this list.
     expect(out).not.toContain(`${okGlyph} host:`);
-    expect(out).not.toContain(`${okGlyph} mapped projects for`);
+    expect(out).not.toContain(`${okGlyph} Mapped projects for`);
     expect(out).not.toContain(`${okGlyph} never-sync items:`);
     expect(out).not.toContain(`${okGlyph} remote origin:`);
   });
