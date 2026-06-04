@@ -80,10 +80,42 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     // home/host-overrides lines DO carry status now (presence/parse-success
     // is conveyed via the gutter glyph), so they are intentionally absent
     // from this list.
-    expect(out).not.toContain(`${okGlyph} host:`);
+    expect(out).not.toContain(`${okGlyph} NOMAD_HOST:`);
     expect(out).not.toContain(`${okGlyph} Mapped projects for`);
     expect(out).not.toContain(`${okGlyph} never-sync items:`);
     expect(out).not.toContain(`${okGlyph} remote origin:`);
+  });
+
+  it('labels the host line NOMAD_HOST with no unset hint or NOMAD_REPO echo when only NOMAD_HOST is set', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('NOMAD_HOST: test-host');
+    expect(out).not.toContain('(env unset, using hostname)');
+    // NOMAD_REPO is not set in this sandbox, so no echo line appears.
+    expect(out).not.toContain('NOMAD_REPO:');
+  });
+
+  it('hints when NOMAD_HOST is unset and echoes NOMAD_REPO when the user has set it', async () => {
+    populateHealthy();
+    mockGitleaksPresent();
+    delete process.env.NOMAD_HOST;
+    const prevRepo = process.env.NOMAD_REPO;
+    const repoPath = join(env.testHome, 'claude-nomad');
+    process.env.NOMAD_REPO = repoPath;
+    // config.ts reads both env vars at module init; re-evaluate it.
+    vi.resetModules();
+    try {
+      const { cmdDoctor } = await import('./commands.doctor.ts');
+      cmdDoctor();
+      const out = joinedLog(env.logSpy);
+      expect(out).toContain('(env unset, using hostname)');
+      expect(out).toContain(`NOMAD_REPO: ${repoPath}`);
+    } finally {
+      restoreEnv('NOMAD_REPO', prevRepo);
+    }
   });
 
   it('annotates absent repo and claude-home paths with the WARN glyph (informational, no exitCode mutation)', async () => {
