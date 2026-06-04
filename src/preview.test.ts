@@ -119,6 +119,75 @@ describe('diffJsonStrings', () => {
   });
 });
 
+describe('previewSettings canonicalization', () => {
+  let testDir: string;
+  let basePath: string;
+  let hostPath: string;
+  let settingsPath: string;
+  let originalNoColor: string | undefined;
+
+  beforeEach(() => {
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    testDir = mkdtempSync(join(tmpdir(), 'nomad-previewsettings-'));
+    basePath = join(testDir, 'settings.base.json');
+    hostPath = join(testDir, 'host.json');
+    settingsPath = join(testDir, 'settings.json');
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('suppresses the diff and notes the rewrite when only key order differs', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'opus', hooks: {}, statusLine: 1 }, null, 2));
+    // current has the same values, different key order.
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ statusLine: 1, hooks: {}, model: 'opus' }, null, 2),
+    );
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result.diff).toBe('');
+    expect(result.notes).toContain(
+      'settings.json will be rewritten in canonical key order; no value changes',
+    );
+  });
+
+  it('still renders a sorted-key diff for a real value change', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'opus', hooks: {}, statusLine: 1 }, null, 2));
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ statusLine: 1, hooks: {}, model: 'sonnet' }, null, 2),
+    );
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result.diff).not.toBe('');
+    expect(result.diff).toContain('sonnet');
+    expect(result.diff).toContain('opus');
+    expect(result.notes).not.toContain(
+      'settings.json will be rewritten in canonical key order; no value changes',
+    );
+  });
+
+  it('emits no note when current and merged are byte-identical', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(settingsPath, JSON.stringify({ model: 'opus' }, null, 2));
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result.diff).toBe('');
+    expect(result.notes).not.toContain(
+      'settings.json will be rewritten in canonical key order; no value changes',
+    );
+  });
+});
+
 describe('computePreview orchestration', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;

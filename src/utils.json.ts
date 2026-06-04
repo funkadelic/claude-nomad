@@ -51,5 +51,29 @@ export function deepMerge<T extends Record<string, unknown>>(target: T, source: 
   return out as T;
 }
 
+/**
+ * Recursively canonicalize a parsed JSON value for stable, order-independent
+ * display diffing. Sorts plain-object keys lexicographically so two value-equal
+ * objects with different key insertion order stringify identically. Array
+ * element order is preserved (arrays are semantic and replace wholesale in
+ * `deepMerge`), but each element is recursed into so nested object keys inside
+ * array items are also sorted. Scalars and `null` pass through unchanged.
+ *
+ * Display-only: callers must NOT feed the output to the write path
+ * (`regenerateSettings`); it exists purely to canonicalize key order before a
+ * preview/diff so a pure key relocation does not render as removed-then-readded.
+ */
+export function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort((a, b) => a.localeCompare(b, 'en'))) {
+      out[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
 /** Claude Code encodes absolute project paths by replacing `/` with `-`. */
 export const encodePath = (absPath: string): string => absPath.replaceAll('/', '-');
