@@ -48,6 +48,7 @@ export default defineConfig({
         { label: 'Usage', link: '/usage/' },
         { label: 'Commands', link: '/commands/' },
         { label: 'Recovery flows', link: '/recovery/' },
+        { label: 'FAQ', link: '/faq/' },
         { label: 'Contributing', link: '/contributing/' },
         { label: 'Security', link: '/security/' },
         { label: 'Changelog', link: '/changelog/' },

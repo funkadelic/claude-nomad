@@ -96,5 +96,7 @@ version-staleness check and `nomad doctor --check-schema`. The CLI works without
 - [Commands reference](https://funkadelic.github.io/claude-nomad/commands/) -- all CLI flags
 - [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/) -- backups, drop-session,
   redact, gitleaks allowlist, non-interactive allow
+- [FAQ](https://funkadelic.github.io/claude-nomad/faq/) -- common questions, like the right
+  push/pull order when both sides have changes
 - [Contributing](https://funkadelic.github.io/claude-nomad/contributing/)
 - [Security policy](https://funkadelic.github.io/claude-nomad/security/)
