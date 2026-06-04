@@ -81,6 +81,35 @@ $ nomad clean --backups --keep 5        # or: keep only the 5 newest
 $ nomad clean --backups --dry-run       # preview either mode first
 ```
 
+## Every pull fails with "Pulling is not possible because you have unmerged files"
+
+```text
+error: Pulling is not possible because you have unmerged files.
+fatal: Exiting because of an unresolved conflict.
+✗  git pull --rebase failed
+```
+
+This means a **previous** pull's rebase hit a conflict and was never resolved, leaving your sync
+repo (`~/claude-nomad/`) stuck mid-rebase. Every pull since then has died on the same wall.
+Recovery is manual but quick:
+
+```bash
+$ cd ~/claude-nomad
+$ git rebase --abort        # or: git merge --abort, if it was a merge
+
+# Safety check before discarding local state: what would be thrown away?
+$ git log --oneline origin/main..HEAD     # stranded local commits, if any
+$ git diff origin/main --stat             # uncommitted divergence
+
+# If nothing above touches config you care about (shared/, hosts/, path-map.json):
+$ git reset --hard origin/main
+$ nomad pull
+```
+
+If the safety check shows local-only commits that DO touch synced config, cherry-pick or copy
+those changes out before the `reset --hard`; they exist nowhere else. When in doubt, the repo is
+plain git, so anything discarded is still in `git reflog` until git prunes it.
+
 ## Is nomad update different from npm update -g claude-nomad?
 
 No. `nomad update` runs the npm self-update for you; it is a convenience wrapper, nothing more.
