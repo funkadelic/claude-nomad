@@ -1,0 +1,11 @@
+---
+// Forces dark mode site-wide (the terminal-themed palette is dark-only by
+// design). Replaces Starlight's ThemeProvider, which reads localStorage and
+// the system preference; paired with an empty ThemeSelect override so the
+// light/dark toggle never renders.
+---
+
+{/* Inlined to avoid a flash of the wrong theme before hydration. */}
+<script is:inline>
+  document.documentElement.dataset.theme = 'dark';
+</script>

@@ -18,6 +18,9 @@ export default defineConfig({
         // Renders the header brand as the hero's ">_ nomad" wordmark; the
         // config title above stays the plain string used in page metadata.
         SiteTitle: './src/components/SiteTitle.astro',
+        // Dark mode only: force the theme and drop the light/dark picker.
+        ThemeProvider: './src/components/ThemeProvider.astro',
+        ThemeSelect: './src/components/ThemeSelect.astro',
       },
       customCss: ['./src/styles/theme.css'],
       favicon: '/favicon.svg',
