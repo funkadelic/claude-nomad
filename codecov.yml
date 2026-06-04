@@ -17,3 +17,9 @@ comment:
   layout: 'header, diff, flags, components, files, footer'
   behavior: default
   require_changes: false
+
+# The docs site never appears in the vitest lcov, so this is belt-and-
+# suspenders: keep docs-site/ out of coverage math even if a future report
+# picks it up, matching the other tools' docs-site exclusions.
+ignore:
+  - docs-site
