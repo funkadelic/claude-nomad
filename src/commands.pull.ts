@@ -113,7 +113,7 @@ function dieIfWedged(repo: string): void {
  * releases the lock before exit (a raw `process.exit()` would skip `finally`
  * and leak the lock, see `NomadFatal` JSDoc). Non-fatal errors rethrow.
  */
-export function cmdPull(opts: { dryRun?: boolean } = {}): void {
+export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}): void {
   const dryRun = opts.dryRun === true;
   if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
   // Fire the init-hint FATAL BEFORE acquireLock so an
