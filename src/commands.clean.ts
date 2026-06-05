@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { BACKUP_BASE } from './config.ts';
-import { fail, log } from './utils.ts';
+import { fail, item, log } from './utils.ts';
 
 /**
  * Shape of a `<ts>` backup directory name as produced by `freshBackupTs`:
@@ -134,7 +134,7 @@ function resolveTargets(
  * Retention is mutually exclusive: `olderThan` (age) and `keep` (count) may
  * not both be set, and an unparseable `olderThan` is rejected; either error
  * prints a FATAL line and exits 1. With neither flag the 14-day age default
- * applies. On `dryRun` the target names are logged and nothing is deleted; on
+ * applies. On `dryRun` the target names are listed and nothing is deleted; on
  * a live run each target passes through the `safeDelete` D-05 guard and a
  * `removed N backup(s)` summary is logged.
  *
@@ -167,7 +167,7 @@ export function cmdClean(
   const targets = resolveTargets(dirs, olderThanMs, keep);
 
   if (dryRun) {
-    for (const name of targets) log(`would remove ${name}`);
+    for (const name of targets) item(name);
     log(`dry-run: ${targets.length} backup(s) would be removed`);
     return;
   }

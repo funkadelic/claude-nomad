@@ -39,6 +39,15 @@ export const fail = (msg: string): void => {
 };
 
 /**
+ * Print a dim, two-space-indented line to stdout with no leading glyph. The
+ * glyph-less companion to `log()`, used to enumerate items (for example the
+ * dry-run prune targets in `cmdClean`) so the enumerated rows read as a list
+ * sitting under a single glyph-prefixed summary line rather than each carrying
+ * a redundant `ℹ︎`.
+ */
+export const item = (msg: string): void => console.log(dim(`  ${msg}`));
+
+/**
  * Sentinel error class for fatal nomad failures. Thrown by `die()` and caught
  * by top-level command wrappers (cmdPull, cmdPush, nomad.ts dispatcher) so a
  * `finally` block can release locks before the process exits. Avoids the
