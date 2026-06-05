@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.44.0](https://github.com/funkadelic/claude-nomad/compare/v0.43.0...v0.44.0) (2026-06-05)
+
+
+### Added
+
+* **eject:** add nomad eject offboarding command ([#250](https://github.com/funkadelic/claude-nomad/issues/250)) ([9b3c69f](https://github.com/funkadelic/claude-nomad/commit/9b3c69fb47dad561dee4beaed6ed55c172a0115a))
+
+
+### Fixed
+
+* **docs-site:** restore aside and GFM table rendering on .mdx pages ([#247](https://github.com/funkadelic/claude-nomad/issues/247)) ([5ccbb27](https://github.com/funkadelic/claude-nomad/commit/5ccbb27e294ccfccd46f842250a88673692894a3))
+
+
+### Testing
+
+* **pull:** freeze clock in freshStrandedBranch collision test ([#249](https://github.com/funkadelic/claude-nomad/issues/249)) ([e32b444](https://github.com/funkadelic/claude-nomad/commit/e32b444ceae38868d730fb45241cde6d04faf803))
+
 ## [0.43.0](https://github.com/funkadelic/claude-nomad/compare/v0.42.0...v0.43.0) (2026-06-05)
 
 

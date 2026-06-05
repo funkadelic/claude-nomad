@@ -1,6 +1,6 @@
 {
   "name": "claude-nomad",
-  "version": "0.43.0",
+  "version": "0.44.0",
   "type": "module",
   "description": "Sync Claude Code config (~/.claude/) across machines via a private Git repo, with path remapping and per-host settings overrides.",
   "keywords": [
