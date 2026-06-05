@@ -41,6 +41,8 @@ survives different file paths and your secrets never ride along.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
   recovers a sync repo stuck mid-rebase while parking your stranded work on a branch, refusing
   entirely if shared config is at risk.
+- **Easy off.** `nomad eject` replaces every managed `~/.claude/` symlink with a real copy in one
+  step, so your setup keeps working after you delete the sync checkout and uninstall the CLI.
 
 See the [full feature tour](https://funkadelic.github.io/claude-nomad/features/) for the rest:
 opt-in per-project sync, transcript redaction, backup pruning, and more.

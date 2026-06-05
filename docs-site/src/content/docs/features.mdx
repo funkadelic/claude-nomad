@@ -95,6 +95,8 @@ place.
 
 Leaving is just as transparent: everything **claude-nomad** manages in `~/.claude/` is plain
 files and symlinks, with no proprietary format to export from. Transcripts and `settings.json`
-are real files that keep working untouched; the shared config (agents, skills, commands, hooks)
-is symlinked into the sync repo checkout, so to fully walk away, copy those links to real files
-(`cp -rL`) before deleting the checkout, then uninstall the CLI.
+are real files that keep working untouched. To walk away, run `nomad eject`: it replaces every
+managed symlink with a real dereferenced copy in one step, so your setup keeps working after you
+delete the `~/claude-nomad/` checkout and uninstall the CLI. After ejecting, it prints a checklist
+of the remaining manual steps (uninstall, remove the env vars, optionally delete the repo and
+backup cache). See [Commands](/claude-nomad/commands/) for the full flag reference.
