@@ -31,7 +31,10 @@ function expandHome(token: string): string {
 
 /** Strip leading/trailing shell quoting and control punctuation from a token. */
 function stripShellPunct(token: string): string {
-  return token.replace(/^['"]+/, '').replace(/['"`;)|&>]+$/, '');
+  const head = token.replace(/^['"]+/, '');
+  let end = head.length;
+  while (end > 0 && '\'"`;)|&>'.includes(head[end - 1])) end--;
+  return head.slice(0, end);
 }
 
 /**
