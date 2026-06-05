@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.43.0](https://github.com/funkadelic/claude-nomad/compare/v0.42.0...v0.43.0) (2026-06-05)
+
+
+### Added
+
+* **doctor:** summary verdict and output UX improvements ([#244](https://github.com/funkadelic/claude-nomad/issues/244)) ([46a8339](https://github.com/funkadelic/claude-nomad/commit/46a83394d1ff503db8dccb5a8b0ad59190da44cb))
+* **doctor:** warn on hooks that break under symlinked dirs without --preserve-symlinks-main ([#246](https://github.com/funkadelic/claude-nomad/issues/246)) ([d9a4d20](https://github.com/funkadelic/claude-nomad/commit/d9a4d20b034920fe6fa4b1432d81fef361e6fbd2))
+
+
+### Documentation
+
+* add features overview to README and feature tour page to docs site ([#242](https://github.com/funkadelic/claude-nomad/issues/242)) ([e45d63f](https://github.com/funkadelic/claude-nomad/commit/e45d63f9d78aef5fa9a7a2b243584e96e1e17aaf))
+* **faq:** add entry for symlink-broken relative requires in hooks ([#245](https://github.com/funkadelic/claude-nomad/issues/245)) ([fa994fb](https://github.com/funkadelic/claude-nomad/commit/fa994fb9ded981f419623dba3f50cc0cd812f986))
+
 ## [0.42.0](https://github.com/funkadelic/claude-nomad/compare/v0.41.0...v0.42.0) (2026-06-04)
 
 
