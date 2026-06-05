@@ -156,7 +156,8 @@ try {
       break;
     }
     case 'eject': {
-      // parseEjectArgs accepts only --dry-run; rejects duplicates and unknown tokens.
+      // parseEjectArgs accepts only --dry-run; rejects duplicates, unknown
+      // tokens, and extra positional arguments.
       const ejectArgs = parseEjectArgs(process.argv);
       if (ejectArgs === null) {
         console.error('usage: nomad eject [--dry-run]');
