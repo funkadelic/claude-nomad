@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 /**
@@ -108,8 +108,15 @@ export function relativeRequireTargetsBroken(scriptPath: string): boolean {
   // Defensive: realPath resolved above but the file could vanish (race) or be
   // unreadable (permissions). Degrade to skip to preserve the WARN-only contract.
   try {
-    const full = readFileSync(realPath, 'utf8');
-    raw = full.slice(0, 65536); // 64 KB bound
+    // Fixed-size read so a huge hook file never loads fully into memory.
+    const fd = openSync(realPath, 'r');
+    try {
+      const buf = Buffer.alloc(65536); // 64 KB bound
+      const bytesRead = readSync(fd, buf, 0, 65536, 0);
+      raw = buf.toString('utf8', 0, bytesRead);
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return false;
   }
