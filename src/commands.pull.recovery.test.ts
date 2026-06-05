@@ -610,6 +610,7 @@ describe('freshStrandedBranch', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -619,6 +620,11 @@ describe('freshStrandedBranch', () => {
   });
 
   it('appends a -N suffix when the timestamped name is already taken', () => {
+    // Freeze the clock: every call below must derive the same second-resolution
+    // base, or a tick between calls dodges the collision this test forces.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 4, 12, 0, 0));
+
     // Pre-create the exact base name the next call will generate, forcing the
     // collision path. Two recoveries in the same wall-clock second hit this.
     const base = freshStrandedBranch(tmp);
