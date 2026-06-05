@@ -1,8 +1,6 @@
 // Source: starlight.astro.build/manual-setup + docs.astro.build/en/guides/deploy/github
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import mdx from '@astrojs/mdx';
-import remarkGfm from 'remark-gfm';
 import starlightLinksValidator from 'starlight-links-validator';
 
 // Absolute URL of the social-card image (served from public/og.png under base).
@@ -11,6 +9,10 @@ const OG_IMAGE = 'https://funkadelic.github.io/claude-nomad/og.png';
 export default defineConfig({
   site: 'https://funkadelic.github.io',
   base: '/claude-nomad', // NO trailing slash
+  // Astro 6 leaves markdown.gfm undefined (the .md processor defaults it on
+  // internally), but @astrojs/mdx only adds remark-gfm when the value is
+  // truthy, so .mdx pages lose GFM tables without this explicit opt-in.
+  markdown: { gfm: true },
   integrations: [
     starlight({
       title: 'claude-nomad',
@@ -63,9 +65,9 @@ export default defineConfig({
         { label: 'Changelog', link: '/changelog/' },
       ],
     }),
-    // Starlight's markdown config does not extend GFM (tables, etc.) to .mdx
-    // files, so register MDX explicitly with remark-gfm. Must come after
-    // starlight() so its injected expressive-code runs before MDX.
-    mdx({ remarkPlugins: [remarkGfm] }),
+    // Do NOT add @astrojs/mdx here: Starlight bundles its own MDX integration
+    // with its remark pipeline (asides, GFM). A second mdx() instance takes
+    // over .mdx rendering without that pipeline, so :::note directives render
+    // as literal text.
   ],
 });
