@@ -110,7 +110,9 @@ describe('cmdDoctor version check', () => {
     const out = joinedLog(env.logSpy);
     // Fetch failure is no longer a silent skip: an informational line says
     // WHY there is no verdict, so "no line" cannot be misread as "current".
-    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
+    expect(out).toContain(
+      'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
+    );
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -124,7 +126,9 @@ describe('cmdDoctor version check', () => {
     const out = joinedLog(env.logSpy);
     // Malformed response surfaces as the informational skip line and must
     // not flip exitCode.
-    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
+    expect(out).toContain(
+      'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
+    );
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -139,7 +143,9 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
+    expect(out).toContain(
+      'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
+    );
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });
@@ -154,7 +160,9 @@ describe('cmdDoctor version check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
+    expect(out).toContain(
+      'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
+    );
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });

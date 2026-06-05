@@ -138,7 +138,8 @@ Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail
 sets `process.exitCode = 1` (`⚠︎` does not). Output ends with a **Summary** section that repeats
 every warning and failure and closes with a one-line verdict (`✓ healthy`, or warning/failure
 counts), so the last line always answers "am I healthy?". Includes a release-version staleness
-check (an info line says when the registry was unreachable, so a skipped check is not mistaken
+check (an info line says when the latest version could not be determined, so a skipped check is
+not mistaken
 for "current"), a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a
 hook command whose script under `~/.claude/` is missing on this host, a wedged-repo check that
 fails (`✗`, exit 1) when the sync repo is stuck mid-rebase or mid-merge from a previous failed

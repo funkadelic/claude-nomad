@@ -47,9 +47,10 @@ PATH. It does NOT pull your sync data; run `nomad pull` separately when you want
 changes to this host.
 
 `nomad doctor` reports when your local install is behind the latest npm release:
-`warning claude-nomad: <local> -> <latest> (run nomad update)`. When the npm registry cannot be
-reached, the line says `version check skipped: registry unreachable` instead of disappearing, so
-a skipped check is never mistaken for "current".
+`warning claude-nomad: <local> -> <latest> (run nomad update)`. When the latest version cannot
+be determined (offline, or an unexpected registry response), the line says
+`version check skipped: could not determine latest version` instead of disappearing, so a
+skipped check is never mistaken for "current".
 
 ## Cross-OS resume
 

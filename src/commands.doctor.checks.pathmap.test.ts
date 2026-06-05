@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -70,6 +70,30 @@ describe('cmdDoctor path-encoding collision detection', () => {
     expect(out).toContain('└ -srv-stray');
     // The mapped dir does not appear in the unmapped list.
     expect(out).not.toContain('├ -srv-foo');
+  });
+
+  it('skips the unmapped listing without throwing when the projects dir is unreadable', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const projectsDir = join(env.testHome, '.claude', 'projects');
+    mkdirSync(join(projectsDir, '-srv-stray'), { recursive: true });
+    // Revoke read permission so readdirSync throws (EACCES); the tolerant
+    // doctor must skip the listing, not crash mid-output.
+    chmodSync(projectsDir, 0o000);
+    try {
+      const { cmdDoctor } = await import('./commands.doctor.ts');
+      cmdDoctor();
+      const out = joinedLog(env.logSpy);
+      expect(out).not.toContain('Unmapped local projects');
+      // Output continued past the listing: the collision scan still ran.
+      expect(out).toContain('path-encoding');
+    } finally {
+      chmodSync(projectsDir, 0o755);
+    }
   });
 
   it('omits the unmapped header entirely when every local project dir is mapped', async () => {

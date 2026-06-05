@@ -93,7 +93,9 @@ describe('cmdDoctor version check (tag edge cases)', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('claude-nomad: 0.11.2 (version check skipped: registry unreachable)');
+    expect(out).toContain(
+      'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
+    );
     expect(out).not.toContain('ahead of latest release');
     expect(process.exitCode === 1).toBe(false);
   });

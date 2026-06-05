@@ -38,13 +38,21 @@ function reportMappedProjects(section: DoctorSection, map: PathMap): void {
 function reportUnmappedProjects(section: DoctorSection, map: PathMap): void {
   const localProjects = join(CLAUDE_HOME, 'projects');
   if (!existsSync(localProjects)) return;
+  // Tolerant-doctor contract: an unreadable projects dir (permissions) skips
+  // this informational listing instead of throwing mid-output.
+  let localDirs: string[];
+  try {
+    localDirs = readdirSync(localProjects);
+  } catch {
+    return;
+  }
   const mappedEncodings = new Set(
     Object.values(map.projects)
       .map((hosts) => hosts[HOST])
       .filter(Boolean)
       .map((abspath) => encodePath(abspath)),
   );
-  const unmapped = readdirSync(localProjects).filter((dir) => !mappedEncodings.has(dir));
+  const unmapped = localDirs.filter((dir) => !mappedEncodings.has(dir));
   if (unmapped.length === 0) return;
   addItem(section, `Unmapped local projects (not synced): ${dim(String(unmapped.length))}`);
   for (const dir of unmapped) {
