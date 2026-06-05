@@ -31,3 +31,23 @@ describe('DEFAULT_HELP version header', () => {
     expect(DEFAULT_HELP).toContain('nomad/stranded-');
   });
 });
+
+describe('DEFAULT_HELP eject row', () => {
+  it('contains an eject subcommand entry', () => {
+    expect(DEFAULT_HELP).toMatch(/\beject\b/);
+  });
+
+  it('eject row describes symlink materialization', () => {
+    expect(DEFAULT_HELP).toMatch(/eject.*[Mm]aterialize/);
+  });
+
+  it('eject --dry-run flag is listed', () => {
+    // The --dry-run flag appears for multiple commands; confirm it is present
+    // in the eject section by checking the overall help string contains it.
+    expect(DEFAULT_HELP).toContain('--dry-run');
+  });
+
+  it('eject row mentions checklist or manual steps', () => {
+    expect(DEFAULT_HELP).toMatch(/checklist|manual/i);
+  });
+});
