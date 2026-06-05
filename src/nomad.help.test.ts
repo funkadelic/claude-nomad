@@ -41,10 +41,14 @@ describe('DEFAULT_HELP eject row', () => {
     expect(DEFAULT_HELP).toMatch(/eject.*[Mm]aterialize/);
   });
 
-  it('eject --dry-run flag is listed', () => {
-    // The --dry-run flag appears for multiple commands; confirm it is present
-    // in the eject section by checking the overall help string contains it.
-    expect(DEFAULT_HELP).toContain('--dry-run');
+  it('eject --dry-run flag is listed in the eject section', () => {
+    // The --dry-run flag appears for multiple commands; slice out the eject
+    // section (its row through the next blank line) and assert against that.
+    const start = DEFAULT_HELP.indexOf('\n  eject');
+    expect(start).toBeGreaterThan(-1);
+    const end = DEFAULT_HELP.indexOf('\n\n', start + 1);
+    expect(end).toBeGreaterThan(start);
+    expect(DEFAULT_HELP.slice(start, end)).toContain('--dry-run');
   });
 
   it('eject row mentions checklist or manual steps', () => {

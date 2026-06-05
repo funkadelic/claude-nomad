@@ -19,6 +19,13 @@ export const EJECT_CHECKLIST = [
 ].join('\n');
 
 /**
+ * Production roots for {@link cmdEject}. Hoisted so the parameter default is a
+ * shared constant rather than a fresh object literal per call; tests inject
+ * temp-dir roots instead.
+ */
+const DEFAULT_ROOTS = { claudeHome: CLAUDE_HOME, repoHome: REPO_HOME };
+
+/**
  * Classification of a managed name's current state in `~/.claude/`.
  *
  * - `absent`: no entry at the link path (not even a dangling symlink)
@@ -336,10 +343,7 @@ function materializeOneOrDie(
  */
 export function cmdEject(
   opts: { dryRun?: boolean } = {},
-  roots: { claudeHome: string; repoHome: string } = {
-    claudeHome: CLAUDE_HOME,
-    repoHome: REPO_HOME,
-  },
+  roots: { claudeHome: string; repoHome: string } = DEFAULT_ROOTS,
 ): void {
   const dryRun = opts.dryRun === true;
   const { claudeHome, repoHome } = roots;
