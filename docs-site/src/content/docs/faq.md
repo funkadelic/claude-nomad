@@ -187,7 +187,18 @@ repo versions; that is exactly what the warning below is telling you:
 ```
 
 If you pull anyway, your overwritten files are recoverable from
-`~/.cache/claude-nomad/backup/<timestamp>/`, but pushing first means you never need them.
+`~/.cache/claude-nomad/backup/<timestamp>/`, but pushing first means you never need them. The
+divergence warning prints the exact backup path it wrote; otherwise, find the newest backup and
+copy the file back. Inside the backup, extras live under `extras/<encoded-project-path>/` (the
+project's absolute path with slashes turned into dashes):
+
+```bash
+$ ls -t ~/.cache/claude-nomad/backup/ | head -1    # newest backup, named <timestamp>
+$ cp ~/.cache/claude-nomad/backup/<timestamp>/extras/-home-you-code-myproject/.planning/ROADMAP.md \
+     ~/code/myproject/.planning/ROADMAP.md
+```
+
+Then push so the repo gets your restored copy and the warning stops firing.
 
 One nuance: because push is last-write-wins, if the *same file* genuinely changed on two hosts,
 the host that pushes last clobbers the other's version in the sync repo (the older copy survives
