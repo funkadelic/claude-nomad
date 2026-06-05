@@ -172,6 +172,18 @@ describe('reportPreserveSymlinksCheck', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it('does not throw and leaves exitCode undefined when settings.json contains literal null', async () => {
+    writeFileSync(join(env.testHome, '.claude', 'settings.json'), 'null\n');
+    let threw = false;
+    try {
+      await runCheck();
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it('does not throw and leaves exitCode undefined when hooks is not an object', async () => {
     writeHooksSettings(env.testHome, 'not-an-object');
     const { out } = await runCheck();
@@ -306,8 +318,8 @@ describe('reportPreserveSymlinksCheck', () => {
     mkdirSync(sharedHooks, { recursive: true });
     symlinkSync(sharedHooks, join(env.testHome, '.claude', 'hooks'));
     const { out } = await runCheck();
-    // Ghost script doesn't exist under the hooks dir - so it won't be flagged
-    // (existsSync fails the shape gate). No WARN.
+    // ghost.js does not exist on disk. realpathSync throws in
+    // relativeRequireTargetsBroken -> returns false -> no WARN.
     expect(out).not.toContain(`${warnGlyph}`);
     expect(process.exitCode).toBeUndefined();
   });
@@ -326,6 +338,21 @@ describe('reportPreserveSymlinksCheck', () => {
     // The require at byte ~60KB is within the 64KB bound, so it should be found.
     // Whether it warns depends on whether the target exists - it doesn't, so WARN.
     expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('does not warn when the broken require is past the 64KB read bound', async () => {
+    // ~6600 repetitions of '// filler\n' (10 bytes each) = ~66000 bytes, past the 65536 bound.
+    // The broken relative require placed after this filler must NOT be detected.
+    const filler = '// filler\n'.repeat(6600);
+    const content = filler + `const x = require('../gsd-core/bin/lib/package-identity.cjs');\n`;
+    buildHookTree(env.testHome, { 'too-large.js': content });
+    writeHooksSettings(env.testHome, {
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/hooks/too-large.js` }],
+    });
+    const { out } = await runCheck();
+    expect(out).not.toContain(`${warnGlyph}`);
+    expect(out).toContain(`${okGlyph} hooks: preserve-symlinks-main not needed`);
     expect(process.exitCode).toBeUndefined();
   });
 
