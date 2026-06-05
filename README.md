@@ -36,7 +36,8 @@ survives different file paths and your secrets never ride along.
 - **Preview before you trust it.** `nomad diff` shows offline what a pull would change, and
   `--dry-run` on pull and push prints the plan without writing anything.
 - **One command tells you what is wrong.** `nomad doctor` is a read-only health check: wedged sync
-  repo, broken hook references, version drift, oversized backup cache, each with a fix hint.
+  repo, broken hook references, hooks that would crash on session start because of a missing
+  `--preserve-symlinks-main` flag, version drift, oversized backup cache, each with a fix hint.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
   recovers a sync repo stuck mid-rebase while parking your stranded work on a branch, refusing
   entirely if shared config is at risk.

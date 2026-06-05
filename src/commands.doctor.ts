@@ -24,6 +24,7 @@ import { reportCheckSchema } from './commands.doctor.check-schema.ts';
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportHookScopeCheck } from './commands.doctor.checks.hooks.scope.ts';
 import { reportHooksTargetCheck } from './commands.doctor.checks.hooks.ts';
+import { reportPreserveSymlinksCheck } from './commands.doctor.checks.hooks.preserve-symlinks.ts';
 import { REPO_HOME, type PathMap } from './config.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { readJsonSafe, renderDoctor, section } from './commands.doctor.format.ts';
@@ -68,6 +69,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   const hooksScan = section('Hook targets');
   reportHooksTargetCheck(hooksScan);
   reportHookScopeCheck(hooksScan);
+  reportPreserveSymlinksCheck(hooksScan);
 
   const settings = section('Settings');
   const base = loadBaseSettings(settings);

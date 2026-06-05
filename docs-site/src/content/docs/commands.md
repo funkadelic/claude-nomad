@@ -146,8 +146,9 @@ fails (`✗`, exit 1) when the sync repo is stuck mid-rebase or mid-merge from a
 pull (the line carries a `nomad pull --force-remote` recovery hint), plus a set of `⚠︎`-only
 checks: gitleaks version drift; on a private GitHub repo, re-enabled Actions;
 optional-dependency presence (`gh` and the curl-or-wget HTTP fetcher); a backups-cache size/count
-nudge toward `nomad clean --backups`; an ESM/CommonJS hook-scope mismatch; and a Node-engine
-floor check. The Path map section lists both the projects mapped for this host and any local
+nudge toward `nomad clean --backups`; an ESM/CommonJS hook-scope mismatch; a Node-engine
+floor check; and a hook command that runs a Node script under a synced (symlinked) directory
+without `--preserve-symlinks-main`. The Path map section lists both the projects mapped for this host and any local
 project directories with no path-map entry (what `nomad push` counts as "unmapped"; they are
 left alone in both directions).
 
@@ -167,6 +168,16 @@ exit 1) when a hook command points at a script under `~/.claude/` that is missin
 (the freshly-configured-host symptom that motivated syncing `hooks/`). It deliberately skips any
 command it cannot resolve to a `~/.claude/` path (bare binaries like `jq`, unresolved env vars),
 so it never false-fails on a command that does not reference a local script.
+
+The preserve-symlinks check (`⚠︎`-only) catches a hook that would crash on every session start:
+when a hook command runs a Node script that lives under one of the directories claude-nomad
+symlinks into `~/.claude/`, Node resolves the script into the sync repo, and any
+`require('../...')` of a `~/.claude/` neighbor breaks with `MODULE_NOT_FOUND` (see the
+[FAQ](/claude-nomad/faq/) for a real-world walkthrough). The warning line names the fix: add
+`--preserve-symlinks-main` to the hook command in `shared/settings.base.json`. It is deliberately
+conservative: only clear `node <script-under-symlinked-dir>` shapes are flagged, and a bounded,
+never-executed peek at the script's first 64 KB suppresses the warning when the script's relative
+requires all resolve (or it has none), so self-contained hooks stay silent.
 
 Two further warning-only drift checks run in `nomad doctor`. The gitleaks version-drift line fires
 when the local gitleaks major.minor differs from the CI-pinned `GITLEAKS_PINNED_VERSION` (gitleaks

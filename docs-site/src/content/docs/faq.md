@@ -149,7 +149,8 @@ Make that edit in `shared/settings.base.json` in your sync repo, not in `~/.clau
 
 Any tool that installs files into a synced directory (`hooks/`, `skills/`, and friends) and
 references other `~/.claude/` paths relative to its own file location can hit this, often right
-after the tool updates itself.
+after the tool updates itself. You do not have to spot it yourself: `nomad doctor` warns about
+hook commands with this shape and prints the same fix hint.
 
 ## Is nomad update different from npm update -g claude-nomad?
 
