@@ -98,6 +98,11 @@ export const DEFAULT_HELP = [
   cont('symlink, and stage for push. <name> must be in SHARED_LINKS or sharedDirs.'),
   row('       --dry-run', 'Preview backup, move, and git-add without writing.'),
   '',
+  row('  eject', 'Materialize every managed ~/.claude/ symlink into a real copy so the'),
+  cont('setup keeps working after deleting the sync repo. Prints a'),
+  cont('manual-remainder checklist (uninstall CLI, drop env vars, optional deletes).'),
+  row('       --dry-run', 'List what would be materialized without writing anything.'),
+  '',
   row(
     '  redact <session-id>',
     'Rewrite the secret span in the local source transcript for a session,',

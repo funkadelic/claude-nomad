@@ -17,6 +17,7 @@
 import { cmdAdopt } from './commands.adopt.ts';
 import { cmdAllow } from './commands.allow.ts';
 import { cmdClean } from './commands.clean.ts';
+import { cmdEject } from './commands.eject.ts';
 import { cmdDoctor } from './commands.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
 import { cmdRedact } from './commands.redact.ts';
@@ -27,6 +28,7 @@ import { HOME } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
+import { parseEjectArgs } from './nomad.dispatch.eject.ts';
 import { parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
 import { parseAllowArgs } from './nomad.dispatch.allow.ts';
 import { parsePullArgs } from './nomad.dispatch.pull.ts';
@@ -151,6 +153,17 @@ try {
         process.exit(1);
       }
       cmdAdopt(name, { dryRun: sub === '--dry-run' });
+      break;
+    }
+    case 'eject': {
+      // parseEjectArgs accepts only --dry-run; rejects duplicates, unknown
+      // tokens, and extra positional arguments.
+      const ejectArgs = parseEjectArgs(process.argv);
+      if (ejectArgs === null) {
+        console.error('usage: nomad eject [--dry-run]');
+        process.exit(1);
+      }
+      cmdEject({ dryRun: ejectArgs.dryRun });
       break;
     }
     case 'doctor':

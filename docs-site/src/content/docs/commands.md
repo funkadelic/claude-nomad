@@ -76,6 +76,28 @@ editor, so it never writes `path-map.json` itself.
 | ----------- | -------------------------------------------------------------------------------------- |
 | `--dry-run` | Preview the planned backup, move, and `git add` without touching the filesystem or the git index. |
 
+## `eject`
+
+`nomad eject [--dry-run]`
+
+Replace every managed `~/.claude/` symlink with a real dereferenced copy so your setup keeps
+working after you delete the `~/claude-nomad/` checkout and uninstall the CLI. The set of managed
+names is the same union of `SHARED_LINKS` and validated `sharedDirs` entries that `nomad pull`
+manages (the authoritative list is `allSharedLinks` in `src/config.ts`). Names that are already
+real files or directories are reported as skipped and left unchanged; absent names are also
+skipped. A managed name that is a symlink pointing outside the sync repo's `shared/` directory is
+skipped as not nomad-managed and left untouched, so eject only materializes links it owns. A
+dangling symlink (the target is missing) causes the whole command to abort before any
+copy is written, with a hint to run `nomad pull` first to restore the missing target. After all
+copies succeed, eject prints a checklist of the manual steps remaining: uninstall the CLI, remove
+`NOMAD_HOST` and `NOMAD_REPO` from your shell rc, and optionally delete the local sync checkout
+and backup cache. `eject` never writes to the sync repo, never invokes git, and never touches
+`~/.claude/projects/` (session transcripts are already real files).
+
+| Flag        | Description                                                                  |
+| ----------- | ---------------------------------------------------------------------------- |
+| `--dry-run` | List what would be materialized without touching the filesystem.             |
+
 ## `redact`
 
 `nomad redact <session-id> [--rule <id>] [--dry-run]`
