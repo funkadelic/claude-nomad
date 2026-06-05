@@ -118,6 +118,39 @@ If the safety check shows local-only commits that DO touch synced config, cherry
 those changes out before the `reset --hard`; they exist nowhere else. When in doubt, the repo is
 plain git, so anything discarded is still in `git reflog` until git prunes it.
 
+## A hook that worked before nomad now fails with "Cannot find module"
+
+```text
+SessionStart:startup hook error
+Error: Cannot find module '../some-tool/lib/helper.cjs'
+Require stack:
+- /home/you/claude-nomad/shared/hooks/check-update.js
+```
+
+The giveaway is the require stack: the failing script shows up under your **sync repo**
+(`~/claude-nomad/shared/...`) instead of `~/.claude/...`.
+
+Here is what happens. On a synced host, directories like `~/.claude/hooks/` are symlinks into the
+sync repo. When Node runs a script, it resolves symlinks first, so the script "believes" it lives
+in `~/claude-nomad/shared/hooks/`. If the tool that installed the hook loads another file by a
+path relative to its own location (say `require('../tool-runtime/helper.cjs')`, expecting to find
+`~/.claude/tool-runtime/` next door), the lookup happens inside the sync repo, where that
+directory does not exist. The hook crashes with `MODULE_NOT_FOUND`.
+
+For Node hooks the fix is one flag, `--preserve-symlinks-main`, which tells Node to keep the
+symlinked path so relative lookups resolve back under `~/.claude/`:
+
+```json
+"command": "node --preserve-symlinks-main \"$HOME/.claude/hooks/check-update.js\""
+```
+
+Make that edit in `shared/settings.base.json` in your sync repo, not in `~/.claude/settings.json`
+(see the first question for why), then push and pull as usual.
+
+Any tool that installs files into a synced directory (`hooks/`, `skills/`, and friends) and
+references other `~/.claude/` paths relative to its own file location can hit this, often right
+after the tool updates itself.
+
 ## Is nomad update different from npm update -g claude-nomad?
 
 No. `nomad update` runs the npm self-update for you; it is a convenience wrapper, nothing more.
