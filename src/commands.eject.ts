@@ -1,8 +1,8 @@
 import { cpSync, existsSync, lstatSync, realpathSync, renameSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 import { allSharedLinks, BACKUP_BASE, CLAUDE_HOME, REPO_HOME, type PathMap } from './config.ts';
-import { fail, log, NomadFatal } from './utils.ts';
+import { die, fail, log } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
 
 /**
@@ -27,6 +27,18 @@ export const EJECT_CHECKLIST = [
  * - `dangling`: a symlink whose target is missing; abort before any mutation
  */
 type NameClass = 'absent' | 'skip-real' | 'materialize' | 'dangling';
+
+/**
+ * Extract a human-readable message from a caught value. Errors carry their
+ * `.message`; anything else is coerced with `String`. Exported so both branches
+ * can be unit-tested without forcing a non-Error throw out of `node:fs`.
+ *
+ * @param err The caught value.
+ * @returns The error message or its string coercion.
+ */
+export function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /**
  * lstat-based existence check that does NOT follow symlinks: a dangling symlink
@@ -71,20 +83,78 @@ function classifyName(linkPath: string): NameClass {
 }
 
 /**
+ * Resolve the canonical `shared/` root under `repoHome`. Eject only owns links
+ * that resolve into this tree (see {@link isManagedTarget}).
+ *
+ * A failure here means the repo checkout is incomplete (`shared/` missing) while
+ * symlinks still resolve, which is a state eject cannot reason about. Convert it
+ * to a NomadFatal with a `nomad pull` hint rather than copying from an unknown
+ * source.
+ *
+ * @param repoHome Absolute path to the nomad repo root.
+ * @returns The realpath of `repoHome/shared`.
+ */
+function resolveSharedRoot(repoHome: string): string {
+  try {
+    return realpathSync(join(repoHome, 'shared'));
+  } catch {
+    return die(
+      `cannot resolve ${join(repoHome, 'shared')} (repo checkout incomplete). ` +
+        `run \`nomad pull\` first, then re-run \`nomad eject\``,
+    );
+  }
+}
+
+/**
+ * Decide whether a resolved symlink target is a nomad-managed source: it must
+ * live strictly inside `sharedRoot` (a child, not `sharedRoot` itself). Uses a
+ * trailing-separator prefix test so `/repo/shared-other` is not mistaken for a
+ * child of `/repo/shared`.
+ *
+ * @param target Realpath the symlink resolves to.
+ * @param sharedRoot Realpath of the repo's `shared/` directory.
+ * @returns True when `target` is contained under `sharedRoot`.
+ */
+function isManagedTarget(target: string, sharedRoot: string): boolean {
+  return target.startsWith(sharedRoot + sep);
+}
+
+/**
  * Materialize one symlink: copy the resolved target to a sibling temp path,
- * remove the symlink, then rename the temp into place. A crash before rename
- * leaves the original symlink intact; after rename the real copy is in place.
+ * remove the symlink, then rename the temp into place.
+ *
+ * Crash-safety windows: a crash before `rmSync(linkPath)` leaves the original
+ * symlink intact (only the temp copy exists, and it is pre-cleaned on the next
+ * run by the unique-suffix + pre-clean). After `rmSync` and before `renameSync`
+ * the symlink is GONE and the temp holds the only copy; a crash in that narrow
+ * window leaves the name missing until eject is re-run (idempotent: re-running
+ * re-classifies the absent name and reports it skipped, while already-real names
+ * are left alone). After `renameSync` the real copy is in place.
  *
  * The `dereference: true` flag on `cpSync` is the `cp -rL` equivalent that
  * follows symlinks inside the target tree and copies real content.
  *
+ * Containment gate: the resolved target must live under `repoHome/shared/`. A
+ * managed name that points somewhere else (left by another tool, or a
+ * user-redirected link) is reported and skipped without mutation so eject only
+ * materializes links it owns.
+ *
  * @param name The managed name being materialized (for log messages).
  * @param linkPath Absolute path of the symlink.
+ * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
+ * @returns True when the target was materialized; false when skipped as unmanaged.
  */
-function materializeOne(name: string, linkPath: string): void {
+function materializeOne(name: string, linkPath: string, sharedRoot: string): boolean {
   const target = realpathSync(linkPath);
-  const tmp = `${linkPath}.eject.tmp.${process.pid}`;
+  if (!isManagedTarget(target, sharedRoot)) {
+    log(`skipped (not a nomad-managed target): ${name} -> ${target}`);
+    return false;
+  }
+  const tmp = `${linkPath}.eject.tmp.${process.pid}.${Date.now()}`;
   try {
+    // Clear any stale leftover (crash residue, or a type-mismatched dir/file)
+    // so cpSync never hits ERR_FS_CP_DIR_TO_NON_DIR.
+    rmSync(tmp, { recursive: true, force: true });
     cpSync(target, tmp, {
       recursive: true,
       force: true,
@@ -94,30 +164,37 @@ function materializeOne(name: string, linkPath: string): void {
     rmSync(linkPath, { force: true });
     renameSync(tmp, linkPath);
     log(`ejected: ${name}`);
+    return true;
   } catch (err) {
     // Clean up the temp on any error before re-throwing.
-    /* c8 ignore start -- temp cleanup on fs fault; unreachable in normal tests */
     try {
       rmSync(tmp, { recursive: true, force: true });
     } catch {
       // best-effort cleanup; ignore secondary error
     }
     throw err;
-    /* c8 ignore stop */
   }
 }
 
 /**
  * Log a dry-run preview of what eject would do for each name in `names`.
  *
+ * The `realpathSync` for a `materialize` entry is guarded: classification ran
+ * earlier, so the target can vanish between classify and preview (TOCTOU). On a
+ * resolve failure the preview degrades to a best-effort message and continues
+ * rather than crashing the safe-preview path. An unmanaged target (resolves
+ * outside `shared/`) prints the same skip line the live path would.
+ *
  * @param names Managed names to preview.
  * @param classifications Map from name to its NameClass.
  * @param claudeHome Absolute path to the claude config directory.
+ * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
  */
 function previewDryRun(
   names: string[],
   classifications: Map<string, NameClass>,
   claudeHome: string,
+  sharedRoot: string,
 ): void {
   for (const name of names) {
     const cls = classifications.get(name);
@@ -127,37 +204,111 @@ function previewDryRun(
     } else if (cls === 'skip-real') {
       log(`skipped (not a symlink): ${name}`);
     } else {
-      const target = realpathSync(linkPath);
-      log(`would materialize: ${name} (copy ${target} -> ${linkPath})`);
+      previewMaterialize(name, linkPath, sharedRoot);
     }
   }
   log(EJECT_CHECKLIST);
 }
 
 /**
+ * Render the dry-run line for a single `materialize` entry, guarding the
+ * realpath resolution and applying the same containment classification the live
+ * path uses so `--dry-run` and live agree.
+ *
+ * Exported for unit testing of the unresolvable-target branch, which a
+ * black-box `cmdEject` call cannot reach (classify and preview resolve the same
+ * path in one call, so a realpath that fails in preview was already classified
+ * dangling and aborted).
+ *
+ * @param name The managed name being previewed.
+ * @param linkPath Absolute path of the symlink.
+ * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
+ */
+export function previewMaterialize(name: string, linkPath: string, sharedRoot: string): void {
+  let target: string;
+  try {
+    target = realpathSync(linkPath);
+  } catch {
+    log(`would materialize: ${name} (target now unresolvable; re-run to re-classify)`);
+    return;
+  }
+  if (!isManagedTarget(target, sharedRoot)) {
+    log(`skipped (not a nomad-managed target): ${name} -> ${target}`);
+    return;
+  }
+  log(`would materialize: ${name} (copy ${target} -> ${linkPath})`);
+}
+
+/**
  * Perform the live materialization pass for all names in `names`.
+ *
+ * Each `materializeOne` is wrapped: a raw `node:fs` fault (ENOSPC, EACCES,
+ * target vanished, rename collision) is converted to a NomadFatal that names the
+ * failed entry, the names already materialized, and tells the user the host is
+ * in a mixed state (do NOT delete the repo checkout yet; fix the cause and
+ * re-run, which is idempotent on already-real names). A final tally precedes the
+ * checklist so a partial run is obvious at a glance.
  *
  * @param names Managed names to process.
  * @param classifications Map from name to its NameClass.
  * @param claudeHome Absolute path to the claude config directory.
+ * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
  */
 function runLiveEject(
   names: string[],
   classifications: Map<string, NameClass>,
   claudeHome: string,
+  sharedRoot: string,
 ): void {
+  const done: string[] = [];
+  let skipped = 0;
   for (const name of names) {
     const cls = classifications.get(name);
     const linkPath = join(claudeHome, name);
     if (cls === 'absent') {
       log(`skipped (absent): ${name}`);
+      skipped++;
     } else if (cls === 'skip-real') {
       log(`skipped (not a symlink): ${name}`);
+      skipped++;
+    } else if (materializeOneOrDie(name, linkPath, sharedRoot, done)) {
+      done.push(name);
     } else {
-      materializeOne(name, linkPath);
+      skipped++;
     }
   }
+  log(`materialized ${done.length}, skipped ${skipped}`);
   log(EJECT_CHECKLIST);
+}
+
+/**
+ * Run {@link materializeOne}, converting any raw fs fault into a NomadFatal with
+ * actionable mixed-state context. Extracted from the loop to keep
+ * {@link runLiveEject} under the cognitive-complexity gate.
+ *
+ * @param name The managed name being materialized.
+ * @param linkPath Absolute path of the symlink.
+ * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
+ * @param done Names already materialized in this run (for the failure message).
+ * @returns True when materialized; false when skipped as unmanaged.
+ */
+function materializeOneOrDie(
+  name: string,
+  linkPath: string,
+  sharedRoot: string,
+  done: string[],
+): boolean {
+  try {
+    return materializeOne(name, linkPath, sharedRoot);
+  } catch (err) {
+    const msg = errMessage(err);
+    return die(
+      `failed to materialize ${name}: ${msg}. ` +
+        `already materialized: ${done.join(', ') || '(none)'}. ` +
+        `the remaining names are still symlinks; do NOT delete ${REPO_HOME} yet, ` +
+        `fix the cause and re-run \`nomad eject\` (it is idempotent on already-real names)`,
+    );
+  }
 }
 
 /**
@@ -169,9 +320,14 @@ function runLiveEject(
  * `SHARED_LINKS` and validated `sharedDirs` entries). For each name:
  * - Absent: reported as skipped, not created.
  * - Already a real file/dir: reported as skipped, left unchanged.
- * - Valid symlink: replaced with a dereferenced copy (copy-then-swap).
+ * - Valid symlink into `shared/`: replaced with a dereferenced copy (copy-then-swap).
+ * - Valid symlink to a target outside `shared/`: reported and skipped (not owned).
  * - Dangling symlink: the whole command aborts with exit 1 before any mutation;
  *   the user is told to run `nomad pull` first.
+ *
+ * A real `node:fs` fault during the live pass (disk full, EACCES, target removed
+ * under us) aborts with exit 1 and a FATAL message naming the failed entry, the
+ * names already materialized, and a do-not-delete-the-repo-yet hint.
  *
  * `dryRun: true` previews actions and prints the checklist without writing.
  *
@@ -206,18 +362,20 @@ export function cmdEject(
     process.exit(1);
   }
 
+  const sharedRoot = resolveSharedRoot(repoHome);
+
   if (dryRun) {
-    previewDryRun(names, classifications, claudeHome);
+    previewDryRun(names, classifications, claudeHome, sharedRoot);
     return;
   }
 
-  /* c8 ignore start -- defensive: runLiveEject only throws on fs fault */
+  // runLiveEject converts every raw fs fault into a NomadFatal (via
+  // materializeOneOrDie), so any throw here is a clean fatal: report it and
+  // exit 1, matching the dangling-abort exit semantics above.
   try {
-    runLiveEject(names, classifications, claudeHome);
+    runLiveEject(names, classifications, claudeHome, sharedRoot);
   } catch (err) {
-    if (!(err instanceof NomadFatal)) throw err;
-    fail(err.message);
-    process.exitCode = 1;
+    fail(errMessage(err));
+    process.exit(1);
   }
-  /* c8 ignore stop */
 }

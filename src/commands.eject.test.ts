@@ -1,10 +1,12 @@
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -13,7 +15,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import { cmdEject, EJECT_CHECKLIST } from './commands.eject.ts';
+import { cmdEject, EJECT_CHECKLIST, errMessage, previewMaterialize } from './commands.eject.ts';
 
 /**
  * Helper: create a temp directory pair (claudeHome + repoHome) for each test.
@@ -240,6 +242,131 @@ describe('cmdEject', () => {
     expect(EJECT_CHECKLIST).toContain('npm uninstall -g claude-nomad');
     expect(EJECT_CHECKLIST).toContain('NOMAD_HOST');
     expect(EJECT_CHECKLIST).toContain('NOMAD_REPO');
+  });
+
+  it('tally: live run logs a materialized/skipped summary before the checklist', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'one');
+    writeFileSync(join(claudeHome, 'my-statusline.cjs'), 'real'); // skip-real
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    const out = allLogs(logSpy);
+    expect(out).toContain('materialized 1, skipped');
+    // Tally precedes the checklist.
+    expect(out.indexOf('materialized 1, skipped')).toBeLessThan(
+      out.indexOf('npm uninstall -g claude-nomad'),
+    );
+  });
+
+  it('unmanaged target: symlink pointing outside shared/ is left untouched and reported', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    // Real target OUTSIDE repoHome/shared/.
+    const outside = join(repoHome, 'elsewhere.md');
+    writeFileSync(outside, 'not ours');
+    symlinkSync(outside, join(claudeHome, 'CLAUDE.md'));
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    const linkPath = join(claudeHome, 'CLAUDE.md');
+    // Still a symlink; nothing was materialized.
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('skipped (not a nomad-managed target): CLAUDE.md'),
+    );
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('materialized 0, skipped'));
+  });
+
+  it('unmanaged target dry-run: outside-shared symlink prints the skip line, not would-materialize', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    const outside = join(repoHome, 'elsewhere.md');
+    writeFileSync(outside, 'not ours');
+    symlinkSync(outside, join(claudeHome, 'CLAUDE.md'));
+
+    cmdEject({ dryRun: true }, { claudeHome, repoHome });
+
+    const out = allLogs(logSpy);
+    expect(out).toContain('skipped (not a nomad-managed target): CLAUDE.md');
+    expect(out).not.toContain('would materialize: CLAUDE.md');
+  });
+
+  it('shared/ missing: FATAL with a nomad pull hint', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'x');
+    // Remove shared/ AFTER the symlink resolves through it for classify... but
+    // classify resolves through shared, so to keep the link non-dangling we
+    // point CLAUDE.md at a target outside shared, then delete shared so its
+    // realpath fails. Simpler: delete shared and point the link elsewhere.
+    rmSync(join(claudeHome, 'CLAUDE.md'));
+    rmSync(join(repoHome, 'shared'), { recursive: true, force: true });
+    const elsewhere = join(repoHome, 'real.md');
+    writeFileSync(elsewhere, 'x');
+    symlinkSync(elsewhere, join(claudeHome, 'CLAUDE.md'));
+
+    expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow(
+      /cannot resolve.*shared.*repo checkout incomplete/,
+    );
+  });
+
+  it('live fs fault: read-only claudeHome aborts with a FATAL naming the failed entry', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'one');
+    // Make claudeHome read-only so the sibling temp copy (cpSync) fails EACCES.
+    chmodSync(claudeHome, 0o500);
+    try {
+      expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('failed to materialize CLAUDE.md'),
+      );
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('already materialized: (none)'));
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('do NOT delete'));
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      chmodSync(claudeHome, 0o700);
+    }
+  });
+
+  it('live fs fault: reports already-materialized names completed before the failure', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    // Use sharedDirs to control ordering: allSharedLinks puts SHARED_LINKS
+    // first; CLAUDE.md materializes, then a later name fails. Point a later
+    // managed name at a target we make unreadable so cpSync dereference fails.
+    const okTarget = join(repoHome, 'shared', 'CLAUDE.md');
+    writeFileSync(okTarget, 'ok');
+    symlinkSync(okTarget, join(claudeHome, 'CLAUDE.md'));
+    const badTarget = join(repoHome, 'shared', 'agents');
+    mkdirSync(badTarget, { recursive: true });
+    const badNested = join(badTarget, 'secret.md');
+    writeFileSync(badNested, 'x');
+    symlinkSync(badTarget, join(claudeHome, 'agents'));
+    chmodSync(badNested, 0o000); // unreadable; dereference copy fails
+
+    try {
+      expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('failed to materialize agents'));
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('already materialized: CLAUDE.md'),
+      );
+    } finally {
+      chmodSync(badNested, 0o600);
+    }
+  });
+
+  it('errMessage: extracts .message from Error and String-coerces non-Error throws', () => {
+    expect(errMessage(new Error('boom'))).toBe('boom');
+    expect(errMessage('plain string')).toBe('plain string');
+    expect(errMessage(42)).toBe('42');
+  });
+
+  it('previewMaterialize unresolvable: missing linkPath degrades to a re-classify hint (WR-03 TOCTOU)', () => {
+    const { repoHome } = makeTempRoots();
+    const sharedRoot = join(repoHome, 'shared');
+    // linkPath does not exist -> realpathSync throws -> degraded message.
+    previewMaterialize('CLAUDE.md', join(repoHome, 'gone', 'CLAUDE.md'), sharedRoot);
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('would materialize: CLAUDE.md (target now unresolvable'),
+    );
   });
 
   it('sharedDirs extra: a sharedDirs entry is materialized like a built-in name', () => {
