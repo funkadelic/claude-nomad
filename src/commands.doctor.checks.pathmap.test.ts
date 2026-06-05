@@ -1,9 +1,9 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, okGlyph } from './color.ts';
+import { failGlyph, infoGlyph, okGlyph } from './color.ts';
 import { type PathMap } from './config.ts';
 import {
   type Env,
@@ -51,6 +51,83 @@ describe('cmdDoctor path-encoding collision detection', () => {
     // is silent and that no NEW exitCode-setting condition fires from THIS
     // describe's setup.
     expect(joinedLog(env.logSpy)).not.toContain('path-encoding collision');
+  });
+
+  it('lists local project dirs missing from the path-map as nested rows under an unmapped header', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    // One local dir matches foo's encoding for this host; one is unmapped.
+    mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-foo'), { recursive: true });
+    mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-stray'), { recursive: true });
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('Unmapped local projects (not synced): 1');
+    expect(out).toContain('└ -srv-stray');
+    // The mapped dir does not appear in the unmapped list.
+    expect(out).not.toContain('├ -srv-foo');
+  });
+
+  it('skips the unmapped listing without throwing when the projects dir is unreadable', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const projectsDir = join(env.testHome, '.claude', 'projects');
+    mkdirSync(join(projectsDir, '-srv-stray'), { recursive: true });
+    // Revoke read permission so readdirSync throws (EACCES); the tolerant
+    // doctor must skip the listing, not crash mid-output.
+    chmodSync(projectsDir, 0o000);
+    try {
+      const { cmdDoctor } = await import('./commands.doctor.ts');
+      cmdDoctor();
+      const out = joinedLog(env.logSpy);
+      expect(out).not.toContain('Unmapped local projects');
+      // Output continued past the listing: the collision scan still ran.
+      expect(out).toContain('path-encoding');
+    } finally {
+      chmodSync(projectsDir, 0o755);
+    }
+  });
+
+  it('omits the unmapped header entirely when every local project dir is mapped', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-foo'), { recursive: true });
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toContain('Unmapped local projects');
+  });
+
+  it('renders each mapped project as a nested connector row under a glyph-free header', async () => {
+    const map: PathMap = {
+      projects: {
+        foo: { 'test-host': '/srv/foo' },
+        bar: { 'other-host': '/srv/bar' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Header drops the info glyph; child rows nest one tree level deeper with
+    // their own connectors and no glyph. The parent stream continues (the
+    // path-encoding row follows), so the child gutter carries the pipe.
+    expect(out).toContain('├ Mapped projects for test-host: 1');
+    expect(out).not.toContain(`${infoGlyph} mapped projects`);
+    expect(out).toContain('  │   └ foo -> /srv/foo');
+    expect(out).not.toContain('bar ->');
   });
 
   // Collisions cause silent data loss in remap, so doctor emits FAIL (not

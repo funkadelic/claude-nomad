@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { addItem, renderDoctor, renderTree, section } from './output-tree.ts';
+import { addChildItem, addItem, renderDoctor, renderTree, section } from './output-tree.ts';
 
 /**
  * Capture every `console.log` line emitted while `fn` runs, returning them as
@@ -146,5 +146,47 @@ describe('renderDoctor alias', () => {
     addItem(s, 'only');
     const lines = captureLog(() => renderDoctor([s]));
     expect(lines).toEqual(['Header', '  └ only']);
+  });
+});
+
+describe('nested child item rendering', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders children one level deeper with their own connectors while the parent stream continues', () => {
+    const s = section('Header');
+    addItem(s, 'parent: 2');
+    addChildItem(s, 'alpha');
+    addChildItem(s, 'beta');
+    addItem(s, 'footer');
+    const lines = captureLog(() => renderTree([s]));
+    expect(lines).toEqual([
+      'Header',
+      '  ├ parent: 2',
+      '  │   ├ alpha',
+      '  │   └ beta',
+      '  └ footer',
+    ]);
+  });
+
+  it('drops the gutter pipe when no regular item follows the children', () => {
+    const s = section('Header');
+    addItem(s, 'only parent');
+    addChildItem(s, 'alpha');
+    addChildItem(s, 'beta');
+    const lines = captureLog(() => renderTree([s]));
+    // Parent takes the elbow (last regular item); trailing children indent
+    // with plain spaces because the parent stream has ended.
+    expect(lines).toEqual(['Header', '  └ only parent', '      ├ alpha', '      └ beta']);
+  });
+
+  it('children never take the section elbow away from the last regular item', () => {
+    const s = section('Header');
+    addItem(s, 'first');
+    addChildItem(s, 'kid');
+    addItem(s, 'last');
+    const lines = captureLog(() => renderTree([s]));
+    expect(lines[lines.length - 1]).toBe('  └ last');
   });
 });

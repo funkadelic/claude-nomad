@@ -56,6 +56,16 @@ export function addItem(s: DoctorSection, text: string): void {
 }
 
 /**
+ * Append a nested child line to a section. Child items render one tree level
+ * deeper than regular items, with their own `├`/`└` connectors under the
+ * preceding regular item (see `renderSection`). Internally marked with a
+ * leading tab, which no caller-supplied item text uses.
+ */
+export function addChildItem(s: DoctorSection, text: string): void {
+  s.items.push(`\t${text}`);
+}
+
+/**
  * True when any item in the section contains the FAIL glyph.
  * Color-wrapped failGlyph (`[31m✗[39m`) still contains the
  * glyph as a substring, so this works for both color-on and color-off output.
@@ -87,11 +97,37 @@ function renderSection(s: DoctorSection): void {
   }
   const header = sectionFailed(s) ? `${red(FAIL_GLYPH_BARE)} ${s.header}` : s.header;
   console.log(header);
-  const lastContent = s.items.reduce((acc, item, j) => (item === '' ? acc : j), -1);
+  // The `└` elbow attaches to the last non-empty REGULAR item; nested child
+  // items get their own connectors one level deeper and never take the elbow.
+  const lastContent = s.items.reduce(
+    (acc, item, j) => (item === '' || isChild(item) ? acc : j),
+    -1,
+  );
   for (let j = 0; j < s.items.length; j++) {
-    if (s.items[j] === '') console.log('');
-    else console.log(`${j === lastContent ? '  └ ' : '  ├ '}${s.items[j]}`);
+    const item = s.items[j];
+    if (item === '') console.log('');
+    else if (isChild(item)) console.log(renderChildLine(s.items, j));
+    else console.log(`${j === lastContent ? '  └ ' : '  ├ '}${item}`);
   }
+}
+
+/** True when the item was added via `addChildItem` (leading-tab marker). */
+function isChild(item: string): boolean {
+  return item.startsWith('\t');
+}
+
+/**
+ * Render one nested child line: a deeper-indented `├`/`└` connector under the
+ * preceding regular item. The gutter carries the parent stream's `│` while
+ * regular items still follow below; once the parent stream has ended, plain
+ * spaces.
+ */
+function renderChildLine(items: string[], j: number): string {
+  const parentContinues = items.some((it, k) => k > j && it !== '' && !isChild(it));
+  const gutter = parentContinues ? '  │ ' : '    ';
+  const next = items[j + 1];
+  const elbow = next === undefined || !isChild(next) ? '└ ' : '├ ';
+  return `${gutter}  ${elbow}${items[j].slice(1)}`;
 }
 
 /**

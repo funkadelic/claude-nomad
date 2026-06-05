@@ -135,14 +135,21 @@ run `nomad pull` separately for that. See [Usage](/claude-nomad/usage/).
 `nomad doctor [--resume-cmd <id>] [--check-shared] [--check-schema]`
 
 Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗`
-sets `process.exitCode = 1` (`⚠︎` does not). Includes an offline-tolerant release-version staleness
-check, a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a hook command
-whose script under `~/.claude/` is missing on this host, a wedged-repo check that fails (`✗`,
-exit 1) when the sync repo is stuck mid-rebase or mid-merge from a previous failed pull (the line
-carries a `nomad pull --force-remote` recovery hint), plus a set of `⚠︎`-only checks: gitleaks
-version drift; on a private GitHub repo, re-enabled Actions; optional-dependency presence (`gh`
-and the curl-or-wget HTTP fetcher); a backups-cache size/count nudge toward `nomad clean --backups`;
-an ESM/CommonJS hook-scope mismatch; and a Node-engine floor check.
+sets `process.exitCode = 1` (`⚠︎` does not). Output ends with a **Summary** section that repeats
+every warning and failure and closes with a one-line verdict (`✓ healthy`, or warning/failure
+counts), so the last line always answers "am I healthy?". Includes a release-version staleness
+check (an info line says when the latest version could not be determined, so a skipped check is
+not mistaken
+for "current"), a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a
+hook command whose script under `~/.claude/` is missing on this host, a wedged-repo check that
+fails (`✗`, exit 1) when the sync repo is stuck mid-rebase or mid-merge from a previous failed
+pull (the line carries a `nomad pull --force-remote` recovery hint), plus a set of `⚠︎`-only
+checks: gitleaks version drift; on a private GitHub repo, re-enabled Actions;
+optional-dependency presence (`gh` and the curl-or-wget HTTP fetcher); a backups-cache size/count
+nudge toward `nomad clean --backups`; an ESM/CommonJS hook-scope mismatch; and a Node-engine
+floor check. The Path map section lists both the projects mapped for this host and any local
+project directories with no path-map entry (what `nomad push` counts as "unmapped"; they are
+left alone in both directions).
 
 | Flag                | Description                                                                                                                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

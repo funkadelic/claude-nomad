@@ -38,7 +38,7 @@ describe('cmdDoctor gitleaks presence', () => {
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
-  it('logs PASS-equivalent version line when gitleaks IS on PATH', async () => {
+  it('is silent in the Repository section when gitleaks IS on PATH', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
@@ -57,9 +57,11 @@ describe('cmdDoctor gitleaks presence', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain('gitleaks:');
-    expect(out).toMatch(/v\d+\.\d+/);
+    // Silent on success: the Repository probe adds no row (the Dependency
+    // Versions drift check owns the visible gitleaks line) and never warns
+    // or fails when the binary runs.
     expect(out).not.toContain(`${failGlyph} gitleaks`);
+    expect(out).not.toContain('gitleaks: not on PATH');
     expect(out).toContain('never-sync items:');
   });
 

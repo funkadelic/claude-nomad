@@ -129,7 +129,10 @@ function checkEventGroups(section: DoctorSection, event: string, groups: unknown
     for (const cmd of commandsFromGroup(group)) {
       for (const resolved of claudePathsIn(cmd)) {
         if (existsSync(resolved)) continue;
-        addItem(section, `${red(failGlyph)} hooks/${event}: command target missing: ${resolved}`);
+        addItem(
+          section,
+          `${red(failGlyph)} hooks/${event}: command target missing: ${resolved} (run nomad pull)`,
+        );
         process.exitCode = 1;
         anyFail = true;
       }

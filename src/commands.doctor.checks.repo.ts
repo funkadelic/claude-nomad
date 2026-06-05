@@ -40,15 +40,22 @@ function isOverrideActive(): boolean {
 }
 
 /**
- * Pushes the host identity (info) and the two key path lines (repo and
- * claude-home) with gutter glyphs. Path presence is reported via warnGlyph
- * (not failGlyph) so an absent CLAUDE_HOME does not flip sectionFailed to
- * decorate the Host header with a fail glyph. The authoritative empty-repo FAIL is
- * owned by reportRepoState; these two lines remain informational and do
- * NOT mutate process.exitCode.
+ * Pushes the host identity (info), any app-specific env overrides the user
+ * has set (`NOMAD_REPO`; `NOMAD_HOST` itself heads the section), and the two
+ * key path lines (repo and claude-home) with gutter glyphs. Path presence is
+ * reported via warnGlyph (not failGlyph) so an absent CLAUDE_HOME does not
+ * flip sectionFailed to decorate the Host header with a fail glyph. The
+ * authoritative empty-repo FAIL is owned by reportRepoState; these lines
+ * remain informational and do NOT mutate process.exitCode.
  */
 export function reportHostAndPaths(section: DoctorSection): void {
-  addItem(section, `${dim(infoGlyph)} host: ${cyan(HOST)}`);
+  // HOST already folds in the fallback (see src/config.ts); the unset hint
+  // tells the user the value came from the OS hostname, not their shell rc.
+  const unsetHint = process.env.NOMAD_HOST ? '' : dim(' (env unset, using hostname)');
+  addItem(section, `${dim(infoGlyph)} NOMAD_HOST: ${cyan(HOST)}${unsetHint}`);
+  if (isOverrideActive()) {
+    addItem(section, `${dim(infoGlyph)} NOMAD_REPO: ${blue(REPO_HOME)}`);
+  }
   addItem(
     section,
     `${existsSync(REPO_HOME) ? green(okGlyph) : yellow(warnGlyph)} repo: ${blue(REPO_HOME)}`,

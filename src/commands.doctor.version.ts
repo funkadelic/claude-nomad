@@ -110,7 +110,16 @@ export function reportVersionCheck(section: DoctorSection): void {
   if (localPure === null) return;
 
   const latest = fetchLatestVersion();
-  if (latest === null) return;
+  if (latest === null) {
+    // A silent skip is indistinguishable from "current"; say the line carries
+    // no verdict instead of vanishing. Neutral wording: null covers offline,
+    // malformed registry JSON, and non-semver tags alike. Informational only.
+    addItem(
+      section,
+      `${dim(infoGlyph)} claude-nomad: ${local} (version check skipped: could not determine latest version)`,
+    );
+    return;
+  }
 
   const cmp = compareSemver(localPure, latest);
   if (cmp === 0) {
