@@ -116,3 +116,26 @@ describe('gitOrFatal (mocked child_process)', () => {
     expect(stderrSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('item', () => {
+  let logSpy: MockInstance<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('prints a two-space-indented, glyph-less line for the message', async () => {
+    const { item } = await import('./utils.ts');
+    item('foo');
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const out = String(logSpy.mock.calls[0][0]);
+    expect(out).toContain('  foo');
+    expect(out).not.toContain('ℹ︎');
+  });
+});

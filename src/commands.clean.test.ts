@@ -129,6 +129,8 @@ describe('cmdClean dry-run', () => {
     expect(existsSync(join(testRoot, '20260201-000000'))).toBe(true);
     const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(out).toContain('20260101-000000');
+    expect(out).toContain('  20260101-000000');
+    expect(out).not.toContain('would remove');
     expect(out).toContain('dry-run');
   });
 });

@@ -5,7 +5,7 @@ import { join, relative } from 'node:path';
 import { REPO_HOME } from './config.ts';
 import { expandStagedDir, isInIndex, isTrackedInHead } from './commands.drop-session.git.ts';
 import { reportScrubHint } from './commands.drop-session.scrub-hint.ts';
-import { die, fail, log, NomadFatal } from './utils.ts';
+import { die, fail, item, NomadFatal } from './utils.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
 /**
@@ -126,7 +126,7 @@ function unstageOne(rel: string): void {
   // first drop already removed the entry from the index but left the
   // working tree file in place).
   if (!isInIndex(rel)) {
-    log(`dropped ${rel} (already absent from index)`);
+    item(`dropped ${rel} (already absent from index)`);
     return;
   }
   try {
@@ -155,5 +155,5 @@ function unstageOne(rel: string): void {
     const detail = e.stderr?.toString().trim() ?? e.message;
     throw new NomadFatal(`git failed to unstage ${rel}: ${detail}`);
   }
-  log(`dropped ${rel}`);
+  item(`dropped ${rel}`);
 }

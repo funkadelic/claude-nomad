@@ -13,7 +13,7 @@ import {
 } from './gh-actions.ts';
 import { DEFAULT_REPO_NAME, ensureOriginRepo } from './init.gh-onboard.ts';
 import { snapshotIntoShared } from './init.snapshot.ts';
-import { die, log } from './utils.ts';
+import { die, item, log } from './utils.ts';
 import { writeJsonAtomic } from './utils.fs.ts';
 
 /**
@@ -116,18 +116,18 @@ export function cmdInit(
   const userClaudeMd = join(CLAUDE_HOME, 'CLAUDE.md');
   if (!snapshot || !existsSync(userClaudeMd)) {
     writeFileSync(join(REPO_HOME, 'shared', 'CLAUDE.md'), SHARED_CLAUDE_MD);
-    log('created shared/CLAUDE.md');
+    item('created shared/CLAUDE.md');
   }
   for (const name of SHARED_KEEP_DIRS) {
     writeFileSync(join(REPO_HOME, 'shared', name, '.gitkeep'), '');
-    log(`created shared/${name}/.gitkeep`);
+    item(`created shared/${name}/.gitkeep`);
   }
   writeFileSync(join(REPO_HOME, 'hosts', '.gitkeep'), '');
-  log('created hosts/.gitkeep');
+  item('created hosts/.gitkeep');
   writeJsonAtomic(join(REPO_HOME, 'shared', 'settings.base.json'), {});
-  log('created shared/settings.base.json');
+  item('created shared/settings.base.json');
   writeJsonAtomic(join(REPO_HOME, 'path-map.json'), { projects: {} } satisfies PathMap);
-  log('created path-map.json');
+  item('created path-map.json');
 
   if (snapshot) {
     // In the init path, path-map.json was just written as `{ projects: {} }`
