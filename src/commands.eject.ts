@@ -2,7 +2,7 @@ import { cpSync, existsSync, lstatSync, realpathSync, renameSync, rmSync } from 
 import { join, sep } from 'node:path';
 
 import { allSharedLinks, BACKUP_BASE, CLAUDE_HOME, REPO_HOME, type PathMap } from './config.ts';
-import { die, fail, log } from './utils.ts';
+import { die, fail, item, log } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
 
 /**
@@ -154,7 +154,7 @@ function isManagedTarget(target: string, sharedRoot: string): boolean {
 function materializeOne(name: string, linkPath: string, sharedRoot: string): boolean {
   const target = realpathSync(linkPath);
   if (!isManagedTarget(target, sharedRoot)) {
-    log(`skipped (not a nomad-managed target): ${name} -> ${target}`);
+    item(`skipped (not a nomad-managed target): ${name} -> ${target}`);
     return false;
   }
   const tmp = `${linkPath}.eject.tmp.${process.pid}.${Date.now()}`;
@@ -170,7 +170,7 @@ function materializeOne(name: string, linkPath: string, sharedRoot: string): boo
     });
     rmSync(linkPath, { force: true });
     renameSync(tmp, linkPath);
-    log(`ejected: ${name}`);
+    item(`ejected: ${name}`);
     return true;
   } catch (err) {
     // Clean up the temp on any error before re-throwing.
@@ -207,9 +207,9 @@ function previewDryRun(
     const cls = classifications.get(name);
     const linkPath = join(claudeHome, name);
     if (cls === 'absent') {
-      log(`skipped (absent): ${name}`);
+      item(`skipped (absent): ${name}`);
     } else if (cls === 'skip-real') {
-      log(`skipped (not a symlink): ${name}`);
+      item(`skipped (not a symlink): ${name}`);
     } else {
       previewMaterialize(name, linkPath, sharedRoot);
     }
@@ -236,14 +236,14 @@ export function previewMaterialize(name: string, linkPath: string, sharedRoot: s
   try {
     target = realpathSync(linkPath);
   } catch {
-    log(`would materialize: ${name} (target now unresolvable; re-run to re-classify)`);
+    item(`would materialize: ${name} (target now unresolvable; re-run to re-classify)`);
     return;
   }
   if (!isManagedTarget(target, sharedRoot)) {
-    log(`skipped (not a nomad-managed target): ${name} -> ${target}`);
+    item(`skipped (not a nomad-managed target): ${name} -> ${target}`);
     return;
   }
-  log(`would materialize: ${name} (copy ${target} -> ${linkPath})`);
+  item(`would materialize: ${name} (copy ${target} -> ${linkPath})`);
 }
 
 /**
@@ -273,10 +273,10 @@ function runLiveEject(
     const cls = classifications.get(name);
     const linkPath = join(claudeHome, name);
     if (cls === 'absent') {
-      log(`skipped (absent): ${name}`);
+      item(`skipped (absent): ${name}`);
       skipped++;
     } else if (cls === 'skip-real') {
-      log(`skipped (not a symlink): ${name}`);
+      item(`skipped (not a symlink): ${name}`);
       skipped++;
     } else if (materializeOneOrDie(name, linkPath, sharedRoot, done)) {
       done.push(name);

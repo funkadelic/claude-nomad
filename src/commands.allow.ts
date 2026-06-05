@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 
 import { REPO_HOME } from './config.ts';
 import { appendGitleaksIgnore, isValidFingerprint } from './commands.redact.core.ts';
-import { die, fail, log } from './utils.ts';
+import { die, fail, item, log } from './utils.ts';
 
 /**
  * Validate each fingerprint with `isValidFingerprint`, then append each valid
@@ -30,6 +30,7 @@ export function cmdAllow(fingerprints: string[]): void {
   }
   for (const fp of fingerprints) {
     appendGitleaksIgnore(fp);
-    log(`allowed: ${fp}`);
+    item(`allowed: ${fp}`);
   }
+  log(`allowed ${fingerprints.length} fingerprint(s)`);
 }

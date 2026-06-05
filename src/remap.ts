@@ -3,7 +3,7 @@ import { join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
-import { die, log } from './utils.ts';
+import { die, item, log } from './utils.ts';
 import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
 
@@ -23,8 +23,8 @@ function copyDir(src: string, dst: string): void {
  * filter restricts to *.jsonl files only. Subdirectory contents (subagents,
  * memory, tool-results, etc.) copy recursively with no further filtering.
  * Stray .bak / .tmp / .swp / editor backups at the source root are skipped
- * and produce one `ℹ︎ skip <rel>: extension not in allowlist` log
- * line each. The filter must allow the source root explicitly (Pitfall 1:
+ * and produce one dim, indented `skip <rel>: extension not in allowlist`
+ * list line each. The filter must allow the source root explicitly (Pitfall 1:
  * cpSync invokes the filter on src === src first, and a false return
  * there would abort the whole copy). Used by remapPush only; remapPull
  * keeps the unfiltered copyDir because the repo side is already curated
@@ -41,7 +41,7 @@ export function copyDirJsonlOnly(src: string, dst: string): void {
       if (rel.split(sep).length > 1) return true;
       if (statSync(srcPath).isDirectory()) return true;
       if (srcPath.endsWith('.jsonl')) return true;
-      log(`skip ${rel}: extension not in allowlist`);
+      item(`skip ${rel}: extension not in allowlist`);
       return false;
     },
   });
