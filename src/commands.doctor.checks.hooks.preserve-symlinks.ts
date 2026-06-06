@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { relativeRequireTargetsBroken } from './commands.doctor.checks.hooks.preserve-symlinks.probe.ts';
-import { allSharedLinks, CLAUDE_HOME, HOME, REPO_HOME, type PathMap } from './config.ts';
+import { allSharedLinks, claudeHome, home, repoHome, type PathMap } from './config.ts';
 
 /**
  * WARN-only `nomad doctor` reporter that catches the symlink-broken-relative-require
@@ -23,10 +23,11 @@ import { allSharedLinks, CLAUDE_HOME, HOME, REPO_HOME, type PathMap } from './co
 
 /** Home-expand `~`, `$HOME`, `${HOME}` in a path token. */
 function expandHome(token: string): string {
+  const h = home();
   return token
-    .replace(/^\$\{HOME\}/, HOME)
-    .replace(/^\$HOME/, HOME)
-    .replace(/^~/, HOME);
+    .replace(/^\$\{HOME\}/, h)
+    .replace(/^\$HOME/, h)
+    .replace(/^~/, h);
 }
 
 /** Strip leading/trailing shell quoting and control punctuation from a token. */
@@ -61,7 +62,7 @@ function commandTokens(command: string): string[] {
  * @returns Parsed PathMap or the safe default.
  */
 function readPathMapSafe(): PathMap {
-  const mapPath = join(REPO_HOME, 'path-map.json');
+  const mapPath = join(repoHome(), 'path-map.json');
   if (!existsSync(mapPath)) return { projects: {} };
   try {
     return JSON.parse(readFileSync(mapPath, 'utf8')) as PathMap;
@@ -80,7 +81,7 @@ function readPathMapSafe(): PathMap {
  */
 function resolvesUnderSymlinkedShared(scriptPath: string, sharedLinkNames: string[]): boolean {
   for (const name of sharedLinkNames) {
-    const prefix = `${CLAUDE_HOME}/${name}/`;
+    const prefix = `${claudeHome()}/${name}/`;
     if (scriptPath.startsWith(prefix)) return true;
   }
   return false;
@@ -219,7 +220,7 @@ function checkEventForPreserveSymlinks(
  * @param section - The doctor section to append items to.
  */
 export function reportPreserveSymlinksCheck(section: DoctorSection): void {
-  const settingsPath = join(CLAUDE_HOME, 'settings.json');
+  const settingsPath = join(claudeHome(), 'settings.json');
   if (!existsSync(settingsPath)) {
     addItem(
       section,

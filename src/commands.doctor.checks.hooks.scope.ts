@@ -3,7 +3,7 @@ import { dirname, extname, join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { CLAUDE_HOME } from './config.ts';
+import { claudeHome } from './config.ts';
 
 /**
  * WARN-only `nomad doctor` reporter that catches the ESM/CommonJS module-scope
@@ -188,7 +188,7 @@ function safeRead(path: string): string | null {
  * @param section - The doctor section to append items to.
  */
 export function reportHookScopeCheck(section: DoctorSection): void {
-  const hooksDir = join(CLAUDE_HOME, 'hooks');
+  const hooksDir = join(claudeHome(), 'hooks');
   if (!existsSync(hooksDir)) {
     addItem(section, `${dim(infoGlyph)} no ~/.claude/hooks; skipping module-scope check`);
     return;

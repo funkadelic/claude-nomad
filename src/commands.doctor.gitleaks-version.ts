@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { green, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { GITLEAKS_PINNED_VERSION, REPO_HOME } from './config.ts';
+import { GITLEAKS_PINNED_VERSION, repoHome } from './config.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
 
 /**
@@ -67,7 +67,7 @@ function readGitleaksVersion(
   run: SpawnSyncFn,
   tomlExists: (path: string) => boolean,
 ): string | null {
-  const tomlPath = join(REPO_HOME, '.gitleaks.toml');
+  const tomlPath = join(repoHome(), '.gitleaks.toml');
   const args: string[] = ['version'];
   if (tomlExists(tomlPath)) args.push('--config', tomlPath);
   try {

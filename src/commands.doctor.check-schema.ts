@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, readJsonSafe, type DoctorSection } from './commands.doctor.format.ts';
-import { CLAUDE_HOME, SETTINGS_SCHEMA_URL } from './config.ts';
+import { claudeHome, SETTINGS_SCHEMA_URL } from './config.ts';
 import { fetchUrl } from './http-fetch.ts';
 
 /**
@@ -41,7 +41,7 @@ function fetchSchemaKeys(): string[] | null {
  * keys absent from it (APP_ONLY_KEYS candidates).
  */
 export function reportCheckSchema(section: DoctorSection): void {
-  const settingsPath = join(CLAUDE_HOME, 'settings.json');
+  const settingsPath = join(claudeHome(), 'settings.json');
   if (!existsSync(settingsPath)) {
     addItem(section, `${dim(infoGlyph)} no ~/.claude/settings.json to check`);
     return;

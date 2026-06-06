@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { blue, cyan, dim, failGlyph, green, infoGlyph, okGlyph, red } from './color.ts';
-import { CLAUDE_HOME, HOST, NEVER_SYNC, REPO_HOME, type PathMap } from './config.ts';
+import { claudeHome, HOST, NEVER_SYNC, repoHome, type PathMap } from './config.ts';
 import {
   addChildItem,
   addItem,
@@ -36,7 +36,7 @@ function reportMappedProjects(section: DoctorSection, map: PathMap): void {
  * the local projects dir does not exist.
  */
 function reportUnmappedProjects(section: DoctorSection, map: PathMap): void {
-  const localProjects = join(CLAUDE_HOME, 'projects');
+  const localProjects = join(claudeHome(), 'projects');
   if (!existsSync(localProjects)) return;
   // Tolerant-doctor contract: an unreadable projects dir (permissions) skips
   // this informational listing instead of throwing mid-output.
@@ -86,7 +86,7 @@ function reportPathCollisions(section: DoctorSection, map: PathMap): void {
 
 /** Pushes mapped projects for the current host and FAILs on path-encoding collisions across hosts; FAILs when path-map.json is missing. */
 export function reportPathMap(section: DoctorSection): void {
-  const mapPath = join(REPO_HOME, 'path-map.json');
+  const mapPath = join(repoHome(), 'path-map.json');
   if (!existsSync(mapPath)) {
     addItem(section, `${red(failGlyph)} path-map.json missing at ${blue(mapPath)}`);
     process.exitCode = 1;

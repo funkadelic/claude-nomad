@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import { warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import {
   ghAuthStatus,
   isActionsEnabled,
@@ -45,7 +45,7 @@ export function reportActionsDrift(section: DoctorSection, run: SpawnSyncFn = ex
   // Gate 1: origin remote. Throws on no remote / non-repo -> silent skip.
   let remote: string;
   try {
-    remote = readOriginRemote(REPO_HOME, run);
+    remote = readOriginRemote(repoHome(), run);
   } catch {
     return;
   }

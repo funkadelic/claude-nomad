@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { dim, failGlyph, green, infoGlyph, okGlyph, red } from './color.ts';
 import { addItem, readJsonSafe, type DoctorSection } from './commands.doctor.format.ts';
-import { CLAUDE_HOME, HOME } from './config.ts';
+import { claudeHome, home } from './config.ts';
 
 /**
  * Always-on `nomad doctor` reporter. Reads `~/.claude/settings.json`, walks
@@ -25,10 +25,11 @@ import { CLAUDE_HOME, HOME } from './config.ts';
  * @returns The path with any leading home-relative syntax resolved to HOME.
  */
 function expandHome(token: string): string {
+  const h = home();
   return token
-    .replace(/^\$\{HOME\}/, HOME)
-    .replace(/^\$HOME/, HOME)
-    .replace(/^~/, HOME);
+    .replace(/^\$\{HOME\}/, h)
+    .replace(/^\$HOME/, h)
+    .replace(/^~/, h);
 }
 
 /**
@@ -62,7 +63,7 @@ function stripShellPunctuation(token: string): string {
  * @returns Iterable of absolute resolved paths under `~/.claude`.
  */
 function* claudePathsIn(command: string): Iterable<string> {
-  const claudePrefix = `${CLAUDE_HOME}/`;
+  const claudePrefix = `${claudeHome()}/`;
   for (const segment of command.split(/&&|\|\||;|\|/)) {
     for (const raw of segment.trim().split(/\s+/).filter(Boolean)) {
       const expanded = expandHome(stripShellPunctuation(raw));
@@ -152,7 +153,7 @@ function checkEventGroups(section: DoctorSection, event: string, groups: unknown
  * @param section - The doctor section to append items to.
  */
 export function reportHooksTargetCheck(section: DoctorSection): void {
-  const settingsPath = join(CLAUDE_HOME, 'settings.json');
+  const settingsPath = join(claudeHome(), 'settings.json');
   if (!existsSync(settingsPath)) {
     addItem(section, `${dim(infoGlyph)} no ~/.claude/settings.json; skipping hook target check`);
     return;

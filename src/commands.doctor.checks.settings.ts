@@ -12,7 +12,7 @@ import {
   warnGlyph,
   yellow,
 } from './color.ts';
-import { HOST, KNOWN_SETTINGS_KEYS, REPO_HOME, CLAUDE_HOME } from './config.ts';
+import { claudeHome, HOST, KNOWN_SETTINGS_KEYS, repoHome } from './config.ts';
 import { addItem, readJsonSafe, type DoctorSection } from './commands.doctor.format.ts';
 
 /**
@@ -25,7 +25,7 @@ import { addItem, readJsonSafe, type DoctorSection } from './commands.doctor.for
 
 /** Loads shared/settings.base.json; on missing or malformed, records a FAIL item in the supplied section. Returns the parsed object or null. */
 export function loadBaseSettings(section: DoctorSection): Record<string, unknown> | null {
-  const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
+  const basePath = join(repoHome(), 'shared', 'settings.base.json');
   if (!existsSync(basePath)) {
     addItem(section, `${red(failGlyph)} shared/settings.base.json missing at ${blue(basePath)}`);
     process.exitCode = 1;
@@ -36,7 +36,7 @@ export function loadBaseSettings(section: DoctorSection): Record<string, unknown
 
 /** Loads ~/.claude/settings.json when present and emits the schema status (okGlyph for known-keys-only, warnGlyph when unknown keys are present); returns the parsed object or null. */
 export function loadAndReportSettings(section: DoctorSection): Record<string, unknown> | null {
-  const settingsPath = join(CLAUDE_HOME, 'settings.json');
+  const settingsPath = join(claudeHome(), 'settings.json');
   if (!existsSync(settingsPath)) return null;
   const settings = readJsonSafe<Record<string, unknown>>(settingsPath, settingsPath, section);
   if (settings === null) return null;
@@ -58,7 +58,8 @@ export function reportHostOverrides(
   base: Record<string, unknown> | null,
   settings: Record<string, unknown> | null,
 ): void {
-  const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
+  const repo = repoHome();
+  const hostFile = join(repo, 'hosts', `${HOST}.json`);
   let drift: string[] = [];
   if (base !== null && settings !== null) {
     const baseKeys = new Set(Object.keys(base));
@@ -73,7 +74,7 @@ export function reportHostOverrides(
       section,
       `${red(failGlyph)} no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`,
     );
-    const hostsDir = join(REPO_HOME, 'hosts');
+    const hostsDir = join(repo, 'hosts');
     if (existsSync(hostsDir)) {
       const cands = readdirSync(hostsDir).filter((f) => f.endsWith('.json'));
       if (cands.length > 0) addItem(section, `${dim(infoGlyph)} candidates: ${cands.join(', ')}`);
