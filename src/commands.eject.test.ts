@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import { cmdEject, EJECT_CHECKLIST, errMessage, previewMaterialize } from './commands.eject.ts';
+import { cmdEject, ejectChecklist, errMessage, previewMaterialize } from './commands.eject.ts';
 
 /**
  * Helper: create a temp directory pair (claudeHome + repoHome) for each test.
@@ -238,10 +238,10 @@ describe('cmdEject', () => {
     }
   });
 
-  it('checklist EJECT_CHECKLIST export contains npm uninstall and NOMAD_HOST items', () => {
-    expect(EJECT_CHECKLIST).toContain('npm uninstall -g claude-nomad');
-    expect(EJECT_CHECKLIST).toContain('NOMAD_HOST');
-    expect(EJECT_CHECKLIST).toContain('NOMAD_REPO');
+  it('ejectChecklist() export contains npm uninstall and NOMAD_HOST items', () => {
+    expect(ejectChecklist()).toContain('npm uninstall -g claude-nomad');
+    expect(ejectChecklist()).toContain('NOMAD_HOST');
+    expect(ejectChecklist()).toContain('NOMAD_REPO');
   });
 
   it('tally: live run logs a materialized/skipped summary before the checklist', () => {

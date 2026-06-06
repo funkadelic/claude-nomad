@@ -1,10 +1,13 @@
 import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { HOME } from './config.ts';
+import { home } from './config.ts';
 import { warn } from './utils.ts';
 
-const LOCK_PATH = join(HOME, '.cache', 'claude-nomad', 'nomad.lock');
+/** Returns the lock file path resolved under the current HOME at call time. */
+function lockFilePath(): string {
+  return join(home(), '.cache', 'claude-nomad', 'nomad.lock');
+}
 
 /** Opaque handle for an acquired lockfile. Pass to `releaseLock` in a `finally`. */
 export type LockHandle = { fd: number };
@@ -19,9 +22,10 @@ export type LockHandle = { fd: number };
  * in the contention-skip message.
  */
 export function acquireLock(verb: string): LockHandle | null {
-  mkdirSync(dirname(LOCK_PATH), { recursive: true });
+  const lp = lockFilePath();
+  mkdirSync(dirname(lp), { recursive: true });
   try {
-    const fd = openSync(LOCK_PATH, 'wx');
+    const fd = openSync(lp, 'wx');
     try {
       writeFileSync(fd, String(process.pid));
     } catch (writeErr) {
@@ -36,7 +40,7 @@ export function acquireLock(verb: string): LockHandle | null {
         /* already closed; ignore */
       }
       try {
-        unlinkSync(LOCK_PATH);
+        unlinkSync(lp);
       } catch {
         /* best-effort cleanup; the original write failure takes precedence */
       }
@@ -58,13 +62,14 @@ export function acquireLock(verb: string): LockHandle | null {
  */
 export function releaseLock(handle: LockHandle | null): void {
   if (handle === null) return;
+  const lp = lockFilePath();
   try {
     closeSync(handle.fd);
   } catch {
     /* already closed; ignore */
   }
   try {
-    unlinkSync(LOCK_PATH);
+    unlinkSync(lp);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
@@ -81,16 +86,17 @@ export function releaseLock(handle: LockHandle | null): void {
  * documented as a backlog item rather than fully closed here.
  */
 function unlinkIfSamePid(expectedPidStr: string): boolean {
+  const lp = lockFilePath();
   let current: string;
   try {
-    current = readFileSync(LOCK_PATH, 'utf8').trim();
+    current = readFileSync(lp, 'utf8').trim();
   } catch {
     return false;
   }
   /* c8 ignore next -- TOCTOU drift between the two reads is a documented residual race, hard to exercise deterministically */
   if (current !== expectedPidStr) return false;
   try {
-    unlinkSync(LOCK_PATH);
+    unlinkSync(lp);
     return true;
   } catch {
     return false;
@@ -105,9 +111,10 @@ function unlinkIfSamePid(expectedPidStr: string): boolean {
  * other case.
  */
 function checkStaleAndRetry(verb: string): LockHandle | null {
+  const lp = lockFilePath();
   let pidStr: string;
   try {
-    pidStr = readFileSync(LOCK_PATH, 'utf8').trim();
+    pidStr = readFileSync(lp, 'utf8').trim();
   } catch {
     pidStr = '';
   }
@@ -139,8 +146,9 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
  * lock is being rapidly recreated by another live process.
  */
 function retryOnce(verb: string): LockHandle | null {
+  const lp = lockFilePath();
   try {
-    const fd = openSync(LOCK_PATH, 'wx');
+    const fd = openSync(lp, 'wx');
     try {
       writeFileSync(fd, String(process.pid));
     } catch {
@@ -153,7 +161,7 @@ function retryOnce(verb: string): LockHandle | null {
         /* already closed; ignore */
       }
       try {
-        unlinkSync(LOCK_PATH);
+        unlinkSync(lp);
       } catch {
         /* best-effort cleanup; the null return below is the contract */
       }
