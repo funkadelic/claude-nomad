@@ -30,7 +30,7 @@ export function cmdAllow(fingerprints: string[]): void {
     }
   }
   for (const fp of fingerprints) {
-    appendGitleaksIgnore(fp);
+    appendGitleaksIgnore(fp, repo);
     item(`allowed: ${fp}`);
   }
   log(`allowed ${fingerprints.length} fingerprint(s)`);

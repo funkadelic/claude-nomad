@@ -155,7 +155,7 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
       return { ...actual, scanStagedTree: vi.fn((): scanModule.Finding[] | null => []) };
     });
     const { scanPushVerdict } = await import('./push-leak-verdict.ts');
-    const v = scanPushVerdict();
+    const v = scanPushVerdict('/repo');
     expect(v.leak).toBe(false);
     expect(v.recovery).toBeNull();
     expect(v.verdictRow).toContain('no leaks');
@@ -172,7 +172,7 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
       };
     });
     const { scanPushVerdict } = await import('./push-leak-verdict.ts');
-    const v = scanPushVerdict();
+    const v = scanPushVerdict('/repo');
     expect(v.leak).toBe(true);
     expect(v.verdictRow).toContain('gitleaks detected secrets in 1 session transcript(s)');
     expect(v.recovery ?? '').toContain('nomad drop-session zzz');
@@ -185,7 +185,7 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
       return { ...actual, scanStagedTree: vi.fn((): scanModule.Finding[] | null => null) };
     });
     const { scanPushVerdict } = await import('./push-leak-verdict.ts');
-    const v = scanPushVerdict();
+    const v = scanPushVerdict('/repo');
     expect(v.leak).toBe(true);
     expect(v.verdictRow).toContain('scan failed, no parseable report');
     expect(v.recovery ?? '').toContain('gitleaks scan failed: no parseable JSON report');
@@ -210,7 +210,7 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
       };
     });
     const { scanPushVerdict } = await import('./push-leak-verdict.ts');
-    const v = scanPushVerdict();
+    const v = scanPushVerdict('/repo');
     expect(v.leak).toBe(true);
     expect(v.verdictRow).toContain('gitleaks not found');
     expect(v.recovery ?? '').toContain('install gitleaks');
@@ -228,7 +228,7 @@ describe('push-leak-verdict: scanPushVerdict (real-push scan path)', () => {
       };
     });
     const { scanPushVerdict } = await import('./push-leak-verdict.ts');
-    expect(() => scanPushVerdict()).toThrow(TypeError);
+    expect(() => scanPushVerdict('/repo')).toThrow(TypeError);
     // Sanity: the spy exists so console.error is suppressed in the suite.
     expect(errSpy).toBeDefined();
   });

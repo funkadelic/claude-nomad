@@ -24,9 +24,14 @@ import {
 export type { FindingAction, PromptFn };
 export { findingKey, parseAction };
 
-/** Apply the Allow action: append the finding's fingerprint to .gitleaksignore. */
-function applyAllow(f: Finding): void {
-  appendGitleaksIgnore(f.Fingerprint);
+/**
+ * Apply the Allow action: append the finding's fingerprint to .gitleaksignore.
+ *
+ * @param f The finding to allow.
+ * @param repo Repo root resolved once by the calling command.
+ */
+function applyAllow(f: Finding, repo: string): void {
+  appendGitleaksIgnore(f.Fingerprint, repo);
 }
 
 /**
@@ -38,10 +43,11 @@ function applyAllow(f: Finding): void {
  * and re-scanning after this call.
  *
  * @param findings All findings from the current verdict.
+ * @param repo Repo root resolved once by the calling command.
  */
-export function allowAllFindings(findings: Finding[]): void {
+export function allowAllFindings(findings: Finding[], repo: string): void {
   for (const f of findings) {
-    appendGitleaksIgnore(f.Fingerprint);
+    appendGitleaksIgnore(f.Fingerprint, repo);
   }
 }
 
@@ -57,13 +63,14 @@ export function allowAllFindings(findings: Finding[]): void {
  *
  * @param findings All findings from the current verdict.
  * @param ruleId The gitleaks rule id to match against `Finding.RuleID`.
+ * @param repo Repo root resolved once by the calling command.
  * @returns Number of findings matched (0 when no findings matched).
  */
-export function allowFindingsByRule(findings: Finding[], ruleId: string): number {
+export function allowFindingsByRule(findings: Finding[], ruleId: string, repo: string): number {
   let count = 0;
   for (const f of findings) {
     if (f.RuleID === ruleId) {
-      appendGitleaksIgnore(f.Fingerprint);
+      appendGitleaksIgnore(f.Fingerprint, repo);
       count++;
     }
   }
@@ -106,6 +113,7 @@ type DispatchCtx = {
   ts: string;
   map: PathMap;
   nowMs: () => number;
+  repo: string;
   scan: (p: string) => Finding[] | null;
   drop: (sid: string, map: PathMap) => boolean;
   redactedSids: Set<string>;
@@ -130,7 +138,7 @@ function dispatchOne(f: Finding, ctx: DispatchCtx): void {
   // was held back from the push.
   if (sid !== null && ctx.droppedSids.has(sid)) return;
   if (action === 'allow') {
-    applyAllow(f);
+    applyAllow(f, ctx.repo);
     return;
   }
   if (sid === null) return;
@@ -159,6 +167,7 @@ function dispatchOne(f: Finding, ctx: DispatchCtx): void {
  * @param ts Backup timestamp.
  * @param map Parsed path-map.
  * @param nowMs Injectable clock.
+ * @param repo Repo root resolved once by the calling command.
  * @param scan Injectable scan function for `applyRedact` (default: `scanFile`).
  * @param drop Injectable staged-copy remover for the Drop action (default: `dropSessionFromStaged`).
  */
@@ -168,6 +177,7 @@ export function dispatchActions(
   ts: string,
   map: PathMap,
   nowMs: () => number,
+  repo: string,
   scan: (p: string) => Finding[] | null = scanFile,
   drop: (sid: string, map: PathMap) => boolean = dropSessionFromStaged,
 ): void {
@@ -176,6 +186,7 @@ export function dispatchActions(
     ts,
     map,
     nowMs,
+    repo,
     scan,
     drop,
     redactedSids: new Set<string>(),

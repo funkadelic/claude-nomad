@@ -59,7 +59,7 @@ describe('allowAllFindings - appends each finding fingerprint', () => {
   it('appends a fingerprint for every finding', async () => {
     const { allowAllFindings } = await import('./commands.push.recovery.actions.ts');
     const findings = [makeFinding({ Fingerprint: 'fp-1' }), makeFinding({ Fingerprint: 'fp-2' })];
-    allowAllFindings(findings);
+    allowAllFindings(findings, testHome);
     const content = readFileSync(join(testHome, '.gitleaksignore'), 'utf8');
     expect(content).toContain('fp-1');
     expect(content).toContain('fp-2');
@@ -71,14 +71,14 @@ describe('allowAllFindings - appends each finding fingerprint', () => {
       makeFinding({ Fingerprint: 'fp-dup' }),
       makeFinding({ Fingerprint: 'fp-dup' }),
     ];
-    allowAllFindings(findings);
+    allowAllFindings(findings, testHome);
     const content = readFileSync(join(testHome, '.gitleaksignore'), 'utf8');
     expect(content.split('\n').filter((l) => l === 'fp-dup')).toHaveLength(1);
   });
 
   it('is a no-op when findings array is empty', async () => {
     const { allowAllFindings } = await import('./commands.push.recovery.actions.ts');
-    allowAllFindings([]);
+    allowAllFindings([], testHome);
     expect(existsSync(join(testHome, '.gitleaksignore'))).toBe(false);
   });
 });
@@ -112,7 +112,7 @@ describe('allowFindingsByRule - appends only matching RuleID fingerprints', () =
       makeFinding({ RuleID: 'generic-api-key', Fingerprint: 'fp-no-match' }),
       makeFinding({ RuleID: 'github-pat', Fingerprint: 'fp-match-2' }),
     ];
-    const count = allowFindingsByRule(findings, 'github-pat');
+    const count = allowFindingsByRule(findings, 'github-pat', testHome);
     const content = readFileSync(join(testHome, '.gitleaksignore'), 'utf8');
     expect(count).toBe(2);
     expect(content).toContain('fp-match-1');
@@ -127,7 +127,7 @@ describe('allowFindingsByRule - appends only matching RuleID fingerprints', () =
       makeFinding({ RuleID: 'github-pat', Fingerprint: 'fp-dup' }),
       makeFinding({ RuleID: 'other-rule', Fingerprint: 'fp-other' }),
     ];
-    const count = allowFindingsByRule(findings, 'github-pat');
+    const count = allowFindingsByRule(findings, 'github-pat', testHome);
     const content = readFileSync(join(testHome, '.gitleaksignore'), 'utf8');
     // count is matched findings (2), even though idempotent append writes one line.
     expect(count).toBe(2);
@@ -138,14 +138,14 @@ describe('allowFindingsByRule - appends only matching RuleID fingerprints', () =
   it('is a no-op-with-count-zero when no findings match the rule', async () => {
     const { allowFindingsByRule } = await import('./commands.push.recovery.actions.ts');
     const findings = [makeFinding({ RuleID: 'other-rule', Fingerprint: 'fp-other' })];
-    const count = allowFindingsByRule(findings, 'github-pat');
+    const count = allowFindingsByRule(findings, 'github-pat', testHome);
     expect(count).toBe(0);
     expect(existsSync(join(testHome, '.gitleaksignore'))).toBe(false);
   });
 
   it('does not throw when no findings match', async () => {
     const { allowFindingsByRule } = await import('./commands.push.recovery.actions.ts');
-    expect(() => allowFindingsByRule([], 'some-rule')).not.toThrow();
+    expect(() => allowFindingsByRule([], 'some-rule', testHome)).not.toThrow();
   });
 });
 
@@ -363,7 +363,7 @@ describe('resolveLeakFindings - allowRule non-interactive path', () => {
       scanVerdict: () => cleanVerdict,
     });
 
-    expect(allowRuleMock).toHaveBeenCalledWith([finding], 'github-pat');
+    expect(allowRuleMock).toHaveBeenCalledWith([finding], 'github-pat', testHome);
     expect(result.leak).toBe(false);
   });
 
@@ -502,10 +502,10 @@ describe('allowAllFindings - calls appendGitleaksIgnore for each finding', () =>
 
     const { allowAllFindings } = await import('./commands.push.recovery.actions.ts');
     const findings = [makeFinding({ Fingerprint: 'fp-a' }), makeFinding({ Fingerprint: 'fp-b' })];
-    allowAllFindings(findings);
+    allowAllFindings(findings, '/repo');
     expect(appendMock).toHaveBeenCalledTimes(2);
-    expect(appendMock).toHaveBeenCalledWith('fp-a');
-    expect(appendMock).toHaveBeenCalledWith('fp-b');
+    expect(appendMock).toHaveBeenCalledWith('fp-a', '/repo');
+    expect(appendMock).toHaveBeenCalledWith('fp-b', '/repo');
   });
 });
 

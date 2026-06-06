@@ -13,7 +13,6 @@
  */
 
 import { failGlyph, green, okGlyph, red } from './color.ts';
-import { repoHome } from './config.ts';
 import { gitleaksInstallHint } from './push-checks.ts';
 import {
   type Finding,
@@ -134,12 +133,13 @@ export function verdictScanError(text: string): LeakVerdict {
  * have thrown, so `cmdPush` still aborts. ENOENT (gitleaks/git absent) maps to
  * the platform-aware install-hint FATAL as `recovery` with a ✗ row.
  *
+ * @param repo Repo root resolved once by the calling command.
  * @returns The structured verdict for the real-push Leak scan section.
  */
-export function scanPushVerdict(): LeakVerdict {
+export function scanPushVerdict(repo: string): LeakVerdict {
   let findings: Finding[] | null;
   try {
-    findings = scanStagedTree(repoHome(), true);
+    findings = scanStagedTree(repo, true);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return {

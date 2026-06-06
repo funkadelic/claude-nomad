@@ -9,8 +9,12 @@ function lockFilePath(): string {
   return join(home(), '.cache', 'claude-nomad', 'nomad.lock');
 }
 
-/** Opaque handle for an acquired lockfile. Pass to `releaseLock` in a `finally`. */
-export type LockHandle = { fd: number };
+/**
+ * Opaque handle for an acquired lockfile. Pass to `releaseLock` in a
+ * `finally`. Carries the exact path opened by `acquireLock` so release
+ * always targets the same file even if HOME changes mid-process.
+ */
+export type LockHandle = { fd: number; path: string };
 
 /**
  * Acquire the exclusive nomad lockfile so two pulls/pushes cannot mutate
@@ -46,11 +50,11 @@ export function acquireLock(verb: string): LockHandle | null {
       }
       throw writeErr;
     }
-    return { fd };
+    return { fd, path: lp };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== 'EEXIST') throw err;
-    return checkStaleAndRetry(verb);
+    return checkStaleAndRetry(verb, lp);
   }
 }
 
@@ -62,7 +66,7 @@ export function acquireLock(verb: string): LockHandle | null {
  */
 export function releaseLock(handle: LockHandle | null): void {
   if (handle === null) return;
-  const lp = lockFilePath();
+  const lp = handle.path;
   try {
     closeSync(handle.fd);
   } catch {
@@ -84,9 +88,11 @@ export function releaseLock(handle: LockHandle | null): void {
  * `false` if the content drifted or the file already vanished. A microsecond
  * window between the re-read and the unlink remains; the residual race is
  * documented as a backlog item rather than fully closed here.
+ *
+ * @param expectedPidStr The pid string read earlier from the lockfile.
+ * @param lp Lock path resolved once by `acquireLock`.
  */
-function unlinkIfSamePid(expectedPidStr: string): boolean {
-  const lp = lockFilePath();
+function unlinkIfSamePid(expectedPidStr: string, lp: string): boolean {
   let current: string;
   try {
     current = readFileSync(lp, 'utf8').trim();
@@ -109,9 +115,11 @@ function unlinkIfSamePid(expectedPidStr: string): boolean {
  * dead AND the compare-and-delete in `unlinkIfSamePid` confirms the file
  * has not been replaced under us. Returns `null` (contention skip) in any
  * other case.
+ *
+ * @param verb `'pull'` or `'push'`; surfaces in the contention-skip message.
+ * @param lp Lock path resolved once by `acquireLock`.
  */
-function checkStaleAndRetry(verb: string): LockHandle | null {
-  const lp = lockFilePath();
+function checkStaleAndRetry(verb: string, lp: string): LockHandle | null {
   let pidStr: string;
   try {
     pidStr = readFileSync(lp, 'utf8').trim();
@@ -120,7 +128,7 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
   }
   const pid = Number.parseInt(pidStr, 10);
   if (!Number.isFinite(pid) || pid <= 0) {
-    if (unlinkIfSamePid(pidStr)) return retryOnce(verb);
+    if (unlinkIfSamePid(pidStr, lp)) return retryOnce(verb, lp);
     warn(`another nomad ${verb} running, skipping`);
     return null;
   }
@@ -131,7 +139,7 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ESRCH') {
-      if (unlinkIfSamePid(pidStr)) return retryOnce(verb);
+      if (unlinkIfSamePid(pidStr, lp)) return retryOnce(verb, lp);
       warn(`another nomad ${verb} running, skipping`);
       return null;
     }
@@ -144,9 +152,11 @@ function checkStaleAndRetry(verb: string): LockHandle | null {
  * Single retry of `openSync(..., 'wx')` after `unlinkIfSamePid` cleared a
  * confirmed-stale lock. Bounded to one attempt to avoid spin loops if the
  * lock is being rapidly recreated by another live process.
+ *
+ * @param verb `'pull'` or `'push'`; surfaces in the contention-skip message.
+ * @param lp Lock path resolved once by `acquireLock`.
  */
-function retryOnce(verb: string): LockHandle | null {
-  const lp = lockFilePath();
+function retryOnce(verb: string, lp: string): LockHandle | null {
   try {
     const fd = openSync(lp, 'wx');
     try {
@@ -168,7 +178,7 @@ function retryOnce(verb: string): LockHandle | null {
       warn(`another nomad ${verb} running, skipping`);
       return null;
     }
-    return { fd };
+    return { fd, path: lp };
   } catch {
     warn(`another nomad ${verb} running, skipping`);
     return null;

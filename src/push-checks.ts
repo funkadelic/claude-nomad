@@ -22,7 +22,6 @@ import { readdirSync, rmSync, type Dirent } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
-import { repoHome } from './config.ts';
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
 import { NomadFatal } from './utils.ts';
 
@@ -159,9 +158,10 @@ export function probeGitleaks(): string {
  * list would mislead them; the recovery commands are the actual fix.
  *
  * `cmdPull` may adopt the same helper in a future refactor.
+ *
+ * @param repo Repo root resolved once by the calling command.
  */
-export function rebaseBeforePush(): void {
-  const repo = repoHome();
+export function rebaseBeforePush(repo: string): void {
   try {
     execFileSync('git', ['pull', '--rebase', '--autostash'], {
       cwd: repo,

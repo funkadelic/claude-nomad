@@ -405,7 +405,7 @@ describe('appendGitleaksIgnore (fs-mocked)', () => {
       return { ...actual, appendFileSync: appendSpy };
     });
     const { appendGitleaksIgnore } = await import('./commands.redact.core.ts');
-    appendGitleaksIgnore('shared/projects/foo/bar.jsonl:github-pat:10');
+    appendGitleaksIgnore('shared/projects/foo/bar.jsonl:github-pat:10', testHome);
     expect(appendSpy).toHaveBeenCalledOnce();
     const [path, content] = appendSpy.mock.calls[0] as [string, string];
     expect(path).toBe(join(testHome, '.gitleaksignore'));
@@ -419,7 +419,7 @@ describe('appendGitleaksIgnore (fs-mocked)', () => {
       return { ...actual, appendFileSync: appendSpy };
     });
     const { appendGitleaksIgnore } = await import('./commands.redact.core.ts');
-    appendGitleaksIgnore('file:rule\n:42');
+    appendGitleaksIgnore('file:rule\n:42', testHome);
     const [, content] = appendSpy.mock.calls[0] as [string, string];
     expect(content).toBe('file:rule:42\n');
   });

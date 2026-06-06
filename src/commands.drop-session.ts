@@ -100,7 +100,7 @@ function collectMatches(repoProjects: string, id: string, repo: string): string[
     const dir = join(repoProjects, logical, id);
     if (existsSync(dir) && statSync(dir).isDirectory()) {
       const dirRel = relative(repo, dir);
-      const staged = expandStagedDir(dirRel);
+      const staged = expandStagedDir(dirRel, repo);
       // A dir present on disk but absent from the index is an already-dropped
       // rerun: push the dir path itself so the per-entry isInIndex() guard
       // logs it as "already absent" rather than letting an empty match set
@@ -127,12 +127,12 @@ function unstageOne(rel: string, repo: string): void {
   // load-bearing guard for the idempotent second-run case, where the
   // first drop already removed the entry from the index but left the
   // working tree file in place).
-  if (!isInIndex(rel)) {
+  if (!isInIndex(rel, repo)) {
     item(`dropped ${rel} (already absent from index)`);
     return;
   }
   try {
-    if (isTrackedInHead(rel)) {
+    if (isTrackedInHead(rel, repo)) {
       execFileSync('git', ['restore', '--staged', '--worktree', '--', rel], {
         cwd: repo,
         stdio: ['ignore', 'pipe', 'pipe'],

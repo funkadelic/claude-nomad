@@ -316,6 +316,16 @@ function materializeOneOrDie(
 }
 
 /**
+ * Production default roots for `cmdEject`, resolved at call time (a named
+ * builder rather than an object-literal parameter default, S7737).
+ *
+ * @returns The production roots object, both paths resolved at call time.
+ */
+function defaultEjectRoots(): { claudeHome: string; repoHome: string } {
+  return { claudeHome: claudeHome(), repoHome: repoHome() };
+}
+
+/**
  * Materialize every managed symlink under `~/.claude/` into a real dereferenced
  * copy so the host keeps working after `~/claude-nomad/` is deleted and the CLI
  * is uninstalled.
@@ -336,14 +346,11 @@ function materializeOneOrDie(
  * `dryRun: true` previews actions and prints the checklist without writing.
  *
  * @param opts.dryRun When true, log planned actions and return without mutation.
- * @param roots Injected paths for testing (defaults to `CLAUDE_HOME`/`REPO_HOME`).
+ * @param roots Injected paths for testing (defaults to `defaultEjectRoots()`).
  */
 export function cmdEject(
   opts: { dryRun?: boolean } = {},
-  roots: { claudeHome: string; repoHome: string } = {
-    claudeHome: claudeHome(),
-    repoHome: repoHome(),
-  },
+  roots: { claudeHome: string; repoHome: string } = defaultEjectRoots(),
 ): void {
   const dryRun = opts.dryRun === true;
   const { claudeHome, repoHome } = roots;

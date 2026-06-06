@@ -106,6 +106,32 @@ describe('cmdEject', () => {
     vi.restoreAllMocks();
   });
 
+  it('default roots: bare cmdEject resolves claudeHome/repoHome from the env at call time', () => {
+    const originalHome = process.env.HOME;
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    // Build a HOME/.claude + NOMAD_REPO pair so the parameter default
+    // (defaultEjectRoots) resolves to these temp roots.
+    const base = mkdtempSync(join(tmpdir(), 'nomad-eject-defaults-'));
+    const home = join(base, 'home');
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    const repo = join(base, 'repo');
+    mkdirSync(join(repo, 'shared'), { recursive: true });
+    makeLinkedFile(join(home, '.claude'), repo, 'CLAUDE.md', 'via defaults');
+    process.env.HOME = home;
+    process.env.NOMAD_REPO = repo;
+    try {
+      cmdEject({ dryRun: true });
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('would materialize: CLAUDE.md'));
+      // dry-run: the symlink is untouched.
+      expect(lstatSync(join(home, '.claude', 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    } finally {
+      process.env.HOME = originalHome;
+      if (originalNomadRepo === undefined) delete process.env.NOMAD_REPO;
+      else process.env.NOMAD_REPO = originalNomadRepo;
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   it('materialize: symlinked file becomes a real file with target contents', () => {
     const { claudeHome, repoHome } = makeTempRoots();
     makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'hello world');

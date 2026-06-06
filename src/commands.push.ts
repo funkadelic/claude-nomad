@@ -62,7 +62,7 @@ async function commitAndPush(
   repo: string,
 ): Promise<void> {
   gitOrFatal(['add', '-A'], 'git add', repo);
-  let verdict = withSpinner('Scanning for secrets', scanPushVerdict);
+  let verdict = withSpinner('Scanning for secrets', () => scanPushVerdict(repo));
   if (verdict.leak) {
     renderPushTree(st, verdict);
     verdict = await resolveLeakFindings(verdict, ts, map, { redactAll, allowAll, allowRule });
@@ -214,7 +214,7 @@ export async function cmdPush(
     // Rebase BEFORE any local mutation: surfaces remote conflicts against the
     // user's committed state, not against in-flight remapPush copies. Runs
     // under dryRun too so the network round-trip mirrors a real push.
-    withSpinner('Rebasing onto origin', rebaseBeforePush);
+    withSpinner('Rebasing onto origin', () => rebaseBeforePush(repo));
     // Collision-resistant ts for remapPush's pre-copy snapshot of repo-side state.
     const ts = freshBackupTs(backup);
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
