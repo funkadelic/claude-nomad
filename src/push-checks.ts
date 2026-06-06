@@ -171,7 +171,7 @@ export function rebaseBeforePush(repo: string): void {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer };
     if (e.stderr) process.stderr.write(e.stderr);
     throw new NomadFatal(
-      'rebase failed; if a conflict was reported, resolve it in ~/claude-nomad/ and run "git rebase --continue" (or "git rebase --abort" to give up). Re-run nomad push after resolution.',
+      `rebase failed; if a conflict was reported, resolve it in ${repo} and run "git rebase --continue" (or "git rebase --abort" to give up). Re-run nomad push after resolution.`,
     );
   }
 }
