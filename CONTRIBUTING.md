@@ -106,17 +106,21 @@ Reports land in `reports/mutation/` (gitignored). Archive each module's
 The `reports/stryker-incremental.json` incremental cache accumulates across sessions so you can
 resume a multi-session sweep without re-running completed modules.
 
-### Known limitation: HOME-based test isolation
+### Resolved limitation: HOME-based test isolation
 
-Modules whose tests set `process.env.HOME = <tmpDir>` and call `vi.resetModules()` to reload
-[`src/config.ts`](src/config.ts) cannot currently be mutation-tested.
-[`src/config.ts`](src/config.ts) resolves `REPO_HOME` at module load time via `os.homedir()`, and
-Stryker's sandbox pins that resolution at process start. The re-imported module sees the sandbox
-HOME, not the test HOME, so the dry-run baseline fails before any mutation runs.
+Modules whose tests swap `process.env.HOME` to a temp directory were previously blocked from
+mutation testing by two stacked issues, both now fixed. First, [`src/config.ts`](src/config.ts)
+resolved its paths at module load time; the call-time resolvers (`home()`, `claudeHome()`,
+`repoHome()`, `backupBase()`) removed that. Second, Stryker's vitest runner forces
+`pool: 'threads'`, and a worker thread's `process.env` mutations update only that isolate's copy
+while `os.homedir()` reads the real process environ and never sees them; `home()` therefore reads
+`process.env.HOME` directly (empty string falls through to `os.homedir()`), pinned by a
+worker-thread probe test in [`src/config.test.ts`](src/config.test.ts).
 
-Modules that use a `NOMAD_REPO` environment override instead of HOME (or that do not mutate HOME at
-all) are not affected and can be swept normally. This limitation does not reduce test coverage;
-those modules remain fully exercised by the normal `npm test` run.
+All HOME-swapping modules now pass the Stryker dry run and can be swept normally. One residual
+scoping caveat: a test only registers kills in sweeps whose `--testFiles` included it, so a test
+file that primarily exercises a sibling module will show up as zero-kill for the module that owns
+it. Cross-reference candidates against the sibling module's report before treating them as dead.
 
 ### Triage
 
