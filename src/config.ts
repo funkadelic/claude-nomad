@@ -5,17 +5,24 @@ import { isValidSharedDir } from './config.sharedDirs.guard.ts';
 import { warn } from './utils.ts';
 
 /**
- * Resolved home directory. Uses Node's `os.homedir()` which reads `$HOME` on
- * POSIX and falls back to `getpwuid_r()` when the env var is unset. Returns
- * `""` only in pathological environments (no env, no uid mapping); callers
- * should verify it is non-empty at CLI entry via `nomad.ts`. Centralizing the
- * lookup here prevents the `process.env.HOME ?? ''` footgun where an unset
- * `HOME` silently produced relative lockfile/backup paths.
+ * Resolved home directory. Reads `process.env.HOME` first (empty string falls
+ * through) and falls back to Node's `os.homedir()` (`getpwuid_r()` on POSIX
+ * when the env var is unset). Returns `""` only in pathological environments
+ * (no env, no uid mapping); callers should verify it is non-empty at CLI
+ * entry via `nomad.ts`.
+ *
+ * The explicit `process.env.HOME` read is load-bearing for worker threads:
+ * `process.env` mutations in a `worker_threads` worker update only that
+ * isolate's copy, while `os.homedir()` reads the real process environ and
+ * stays blind to them. Tools that run tests in worker threads (Stryker's
+ * vitest runner forces `pool: 'threads'`) need the env read for the
+ * tests' HOME swap to take effect.
  *
  * Call-time resolver: resolved on each call, not at module load.
  */
 export function home(): string {
-  return homedir();
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  return process.env.HOME || homedir();
 }
 
 /**
