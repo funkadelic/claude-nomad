@@ -24,7 +24,7 @@ import { cmdRedact } from './commands.redact.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
 import { cmdUpdate } from './commands.update.ts';
-import { HOME } from './config.ts';
+import { home } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
@@ -46,7 +46,8 @@ import { fail, NomadFatal } from './utils.ts';
  */
 import pkg from '../package.json' with { type: 'json' };
 
-if (!HOME) {
+const h = home();
+if (!h) {
   fail(
     'could not determine home directory (HOME env unset and no uid mapping). Set HOME and retry.',
   );

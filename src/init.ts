@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, type PathMap, REPO_HOME } from './config.ts';
+import { claudeHome, type PathMap, repoHome } from './config.ts';
 import {
   disableActions,
   ghAuthStatus,
@@ -82,15 +82,17 @@ export function cmdInit(
 ): void {
   const snapshot = opts.snapshot === true;
   const keepActions = opts.keepActions === true;
+  const repo = repoHome();
+  const claude = claudeHome();
 
-  // Create REPO_HOME, then refuse to clobber an already-initialized tree BEFORE
+  // Create repo root, then refuse to clobber an already-initialized tree BEFORE
   // any onboarding side effects. ensureOriginRepo can create a GitHub repo and
   // wire a remote, so the conflict guard must run first: otherwise a re-init on
-  // an already-scaffolded REPO_HOME that lacks an origin would create a stray
+  // an already-scaffolded repo that lacks an origin would create a stray
   // private repo and wire it, then abort with "already initialized".
-  mkdirSync(REPO_HOME, { recursive: true });
+  mkdirSync(repo, { recursive: true });
 
-  const conflict = preflightConflict(REPO_HOME);
+  const conflict = preflightConflict(repo);
   if (conflict !== null) {
     die(`already initialized; refusing to clobber ${conflict}`);
   }
@@ -101,10 +103,10 @@ export function cmdInit(
   // Create the directory structure first so the subsequent file writes have
   // a parent. `recursive: true` is a no-op when the dir already exists, but
   // the preflight guarantees it does not.
-  mkdirSync(join(REPO_HOME, 'shared'), { recursive: true });
-  mkdirSync(join(REPO_HOME, 'hosts'), { recursive: true });
+  mkdirSync(join(repo, 'shared'), { recursive: true });
+  mkdirSync(join(repo, 'hosts'), { recursive: true });
   for (const name of SHARED_KEEP_DIRS) {
-    mkdirSync(join(REPO_HOME, 'shared', name), { recursive: true });
+    mkdirSync(join(repo, 'shared', name), { recursive: true });
   }
 
   // Per-artifact writes. Each emits a log line so the user sees the
@@ -113,20 +115,20 @@ export function cmdInit(
   // never a half-written JSON the next pull would die on. In snapshot mode,
   // skip the CLAUDE.md placeholder when a real source exists so the overlay
   // copies the user content verbatim instead of an overwrite-from-placeholder.
-  const userClaudeMd = join(CLAUDE_HOME, 'CLAUDE.md');
+  const userClaudeMd = join(claude, 'CLAUDE.md');
   if (!snapshot || !existsSync(userClaudeMd)) {
-    writeFileSync(join(REPO_HOME, 'shared', 'CLAUDE.md'), SHARED_CLAUDE_MD);
+    writeFileSync(join(repo, 'shared', 'CLAUDE.md'), SHARED_CLAUDE_MD);
     item('created shared/CLAUDE.md');
   }
   for (const name of SHARED_KEEP_DIRS) {
-    writeFileSync(join(REPO_HOME, 'shared', name, '.gitkeep'), '');
+    writeFileSync(join(repo, 'shared', name, '.gitkeep'), '');
     item(`created shared/${name}/.gitkeep`);
   }
-  writeFileSync(join(REPO_HOME, 'hosts', '.gitkeep'), '');
+  writeFileSync(join(repo, 'hosts', '.gitkeep'), '');
   item('created hosts/.gitkeep');
-  writeJsonAtomic(join(REPO_HOME, 'shared', 'settings.base.json'), {});
+  writeJsonAtomic(join(repo, 'shared', 'settings.base.json'), {});
   item('created shared/settings.base.json');
-  writeJsonAtomic(join(REPO_HOME, 'path-map.json'), { projects: {} } satisfies PathMap);
+  writeJsonAtomic(join(repo, 'path-map.json'), { projects: {} } satisfies PathMap);
   item('created path-map.json');
 
   if (snapshot) {
@@ -139,7 +141,7 @@ export function cmdInit(
   }
 
   if (!keepActions) {
-    maybeDisableRepoActions(REPO_HOME, opts.run);
+    maybeDisableRepoActions(repo, opts.run);
   }
 
   log('init complete');
