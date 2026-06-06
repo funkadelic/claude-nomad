@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BACKUP_BASE, REPO_HOME } from './config.ts';
+import { backupBase, repoHome } from './config.ts';
 import { listDivergingFiles } from './extras-sync.diff.ts';
 import { eachExtrasTarget, loadValidatedExtras, type ExtrasCounts } from './extras-sync.core.ts';
 import { warn } from './utils.ts';
@@ -32,12 +32,13 @@ export function divergenceCheckExtras(ts: string): void {
   if (v === null) return;
 
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
-  const backupRoot = join(BACKUP_BASE, ts, 'extras');
+  const backupRoot = join(backupBase(), ts, 'extras');
+  const repo = repoHome();
   for (const { logical, localRoot, dirname } of eachExtrasTarget(v, counts)) {
     const local = join(localRoot, dirname);
-    const repo = join(REPO_HOME, 'shared', 'extras', logical, dirname);
-    if (!existsSync(local) || !existsSync(repo)) continue;
-    const diff = listDivergingFiles(local, repo);
+    const repoEntry = join(repo, 'shared', 'extras', logical, dirname);
+    if (!existsSync(local) || !existsSync(repoEntry)) continue;
+    const diff = listDivergingFiles(local, repoEntry);
     if (diff.length === 0) continue;
     const projectBackupRoot = join(backupRoot, encodePath(localRoot));
     warn(

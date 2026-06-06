@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'no
 import { join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
-import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { die, item, log } from './utils.ts';
 import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
@@ -105,8 +105,10 @@ export function remapPull(
   let unmapped = 0;
   const pulled: string[] = [];
   const wouldPull: string[] = [];
-  const mapPath = join(REPO_HOME, 'path-map.json');
-  const repoProjects = join(REPO_HOME, 'shared', 'projects');
+  const repo = repoHome();
+  const claude = claudeHome();
+  const mapPath = join(repo, 'path-map.json');
+  const repoProjects = join(repo, 'shared', 'projects');
   if (!existsSync(mapPath) || !existsSync(repoProjects)) {
     const text = 'no path-map or repo projects dir; skipping session remap';
     emitPreview(opts.onPreview, { kind: 'note', text }, text);
@@ -114,7 +116,7 @@ export function remapPull(
   }
 
   const map = readJson<PathMap>(mapPath);
-  const localProjects = join(CLAUDE_HOME, 'projects');
+  const localProjects = join(claude, 'projects');
   if (!dryRun) mkdirSync(localProjects, { recursive: true });
 
   for (const [logical, hosts] of Object.entries(map.projects)) {
@@ -225,15 +227,17 @@ export function remapPush(
   let unmapped = 0;
   const pushed: string[] = [];
   const wouldPush: string[] = [];
-  const mapPath = join(REPO_HOME, 'path-map.json');
+  const repo = repoHome();
+  const claude = claudeHome();
+  const mapPath = join(repo, 'path-map.json');
   if (!existsSync(mapPath)) {
     log('no path-map.json; skipping session export');
     return { unmapped: 0, collisions: 0, pushed, wouldPush };
   }
 
   const map = readJson<PathMap>(mapPath);
-  const localProjects = join(CLAUDE_HOME, 'projects');
-  const repoProjects = join(REPO_HOME, 'shared', 'projects');
+  const localProjects = join(claude, 'projects');
+  const repoProjects = join(repo, 'shared', 'projects');
 
   const reverse = buildReverseMap(map);
   if (!existsSync(localProjects)) return { unmapped, collisions: 0, pushed, wouldPush };
@@ -257,7 +261,7 @@ export function remapPush(
     // history exists only AFTER the commit step, so a corrupt or
     // path-encoding-collided local dir would otherwise have no rollback
     // path. Symmetric with remapPull's backupBeforeWrite on the local dst.
-    backupRepoWrite(repoDst, ts, REPO_HOME);
+    backupRepoWrite(repoDst, ts, repo);
     copyDirJsonlOnly(join(localProjects, dir), repoDst);
     pushed.push(logical);
   }
