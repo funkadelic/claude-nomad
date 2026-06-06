@@ -9,6 +9,7 @@ truth, so this guide stays short and points at them rather than restating values
 
 - [Development setup](#development-setup)
 - [Dependency management](#dependency-management)
+- [Mutation testing](#mutation-testing)
 - [Branch naming](#branch-naming)
 - [Commit messages](#commit-messages)
 - [Pull requests](#pull-requests)
@@ -74,6 +75,93 @@ One grouping choice is deliberate and worth stating: Dependabot groups dev-depen
 `patch` updates and production `patch` updates into single PRs, but a production `minor` update
 arrives as its own PR. Production minors are the likeliest to carry behavior change, so they get
 individual review while the lower-risk batches stay consolidated.
+
+## Mutation testing
+
+Stryker flags tests that kill zero mutants across a module's mutation report. A zero-kill test is
+one that no code change in that module could cause to fail; it is a candidate for removal if it is
+redundant with a richer sibling. Use this workflow to identify and triage those candidates.
+
+**Mutation testing is local-only.** Runtime is 20 to 60 minutes for a full sweep, so it is never
+wired into CI. Run it as a hygiene exercise, not as part of the normal development loop.
+
+### Running per-module
+
+The committed [`stryker.config.mjs`](stryker.config.mjs) contains the project defaults. Run one
+module at a time, always scoping both the mutate target and the test files:
+
+```bash
+npx stryker run --incremental --force \
+  --mutate "src/<module>.ts" \
+  --testFiles "src/<module>.test.ts"
+```
+
+The `--testFiles` scope is required. Without it Stryker runs the full suite as the dry-run baseline
+and the dry run fails on developer machines (the full suite is not idempotent under the Stryker
+sandbox).
+
+Reports land in `reports/mutation/` (gitignored). Archive each module's
+`reports/mutation/mutation.json` under a per-module name (for example
+`reports/archive/<module>.json`) before moving to the next module, or the file will be overwritten.
+The `reports/stryker-incremental.json` incremental cache accumulates across sessions so you can
+resume a multi-session sweep without re-running completed modules.
+
+### Known limitation: HOME-based test isolation
+
+Modules whose tests set `process.env.HOME = <tmpDir>` and call `vi.resetModules()` to reload
+[`src/config.ts`](src/config.ts) cannot currently be mutation-tested.
+[`src/config.ts`](src/config.ts) resolves `REPO_HOME` at module load time via `os.homedir()`, and
+Stryker's sandbox pins that resolution at process start. The re-imported module sees the sandbox
+HOME, not the test HOME, so the dry-run baseline fails before any mutation runs.
+
+Modules that use a `NOMAD_REPO` environment override instead of HOME (or that do not mutate HOME at
+all) are not affected and can be swept normally. This limitation does not reduce test coverage;
+those modules remain fully exercised by the normal `npm test` run.
+
+### Triage
+
+After running a module, list zero-kill candidates:
+
+```bash
+node scripts/find-zero-kill-tests.mjs reports/archive/<module>.json
+```
+
+[`scripts/find-zero-kill-tests.mjs`](scripts/find-zero-kill-tests.mjs) emits one `ZERO-KILL` line
+per candidate and exits 0 (no output means every test in the report kills at least one mutant).
+
+Review each candidate against the keep/delete criterion:
+
+- **Delete** only when the test is redundant with a richer sibling in the same file, a literal
+  duplicate, or a narrow early test that is fully subsumed by a later broader test.
+- **Keep** when the test pins a distinct documented behavior (for example, a specific error path or
+  an empty-input contract), guards a branch that Stryker does not mutate, or is the sole
+  documentation of a behavioral contract.
+
+Zero-kill results from subprocess-based tests (for example, `commands.adopt`) are expected false
+positives: Stryker cannot observe kills that happen inside a spawned child process. Keep those tests
+without further analysis.
+
+**Security modules default to keep.** Tests in [`src/push-checks.ts`](src/push-checks.ts),
+[`src/push-gitleaks*.ts`](src/push-gitleaks.ts),
+[`src/commands.redact*.ts`](src/commands.redact.ts),
+[`src/commands.push.recovery*.ts`](src/commands.push.recovery.ts),
+[`src/utils.lockfile*.ts`](src/utils.lockfile.ts), and
+[`src/config.sharedDirs.guard.ts`](src/config.sharedDirs.guard.ts) are never bulk-deleted. A
+zero-kill result in a security module often documents a refusal or containment invariant that
+mutation testing does not exercise (for example, a traversal-guard rejection path). Delete a
+security-module test only with an explicit recorded rationale.
+
+### Coverage guardrail
+
+After each deletion, run:
+
+```bash
+npm run coverage
+```
+
+If the deletion uncovers lines in the touched source file, revert it. The test was load-bearing for
+coverage, not dead weight. The project coverage gate must not regress: a fully-covered file is
+absent from the coverage text table (`skipFull`), so absence is the pass signal.
 
 ## Branch naming
 

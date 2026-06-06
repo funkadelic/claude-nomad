@@ -407,11 +407,6 @@ describe('startSpinner (worker-spawn failure degraded path)', () => {
     // Degraded to plain start; an aborted step adds no "done" line.
     expect(capturedOutput(deps.out)).toBe('Pushing...\n');
   });
-
-  it('does not throw from startSpinner on spawn failure', () => {
-    const deps = makeFailingWorkerDeps();
-    expect(() => startSpinner('Pushing', deps)).not.toThrow();
-  });
 });
 
 // ---------------------------------------------------------------------------

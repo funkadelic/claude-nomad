@@ -10,3 +10,4 @@ package-lock.json
 # Owned by release-please; format drifts on every release.
 CHANGELOG.md
 docs-site/
+reports/

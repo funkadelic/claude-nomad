@@ -13,6 +13,7 @@ export default tseslint.config(
       '.planning/**',
       '.claude/**',
       'docs-site/**',
+      '.stryker-tmp/**',
     ],
   },
   js.configs.recommended,
@@ -80,6 +81,20 @@ export default tseslint.config(
     // project graph; disable the typescript-eslint project service for them so
     // the parser does not reject a .mjs file the tsconfig does not enumerate.
     files: ['**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      sourceType: 'module',
+      globals: { ...globals.node },
+      parserOptions: {
+        projectService: false,
+      },
+    },
+  },
+  {
+    // TypeScript files under scripts/ import from .mjs files which have no
+    // TypeScript declarations; disable type-checked rules and project service
+    // so the parser accepts files outside the tsconfig include set.
+    files: ['scripts/**/*.ts'],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: {
       sourceType: 'module',

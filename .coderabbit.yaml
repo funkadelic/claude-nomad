@@ -1,7 +1,11 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# CodeRabbit configuration. docs-site/ is the generated-content Starlight
-# site; review effort belongs on the CLI source, mirroring the exclusions in
-# sonar-project.properties, eslint.config.js, and .prettierignore.
+# CodeRabbit configuration. docs-site/ pages are hand-authored and reviewed;
+# only its generated/vendored output is excluded (gitignore already keeps
+# dist/node_modules/.astro out of diffs, these are defense-in-depth) plus the
+# lockfile to skip dep-bump noise.
 reviews:
   path_filters:
-    - '!docs-site/**'
+    - '!docs-site/dist/**'
+    - '!docs-site/node_modules/**'
+    - '!docs-site/.astro/**'
+    - '!docs-site/package-lock.json'
