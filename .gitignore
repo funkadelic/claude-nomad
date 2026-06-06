@@ -19,5 +19,4 @@ docs-site/node_modules/
 docs-site/.astro/
 .fallow/
 .stryker-tmp/
-reports/mutation/
-reports/stryker-incremental.json
+reports/
