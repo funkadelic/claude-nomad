@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import type { PathMap } from './config.ts';
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import {
   type FindingAction,
   type PromptFn,
@@ -223,16 +223,18 @@ export async function resolveLeakFindings(
   } = deps;
 
   const scanVerdict = deps.scanVerdict ?? (await import('./push-leak-verdict.ts')).scanPushVerdict;
+  // Resolve root once per invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
 
   let current = verdict;
 
   if (redactAll) {
     redactAllFindings(current.findings, ts, map, nowMs, scan);
-    return applyThenRescan(scanVerdict, REPO_HOME);
+    return applyThenRescan(scanVerdict, repo);
   }
 
   if (allowAll) {
-    return allowThenRescan(() => allowAllFindings(current.findings), scanVerdict, REPO_HOME);
+    return allowThenRescan(() => allowAllFindings(current.findings), scanVerdict, repo);
   }
 
   if (allowRule !== undefined) {
@@ -242,7 +244,7 @@ export async function resolveLeakFindings(
         if (matched === 0) log(`no findings matched rule ${allowRule}; re-scanning`);
       },
       scanVerdict,
-      REPO_HOME,
+      repo,
     );
   }
 
@@ -268,7 +270,7 @@ export async function resolveLeakFindings(
     }
 
     dispatchActions(current.findings, actions, ts, map, nowMs, scan);
-    gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
+    gitOrFatal(['add', '-A'], 'git add', repo);
     current = scanVerdict();
   }
   return current;
