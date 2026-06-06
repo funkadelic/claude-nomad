@@ -13,7 +13,7 @@
  */
 
 import { failGlyph, green, okGlyph, red } from './color.ts';
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { gitleaksInstallHint } from './push-checks.ts';
 import {
   type Finding,
@@ -139,7 +139,7 @@ export function verdictScanError(text: string): LeakVerdict {
 export function scanPushVerdict(): LeakVerdict {
   let findings: Finding[] | null;
   try {
-    findings = scanStagedTree(REPO_HOME, true);
+    findings = scanStagedTree(repoHome(), true);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return {

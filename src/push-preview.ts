@@ -21,7 +21,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { dim, infoGlyph } from './color.ts';
-import { CLAUDE_HOME, HOST, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import { claudeHome, repoHome, HOST, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { copyExtras } from './extras-sync.ts';
 import { copyDirJsonlOnly } from './remap.ts';
@@ -54,7 +54,7 @@ function stageSessions(tmpRoot: string, map: PathMap): number {
     reverse.set(encodePath(p), logical);
   }
 
-  const localProjects = join(CLAUDE_HOME, 'projects');
+  const localProjects = join(claudeHome(), 'projects');
   if (!existsSync(localProjects)) return 0;
 
   let staged = 0;
@@ -144,7 +144,7 @@ export function previewPushLeaks(map: PathMap): LeakVerdict {
     if (sessionCount + extrasCount === 0) {
       return { leak: false, verdictRow: NOTHING_TO_SCAN_ROW, recovery: null, findings: [] };
     }
-    const ignoreFile = join(REPO_HOME, '.gitleaksignore');
+    const ignoreFile = join(repoHome(), '.gitleaksignore');
     if (existsSync(ignoreFile)) {
       copyFileSync(ignoreFile, join(tmpRoot, '.gitleaksignore'));
     }

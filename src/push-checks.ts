@@ -22,7 +22,7 @@ import { readdirSync, rmSync, type Dirent } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
 import { NomadFatal } from './utils.ts';
 
@@ -161,9 +161,10 @@ export function probeGitleaks(): string {
  * `cmdPull` may adopt the same helper in a future refactor.
  */
 export function rebaseBeforePush(): void {
+  const repo = repoHome();
   try {
     execFileSync('git', ['pull', '--rebase', '--autostash'], {
-      cwd: REPO_HOME,
+      cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (err) {
