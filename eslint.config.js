@@ -13,6 +13,7 @@ export default tseslint.config(
       '.planning/**',
       '.claude/**',
       'docs-site/**',
+      '.stryker-tmp/**',
     ],
   },
   js.configs.recommended,
