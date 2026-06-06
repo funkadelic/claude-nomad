@@ -1,7 +1,5 @@
 import { execFileSync } from 'node:child_process';
 
-import { REPO_HOME } from './config.ts';
-
 /**
  * Expand a repo-relative directory into its staged entries via
  * `git ls-files -z -- <dirRel>` (argv-array form, NUL-split for path
@@ -11,11 +9,12 @@ import { REPO_HOME } from './config.ts';
  * per-entry idempotency guard rather than escalating to a FATAL.
  *
  * @param dirRel Repo-relative directory path (`shared/projects/<logical>/<id>`).
+ * @param repo Repo root resolved once by the calling command.
  */
-export function expandStagedDir(dirRel: string): string[] {
+export function expandStagedDir(dirRel: string, repo: string): string[] {
   try {
     const out = execFileSync('git', ['ls-files', '-z', '--', dirRel], {
-      cwd: REPO_HOME,
+      cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return out
@@ -48,11 +47,14 @@ export function expandStagedDir(dirRel: string): string[] {
  * idempotent and produces the user-intended unstage outcome regardless
  * of which case fired, so the collapsed return is intentional. Repo
  * health belongs to `nomad doctor`, not drop-session.
+ *
+ * @param rel Repo-relative path to probe.
+ * @param repo Repo root resolved once by the calling command.
  */
-export function isTrackedInHead(rel: string): boolean {
+export function isTrackedInHead(rel: string, repo: string): boolean {
   try {
     execFileSync('git', ['cat-file', '-e', `HEAD:${rel}`], {
-      cwd: REPO_HOME,
+      cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return true;
@@ -67,11 +69,14 @@ export function isTrackedInHead(rel: string): boolean {
  * guard: a second invocation on the same id finds the file on disk (per
  * `existsSync`) but absent from the index, and must NOT call `git rm
  * --cached` on it (which would fail with exit 128).
+ *
+ * @param rel Repo-relative path to probe.
+ * @param repo Repo root resolved once by the calling command.
  */
-export function isInIndex(rel: string): boolean {
+export function isInIndex(rel: string, repo: string): boolean {
   try {
     const out = execFileSync('git', ['ls-files', '--', rel], {
-      cwd: REPO_HOME,
+      cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return out.toString().trim() !== '';

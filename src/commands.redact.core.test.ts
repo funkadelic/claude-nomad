@@ -107,7 +107,7 @@ describe('appendGitleaksIgnore', () => {
     const ignPath = join(env.repoHome, '.gitleaksignore');
     expect(existsSync(ignPath)).toBe(false);
 
-    append('a:b:1');
+    append('a:b:1', env.repoHome);
 
     const content = readFileSync(ignPath, 'utf8');
     expect(content).toBe('a:b:1\n');
@@ -115,8 +115,8 @@ describe('appendGitleaksIgnore', () => {
 
   it('is idempotent: calling twice yields exactly one matching line', async () => {
     const { appendGitleaksIgnore: append } = await import('./commands.redact.core.ts');
-    append('a:b:1');
-    append('a:b:1');
+    append('a:b:1', env.repoHome);
+    append('a:b:1', env.repoHome);
 
     const content = readFileSync(join(env.repoHome, '.gitleaksignore'), 'utf8');
     const lines = content.split('\n').filter((l) => l.length > 0);
@@ -125,8 +125,8 @@ describe('appendGitleaksIgnore', () => {
 
   it('appending a distinct fingerprint after an existing one preserves both with no duplicates', async () => {
     const { appendGitleaksIgnore: append } = await import('./commands.redact.core.ts');
-    append('a:b:1');
-    append('c:d:2');
+    append('a:b:1', env.repoHome);
+    append('c:d:2', env.repoHome);
 
     const content = readFileSync(join(env.repoHome, '.gitleaksignore'), 'utf8');
     const lines = content.split('\n').filter((l) => l.length > 0);
@@ -141,14 +141,14 @@ describe('appendGitleaksIgnore', () => {
     writeFileSync(ignPath, 'a:b:1\n', 'utf8');
     const before = readFileSync(ignPath, 'utf8');
 
-    append('a:b:1');
+    append('a:b:1', env.repoHome);
 
     expect(readFileSync(ignPath, 'utf8')).toBe(before);
   });
 
   it('never writes a blank line for an empty fingerprint', async () => {
     const { appendGitleaksIgnore: append } = await import('./commands.redact.core.ts');
-    append('');
+    append('', env.repoHome);
     const ignPath = join(env.repoHome, '.gitleaksignore');
     expect(existsSync(ignPath)).toBe(false);
   });
@@ -160,7 +160,7 @@ describe('appendGitleaksIgnore', () => {
     // fingerprints onto one line (which would de-activate both ignore entries).
     writeFileSync(ignPath, 'a:b:1', 'utf8');
 
-    append('c:d:2');
+    append('c:d:2', env.repoHome);
 
     const content = readFileSync(ignPath, 'utf8');
     const lines = content.split('\n').filter((l) => l.length > 0);

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { fail } from './utils.ts';
 import { readJson } from './utils.json.ts';
 
@@ -28,7 +28,7 @@ export function resumeCmd(sessionId: string): void {
     process.exit(1);
   }
 
-  const projectsRoot = join(CLAUDE_HOME, 'projects');
+  const projectsRoot = join(claudeHome(), 'projects');
   if (!existsSync(projectsRoot)) {
     fail(`${projectsRoot} does not exist`);
     process.exit(1);
@@ -44,7 +44,7 @@ export function resumeCmd(sessionId: string): void {
     fail(`no cwd field found in ${jsonlPath}`);
     process.exit(1);
   }
-  const mapPath = join(REPO_HOME, 'path-map.json');
+  const mapPath = join(repoHome(), 'path-map.json');
   if (!existsSync(mapPath)) {
     fail('path-map.json missing');
     process.exit(1);

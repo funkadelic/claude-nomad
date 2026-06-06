@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import type { PathMap } from './config.ts';
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import {
   type FindingAction,
   type PromptFn,
@@ -49,8 +49,8 @@ export type { FindingAction };
 export type RecoveryDeps = {
   /** Override TTY detection (default: `isTTY()`). */
   isTTYCheck?: () => boolean;
-  /** Override `scanPushVerdict` for the post-action re-scan. */
-  scanVerdict?: () => LeakVerdict;
+  /** Override `scanPushVerdict` for the post-action re-scan (receives the resolved repo root). */
+  scanVerdict?: (repo: string) => LeakVerdict;
   /** Injectable clock for live-session detection (default: `Date.now`). */
   nowMs?: () => number;
   /** When true, redact all findings without prompting; no TTY required. */
@@ -119,13 +119,16 @@ export function printRecoveryLegend(print: (line: string) => void = console.log)
  * all non-interactive resolution modes (`--redact-all`, `--allow-all`,
  * `--allow <rule>`) so the re-stage + re-scan sequence is not duplicated.
  *
- * @param scanVerdict Injectable scan function.
- * @param repoHome Repository root path for `git add -A`.
+ * @param scanVerdict Injectable scan function (receives the resolved repo root).
+ * @param repoHome Repository root path for `git add -A` and the re-scan.
  * @returns The clean `LeakVerdict` after re-staging and re-scanning.
  */
-function applyThenRescan(scanVerdict: () => LeakVerdict, repoHome: string): LeakVerdict {
+function applyThenRescan(
+  scanVerdict: (repo: string) => LeakVerdict,
+  repoHome: string,
+): LeakVerdict {
   gitOrFatal(['add', '-A'], 'git add', repoHome);
-  const next = scanVerdict();
+  const next = scanVerdict(repoHome);
   if (next.leak) {
     const { bySession, other } = partitionFindings(next.findings);
     throw new NomadFatal(buildSessionAwareFatal(bySession, other));
@@ -143,13 +146,13 @@ function applyThenRescan(scanVerdict: () => LeakVerdict, repoHome: string): Leak
  * `--allow <rule>` paths.
  *
  * @param append Writes the allow fingerprints for the chosen mode.
- * @param scanVerdict Injectable scan function.
+ * @param scanVerdict Injectable scan function (receives the resolved repo root).
  * @param repoHome Repository root path for the ignore file and `git add -A`.
  * @returns The clean `LeakVerdict` after re-staging and re-scanning.
  */
 function allowThenRescan(
   append: () => void,
-  scanVerdict: () => LeakVerdict,
+  scanVerdict: (repo: string) => LeakVerdict,
   repoHome: string,
 ): LeakVerdict {
   const ignPath = join(repoHome, '.gitleaksignore');
@@ -223,26 +226,28 @@ export async function resolveLeakFindings(
   } = deps;
 
   const scanVerdict = deps.scanVerdict ?? (await import('./push-leak-verdict.ts')).scanPushVerdict;
+  // Resolve root once per invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
 
   let current = verdict;
 
   if (redactAll) {
     redactAllFindings(current.findings, ts, map, nowMs, scan);
-    return applyThenRescan(scanVerdict, REPO_HOME);
+    return applyThenRescan(scanVerdict, repo);
   }
 
   if (allowAll) {
-    return allowThenRescan(() => allowAllFindings(current.findings), scanVerdict, REPO_HOME);
+    return allowThenRescan(() => allowAllFindings(current.findings, repo), scanVerdict, repo);
   }
 
   if (allowRule !== undefined) {
     return allowThenRescan(
       () => {
-        const matched = allowFindingsByRule(current.findings, allowRule);
+        const matched = allowFindingsByRule(current.findings, allowRule, repo);
         if (matched === 0) log(`no findings matched rule ${allowRule}; re-scanning`);
       },
       scanVerdict,
-      REPO_HOME,
+      repo,
     );
   }
 
@@ -267,9 +272,9 @@ export async function resolveLeakFindings(
       throw new NomadFatal(buildSessionAwareFatal(bySession, other));
     }
 
-    dispatchActions(current.findings, actions, ts, map, nowMs, scan);
-    gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
-    current = scanVerdict();
+    dispatchActions(current.findings, actions, { ts, map, nowMs, repo, scan });
+    gitOrFatal(['add', '-A'], 'git add', repo);
+    current = scanVerdict(repo);
   }
   return current;
 }

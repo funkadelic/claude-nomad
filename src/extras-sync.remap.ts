@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import {
   copyExtras,
   eachExtrasTarget,
@@ -80,7 +80,8 @@ export function remapExtrasPush(
   const v = loadValidatedExtras({ missingMsg: 'no path-map.json; skipping extras push' });
   if (v === null) return { unmapped: 0, skipped: 0, pushed: [], wouldPush: [] };
 
-  const repoExtras = join(REPO_HOME, 'shared', 'extras');
+  const repo = repoHome();
+  const repoExtras = join(repo, 'shared', 'extras');
   if (!dryRun) mkdirSync(repoExtras, { recursive: true });
 
   const { unmapped, skipped, done, would } = runExtrasOp(
@@ -90,7 +91,7 @@ export function remapExtrasPush(
       src: join(localRoot, dirname),
       dst: join(repoExtras, logical, dirname),
     }),
-    (dst) => backupRepoWrite(dst, ts, REPO_HOME),
+    (dst) => backupRepoWrite(dst, ts, repo),
   );
   return { unmapped, skipped, pushed: done, wouldPush: would };
 }
@@ -122,7 +123,7 @@ export function remapExtrasPull(
   });
   if (v === null) return { unmapped: 0, skipped: 0, pulled: [], wouldPull: [] };
 
-  const repoExtras = join(REPO_HOME, 'shared', 'extras');
+  const repoExtras = join(repoHome(), 'shared', 'extras');
   const { unmapped, skipped, done, would } = runExtrasOp(
     v,
     dryRun,

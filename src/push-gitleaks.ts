@@ -17,7 +17,7 @@
  * this scan (defense-in-depth mid-flow).
  */
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { gitleaksInstallHint } from './push-checks.ts';
 import { type Finding, scanStagedTree } from './push-gitleaks.scan.ts';
 import { NomadFatal } from './utils.ts';
@@ -245,7 +245,7 @@ export function buildSessionAwareFatal(
 export function runGitleaksScan(): void {
   let findings: Finding[] | null;
   try {
-    findings = scanStagedTree(REPO_HOME, true);
+    findings = scanStagedTree(repoHome(), true);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new NomadFatal(gitleaksInstallHint());

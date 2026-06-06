@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
 import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
 import { addItem, renderTree, section } from './output-tree.ts';
@@ -184,6 +184,8 @@ export function computePreview(
   map: PathMap,
   verb: PreviewVerb = 'pull',
 ): { unmapped: number; collisions: number } {
+  const repo = repoHome();
+  const claude = claudeHome();
   console.log(`would pull on host=${HOST} (dry-run; no mutation)`);
   console.log('');
 
@@ -196,9 +198,9 @@ export function computePreview(
 
   // settings.json section (raw, omitted when diff='' and no notes).
   const settingsResult = previewSettings(
-    join(REPO_HOME, 'shared', 'settings.base.json'),
-    join(REPO_HOME, 'hosts', `${HOST}.json`),
-    join(CLAUDE_HOME, 'settings.json'),
+    join(repo, 'shared', 'settings.base.json'),
+    join(repo, 'hosts', `${HOST}.json`),
+    join(claude, 'settings.json'),
   );
   const settingsSection = buildSettingsSectionForPreview(settingsResult);
 

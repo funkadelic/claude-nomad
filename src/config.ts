@@ -11,23 +11,20 @@ import { warn } from './utils.ts';
  * should verify it is non-empty at CLI entry via `nomad.ts`. Centralizing the
  * lookup here prevents the `process.env.HOME ?? ''` footgun where an unset
  * `HOME` silently produced relative lockfile/backup paths.
+ *
+ * Call-time resolver: resolved on each call, not at module load.
  */
-export const HOME = homedir();
-
-/** Absolute path to the user's Claude Code config directory (`~/.claude`). */
-export const CLAUDE_HOME = resolve(HOME, '.claude');
+export function home(): string {
+  return homedir();
+}
 
 /**
- * Host-local backup cache root (`~/.cache/claude-nomad/backup`). Single
- * source of truth for the backup root. The snapshot writers
- * (`backupBeforeWrite`, `backupRepoWrite`, `backupExtrasWrite`,
- * `divergenceCheckExtras`, `cmdAdopt`, `cmdRedact`) write per-run `<ts>`
- * subdirs here; the snapshot callers (`pull`, `push`, `diff`) and the
- * management surfaces (`nomad clean --backups` pruning, the doctor backups
- * check) read from it. Lives under `~/.cache`, outside the synced `~/.claude`
- * tree.
+ * Absolute path to the user's Claude Code config directory (`~/.claude`).
+ * Resolved on each call so environment changes are reflected immediately.
  */
-export const BACKUP_BASE = join(HOME, '.cache', 'claude-nomad', 'backup');
+export function claudeHome(): string {
+  return resolve(home(), '.claude');
+}
 
 /**
  * Absolute path to the local checkout of the private sync repo. Reads
@@ -39,9 +36,23 @@ export const BACKUP_BASE = join(HOME, '.cache', 'claude-nomad', 'backup');
  * directory at first use (downstream `existsSync` / `cpSync` / git invocations
  * accept either absolute or relative paths); we intentionally do NOT
  * `resolve()` here so developers can point the override at relative checkouts.
+ *
+ * Resolved on each call so mid-process `NOMAD_REPO` changes are reflected
+ * without `vi.resetModules()`.
  */
-// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-export const REPO_HOME = process.env.NOMAD_REPO || resolve(HOME, 'claude-nomad');
+export function repoHome(): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  return process.env.NOMAD_REPO || resolve(home(), 'claude-nomad');
+}
+
+/**
+ * Host-local backup cache root (`~/.cache/claude-nomad/backup`). Single
+ * source of truth for the backup root. Resolved on each call so environment
+ * changes are reflected immediately.
+ */
+export function backupBase(): string {
+  return join(home(), '.cache', 'claude-nomad', 'backup');
+}
 
 /**
  * The official Claude Code settings JSON schema. Source of truth for

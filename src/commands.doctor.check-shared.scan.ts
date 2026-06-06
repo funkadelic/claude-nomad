@@ -16,7 +16,7 @@ import { join } from 'node:path';
 
 import { green, red, dim, bold, okGlyph, failGlyph } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { CLAUDE_HOME } from './config.ts';
+import { claudeHome } from './config.ts';
 import { type Finding, partitionFindings, scanStagedTree } from './push-gitleaks.ts';
 
 /**
@@ -28,7 +28,7 @@ import { type Finding, partitionFindings, scanStagedTree } from './push-gitleaks
 function scrubPath(logical: string, sid: string, logicalToEncoded: Map<string, string>): string {
   /* c8 ignore next -- the `?? logical` fallback is defensive; the temp-tree build keys every staged logical */
   const encoded = logicalToEncoded.get(logical) ?? logical;
-  return join(CLAUDE_HOME, 'projects', encoded, `${sid}.jsonl`);
+  return join(claudeHome(), 'projects', encoded, `${sid}.jsonl`);
 }
 
 /**

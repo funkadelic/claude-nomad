@@ -12,7 +12,7 @@ import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { PathMap } from './config.ts';
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 
 /**
  * Remove the session's generated copies from the staged tree under
@@ -37,9 +37,11 @@ import { REPO_HOME } from './config.ts';
 export function dropSessionFromStaged(sid: string, map: PathMap): boolean {
   const logicals = Object.keys(map.projects);
   if (logicals.length === 0) return false;
+  // Resolve root once per invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
   for (const logical of logicals) {
-    const jsonl = join(REPO_HOME, 'shared', 'projects', logical, `${sid}.jsonl`);
-    const dir = join(REPO_HOME, 'shared', 'projects', logical, sid);
+    const jsonl = join(repo, 'shared', 'projects', logical, `${sid}.jsonl`);
+    const dir = join(repo, 'shared', 'projects', logical, sid);
     rmSync(jsonl, { force: true });
     rmSync(dir, { recursive: true, force: true });
   }

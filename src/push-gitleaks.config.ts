@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { NomadFatal, warn } from './utils.ts';
 
 /**
@@ -27,9 +27,13 @@ import { NomadFatal, warn } from './utils.ts';
  * `--config` on a `null` return so gitleaks uses its default ruleset; scanning
  * is never disabled. Used by `resolveTomlConfig` below and by `push-checks.ts`
  * `probeGitleaks`.
+ *
+ * @param repo Repo root; defaults to `repoHome()` for direct callers, while
+ *   `resolveTomlConfig` passes its already-captured root so the whole
+ *   overlay/base precedence chain resolves against one repo.
  */
-export function resolveTomlPath(): string | null {
-  const repoToml = join(REPO_HOME, '.gitleaks.toml');
+export function resolveTomlPath(repo: string = repoHome()): string | null {
+  const repoToml = join(repo, '.gitleaks.toml');
   if (existsSync(repoToml)) return repoToml;
   const bundled = fileURLToPath(new URL('../.gitleaks.toml', import.meta.url));
   return existsSync(bundled) ? bundled : null;
@@ -132,9 +136,10 @@ function buildOverlayTempConfig(
  *   the flag on `null`) and removes a non-null `tempPath` in a `finally`.
  */
 export function resolveTomlConfig(): TomlConfigResult {
-  const overlayPath = join(REPO_HOME, '.gitleaks.overlay.toml');
-  const repoToml = join(REPO_HOME, '.gitleaks.toml');
-  const bundled = resolveTomlPath();
+  const repo = repoHome();
+  const overlayPath = join(repo, '.gitleaks.overlay.toml');
+  const repoToml = join(repo, '.gitleaks.toml');
+  const bundled = resolveTomlPath(repo);
   if (!existsSync(overlayPath)) {
     return { path: bundled, tempPath: null };
   }

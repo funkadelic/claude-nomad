@@ -2,12 +2,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { backupExtrasWrite } from './utils.fs.ts';
+import { encodePath } from './utils.json.ts';
 
 /**
  * backupExtrasWrite coverage, split off from the utils.fs.backup.test.ts
  * sibling to keep both files under the ~200-line cap. The helper snapshots a
- * path OUTSIDE CLAUDE_HOME (project-attached extras live at a project root on
+ * path OUTSIDE claudeHome() (project-attached extras live at a project root on
  * the host filesystem) under an explicit projectRoot anchor. SUT loads from
  * ./utils.fs.ts; encodePath loads from ./utils.json.ts.
  */
@@ -27,11 +30,9 @@ describe('backupExtrasWrite', () => {
     projectRoot = join(testHome, 'fake-project');
     mkdirSync(projectRoot, { recursive: true });
     cacheBase = join(testHome, '.cache', 'claude-nomad', 'backup');
-    vi.resetModules();
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -39,14 +40,12 @@ describe('backupExtrasWrite', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('snapshots a single file to the extras-prefixed backup root, namespaced by projectRoot', async () => {
+  it('snapshots a single file to the extras-prefixed backup root, namespaced by projectRoot', () => {
     const planningDir = join(projectRoot, '.planning');
     mkdirSync(planningDir, { recursive: true });
     const src = join(planningDir, 'PLAN.md');
     writeFileSync(src, '# plan content\n');
 
-    const { backupExtrasWrite } = await import('./utils.fs.ts');
-    const { encodePath } = await import('./utils.json.ts');
     backupExtrasWrite(src, '20260522-100000', projectRoot);
 
     const backupFile = join(
@@ -61,14 +60,12 @@ describe('backupExtrasWrite', () => {
     expect(readFileSync(backupFile, 'utf8')).toBe('# plan content\n');
   });
 
-  it('recursively snapshots a directory tree under the encoded-projectRoot namespace', async () => {
+  it('recursively snapshots a directory tree under the encoded-projectRoot namespace', () => {
     const planningDir = join(projectRoot, '.planning');
     mkdirSync(join(planningDir, 'phases', '01'), { recursive: true });
     writeFileSync(join(planningDir, 'STATE.md'), 'state\n');
     writeFileSync(join(planningDir, 'phases', '01', 'PLAN.md'), 'plan\n');
 
-    const { backupExtrasWrite } = await import('./utils.fs.ts');
-    const { encodePath } = await import('./utils.json.ts');
     backupExtrasWrite(planningDir, '20260522-100001', projectRoot);
 
     const backupRoot = join(
@@ -84,7 +81,7 @@ describe('backupExtrasWrite', () => {
     expect(readFileSync(join(backupRoot, 'phases', '01', 'PLAN.md'), 'utf8')).toBe('plan\n');
   });
 
-  it('does not collide when two projectRoots share the same relative extras path', async () => {
+  it('does not collide when two projectRoots share the same relative extras path', () => {
     // Without the encodePath(projectRoot) namespace, `backup/<ts>/extras/<rel>`
     // collides whenever two opted-in projects pull simultaneously with the
     // same relative extras tree. `cpSync` runs with `force: false`, so the
@@ -96,8 +93,6 @@ describe('backupExtrasWrite', () => {
     writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), 'A\n');
     writeFileSync(join(projectRootB, '.planning', 'PLAN.md'), 'B\n');
 
-    const { backupExtrasWrite } = await import('./utils.fs.ts');
-    const { encodePath } = await import('./utils.json.ts');
     backupExtrasWrite(join(projectRoot, '.planning', 'PLAN.md'), '20260522-100004', projectRoot);
     backupExtrasWrite(join(projectRootB, '.planning', 'PLAN.md'), '20260522-100004', projectRootB);
 
@@ -121,16 +116,15 @@ describe('backupExtrasWrite', () => {
     expect(readFileSync(bBackup, 'utf8')).toBe('B\n');
   });
 
-  it('no-ops when the source path does not exist', async () => {
+  it('no-ops when the source path does not exist', () => {
     const missing = join(projectRoot, '.planning', 'never-existed.md');
 
-    const { backupExtrasWrite } = await import('./utils.fs.ts');
     expect(() => backupExtrasWrite(missing, '20260522-100002', projectRoot)).not.toThrow();
 
     expect(existsSync(join(cacheBase, '20260522-100002'))).toBe(false);
   });
 
-  it('no-ops when absPath resolves outside projectRoot', async () => {
+  it('no-ops when absPath resolves outside projectRoot', () => {
     // path.relative(projectRoot, '/some/other/path') returns a ..-prefixed
     // string. The helper must detect that and return silently, matching the
     // existing backupBeforeWrite / backupRepoWrite contract.
@@ -138,7 +132,6 @@ describe('backupExtrasWrite', () => {
     mkdirSync(join(testHome, 'unrelated'), { recursive: true });
     writeFileSync(outside, 'unrelated\n');
 
-    const { backupExtrasWrite } = await import('./utils.fs.ts');
     expect(() => backupExtrasWrite(outside, '20260522-100003', projectRoot)).not.toThrow();
 
     expect(existsSync(join(cacheBase, '20260522-100003'))).toBe(false);

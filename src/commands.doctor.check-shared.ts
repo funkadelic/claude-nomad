@@ -24,7 +24,7 @@ import { join } from 'node:path';
 import { red, yellow, failGlyph, warnGlyph } from './color.ts';
 import { emitClean, scanAndReport } from './commands.doctor.check-shared.scan.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { claudeHome, HOST, repoHome, type PathMap } from './config.ts';
 import { copyDirJsonlOnly } from './remap.ts';
 import { nowTimestamp } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
@@ -51,7 +51,8 @@ type ScanTree = {
 function buildScanTree(tmpRoot: string): ScanTree {
   const logicalToEncoded = new Map<string, string>();
   let staged = 0;
-  const mapPath = join(REPO_HOME, 'path-map.json');
+  const repo = repoHome();
+  const mapPath = join(repo, 'path-map.json');
   if (!existsSync(mapPath)) return { logicalToEncoded, staged, malformed: false };
   let map: PathMap;
   try {
@@ -71,7 +72,7 @@ function buildScanTree(tmpRoot: string): ScanTree {
     reverse.set(encodePath(p), logical);
   }
 
-  const localProjects = join(CLAUDE_HOME, 'projects');
+  const localProjects = join(claudeHome(), 'projects');
   if (!existsSync(localProjects)) return { logicalToEncoded, staged, malformed: false };
   for (const dir of readdirSync(localProjects)) {
     const logical = reverse.get(dir);

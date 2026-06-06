@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { claudeHome, HOST, repoHome, type PathMap } from './config.ts';
 import { log } from './utils.ts';
 import { encodePath, readJson } from './utils.json.ts';
 
@@ -52,9 +52,10 @@ export function reportScrubHint(id: string, matches: string[]): void {
  */
 function resolveLiveTranscript(id: string, matches: string[]): string | null {
   try {
-    const mapPath = join(REPO_HOME, 'path-map.json');
+    const mapPath = join(repoHome(), 'path-map.json');
     if (!existsSync(mapPath)) return null;
     const projects = readJson<PathMap>(mapPath).projects;
+    const claude = claudeHome();
     for (const rel of matches) {
       const logical = SHARED_PROJECT_LOGICAL.exec(rel)?.[1];
       /* c8 ignore next -- defensive: every collectMatches path is rooted at shared/projects/<logical>/ */
@@ -64,7 +65,7 @@ function resolveLiveTranscript(id: string, matches: string[]): string | null {
       // a directory that cannot exist among the absolute-path-encoded dirs, so
       // the existsSync guard below rejects it and falls through to the generic.
       if (abs === undefined) continue;
-      const live = join(CLAUDE_HOME, 'projects', encodePath(abs), `${id}.jsonl`);
+      const live = join(claude, 'projects', encodePath(abs), `${id}.jsonl`);
       if (existsSync(live)) return live;
     }
     return null;

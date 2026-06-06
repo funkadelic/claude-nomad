@@ -6,7 +6,7 @@ import {
   buildSessionsSection,
   buildSettingsSection,
 } from './commands.push.sections.ts';
-import { BACKUP_BASE, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { renderTree, section, addItem } from './output-tree.ts';
@@ -135,12 +135,15 @@ function handleWedge(repo: string, forceRemote: boolean): void {
 export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}): void {
   const dryRun = opts.dryRun === true;
   const forceRemote = opts.forceRemote === true;
-  if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
+  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
+  const backup = backupBase();
+  if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
   // Fire the init-hint FATAL BEFORE acquireLock so an
   // unscaffolded repo never creates a lock file. Keyed off the same signal
   // regenerateSettings uses (shared/settings.base.json), so the two entry
   // points share one phrasing instead of diverging on edits.
-  if (!existsSync(join(REPO_HOME, 'shared', 'settings.base.json'))) {
+  if (!existsSync(join(repo, 'shared', 'settings.base.json'))) {
     die("repo not initialized; run 'nomad init' to scaffold");
   }
   const handle = acquireLock('pull');
@@ -149,20 +152,20 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
     // Collision-resistant ts: nowTimestamp() is second-resolution, so two
     // pulls in the same wall-clock second would share `ts` and the second's
     // backupBeforeWrite calls (cpSync force:false) would silently no-op.
-    const ts = freshBackupTs(BACKUP_BASE);
-    // Preflight: handle REPO_HOME stuck mid-rebase or mid-merge. With
+    const ts = freshBackupTs(backup);
+    // Preflight: handle repo stuck mid-rebase or mid-merge. With
     // --force-remote, handleWedge delegates to recoverForceRemote (aborts,
     // safety-diffs, parks stranded commits, resets to origin/main). Without
     // it, handleWedge throws NomadFatal (via die()). Either way, the finally
     // block releases the lock. No backup dir or git pull runs before this check.
-    handleWedge(REPO_HOME, forceRemote);
+    handleWedge(repo, forceRemote);
     if (!dryRun) {
       // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
       // (out of disk, permission denied), die() throws (NomadFatal) and the
       // outer catch logs + sets exitCode, then finally releases the lock.
       // Skipped under dryRun: no backups are written, and an empty
       // backup-root dir would pollute the cache.
-      const backupRoot = join(BACKUP_BASE, ts);
+      const backupRoot = join(backup, ts);
       try {
         mkdirSync(backupRoot, { recursive: true });
       } catch (err) {
@@ -177,11 +180,11 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
         ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
         : `pull on host=${HOST} (backup=${ts})`,
     );
-    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', REPO_HOME);
+    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', repo);
     // Read path-map.json for sharedDirs/symlink threading. Falls back to a
     // no-sharedDirs map when the file is absent (fresh-clone before init).
     // A parse failure routes through NomadFatal -> catch -> lock release.
-    const mapPath = join(REPO_HOME, 'path-map.json');
+    const mapPath = join(repo, 'path-map.json');
     const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
     // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
     // Runs AFTER the rebase (so origin content is fetched) and BEFORE any

@@ -2,10 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
 
 /**
- * CLAUDE_HOME / REPO_HOME backup-helper coverage, split off from
+ * claudeHome() / backupBase() backup-helper coverage, split off from
  * utils.test.ts to mirror utils.fs.ts and keep file sizes under the
  * ~200-line cap. The explicit-projectRoot backupExtrasWrite cases live in
  * the sibling utils.fs.backup-extras.test.ts. SUT loads from ./utils.fs.ts.
@@ -21,7 +23,6 @@ describe('backupBeforeWrite', () => {
     testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
     process.env.HOME = testHome;
     mkdirSync(join(testHome, '.claude'), { recursive: true });
-    vi.resetModules();
   });
 
   afterEach(() => {
@@ -30,8 +31,7 @@ describe('backupBeforeWrite', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('copies an existing file under CLAUDE_HOME to the backup dir byte-equal', async () => {
-    const { backupBeforeWrite } = await import('./utils.fs.ts');
+  it('copies an existing file under claudeHome() to the backup dir byte-equal', () => {
     const src = join(testHome, '.claude', 'settings.json');
     writeFileSync(src, '{"a":1}');
     backupBeforeWrite(src, ts);
@@ -40,15 +40,13 @@ describe('backupBeforeWrite', () => {
     expect(readFileSync(dst, 'utf8')).toBe('{"a":1}');
   });
 
-  it('is a no-op when the source path does not exist', async () => {
-    const { backupBeforeWrite } = await import('./utils.fs.ts');
+  it('is a no-op when the source path does not exist', () => {
     const src = join(testHome, '.claude', 'settings.json');
     backupBeforeWrite(src, ts);
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 
-  it('refuses paths outside CLAUDE_HOME', async () => {
-    const { backupBeforeWrite } = await import('./utils.fs.ts');
+  it('refuses paths outside claudeHome()', () => {
     mkdirSync(join(testHome, '.other'), { recursive: true });
     const src = join(testHome, '.other', 'data.json');
     writeFileSync(src, '{"a":1}');
@@ -56,8 +54,7 @@ describe('backupBeforeWrite', () => {
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 
-  it('recursively copies a directory under CLAUDE_HOME', async () => {
-    const { backupBeforeWrite } = await import('./utils.fs.ts');
+  it('recursively copies a directory under claudeHome()', () => {
     const agentsDir = join(testHome, '.claude', 'agents');
     mkdirSync(agentsDir, { recursive: true });
     writeFileSync(join(agentsDir, 'foo.md'), 'foo');
@@ -81,7 +78,6 @@ describe('backupRepoWrite', () => {
     process.env.HOME = testHome;
     repoHome = join(testHome, 'claude-nomad');
     mkdirSync(repoHome, { recursive: true });
-    vi.resetModules();
   });
 
   afterEach(() => {
@@ -90,8 +86,7 @@ describe('backupRepoWrite', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('copies a repo-scoped file to the repo subdir of the backup root', async () => {
-    const { backupRepoWrite } = await import('./utils.fs.ts');
+  it('copies a repo-scoped file to the repo subdir of the backup root', () => {
     const src = join(repoHome, 'shared', 'projects', 'foo', 'session.jsonl');
     mkdirSync(join(repoHome, 'shared', 'projects', 'foo'), { recursive: true });
     writeFileSync(src, '{"a":1}');
@@ -112,15 +107,13 @@ describe('backupRepoWrite', () => {
     expect(readFileSync(dst, 'utf8')).toBe('{"a":1}');
   });
 
-  it('is a no-op when the source path does not exist', async () => {
-    const { backupRepoWrite } = await import('./utils.fs.ts');
+  it('is a no-op when the source path does not exist', () => {
     const src = join(repoHome, 'shared', 'projects', 'missing');
     backupRepoWrite(src, ts, repoHome);
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 
-  it('refuses paths outside REPO_HOME', async () => {
-    const { backupRepoWrite } = await import('./utils.fs.ts');
+  it('refuses paths outside the repoHome argument', () => {
     const outsidePath = join(testHome, 'elsewhere.json');
     writeFileSync(outsidePath, '{"a":1}');
     backupRepoWrite(outsidePath, ts, repoHome);

@@ -15,7 +15,7 @@ import { cpSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 import type { PathMap } from './config.ts';
-import { CLAUDE_HOME, HOST, REPO_HOME } from './config.ts';
+import { claudeHome, HOST, repoHome } from './config.ts';
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { resolveLiveTranscript } from './commands.redact.ts';
 import {
@@ -38,15 +38,22 @@ import { sessionIdFromFinding } from './commands.push.recovery.seams.ts';
  *
  * @param localPath Absolute path to the live `<sid>.jsonl` transcript.
  * @param map Parsed path-map.
+ * @param claude Resolved Claude home path for this invocation.
+ * @param repo Resolved repo home path for this invocation.
  * @returns The staged project dir, or null when the path maps to no host.
  */
-function resolveStagedDir(localPath: string, map: PathMap): string | null {
+function resolveStagedDir(
+  localPath: string,
+  map: PathMap,
+  claude: string,
+  repo: string,
+): string | null {
   for (const [logical, hostMap] of Object.entries(map.projects)) {
     assertSafeLogical(logical);
     const abs = hostMap[HOST];
     if (abs === undefined) continue;
-    if (localPath.startsWith(join(CLAUDE_HOME, 'projects', encodePath(abs)) + sep)) {
-      return join(REPO_HOME, 'shared', 'projects', logical);
+    if (localPath.startsWith(join(claude, 'projects', encodePath(abs)) + sep)) {
+      return join(repo, 'shared', 'projects', logical);
     }
   }
   return null;
@@ -95,6 +102,10 @@ export function applyRedact(
     return false;
   };
 
+  // Resolve roots once per invocation (T-45-02 TOCTOU mitigation).
+  const claude = claudeHome();
+  const repo = repoHome();
+
   const sid = sessionIdFromFinding(f);
   if (sid === null) {
     return refuse(
@@ -127,7 +138,7 @@ export function applyRedact(
   // the mapping first means an unmapped session or a poisoned logical key
   // (assertSafeLogical throws) fails closed without having rewritten local
   // transcripts. resolveStagedDir validates every logical key as it walks.
-  const stagedProjectDir = resolveStagedDir(localPath, map);
+  const stagedProjectDir = resolveStagedDir(localPath, map, claude, repo);
   if (stagedProjectDir === null) {
     return refuse(
       `could not map the local transcript for session ${sid} to a staged copy; choose Drop session or Skip.`,

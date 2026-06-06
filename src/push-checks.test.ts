@@ -356,7 +356,7 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     });
     const { rebaseBeforePush } = await import('./push-checks.ts');
     const stderrCallCountBefore = stderrSpy.mock.calls.length;
-    expect(() => rebaseBeforePush()).toThrow(/rebase failed/);
+    expect(() => rebaseBeforePush('/repo')).toThrow(/rebase failed/);
     // The FATAL message itself does not go through process.stderr.write
     // (it lives on the thrown NomadFatal). No forwarding should have run.
     const stderrCallsAfter = stderrSpy.mock.calls.slice(stderrCallCountBefore);
@@ -380,7 +380,7 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
       };
     });
     const { rebaseBeforePush } = await import('./push-checks.ts');
-    expect(() => rebaseBeforePush()).not.toThrow();
+    expect(() => rebaseBeforePush('/repo')).not.toThrow();
     // Ensure stdoutSpy is referenced (lint-clean) without changing behavior.
     expect(stdoutSpy).toBeDefined();
   });
@@ -400,11 +400,11 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
       };
     });
     const { rebaseBeforePush } = await import('./push-checks.ts');
-    expect(() => rebaseBeforePush()).toThrow(/rebase failed/);
-    expect(() => rebaseBeforePush()).toThrow(/git rebase --continue/);
+    expect(() => rebaseBeforePush('/repo')).toThrow(/rebase failed/);
+    expect(() => rebaseBeforePush('/repo')).toThrow(/git rebase --continue/);
     // Negation: corrected wording must NOT reference the stash list.
     try {
-      rebaseBeforePush();
+      rebaseBeforePush('/repo');
     } catch (err) {
       expect((err as Error).message).not.toMatch(/stash/);
     }

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { ghAuthStatus, readOriginRemote, type SpawnSyncFn } from './gh-actions.ts';
 import { die, log, NomadFatal } from './utils.ts';
 
@@ -51,9 +51,11 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
     );
   }
 
+  const repo = repoHome();
+
   // Fast idempotency path: if origin is already wired, nothing to do (D-09).
   try {
-    readOriginRemote(REPO_HOME, run);
+    readOriginRemote(repo, run);
     return;
   } catch {
     // No origin configured; fall through to the create flow.
@@ -71,14 +73,14 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
     die('gh CLI is not authenticated. Run `gh auth login` and retry.');
   }
 
-  // Initialize REPO_HOME as a git repo so `git remote add` below has a
-  // repository to write to. On a first host REPO_HOME is a brand-new empty
+  // Initialize the repo root as a git repo so `git remote add` below has a
+  // repository to write to. On a first host this is a brand-new empty
   // directory (just mkdir'd by cmdInit); without this `git remote add` fails
   // with "not a git repository". `git init` is idempotent: re-running on an
   // already-initialized repo reinitializes harmlessly and leaves the branch
   // and config untouched.
   try {
-    run('git', ['init', '-b', 'main'], { cwd: REPO_HOME, stdio: ['ignore', 'ignore', 'pipe'] });
+    run('git', ['init', '-b', 'main'], { cwd: repo, stdio: ['ignore', 'ignore', 'pipe'] });
   } catch (err) {
     const e = err as NodeJS.ErrnoException;
     throw new NomadFatal(`git init failed: ${e.message}`);
@@ -127,7 +129,7 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
   // Wire origin in the local git working tree.
   try {
     run('git', ['remote', 'add', 'origin', `git@github.com:${owner}/${repoName}.git`], {
-      cwd: REPO_HOME,
+      cwd: repo,
       stdio: ['ignore', 'ignore', 'pipe'],
     });
   } catch (err) {

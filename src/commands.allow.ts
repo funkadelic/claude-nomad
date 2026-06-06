@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { appendGitleaksIgnore, isValidFingerprint } from './commands.redact.core.ts';
 import { die, fail, item, log } from './utils.ts';
 
@@ -17,7 +17,8 @@ import { die, fail, item, log } from './utils.ts';
  *   argv by `parseAllowArgs`).
  */
 export function cmdAllow(fingerprints: string[]): void {
-  if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
+  const repo = repoHome();
+  if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
 
   for (const fp of fingerprints) {
     if (!isValidFingerprint(fp)) {
@@ -29,7 +30,7 @@ export function cmdAllow(fingerprints: string[]): void {
     }
   }
   for (const fp of fingerprints) {
-    appendGitleaksIgnore(fp);
+    appendGitleaksIgnore(fp, repo);
     item(`allowed: ${fp}`);
   }
   log(`allowed ${fingerprints.length} fingerprint(s)`);

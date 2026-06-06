@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { BACKUP_BASE } from './config.ts';
+import { backupBase as getBackupBase } from './config.ts';
 
 /**
  * Shape of a `<ts>` backup directory name as produced by `freshBackupTs`:
@@ -88,9 +88,12 @@ function totalSizeMb(backupBase: string, dirs: string[]): number {
  * `reportOptionalDeps` / `reportVersionCheck`.
  *
  * @param section - The Nomad Version section to append the WARN row to.
- * @param backupBase - Backup root to inspect (overridable for tests; defaults to `BACKUP_BASE`).
+ * @param backupBase - Backup root to inspect (overridable for tests; defaults to `backupBase()`).
  */
-export function reportBackupsCheck(section: DoctorSection, backupBase: string = BACKUP_BASE): void {
+export function reportBackupsCheck(
+  section: DoctorSection,
+  backupBase: string = getBackupBase(),
+): void {
   if (!existsSync(backupBase)) return;
   const dirs = safeReaddir(backupBase).filter((n) => TS_SHAPE.test(n));
   const count = dirs.length;

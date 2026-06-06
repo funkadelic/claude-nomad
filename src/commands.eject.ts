@@ -1,29 +1,26 @@
 import { cpSync, existsSync, lstatSync, realpathSync, renameSync, rmSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
-import { allSharedLinks, BACKUP_BASE, CLAUDE_HOME, REPO_HOME, type PathMap } from './config.ts';
+import { allSharedLinks, backupBase, claudeHome, repoHome, type PathMap } from './config.ts';
 import { die, fail, item, log } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
 
 /**
- * Manual-remainder checklist printed at the end of every successful eject run
- * (live and dry-run). Exported so tests can assert on the exact wording.
+ * Build the manual-remainder checklist using call-time path values.
+ * Exported so tests can assert on the exact wording.
+ *
+ * @returns The checklist string with current repoHome()/backupBase() values.
  */
-export const EJECT_CHECKLIST = [
-  'Manual steps remaining to finish leaving claude-nomad on this host:',
-  `  1. Uninstall the CLI: npm uninstall -g claude-nomad`,
-  `  2. Remove NOMAD_HOST and NOMAD_REPO from your shell rc (~/.zshrc or ~/.bashrc)`,
-  `  3. Optionally delete the local sync checkout: rm -rf ${REPO_HOME}`,
-  `  4. Optionally delete the private sync repo on GitHub`,
-  `  5. Optionally delete the backup cache: rm -rf ${BACKUP_BASE}`,
-].join('\n');
-
-/**
- * Production roots for {@link cmdEject}. Hoisted so the parameter default is a
- * shared constant rather than a fresh object literal per call; tests inject
- * temp-dir roots instead.
- */
-const DEFAULT_ROOTS = { claudeHome: CLAUDE_HOME, repoHome: REPO_HOME };
+export function ejectChecklist(): string {
+  return [
+    'Manual steps remaining to finish leaving claude-nomad on this host:',
+    `  1. Uninstall the CLI: npm uninstall -g claude-nomad`,
+    `  2. Remove NOMAD_HOST and NOMAD_REPO from your shell rc (~/.zshrc or ~/.bashrc)`,
+    `  3. Optionally delete the local sync checkout: rm -rf ${repoHome()}`,
+    `  4. Optionally delete the private sync repo on GitHub`,
+    `  5. Optionally delete the backup cache: rm -rf ${backupBase()}`,
+  ].join('\n');
+}
 
 /**
  * Classification of a managed name's current state in `~/.claude/`.
@@ -214,7 +211,7 @@ function previewDryRun(
       previewMaterialize(name, linkPath, sharedRoot);
     }
   }
-  log(EJECT_CHECKLIST);
+  log(ejectChecklist());
 }
 
 /**
@@ -285,7 +282,7 @@ function runLiveEject(
     }
   }
   log(`materialized ${done.length}, skipped ${skipped}`);
-  log(EJECT_CHECKLIST);
+  log(ejectChecklist());
 }
 
 /**
@@ -312,10 +309,20 @@ function materializeOneOrDie(
     return die(
       `failed to materialize ${name}: ${msg}. ` +
         `already materialized: ${done.join(', ') || '(none)'}. ` +
-        `the remaining names are still symlinks; do NOT delete ${REPO_HOME} yet, ` +
+        `the remaining names are still symlinks; do NOT delete ${repoHome()} yet, ` +
         `fix the cause and re-run \`nomad eject\` (it is idempotent on already-real names)`,
     );
   }
+}
+
+/**
+ * Production default roots for `cmdEject`, resolved at call time (a named
+ * builder rather than an object-literal parameter default, S7737).
+ *
+ * @returns The production roots object, both paths resolved at call time.
+ */
+function defaultEjectRoots(): { claudeHome: string; repoHome: string } {
+  return { claudeHome: claudeHome(), repoHome: repoHome() };
 }
 
 /**
@@ -339,11 +346,11 @@ function materializeOneOrDie(
  * `dryRun: true` previews actions and prints the checklist without writing.
  *
  * @param opts.dryRun When true, log planned actions and return without mutation.
- * @param roots Injected paths for testing (defaults to `CLAUDE_HOME`/`REPO_HOME`).
+ * @param roots Injected paths for testing (defaults to `defaultEjectRoots()`).
  */
 export function cmdEject(
   opts: { dryRun?: boolean } = {},
-  roots: { claudeHome: string; repoHome: string } = DEFAULT_ROOTS,
+  roots: { claudeHome: string; repoHome: string } = defaultEjectRoots(),
 ): void {
   const dryRun = opts.dryRun === true;
   const { claudeHome, repoHome } = roots;

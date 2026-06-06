@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { BACKUP_BASE, HOST, type PathMap, REPO_HOME } from './config.ts';
+import { backupBase, HOST, type PathMap, repoHome } from './config.ts';
 import { enforceAllowList } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
@@ -22,12 +22,14 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  * `shared/projects/<logical>/` prefix. Emits a per-hit FATAL line on stderr and
  * throws a summarizing `NomadFatal` (caught by `cmdPush` so the lock releases).
  * Runs AFTER `remapPush` so it inspects the post-copy tree.
+ *
+ * @param repo Resolved repo root path for this invocation.
  */
-function guardGitlinks(): void {
-  const gitlinks = findGitlinks(join(REPO_HOME, 'shared'));
+function guardGitlinks(repo: string): void {
+  const gitlinks = findGitlinks(join(repo, 'shared'));
   if (gitlinks.length === 0) return;
   for (const p of gitlinks) {
-    const rel = relative(REPO_HOME, p);
+    const rel = relative(repo, p);
     fail(`gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`);
   }
   const noun = gitlinks.length === 1 ? 'entry' : 'entries';
@@ -48,6 +50,7 @@ function guardGitlinks(): void {
  * @param redactAll - When true, redact all findings non-interactively.
  * @param allowAll - When true, allow all findings non-interactively.
  * @param allowRule - When set, allow only findings matching this rule id.
+ * @param repo - Resolved repo root path for this invocation.
  */
 async function commitAndPush(
   st: PushState,
@@ -56,15 +59,16 @@ async function commitAndPush(
   redactAll: boolean,
   allowAll: boolean,
   allowRule: string | undefined,
+  repo: string,
 ): Promise<void> {
-  gitOrFatal(['add', '-A'], 'git add', REPO_HOME);
-  let verdict = withSpinner('Scanning for secrets', scanPushVerdict);
+  gitOrFatal(['add', '-A'], 'git add', repo);
+  let verdict = withSpinner('Scanning for secrets', () => scanPushVerdict(repo));
   if (verdict.leak) {
     renderPushTree(st, verdict);
     verdict = await resolveLeakFindings(verdict, ts, map, { redactAll, allowAll, allowRule });
   }
-  gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', REPO_HOME);
-  withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', REPO_HOME));
+  gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', repo);
+  withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', repo));
   renderPushTree(st, verdict);
 }
 
@@ -197,7 +201,10 @@ export async function cmdPush(
   const allowAll = opts.allowAll === true;
   const allowRule = opts.allowRule;
   guardResolutionModeConflicts(dryRun, redactAll, allowAll, allowRule);
-  if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
+  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
+  const backup = backupBase();
+  if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
   const handle = acquireLock('push');
   if (handle === null) process.exit(0);
   try {
@@ -207,9 +214,9 @@ export async function cmdPush(
     // Rebase BEFORE any local mutation: surfaces remote conflicts against the
     // user's committed state, not against in-flight remapPush copies. Runs
     // under dryRun too so the network round-trip mirrors a real push.
-    withSpinner('Rebasing onto origin', rebaseBeforePush);
+    withSpinner('Rebasing onto origin', () => rebaseBeforePush(repo));
     // Collision-resistant ts for remapPush's pre-copy snapshot of repo-side state.
-    const ts = freshBackupTs(BACKUP_BASE);
+    const ts = freshBackupTs(backup);
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
     // Wrapped in a spinner: the recursive cpSync session copy is the longest
@@ -221,7 +228,7 @@ export async function cmdPush(
     // dryRun is forwarded so a preview push reports the same skipped count.
     const extras = withSpinner('Syncing extras', () => remapExtrasPush(ts, { dryRun }));
     const st: PushState = { dryRun, remap, extras };
-    guardGitlinks();
+    guardGitlinks(repo);
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()
     // the leading status-space and shift parsePorcelainZ's offsets.
     // `untrackedAll` (issue #111): the allow-list runs on this snapshot BEFORE
@@ -230,7 +237,7 @@ export async function cmdPush(
     // record that the `shared/extras/<logical>/<dirname>/` child prefix cannot
     // match, so the first extras push is rejected. Expanding to per-file paths
     // lets the existing allow-list accept them while keeping the gate order.
-    const status = gitStatusPorcelainZ(REPO_HOME, { untrackedAll: true });
+    const status = gitStatusPorcelainZ(repo, { untrackedAll: true });
     // REAL-PUSH-ONLY early return: a dry-run copies nothing into shared/, so an
     // empty status is the normal headline case (clean repo, new mapped
     // sessions) and must still reach the dry-run preview below.
@@ -239,7 +246,7 @@ export async function cmdPush(
       renderNoScanTree(st);
       return;
     }
-    const mapPath = join(REPO_HOME, 'path-map.json');
+    const mapPath = join(repo, 'path-map.json');
     // A dry-run with no map cannot enforce nor scan: render the no-scan tree and
     // return without dying. A real push with a non-empty status still dies.
     if (!existsSync(mapPath)) {
@@ -254,7 +261,7 @@ export async function cmdPush(
     // dryRun skips git add / commit / push: run the read-only leak preview,
     // which prints any recovery below the rendered tree.
     if (dryRun) return runDryRunPreview(st, map);
-    await commitAndPush(st, ts, map, redactAll, allowAll, allowRule);
+    await commitAndPush(st, ts, map, redactAll, allowAll, allowRule, repo);
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);

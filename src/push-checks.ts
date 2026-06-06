@@ -22,7 +22,6 @@ import { readdirSync, rmSync, type Dirent } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
-import { REPO_HOME } from './config.ts';
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
 import { NomadFatal } from './utils.ts';
 
@@ -159,18 +158,20 @@ export function probeGitleaks(): string {
  * list would mislead them; the recovery commands are the actual fix.
  *
  * `cmdPull` may adopt the same helper in a future refactor.
+ *
+ * @param repo Repo root resolved once by the calling command.
  */
-export function rebaseBeforePush(): void {
+export function rebaseBeforePush(repo: string): void {
   try {
     execFileSync('git', ['pull', '--rebase', '--autostash'], {
-      cwd: REPO_HOME,
+      cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer };
     if (e.stderr) process.stderr.write(e.stderr);
     throw new NomadFatal(
-      'rebase failed; if a conflict was reported, resolve it in ~/claude-nomad/ and run "git rebase --continue" (or "git rebase --abort" to give up). Re-run nomad push after resolution.',
+      `rebase failed; if a conflict was reported, resolve it in ${repo} and run "git rebase --continue" (or "git rebase --abort" to give up). Re-run nomad push after resolution.`,
     );
   }
 }

@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
@@ -60,12 +60,14 @@ function emitCreate(onPreview: LinkOpts['onPreview'], from: string, to: string):
  */
 export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}): void {
   const dryRun = opts.dryRun === true;
+  const claude = claudeHome();
+  const repo = repoHome();
   // Derive once: allSharedLinks emits a WARN per invalid sharedDirs entry, so
   // calling it per loop would double every such warning in a single run.
   const linkNames = allSharedLinks(map);
   for (const name of linkNames) {
-    const linkPath = join(CLAUDE_HOME, name);
-    const target = join(REPO_HOME, 'shared', name);
+    const linkPath = join(claude, name);
+    const target = join(repo, 'shared', name);
     if (!existsSync(linkPath)) continue;
     if (lstatSync(linkPath).isSymbolicLink()) continue;
     if (!existsSync(target)) continue;
@@ -77,13 +79,13 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
     rmSync(linkPath, { recursive: true, force: true });
   }
   for (const name of linkNames) {
-    const target = join(REPO_HOME, 'shared', name);
+    const target = join(repo, 'shared', name);
     if (!existsSync(target)) continue;
     if (dryRun) {
-      emitCreate(opts.onPreview, join(CLAUDE_HOME, name), target);
+      emitCreate(opts.onPreview, join(claude, name), target);
       continue;
     }
-    ensureSymlink(join(CLAUDE_HOME, name), target);
+    ensureSymlink(join(claude, name), target);
   }
 }
 
@@ -118,8 +120,10 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
  */
 export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}): { label: string } {
   const dryRun = opts.dryRun === true;
-  const basePath = join(REPO_HOME, 'shared', 'settings.base.json');
-  const hostPath = join(REPO_HOME, 'hosts', `${HOST}.json`);
+  const repo = repoHome();
+  const claude = claudeHome();
+  const basePath = join(repo, 'shared', 'settings.base.json');
+  const hostPath = join(repo, 'hosts', `${HOST}.json`);
   if (!existsSync(basePath)) {
     die("repo not initialized; run 'nomad init' to scaffold");
   }
@@ -129,7 +133,7 @@ export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}):
   const overrides = hasOverrides ? readJson<Record<string, unknown>>(hostPath) : {};
   const merged = deepMerge(base, overrides);
 
-  const settingsPath = join(CLAUDE_HOME, 'settings.json');
+  const settingsPath = join(claude, 'settings.json');
 
   // Pull-side surface: warn-then-proceed when no host file matches AND
   // existing settings has top-level keys not in base. Informational only;

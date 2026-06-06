@@ -1,7 +1,7 @@
 import { copyFileSync, cpSync, existsSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { allSharedLinks, claudeHome, HOST, repoHome, type PathMap } from './config.ts';
 import { die, log } from './utils.ts';
 import { writeJsonAtomic } from './utils.fs.ts';
 import { readJson } from './utils.json.ts';
@@ -21,10 +21,12 @@ import { readJson } from './utils.json.ts';
  * with `cmdInit` itself.
  */
 export function snapshotIntoShared(map: PathMap): void {
+  const repo = repoHome();
+  const claude = claudeHome();
   for (const name of allSharedLinks(map)) {
-    const src = join(CLAUDE_HOME, name);
+    const src = join(claude, name);
     if (!existsSync(src)) continue;
-    const dst = join(REPO_HOME, 'shared', name);
+    const dst = join(repo, 'shared', name);
     if (statSync(src).isDirectory()) {
       // Remove the .gitkeep first so cpSync starts against an empty dst.
       // Force is false so existing files are not overwritten; errorOnExist
@@ -40,7 +42,7 @@ export function snapshotIntoShared(map: PathMap): void {
     log(`snapshotted shared/${name} from ${src}`);
   }
 
-  const userSettings = join(CLAUDE_HOME, 'settings.json');
+  const userSettings = join(claude, 'settings.json');
   if (existsSync(userSettings)) {
     // `return die(...)` keeps `parsed` definitely-assigned for the writeJsonAtomic call.
     let parsed: Record<string, unknown>;
@@ -49,7 +51,7 @@ export function snapshotIntoShared(map: PathMap): void {
     } catch (err) {
       return die(`malformed ${userSettings}: ${(err as Error).message}`);
     }
-    const hostFile = join(REPO_HOME, 'hosts', `${HOST}.json`);
+    const hostFile = join(repo, 'hosts', `${HOST}.json`);
     writeJsonAtomic(hostFile, parsed);
     log(`snapshotted hosts/${HOST}.json from ${userSettings}`);
   }

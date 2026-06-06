@@ -1,7 +1,7 @@
 import { cpSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { HOST, REPO_HOME, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import { HOST, repoHome, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
 import { assertSafeLocalRoot, assertSafeLogical } from './extras-sync.guards.ts';
 import { log } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
@@ -30,8 +30,9 @@ export function loadValidatedExtras(opts: {
   requireRepoExtras?: boolean;
   missingMsg?: string;
 }): ValidatedExtras | null {
-  const mapPath = join(REPO_HOME, 'path-map.json');
-  const repoExtras = join(REPO_HOME, 'shared', 'extras');
+  const repo = repoHome();
+  const mapPath = join(repo, 'path-map.json');
+  const repoExtras = join(repo, 'shared', 'extras');
   if (!existsSync(mapPath) || (opts.requireRepoExtras === true && !existsSync(repoExtras))) {
     if (opts.missingMsg !== undefined) log(opts.missingMsg);
     return null;

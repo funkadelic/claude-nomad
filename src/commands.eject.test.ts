@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import { cmdEject, EJECT_CHECKLIST, errMessage, previewMaterialize } from './commands.eject.ts';
+import { cmdEject, ejectChecklist, errMessage, previewMaterialize } from './commands.eject.ts';
 
 /**
  * Helper: create a temp directory pair (claudeHome + repoHome) for each test.
@@ -104,6 +104,32 @@ describe('cmdEject', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('default roots: bare cmdEject resolves claudeHome/repoHome from the env at call time', () => {
+    const originalHome = process.env.HOME;
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    // Build a HOME/.claude + NOMAD_REPO pair so the parameter default
+    // (defaultEjectRoots) resolves to these temp roots.
+    const base = mkdtempSync(join(tmpdir(), 'nomad-eject-defaults-'));
+    const home = join(base, 'home');
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    const repo = join(base, 'repo');
+    mkdirSync(join(repo, 'shared'), { recursive: true });
+    makeLinkedFile(join(home, '.claude'), repo, 'CLAUDE.md', 'via defaults');
+    process.env.HOME = home;
+    process.env.NOMAD_REPO = repo;
+    try {
+      cmdEject({ dryRun: true });
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('would materialize: CLAUDE.md'));
+      // dry-run: the symlink is untouched.
+      expect(lstatSync(join(home, '.claude', 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    } finally {
+      process.env.HOME = originalHome;
+      if (originalNomadRepo === undefined) delete process.env.NOMAD_REPO;
+      else process.env.NOMAD_REPO = originalNomadRepo;
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 
   it('materialize: symlinked file becomes a real file with target contents', () => {
@@ -238,10 +264,10 @@ describe('cmdEject', () => {
     }
   });
 
-  it('checklist EJECT_CHECKLIST export contains npm uninstall and NOMAD_HOST items', () => {
-    expect(EJECT_CHECKLIST).toContain('npm uninstall -g claude-nomad');
-    expect(EJECT_CHECKLIST).toContain('NOMAD_HOST');
-    expect(EJECT_CHECKLIST).toContain('NOMAD_REPO');
+  it('ejectChecklist() export contains npm uninstall and NOMAD_HOST items', () => {
+    expect(ejectChecklist()).toContain('npm uninstall -g claude-nomad');
+    expect(ejectChecklist()).toContain('NOMAD_HOST');
+    expect(ejectChecklist()).toContain('NOMAD_REPO');
   });
 
   it('tally: live run logs a materialized/skipped summary before the checklist', () => {

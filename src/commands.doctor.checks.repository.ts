@@ -14,7 +14,7 @@ import {
   warnGlyph,
   yellow,
 } from './color.ts';
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { detectWedge } from './commands.pull.wedge.ts';
 import { findGitlinks } from './push-checks.ts';
@@ -62,11 +62,12 @@ export function reportGitleaksProbe(section: DoctorSection): boolean {
 
 /** Walks shared/ for nested .git gitlinks; emits failGlyph per gitlink found (sets exitCode=1), okGlyph when none. */
 export function reportGitlinks(section: DoctorSection): void {
-  const sharedDir = join(REPO_HOME, 'shared');
+  const repo = repoHome();
+  const sharedDir = join(repo, 'shared');
   if (existsSync(sharedDir)) {
     const gitlinks = findGitlinks(sharedDir);
     for (const p of gitlinks) {
-      const rel = relative(REPO_HOME, p);
+      const rel = relative(repo, p);
       addItem(
         section,
         `${red(failGlyph)} gitlink: ${blue(rel)} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,
@@ -84,7 +85,7 @@ export function reportGitlinks(section: DoctorSection): void {
 export function reportRemote(section: DoctorSection): void {
   try {
     const url = execFileSync('git', ['remote', 'get-url', 'origin'], {
-      cwd: REPO_HOME,
+      cwd: repoHome(),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
       .toString()
@@ -98,7 +99,7 @@ export function reportRemote(section: DoctorSection): void {
 /** WARNs when ~/claude-nomad/ has uncommitted changes (autostash territory for push). */
 export function reportRebaseClean(section: DoctorSection): void {
   try {
-    const status = gitStatusPorcelainZ(REPO_HOME);
+    const status = gitStatusPorcelainZ(repoHome());
     if (status.length > 0) {
       addItem(
         section,
@@ -125,7 +126,7 @@ export function reportRebaseClean(section: DoctorSection): void {
  */
 export function reportRebaseState(section: DoctorSection): void {
   try {
-    const wedge = detectWedge(REPO_HOME);
+    const wedge = detectWedge(repoHome());
     if (wedge !== null) {
       const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
       addItem(

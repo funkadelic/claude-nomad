@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
-import { BACKUP_BASE, CLAUDE_HOME } from './config.ts';
+import { backupBase, claudeHome } from './config.ts';
 import { encodePath } from './utils.json.ts';
 import { die, log } from './utils.ts';
 
@@ -91,30 +91,31 @@ export function ensureSymlink(linkPath: string, target: string): void {
 }
 
 /**
- * Snapshot `absPath` into `BACKUP_BASE/<ts>/<rel>` before destructive write.
- * No-op if source missing or outside CLAUDE_HOME. Recursive for directories.
+ * Snapshot `absPath` into `backupBase()/<ts>/<rel>` before destructive write.
+ * No-op if source missing or outside claudeHome(). Recursive for directories.
  */
 export function backupBeforeWrite(absPath: string, ts: string): void {
   if (!existsSync(absPath)) return;
-  const rel = relative(CLAUDE_HOME, absPath);
+  const claude = claudeHome();
+  const rel = relative(claude, absPath);
   if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(BACKUP_BASE, ts);
+  const backupRoot = join(backupBase(), ts);
   const dst = join(backupRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
 }
 
 /**
- * Parallel of `backupBeforeWrite`, but scoped to `REPO_HOME` instead of
- * `CLAUDE_HOME`. Used by `remapPush` to snapshot repo-side encoded-dir
+ * Parallel of `backupBeforeWrite`, but scoped to `repoHome` instead of
+ * `claudeHome()`. Used by `remapPush` to snapshot repo-side encoded-dir
  * state before `copyDir` clobbers it. Backup root is repo-prefixed so the
- * dump is distinguishable from `CLAUDE_HOME` backups in the same `ts` dir.
+ * dump is distinguishable from `claudeHome()` backups in the same `ts` dir.
  */
 export function backupRepoWrite(absPath: string, ts: string, repoHome: string): void {
   if (!existsSync(absPath)) return;
   const rel = relative(repoHome, absPath);
   if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(BACKUP_BASE, ts, 'repo');
+  const backupRoot = join(backupBase(), ts, 'repo');
   const dst = join(backupRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
@@ -133,7 +134,7 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
  * Backup root is `extras/`-prefixed inside the same `<ts>` dir so the
  * snapshot is distinguishable from `CLAUDE_HOME` dumps (no prefix) and
  * `repo/` dumps. Layout:
- * `~/.cache/claude-nomad/backup/<ts>/extras/<encoded-projectRoot>/<rel>/`
+ * `backupBase()/<ts>/extras/<encoded-projectRoot>/<rel>/`
  * where `<rel>` is `relative(projectRoot, absPath)` and
  * `<encoded-projectRoot>` is `encodePath(projectRoot)`. The encoded prefix
  * namespaces snapshots by project so two opted-in projects with the same
@@ -145,7 +146,7 @@ export function backupExtrasWrite(absPath: string, ts: string, projectRoot: stri
   if (!existsSync(absPath)) return;
   const rel = relative(projectRoot, absPath);
   if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(BACKUP_BASE, ts, 'extras');
+  const backupRoot = join(backupBase(), ts, 'extras');
   const dst = join(backupRoot, encodePath(projectRoot), rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });

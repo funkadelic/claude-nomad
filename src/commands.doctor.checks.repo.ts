@@ -13,7 +13,7 @@ import {
   warnGlyph,
   yellow,
 } from './color.ts';
-import { allSharedLinks, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { allSharedLinks, claudeHome, HOST, repoHome, type PathMap } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 
@@ -52,23 +52,23 @@ export function reportHostAndPaths(section: DoctorSection): void {
   // HOST already folds in the fallback (see src/config.ts); the unset hint
   // tells the user the value came from the OS hostname, not their shell rc.
   const unsetHint = process.env.NOMAD_HOST ? '' : dim(' (env unset, using hostname)');
+  const repo = repoHome();
+  const claude = claudeHome();
   addItem(section, `${dim(infoGlyph)} NOMAD_HOST: ${cyan(HOST)}${unsetHint}`);
   if (isOverrideActive()) {
-    addItem(section, `${dim(infoGlyph)} NOMAD_REPO: ${blue(REPO_HOME)}`);
+    addItem(section, `${dim(infoGlyph)} NOMAD_REPO: ${blue(repo)}`);
   }
+  addItem(section, `${existsSync(repo) ? green(okGlyph) : yellow(warnGlyph)} repo: ${blue(repo)}`);
   addItem(
     section,
-    `${existsSync(REPO_HOME) ? green(okGlyph) : yellow(warnGlyph)} repo: ${blue(REPO_HOME)}`,
-  );
-  addItem(
-    section,
-    `${existsSync(CLAUDE_HOME) ? green(okGlyph) : yellow(warnGlyph)} claude home: ${blue(CLAUDE_HOME)}`,
+    `${existsSync(claude) ? green(okGlyph) : yellow(warnGlyph)} claude home: ${blue(claude)}`,
   );
 }
 
 /** Emits the repo-state status line derived from classifyRepoState (okGlyph/warnGlyph/failGlyph). When `NOMAD_REPO` is active, all three branches receive a ` (NOMAD_REPO)` suffix so the env override is visible whatever the repo state. FAIL signals via process.exitCode. */
 export function reportRepoState(section: DoctorSection): void {
-  const state = classifyRepoState(REPO_HOME, HOST);
+  const repo = repoHome();
+  const state = classifyRepoState(repo, HOST);
   // Computed once so populated/partial/empty branches share the same
   // annotation. Leading space before `(` keeps the line readable on every
   // branch; empty string produces zero visual change when the override is
@@ -79,7 +79,7 @@ export function reportRepoState(section: DoctorSection): void {
   } else if (state === 'partial') {
     addItem(
       section,
-      `${yellow(warnGlyph)} repo state: partial ${reasonForPartial(REPO_HOME, HOST)}${overrideLabel}`,
+      `${yellow(warnGlyph)} repo state: partial ${reasonForPartial(repo, HOST)}${overrideLabel}`,
     );
   } else {
     addItem(
@@ -97,7 +97,7 @@ export function reportRepoState(section: DoctorSection): void {
  * fix. Doctor uses this to downgrade those rows from a warn to an info note.
  */
 function repoHasSharedSource(name: string): boolean {
-  return existsSync(join(REPO_HOME, 'shared', name));
+  return existsSync(join(repoHome(), 'shared', name));
 }
 
 /**
@@ -180,8 +180,9 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
  * dangling or unreadable link is not masked.
  */
 export function reportSharedLinks(section: DoctorSection, map: PathMap): void {
+  const claude = claudeHome();
   for (const name of allSharedLinks(map)) {
-    const p = join(CLAUDE_HOME, name);
+    const p = join(claude, name);
     const { line, fail } = classifySharedLink(name, p);
     addItem(section, line);
     if (fail) process.exitCode = 1;

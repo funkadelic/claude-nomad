@@ -25,7 +25,7 @@ import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportHookScopeCheck } from './commands.doctor.checks.hooks.scope.ts';
 import { reportHooksTargetCheck } from './commands.doctor.checks.hooks.ts';
 import { reportPreserveSymlinksCheck } from './commands.doctor.checks.hooks.preserve-symlinks.ts';
-import { REPO_HOME, type PathMap } from './config.ts';
+import { repoHome, type PathMap } from './config.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { readJsonSafe, renderDoctor, section } from './commands.doctor.format.ts';
 import { reportGitleaksVersionCheck } from './commands.doctor.gitleaks-version.ts';
@@ -61,7 +61,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   // Tolerantly read path-map.json for sharedDirs: doctor is read-only and
   // must not throw on a missing or malformed map. Fall back to { projects: {} }
   // so hooks + static SHARED_LINKS rows still emit on a fresh host.
-  const mapPath = join(REPO_HOME, 'path-map.json');
+  const mapPath = join(repoHome(), 'path-map.json');
   const rawMap = existsSync(mapPath) ? readJsonSafe<PathMap>(mapPath, mapPath, links) : null;
   const map: PathMap = rawMap ?? { projects: {} };
   reportSharedLinks(links, map);

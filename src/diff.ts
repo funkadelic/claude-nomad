@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BACKUP_BASE, REPO_HOME, type PathMap } from './config.ts';
+import { backupBase, repoHome, type PathMap } from './config.ts';
 import { computePreview } from './preview.ts';
 import { die, fail, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
@@ -32,13 +32,14 @@ import { readPathMap } from './utils.json.ts';
  */
 export function cmdDiff(): void {
   try {
-    if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
-    const ts = freshBackupTs(BACKUP_BASE);
+    const repo = repoHome();
+    if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
+    const ts = freshBackupTs(backupBase());
     // Preview log lines reference `ts` so output stays consistent with
     // pull --dry-run; the backup root itself is intentionally NOT created.
     // Read the map tolerantly (offline-safe: fall back to no-sharedDirs when
     // path-map.json is absent from a partially-scaffolded repo).
-    const mapPath = join(REPO_HOME, 'path-map.json');
+    const mapPath = join(repo, 'path-map.json');
     const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
     // computePreview renders the full tree including the Summary row; no
     // separate emitSummary call needed (it would print a duplicate).
