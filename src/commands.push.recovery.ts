@@ -272,7 +272,7 @@ export async function resolveLeakFindings(
       throw new NomadFatal(buildSessionAwareFatal(bySession, other));
     }
 
-    dispatchActions(current.findings, actions, ts, map, nowMs, repo, scan);
+    dispatchActions(current.findings, actions, { ts, map, nowMs, repo, scan });
     gitOrFatal(['add', '-A'], 'git add', repo);
     current = scanVerdict(repo);
   }

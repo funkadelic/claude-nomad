@@ -1216,16 +1216,14 @@ describe('dispatchActions - drop wins at session level', () => {
     ]);
     const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
 
-    dispatchActions(
-      [finding1, finding2],
-      actions,
-      'ts-x',
+    dispatchActions([finding1, finding2], actions, {
+      ts: 'ts-x',
       map,
-      Date.now,
-      testHome,
-      scanSpy,
-      dropMock,
-    );
+      nowMs: Date.now,
+      repo: testHome,
+      scan: scanSpy,
+      drop: dropMock,
+    });
 
     expect(dropMock).toHaveBeenCalledOnce();
     expect(dropMock).toHaveBeenCalledWith('abc123', map);
@@ -1264,16 +1262,13 @@ describe('dispatchActions - drop wins at session level', () => {
     ]);
     const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
 
-    dispatchActions(
-      [finding1, finding2],
-      actions,
-      'ts-x',
+    dispatchActions([finding1, finding2], actions, {
+      ts: 'ts-x',
       map,
-      Date.now,
-      testHome,
-      undefined,
-      dropMock,
-    );
+      nowMs: Date.now,
+      repo: testHome,
+      drop: dropMock,
+    });
 
     expect(dropMock).toHaveBeenCalledOnce();
     expect(dropMock).toHaveBeenCalledWith('abc123', map);
@@ -1313,16 +1308,13 @@ describe('dispatchActions - drop wins at session level', () => {
     ]);
     const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
 
-    dispatchActions(
-      [finding1, finding2],
-      actions,
-      'ts-x',
+    dispatchActions([finding1, finding2], actions, {
+      ts: 'ts-x',
       map,
-      Date.now,
-      testHome,
-      undefined,
-      dropMock,
-    );
+      nowMs: Date.now,
+      repo: testHome,
+      drop: dropMock,
+    });
 
     expect(dropMock).toHaveBeenCalledWith('abc123', map);
     // Drop wins: the allow for the same dropped session must NOT write a fingerprint.
@@ -1447,7 +1439,13 @@ describe('dispatchActions - Drop action uses dropSessionFromStaged', () => {
     const actions = new Map([[findingKey(finding), 'drop' as const]]);
     const map: PathMap = { projects: { 'my-proj': { host: '/some/path' } } };
 
-    dispatchActions([finding], actions, 'ts-x', map, Date.now, '/repo', undefined, dropMock);
+    dispatchActions([finding], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+      drop: dropMock,
+    });
 
     expect(dropMock).toHaveBeenCalledOnce();
     expect(dropMock).toHaveBeenCalledWith('abc123', map);
@@ -1466,7 +1464,13 @@ describe('dispatchActions - Drop action uses dropSessionFromStaged', () => {
     const actions = new Map([[findingKey(finding), 'drop' as const]]);
     const map: PathMap = { projects: {} };
 
-    dispatchActions([finding], actions, 'ts-x', map, Date.now, '/repo', undefined, dropMock);
+    dispatchActions([finding], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+      drop: dropMock,
+    });
 
     expect(dropMock).toHaveBeenCalledOnce();
     expect(logSpy).not.toHaveBeenCalled();
@@ -1861,7 +1865,13 @@ describe('dispatchActions - remaining dispatchOne branches', () => {
     // skipped -> explicit 'skip'; unmapped has NO key in the map (defaults skip).
     const actions = new Map([[findingKey(skipped), 'skip' as const]]);
     const map: PathMap = { projects: { p: { 'test-host': '/x/p' } } };
-    dispatchActions([skipped, unmapped], actions, 'ts-x', map, Date.now, testHome, scanSpy);
+    dispatchActions([skipped, unmapped], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: testHome,
+      scan: scanSpy,
+    });
     expect(scanSpy).not.toHaveBeenCalled();
   });
 
@@ -1871,7 +1881,13 @@ describe('dispatchActions - remaining dispatchOne branches', () => {
     const finding = makeFinding({ File: 'shared/other/not-a-session.txt' });
     const actions = new Map([[findingKey(finding), 'redact' as const]]);
     const map: PathMap = { projects: {} };
-    dispatchActions([finding], actions, 'ts-x', map, Date.now, testHome, scanSpy);
+    dispatchActions([finding], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: testHome,
+      scan: scanSpy,
+    });
     // sid === null short-circuits, so applyRedact (and scan) never run.
     expect(scanSpy).not.toHaveBeenCalled();
   });
@@ -1901,7 +1917,13 @@ describe('dispatchActions - remaining dispatchOne branches', () => {
       [findingKey(f2), 'redact' as const],
     ]);
 
-    dispatchActions([f1, f2], actions, 'ts-x', map, () => farFuture, testHome, scanSpy);
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: () => farFuture,
+      repo: testHome,
+      scan: scanSpy,
+    });
 
     // First redact succeeds and marks the session; the second is deduped.
     expect(scanSpy).toHaveBeenCalledOnce();
@@ -1924,7 +1946,13 @@ describe('dispatchActions - remaining dispatchOne branches', () => {
       [findingKey(f2), 'redact' as const],
     ]);
 
-    dispatchActions([f1, f2], actions, 'ts-x', map, () => farFuture, testHome, scanSpy);
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: () => farFuture,
+      repo: testHome,
+      scan: scanSpy,
+    });
 
     // applyRedact returned false both times, so the session was never marked
     // redacted and the second finding retried.

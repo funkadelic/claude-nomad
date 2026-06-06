@@ -164,23 +164,27 @@ function dispatchOne(f: Finding, ctx: DispatchCtx): void {
  *
  * @param findings Full findings list from the current verdict.
  * @param actions The action map returned by `collectActions`.
- * @param ts Backup timestamp.
- * @param map Parsed path-map.
- * @param nowMs Injectable clock.
- * @param repo Repo root resolved once by the calling command.
- * @param scan Injectable scan function for `applyRedact` (default: `scanFile`).
- * @param drop Injectable staged-copy remover for the Drop action (default: `dropSessionFromStaged`).
+ * @param opts Loop-invariant inputs for the dispatch pass.
+ * @param opts.ts Backup timestamp.
+ * @param opts.map Parsed path-map.
+ * @param opts.nowMs Injectable clock.
+ * @param opts.repo Repo root resolved once by the calling command.
+ * @param opts.scan Injectable scan function for `applyRedact` (default: `scanFile`).
+ * @param opts.drop Injectable staged-copy remover for the Drop action (default: `dropSessionFromStaged`).
  */
 export function dispatchActions(
   findings: Finding[],
   actions: Map<string, FindingAction>,
-  ts: string,
-  map: PathMap,
-  nowMs: () => number,
-  repo: string,
-  scan: (p: string) => Finding[] | null = scanFile,
-  drop: (sid: string, map: PathMap) => boolean = dropSessionFromStaged,
+  opts: {
+    ts: string;
+    map: PathMap;
+    nowMs: () => number;
+    repo: string;
+    scan?: (p: string) => Finding[] | null;
+    drop?: (sid: string, map: PathMap) => boolean;
+  },
 ): void {
+  const { ts, map, nowMs, repo, scan = scanFile, drop = dropSessionFromStaged } = opts;
   const ctx: DispatchCtx = {
     actions,
     ts,
