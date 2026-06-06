@@ -15,11 +15,13 @@
 // Exit codes:
 //   0 on success (even when zero candidates found; absence of output means all
 //     tests kill at least one mutant).
-//   1 on JSON parse error or unreadable report file.
+//   1 on unreadable report file, JSON parse error, or a report that is not an
+//     object (a scalar or null body).
 //
 // ESM (.mjs) because package.json declares "type": "module".
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Derive the zero-kill test list from a Stryker mutation report.
@@ -59,8 +61,29 @@ export function findZeroKillTests(report) {
   return candidates;
 }
 
+/**
+ * True when this module is the process entry point (invoked directly), false
+ * when imported by tests. Compares realpaths on both sides so invocation via a
+ * symlink still matches: Node resolves `import.meta.url` through symlinks but
+ * leaves `process.argv[1]` as the symlink path. Falls back to a plain inequality
+ * when `argv[1]` is absent (e.g. a REPL import) so the guard never throws.
+ *
+ * @returns {boolean} Whether the script is running as the entry point.
+ */
+function isDirectInvocation() {
+  const entry = process.argv[1];
+  if (!entry) {
+    return false;
+  }
+  try {
+    return fileURLToPath(import.meta.url) === realpathSync(entry);
+  } catch {
+    return false;
+  }
+}
+
 // Run main only when invoked directly, not when imported by tests.
-if (import.meta.url === new URL(process.argv[1], 'file://').href) {
+if (isDirectInvocation()) {
   const reportPath = process.argv[2] ?? 'reports/mutation/mutation.json';
   let raw;
   try {
@@ -76,6 +99,10 @@ if (import.meta.url === new URL(process.argv[1], 'file://').href) {
     process.stderr.write(
       `find-zero-kill-tests: JSON parse error in ${reportPath}: ${String(err)}\n`,
     );
+    process.exit(1);
+  }
+  if (typeof report !== 'object' || report === null) {
+    process.stderr.write(`find-zero-kill-tests: report is not an object in ${reportPath}\n`);
     process.exit(1);
   }
   const candidates = findZeroKillTests(report);
