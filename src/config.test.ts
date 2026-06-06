@@ -180,6 +180,47 @@ describe('call-time resolvers: home, claudeHome, repoHome, backupBase', () => {
     process.env.HOME = '/tmp/home-h';
     expect(backupBase()).toBe(join('/tmp/home-h', '.cache', 'claude-nomad', 'backup'));
   });
+
+  it('home() falls back to os.homedir() when HOME is unset', async () => {
+    const { home } = await import('./config.ts');
+    const { homedir } = await import('node:os');
+    delete process.env.HOME;
+    expect(home()).toBe(homedir());
+  });
+
+  it('home() honors a worker-thread HOME override that os.homedir() cannot see', async () => {
+    // worker_threads keep a per-isolate copy of process.env; mutations there
+    // never reach the real process environ, so os.homedir() stays pinned to
+    // the parent HOME. home() must read process.env.HOME directly or tools
+    // that run tests in worker threads (Stryker's vitest runner forces
+    // pool: "threads") see the parent HOME instead of the test HOME.
+    const { Worker } = await import('node:worker_threads');
+    const fakeHome = '/tmp/nomad-worker-home-probe';
+    const configUrl = new URL('./config.ts', import.meta.url).href;
+    const workerCode = [
+      "const { parentPort, workerData } = require('node:worker_threads');",
+      'process.env.HOME = workerData.fakeHome;',
+      'import(workerData.configUrl).then(',
+      "  (m) => parentPort.postMessage({ home: m.home(), homedir: require('node:os').homedir() }),",
+      '  (err) => parentPort.postMessage({ error: String(err) }),',
+      ');',
+    ].join('\n');
+    const result = await new Promise<{ home?: string; homedir?: string; error?: string }>(
+      (res, rej) => {
+        const w = new Worker(workerCode, { eval: true, workerData: { fakeHome, configUrl } });
+        w.once('message', (msg: { home?: string; homedir?: string; error?: string }) => {
+          res(msg);
+          void w.terminate();
+        });
+        w.once('error', rej);
+      },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.home).toBe(fakeHome);
+    // Sanity: the isolate-local mutation is invisible to os.homedir(),
+    // which is exactly why home() cannot delegate to it alone.
+    expect(result.homedir).not.toBe(fakeHome);
+  });
 });
 
 describe('allSharedLinks', () => {
