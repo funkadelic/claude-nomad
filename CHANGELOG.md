@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.44.1](https://github.com/funkadelic/claude-nomad/compare/v0.44.0...v0.44.1) (2026-06-06)
+
+
+### Fixed
+
+* **config:** read HOME from process.env before os.homedir() ([#255](https://github.com/funkadelic/claude-nomad/issues/255)) ([2d5d679](https://github.com/funkadelic/claude-nomad/commit/2d5d67930196bd33f68de608385d4254f203f758))
+* **output:** list per-item lines without info glyph ([#251](https://github.com/funkadelic/claude-nomad/issues/251)) ([bdbebee](https://github.com/funkadelic/claude-nomad/commit/bdbebee506d69eeffc91d609c44110f5d4f38e25))
+
+
+### Changed
+
+* **config:** resolve HOME-derived paths at call time ([#254](https://github.com/funkadelic/claude-nomad/issues/254)) ([db007fc](https://github.com/funkadelic/claude-nomad/commit/db007fceb92c435ad8c0149119691fdbdb6d9aaa))
+
+
+### Documentation
+
+* mark the HOME-isolation mutation-testing limitation resolved ([#256](https://github.com/funkadelic/claude-nomad/issues/256)) ([83f462d](https://github.com/funkadelic/claude-nomad/commit/83f462d51b991f3ecc7ce853c4694163fbb0b859))
+
+
+### Testing
+
+* add Stryker mutation-testing toolchain and prune zero-kill test ([#253](https://github.com/funkadelic/claude-nomad/issues/253)) ([c7339f1](https://github.com/funkadelic/claude-nomad/commit/c7339f11dd1dc28fa8fa73f744805dc0ca005855))
+
 ## [0.44.0](https://github.com/funkadelic/claude-nomad/compare/v0.43.0...v0.44.0) (2026-06-05)
 
 
