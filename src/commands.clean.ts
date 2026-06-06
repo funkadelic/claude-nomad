@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BACKUP_BASE } from './config.ts';
+import { backupBase as getBackupBase } from './config.ts';
 import { fail, item, log } from './utils.ts';
 
 /**
@@ -146,7 +146,7 @@ function resolveTargets(
  */
 export function cmdClean(
   opts: { dryRun?: boolean; olderThan?: string; keep?: number },
-  backupBase: string = BACKUP_BASE,
+  backupBase: string = getBackupBase(),
 ): void {
   const { dryRun, olderThan, keep } = opts;
   if (olderThan !== undefined && keep !== undefined) {

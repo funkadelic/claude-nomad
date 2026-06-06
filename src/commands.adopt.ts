@@ -1,7 +1,7 @@
 import { cpSync, existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BACKUP_BASE, CLAUDE_HOME, REPO_HOME, SHARED_LINKS, type PathMap } from './config.ts';
+import { backupBase, claudeHome, repoHome, SHARED_LINKS, type PathMap } from './config.ts';
 import { isValidSharedDir } from './config.sharedDirs.guard.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
@@ -83,8 +83,14 @@ function isValidAdoptName(name: string): boolean {
  * @param linkPath Absolute path of the source directory (`CLAUDE_HOME/<name>`).
  * @param sharedTarget Absolute path of the destination (`REPO_HOME/shared/<name>`).
  */
-function performAdoptMove(name: string, linkPath: string, sharedTarget: string): void {
-  const ts = freshBackupTs(BACKUP_BASE);
+function performAdoptMove(
+  name: string,
+  linkPath: string,
+  sharedTarget: string,
+  repo: string,
+  backup: string,
+): void {
+  const ts = freshBackupTs(backup);
 
   // D-00c: backup before any mutation
   backupBeforeWrite(linkPath, ts);
@@ -99,7 +105,7 @@ function performAdoptMove(name: string, linkPath: string, sharedTarget: string):
 
   // D-02: targeted stage of shared/<name> only; never git add -A
   const rel = join('shared', name);
-  gitOrFatal(['add', '--', rel], `git add shared/${name}`, REPO_HOME);
+  gitOrFatal(['add', '--', rel], `git add shared/${name}`, repo);
 
   log(`adopted ${name}; ${ADOPT_PUSH_HINT}`);
 }
@@ -133,8 +139,13 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     process.exit(1);
   }
 
+  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
+  const claude = claudeHome();
+  const backup = backupBase();
+
   // D-03: confirm name is an already-configured shared target
-  const map = readMapIfPresent(REPO_HOME);
+  const map = readMapIfPresent(repo);
   if (!isConfiguredTarget(name, map)) {
     fail(
       `${name}: not a configured shared target. ` +
@@ -143,8 +154,8 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     process.exit(1);
   }
 
-  const linkPath = join(CLAUDE_HOME, name);
-  const sharedTarget = join(REPO_HOME, 'shared', name);
+  const linkPath = join(claude, name);
+  const sharedTarget = join(repo, 'shared', name);
 
   // D-00b precondition checks -- in order: absent, already symlink, would clobber
   if (!existsSync(linkPath)) {
@@ -162,7 +173,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
 
   // D-00d: dry-run preview -- branch before any mutation
   if (dryRun) {
-    const ts = freshBackupTs(BACKUP_BASE);
+    const ts = freshBackupTs(backup);
     log(`would backup: ${linkPath} -> backup/${ts}/${name}`);
     log(`would move: ${linkPath} -> shared/${name}`);
     log(`would stage: shared/${name}`);
@@ -171,7 +182,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
 
   /* c8 ignore start -- catch is defensive: performAdoptMove only throws on a git/fs fault */
   try {
-    performAdoptMove(name, linkPath, sharedTarget);
+    performAdoptMove(name, linkPath, sharedTarget, repo, backup);
   } catch (err) {
     if (!(err instanceof NomadFatal)) throw err;
     fail(err.message);

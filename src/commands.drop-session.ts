@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { expandStagedDir, isInIndex, isTrackedInHead } from './commands.drop-session.git.ts';
 import { reportScrubHint } from './commands.drop-session.scrub-hint.ts';
 import { die, fail, item, NomadFatal } from './utils.ts';
@@ -42,20 +42,22 @@ export function cmdDropSession(id: string): void {
     fail(`invalid session id: ${id}`);
     process.exit(1);
   }
-  if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
+  // Resolve root once per command invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
+  if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
 
   const handle = acquireLock('drop-session');
   if (handle === null) process.exit(0);
   try {
-    const repoProjects = join(REPO_HOME, 'shared', 'projects');
+    const repoProjects = join(repo, 'shared', 'projects');
     if (!existsSync(repoProjects)) {
       throw new NomadFatal(`no staged session matches ${id}`);
     }
-    const matches = collectMatches(repoProjects, id);
+    const matches = collectMatches(repoProjects, id, repo);
     if (matches.length === 0) {
       throw new NomadFatal(`no staged session matches ${id}`);
     }
-    for (const rel of matches) unstageOne(rel);
+    for (const rel of matches) unstageOne(rel, repo);
     reportScrubHint(id, matches);
   } catch (err) {
     // Defensive escape hatch: only fires if a non-NomadFatal error escapes
@@ -88,16 +90,16 @@ export function cmdDropSession(id: string): void {
  * @param id Already-validated session id (see `cmdDropSession`'s entry guard).
  * @returns Repo-relative paths to unstage (possibly empty).
  */
-function collectMatches(repoProjects: string, id: string): string[] {
+function collectMatches(repoProjects: string, id: string, repo: string): string[] {
   const matches: string[] = [];
   for (const logical of readdirSync(repoProjects)) {
     const candidate = join(repoProjects, logical, `${id}.jsonl`);
     if (existsSync(candidate)) {
-      matches.push(relative(REPO_HOME, candidate));
+      matches.push(relative(repo, candidate));
     }
     const dir = join(repoProjects, logical, id);
     if (existsSync(dir) && statSync(dir).isDirectory()) {
-      const dirRel = relative(REPO_HOME, dir);
+      const dirRel = relative(repo, dir);
       const staged = expandStagedDir(dirRel);
       // A dir present on disk but absent from the index is an already-dropped
       // rerun: push the dir path itself so the per-entry isInIndex() guard
@@ -120,7 +122,7 @@ function collectMatches(repoProjects: string, id: string): string[] {
  * @param rel Repo-relative path to unstage.
  * @throws NomadFatal when the underlying git invocation fails.
  */
-function unstageOne(rel: string): void {
+function unstageOne(rel: string, repo: string): void {
   // Pitfall 7: skip files that are not in the index at all (the
   // load-bearing guard for the idempotent second-run case, where the
   // first drop already removed the entry from the index but left the
@@ -132,12 +134,12 @@ function unstageOne(rel: string): void {
   try {
     if (isTrackedInHead(rel)) {
       execFileSync('git', ['restore', '--staged', '--worktree', '--', rel], {
-        cwd: REPO_HOME,
+        cwd: repo,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } else {
       execFileSync('git', ['rm', '--cached', '-f', '--', rel], {
-        cwd: REPO_HOME,
+        cwd: repo,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     }

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 
 /**
  * Expand a repo-relative directory into its staged entries via
@@ -15,7 +15,7 @@ import { REPO_HOME } from './config.ts';
 export function expandStagedDir(dirRel: string): string[] {
   try {
     const out = execFileSync('git', ['ls-files', '-z', '--', dirRel], {
-      cwd: REPO_HOME,
+      cwd: repoHome(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return out
@@ -52,7 +52,7 @@ export function expandStagedDir(dirRel: string): string[] {
 export function isTrackedInHead(rel: string): boolean {
   try {
     execFileSync('git', ['cat-file', '-e', `HEAD:${rel}`], {
-      cwd: REPO_HOME,
+      cwd: repoHome(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return true;
@@ -71,7 +71,7 @@ export function isTrackedInHead(rel: string): boolean {
 export function isInIndex(rel: string): boolean {
   try {
     const out = execFileSync('git', ['ls-files', '--', rel], {
-      cwd: REPO_HOME,
+      cwd: repoHome(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return out.toString().trim() !== '';

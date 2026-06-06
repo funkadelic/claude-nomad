@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { BACKUP_BASE, CLAUDE_HOME, HOST, REPO_HOME, type PathMap } from './config.ts';
+import { backupBase, claudeHome, HOST, repoHome, type PathMap } from './config.ts';
 import { isRecentlyModified } from './commands.redact.core.ts';
 import {
   applySubtreeRedactions,
@@ -26,13 +26,14 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  */
 export function resolveLiveTranscript(id: string): string | null {
   try {
-    const mapPath = join(REPO_HOME, 'path-map.json');
+    const mapPath = join(repoHome(), 'path-map.json');
     if (!existsSync(mapPath)) return null;
     const projects = readJson<PathMap>(mapPath).projects;
+    const claude = claudeHome();
     for (const hostMap of Object.values(projects)) {
       const abs = hostMap[HOST];
       if (abs === undefined) continue;
-      const live = join(CLAUDE_HOME, 'projects', encodePath(abs), `${id}.jsonl`);
+      const live = join(claude, 'projects', encodePath(abs), `${id}.jsonl`);
       if (existsSync(live)) return live;
     }
     return null;
@@ -101,7 +102,10 @@ export function cmdRedact(
     fail(`invalid session id: ${id}`);
     process.exit(1);
   }
-  if (!existsSync(REPO_HOME)) die(`repo not cloned at ${REPO_HOME}`);
+  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
+  const backup = backupBase();
+  if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
 
   const handle = acquireLock('redact');
   if (handle === null) process.exit(0);
@@ -135,7 +139,7 @@ export function cmdRedact(
       return;
     }
 
-    const ts = freshBackupTs(BACKUP_BASE);
+    const ts = freshBackupTs(backup);
     const { total: totalCount, dirty } = applySubtreeRedactions(
       localPath,
       mainFindings,

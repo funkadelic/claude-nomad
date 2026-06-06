@@ -1,7 +1,7 @@
 import { appendFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 
 /** Minimal finding shape consumed by `applyRedactions`. */
 export type RedactFinding = {
@@ -182,7 +182,7 @@ function isAlreadyPresent(line: string, lines: string[]): boolean {
 export function appendGitleaksIgnore(fingerprint: string): void {
   const sanitized = fingerprint.replace(/[\r\n]/g, '').trim();
   if (sanitized.length === 0) return;
-  const ignPath = join(REPO_HOME, '.gitleaksignore');
+  const ignPath = join(repoHome(), '.gitleaksignore');
   // Read atomically: attempt the read and treat any failure (missing file) as
   // empty, rather than an existsSync check-then-read that races on the file.
   let raw: string;
