@@ -90,6 +90,20 @@ export default tseslint.config(
     },
   },
   {
+    // TypeScript files under scripts/ import from .mjs files which have no
+    // TypeScript declarations; disable type-checked rules and project service
+    // so the parser accepts files outside the tsconfig include set.
+    files: ['scripts/**/*.ts'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      sourceType: 'module',
+      globals: { ...globals.node },
+      parserOptions: {
+        projectService: false,
+      },
+    },
+  },
+  {
     files: ['src/**/*.test.ts'],
     rules: { 'max-lines': 'off' },
   },
