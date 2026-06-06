@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { REPO_HOME } from './config.ts';
+import { repoHome } from './config.ts';
 import { NomadFatal, warn } from './utils.ts';
 
 /**
@@ -29,7 +29,7 @@ import { NomadFatal, warn } from './utils.ts';
  * `probeGitleaks`.
  */
 export function resolveTomlPath(): string | null {
-  const repoToml = join(REPO_HOME, '.gitleaks.toml');
+  const repoToml = join(repoHome(), '.gitleaks.toml');
   if (existsSync(repoToml)) return repoToml;
   const bundled = fileURLToPath(new URL('../.gitleaks.toml', import.meta.url));
   return existsSync(bundled) ? bundled : null;
@@ -132,8 +132,9 @@ function buildOverlayTempConfig(
  *   the flag on `null`) and removes a non-null `tempPath` in a `finally`.
  */
 export function resolveTomlConfig(): TomlConfigResult {
-  const overlayPath = join(REPO_HOME, '.gitleaks.overlay.toml');
-  const repoToml = join(REPO_HOME, '.gitleaks.toml');
+  const repo = repoHome();
+  const overlayPath = join(repo, '.gitleaks.overlay.toml');
+  const repoToml = join(repo, '.gitleaks.toml');
   const bundled = resolveTomlPath();
   if (!existsSync(overlayPath)) {
     return { path: bundled, tempPath: null };

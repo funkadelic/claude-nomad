@@ -55,45 +55,6 @@ export function backupBase(): string {
 }
 
 /**
- * Resolved home directory. Uses Node's `os.homedir()` which reads `$HOME` on
- * POSIX and falls back to `getpwuid_r()` when the env var is unset. Returns
- * `""` only in pathological environments (no env, no uid mapping); callers
- * should verify it is non-empty at CLI entry via `nomad.ts`. Centralizing the
- * lookup here prevents the `process.env.HOME ?? ''` footgun where an unset
- * `HOME` silently produced relative lockfile/backup paths.
- */
-export const HOME = homedir();
-
-/** Absolute path to the user's Claude Code config directory (`~/.claude`). */
-export const CLAUDE_HOME = resolve(HOME, '.claude');
-
-/**
- * Host-local backup cache root (`~/.cache/claude-nomad/backup`). Single
- * source of truth for the backup root. The snapshot writers
- * (`backupBeforeWrite`, `backupRepoWrite`, `backupExtrasWrite`,
- * `divergenceCheckExtras`, `cmdAdopt`, `cmdRedact`) write per-run `<ts>`
- * subdirs here; the snapshot callers (`pull`, `push`, `diff`) and the
- * management surfaces (`nomad clean --backups` pruning, the doctor backups
- * check) read from it. Lives under `~/.cache`, outside the synced `~/.claude`
- * tree.
- */
-export const BACKUP_BASE = join(HOME, '.cache', 'claude-nomad', 'backup');
-
-/**
- * Absolute path to the local checkout of the private sync repo. Reads
- * `NOMAD_REPO` first, falls back to `~/claude-nomad`. A set-but-empty
- * `NOMAD_REPO` (e.g. `export NOMAD_REPO=` in a dotfile that clobbers the
- * variable) must also fall through to the default. `??` only triggers on
- * null/undefined, so `||` is used here to fall through on empty strings too.
- * Relative paths in `NOMAD_REPO` are resolved against the current working
- * directory at first use (downstream `existsSync` / `cpSync` / git invocations
- * accept either absolute or relative paths); we intentionally do NOT
- * `resolve()` here so developers can point the override at relative checkouts.
- */
-// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-export const REPO_HOME = process.env.NOMAD_REPO || resolve(HOME, 'claude-nomad');
-
-/**
  * The official Claude Code settings JSON schema. Source of truth for
  * `SCHEMA_KEYS` (kept current by `scripts/sync-settings-keys.ts`) and the
  * on-demand `nomad doctor --check-schema` reporter, which fetches it live to
