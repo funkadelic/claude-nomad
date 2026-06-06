@@ -37,14 +37,15 @@ import { readFileSync } from 'node:fs';
  *   and human-readable test name.
  */
 export function findZeroKillTests(report) {
+  const r = report ?? {};
   const killers = new Set(
-    Object.values(report.files ?? {}).flatMap((file) =>
+    Object.values(r.files ?? {}).flatMap((file) =>
       Object.values(file.mutants ?? {}).flatMap((m) => m.killedBy ?? []),
     ),
   );
 
   const candidates = [];
-  for (const [fileName, testFile] of Object.entries(report.testFiles ?? {})) {
+  for (const [fileName, testFile] of Object.entries(r.testFiles ?? {})) {
     for (const test of testFile.tests ?? []) {
       if (!killers.has(test.id)) {
         candidates.push({

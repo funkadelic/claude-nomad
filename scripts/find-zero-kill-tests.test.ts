@@ -72,6 +72,14 @@ describe('findZeroKillTests (scripts/find-zero-kill-tests.mjs)', () => {
     expect(findZeroKillTests({})).toEqual([]);
     expect(findZeroKillTests({ files: {} })).toEqual([]);
     expect(findZeroKillTests({ testFiles: {} })).toEqual([]);
+    // A report that JSON-parses to null/undefined must not throw (the whole
+    // report is coalesced before any field access).
+    expect(findZeroKillTests(null as unknown as Parameters<typeof findZeroKillTests>[0])).toEqual(
+      [],
+    );
+    expect(
+      findZeroKillTests(undefined as unknown as Parameters<typeof findZeroKillTests>[0]),
+    ).toEqual([]);
     expect(
       findZeroKillTests({
         files: { 'src/x.ts': { mutants: { '0': {} } } },
