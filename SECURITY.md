@@ -49,16 +49,16 @@ only for multi-user repos or a repo compromise, which are out of scope for the d
 
 ## Related reading
 
-This policy is a thin entry point; the security posture itself is documented in the README rather
-than restated here:
+This policy is a thin entry point; the security posture itself is documented on the
+[docs site](https://funkadelic.github.io/claude-nomad/) rather than restated here:
 
-- [Privacy by default](README.md#privacy-by-default): the two-layer CI defense (workflows skip on
-  private repos, Actions auto-disabled on a private mirror) and the warning about flipping a mirror
-  public.
-- [What does NOT sync (deliberate trade-offs)](README.md#what-does-not-sync-deliberate-trade-offs):
+- [Privacy by default](https://funkadelic.github.io/claude-nomad/quickstart/#privacy-by-default):
+  the two-layer CI defense (workflows skip on private repos, Actions auto-disabled on a private
+  mirror) and the warning about flipping a mirror public.
+- [What does NOT sync (deliberate trade-offs)](https://funkadelic.github.io/claude-nomad/how-it-works/#what-does-not-sync-deliberate-trade-offs):
   what stays host-local, including OAuth tokens and ephemeral state.
 
 Secrets are scanned by gitleaks locally on push, and in CI on pull requests via
 [`.github/workflows/gitleaks.yml`](.github/workflows/gitleaks.yml). The repo-root `.gitleaks.toml`
 allowlist and its rationale are described under
-[`.gitleaks.toml` allowlist policy](README.md#gitleakstoml-allowlist-policy).
+[`.gitleaks.toml` allowlist policy](https://funkadelic.github.io/claude-nomad/recovery/#gitleakstoml-allowlist-policy).

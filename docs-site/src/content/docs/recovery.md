@@ -225,12 +225,24 @@ back, so an aborted push leaves no allowlist lines behind. `--redact-all`, `--al
 
 `gitleaks protect` runs against the staged tree on every `nomad push` and can flag
 structurally-distinguishable tool-output noise as `generic-api-key`. The repo-root
-`.gitleaks.toml` pre-allows four such patterns so routine pushes are not blocked:
+`.gitleaks.toml` pre-allows several such patterns so routine pushes are not blocked:
 
 - Sonar issue keys (`AY` prefix + 20+ url-safe chars).
 - gitleaks fingerprint format (`<context>:<rule>:<line>` emitted by gitleaks's own reports).
 - npm audit advisory hashes (anchored on the JSON shape `"id":"<40..64 hex>"`).
 - Coverage-report line-keys (`key=<hex> <path>:<line>`).
+
+A second group of entries is scoped to synced session transcripts
+(`shared/projects/<project>/*.jsonl`) and anchored on the surrounding output structure, so none
+of them can allow a bare token sitting anywhere else:
+
+- The documented test-fixture GitHub PAT literal and its scrub placeholders, which accumulate in
+  transcripts whenever a conversation touches the docs that quote them.
+- SonarCloud issue-listing output (`key: <id>` immediately followed by `rule: <lang>:S<n>`), the
+  shape produced by dumping Sonar API results during a PR review.
+- SSH public-key fingerprints in git signature-verification output (`with <keytype> key
+  SHA256:<43-char base64>`, as printed by `git log --show-signature`). A fingerprint is a hash of
+  a public key, not a credential.
 
 The file extends the default gitleaks ruleset, so real high-entropy secrets like `ghp_*`,
 `sk_live_*`, `xoxb-*`, and `AKIA*` still fire. The allowlist patterns are structurally

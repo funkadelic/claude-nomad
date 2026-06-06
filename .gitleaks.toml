@@ -39,6 +39,27 @@ paths = [
 ]
 condition = "AND"
 
+# Path-scoped: SSH public-key fingerprints in git signature-verification
+# output (`git log --show-signature`, `git verify-commit`) land in session
+# transcripts as `Good "git" signature for <signer> with ED25519 key
+# SHA256:<43-char base64>`. The fingerprint is a hash of a PUBLIC key, not a
+# credential, but its 43-char base64 body trips generic-api-key. Anchoring on
+# the surrounding `with <keytype> key SHA256:` structure (via
+# regexTarget = "line") keeps this from whitelisting a bare token: a real
+# secret is never preceded by an SSH key-type label and the SHA256: scheme
+# prefix. `condition = "AND"` plus the session-jsonl path scope double-locks
+# it to synced transcripts.
+[[allowlists]]
+description = "claude-nomad: SSH public-key fingerprints (with <keytype> key SHA256:<b64>) in git signature output in synced session transcripts"
+regexTarget = "line"
+regexes = [
+    '''with (?:ED25519|ED25519-SK|ECDSA|ECDSA-SK|RSA|DSA) key SHA256:[A-Za-z0-9+/]{43}''',
+]
+paths = [
+    '''^shared/projects/[^/]+/.*\.jsonl$''',
+]
+condition = "AND"
+
 # Path-scoped: SonarCloud issue-listing tool output (`gh`/sonar API dumps of
 # the form `key: <20-char id>` immediately followed by `rule: <lang>:S<n>`)
 # lands in session transcripts during PR reviews. The issue key is an opaque
