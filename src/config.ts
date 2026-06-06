@@ -11,6 +11,56 @@ import { warn } from './utils.ts';
  * should verify it is non-empty at CLI entry via `nomad.ts`. Centralizing the
  * lookup here prevents the `process.env.HOME ?? ''` footgun where an unset
  * `HOME` silently produced relative lockfile/backup paths.
+ *
+ * Call-time resolver: resolved on each call, not at module load.
+ */
+export function home(): string {
+  return homedir();
+}
+
+/**
+ * Absolute path to the user's Claude Code config directory (`~/.claude`).
+ * Resolved on each call so environment changes are reflected immediately.
+ */
+export function claudeHome(): string {
+  return resolve(home(), '.claude');
+}
+
+/**
+ * Absolute path to the local checkout of the private sync repo. Reads
+ * `NOMAD_REPO` first, falls back to `~/claude-nomad`. A set-but-empty
+ * `NOMAD_REPO` (e.g. `export NOMAD_REPO=` in a dotfile that clobbers the
+ * variable) must also fall through to the default. `??` only triggers on
+ * null/undefined, so `||` is used here to fall through on empty strings too.
+ * Relative paths in `NOMAD_REPO` are resolved against the current working
+ * directory at first use (downstream `existsSync` / `cpSync` / git invocations
+ * accept either absolute or relative paths); we intentionally do NOT
+ * `resolve()` here so developers can point the override at relative checkouts.
+ *
+ * Resolved on each call so mid-process `NOMAD_REPO` changes are reflected
+ * without `vi.resetModules()`.
+ */
+export function repoHome(): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  return process.env.NOMAD_REPO || resolve(home(), 'claude-nomad');
+}
+
+/**
+ * Host-local backup cache root (`~/.cache/claude-nomad/backup`). Single
+ * source of truth for the backup root. Resolved on each call so environment
+ * changes are reflected immediately.
+ */
+export function backupBase(): string {
+  return join(home(), '.cache', 'claude-nomad', 'backup');
+}
+
+/**
+ * Resolved home directory. Uses Node's `os.homedir()` which reads `$HOME` on
+ * POSIX and falls back to `getpwuid_r()` when the env var is unset. Returns
+ * `""` only in pathological environments (no env, no uid mapping); callers
+ * should verify it is non-empty at CLI entry via `nomad.ts`. Centralizing the
+ * lookup here prevents the `process.env.HOME ?? ''` footgun where an unset
+ * `HOME` silently produced relative lockfile/backup paths.
  */
 export const HOME = homedir();
 
