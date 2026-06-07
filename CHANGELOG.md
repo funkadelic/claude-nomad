@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.45.0](https://github.com/funkadelic/claude-nomad/compare/v0.44.1...v0.45.0) (2026-06-07)
+
+
+### Added
+
+* **doctor:** warn when settings.json drifts from the base+host merge ([#259](https://github.com/funkadelic/claude-nomad/issues/259)) ([6401732](https://github.com/funkadelic/claude-nomad/commit/6401732199aa9f883de78b15b323ec4dfecf8d3f))
+
+
+### Changed
+
+* **gitleaks:** allowlist SSH key fingerprints in signature output ([#257](https://github.com/funkadelic/claude-nomad/issues/257)) ([ca310aa](https://github.com/funkadelic/claude-nomad/commit/ca310aa7f3a23b152ed149224400d60332ada037))
+
+
+### Testing
+
+* kill mutation survivors from the full Stryker sweep ([#260](https://github.com/funkadelic/claude-nomad/issues/260)) ([314e315](https://github.com/funkadelic/claude-nomad/commit/314e31587cb97e0fdf5b410587bb0ca64a2e46d5))
+
 ## [0.44.1](https://github.com/funkadelic/claude-nomad/compare/v0.44.0...v0.44.1) (2026-06-06)
 
 
