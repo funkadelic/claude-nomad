@@ -37,6 +37,43 @@ function emitCreate(onPreview: LinkOpts['onPreview'], from: string, to: string):
 }
 
 /**
+ * Return true when a symlink already exists at `linkPath`, meaning
+ * `ensureSymlink` would no-op. `existsSync` follows the symlink, so a dangling
+ * symlink (broken target) returns false and is NOT considered satisfied.
+ */
+function isAlreadySymlink(linkPath: string): boolean {
+  return existsSync(linkPath) && lstatSync(linkPath).isSymbolicLink();
+}
+
+/**
+ * First pass of `applySharedLinks`: for each link name, if a non-symlink
+ * occupies the link path and the repo has a counterpart, either preview the
+ * auto-move (dry-run) or perform it (wet).
+ */
+function runAutoMovePasses(
+  linkNames: readonly string[],
+  claude: string,
+  repo: string,
+  ts: string,
+  dryRun: boolean,
+  onPreview: LinkOpts['onPreview'],
+): void {
+  for (const name of linkNames) {
+    const linkPath = join(claude, name);
+    const target = join(repo, 'shared', name);
+    if (!existsSync(linkPath)) continue;
+    if (lstatSync(linkPath).isSymbolicLink()) continue;
+    if (!existsSync(target)) continue;
+    if (dryRun) {
+      emitAutoMove(onPreview, linkPath, ts, name);
+      continue;
+    }
+    backupBeforeWrite(linkPath, ts);
+    rmSync(linkPath, { recursive: true, force: true });
+  }
+}
+
+/**
  * Symlink every name in `allSharedLinks(map)` (the static shared-link set
  * plus any validated `sharedDirs` entries from `path-map.json`) from the
  * repo's `shared/` dir into `~/.claude/`. Two-pass: first back up and remove
@@ -65,27 +102,19 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
   // Derive once: allSharedLinks emits a WARN per invalid sharedDirs entry, so
   // calling it per loop would double every such warning in a single run.
   const linkNames = allSharedLinks(map);
+  runAutoMovePasses(linkNames, claude, repo, ts, dryRun, opts.onPreview);
   for (const name of linkNames) {
+    const target = join(repo, 'shared', name);
+    if (!existsSync(target)) continue;
     const linkPath = join(claude, name);
-    const target = join(repo, 'shared', name);
-    if (!existsSync(linkPath)) continue;
-    if (lstatSync(linkPath).isSymbolicLink()) continue;
-    if (!existsSync(target)) continue;
+    // Mirror ensureSymlink's no-op condition so preview cannot diverge from
+    // the mutating path: any existing symlink at linkPath is already satisfied.
+    if (isAlreadySymlink(linkPath)) continue;
     if (dryRun) {
-      emitAutoMove(opts.onPreview, linkPath, ts, name);
+      emitCreate(opts.onPreview, linkPath, target);
       continue;
     }
-    backupBeforeWrite(linkPath, ts);
-    rmSync(linkPath, { recursive: true, force: true });
-  }
-  for (const name of linkNames) {
-    const target = join(repo, 'shared', name);
-    if (!existsSync(target)) continue;
-    if (dryRun) {
-      emitCreate(opts.onPreview, join(claude, name), target);
-      continue;
-    }
-    ensureSymlink(join(claude, name), target);
+    ensureSymlink(linkPath, target);
   }
 }
 
