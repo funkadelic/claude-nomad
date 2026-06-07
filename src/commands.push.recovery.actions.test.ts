@@ -805,7 +805,7 @@ describe('collectActions - masked context line in prompt', () => {
       vi.resetModules();
       const { collectActions } = await import('./commands.push.recovery.actions.ts');
 
-      // An absolute File pointing at a real outside file must be refused.
+      // An absolute File path must be refused, even when pointing inside the repo.
       const absFile = join(testRepo, 'abs.jsonl');
       writeFileSync(absFile, `leaked ${SECRET}\n`, 'utf8');
 
