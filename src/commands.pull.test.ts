@@ -460,9 +460,9 @@ describe('cmdPull: extras integration', () => {
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull()).not.toThrow();
     const out = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
-    // Sum is 5; a subtraction mutation would yield -1 and render "summary: -1 unmapped on pull"
-    // or "summary: clean" (negative unmapped collapses), never "5 unmapped on pull".
-    expect(out).toContain('summary: 5 unmapped on pull');
+    // Sum is 5; a subtraction mutation would yield -1 and render "-1 unmapped on pull"
+    // or "clean" (negative unmapped collapses), never "5 unmapped on pull".
+    expect(out).toContain('5 unmapped on pull');
   });
 
   it('renders the WET grouped tree with a host-override Settings label and zero-skip Sessions', async () => {
@@ -502,7 +502,7 @@ describe('cmdPull: extras integration', () => {
     expect(out).not.toContain('not in path-map');
     expect(out).not.toContain('Extras');
     // Clean summary (no unmapped, no extras skipped).
-    expect(out).toMatch(/✓ +summary: clean/);
+    expect(out).toContain('clean');
   });
 });
 

@@ -343,7 +343,7 @@ describe('computePreview orchestration', () => {
     expect(logs.join('\n')).not.toContain('ℹ');
   });
 
-  it('verb "diff" produces "summary: clean" (or unmapped on diff) in Summary row', async () => {
+  it('verb "diff" produces a plain "clean" (or unmapped on diff) Summary row', async () => {
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
 
@@ -356,12 +356,11 @@ describe('computePreview orchestration', () => {
     computePreview('20260516-000000', { projects: {} }, 'diff');
 
     const joined = logs.join('\n');
-    expect(joined).toContain('summary:');
-    // Clean case: no unmapped entries.
-    expect(joined).toContain('summary: clean');
+    // Clean case: no unmapped entries. The plain Summary row is exactly 'clean'.
+    expect(joined).toContain('clean');
   });
 
-  it('verb "pull" produces "summary: clean" row in Summary', async () => {
+  it('verb "pull" produces a plain "clean" row in Summary', async () => {
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
 
@@ -373,7 +372,7 @@ describe('computePreview orchestration', () => {
     const { computePreview } = await import('./preview.ts');
     computePreview('20260516-000000', { projects: {} }, 'pull');
 
-    expect(logs.join('\n')).toContain('summary: clean');
+    expect(logs.join('\n')).toContain('clean');
   });
 
   it('Summary row shows "unmapped on diff" when verb is diff and unmapped > 0', async () => {
@@ -541,7 +540,9 @@ describe('computePreview orchestration', () => {
     const { computePreview } = await import('./preview.ts');
     computePreview('20260516-000000', { projects: {} });
 
-    const summaryLines = logs.filter((l) => l.includes('summary:'));
+    // The plain Summary row no longer carries a 'summary:' prefix; on the
+    // empty-path-map clean fixture (default verb pull) the row is exactly 'clean'.
+    const summaryLines = logs.filter((l) => l.includes('clean'));
     expect(summaryLines.length).toBe(1);
   });
 

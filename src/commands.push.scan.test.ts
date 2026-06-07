@@ -164,7 +164,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toMatch(/no leaks/);
     // The Summary row carries the combined unmapped count.
     expect(out).toContain('Summary');
-    expect(out).toContain('summary: 2 unmapped on push, 0 collisions (run nomad doctor to list)');
+    expect(out).toContain('2 unmapped on push, 0 collisions (run nomad doctor to list)');
     expect(out).not.toContain('push complete');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./push-leak-verdict.ts');
