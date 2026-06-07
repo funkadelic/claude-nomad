@@ -156,8 +156,9 @@ describe('emitSummary', () => {
  * Unit tests for the pure phrasing core `summaryText` and the rendered-row
  * helper `summaryRow`. These back the grouped push/pull tree's Summary section
  * and must phrase outcomes identically to `emitSummary` so the standalone
- * cmdDiff line and the in-tree row never drift. Color is disabled in tests, so
- * the rendered glyph rows match plain substrings.
+ * cmdDiff line and the in-tree row never drift. `summaryRow` now renders plain
+ * text (no status glyph), so the rendered row equals the bare message with the
+ * "summary: " prefix stripped.
  */
 describe('summaryText', () => {
   it('pull clean returns the clean text and clean=true', () => {
@@ -206,21 +207,21 @@ describe('summaryText', () => {
 });
 
 describe('summaryRow', () => {
-  it('renders the clean outcome with the ok glyph', () => {
-    expect(summaryRow('pull', 0)).toMatch(/^✓\s+summary: clean$/);
+  it('renders the clean outcome as plain text', () => {
+    expect(summaryRow('pull', 0)).toBe('clean');
   });
 
-  it('renders a pull warning outcome with the warn glyph', () => {
-    expect(summaryRow('pull', 3)).toBe('⚠︎ summary: 3 unmapped on pull (run nomad doctor to list)');
+  it('renders a pull warning outcome as plain text', () => {
+    expect(summaryRow('pull', 3)).toBe('3 unmapped on pull (run nomad doctor to list)');
   });
 
-  it('renders the push clean outcome with the ok glyph', () => {
-    expect(summaryRow('push', 0, 0, 0)).toMatch(/^✓\s+summary: clean$/);
+  it('renders the push clean outcome as plain text', () => {
+    expect(summaryRow('push', 0, 0, 0)).toBe('clean');
   });
 
-  it('renders a push warning outcome (collisions + extras) with the warn glyph', () => {
+  it('renders a push warning outcome (collisions + extras) as plain text', () => {
     expect(summaryRow('push', 1, 2, 3)).toBe(
-      '⚠︎ summary: 1 unmapped on push, 2 collisions, 3 extras skipped (run nomad doctor to list)',
+      '1 unmapped on push, 2 collisions, 3 extras skipped (run nomad doctor to list)',
     );
   });
 });

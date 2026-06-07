@@ -231,7 +231,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     const { cmdDiff } = await import('./diff.ts');
     cmdDiff();
-    expect(logOutput()).toMatch(/summary: clean/);
+    expect(logOutput()).toContain('clean');
     // No duplicate in stderr.
     expect(errOutput()).not.toContain('summary:');
   });
@@ -243,9 +243,11 @@ describe('cmdDiff (offline, lockless preview)', () => {
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     const { cmdDiff } = await import('./diff.ts');
     cmdDiff();
+    // The plain Summary row no longer carries a 'summary:' prefix; on the
+    // empty-path-map clean fixture the row is exactly 'clean', so match on that.
     const summaryLines = logOutput()
       .split('\n')
-      .filter((l) => l.includes('summary:'));
+      .filter((l) => l.includes('clean'));
     expect(summaryLines.length).toBe(1);
   });
 
@@ -261,7 +263,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
       .filter((s) => s.length > 0);
     expect(lines.length).toBeGreaterThan(0);
     const lastLine = lines[lines.length - 1];
-    expect(lastLine).toContain('summary:');
+    expect(lastLine).toContain('clean');
   });
 
   it('no ℹ︎ glyph appears in cmdDiff tree sections when repo is fully scaffolded', async () => {

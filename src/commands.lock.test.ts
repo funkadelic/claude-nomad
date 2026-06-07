@@ -315,13 +315,13 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
     // WET tree output goes through console.log (stdout): the `pull on host=`
-    // header, the Settings row, and the warn Summary row (summaryRow embeds the
-    // ⚠︎ glyph; phrasing is byte-identical to emitSummary). The standalone
-    // `pull complete` line is gone.
+    // header, the Settings row, and the warn Summary row (summaryRow is now
+    // plain: no glyph, no 'summary:' prefix; phrasing otherwise matches
+    // emitSummary). The standalone `pull complete` line is gone.
     const out = logOutput();
     expect(out).toContain('pull on host=');
     expect(out).toContain('settings.json (base + no host overrides)');
-    expect(out).toContain('⚠︎ summary: 2 unmapped on pull (run nomad doctor to list)');
+    expect(out).toContain('2 unmapped on pull (run nomad doctor to list)');
     expect(out).toContain('2 not in path-map (run nomad doctor to list)');
     expect(out).not.toContain('pull complete');
   });
@@ -337,7 +337,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
-    expect(logOutput()).toMatch(/✓ +summary: clean/);
+    expect(logOutput()).toContain('clean');
   });
 
   it('cmdPull --dry-run emits the unmapped-on-pull summary line based on computePreview', async () => {

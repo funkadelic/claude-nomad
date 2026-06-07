@@ -71,7 +71,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // standalone `push complete` line is gone.
     const out = logOutput(env);
     expect(out).toContain('Summary');
-    expect(out).toContain('summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)');
+    expect(out).toContain('1 unmapped on push, 0 collisions (run nomad doctor to list)');
     expect(out).toContain('Leak scan');
     expect(out).toMatch(/no leaks/);
     expect(out).not.toContain('push complete');
@@ -124,8 +124,8 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
     const out = logOutput(env);
-    // The clean Summary row renders inside the tree (stdout).
-    expect(out).toMatch(/✓ +summary: clean/);
+    // The clean Summary row renders inside the tree (stdout) as plain text.
+    expect(out).toContain('clean');
     // The pushed session shows as a ✓ row under the Sessions section.
     expect(out).toContain('Sessions');
     expect(out).toMatch(/✓ +my-project/);
@@ -168,7 +168,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // The Summary row renders in-tree (stdout). With 3 unmapped sessions the
     // Sessions section shows the collapsed count row.
     expect(out).toContain('Summary');
-    expect(out).toContain('summary: 3 unmapped on push, 0 collisions (run nomad doctor to list)');
+    expect(out).toContain('3 unmapped on push, 0 collisions (run nomad doctor to list)');
     expect(out).toContain('Sessions');
     expect(out).toContain('3 not in path-map (run nomad doctor to list)');
     // No staging happened, so there is no Leak scan section.
@@ -214,8 +214,8 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // Empty Sessions/Extras sections are omitted by renderTree.
     expect(out).not.toContain('Sessions');
     expect(out).not.toContain('Extras');
-    // Only the clean Summary row remains.
-    expect(out).toMatch(/✓ +summary: clean/);
+    // Only the clean Summary row remains, rendered as plain text.
+    expect(out).toContain('clean');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
   });

@@ -1,4 +1,3 @@
-import { green, okGlyph, warnGlyph, yellow } from './color.ts';
 import { ok, warn } from './utils.ts';
 
 /** The three originating commands that share the end-of-run summary line. */
@@ -53,17 +52,19 @@ export function summaryText(
 }
 
 /**
- * Build the fully-rendered Summary-section row (status glyph embedded) for the
- * grouped push/pull tree. Delegates phrasing to `summaryText` so the row text
- * matches `emitSummary` byte-for-byte. A clean outcome renders
- * `${green(okGlyph)} <text>`; any warning outcome renders
- * `${yellow(warnGlyph)} <text>`.
+ * Build the Summary-section row for the grouped push/pull/diff tree. Delegates
+ * phrasing to `summaryText` so the row text matches `emitSummary`, then returns
+ * the plain message text: no status glyph (the Summary group header carries the
+ * success/warn semantics the inline glyph used to duplicate) and no color. The
+ * constant "summary: " prefix is stripped, since the group header already reads
+ * "Summary". A clean outcome renders as `clean`; any warning outcome renders as
+ * its bare message, e.g. `3 unmapped on pull (run nomad doctor to list)`.
  *
  * @param verb - the originating command.
  * @param unmapped - count of path-map entries skipped for this host.
  * @param collisions - push-only collision count (ignored for pull/diff).
  * @param extrasSkipped - count of extras dirnames the whitelist declined.
- * @returns the rendered row string for the Summary section.
+ * @returns the plain row string for the Summary section.
  */
 export function summaryRow(
   verb: SummaryVerb,
@@ -71,8 +72,8 @@ export function summaryRow(
   collisions = 0,
   extrasSkipped = 0,
 ): string {
-  const { text, clean } = summaryText(verb, unmapped, collisions, extrasSkipped);
-  return clean ? `${green(okGlyph)} ${text}` : `${yellow(warnGlyph)} ${text}`;
+  const { text } = summaryText(verb, unmapped, collisions, extrasSkipped);
+  return text.replace(/^summary: /, '');
 }
 
 /**
