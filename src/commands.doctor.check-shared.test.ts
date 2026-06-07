@@ -287,9 +287,10 @@ describe('reportCheckShared buildScanTree unit tests (gitleaks mocked)', () => {
   });
 
   it('emits clean (staged=0) when map.projects is an array', async () => {
-    // Kills the L63 `typeof map.projects !== 'object'` half of the guard: an
-    // array is an object in typeof, so only the Array.isArray-equivalent branch
-    // catches it. Verifies that the guard rejects array-valued projects.
+    // Pins the array edge case: an array passes the L63 guard (typeof 'object',
+    // not null), so its numeric entries reach the per-entry loop where each
+    // string value is filtered by the L69 `typeof hosts !== 'object'` guard.
+    // Asserts array-valued projects degrade to a clean no-op, not a crash.
     const env = makeEnv();
     testHome = env.testHome;
     writeFileSync(

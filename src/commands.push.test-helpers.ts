@@ -92,6 +92,7 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('./extras-sync.ts');
   vi.doUnmock('./utils.ts');
   vi.doUnmock('./utils.lockfile.ts');
+  vi.doUnmock('./commands.push.allowlist.ts');
   vi.doUnmock('node:child_process');
   process.exitCode = env.originalExitCode;
   if (env.originalHome === undefined) delete process.env.HOME;
