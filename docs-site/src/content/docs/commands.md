@@ -210,6 +210,23 @@ when origin is a private GitHub repo that is gh-authed with Actions re-enabled, 
 the auto-disable that runs on `nomad init` (see [Quickstart](/claude-nomad/quickstart/)); it is silent on every
 prerequisite miss (non-GitHub origin, `gh` unauthed, public repo, or Actions already off).
 
+The settings merge-drift check (`⚠︎`-only, never exit 1) runs in the Settings section of
+`nomad doctor` immediately after the host-overrides row. It recomputes the same
+`deepMerge(shared/settings.base.json, hosts/<NOMAD_HOST>.json)` that `nomad pull` would write,
+then deep-compares the result against `~/.claude/settings.json`. A `⚠︎` warning fires when
+merged keys are missing from the live file or hold a changed value, the signature of an external
+writer (for example a Claude Code onboarding flow) silently clobbering `settings.json` and
+dropping managed keys; the fix is `nomad pull`. A separate `ℹ︎` info line lists local-only keys
+absent from the merge as promotion candidates for `shared/settings.base.json` or
+`hosts/<NOMAD_HOST>.json`, since those are typically transient state written between pulls (for
+example notification toggles), not an error; when this host has no `hosts/<NOMAD_HOST>.json` at
+all, that info line is withheld because the host-overrides row above it already flags the same
+keys as a failure. A `⚠︎` warning also fires when `hosts/<NOMAD_HOST>.json` exists but does not
+parse, since `nomad pull` would stop on that file. The check reports key names only and never
+leaks values. It skips with a `ℹ︎` when `settings.json` is absent or when
+`shared/settings.base.json` is absent or unparseable; a malformed `settings.json` is skipped
+silently, since doctor's settings load already fails (`✗`, exit 1) on the same file.
+
 ## Global flags
 
 `nomad --version`

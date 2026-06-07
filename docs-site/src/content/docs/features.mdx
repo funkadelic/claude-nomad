@@ -72,8 +72,10 @@ without writing anything. Nothing has to be taken on faith.
 `nomad doctor` is a read-only health check covering the things that actually break: a sync repo
 stuck mid-rebase, hook references pointing at scripts missing on this host, hooks that would
 crash at session start because a Node script under a synced directory needs
-`--preserve-symlinks-main`, version drift between your install and the latest release, gitleaks
-drift against CI, and a backup cache that needs pruning. Each failing line carries a fix hint, and extra flags go deeper:
+`--preserve-symlinks-main`, a `settings.json` that no longer matches the base+host merge nomad
+would write (the silent-clobber case, fixed with `nomad pull`), version drift between your
+install and the latest release, gitleaks drift against CI, and a backup cache that needs
+pruning. Each failing line carries a fix hint, and extra flags go deeper:
 `--check-shared` secret-scans what a push would publish, `--check-schema` validates your settings
 against the live Claude Code schema. See [Commands](/claude-nomad/commands/) for every check.
 
