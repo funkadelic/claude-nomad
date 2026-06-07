@@ -226,8 +226,8 @@ describe('reportCheckShared buildScanTree unit tests (gitleaks mocked)', () => {
       };
     });
     vi.doMock('./commands.doctor.check-shared.scan.ts', async (importOriginal) => {
-      // eslint-disable-next-line @typescript-eslint/consistent-type-imports
       const actual =
+        // eslint-disable-next-line @typescript-eslint/consistent-type-imports
         await importOriginal<typeof import('./commands.doctor.check-shared.scan.ts')>();
       return {
         ...actual,
