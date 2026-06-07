@@ -123,6 +123,37 @@ describe('resumeCmd', () => {
     );
   });
 
+  it('accepts a valid session id of exactly 128 characters (boundary)', async () => {
+    // The length guard is `sessionId.length > 128`, so 128 is the last valid
+    // length. Kills the L26 EqualityOperator mutation (>= 128 would reject a
+    // 128-char ID, changing the boundary from exclusive to inclusive).
+    env = makeEnv('test-host');
+    // Generate a 128-char id using only allowed chars [A-Za-z0-9_-].
+    const sid128 = 'a'.repeat(128);
+    writePathMap(env.testHome, {});
+    // No transcript exists for this id, so the code proceeds past the length
+    // check and reaches the "not found" error. Asserting exit:1 + the "not
+    // found" message (not "invalid session id") proves the length check passed.
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd(sid128)).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('not found in any ~/.claude/projects/<encoded>/'),
+    );
+    // Confirm the "invalid session id" message was NOT emitted.
+    const errorMessages = env.errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errorMessages).not.toContain('invalid session id');
+  });
+
+  it('rejects a session id of exactly 129 characters (length > 128 boundary)', async () => {
+    // 129 chars exceeds the limit; the guard fires and exits 1 with "invalid".
+    env = makeEnv('test-host');
+    const sid129 = 'a'.repeat(129);
+    writePathMap(env.testHome, {});
+    const { resumeCmd } = await import('./resume.ts');
+    expect(() => resumeCmd(sid129)).toThrow('exit:1');
+    expect(env.errorSpy).toHaveBeenCalledWith(expect.stringContaining('invalid session id'));
+  });
+
   it('rejects sessionId containing a path separator', async () => {
     env = makeEnv('test-host');
     writePathMap(env.testHome, {});

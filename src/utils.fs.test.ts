@@ -1,11 +1,13 @@
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -150,5 +152,38 @@ describe('ensureSymlink', () => {
     writeFileSync(linkPath, 'pre-existing regular file');
     expect(() => ensureSymlink(linkPath, target)).toThrow(NomadFatal);
     expect(() => ensureSymlink(linkPath, target)).toThrow(/exists and is not a symlink/);
+  });
+
+  it('creates the symlink when linkPath does not exist yet', async () => {
+    // Happy path: linkPath absent -> symlinkSync called -> link exists pointing
+    // at target. Kills the L84 BooleanLiteral mutation (existsSync forced true
+    // would call lstatSync on a non-existent path and throw ENOENT instead of
+    // creating the symlink).
+    const { ensureSymlink } = await import('./utils.fs.ts');
+    const target = join(testDir, 'target.txt');
+    const linkPath = join(testDir, 'link');
+    writeFileSync(target, 'target-content');
+    expect(existsSync(linkPath)).toBe(false);
+    expect(() => ensureSymlink(linkPath, target)).not.toThrow();
+    // The link must now exist and must be a symlink pointing to target.
+    expect(existsSync(linkPath)).toBe(true);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+  });
+
+  it('is a no-op when a symlink already exists at linkPath (idempotent)', async () => {
+    // Idempotency path: linkPath exists as a symlink -> isSymbolicLink() returns
+    // true -> function returns early without calling symlinkSync again.
+    // Kills the L85 ConditionalExpression mutation (isSymbolicLink() forced false
+    // would fall through to die(), throwing NomadFatal on a valid symlink).
+    const { ensureSymlink } = await import('./utils.fs.ts');
+    const target = join(testDir, 'target.txt');
+    const linkPath = join(testDir, 'link');
+    writeFileSync(target, 'target-content');
+    symlinkSync(target, linkPath);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    // Second call must not throw even though the link already exists.
+    expect(() => ensureSymlink(linkPath, target)).not.toThrow();
+    // The link still exists and is still a symlink.
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
   });
 });
