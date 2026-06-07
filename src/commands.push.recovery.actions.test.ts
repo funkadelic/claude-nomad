@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -526,5 +526,311 @@ describe('module exports: allowAllFindings + allowFindingsByRule', () => {
   it('exports allowFindingsByRule as a function', async () => {
     const mod = await import('./commands.push.recovery.actions.ts');
     expect(typeof mod.allowFindingsByRule).toBe('function');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectActions - masked context line in prompt
+// ---------------------------------------------------------------------------
+
+/** Build a Finding with full field control for collectActions tests. */
+function makeFullFinding(
+  overrides: Partial<{
+    RuleID: string;
+    File: string;
+    StartLine: number;
+    StartColumn: number;
+    EndColumn: number;
+    Match: string;
+    Fingerprint: string;
+  }> = {},
+): Finding {
+  return {
+    RuleID: overrides.RuleID ?? 'github-pat',
+    File: overrides.File ?? 'shared/projects/my-proj/abc123.jsonl',
+    StartLine: overrides.StartLine ?? 1,
+    StartColumn: overrides.StartColumn ?? 1,
+    EndColumn: overrides.EndColumn ?? 40,
+    Match: overrides.Match ?? '',
+    Fingerprint: overrides.Fingerprint ?? 'shared/projects/my-proj/abc123.jsonl:github-pat:1',
+    Description: 'GitHub PAT',
+  };
+}
+
+describe('collectActions - masked context line in prompt', () => {
+  const SECRET = 'ghp_FAKESECRETVALUE1234567890ABCDEF';
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('emits a context line with masked span and surrounding text when readLine returns a line', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const line = `prefix_text ${SECRET} suffix_text`;
+    const startCol = 'prefix_text '.length + 1;
+    const endCol = 'prefix_text '.length + SECRET.length;
+    const f = makeFullFinding({ StartColumn: startCol, EndColumn: endCol, Match: SECRET });
+
+    let capturedPrompt = '';
+    const prompt = (p: string): Promise<string> => {
+      capturedPrompt = p;
+      return Promise.resolve('s'); // skip
+    };
+    const readLine = (_file: string, _line: number): string | null => line;
+
+    await collectActions([f], prompt, readLine);
+
+    expect(capturedPrompt).toContain('context:');
+    expect(capturedPrompt).toContain('ghp_************');
+    expect(capturedPrompt).toContain('prefix_text ');
+    expect(capturedPrompt).not.toContain(SECRET);
+  });
+
+  it('emits a masked-Match context line when readLine returns null and Match is non-empty', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFullFinding({ Match: SECRET });
+
+    let capturedPrompt = '';
+    const prompt = (p: string): Promise<string> => {
+      capturedPrompt = p;
+      return Promise.resolve('s');
+    };
+    const readLine = (_file: string, _line: number): string | null => null;
+
+    await collectActions([f], prompt, readLine);
+
+    expect(capturedPrompt).toContain('context:');
+    expect(capturedPrompt).toContain('ghp_************');
+    expect(capturedPrompt).not.toContain(SECRET);
+  });
+
+  it('omits the context line when readLine returns null and Match is empty', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFullFinding({ Match: '' });
+
+    let capturedPrompt = '';
+    const prompt = (p: string): Promise<string> => {
+      capturedPrompt = p;
+      return Promise.resolve('s');
+    };
+    const readLine = (_file: string, _line: number): string | null => null;
+
+    await collectActions([f], prompt, readLine);
+
+    expect(capturedPrompt).not.toContain('context:');
+    expect(capturedPrompt).toContain('Finding:');
+    expect(capturedPrompt).toContain('[R]edact');
+  });
+
+  it('action map is unaffected by the new context line (default skip still applies)', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFullFinding({ Match: SECRET });
+    const prompt = (_p: string): Promise<string> => Promise.resolve(''); // empty -> skip
+    const readLine = (_file: string, _line: number): string | null => null;
+
+    const actions = await collectActions([f], prompt, readLine);
+
+    expect(actions.size).toBe(1);
+    const action = actions.values().next().value;
+    expect(action).toBe('skip');
+  });
+
+  it('default real readLine reads from a fixture file under NOMAD_REPO', async () => {
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-reader-'));
+    try {
+      process.env.NOMAD_REPO = testRepo;
+      vi.resetModules();
+      const { collectActions } = await import('./commands.push.recovery.actions.ts');
+
+      // Create a fixture file at shared/projects/my-proj/abc123.jsonl.
+      const relPath = 'shared/projects/my-proj/abc123.jsonl';
+      const dir = join(testRepo, 'shared/projects/my-proj');
+      mkdirSync(dir, { recursive: true });
+      const lineContent = `prefix_text ${SECRET} suffix_text`;
+      writeFileSync(join(testRepo, relPath), lineContent + '\n', 'utf8');
+
+      const startCol = 'prefix_text '.length + 1;
+      const endCol = 'prefix_text '.length + SECRET.length;
+      const f = makeFullFinding({
+        File: relPath,
+        StartLine: 1,
+        StartColumn: startCol,
+        EndColumn: endCol,
+        Match: SECRET,
+      });
+
+      let capturedPrompt = '';
+      const prompt = (p: string): Promise<string> => {
+        capturedPrompt = p;
+        return Promise.resolve('s');
+      };
+
+      // No readLine arg: uses the real default reader.
+      await collectActions([f], prompt);
+
+      expect(capturedPrompt).toContain('context:');
+      expect(capturedPrompt).toContain('ghp_************');
+      expect(capturedPrompt).not.toContain(SECRET);
+    } finally {
+      rmSync(testRepo, { recursive: true, force: true });
+      if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+      else delete process.env.NOMAD_REPO;
+    }
+  });
+
+  it('default real readLine falls back to masked Match when file is missing', async () => {
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-missing-'));
+    try {
+      process.env.NOMAD_REPO = testRepo;
+      vi.resetModules();
+      const { collectActions } = await import('./commands.push.recovery.actions.ts');
+
+      // No fixture file written: the reader throws ENOENT and returns null.
+      // Match is non-empty so the fallback fires and shows a masked Match.
+      const f = makeFullFinding({
+        File: 'shared/projects/my-proj/missing.jsonl',
+        StartLine: 1,
+        Match: SECRET,
+      });
+
+      let capturedPrompt = '';
+      const prompt = (p: string): Promise<string> => {
+        capturedPrompt = p;
+        return Promise.resolve('s');
+      };
+
+      await collectActions([f], prompt);
+
+      // Falls back to masked Match.
+      expect(capturedPrompt).toContain('context:');
+      expect(capturedPrompt).toContain('ghp_************');
+      expect(capturedPrompt).not.toContain(SECRET);
+    } finally {
+      rmSync(testRepo, { recursive: true, force: true });
+      if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+      else delete process.env.NOMAD_REPO;
+    }
+  });
+
+  it('default real readLine returns null for an out-of-range line number (falls back to masked Match)', async () => {
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-oor-'));
+    try {
+      process.env.NOMAD_REPO = testRepo;
+      vi.resetModules();
+      const { collectActions } = await import('./commands.push.recovery.actions.ts');
+
+      // Create a 1-line fixture; request line 999 (out of range -> null -> Match fallback).
+      const relPath = 'shared/projects/my-proj/oor.jsonl';
+      const dir = join(testRepo, 'shared/projects/my-proj');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(testRepo, relPath), 'only one line\n', 'utf8');
+
+      const f = makeFullFinding({
+        File: relPath,
+        StartLine: 999,
+        Match: SECRET,
+      });
+
+      let capturedPrompt = '';
+      const prompt = (p: string): Promise<string> => {
+        capturedPrompt = p;
+        return Promise.resolve('s');
+      };
+
+      await collectActions([f], prompt);
+
+      // Out-of-range line -> readLine returns null -> falls back to masked Match.
+      expect(capturedPrompt).toContain('context:');
+      expect(capturedPrompt).toContain('ghp_************');
+      expect(capturedPrompt).not.toContain(SECRET);
+    } finally {
+      rmSync(testRepo, { recursive: true, force: true });
+      if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+      else delete process.env.NOMAD_REPO;
+    }
+  });
+
+  it('default real readLine refuses a File that escapes the repo root via ..', async () => {
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    const outer = mkdtempSync(join(tmpdir(), 'nomad-ctx-escape-'));
+    try {
+      const testRepo = join(outer, 'repo');
+      mkdirSync(testRepo, { recursive: true });
+      process.env.NOMAD_REPO = testRepo;
+      vi.resetModules();
+      const { collectActions } = await import('./commands.push.recovery.actions.ts');
+
+      // A real secret-bearing file sits OUTSIDE the repo root. A traversal
+      // File must not read it; the reader returns null and the prompt falls
+      // back to the masked Match instead of leaking the outside file.
+      writeFileSync(join(outer, 'outside.jsonl'), `leaked ${SECRET}\n`, 'utf8');
+
+      const f = makeFullFinding({
+        File: '../outside.jsonl',
+        StartLine: 1,
+        Match: SECRET,
+      });
+
+      let capturedPrompt = '';
+      const prompt = (p: string): Promise<string> => {
+        capturedPrompt = p;
+        return Promise.resolve('s');
+      };
+
+      await collectActions([f], prompt);
+
+      // Confinement guard -> null -> masked Match fallback, raw secret absent.
+      expect(capturedPrompt).toContain('context:');
+      expect(capturedPrompt).toContain('ghp_************');
+      expect(capturedPrompt).not.toContain(SECRET);
+    } finally {
+      rmSync(outer, { recursive: true, force: true });
+      if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+      else delete process.env.NOMAD_REPO;
+    }
+  });
+
+  it('default real readLine refuses an absolute File path', async () => {
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-abs-'));
+    try {
+      process.env.NOMAD_REPO = testRepo;
+      vi.resetModules();
+      const { collectActions } = await import('./commands.push.recovery.actions.ts');
+
+      // An absolute File pointing at a real outside file must be refused.
+      const absFile = join(testRepo, 'abs.jsonl');
+      writeFileSync(absFile, `leaked ${SECRET}\n`, 'utf8');
+
+      const f = makeFullFinding({
+        File: absFile,
+        StartLine: 1,
+        Match: SECRET,
+      });
+
+      let capturedPrompt = '';
+      const prompt = (p: string): Promise<string> => {
+        capturedPrompt = p;
+        return Promise.resolve('s');
+      };
+
+      await collectActions([f], prompt);
+
+      // Absolute path rejected -> null -> masked Match fallback.
+      expect(capturedPrompt).toContain('context:');
+      expect(capturedPrompt).toContain('ghp_************');
+      expect(capturedPrompt).not.toContain(SECRET);
+    } finally {
+      rmSync(testRepo, { recursive: true, force: true });
+      if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+      else delete process.env.NOMAD_REPO;
+    }
   });
 });
