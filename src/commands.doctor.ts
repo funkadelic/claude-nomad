@@ -25,6 +25,7 @@ import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportHookScopeCheck } from './commands.doctor.checks.hooks.scope.ts';
 import { reportHooksTargetCheck } from './commands.doctor.checks.hooks.ts';
 import { reportPreserveSymlinksCheck } from './commands.doctor.checks.hooks.preserve-symlinks.ts';
+import { reportSettingsDriftCheck } from './commands.doctor.checks.settings-drift.ts';
 import { repoHome, type PathMap } from './config.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { readJsonSafe, renderDoctor, section } from './commands.doctor.format.ts';
@@ -75,6 +76,7 @@ export function cmdDoctor(opts: { checkShared?: boolean; checkSchema?: boolean }
   const base = loadBaseSettings(settings);
   const parsedSettings = loadAndReportSettings(settings);
   reportHostOverrides(settings, base, parsedSettings);
+  reportSettingsDriftCheck(settings);
 
   const pathMap = section('Path map');
   reportPathMap(pathMap);
