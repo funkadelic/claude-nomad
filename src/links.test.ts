@@ -576,6 +576,95 @@ describe('applySharedLinks onPreview structured sink', () => {
     applySharedLinks('ts4', { projects: {} }, { dryRun: true });
     expect(logs.join('\n')).toContain('would auto-move non-symlink:');
   });
+
+  // Test A: already-correct symlink suppresses create event in dry-run.
+  it('emits no create event for a name whose link path is already a symlink (clean host)', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    const sharedTarget = join(sharedDir, 'CLAUDE.md');
+    const linkPath = join(claudeDir, 'CLAUDE.md');
+    symlinkSync(sharedTarget, linkPath);
+
+    const events: unknown[] = [];
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks(
+      'ts-clean',
+      { projects: {} },
+      { dryRun: true, onPreview: (e) => events.push(e) },
+    );
+
+    const creates = events.filter((e) => (e as { kind: string }).kind === 'create');
+    const claudeMdCreates = creates.filter((e) =>
+      (e as { from: string }).from.endsWith('CLAUDE.md'),
+    );
+    expect(claudeMdCreates).toHaveLength(0);
+  });
+
+  // Test B: missing link still emits a create event.
+  it('emits a create event for a name with shared/<name> present but no link on disk', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    // No ~/.claude/CLAUDE.md created.
+
+    const events: unknown[] = [];
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks(
+      'ts-missing',
+      { projects: {} },
+      { dryRun: true, onPreview: (e) => events.push(e) },
+    );
+
+    const creates = events.filter((e) => (e as { kind: string }).kind === 'create');
+    const claudeMdCreates = creates.filter((e) =>
+      (e as { from: string }).from.endsWith('CLAUDE.md'),
+    );
+    expect(claudeMdCreates.length).toBeGreaterThan(0);
+  });
+
+  // Test C: symlink pointing at a live but wrong target emits NO create event.
+  // The guard mirrors ensureSymlink: any existing symlink (existsSync follows
+  // it to the live target) is considered already-satisfied. Intentional parity
+  // with ensureSymlink, which no-ops on any symlink without comparing targets.
+  it('emits no create event for a symlink pointing at a live but wrong target (ensureSymlink parity)', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    // Create a real file to be the "wrong" live target so existsSync follows
+    // the symlink and returns true.
+    const wrongTarget = join(testHome, 'some-other-file.md');
+    writeFileSync(wrongTarget, '# wrong\n');
+    const linkPath = join(claudeDir, 'CLAUDE.md');
+    symlinkSync(wrongTarget, linkPath);
+
+    const events: unknown[] = [];
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks(
+      'ts-wrongtarget',
+      { projects: {} },
+      { dryRun: true, onPreview: (e) => events.push(e) },
+    );
+
+    const creates = events.filter((e) => (e as { kind: string }).kind === 'create');
+    const claudeMdCreates = creates.filter((e) =>
+      (e as { from: string }).from.endsWith('CLAUDE.md'),
+    );
+    expect(claudeMdCreates).toHaveLength(0);
+  });
+
+  // Test D: non-symlink occupant still produces both auto-move and create events.
+  it('emits both auto-move and create events when a non-symlink occupies the link path', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# real file\n');
+
+    const events: unknown[] = [];
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks(
+      'ts-nonlink',
+      { projects: {} },
+      { dryRun: true, onPreview: (e) => events.push(e) },
+    );
+
+    const moves = events.filter((e) => (e as { kind: string }).kind === 'auto-move');
+    const creates = events.filter((e) => (e as { kind: string }).kind === 'create');
+    expect(moves.length).toBeGreaterThan(0);
+    expect(creates.length).toBeGreaterThan(0);
+  });
 });
 
 describe('applySharedLinks sharedDirs support', () => {
