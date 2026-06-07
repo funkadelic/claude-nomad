@@ -1,12 +1,29 @@
 /**
  * Pure, side-effect-free seams for the push-time recovery menu: key
- * derivation, session-id extraction, and prompt-answer parsing. Extracted from
- * `commands.push.recovery.actions.ts` so both modules stay under the 220-line
- * advisory cap.
+ * derivation, session-id extraction, prompt-answer parsing, and finding-context
+ * masking. Extracted from `commands.push.recovery.actions.ts` so both modules
+ * stay under the 220-line advisory cap.
  */
 
 import type { Finding } from './push-gitleaks.scan.ts';
 import { SESSION_PATH } from './push-gitleaks.ts';
+
+// ---------------------------------------------------------------------------
+// Secret masking constants
+// ---------------------------------------------------------------------------
+
+/** Number of leading characters to keep before the mask in maskSecret. */
+const MASK_LEAD = 4;
+
+/** Fixed-length mask string appended after the kept lead. Non-length-preserving so no length info leaks. */
+const MASK_BODY = '************';
+
+/** Context window: maximum chars of source prefix or suffix shown on each side of the masked span. */
+const CONTEXT_WINDOW = 40;
+
+/** Control-character regex: C0 range (U+0000-U+001F) and DEL (U+007F). */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/g;
 
 /** Action a user can assign to one finding in the recovery menu. */
 export type FindingAction = 'redact' | 'allow' | 'drop' | 'skip';
@@ -63,4 +80,82 @@ export function parseAction(raw: string): FindingAction {
   if (t === 'a' || t === 'allow') return 'allow';
   if (t === 'd' || t === 'drop') return 'drop';
   return 'skip';
+}
+
+/**
+ * Mask a secret value for safe display. Keeps at most `MASK_LEAD` (4)
+ * characters from the start of the secret, then appends a fixed-length mask
+ * of `MASK_BODY` (12 asterisks). Non-length-preserving: the output never
+ * reveals the secret's full length. An empty input returns the bare mask.
+ *
+ * @param secret The raw secret string.
+ * @returns The masked representation, e.g. `"ghp_************"`.
+ */
+export function maskSecret(secret: string): string {
+  return secret.slice(0, MASK_LEAD) + MASK_BODY;
+}
+
+/**
+ * Build a one-line display excerpt for a finding, masking the secret span so
+ * it can be shown to the user without leaking the raw value.
+ *
+ * Primary path: `readLine(finding.File, finding.StartLine)` returns the raw
+ * source line. The span `StartColumn..EndColumn` (1-indexed inclusive) is
+ * extracted, masked via `maskSecret`, and reassembled with up to
+ * `CONTEXT_WINDOW` (40) chars of surrounding context on each side. Ellipses
+ * are prepended/appended when the context is truncated. Control characters
+ * (C0 range and DEL) are stripped from the assembled excerpt.
+ *
+ * Fallback path: when `readLine` returns null, or the primary excerpt is
+ * empty after assembly, the `Finding.Match` field is used: if non-empty,
+ * returns `maskSecret(Match)` with control chars stripped; otherwise returns
+ * null (no context line).
+ *
+ * @param finding The gitleaks finding to build context for.
+ * @param readLine Injected seam returning the raw 1-indexed source line, or
+ *   null on any failure (missing file, out-of-range line).
+ * @returns A masked display excerpt, or null when no source is available.
+ */
+export function buildFindingContext(
+  finding: Finding,
+  readLine: (file: string, line: number) => string | null,
+): string | null {
+  const raw = readLine(finding.File, finding.StartLine);
+
+  if (raw !== null) {
+    // Clamp columns into [1, raw.length] to handle out-of-range gitleaks output.
+    const len = raw.length;
+    const startCol = Math.max(1, Math.min(finding.StartColumn, len + 1));
+    const endCol = Math.max(startCol, Math.min(finding.EndColumn, len));
+    // 0-indexed slice boundaries.
+    const spanStart = startCol - 1;
+    const spanEnd = endCol; // endCol is inclusive, slice end is exclusive
+
+    const secret = raw.slice(spanStart, spanEnd);
+    const masked = maskSecret(secret);
+
+    const fullPrefix = raw.slice(0, spanStart);
+    const fullSuffix = raw.slice(spanEnd);
+
+    const prefixTruncated = fullPrefix.length > CONTEXT_WINDOW;
+    const suffixTruncated = fullSuffix.length > CONTEXT_WINDOW;
+
+    const prefix = prefixTruncated
+      ? fullPrefix.slice(fullPrefix.length - CONTEXT_WINDOW)
+      : fullPrefix;
+    const suffix = suffixTruncated ? fullSuffix.slice(0, CONTEXT_WINDOW) : fullSuffix;
+
+    const excerpt =
+      (prefixTruncated ? '...' : '') + prefix + masked + suffix + (suffixTruncated ? '...' : '');
+    const stripped = excerpt.replace(CONTROL_CHARS, '');
+    /* c8 ignore start */
+    if (stripped.trim().length > 0) return stripped;
+    /* c8 ignore stop */
+  }
+
+  // Fallback: use the Match field.
+  if (finding.Match.length > 0) {
+    return maskSecret(finding.Match).replace(CONTROL_CHARS, '');
+  }
+  return null;
 }
