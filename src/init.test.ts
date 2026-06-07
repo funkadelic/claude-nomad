@@ -750,4 +750,59 @@ describe('maybeDisableRepoActions (via cmdInit opts.run)', () => {
     const ghCalls = calls.filter((c) => c.startsWith('gh'));
     expect(ghCalls).toHaveLength(0);
   });
+
+  it('suppresses ALL gh auth and API calls on a GitHub remote when keepActions is true (kills L84/L143)', async () => {
+    // L84 `keepActions = opts.keepActions === true` mutated to always false, and
+    // L143 `if (!keepActions)` mutated to always true, both cause
+    // maybeDisableRepoActions to run even when keepActions is set. With a GitHub
+    // remote, that would trigger gh auth status, then API calls. Prove no gh
+    // call fires: use a run function that records every invocation and throws on
+    // any gh call.
+    const calls: string[] = [];
+    const run: SpawnSyncFn = (bin, args) => {
+      const argv = Array.from(args);
+      calls.push(`${bin} ${argv.join(' ')}`);
+      if (bin === 'gh')
+        throw new Error(`gh called unexpectedly with keepActions=true: ${argv.join(' ')}`);
+      if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
+        // GitHub remote: origin exists, so ensureOriginRepo is a no-op.
+        return Buffer.from('https://github.com/owner/repo.git\n');
+      }
+      throw new Error(`Unexpected subprocess: ${bin} ${argv.join(' ')}`);
+    };
+    const { cmdInit } = await import('./init.ts');
+    // With keepActions=true and a GitHub remote, no gh call must fire.
+    expect(() => cmdInit({ keepActions: true, run })).not.toThrow();
+    const ghCalls = calls.filter((c) => c.startsWith('gh'));
+    expect(ghCalls).toHaveLength(0);
+    expect(joinedLog(env.logSpy)).toContain('init complete');
+  });
+
+  it('does NOT disable actions on a public repo (kills L203 ConditionalExpression false)', async () => {
+    // L203 `if (!isPrivate) return` forced to `false` would proceed past the
+    // public-repo guard and call isActionsEnabled/disableActions. Verify that
+    // when the repo is public, neither "already disabled" nor "disabled" log
+    // lines appear, and no disable API call is made.
+    const calls: string[] = [];
+    const baseRun = makeGhRun({
+      remote: 'https://github.com/a/b.git',
+      auth: 'ok',
+      isPrivate: false,
+    });
+    const run: SpawnSyncFn = (bin, args) => {
+      calls.push(`${bin} ${Array.from(args).join(' ')}`);
+      return baseRun(bin, args);
+    };
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ run });
+    const logged = joinedLog(env.logSpy);
+    // Public repo: no disabled/already-disabled messages.
+    expect(logged).not.toContain('already disabled');
+    expect(logged).not.toContain('disabled GitHub Actions');
+    expect(logged).not.toContain('could not auto-disable');
+    // No PUT calls (the Actions disable API).
+    const putCalls = calls.filter((c) => c.includes('PUT'));
+    expect(putCalls).toHaveLength(0);
+    expect(logged).toContain('init complete');
+  });
 });
