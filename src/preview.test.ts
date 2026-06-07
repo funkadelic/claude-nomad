@@ -186,6 +186,22 @@ describe('previewSettings canonicalization', () => {
       'settings.json will be rewritten in canonical key order; no value changes',
     );
   });
+
+  it('does NOT add malformed-host note when host file is simply absent (L90: && existsSync guard)', async () => {
+    // L90: `if (hostOverrides === null && existsSync(hostPath))`
+    // When hostPath does not exist, readJsonOrNull returns null (existsSync false
+    // path), but the note must NOT fire because the host file is absent, not
+    // malformed. A ConditionalExpression-true mutation always fires the note even
+    // when hostPath was never created.
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(settingsPath, JSON.stringify({ model: 'opus' }, null, 2));
+    // hostPath is NOT written (stays absent).
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    // No malformed-host note when the file simply doesn't exist.
+    expect(result.notes.some((n) => n.includes('malformed'))).toBe(false);
+  });
 });
 
 describe('computePreview orchestration', () => {
