@@ -253,11 +253,15 @@ Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on 
 in the repo instead.
 :::
 
-`nomad doctor` warns when `settings.json` carries a top-level key it does not recognize (a cue
-that Claude Code added a setting). The recognized set is kept current against Claude Code's
-published settings schema by a weekly automated PR in the public repo, so a periodic
-`nomad update` (to get the latest CLI) is what keeps that warning quiet on your hosts. To check
-your own `settings.json` against the live schema on demand, run `nomad doctor --check-schema`.
+`nomad doctor` warns when `settings.json` no longer matches the base+host merge nomad would
+write, naming the missing or changed keys: the symptom of another tool rewriting the file out
+from under you (the same clobber the warning above describes, except done by software). The fix
+is `nomad pull`. It also warns when `settings.json` carries a top-level key it does not
+recognize (a cue that Claude Code added a setting). The recognized set is kept current against
+Claude Code's published settings schema by a weekly automated PR in the public repo, so a
+periodic `nomad update` (to get the latest CLI) is what keeps that warning quiet on your hosts.
+To check your own `settings.json` against the live schema on demand, run
+`nomad doctor --check-schema`.
 
 ## What does NOT sync (deliberate trade-offs)
 
