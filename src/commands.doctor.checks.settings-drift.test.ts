@@ -238,7 +238,7 @@ describe('reportSettingsDriftCheck', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('emits silent skip and leaves exitCode undefined on malformed base.json', async () => {
+  it('emits a distinct unparseable skip (not "missing") on malformed base.json', async () => {
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
       '{ bad json\n',
@@ -248,12 +248,19 @@ describe('reportSettingsDriftCheck', () => {
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
     let threw = false;
+    let out = '';
     try {
-      await runCheck();
+      out = (await runCheck()).out;
     } catch {
       threw = true;
     }
     expect(threw).toBe(false);
+    // The file is present but malformed: the row must say unparseable, not
+    // missing, so it agrees with loadBaseSettings' malformed-JSON FAIL.
+    expect(out).toContain('shared/settings.base.json unparseable');
+    expect(out).not.toContain('settings.base.json missing');
+    expect(out).toContain(infoGlyph);
+    expect(out).not.toContain(warnGlyph);
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -307,10 +314,14 @@ describe('reportSettingsDriftCheck', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('emits a dim info for extra local-only keys (not a warn)', async () => {
+  it('emits a dim info for extra local-only keys when a host file exists (not a warn)', async () => {
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
     );
     writeFileSync(
       join(env.testHome, '.claude', 'settings.json'),
@@ -321,6 +332,24 @@ describe('reportSettingsDriftCheck', () => {
     expect(out).toContain('agentPushNotifEnabled');
     expect(out).toContain('promotion candidates');
     expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('suppresses the extra-keys info row when no host file exists (reportHostOverrides FAILs those keys)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    // No hosts/test-host.json: the unbased extra key is reportHostOverrides'
+    // FAIL territory; a softer promotion info row would contradict it.
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'sonnet', agentPushNotifEnabled: true }) + '\n',
+    );
+    const { out } = await runCheck();
+    expect(out).not.toContain('promotion candidates');
+    // Extras exist, so settings does not match the merge: no false ok row either.
+    expect(out).not.toContain('settings.json matches base+host merge');
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -406,7 +435,7 @@ describe('reportSettingsDriftCheck', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('silently skips when base.json contains a JSON array (not a plain object)', async () => {
+  it('reports unparseable skip when base.json contains a JSON array (not a plain object)', async () => {
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
       JSON.stringify([1, 2, 3]) + '\n',
@@ -416,16 +445,18 @@ describe('reportSettingsDriftCheck', () => {
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
     let threw = false;
+    let out = '';
     try {
-      await runCheck();
+      out = (await runCheck()).out;
     } catch {
       threw = true;
     }
     expect(threw).toBe(false);
+    expect(out).toContain('shared/settings.base.json unparseable');
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('emits malformed host json skip (not throw) and exitCode stays undefined', async () => {
+  it('warns on malformed host json (a real pull would die on it) without setting exitCode', async () => {
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
@@ -436,12 +467,19 @@ describe('reportSettingsDriftCheck', () => {
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
     let threw = false;
+    let out = '';
     try {
-      await runCheck();
+      out = (await runCheck()).out;
     } catch {
       threw = true;
     }
     expect(threw).toBe(false);
+    // A base-only merge would compare clean here, but pull would die on the
+    // host file: the check must warn, not report a false-healthy match.
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('hosts/test-host.json unparseable');
+    expect(out).toContain('nomad pull');
+    expect(out).not.toContain('settings.json matches base+host merge');
     expect(process.exitCode).toBeUndefined();
   });
 });

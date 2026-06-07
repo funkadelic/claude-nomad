@@ -219,9 +219,12 @@ writer (for example a Claude Code onboarding flow) silently clobbering `settings
 dropping managed keys; the fix is `nomad pull`. A separate `ℹ︎` info line lists local-only keys
 absent from the merge as promotion candidates for `shared/settings.base.json` or
 `hosts/<NOMAD_HOST>.json`, since those are typically transient state written between pulls (for
-example notification toggles), not an error. The check reports key names only and never leaks
-values. It skips with a `ℹ︎` when `settings.json` or `shared/settings.base.json` is absent or
-unparseable.
+example notification toggles), not an error; when this host has no `hosts/<NOMAD_HOST>.json` at
+all, that info line is withheld because the host-overrides row above it already flags the same
+keys as a failure. A `⚠︎` warning also fires when `hosts/<NOMAD_HOST>.json` exists but does not
+parse, since `nomad pull` would stop on that file. The check reports key names only and never
+leaks values. It skips with a `ℹ︎` when `settings.json` or `shared/settings.base.json` is absent
+or unparseable.
 
 ## Global flags
 

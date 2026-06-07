@@ -80,7 +80,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
 
 /** Result shape from `diffMergedSettings`. */
 export type SettingsDiff = {
-  /** Keys present in merged but absent from settings (or with different values -- split by `changed`). */
+  /** Keys present in merged but absent from settings (value-changed keys go to `changed`). */
   missing: string[];
   /** Keys present in both merged and settings with deep-different values. */
   changed: string[];
@@ -162,10 +162,17 @@ function tryReadJson(filePath: string): Record<string, unknown> | null {
  * `~/.claude/settings.json`, recomputes the merge, and emits drift rows.
  *
  * Outcomes:
- * - `ℹ︎` skip when `settings.json` is absent or `settings.base.json` is missing.
+ * - `ℹ︎` skip when `settings.json` is absent, or `settings.base.json` is
+ *   missing or present-but-unparseable (distinct wording per case).
+ * - `⚠︎` WARN when `hosts/<HOST>.json` exists but is unparseable: a real
+ *   `nomad pull` would die on that file, so the check must not report a
+ *   base-only merge as healthy.
  * - `⚠︎` WARN when merged keys are absent from settings (external clobber).
  * - `⚠︎` WARN when merged keys are present but value-changed.
  * - `ℹ︎` info when settings has extra local-only keys (promotion candidates).
+ *   Suppressed when no host file exists: `reportHostOverrides` already FAILs
+ *   on the same unbased keys in that case, and a softer info row about the
+ *   identical keys would contradict it.
  * - `✓` ok when settings matches the merge exactly.
  *
  * Never sets `process.exitCode`. Never throws.
@@ -196,9 +203,12 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
 
   const base = tryReadJson(basePath);
   if (base === null) {
+    // Present but unparseable: distinct from the absent case above so the
+    // operator is not sent looking for a missing file (loadBaseSettings FAILs
+    // on the same file in this run; this row must agree it is malformed).
     addItem(
       section,
-      `${dim(infoGlyph)} shared/settings.base.json missing; skipping merge-drift check`,
+      `${dim(infoGlyph)} shared/settings.base.json unparseable; skipping merge-drift check`,
     );
     return;
   }
@@ -211,23 +221,39 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
 
   const hostExists = existsSync(hostPath);
   const hostObj = hostExists ? tryReadJson(hostPath) : null;
-  // When host file exists but is malformed, treat as absent (tolerant degradation).
+  if (hostExists && hostObj === null) {
+    // Present but unparseable: regenerateSettings reads this file without a
+    // guard, so a real 'nomad pull' would die here. Reporting a base-only
+    // merge as healthy would be a false-clean verdict; warn instead.
+    addItem(
+      section,
+      `${yellow(warnGlyph)} hosts/${host}.json unparseable; 'nomad pull' will fail (fix the host file)`,
+    );
+    return;
+  }
   const merged = deepMerge(base, hostObj ?? {});
 
   const { missing, changed, extra } = diffMergedSettings(merged, settings);
 
-  emitDriftRows(section, missing, changed, extra, host);
+  emitDriftRows(section, missing, changed, extra, host, hostExists);
 }
 
 /**
  * Emit the drift rows for each category. Extracted to keep `reportSettingsDriftCheck`
  * under the cognitive-complexity gate.
  *
+ * The extra-keys info row is gated on `hostFileExists`: with no host file,
+ * `reportHostOverrides` already FAILs on the same unbased keys in the same
+ * Settings section, and a softer "promotion candidates" row about identical
+ * keys would contradict that verdict. The ok row is not emitted in that case
+ * either (extras exist, so settings does not match the merge exactly).
+ *
  * @param section - Doctor section to append to.
  * @param missing - Keys in merged absent from settings.
  * @param changed - Keys in both with different values.
  * @param extra - Keys in settings absent from merged.
  * @param host - Current host identifier for the promotion-candidate hint.
+ * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the extra-keys row).
  */
 function emitDriftRows(
   section: DoctorSection,
@@ -235,6 +261,7 @@ function emitDriftRows(
   changed: string[],
   extra: string[],
   host: string,
+  hostFileExists: boolean,
 ): void {
   if (missing.length > 0) {
     addItem(
@@ -248,7 +275,7 @@ function emitDriftRows(
       `${yellow(warnGlyph)} settings.json drift: merged keys with changed values: ${changed.join(', ')} (run 'nomad pull')`,
     );
   }
-  if (extra.length > 0) {
+  if (extra.length > 0 && hostFileExists) {
     addItem(
       section,
       `${dim(infoGlyph)} settings.json has ${extra.length} local-only key(s) not in base+host merge: ${extra.join(', ')} (promotion candidates for shared/settings.base.json or hosts/${host}.json)`,
