@@ -427,6 +427,44 @@ describe('cmdPull: extras integration', () => {
     expect(out).not.toContain('pull complete');
   });
 
+  it('summaryRow receives the SUM of remapResult.unmapped + extrasResult.unmapped (L49 ArithmeticOperator)', async () => {
+    // Both remap and extras report unmapped > 0. The collapsed summary count
+    // must equal 2+3=5, not 2-3=-1 (the ArithmeticOperator + -> - mutation).
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot }, bar: { 'other-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 2, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 3, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    const out = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    // Sum is 5; a subtraction mutation would yield -1 and render "summary: -1 unmapped on pull"
+    // or "summary: clean" (negative unmapped collapses), never "5 unmapped on pull".
+    expect(out).toContain('summary: 5 unmapped on pull');
+  });
+
   it('renders the WET grouped tree with a host-override Settings label and zero-skip Sessions', async () => {
     // Settings-with-override label branch ('<HOST>.json') plus a pulled
     // session with unmapped==0 (no collapsed count row). Covers the

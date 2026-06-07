@@ -197,6 +197,38 @@ describe('regenerateSettings (integration)', () => {
       "repo not initialized; run 'nomad init' to scaffold",
     );
   });
+
+  it('does NOT fire drift WARN when a host override file exists, even if settings has unbased keys', async () => {
+    // Regression guard for L143: `!hasOverrides && existsSync(settingsPath)`.
+    // When hosts/test-host.json exists, hasOverrides=true. The condition must
+    // be false regardless of whether settings.json has unbased keys.
+    // A ConditionalExpression-true or LogicalOperator-|| mutation would fire the
+    // drift WARN even with a host file present.
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    // Host override file exists (hasOverrides=true).
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
+    // Prior settings.json has an unbased key ('statusLine' not in base).
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
+    );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    // No drift WARN should have been emitted.
+    expect(writes.join('')).not.toContain('⚠︎');
+    expect(writes.join('')).not.toContain('unbased keys');
+  });
 });
 
 describe('applySharedLinks auto-move', () => {
