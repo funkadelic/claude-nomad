@@ -507,7 +507,7 @@ describe('cmdRedact', () => {
     // Should NOT throw from the id-validation path (which calls process.exit(1))
     // but WILL set exitCode=1 from the "transcript not found" path which uses
     // process.exitCode = 1 instead.
-    expect(() => cmdRedact({ id: id128 })).not.toThrow('process.exit');
+    expect(() => cmdRedact({ id: id128 })).not.toThrow();
     expect(exitSpy).not.toHaveBeenCalled();
   });
 

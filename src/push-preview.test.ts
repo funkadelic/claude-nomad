@@ -609,7 +609,7 @@ describe('previewPushLeaks: extras staging', () => {
       projects: null as unknown as Record<string, Record<string, string>>,
       extras: { 'some-project': ['.planning'] },
     };
-    expect(() => previewPushLeaks(map)).not.toThrow();
+    // Single direct call: a throw here fails the test, covering the no-throw pin.
     const verdict = previewPushLeaks(map);
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
     expect(verdict.leak).toBe(false);
@@ -633,7 +633,7 @@ describe('previewPushLeaks: extras staging', () => {
       projects: {} as Record<string, Record<string, string>>,
       extras: { [logical]: ['.planning'] },
     };
-    expect(() => previewPushLeaks(mapContent)).not.toThrow();
+    // Single direct call: a throw here fails the test, covering the no-throw pin.
     const verdict = previewPushLeaks(mapContent);
     expect(verdict.leak).toBe(false);
     expect(verdict.verdictRow).toMatch(/nothing to scan/i);

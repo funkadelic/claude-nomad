@@ -347,9 +347,6 @@ describe('reportHostAndPaths NOMAD_REPO info line (direct)', () => {
     // line would add a spurious NOMAD_REPO annotation on every doctor run,
     // even when the user is on the default repo path.
     delete process.env.NOMAD_REPO;
-    process.env.NOMAD_REPO = join(testHome, 'claude-nomad');
-    // Temporarily un-set NOMAD_REPO to test the unset case.
-    delete process.env.NOMAD_REPO;
     vi.resetModules();
     const { section } = await import('./commands.doctor.format.ts');
     const { reportHostAndPaths } = await import('./commands.doctor.checks.repo.ts');

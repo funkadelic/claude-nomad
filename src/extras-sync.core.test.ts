@@ -163,7 +163,7 @@ describe('loadValidatedExtras early-exit guards (L36/L37/L43)', () => {
     expect(() => loadValidatedExtras({})).toThrow();
   });
 
-  it('TBD local root is skipped by assertSafeLocalRoot check (kills L47 OptionalChaining and L48 ConditionalExpression)', async () => {
+  it('absent logical does not crash due to optional chaining (kills L47 OptionalChaining and L48 ConditionalExpression)', async () => {
     // L47 removing `?.` would throw when projects[logical] is undefined.
     // L48 forcing `false` would skip the `assertSafeLocalRoot` call for a valid non-TBD root.
     // Test 1: logical not in projects at all (undefined access -> must not throw due to ?.)
@@ -176,7 +176,7 @@ describe('loadValidatedExtras early-exit guards (L36/L37/L43)', () => {
     );
     const { loadValidatedExtras } = await import('./extras-sync.core.ts');
     // logical 'foo' not in projects -> map.projects['foo'] is undefined, [HOST] would crash without ?.
-    expect(() => loadValidatedExtras({})).not.toThrow();
+    // Single direct call: a throw here fails the test, covering the no-throw pin.
     const result = loadValidatedExtras({});
     // extrasMap is non-empty so result is non-null (validation loop ran without crashing).
     expect(result).not.toBeNull();
