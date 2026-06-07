@@ -170,7 +170,7 @@ describe('buildFindingContext - control character stripping', () => {
   const CTRL_REGEX = /[\x00-\x1f\x7f]/;
 
   it('strips C0 control chars embedded in the source line', () => {
-    // Line contains BEL, NUL, and ESC characters outside the secret span.
+    // Line contains BEL, NUL, and ESC characters; verifies they are stripped from output.
     const line = 'prefix\x07\x00 SECRET \x1b[31m suffix';
     const finding = makeFinding({ StartColumn: 16, EndColumn: 21, Match: 'SECRET' });
     const reader = (_f: string, _n: number): string | null => line;
