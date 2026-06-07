@@ -48,7 +48,7 @@ function objectsEqual(a: Record<string, unknown>, b: Record<string, unknown>): b
   const bKeys = Object.keys(b);
   if (aKeys.length !== bKeys.length) return false;
   for (const k of aKeys) {
-    if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+    if (!Object.hasOwn(b, k)) return false;
     if (!deepEqual(a[k], b[k])) return false;
   }
   return true;
@@ -124,9 +124,9 @@ export function diffMergedSettings(
 
   const collator = (a: string, b: string): number => a.localeCompare(b, 'en');
   return {
-    missing: missing.sort(collator),
-    changed: changed.sort(collator),
-    extra: extra.sort(collator),
+    missing: missing.toSorted(collator),
+    changed: changed.toSorted(collator),
+    extra: extra.toSorted(collator),
   };
 }
 
