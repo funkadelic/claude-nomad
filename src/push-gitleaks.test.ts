@@ -997,6 +997,269 @@ describe('buildSessionAwareFatal (pure)', () => {
     // Count must be 1, not 3.
     expect(counts?.get('generic-api-key')).toBe(1);
   });
+
+  it('dedupeFindings: two DISTINCT findings with the SAME non-empty Fingerprint collapse to one entry', async () => {
+    // Kills the StringLiteral->"" mutation on findingIdentityKey (L72):
+    // when Fingerprint is mutated to always return "", all strings use the
+    // composite fallback, so two findings at different lines with the same fp
+    // would NOT dedup. Under real code they share the fp key and collapse to 1.
+    const { partitionFindings } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const base = {
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/proj/sid.jsonl',
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp-shared-non-empty',
+    };
+    // Two findings at DIFFERENT lines but sharing the same non-empty Fingerprint.
+    const a = { ...base, StartLine: 1 };
+    const b = { ...base, StartLine: 7 };
+    const { bySession } = partitionFindings([a, b]);
+    // Same Fingerprint -> dedup -> only one entry, not two.
+    expect(bySession.size).toBe(1);
+    expect(bySession.get('sid')?.get('generic-api-key')).toBe(1);
+  });
+
+  it('dedupeFindings: two DISTINCT empty-Fingerprint findings at different lines stay distinct', async () => {
+    // Kills the ConditionalExpression->"true" and EqualityOperator->">= 0" mutations
+    // on L72: when the length check is always-true, empty-string fp is used as
+    // the key, collapsing all empty-fp findings into one. Under real code, empty
+    // fp falls through to the composite key, keeping different-line findings distinct.
+    const { partitionFindings } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const base = {
+      RuleID: 'generic-api-key',
+      File: 'shared/projects/proj/sid.jsonl',
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: '',
+    };
+    // Two findings at DIFFERENT lines, both with empty Fingerprint.
+    const a = { ...base, StartLine: 1 };
+    const b = { ...base, StartLine: 9 };
+    const { bySession } = partitionFindings([a, b]);
+    // Different composite keys (different StartLine) -> must remain 2 distinct counts.
+    expect(bySession.get('sid')?.get('generic-api-key')).toBe(2);
+  });
+
+  it('buildSessionAwareFatal: does NOT emit "Also found:" when the other bucket is empty', async () => {
+    // Kills ConditionalExpression->"true" and EqualityOperator->">= 0" mutations
+    // on the `if (other.length > 0)` guard (L209): when the guard is always-true,
+    // an empty "Also found:" block would appear even with no non-session findings.
+    const { partitionFindings, buildSessionAwareFatal } =
+      (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const findings: Finding[] = [
+      {
+        RuleID: 'generic-api-key',
+        File: 'shared/projects/foo/sid-A.jsonl',
+        StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp1',
+      },
+    ];
+    const { bySession, other } = partitionFindings(findings);
+    expect(other.length).toBe(0);
+    const msg = buildSessionAwareFatal(bySession, other);
+    // With zero non-session findings, the "Also found:" header must be absent.
+    expect(msg).not.toContain('Also found:');
+  });
+
+  it('buildSessionAwareFatal: FATAL output does not start with extra stale content when there are session findings', async () => {
+    // Kills the ArrayDeclaration->["Stryker was here"] mutation on L200:
+    // if the lines array starts pre-populated with stale content, the first
+    // line of the FATAL message would contain that stale text.
+    const { partitionFindings, buildSessionAwareFatal } =
+      (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const findings: Finding[] = [
+      {
+        RuleID: 'generic-api-key',
+        File: 'shared/projects/foo/sid-A.jsonl',
+        StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp1',
+      },
+    ];
+    const { bySession, other } = partitionFindings(findings);
+    const msg = buildSessionAwareFatal(bySession, other);
+    // The FATAL body must start with the session-count header, not with stale
+    // pre-populated content. The first non-empty line must reference "gitleaks".
+    const firstNonEmpty = msg.split('\n').find((l) => l.trim().length > 0) ?? '';
+    expect(firstNonEmpty).toMatch(/gitleaks/i);
+    expect(firstNonEmpty).not.toMatch(/Stryker was here/i);
+  });
+});
+
+// Security-routing: SESSION_PATH and SUBAGENT_SESSION_PATH regex anchor/character-class pins.
+// These tests ensure that mutated character classes or missing anchors cannot change the
+// session-path classification that routes findings to drop-session vs the other/allowlist bucket.
+// Each test calls vi.resetModules() before import so that Stryker's per-mutant instrumented
+// module is loaded fresh rather than served from the cached module registry.
+describe('SESSION_PATH and SUBAGENT_SESSION_PATH regex hardening (security routing)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('SESSION_PATH: path with non-POSIX prefix is NOT classified as a session path', async () => {
+    // Kills the "remove ^ anchor" mutation on SESSION_PATH (L39): without ^,
+    // a path like "foo/shared/projects/x/y.jsonl" would match and be routed
+    // to drop-session instead of the other/allowlist bucket.
+    const { partitionFindings } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const findings: Finding[] = [
+      {
+        RuleID: 'github-pat',
+        File: 'foo/shared/projects/my-proj/sid-A.jsonl',
+        StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp1',
+      },
+    ];
+    const { bySession, other } = partitionFindings(findings);
+    // The path has a non-empty prefix before "shared/"; must NOT match SESSION_PATH.
+    expect(bySession.size).toBe(0);
+    expect(other.length).toBe(1);
+    expect(other[0]?.File).toBe('foo/shared/projects/my-proj/sid-A.jsonl');
+  });
+
+  it('SESSION_PATH: path with trailing suffix is NOT classified as a session path', async () => {
+    // Kills the "remove $ anchor" mutation on SESSION_PATH (L39): without $,
+    // a path like "shared/projects/x/y.jsonl.bak" would match and be routed
+    // to drop-session incorrectly.
+    const { partitionFindings } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const findings: Finding[] = [
+      {
+        RuleID: 'github-pat',
+        File: 'shared/projects/my-proj/sid-A.jsonl.bak',
+        StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp1',
+      },
+    ];
+    const { bySession, other } = partitionFindings(findings);
+    expect(bySession.size).toBe(0);
+    expect(other.length).toBe(1);
+  });
+
+  it('SUBAGENT_SESSION_PATH: path with non-POSIX prefix does NOT yield a session drop-session hint', async () => {
+    // Kills the "remove ^ anchor" mutation on SUBAGENT_SESSION_PATH (L49):
+    // without ^, a path like "evil/shared/projects/x/sid/sub.jsonl" would
+    // be classified as a subagent path and emit a drop-session hint.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const hint = otherFindingHint({
+      RuleID: 'github-pat',
+      File: 'evil/shared/projects/my-proj/abc123/subagents/agent.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    // Must NOT extract session id and suggest drop-session; must be manual-review fallback.
+    expect(hint).toContain('git diff --cached');
+    expect(hint).not.toContain('nomad drop-session');
+    expect(hint).not.toContain('nomad redact');
+  });
+
+  it('SUBAGENT_SESSION_PATH: path without .jsonl suffix does NOT yield a drop-session hint', async () => {
+    // Kills the "remove $ anchor" mutation on SUBAGENT_SESSION_PATH (L49):
+    // without $, a path like "shared/projects/x/sid/a.jsonl.bak" might match.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const hint = otherFindingHint({
+      RuleID: 'github-pat',
+      File: 'shared/projects/my-proj/abc123/subagents/agent.jsonl.bak',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    expect(hint).toContain('git diff --cached');
+    expect(hint).not.toContain('nomad drop-session');
+  });
+
+  it('SUBAGENT_SESSION_PATH: path with empty logical segment does NOT match', async () => {
+    // Kills the "[^/]" (not "+") mutation on the logical segment in SUBAGENT_SESSION_PATH (L49):
+    // without "+", a path like "shared/projects//sid/sub.jsonl" (empty logical) would match.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const hint = otherFindingHint({
+      RuleID: 'github-pat',
+      File: 'shared/projects//abc123/subagents/agent.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    // Empty logical segment -- should not match the subagent pattern.
+    expect(hint).toContain('git diff --cached');
+    expect(hint).not.toContain('nomad drop-session');
+  });
+
+  it('SUBAGENT_SESSION_PATH: path with slash in logical segment does NOT match', async () => {
+    // Kills the "[/]+" mutation for the logical segment in SUBAGENT_SESSION_PATH (L49):
+    // with "[/]+" in place of "[^/]+", only paths with slashes in the logical
+    // segment would match, letting real subagent paths escape without a hint.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    // This is a real subagent path (no slashes in logical).
+    const realHint = otherFindingHint({
+      RuleID: 'github-pat',
+      File: 'shared/projects/my-proj/abc123/subagents/agent.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    // The real subagent path MUST yield a drop-session hint.
+    expect(realHint).toContain('nomad drop-session abc123');
+  });
+
+  it('SUBAGENT_SESSION_PATH: path with empty session-id segment does NOT match', async () => {
+    // Kills the "[^/]" (not "+") mutation on the session-id segment in SUBAGENT_SESSION_PATH (L49):
+    // without "+", a 1-char session id like "shared/projects/x/a/sub.jsonl" would match
+    // but so would an empty session id "shared/projects/x//sub.jsonl".
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const hint = otherFindingHint({
+      RuleID: 'github-pat',
+      File: 'shared/projects/my-proj//subagents/agent.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    // Empty session-id segment -- must not match the subagent pattern.
+    expect(hint).toContain('git diff --cached');
+    expect(hint).not.toContain('nomad drop-session');
+  });
+
+  it('SUBAGENT_SESSION_PATH: deeply-nested path still matches (.*\\.jsonl$ required)', async () => {
+    // Kills the ".\\.jsonl$" (only 1 char before .jsonl) mutation on SUBAGENT_SESSION_PATH (L49):
+    // with only one character required before ".jsonl", a path like
+    // "shared/projects/x/sid/sub/nested/agent.jsonl" would NOT match.
+    const { otherFindingHint } = (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    // A genuine deeply-nested subagent transcript path.
+    const hint = otherFindingHint({
+      RuleID: 'github-pat',
+      File: 'shared/projects/my-proj/abc123/subagents/nested/deep/agent.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 10,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    });
+    // Must match and yield a drop-session hint for "abc123".
+    expect(hint).toContain('nomad drop-session abc123');
+    expect(hint).toContain('nomad redact abc123');
+  });
 });
 
 // --config wiring: pass --config <REPO_HOME>/.gitleaks.toml when the file
