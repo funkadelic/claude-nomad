@@ -491,6 +491,54 @@ describe('cmdRedact', () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
+  it('accepts a session id of exactly 128 chars (boundary: max valid length)', async () => {
+    // Kills L101 EqualityOperator mutation `id.length >= 128` which would
+    // incorrectly reject a 128-char id (the valid upper bound is 128 inclusive).
+    // With no path-map.json the call proceeds past validation and returns
+    // exitCode=1 due to unresolvable transcript -- but no exit(1) from the
+    // id-validation gate.
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((_code?: number | string | null) => {
+        throw new Error('process.exit');
+      });
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const id128 = 'a'.repeat(128);
+    // Should NOT throw from the id-validation path (which calls process.exit(1))
+    // but WILL set exitCode=1 from the "transcript not found" path which uses
+    // process.exitCode = 1 instead.
+    expect(() => cmdRedact({ id: id128 })).not.toThrow();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('sets exitCode=1 for both null localPath and non-existent file (|| guard)', async () => {
+    // Kills L114 LogicalOperator mutation `localPath === null && !existsSync(...)`.
+    // With the && mutation, a non-null localPath that does not exist on disk
+    // would pass the guard (null && false = false) and proceed to the mtime
+    // check, crashing on statSync. The || form is correct: fail when EITHER
+    // the path could not be resolved OR the file does not exist.
+    //
+    // Simulate: path-map.json present but the resolved path file is absent.
+    const claudeHome = join(testHome, '.claude');
+    const encodedDir = '-srv-myproject';
+    const projectsDir = join(claudeHome, 'projects', encodedDir);
+    mkdirSync(projectsDir, { recursive: true });
+    // Write a path-map.json that maps to /srv/myproject on test-host
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/srv/myproject' } } }) + '\n',
+    );
+    // Do NOT create the transcript file; it resolves to a path that does not exist.
+    const { cmdRedact } = await import('./commands.redact.ts');
+    const savedExitCode = process.exitCode;
+    try {
+      cmdRedact({ id: 'ghost-session' });
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = savedExitCode;
+    }
+  });
+
   it('sets exitCode=1 when the local transcript cannot be resolved (no path-map)', async () => {
     // REPO_HOME exists (testHome) but has no path-map.json
     const { cmdRedact } = await import('./commands.redact.ts');
@@ -1571,5 +1619,83 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
     const printed = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(printed).toContain('no findings');
     expect(printed).toContain('sess-allclean');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// config.sharedDirs.guard: SAFE_LOGICAL and SAFE_SEGMENT regex pin tests
+// These tests live here because the guard module is mutated in the commands.redact
+// Stryker sweep scope; the guard's own test file is not included in that sweep,
+// so the regex anchor/quantifier mutations survive without this coverage block.
+// ---------------------------------------------------------------------------
+
+describe('assertSafeLogical (security guard regex anchor/quantifier pin)', () => {
+  it('accepts valid logical names: alphanum, dot, dash, underscore', async () => {
+    const { assertSafeLogical } = await import('./config.sharedDirs.guard.ts');
+    // Must not throw for normal project names.
+    expect(() => assertSafeLogical('my-project')).not.toThrow();
+    expect(() => assertSafeLogical('proj_v2')).not.toThrow();
+    expect(() => assertSafeLogical('ha.acwd')).not.toThrow();
+    expect(() => assertSafeLogical('A1')).not.toThrow();
+  });
+
+  it('rejects a name with a trailing slash (kills missing $ end anchor)', async () => {
+    // Regex mutation /^[A-Za-z0-9._-]+/ (no $) accepts "valid/trailing" because
+    // the pattern matches from ^ up to the slash, then stops; ^ anchor is ok but
+    // the missing $ lets the slash through. Must throw.
+    const { assertSafeLogical } = await import('./config.sharedDirs.guard.ts');
+    expect(() => assertSafeLogical('valid/trailing')).toThrow();
+  });
+
+  it('rejects a name with a leading slash (kills missing ^ start anchor)', async () => {
+    // Regex mutation /[A-Za-z0-9._-]+$/ (no ^) accepts "/leading" because it
+    // matches "leading" as a suffix. Must throw.
+    const { assertSafeLogical } = await import('./config.sharedDirs.guard.ts');
+    expect(() => assertSafeLogical('/leading')).toThrow();
+  });
+
+  it('rejects a name with more than one character when + is removed (single-char quantifier)', async () => {
+    // Regex mutation /^[A-Za-z0-9._-]$/ (+ -> nothing) only matches exactly one
+    // character. A two-char name like "ab" must still be accepted by the real
+    // regex; this test is green with the real regex and red with the mutation.
+    const { assertSafeLogical } = await import('./config.sharedDirs.guard.ts');
+    expect(() => assertSafeLogical('ab')).not.toThrow();
+    expect(() => assertSafeLogical('abc123')).not.toThrow();
+  });
+
+  it('rejects a name whose every char is NOT in [A-Za-z0-9._-] (kills negated char class)', async () => {
+    // Regex mutation /^[^A-Za-z0-9._-]+$/ (negated class) accepts e.g. "!!!"
+    // (all outside the safe set) and rejects "abc" (all inside). Must throw for
+    // an all-special name.
+    const { assertSafeLogical } = await import('./config.sharedDirs.guard.ts');
+    expect(() => assertSafeLogical('!@#')).toThrow();
+  });
+});
+
+describe('isValidSharedDir (SAFE_SEGMENT regex anchor/quantifier pin)', () => {
+  it('accepts a valid segment name', async () => {
+    const { isValidSharedDir } = await import('./config.sharedDirs.guard.ts');
+    expect(isValidSharedDir('my-custom-dir')).toBe(true);
+    expect(isValidSharedDir('tool.kit')).toBe(true);
+  });
+
+  it('rejects a segment with a trailing slash (kills missing $ end anchor)', async () => {
+    const { isValidSharedDir } = await import('./config.sharedDirs.guard.ts');
+    expect(isValidSharedDir('safe/trailing')).toBe(false);
+  });
+
+  it('rejects a segment with a leading slash (kills missing ^ start anchor)', async () => {
+    const { isValidSharedDir } = await import('./config.sharedDirs.guard.ts');
+    expect(isValidSharedDir('/leading')).toBe(false);
+  });
+
+  it('accepts a multi-char segment (kills single-char quantifier mutation)', async () => {
+    const { isValidSharedDir } = await import('./config.sharedDirs.guard.ts');
+    expect(isValidSharedDir('abcde')).toBe(true);
+  });
+
+  it('rejects a name whose every char is NOT in [A-Za-z0-9._-] (kills negated char class)', async () => {
+    const { isValidSharedDir } = await import('./config.sharedDirs.guard.ts');
+    expect(isValidSharedDir('!@#')).toBe(false);
   });
 });

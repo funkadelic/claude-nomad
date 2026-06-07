@@ -400,4 +400,124 @@ describe('ensureOriginRepo', () => {
     const { DEFAULT_REPO_NAME } = await import('./init.gh-onboard.ts');
     expect(DEFAULT_REPO_NAME).toBe('claude-nomad-config');
   });
+
+  // -------------------------------------------------------------------------
+  // Subprocess options: cwd, stdio, timeout passed correctly (kills ObjectLiteral
+  // mutations where Stryker replaces option objects with {})
+  // -------------------------------------------------------------------------
+
+  it('passes cwd:repo to git init and git remote add (not process.cwd)', async () => {
+    // Kills L83 ObjectLiteral -> {} mutation and L131 ObjectLiteral -> {}
+    // mutation: without the cwd option the subprocess runs in process.cwd(),
+    // which is the project root -- not the target repository directory.
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    const capturedOpts: Record<string, unknown>[] = [];
+    const run: SpawnSyncFn = (bin, args, opts) => {
+      const argv = Array.from(args);
+      if (opts !== undefined) capturedOpts.push({ bin, argv, opts });
+      if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
+        throw Object.assign(new Error('no origin'), { code: 128 });
+      }
+      if (bin === 'gh' && argv[0] === 'auth') return Buffer.from('');
+      if (bin === 'git' && argv[0] === 'init') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'repo') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'api') return Buffer.from('test-owner\n');
+      if (bin === 'git' && argv[1] === 'add') return Buffer.from('');
+      throw new Error(`Unexpected: ${bin} ${argv.join(' ')}`);
+    };
+    ensureOriginRepo('my-config', run);
+
+    const expectedCwd = join(testHome, 'claude-nomad');
+
+    // git init must pass cwd
+    const gitInitCall = capturedOpts.find(
+      (c) => c.bin === 'git' && (c.argv as string[])[0] === 'init',
+    );
+    expect(gitInitCall?.opts).toMatchObject({ cwd: expectedCwd });
+
+    // git remote add must pass cwd
+    const remoteAddCall = capturedOpts.find(
+      (c) => c.bin === 'git' && (c.argv as string[])[1] === 'add',
+    );
+    expect(remoteAddCall?.opts).toMatchObject({ cwd: expectedCwd });
+  });
+
+  it('passes --private flag and repo name to gh repo create', async () => {
+    // Kills L95 ArrayDeclaration -> [] mutation (no args) and L95 StringLiteral
+    // mutations on '--private' and the repo name.
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    let repoCreateArgs: string[] | undefined;
+    const run: SpawnSyncFn = (bin, args) => {
+      const argv = Array.from(args);
+      if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
+        throw Object.assign(new Error('no origin'), { code: 128 });
+      }
+      if (bin === 'gh' && argv[0] === 'auth') return Buffer.from('');
+      if (bin === 'git' && argv[0] === 'init') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'repo' && argv[1] === 'create') {
+        repoCreateArgs = argv;
+        return Buffer.from('');
+      }
+      if (bin === 'gh' && argv[0] === 'api') return Buffer.from('test-owner\n');
+      if (bin === 'git' && argv[1] === 'add') return Buffer.from('');
+      throw new Error(`Unexpected: ${bin} ${argv.join(' ')}`);
+    };
+    ensureOriginRepo('my-repo-name', run);
+    expect(repoCreateArgs).toBeDefined();
+    expect(repoCreateArgs).toContain('--private');
+    expect(repoCreateArgs).toContain('my-repo-name');
+  });
+
+  it('passes --jq .login to gh api user to extract the login field', async () => {
+    // Kills L111 ArrayDeclaration -> [] and L111 StringLiteral mutations on
+    // '--jq' and '.login': without these args the response is not filtered and
+    // the owner resolution produces invalid JSON or the wrong field.
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    let apiUserArgs: string[] | undefined;
+    const run: SpawnSyncFn = (bin, args) => {
+      const argv = Array.from(args);
+      if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
+        throw Object.assign(new Error('no origin'), { code: 128 });
+      }
+      if (bin === 'gh' && argv[0] === 'auth') return Buffer.from('');
+      if (bin === 'git' && argv[0] === 'init') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'repo') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'api' && argv[1] === 'user') {
+        apiUserArgs = argv;
+        return Buffer.from('test-owner\n');
+      }
+      if (bin === 'git' && argv[1] === 'add') return Buffer.from('');
+      throw new Error(`Unexpected: ${bin} ${argv.join(' ')}`);
+    };
+    ensureOriginRepo('any-repo', run);
+    expect(apiUserArgs).toBeDefined();
+    expect(apiUserArgs).toContain('--jq');
+    expect(apiUserArgs).toContain('.login');
+  });
+
+  it('passes "origin" and the full git@github.com remote URL to git remote add', async () => {
+    // Kills L133 ArrayDeclaration -> [] and L133 StringLiteral mutations on
+    // 'origin' and 'git@github.com:' prefix.
+    const { ensureOriginRepo } = await import('./init.gh-onboard.ts');
+    let remoteAddArgs: string[] | undefined;
+    const run: SpawnSyncFn = (bin, args) => {
+      const argv = Array.from(args);
+      if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
+        throw Object.assign(new Error('no origin'), { code: 128 });
+      }
+      if (bin === 'gh' && argv[0] === 'auth') return Buffer.from('');
+      if (bin === 'git' && argv[0] === 'init') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'repo') return Buffer.from('');
+      if (bin === 'gh' && argv[0] === 'api') return Buffer.from('mylogin\n');
+      if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'add') {
+        remoteAddArgs = argv;
+        return Buffer.from('');
+      }
+      throw new Error(`Unexpected: ${bin} ${argv.join(' ')}`);
+    };
+    ensureOriginRepo('my-repo', run);
+    expect(remoteAddArgs).toBeDefined();
+    expect(remoteAddArgs).toContain('origin');
+    expect(remoteAddArgs?.[3]).toBe('git@github.com:mylogin/my-repo.git');
+  });
 });

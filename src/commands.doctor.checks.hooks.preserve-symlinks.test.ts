@@ -522,4 +522,139 @@ describe('reportPreserveSymlinksCheck', () => {
     expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
     expect(process.exitCode).toBeUndefined();
   });
+
+  // -------------------------------------------------------------------------
+  // expandHome: $HOME, ${HOME}, and ~ expansion
+  // -------------------------------------------------------------------------
+
+  it('expands ${HOME} in hook command paths', async () => {
+    // Kills the L28 Regex mutation /\$\{HOME\}/ -> /\$\{HOME\}/ (no `^` anchor).
+    // A hook command using ${HOME} instead of ~ must still be detected.
+    buildHookTree(env.testHome, {
+      'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
+    });
+    writeHooksSettings(env.testHome, {
+      PostToolUse: [{ type: 'command', command: `node \${HOME}/.claude/hooks/run.js` }],
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
+    expect(out).toContain('--preserve-symlinks-main');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('expands $HOME in hook command paths', async () => {
+    // Kills the L29 Regex mutation /\$HOME/ (no `^` anchor variant).
+    buildHookTree(env.testHome, {
+      'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
+    });
+    writeHooksSettings(env.testHome, {
+      PostToolUse: [{ type: 'command', command: `node $HOME/.claude/hooks/run.js` }],
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
+    expect(out).toContain('--preserve-symlinks-main');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // hooks type guard: null hooks, array hooks
+  // -------------------------------------------------------------------------
+
+  it('emits OK when hooks is null (not a usable hooks object)', async () => {
+    // Kills L244 LogicalOperator mutations: (typeof hooks !== 'object' &&
+    // hooks === null) vs the correct || form. When hooks === null the guard
+    // must short-circuit and emit OK without iterating.
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ hooks: null }) + '\n',
+    );
+    const { out } = await runCheck();
+    expect(out).toContain(`${okGlyph} hooks: preserve-symlinks-main not needed`);
+    expect(out).not.toContain(`${warnGlyph}`);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('emits OK when hooks is an array (not a usable hooks object)', async () => {
+    // Kills L244 Array.isArray LogicalOperator mutation: (... || ...) && Array.isArray
+    // becomes (... && ...) && Array.isArray. When hooks is an array, the
+    // guard must still fire and emit OK.
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ hooks: [{ type: 'command', command: 'node run.js' }] }) + '\n',
+    );
+    const { out } = await runCheck();
+    expect(out).toContain(`${okGlyph} hooks: preserve-symlinks-main not needed`);
+    expect(out).not.toContain(`${warnGlyph}`);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // nodeScriptArg: flag skipping and script detection
+  // -------------------------------------------------------------------------
+
+  it('detects script arg after multiple node flags', async () => {
+    // Kills L100 UpdateOperator i-- mutation: the loop must increment (i++),
+    // not decrement, to advance past flags toward the script argument.
+    // A command with two flags before the script: node --flag1 --flag2 <script>
+    buildHookTree(env.testHome, {
+      'flagged.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
+    });
+    writeHooksSettings(env.testHome, {
+      PostToolUse: [
+        {
+          type: 'command',
+          command: `node --no-warnings --experimental-vm-modules ~/.claude/hooks/flagged.js`,
+        },
+      ],
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
+    expect(out).toContain('--preserve-symlinks-main');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // hasPreserveSymlinksMain: flag detection at mid-position
+  // -------------------------------------------------------------------------
+
+  it('detects --preserve-symlinks-main placed before the script path', async () => {
+    // Kills L118 UpdateOperator i-- mutation and L120 BooleanLiteral/ConditionalExpression
+    // mutations. The flag can appear before the script: node --preserve-symlinks-main script.js
+    buildHookTree(env.testHome, {
+      'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
+    });
+    writeHooksSettings(env.testHome, {
+      PostToolUse: [
+        {
+          type: 'command',
+          command: `node --preserve-symlinks-main ~/.claude/hooks/run.js`,
+        },
+      ],
+    });
+    const { out } = await runCheck();
+    expect(out).not.toContain(`${warnGlyph}`);
+    expect(out).toContain(`${okGlyph} hooks: preserve-symlinks-main not needed`);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('stops scanning flags at the first non-flag token (does not find flag after script)', async () => {
+    // hasPreserveSymlinksMain breaks on the first non-flag token. If the flag
+    // appears after the script path it must NOT be detected (it would be a
+    // positional arg to the script, not a node flag).
+    buildHookTree(env.testHome, {
+      'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
+    });
+    writeHooksSettings(env.testHome, {
+      PostToolUse: [
+        {
+          type: 'command',
+          command: `node ~/.claude/hooks/run.js --preserve-symlinks-main`,
+        },
+      ],
+    });
+    const { out } = await runCheck();
+    // Flag after script -> not a node flag -> still warns.
+    expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
+    expect(process.exitCode).toBeUndefined();
+  });
 });

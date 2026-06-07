@@ -492,14 +492,21 @@ describe('previewPushLeaks: extras staging', () => {
     };
     writeFileSync(join(env.repoUnderHome, 'path-map.json'), JSON.stringify(mapContent) + '\n');
 
-    // Track the temp root the scan was called with.
+    // Capture both the tree root and whether the whitelisted extras dir is present.
+    // NOTE: the check must happen INSIDE the mock because previewPushLeaks cleans the
+    // temp tree in its finally block before returning.
     let scannedRoot = '';
+    let whitelistedExtrasFoundInTree = false;
     vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof scanModule>();
       return {
         ...actual,
         scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
           scannedRoot = dir;
+          // Verify the whitelisted .planning extras are staged at the expected path.
+          whitelistedExtrasFoundInTree = existsSync(
+            join(dir, 'shared', 'extras', logical, '.planning'),
+          );
           return [];
         }),
       };
@@ -510,6 +517,8 @@ describe('previewPushLeaks: extras staging', () => {
     // The scanned root must not be under REPO_HOME/shared.
     expect(scannedRoot).not.toBe('');
     expect(scannedRoot).not.toContain(env.repoUnderHome);
+    // The whitelisted extras MUST be present in the staged tree (kills L95 BlockStatement mutation).
+    expect(whitelistedExtrasFoundInTree).toBe(true);
     // REPO_HOME/shared must remain absent.
     expect(existsSync(join(env.repoUnderHome, 'shared'))).toBe(false);
   });
@@ -536,13 +545,18 @@ describe('previewPushLeaks: extras staging', () => {
     expect(scanCalled).toBe(false);
   });
 
-  it('skips a non-whitelisted extras dirname and still scans the session', async () => {
-    // Covers the `!whitelist.includes(dirname)` continue in stageExtras (line 86).
+  it('skips a non-whitelisted extras dirname and does NOT stage its contents', async () => {
+    // Covers the `!whitelist.includes(dirname)` continue in stageExtras.
+    // Verifies the non-whitelisted directory is absent from the scanned tree root,
+    // killing the BlockStatement->{} and BooleanLiteral mutations on that guard.
+    // NOTE: the temp tree is cleaned in previewPushLeaks's finally block, so the
+    // tree structure must be captured INSIDE the scanStagedTree mock before cleanup.
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
     plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
     const notWhitelisted = 'some-random-dir';
     mkdirSync(join(localPath, notWhitelisted), { recursive: true });
+    writeFileSync(join(localPath, notWhitelisted, 'secret.txt'), 'data\n');
 
     const mapContent = {
       projects: { [logical]: { 'test-host': localPath } },
@@ -550,23 +564,80 @@ describe('previewPushLeaks: extras staging', () => {
     };
     writeFileSync(join(env.repoUnderHome, 'path-map.json'), JSON.stringify(mapContent) + '\n');
 
-    let scanCalled = false;
+    // Capture whether the non-whitelisted dir exists inside the scan mock (before cleanup).
+    let nonWhitelistedFoundInTree = false;
     vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof scanModule>();
       return {
         ...actual,
-        scanStagedTree: vi.fn((): scanModule.Finding[] | null => {
-          scanCalled = true;
+        scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+          // Check INSIDE the mock before cleanup removes the tree.
+          const extrasPath = join(dir, 'shared', 'extras', logical, notWhitelisted);
+          nonWhitelistedFoundInTree = existsSync(extrasPath);
           return [];
         }),
       };
     });
     const { previewPushLeaks } = await import('./push-preview.ts');
     previewPushLeaks(mapContent);
-    // Session was staged (1 session dir), so scan must have been called.
-    expect(scanCalled).toBe(true);
+    // The non-whitelisted dirname must NOT appear under the extras tree.
+    expect(nonWhitelistedFoundInTree).toBe(false);
     // REPO_HOME/shared still absent (only sessions staged into tmp, no extras).
     expect(existsSync(join(env.repoUnderHome, 'shared'))).toBe(false);
+  });
+
+  it('returns nothing-to-scan (no scan) when map.projects is null with extras present', async () => {
+    // Kills the ConditionalExpression->false mutations on line 47 (stageSessions) and
+    // line 87 (stageExtras), and the LogicalOperator && mutation on line 87.
+    //
+    // The L47 ConditionalExpression->false makes `if (false) return 0` -> guard never fires.
+    // Without the early return, the code reaches Object.entries(map.projects) which throws on null.
+    // NOTE: stageSessions has an intermediate guard `if (!existsSync(localProjects)) return 0`
+    // so we must create the ~/.claude/projects dir to force the code past that guard.
+    //
+    // The L87 && mutation makes the guard not fire for null -> map.projects[logical] throws.
+    // Including `extras` with a project entry ensures stageExtras reaches that path.
+    mkdirSync(join(env.claudeHome, 'projects'), { recursive: true });
+
+    const scanMock = vi.fn(() => [] as scanModule.Finding[]);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = {
+      projects: null as unknown as Record<string, Record<string, string>>,
+      extras: { 'some-project': ['.planning'] },
+    };
+    // Single direct call: a throw here fails the test, covering the no-throw pin.
+    const verdict = previewPushLeaks(map);
+    expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.verdictRow).toMatch(/nothing to scan, no leaks/i);
+    expect(scanMock).not.toHaveBeenCalled();
+  });
+
+  it('skips extras for a logical absent from map.projects without throwing', async () => {
+    // Covers the optional chaining `map.projects[logical]?.[HOST]` on line 93:
+    // if the logical is in extras but NOT a key in map.projects, the optional
+    // chain returns undefined (no-op), while removing ?. would throw on undefined.
+    const scanMock = vi.fn(() => [] as scanModule.Finding[]);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const logical = 'my-project';
+    // map.projects is empty (logical is NOT a key), but extras lists it.
+    const mapContent = {
+      projects: {} as Record<string, Record<string, string>>,
+      extras: { [logical]: ['.planning'] },
+    };
+    // Single direct call: a throw here fails the test, covering the no-throw pin.
+    const verdict = previewPushLeaks(mapContent);
+    expect(verdict.leak).toBe(false);
+    expect(verdict.verdictRow).toMatch(/nothing to scan/i);
+    expect(scanMock).not.toHaveBeenCalled();
   });
 
   it('skips extras whose source path does not exist locally', async () => {

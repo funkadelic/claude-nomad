@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -280,6 +280,159 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     expect(section.items.some((r) => r === 'Finding types')).toBe(false);
     // Remediation block IS present (gated on bySession.size > 0, not Description).
     expect(section.items.some((r) => r === 'Remediation')).toBe(true);
+    expect(process.exitCode).toBe(1);
+  });
+
+  /**
+   * SESSION_PATH_LOGICAL anchor tests (L101): the regex anchors are critical for
+   * correct logical-name capture in buildLogicalBySession. Two tests verify that
+   * each anchor is load-bearing by constructing a findings array where anchor
+   * removal would cause a different logical name to be captured first, producing
+   * the wrong scrub path in the Remediation block.
+   */
+  it('uses the correct logical name when a prefixed path appears before the real session path (start-anchor guard)', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // Two session dirs: "correct-logical" (the real project) and "wrong-logical"
+    // (an injected prefix that should never match).
+    const correctEncoded = '-srv-correct-proj';
+    const wrongEncoded = '-srv-wrong-proj';
+    mkdirSync(join(testHome, '.claude', 'projects', correctEncoded), { recursive: true });
+    mkdirSync(join(testHome, '.claude', 'projects', wrongEncoded), { recursive: true });
+    writeFileSync(
+      join(testHome, '.claude', 'projects', correctEncoded, 'sid-anchor-start.jsonl'),
+      `{"role":"user","text":"benign"}\n`,
+    );
+    // path-map maps the correct logical to this host
+    writePathMap(testHome, {
+      'correct-logical': { 'test-host': '/srv/correct-proj' },
+    });
+
+    // findings[0]: a path with a prefix ("injected/...") that must NOT match
+    // SESSION_PATH_LOGICAL due to the ^ anchor. If ^ is removed, this path
+    // matches and sets the logical to "wrong-logical" for sid-anchor-start.
+    // findings[1]: the real session path, correctly anchored.
+    const report = JSON.stringify([
+      {
+        RuleID: 'aws-access-key',
+        Description: 'AWS Access Key',
+        File: 'injected/shared/projects/wrong-logical/sid-anchor-start.jsonl',
+        StartLine: 1,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-anchor-start-bad',
+      },
+      {
+        RuleID: 'aws-access-key',
+        Description: 'AWS Access Key',
+        File: 'shared/projects/correct-logical/sid-anchor-start.jsonl',
+        StartLine: 1,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-anchor-start-real',
+      },
+    ]);
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          const rp = list.find((a) => a.startsWith('--report-path='));
+          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
+          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    // The session row must be present for sid-anchor-start.
+    expect(rows).toContain('in session sid-anchor-start');
+    // The scrub path must reference the encoded directory for "correct-logical"
+    // (-srv-correct-proj). If the ^ anchor is removed, "wrong-logical" matches
+    // first; logicalToEncoded has no entry for it so the fallback "wrong-logical"
+    // literal appears in the scrub path instead of the encoded dir.
+    const scrubLine = section.items.find((r) => r.includes('- rotate the credential, then scrub'));
+    expect(scrubLine).toBeDefined();
+    expect(scrubLine).toContain('-srv-correct-proj');
+    expect(scrubLine).not.toContain('wrong-logical');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('uses the correct logical name when a .bak path appears before the real session path (end-anchor guard)', async () => {
+    const env = makeEnv();
+    testHome = env.testHome;
+    // Two logical projects: "correct-proj" (the real session) and "wrong-proj"
+    // (an injected .bak finding that should not match due to the $ anchor).
+    const correctEncoded = '-srv-end-correct';
+    mkdirSync(join(testHome, '.claude', 'projects', correctEncoded), { recursive: true });
+    writeFileSync(
+      join(testHome, '.claude', 'projects', correctEncoded, 'sid-anchor-end.jsonl'),
+      `{"role":"user","text":"benign"}\n`,
+    );
+    writePathMap(testHome, {
+      'end-correct-proj': { 'test-host': '/srv/end-correct' },
+    });
+
+    // findings[0]: a path with a .bak suffix and a different logical name.
+    // SESSION_PATH (with $) does NOT match it, so it lands in `other`.
+    // SESSION_PATH_LOGICAL (with $ removed) WOULD match it: group 1 = "wrong-proj",
+    // group 2 = "sid-anchor-end" -- poisoning the logical lookup for that sid.
+    // findings[1]: the real session path (correct logical).
+    const report = JSON.stringify([
+      {
+        RuleID: 'github-pat',
+        Description: 'GitHub Personal Access Token',
+        File: 'shared/projects/wrong-proj/sid-anchor-end.jsonl.bak',
+        StartLine: 1,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-anchor-end-bad',
+      },
+      {
+        RuleID: 'github-pat',
+        Description: 'GitHub Personal Access Token',
+        File: 'shared/projects/end-correct-proj/sid-anchor-end.jsonl',
+        StartLine: 2,
+        Match: 'REDACTED',
+        Fingerprint: 'fp-anchor-end-real',
+      },
+    ]);
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const list = args ?? [];
+          if (list[0] === 'version') return Buffer.from('8.0.0');
+          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          const rp = list.find((a) => a.startsWith('--report-path='));
+          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
+          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+        }),
+      };
+    });
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    // The real session finding must produce a session row.
+    expect(rows).toContain('in session sid-anchor-end');
+    // The scrub path must use the encoded directory for "end-correct-proj"
+    // (-srv-end-correct). If the $ anchor is removed, the .bak path
+    // "shared/projects/wrong-proj/sid-anchor-end.jsonl.bak" matches first,
+    // capturing logical="wrong-proj"; logicalToEncoded has no entry for it so
+    // the fallback "wrong-proj" literal appears in the scrub path instead of
+    // the real encoded dir.
+    const scrubLine = section.items.find((r) => r.includes('- rotate the credential, then scrub'));
+    expect(scrubLine).toBeDefined();
+    expect(scrubLine).toContain('-srv-end-correct');
+    expect(scrubLine).not.toContain('wrong-proj');
     expect(process.exitCode).toBe(1);
   });
 

@@ -266,3 +266,72 @@ describe('reportRebaseState', () => {
     expect(process.exitCode).toBe(1);
   });
 });
+
+describe('reportRebaseClean', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', setupGitRepo: true });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('emits a WARN line when the repo has uncommitted changes', async () => {
+    // Commit what the scaffold wrote (settings.base.json etc) so the repo
+    // starts clean, then stage a new file to produce dirty status.
+    const repoDir = join(env.testHome, 'claude-nomad');
+    execFileSync('git', ['add', '-A'], { cwd: repoDir, stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('git', ['-c', 'user.email=t@t.com', '-c', 'user.name=T', 'commit', '-m', 'init'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
+    execFileSync('git', ['add', 'uncommitted.txt'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const { reportRebaseClean } = await import('./commands.doctor.checks.repository.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportRebaseClean(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('uncommitted changes');
+    // WARN must not set exitCode -- this is informational only.
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits nothing when the repo is clean', async () => {
+    // Commit the scaffold files so git status returns empty (clean tree).
+    const repoDir = join(env.testHome, 'claude-nomad');
+    execFileSync('git', ['add', '-A'], { cwd: repoDir, stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('git', ['-c', 'user.email=t@t.com', '-c', 'user.name=T', 'commit', '-m', 'init'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const { reportRebaseClean } = await import('./commands.doctor.checks.repository.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportRebaseClean(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toContain('uncommitted changes');
+    expect(process.exitCode).toBe(0);
+  });
+});

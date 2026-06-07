@@ -1,4 +1,5 @@
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -228,5 +229,213 @@ describe('cmdDoctor sharedDirs symlink row', () => {
     // We only assert that no throw occurred and that output contains link-related rows.
     expect(out).toContain('hooks');
     expect(process.exitCode).not.toBeUndefined();
+  });
+});
+
+describe('reportSharedLinks non-symlink fail path (direct)', () => {
+  // Tests that exercise classifySharedLink's non-symlink branch via
+  // reportSharedLinks directly, without going through the full cmdDoctor stack.
+  // This isolates the L131 BooleanLiteral mutation: `fail: true` -> `fail: false`
+  // in classifySharedLink would allow a non-symlink file to avoid setting
+  // exitCode=1.
+
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let originalNoColor: string | undefined;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-repo-direct-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_REPO = join(testHome, 'claude-nomad');
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NOMAD_REPO', originalNomadRepo);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('sets exitCode=1 and emits a FAIL row when a SHARED_LINKS entry is a regular file', async () => {
+    // Kills the L131 BooleanLiteral mutation: `fail: true` -> `fail: false` in
+    // classifySharedLink's non-symlink branch would let reportSharedLinks skip
+    // the `process.exitCode = 1` assignment, silently masking the "blocks sync"
+    // condition. Going directly to reportSharedLinks (not cmdDoctor) ensures the
+    // assertion is clean, without exitCode noise from other doctor sections.
+    const { SHARED_LINKS } = await import('./config.ts');
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const name = SHARED_LINKS[0];
+    if (!name) throw new Error('SHARED_LINKS is empty');
+    // Write a regular file (NOT a symlink) at ~/.claude/<name>.
+    writeFileSync(join(testHome, '.claude', name), '# placeholder\n');
+
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const failRows = sec.items.filter((r) => r.includes(failGlyph));
+    expect(failRows.length).toBeGreaterThan(0);
+    expect(failRows.some((r) => r.includes(name))).toBe(true);
+    expect(failRows.some((r) => r.includes('NOT a symlink'))).toBe(true);
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('reportHostAndPaths NOMAD_REPO info line (direct)', () => {
+  // Tests for the NOMAD_REPO info line emitted by reportHostAndPaths.
+  // These kill the L58 ConditionalExpression survivors (always/never emit the
+  // line) and the L59 StringLiteral format mutation.
+
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let originalNoColor: string | undefined;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-hostandpaths-'));
+    process.env.HOME = testHome;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NOMAD_REPO', originalNomadRepo);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('emits a NOMAD_REPO info line when NOMAD_REPO is set', async () => {
+    // Kills L58 ConditionalExpression -> false: the NOMAD_REPO line is
+    // conditionally shown only when the env override is active. A mutation that
+    // always suppresses it would make the annotation invisible.
+    process.env.NOMAD_REPO = join(testHome, 'claude-nomad');
+    vi.resetModules();
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportHostAndPaths } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Host');
+    reportHostAndPaths(sec);
+    const rows = sec.items.join('\n');
+    expect(rows).toContain('NOMAD_REPO:');
+    expect(rows).toContain(join(testHome, 'claude-nomad'));
+  });
+
+  it('does NOT emit a NOMAD_REPO info line when NOMAD_REPO is unset', async () => {
+    // Kills L58 ConditionalExpression -> true: a mutation that always emits the
+    // line would add a spurious NOMAD_REPO annotation on every doctor run,
+    // even when the user is on the default repo path.
+    delete process.env.NOMAD_REPO;
+    vi.resetModules();
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportHostAndPaths } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Host');
+    reportHostAndPaths(sec);
+    const rows = sec.items.join('\n');
+    expect(rows).not.toContain('NOMAD_REPO:');
+  });
+
+  it('emits NOMAD_HOST info line (kills L51 BlockStatement and L57 StringLiteral)', async () => {
+    // If the entire reportHostAndPaths body is replaced with {} (L51 mutation),
+    // no items are added. Asserting at least the NOMAD_HOST line is present
+    // kills the BlockStatement mutation.
+    process.env.NOMAD_HOST = 'test-host';
+    process.env.NOMAD_REPO = join(testHome, 'claude-nomad');
+    vi.resetModules();
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportHostAndPaths } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Host');
+    reportHostAndPaths(sec);
+    const rows = sec.items.join('\n');
+    expect(rows).toContain('NOMAD_HOST:');
+    expect(rows).toContain('test-host');
+    // repo line must also be present (kills L61 StringLiteral mutation).
+    expect(rows).toContain('repo:');
+    // claude home line must also be present (kills L64 StringLiteral mutation).
+    expect(rows).toContain('claude home:');
+  });
+});
+
+describe('reportRepoState NOMAD_REPO annotation (direct)', () => {
+  // Kills L76 StringLiteral mutation: `' (NOMAD_REPO)'` -> `''` (empty string).
+  // If the annotation string is empty the test asserting its presence would
+  // fail, killing the mutation.
+
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let originalNoColor: string | undefined;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-repostate-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NOMAD_REPO', originalNomadRepo);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('appends (NOMAD_REPO) annotation on the repo-state line when NOMAD_REPO is set', async () => {
+    // Direct test on reportRepoState so the assertion is unambiguous.
+    // Kills L76 StringLiteral -> '' mutation.
+    process.env.NOMAD_REPO = join(testHome, 'claude-nomad');
+    vi.resetModules();
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportRepoState } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Repo');
+    reportRepoState(sec);
+    const rows = sec.items.join('\n');
+    expect(rows).toContain('repo state:');
+    expect(rows).toContain(' (NOMAD_REPO)');
+  });
+
+  it('omits (NOMAD_REPO) annotation when NOMAD_REPO is unset', async () => {
+    // Kills L58 ConditionalExpression -> true in reportHostAndPaths (secondary);
+    // also pins the overrideLabel = '' path in reportRepoState.
+    delete process.env.NOMAD_REPO;
+    vi.resetModules();
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportRepoState } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Repo');
+    reportRepoState(sec);
+    const rows = sec.items.join('\n');
+    expect(rows).toContain('repo state:');
+    expect(rows).not.toContain('(NOMAD_REPO)');
   });
 });

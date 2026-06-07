@@ -329,4 +329,79 @@ describe('reportHooksTargetCheck', () => {
     expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
   });
+
+  it('emits OK (not FAIL) when hooks block is null', async () => {
+    // Kills the L166 ConditionalExpression mutation: with `hooks === null` the
+    // null-guard in reportHooksTargetCheck must fire the early-return OK path.
+    // Without the guard (mutation -> false), the code attempts Object.entries(null)
+    // which throws TypeError; the test would fail in that branch.
+    writeSettings(env.testHome, { hooks: null });
+    const { out } = await runCheck();
+    expect(out).toContain(`${okGlyph} hooks: all command targets present`);
+    expect(out).not.toContain(failGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits OK (not FAIL) when hooks block is an array', async () => {
+    // Kills the L166 Array.isArray branch mutation: an array-valued hooks block
+    // must hit the early-return OK path. Without the Array.isArray check the
+    // code would call Object.entries([...]) which iterates numeric index keys
+    // and may produce unexpected behavior.
+    writeSettings(env.testHome, { hooks: [] });
+    const { out } = await runCheck();
+    expect(out).toContain(`${okGlyph} hooks: all command targets present`);
+    expect(out).not.toContain(failGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('does not emit OK when at least one target is missing', async () => {
+    // Kills the L177 ConditionalExpression mutation: `if (!anyFail)` mutated
+    // to `if (true)` would always emit the OK line even after a FAIL was
+    // recorded. The test asserts that no OK line appears alongside the FAIL.
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: [{ type: 'command', command: `~/.claude/hooks/absent.sh` }],
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${failGlyph} hooks/PostToolUse: command target missing:`);
+    expect(out).not.toContain(`${okGlyph} hooks: all command targets present`);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('does not FAIL when a non-command-type entry has a string command field', async () => {
+    // Kills the L114 LogicalOperator mutation: `g.type === 'command' && typeof
+    // g.command === 'string'` mutated to `g.type === 'command' || typeof
+    // g.command === 'string'` would match entries whose command is a string
+    // regardless of type, yielding a ~/.claude path even for non-command types.
+    // The target script exists so a false yield would still produce OK; the
+    // assertion is on exitCode=0 and the absence of unexpected FAILs.
+    touchScript(env.testHome, 'hooks/run.sh');
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: [{ type: 'other_type', command: `~/.claude/hooks/run.sh` }],
+      },
+    });
+    const { out } = await runCheck();
+    // The entry type is not "command" so it must be silently skipped -> OK.
+    expect(out).toContain(`${okGlyph} hooks: all command targets present`);
+    expect(out).not.toContain(failGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('does not FAIL for a non-command-type entry whose target is absent', async () => {
+    // Secondary kill for the L114 LogicalOperator mutation: if the mutation
+    // erroneously matches entries by command-string-presence alone, an absent
+    // ~/.claude path would surface as a FAIL. With correct logic (type must be
+    // "command"), the entry is skipped and no FAIL is emitted.
+    writeSettings(env.testHome, {
+      hooks: {
+        PostToolUse: [{ type: 'mcp', command: `~/.claude/hooks/absent.sh` }],
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).not.toContain(failGlyph);
+    expect(out).toContain(`${okGlyph} hooks: all command targets present`);
+    expect(process.exitCode).toBe(0);
+  });
 });

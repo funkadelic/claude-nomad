@@ -131,6 +131,41 @@ describe('scanFile (mocked child_process)', () => {
     expect(scanFile('/some/file.jsonl')).toBeNull();
   });
 
+  it('does NOT forward streams when crashing with default forwardStreams (omitted arg)', async () => {
+    // Kills the BooleanLiteral mutation on line 171: `forwardStreams = false` -> `true`.
+    // If the default were true, a crash with no parseable report would write to process streams.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          const err = new Error('crash') as NodeJS.ErrnoException & {
+            status?: number;
+            stderr?: Buffer;
+            stdout?: Buffer;
+          };
+          err.status = 2;
+          err.stderr = Buffer.from('scanfile-default-no-forward-stderr');
+          err.stdout = Buffer.from('scanfile-default-no-forward-stdout');
+          throw err;
+        }),
+      };
+    });
+    const { scanFile } = await import('./push-gitleaks.scan.ts');
+    // Call without the second arg: the default must be false -> no stream write.
+    expect(scanFile('/some/file.jsonl')).toBeNull();
+    const stderrLeaked = stderrSpy.mock.calls.some(
+      (c: unknown[]) =>
+        Buffer.isBuffer(c[0]) && c[0].toString().includes('scanfile-default-no-forward-stderr'),
+    );
+    const stdoutLeaked = stdoutSpy.mock.calls.some(
+      (c: unknown[]) =>
+        Buffer.isBuffer(c[0]) && c[0].toString().includes('scanfile-default-no-forward-stdout'),
+    );
+    expect(stderrLeaked).toBe(false);
+    expect(stdoutLeaked).toBe(false);
+  });
+
   it('returns parsed findings on exit-1 and does NOT forward streams when the report parses', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
@@ -364,6 +399,112 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
     const result = scanStagedTree(testHome);
     expect(result).not.toBeNull();
     expect(result!.length).toBe(1);
+  });
+
+  it('does NOT forward streams when crashing with default forwardStreams (omitted arg)', async () => {
+    // Kills the BooleanLiteral mutation on line 99: `forwardStreams = false` -> `true`.
+    // If the default were true, an unexpected crash (status 2, no report) would
+    // leak gitleaks stderr to the terminal. The default must be false.
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          if ((args ?? []).some((a) => a.startsWith('--report-path='))) {
+            const err = new Error('crash') as NodeJS.ErrnoException & {
+              status?: number;
+              stderr?: Buffer;
+              stdout?: Buffer;
+            };
+            err.status = 2;
+            err.stderr = Buffer.from('default-no-forward-stderr');
+            err.stdout = Buffer.from('default-no-forward-stdout');
+            throw err;
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    // Call without the second arg: default forwardStreams must be false.
+    expect(scanStagedTree(testHome)).toBeNull();
+    const stderrLeaked = stderrSpy.mock.calls.some(
+      (c: unknown[]) =>
+        Buffer.isBuffer(c[0]) && c[0].toString().includes('default-no-forward-stderr'),
+    );
+    const stdoutLeaked = stdoutSpy.mock.calls.some(
+      (c: unknown[]) =>
+        Buffer.isBuffer(c[0]) && c[0].toString().includes('default-no-forward-stdout'),
+    );
+    expect(stderrLeaked).toBe(false);
+    expect(stdoutLeaked).toBe(false);
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+  });
+
+  it('does NOT forward streams when forwardStreams=true but report IS parseable (no crash path)', async () => {
+    // Kills L123 ConditionalExpression->true and LogicalOperator->|| mutations.
+    // The || mutation: `forwardStreams && report === null` -> `forwardStreams || report === null`
+    // means streams would leak even when the report IS parsed (a findings result).
+    // This test asserts: forwardStreams=true + non-zero exit + parseable report -> no stream write.
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            // Write a parseable findings report before throwing.
+            const reportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(reportPath), { recursive: true });
+            writeFileSync(
+              reportPath,
+              JSON.stringify([
+                {
+                  RuleID: 'generic-api-key',
+                  File: 'shared/foo.ts',
+                  StartLine: 1,
+                  StartColumn: 1,
+                  EndColumn: 9,
+                  Match: 'secret',
+                  Fingerprint: 'fp-staged',
+                },
+              ]),
+            );
+            const err = new Error('found') as NodeJS.ErrnoException & {
+              status?: number;
+              stderr?: Buffer;
+            };
+            err.status = 1;
+            err.stderr = Buffer.from('staged-finding-stderr-must-not-appear');
+            throw err;
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    // forwardStreams=true, but report parses -> streams must NOT be written.
+    const result = scanStagedTree(testHome, true);
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(1);
+    const leaked = stderrSpy.mock.calls.some(
+      (c: unknown[]) =>
+        Buffer.isBuffer(c[0]) && c[0].toString().includes('staged-finding-stderr-must-not-appear'),
+    );
+    expect(leaked).toBe(false);
+    stderrSpy.mockRestore();
   });
 
   it('forwards stderr on the staged-scan crash path when forwardStreams=true', async () => {

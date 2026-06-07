@@ -326,4 +326,95 @@ describe('reportHookScopeCheck', () => {
     expect(out).toContain(`${infoGlyph} no ~/.claude/hooks; skipping module-scope check`);
     expect(process.exitCode).toBe(0);
   });
+
+  it('classifies exports.method as CJS (exports.\\w pattern)', async () => {
+    // `exports.foo = ...` uses the `exports.<identifier>` CJS marker.
+    // Kills the regex mutation /\bexports\.\W/ (non-word class) which would
+    // miss alphanumeric export names.
+    buildHookTree(env.testHome, {
+      rootType: 'module',
+      files: { 'exp.js': 'exports.handler = function() { return 1; };\n' },
+    });
+    const { out } = await runCheck();
+    // Under ESM ancestor, a CJS hook should WARN.
+    expect(out).toContain(`${warnGlyph} hooks/exp.js:`);
+    expect(out).toContain('cjs source loads as esm');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('classifies import.meta as ESM (not CJS)', async () => {
+    // `import.meta.url` is the canonical ESM-only pattern. Without `require()`
+    // or `module.exports` the file should be classified as ESM only.
+    buildHookTree(env.testHome, {
+      hooksType: 'commonjs',
+      files: { 'meta.js': 'const u = import.meta.url;\nconsole.log(u);\n' },
+    });
+    const { out } = await runCheck();
+    // Under CJS context, an ESM-only hook (import.meta) should WARN.
+    expect(out).toContain(`${warnGlyph} hooks/meta.js:`);
+    expect(out).toContain('esm source loads as cjs');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('CJS wins the cjs+esm tie: no WARN under CJS ancestor', async () => {
+    // A file with both require() and export markers: classified as 'cjs'.
+    // Under a CJS effective type, this is consistent -> no WARN.
+    // Kills L131 cjs || esm LogicalOperator mutation (would route esm-only to
+    // 'cjs' via the cjs||esm shortcut, changing ESM-only file behavior) and
+    // the ConditionalExpression -> false mutation (would skip the cjs return,
+    // falling through to ESM classification, producing a spurious WARN).
+    buildHookTree(env.testHome, {
+      hooksType: 'commonjs',
+      files: {
+        'tied.js': 'export const x = 1;\nconst y = require("y");\nmodule.exports = y;\n',
+      },
+    });
+    const { out } = await runCheck();
+    expect(out).not.toContain(`${warnGlyph}`);
+    expect(out).toContain(`${okGlyph} hooks: module type consistent`);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('remedy text for CJS-as-ESM mismatch contains .cjs and type:commonjs', async () => {
+    // Kills the StringLiteral mutations on the remedy() return values.
+    // The remedy text is shown in parentheses on the WARN row.
+    buildHookTree(env.testHome, {
+      rootType: 'module',
+      files: { 'rem.js': 'const y = require("y");\nmodule.exports = y;\n' },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain('.cjs');
+    expect(out).toContain('type');
+    expect(out).toContain('commonjs');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('remedy text for ESM-as-CJS mismatch contains .mjs', async () => {
+    // Kills the StringLiteral mutation on the ESM remedy return value.
+    buildHookTree(env.testHome, {
+      hooksType: 'commonjs',
+      files: { 'esmrem.js': 'export const a = 1;\n' },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain('.mjs');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('stripCommentsAndStrings: single-quoted replacement preserves surrounding context', async () => {
+    // Kills the StringLiteral "" mutation on the single-quote replacement branch.
+    // A string like 'require("x")' inside single quotes must be replaced
+    // with '' (not "") so the outer double-quote context stays intact.
+    // Feed a hook that has its only marker inside single-quotes: after
+    // stripping, no marker remains -> classified unknown -> skipped -> OK.
+    buildHookTree(env.testHome, {
+      rootType: 'module',
+      files: { 'sq2.js': "const s = 'module.exports = x';\n" },
+    });
+    const { out } = await runCheck();
+    // The marker is in a string: after stripping it becomes '' (empty), no CJS
+    // signal remains, source is unknown -> skipped -> ok summary fires.
+    expect(out).not.toContain(`${warnGlyph}`);
+    expect(out).toContain(`${okGlyph} hooks: module type consistent`);
+    expect(process.exitCode).toBe(0);
+  });
 });

@@ -70,6 +70,25 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     expect(hits).toContain(join(testDir, 'b', 'nested', '.git'));
   });
 
+  it('does not recurse into regular files (only directories) when walking the tree', async () => {
+    // Kills the L104 ConditionalExpression->true mutation: with true, the walker
+    // treats every entry as a directory and calls walk(p) for regular files,
+    // causing readdirSync(regularFile) to throw ENOENT/ENOTDIR.
+    // This test has a regular file alongside a .git file; the walker must return
+    // the .git hit without throwing on the regular file.
+    const { findGitlinks } = await import('./push-checks.ts');
+    const subDir = join(testDir, 'sub');
+    mkdirSync(subDir, { recursive: true });
+    // A regular file (NOT named .git) - the walker must check isDirectory() for it.
+    writeFileSync(join(subDir, 'README.md'), '# readme\n');
+    // A .git gitlink file - should be found.
+    writeFileSync(join(subDir, '.git'), 'gitdir: ../.git/modules/sub');
+    expect(() => findGitlinks(testDir)).not.toThrow();
+    const hits = findGitlinks(testDir);
+    expect(hits).toContain(join(subDir, '.git'));
+    expect(hits.length).toBe(1);
+  });
+
   it('silently skips a subdirectory whose readdirSync throws EACCES', async () => {
     // Two real sibling subtrees: `accessible/foo/.git` (a real hit) plus
     // `locked/` chmodded to 0o000 so readdirSync throws EACCES on entry. The
@@ -340,10 +359,12 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
   });
 
   it('rebaseBeforePush throws without forwarding stderr when the error carries no stderr buffer', async () => {
-    // Cover the line-180 falsey branch (`if (e.stderr)` false). git fails
+    // Cover the line-172 falsey branch (`if (e.stderr)` false). git fails
     // with no captured stderr (e.g., signal-killed before output). The
     // FATAL fires with the standard rebase message and no spurious stderr
     // forwarding lands.
+    // Kills the ConditionalExpression->true mutation on line 172: with true,
+    // `process.stderr.write(undefined)` is called even when e.stderr is absent.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
@@ -357,17 +378,11 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     const { rebaseBeforePush } = await import('./push-checks.ts');
     const stderrCallCountBefore = stderrSpy.mock.calls.length;
     expect(() => rebaseBeforePush('/repo')).toThrow(/rebase failed/);
-    // The FATAL message itself does not go through process.stderr.write
-    // (it lives on the thrown NomadFatal). No forwarding should have run.
+    // process.stderr.write must NOT have been called at all (no stderr to forward).
+    // This assertion is stricter than checking for non-empty content; it catches the
+    // ConditionalExpression->true mutation which calls write(undefined).
     const stderrCallsAfter = stderrSpy.mock.calls.slice(stderrCallCountBefore);
-    const forwarded = stderrCallsAfter.some((c: unknown[]) => {
-      const chunk = c[0];
-      return (
-        (Buffer.isBuffer(chunk) && chunk.toString().length > 0) ||
-        (typeof chunk === 'string' && chunk.length > 0)
-      );
-    });
-    expect(forwarded).toBe(false);
+    expect(stderrCallsAfter.length).toBe(0);
   });
 
   // rebaseBeforePush

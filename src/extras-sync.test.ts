@@ -238,3 +238,80 @@ describe('extras-sync e2e round-trip', () => {
     expect(existsSync(join(hostBProjectRoot, '.planning'))).toBe(false);
   });
 });
+
+describe('divergenceCheckExtras early-exit and skip guards', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testRepo: string;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testRepo = mkdtempSync(join(tmpdir(), 'nomad-divcheck-repo-'));
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-divcheck-home-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    process.env.NOMAD_REPO = testRepo;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testRepo, { recursive: true, force: true });
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('does NOT throw when path-map.json is absent (L32: null guard on loadValidatedExtras)', async () => {
+    // No path-map.json: loadValidatedExtras returns null.
+    // A ConditionalExpression-false mutation on L32 would skip the return,
+    // passing null to eachExtrasTarget which dereferences null.extrasMap -> TypeError.
+    expect(existsSync(join(testRepo, 'path-map.json'))).toBe(false);
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    expect(() => divergenceCheckExtras('20260516-000000')).not.toThrow();
+  });
+
+  it('does NOT warn when only the local side is absent (L40: || not && guard)', async () => {
+    // L40: `if (!existsSync(local) || !existsSync(repoEntry)) continue`
+    // An && mutation would only skip when BOTH absent; with || it skips when
+    // either side is absent. When local is absent but repoEntry exists, the ||
+    // guard skips cleanly. With &&, it would proceed to listDivergingFiles where
+    // git diff against a missing directory would emit a spurious warn().
+    const projectRoot = join(testHome, 'fake-project');
+    mkdirSync(projectRoot, { recursive: true });
+    // repoEntry (shared/extras/testproj/.planning) exists with content.
+    const repoExtras = join(testRepo, 'shared', 'extras', 'testproj', '.planning');
+    mkdirSync(repoExtras, { recursive: true });
+    writeFileSync(join(repoExtras, 'STATE.md'), '# state\n');
+    // local (.planning in projectRoot) does NOT exist.
+    expect(existsSync(join(projectRoot, '.planning'))).toBe(false);
+    writeFileSync(
+      join(testRepo, 'path-map.json'),
+      JSON.stringify({
+        projects: { testproj: { 'test-host': projectRoot } },
+        extras: { testproj: ['.planning'] },
+      }) + '\n',
+    );
+
+    const warnLines: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      warnLines.push(String(chunk));
+      return true;
+    });
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    expect(() => divergenceCheckExtras('20260516-000000')).not.toThrow();
+    // No warn should be emitted because the local side was absent (early continue).
+    const combined = warnLines.join('');
+    expect(combined).not.toContain('diverges from origin');
+  });
+});

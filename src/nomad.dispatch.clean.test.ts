@@ -46,6 +46,12 @@ describe('parseCleanArgs', () => {
     expect(parseCleanArgs(argv(['--backups', '--keep', '0']))?.keep).toBe(0);
   });
 
+  it('parses multi-digit --keep values (L59 Regex: /^\\d+$/ vs /^\\d$/)', () => {
+    // A /^\d$/ mutation would reject '42' because it has two digits.
+    expect(parseCleanArgs(argv(['--backups', '--keep', '42']))?.keep).toBe(42);
+    expect(parseCleanArgs(argv(['--backups', '--keep', '100']))?.keep).toBe(100);
+  });
+
   it('returns null when --backups is absent', () => {
     expect(parseCleanArgs(argv(['--dry-run']))).toBeNull();
     expect(parseCleanArgs(argv(['--older-than', '14d']))).toBeNull();

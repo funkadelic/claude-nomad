@@ -463,4 +463,42 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     const lines = staged.split('\n').filter(Boolean);
     expect(lines.every((l) => l.startsWith('shared/my-tools/'))).toBe(true);
   });
+
+  // isValidAdoptName: invalid name in sharedDirs must still be rejected
+  it('rejects a path-traversal name even when manually written into sharedDirs', async () => {
+    // This can only happen if the user hand-edits path-map.json to contain an
+    // unsafe name. cmdAdopt validates the name before checking membership, so the
+    // invalid name must still be rejected at the isValidAdoptName gate.
+    // Kills L73 ConditionalExpression -> true mutation (which would skip the name
+    // validation entirely and accept any name, including path traversals).
+    const mapPath = join(env.repoHome, 'path-map.json');
+    const map = JSON.parse(readFileSync(mapPath, 'utf8')) as {
+      projects: unknown;
+      sharedDirs?: string[];
+    };
+    // Directly insert an invalid entry bypassing isValidSharedDir
+    map.sharedDirs = ['../evil'];
+    writeFileSync(mapPath, JSON.stringify(map) + '\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    // Invalid name must be rejected before membership is checked
+    expect(() => cmdAdopt('../evil')).toThrow('exit:1');
+    expect(errOutput(env)).toContain('../evil');
+    // No filesystem mutation
+    expect(diffCached(env)).toBe('');
+  });
+
+  // readMapIfPresent fallback: absent path-map.json returns { projects: {} }
+  // Kills L44 ObjectLiteral -> {} mutation (would return an empty object with no
+  // 'projects' key, causing Object.entries(map.projects) to throw in callers).
+  it('readMapIfPresent fallback has a projects key when path-map.json is absent', async () => {
+    rmSync(join(env.repoHome, 'path-map.json'));
+    // Use a SHARED_LINKS name so it reaches isConfiguredTarget without name-validation fail.
+    // hooks is in SHARED_LINKS, so even with empty sharedDirs it passes membership.
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    // Should not throw -- the fallback { projects: {} } means hooks is found in SHARED_LINKS.
+    // If fallback was {} (no projects key), isConfiguredTarget would crash.
+    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(errOutput(env)).toBe('');
+  });
 });

@@ -174,3 +174,100 @@ describe('cmdDoctor path-encoding collision detection', () => {
     expect(process.exitCode).toBe(1);
   });
 });
+
+describe('reportPathMap schema validation', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', writeSettings: true });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('FAILs with exitCode=1 when projects is null', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: null }) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
+    expect(out).toContain('"projects" must be an object');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('FAILs with exitCode=1 when projects is an array', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: [{ foo: '/bar' }] }) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
+    expect(out).toContain('"projects" must be an object');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('FAILs with exitCode=1 when a project hosts value is null', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: { myproj: null } }) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
+    expect(out).toContain('"myproj" hosts must be an object');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('FAILs with exitCode=1 when a project hosts value is an array', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: { myproj: ['/srv/foo'] } }) + '\n',
+    );
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
+    expect(out).toContain('"myproj" hosts must be an object');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('skips exactly the string "TBD" during the collision scan (not a collision)', async () => {
+    // The TBD skip uses strict equality. A host value of exactly "TBD" must be
+    // excluded from the collision scan; other placeholder-like strings are not
+    // special and would be checked normally.
+    const map = {
+      projects: {
+        a: { 'test-host': '/srv/a', 'other-host': 'TBD' },
+        b: { 'test-host': '/srv/b', 'third-host': 'TBD' },
+      },
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // Two separate hosts each have "TBD" -- both are skipped; no collision reported.
+    expect(out).not.toContain(`${failGlyph} path-encoding collision`);
+    expect(out).toContain(`path-encoding: no collisions`);
+    expect(process.exitCode).toBe(0);
+  });
+});

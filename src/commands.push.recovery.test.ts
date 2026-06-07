@@ -230,6 +230,138 @@ describe('resolveLeakFindings - TTY all-Skip -> NomadFatal (D-03)', () => {
       }),
     ).rejects.toThrow(NomadFatal);
   });
+
+  it('NomadFatal message names the session id of the skipped finding', async () => {
+    // Kills the L270 ArrowFunction `() => undefined` mutation: that mutation makes
+    // filter always return false -> unresolved=[] -> partitionFindings([]) -> empty
+    // bySession map -> FATAL message has no session name or drop-session hint.
+    // This test asserts the FATAL contains 'abc123' (the session id from the file path).
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    // The default finding has File:'shared/projects/my-proj/abc123.jsonl' so partitionFindings
+    // routes it to bySession with session id 'abc123'.
+    const finding = makeFinding();
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: 'session-aware fatal',
+      findings: [finding],
+    };
+    const map: PathMap = { projects: {} };
+    let caughtMessage = '';
+    try {
+      await resolveLeakFindings(verdict, 'ts-001', map, {
+        isTTYCheck: () => true,
+        makePrompt: () => () => Promise.resolve(''),
+        scanVerdict: () => ({ leak: false, verdictRow: '✓', recovery: null, findings: [] }),
+      });
+    } catch (err) {
+      caughtMessage = (err as Error).message;
+    }
+    // The FATAL message must name the session id so the user knows which session to drop.
+    expect(caughtMessage).toContain('abc123');
+    expect(caughtMessage).toContain('nomad drop-session');
+  });
+
+  it('NomadFatal message names BOTH sessions when TWO distinct session files are skipped', async () => {
+    // Kills the L270 EqualityOperator `!== skip` mutation: that mutation inverts the
+    // filter so only non-skip findings are in unresolved -> wrong session named in FATAL.
+    // With two findings from different sessions both skipped, the FATAL must name both.
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const finding1 = makeFinding({
+      File: 'shared/projects/p1/session-A.jsonl',
+      Fingerprint: 'fp1',
+    });
+    const finding2 = makeFinding({
+      File: 'shared/projects/p2/session-B.jsonl',
+      Fingerprint: 'fp2',
+    });
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: 'session-aware fatal',
+      findings: [finding1, finding2],
+    };
+    const map: PathMap = { projects: {} };
+    let caughtMessage = '';
+    try {
+      await resolveLeakFindings(verdict, 'ts-001', map, {
+        isTTYCheck: () => true,
+        // Both findings get 'skip' (empty prompt).
+        makePrompt: () => () => Promise.resolve(''),
+        scanVerdict: () => ({ leak: false, verdictRow: '✓', recovery: null, findings: [] }),
+      });
+    } catch (err) {
+      caughtMessage = (err as Error).message;
+    }
+    expect(caughtMessage).toContain('session-A');
+    expect(caughtMessage).toContain('session-B');
+  });
+});
+
+describe('resolveLeakFindings - while loop exits when leak=false regardless of findings.length', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.redact.core.ts');
+    vi.doUnmock('./utils.ts');
+  });
+
+  it('exits the recovery loop when leak=false even if findings array is non-empty', async () => {
+    // Kills the L264 LogicalOperator || mutation: `current.leak && current.findings.length > 0`
+    // mutated to `||` would continue looping when leak=false AND findings.length>0.
+    // This test: after one allow action, scanVerdict returns leak=false but with leftover findings.
+    // With &&: false && (1>0) = false -> loop exits immediately.
+    // With ||: false || (1>0) = true -> loop tries another iteration (calls collectActions again).
+    // We verify the loop exits after exactly ONE scanVerdict call.
+    vi.doMock('./commands.redact.core.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof redactModule>();
+      return { ...actual, appendGitleaksIgnore: vi.fn() };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const finding = makeFinding({
+      Fingerprint: 'shared/projects/my-proj/abc123.jsonl:github-pat:1',
+    });
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: 'session-aware fatal',
+      findings: [finding],
+    };
+    const map: PathMap = { projects: {} };
+
+    // scanVerdict returns leak=false but findings array is non-empty (unusual but valid).
+    // This distinguishes && from || in the while condition.
+    const scanVerdictMock = vi.fn().mockReturnValue({
+      leak: false,
+      verdictRow: '✓ no leaks',
+      recovery: null,
+      findings: [finding], // non-empty but leak=false
+    });
+
+    // One 'a' (Allow) action, then no more prompts (loop must exit).
+    let callCount = 0;
+    const result = await resolveLeakFindings(verdict, 'ts-001', map, {
+      isTTYCheck: () => true,
+      makePrompt: () => () => {
+        callCount++;
+        // First prompt: allow. If the loop tries a second iteration, callCount=2.
+        return Promise.resolve(callCount === 1 ? 'a' : '');
+      },
+      scanVerdict: scanVerdictMock,
+    });
+
+    // Loop must have exited after 1 scanVerdict call (leak=false exits &&, continues ||).
+    expect(scanVerdictMock).toHaveBeenCalledTimes(1);
+    expect(result.leak).toBe(false);
+  });
 });
 
 describe('resolveLeakFindings - TTY Allow action -> re-scan clean -> returns', () => {

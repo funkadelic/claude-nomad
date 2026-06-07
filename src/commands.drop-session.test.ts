@@ -151,6 +151,103 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// cmdDropSession: id-validation guard boundary tests (L41 survivors)
+// ---------------------------------------------------------------------------
+
+describe('cmdDropSession (id-validation boundary, L41)', () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = makeDropSessionEnv();
+  });
+
+  afterEach(() => {
+    teardownDropSessionEnv(env);
+  });
+
+  it('rejects a 129-char id (> 128) and accepts a 128-char id (kills L41 EqualityOperator >= 128)', async () => {
+    // L41 `id.length > 128` mutated to `>= 128` would reject a valid 128-char id.
+    // Prove that exactly 128 chars is accepted and 129 chars is rejected.
+    const id128 = 'a'.repeat(128);
+    const id129 = 'a'.repeat(129);
+    stageSession(env, 'foo', id128, '{"k":"v"}\n');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    // 128-char id must be accepted (no exit:1 thrown).
+    expect(() => cmdDropSession(id128)).not.toThrow();
+    expect(diffCached(env)).not.toContain(id128);
+
+    // 129-char id must be rejected.
+    expect(() => cmdDropSession(id129)).toThrow('exit:1');
+    expect(errOutput(env)).toMatch(/invalid session id/);
+  });
+
+  it('rejects an id with special chars (! # etc) while accepting all-alphanumeric (kills L41 LogicalOperator)', async () => {
+    // L41 `id.length === 0 || id.length > 128 || !/^[A-Za-z0-9_-]+$/.test(id)`
+    // mutated with `&&` would require ALL conditions to reject. Prove that a
+    // short id with invalid chars is still rejected when length checks would pass.
+    const idValid = 'abc123';
+    const idInvalid = 'abc!@#';
+    stageSession(env, 'foo', idValid, '{"k":"v"}\n');
+
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+    // Valid short alphanum id accepted.
+    expect(() => cmdDropSession(idValid)).not.toThrow();
+
+    // Invalid chars id rejected (length is 6, valid range -- only the regex fails).
+    expect(() => cmdDropSession(idInvalid)).toThrow('exit:1');
+    expect(errOutput(env)).toMatch(/invalid session id/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdDropSession: collectMatches existsSync branches (L97/L101)
+// ---------------------------------------------------------------------------
+
+describe('cmdDropSession (collectMatches existsSync branches, L97/L101)', () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = makeDropSessionEnv();
+  });
+
+  afterEach(() => {
+    teardownDropSessionEnv(env);
+  });
+
+  it('does NOT include a session when no <id>.jsonl exists on disk (kills L97 ConditionalExpression true)', async () => {
+    // L97 `if (existsSync(candidate))` forced to `true` would push every
+    // candidate path even when the file does not exist, producing a spurious
+    // match on a nonexistent path. Stage only sid-B so sid-A has no .jsonl.
+    stageSession(env, 'foo', 'sid-B', '{"k":"v"}\n');
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+
+    // sid-A has no staged file: NomadFatal sets exitCode=1 and emits "no staged session".
+    cmdDropSession('sid-A');
+    expect(process.exitCode).toBe(1);
+    expect(errOutput(env)).toMatch(/no staged session matches sid-A/);
+    // sid-B's .jsonl should still be staged (not accidentally touched).
+    expect(diffCached(env)).toContain('shared/projects/foo/sid-B.jsonl');
+  });
+
+  it('does NOT include a dir-only entry when it has no staged contents (kills L101 ConditionalExpression true)', async () => {
+    // L101 `if (existsSync(dir) && statSync(dir).isDirectory())` forced to `true`
+    // would always enter the dir branch. With no subagent dir present, the path
+    // should not be added as a match. Only a flat .jsonl session present.
+    stageSession(env, 'foo', 'sid-A', '{"k":"v"}\n');
+    // No sid-B directory at all.
+    const { cmdDropSession } = await import('./commands.drop-session.ts');
+
+    // Dropping sid-B (which has no .jsonl or dir) should produce "no staged session matches".
+    cmdDropSession('sid-B');
+    expect(process.exitCode).toBe(1);
+    expect(errOutput(env)).toMatch(/no staged session matches sid-B/);
+    // sid-A's file should remain untouched.
+    expect(diffCached(env)).toContain('shared/projects/foo/sid-A.jsonl');
+  });
+});
+
 describe('cmdDropSession (scrub-remediation hint)', () => {
   let env: Env;
 
