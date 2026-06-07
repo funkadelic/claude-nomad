@@ -6,7 +6,11 @@
  * helper in `commands.push.recovery.drop.ts`.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { PathMap } from './config.ts';
+import { repoHome } from './config.ts';
 import { appendGitleaksIgnore } from './commands.redact.core.ts';
 import { applyRedact } from './commands.push.recovery.redact.ts';
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
@@ -16,6 +20,7 @@ import { log } from './utils.ts';
 import {
   type FindingAction,
   type PromptFn,
+  buildFindingContext,
   findingKey,
   parseAction,
   sessionIdFromFinding,
@@ -78,24 +83,53 @@ export function allowFindingsByRule(findings: Finding[], ruleId: string, repo: s
 }
 
 /**
+ * Build the real line reader for `collectActions`. Resolves `repoHome()` once
+ * per call, joins with the finding's repo-relative `File`, reads the file, and
+ * returns the 1-indexed line. Returns null on any error (missing file, out-of-
+ * range line index, or a thrown read exception).
+ */
+function makeDefaultReadLine(repo: string): (file: string, line: number) => string | null {
+  return (file: string, line: number): string | null => {
+    try {
+      const content = readFileSync(join(repo, file), 'utf8');
+      const lines = content.split(/\r?\n/);
+      const idx = line - 1; // convert 1-indexed to 0-indexed
+      if (idx < 0 || idx >= lines.length) return null;
+      /* c8 ignore next */
+      return lines[idx] ?? null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
  * Walk all findings and prompt the user for one action each. Returns a map
  * from `findingKey` to the chosen action, defaulting to `'skip'` on empty
- * input.
+ * input. Emits a masked `  context: <excerpt>` line under each finding header
+ * when `buildFindingContext` returns a non-null excerpt, so the user can
+ * distinguish a real secret from a documented fixture without seeing the raw value.
  *
  * @param findings The findings to present.
  * @param prompt An injectable prompt function (one question per call).
+ * @param readLine Optional injectable line reader seam. Defaults to a real
+ *   reader that resolves `repoHome()` once and reads the repo-relative file.
  * @returns Populated actions map.
  */
 export async function collectActions(
   findings: Finding[],
   prompt: PromptFn,
+  readLine?: (file: string, line: number) => string | null,
 ): Promise<Map<string, FindingAction>> {
+  const reader = readLine ?? makeDefaultReadLine(repoHome());
   const actions = new Map<string, FindingAction>();
   for (const f of findings) {
     const sid = sessionIdFromFinding(f);
+    const ctx = buildFindingContext(f, reader);
     const header =
       `\nFinding: ${f.RuleID} in ${f.File} line ${f.StartLine}` +
       (sid === null ? '' : ` (session: ${sid})`) +
+      (ctx !== null ? `\n  context: ${ctx}` : '') +
       '\n  [R]edact  [A]llow  [D]rop session  [S]kip (default)\n';
     actions.set(findingKey(f), parseAction(await prompt(header + '> ')));
   }
