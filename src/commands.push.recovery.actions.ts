@@ -7,7 +7,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, resolve, sep } from 'node:path';
 
 import type { PathMap } from './config.ts';
 import { repoHome } from './config.ts';
@@ -86,12 +86,19 @@ export function allowFindingsByRule(findings: Finding[], ruleId: string, repo: s
  * Build the real line reader for `collectActions`. Resolves `repoHome()` once
  * per call, joins with the finding's repo-relative `File`, reads the file, and
  * returns the 1-indexed line. Returns null on any error (missing file, out-of-
- * range line index, or a thrown read exception).
+ * range line index, or a thrown read exception). Confines reads to the repo
+ * root: an absolute `file` or one whose resolved path escapes `repo` (via
+ * `..`) returns null rather than reading an unintended local file.
  */
 function makeDefaultReadLine(repo: string): (file: string, line: number) => string | null {
   return (file: string, line: number): string | null => {
     try {
-      const content = readFileSync(join(repo, file), 'utf8');
+      const repoRoot = resolve(repo);
+      const target = resolve(repoRoot, file);
+      if (isAbsolute(file) || (target !== repoRoot && !target.startsWith(repoRoot + sep))) {
+        return null;
+      }
+      const content = readFileSync(target, 'utf8');
       const lines = content.split(/\r?\n/);
       const idx = line - 1; // convert 1-indexed to 0-indexed
       if (idx < 0 || idx >= lines.length) return null;
@@ -129,7 +136,7 @@ export async function collectActions(
     const header =
       `\nFinding: ${f.RuleID} in ${f.File} line ${f.StartLine}` +
       (sid === null ? '' : ` (session: ${sid})`) +
-      (ctx !== null ? `\n  context: ${ctx}` : '') +
+      (ctx === null ? '' : `\n  context: ${ctx}`) +
       '\n  [R]edact  [A]llow  [D]rop session  [S]kip (default)\n';
     actions.set(findingKey(f), parseAction(await prompt(header + '> ')));
   }

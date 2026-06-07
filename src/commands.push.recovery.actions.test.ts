@@ -756,4 +756,81 @@ describe('collectActions - masked context line in prompt', () => {
       else delete process.env.NOMAD_REPO;
     }
   });
+
+  it('default real readLine refuses a File that escapes the repo root via ..', async () => {
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    const outer = mkdtempSync(join(tmpdir(), 'nomad-ctx-escape-'));
+    try {
+      const testRepo = join(outer, 'repo');
+      mkdirSync(testRepo, { recursive: true });
+      process.env.NOMAD_REPO = testRepo;
+      vi.resetModules();
+      const { collectActions } = await import('./commands.push.recovery.actions.ts');
+
+      // A real secret-bearing file sits OUTSIDE the repo root. A traversal
+      // File must not read it; the reader returns null and the prompt falls
+      // back to the masked Match instead of leaking the outside file.
+      writeFileSync(join(outer, 'outside.jsonl'), `leaked ${SECRET}\n`, 'utf8');
+
+      const f = makeFullFinding({
+        File: '../outside.jsonl',
+        StartLine: 1,
+        Match: SECRET,
+      });
+
+      let capturedPrompt = '';
+      const prompt = (p: string): Promise<string> => {
+        capturedPrompt = p;
+        return Promise.resolve('s');
+      };
+
+      await collectActions([f], prompt);
+
+      // Confinement guard -> null -> masked Match fallback, raw secret absent.
+      expect(capturedPrompt).toContain('context:');
+      expect(capturedPrompt).toContain('ghp_************');
+      expect(capturedPrompt).not.toContain(SECRET);
+    } finally {
+      rmSync(outer, { recursive: true, force: true });
+      if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+      else delete process.env.NOMAD_REPO;
+    }
+  });
+
+  it('default real readLine refuses an absolute File path', async () => {
+    const originalNomadRepo = process.env.NOMAD_REPO;
+    const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-abs-'));
+    try {
+      process.env.NOMAD_REPO = testRepo;
+      vi.resetModules();
+      const { collectActions } = await import('./commands.push.recovery.actions.ts');
+
+      // An absolute File pointing at a real outside file must be refused.
+      const absFile = join(testRepo, 'abs.jsonl');
+      writeFileSync(absFile, `leaked ${SECRET}\n`, 'utf8');
+
+      const f = makeFullFinding({
+        File: absFile,
+        StartLine: 1,
+        Match: SECRET,
+      });
+
+      let capturedPrompt = '';
+      const prompt = (p: string): Promise<string> => {
+        capturedPrompt = p;
+        return Promise.resolve('s');
+      };
+
+      await collectActions([f], prompt);
+
+      // Absolute path rejected -> null -> masked Match fallback.
+      expect(capturedPrompt).toContain('context:');
+      expect(capturedPrompt).toContain('ghp_************');
+      expect(capturedPrompt).not.toContain(SECRET);
+    } finally {
+      rmSync(testRepo, { recursive: true, force: true });
+      if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+      else delete process.env.NOMAD_REPO;
+    }
+  });
 });
