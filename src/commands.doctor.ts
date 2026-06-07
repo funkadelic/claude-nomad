@@ -45,6 +45,13 @@ import { buildVerdictSection } from './commands.doctor.verdict.ts';
  * Run every doctor reporter and assemble the final ordered section array
  * (body sections followed by the verdict). All check branching lives here so
  * `cmdDoctor` stays linear under the cognitive-complexity gate.
+ *
+ * INVARIANT: reporters MUST NOT write to stdout or stderr. The spinner owns the
+ * terminal during gathering (it animates on stderr); reporters only populate
+ * their section objects, and every subprocess they spawn must capture child
+ * streams (`stdio: 'pipe'`, never `'inherit'` or a bare `execSync`) so child
+ * output cannot land on top of the live spinner frame. `renderDoctor` is the
+ * sole stdout writer, and it runs only after the spinner has stopped.
  */
 function gatherDoctorSections(opts: {
   checkShared?: boolean;
