@@ -223,8 +223,9 @@ example notification toggles), not an error; when this host has no `hosts/<NOMAD
 all, that info line is withheld because the host-overrides row above it already flags the same
 keys as a failure. A `⚠︎` warning also fires when `hosts/<NOMAD_HOST>.json` exists but does not
 parse, since `nomad pull` would stop on that file. The check reports key names only and never
-leaks values. It skips with a `ℹ︎` when `settings.json` or `shared/settings.base.json` is absent
-or unparseable.
+leaks values. It skips with a `ℹ︎` when `settings.json` is absent or when
+`shared/settings.base.json` is absent or unparseable; a malformed `settings.json` is skipped
+silently, since doctor's settings load already fails (`✗`, exit 1) on the same file.
 
 ## Global flags
 
