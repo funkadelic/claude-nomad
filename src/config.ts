@@ -141,14 +141,15 @@ export function allSharedLinks(map: PathMap): string[] {
  * copied under `shared/extras/<logical>/<name>`. Only listed names are
  * eligible for sync; widening is a one-line edit with no migration required.
  *
- * `.claude` is supported and filtered against the full `NEVER_SYNC` boundary
- * (not just the `ALWAYS_NEVER_SYNC` secret subset): its tree mirrors
- * `~/.claude/` semantics, so ephemeral/host-local names (`settings.local.json`,
- * `projects/`, `shell-snapshots/`, `statsig/`, `sessions/`, `todos/`, ...) are
- * stripped on push, leaving only config (`settings.json`, `hooks/`, `agents/`,
- * `skills/`, `commands/`, `rules/`). `.planning` keeps the narrow
- * `ALWAYS_NEVER_SYNC` subset so its legitimate `todos`/`plans` content passes.
- * See `extrasDenySet` in `extras-sync.core.ts`.
+ * `.claude` is supported and filtered against `CLAUDE_EXTRA_NEVER_SYNC` (the
+ * full `NEVER_SYNC` set plus `projects`), not just the `ALWAYS_NEVER_SYNC`
+ * secret subset: its tree mirrors `~/.claude/` semantics, so ephemeral/
+ * host-local names (`settings.local.json`, `projects/`, `shell-snapshots/`,
+ * `statsig/`, `sessions/`, `todos/`, ...) are stripped on push, leaving only
+ * config (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`,
+ * `rules/`). `.planning` keeps the narrow `ALWAYS_NEVER_SYNC` subset so its
+ * legitimate `todos`/`plans` content passes. See `extrasDenySet` in
+ * `extras-sync.core.ts`.
  */
 export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md', '.claude'] as const;
 
@@ -171,7 +172,7 @@ export const ALWAYS_NEVER_SYNC = new Set([
 // ./config.never-sync.ts (a dependency-free leaf) so config.sharedDirs.guard.ts
 // can import it without importing config.ts (which would re-form a cycle);
 // re-exported here so existing `from './config.ts'` imports keep resolving.
-export { NEVER_SYNC } from './config.never-sync.ts';
+export { NEVER_SYNC, CLAUDE_EXTRA_NEVER_SYNC } from './config.never-sync.ts';
 
 // Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in
 // this set trigger a `nomad doctor` WARN. Defined in ./settings-keys.ts so the

@@ -3,8 +3,8 @@ import { basename, join } from 'node:path';
 
 import {
   ALWAYS_NEVER_SYNC,
+  CLAUDE_EXTRA_NEVER_SYNC,
   HOST,
-  NEVER_SYNC,
   repoHome,
   SUPPORTED_EXTRAS,
   type PathMap,
@@ -108,17 +108,17 @@ export function copyExtras(src: string, dst: string): void {
  * `.claude` extra mirrors `~/.claude/` semantics, so its subdirectory names
  * (`projects`, `shell-snapshots`, `statsig`, `telemetry`, `sessions`, `todos`,
  * ...) are exactly the ephemeral, host-local state that must not sync; it gets
- * the full `NEVER_SYNC` boundary. Content-style extras (`.planning`) keep the
- * narrow `ALWAYS_NEVER_SYNC` subset so legitimate names like `todos`/`plans`
- * inside a synced `.planning/` tree are not false-blocked (Pitfall 6). Mirrored
- * by `isNeverSync` in `commands.push.allowlist.ts` so the copy filter and the
- * push gate agree on the boundary.
+ * `CLAUDE_EXTRA_NEVER_SYNC` (the full `NEVER_SYNC` set plus `projects`).
+ * Content-style extras (`.planning`) keep the narrow `ALWAYS_NEVER_SYNC` subset
+ * so legitimate names like `todos`/`plans` inside a synced `.planning/` tree are
+ * not false-blocked (Pitfall 6). Mirrored by `blockSetFor` in
+ * `commands.push.allowlist.ts` so the copy filter and the push gate agree.
  *
  * @param dirname - The extra's whitelisted name (e.g. `.claude`, `.planning`).
  * @returns The set of basenames to skip during the copy.
  */
 export function extrasDenySet(dirname: string): Set<string> {
-  return dirname === '.claude' ? NEVER_SYNC : ALWAYS_NEVER_SYNC;
+  return dirname === '.claude' ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
 }
 
 /**

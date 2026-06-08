@@ -1,5 +1,6 @@
 import {
   ALWAYS_NEVER_SYNC,
+  CLAUDE_EXTRA_NEVER_SYNC,
   NEVER_SYNC,
   PUSH_ALLOWED_STATIC,
   SUPPORTED_EXTRAS,
@@ -39,18 +40,23 @@ function isAllowed(path: string, allowed: readonly string[]): boolean {
  */
 function blockSetFor(segments: string[]): Set<string> {
   if (segments[0] !== 'shared' || segments[1] !== 'extras') return NEVER_SYNC;
-  return segments[3] === '.claude' ? NEVER_SYNC : ALWAYS_NEVER_SYNC;
+  return segments[3] === '.claude' ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
 }
 
 /**
  * True when any path segment matches the hard-block denylist for that path (see
  * `blockSetFor`). Genuinely-sensitive host-local files stay blocked even when
- * nested inside a synced extras dir.
+ * nested inside a synced extras dir. Inside `shared/extras/<logical>/<dirname>/`
+ * only the content segments (index 4+) are scanned: the `<logical>` and
+ * `<dirname>` names are not denylist tokens, and a logical that happens to equal
+ * a `NEVER_SYNC` token (e.g. a project named `sessions`) must not hard-block its
+ * own legitimate files.
  */
 function isNeverSync(path: string): boolean {
   const segments = path.split('/');
   const blockSet = blockSetFor(segments);
-  for (const segment of segments) {
+  const scan = segments[0] === 'shared' && segments[1] === 'extras' ? segments.slice(4) : segments;
+  for (const segment of scan) {
     if (blockSet.has(segment)) return true;
   }
   return false;

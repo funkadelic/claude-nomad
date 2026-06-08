@@ -274,6 +274,17 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
   });
 
+  it('hard-blocks projects/ under a .claude extra (transcripts; CLAUDE_EXTRA_NEVER_SYNC adds it)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // `projects` is NOT in base NEVER_SYNC (it is the path-remap destination),
+    // so this proves the .claude denylist is the CLAUDE_EXTRA_NEVER_SYNC superset.
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.claude/projects/enc/transcript.jsonl\0', map),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
   it('permits config (settings.json, hooks/) under a .claude extra', async () => {
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     expect(() =>
@@ -281,6 +292,18 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
     ).not.toThrow();
     expect(() =>
       enforceAllowList('A  shared/extras/foo/.claude/hooks/foo.cjs\0', map),
+    ).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT block a .claude file when the LOGICAL name collides with a NEVER_SYNC token', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    // A project legitimately named `sessions` (a NEVER_SYNC token). Only content
+    // segments under <dirname> are scanned, so its own settings.json must pass
+    // even though the logical equals a denied token.
+    const collisionMap: PathMap = { projects: {}, extras: { sessions: ['.claude'] } };
+    expect(() =>
+      enforceAllowList('A  shared/extras/sessions/.claude/settings.json\0', collisionMap),
     ).not.toThrow();
     expect(errorSpy).not.toHaveBeenCalled();
   });

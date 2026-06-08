@@ -100,12 +100,12 @@ Pointers and specifics:
   uses only this subset so its legitimate `todos/` and `plans/` content still syncs.)
 - **The `.claude/` extra is filtered against the _full_ never-synced set, not just that subset.**
   Because a `.claude/` directory mirrors the layout of `~/.claude/`, opting it in strips every
-  ephemeral or host-local name on push (`settings.local.json`, `projects/`, `shell-snapshots/`,
-  `sessions/`, `statsig/`, `telemetry/`, `todos/`, and the rest of `NEVER_SYNC`), leaving only your
-  config (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`, `rules/`). So syncing
-  `.claude/` carries your project's Claude setup across machines without ever leaking session
-  transcripts or per-host secrets. The same boundary is enforced a second time at the push gate as a
-  backstop.
+  ephemeral or host-local name on push: the whole `NEVER_SYNC` set plus session transcripts under
+  `projects/` (`settings.local.json`, `projects/`, `shell-snapshots/`, `sessions/`, `statsig/`,
+  `telemetry/`, `todos/`, ...), leaving only your config (`settings.json`, `hooks/`, `agents/`,
+  `skills/`, `commands/`, `rules/`). So syncing `.claude/` carries your project's Claude setup across
+  machines without ever leaking session transcripts or per-host secrets. The same boundary is
+  enforced a second time at the push gate as a backstop.
 
 :::note
 Plugins that depend on host-specific state (external binaries, API keys in env, MCP server

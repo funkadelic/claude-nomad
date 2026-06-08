@@ -438,12 +438,27 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
     expect(existsSync(join(tmpDst, 'inner.md'))).toBe(true);
   });
 
-  it('extrasDenySet returns NEVER_SYNC for .claude and ALWAYS_NEVER_SYNC for others', async () => {
+  it('extrasDenySet returns CLAUDE_EXTRA_NEVER_SYNC for .claude and ALWAYS_NEVER_SYNC for others', async () => {
     const { extrasDenySet } = await import('./extras-sync.core.ts');
-    const { NEVER_SYNC, ALWAYS_NEVER_SYNC } = await import('./config.ts');
-    expect(extrasDenySet('.claude')).toBe(NEVER_SYNC);
+    const { CLAUDE_EXTRA_NEVER_SYNC, ALWAYS_NEVER_SYNC } = await import('./config.ts');
+    expect(extrasDenySet('.claude')).toBe(CLAUDE_EXTRA_NEVER_SYNC);
     expect(extrasDenySet('.planning')).toBe(ALWAYS_NEVER_SYNC);
     expect(extrasDenySet('CLAUDE.md')).toBe(ALWAYS_NEVER_SYNC);
+  });
+
+  it('strips a projects/ dir under the .claude denylist (session transcripts, not in base NEVER_SYNC)', async () => {
+    // `projects` is absent from NEVER_SYNC (mapped projects sync transcripts via
+    // the path-remap mechanism), but the .claude extra must still strip a raw
+    // projects/ dir so transcripts never ride through the extras gate.
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
+    mkdirSync(join(tmpSrc, 'projects', 'enc'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'projects', 'enc', 'transcript.jsonl'), '{"secret":1}\n');
+
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'projects'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
   });
 
   it('unfiltered copyExtras still copies settings.local.json (original behavior unchanged)', async () => {

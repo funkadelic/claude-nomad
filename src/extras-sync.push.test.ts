@@ -234,6 +234,8 @@ describe('remapExtrasPush (integration)', () => {
     writeFileSync(join(claudeDir, 'shell-snapshots', 'snap.sh'), 'export TOKEN=abc\n');
     mkdirSync(join(claudeDir, 'sessions'), { recursive: true });
     writeFileSync(join(claudeDir, 'sessions', 's.json'), '{}\n');
+    mkdirSync(join(claudeDir, 'projects', 'enc'), { recursive: true });
+    writeFileSync(join(claudeDir, 'projects', 'enc', 'transcript.jsonl'), '{"secret":1}\n');
     writeFileSync(
       mapPath,
       JSON.stringify({
@@ -250,6 +252,8 @@ describe('remapExtrasPush (integration)', () => {
     // NEVER_SYNC-only ephemeral state must NOT be staged (the CR-01 fix).
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'shell-snapshots'))).toBe(false);
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'sessions'))).toBe(false);
+    // projects/ (transcripts) must NOT be staged: in CLAUDE_EXTRA_NEVER_SYNC.
+    expect(existsSync(join(sharedExtras, 'foo', '.claude', 'projects'))).toBe(false);
     // settings.json (config) must be present.
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'settings.json'))).toBe(true);
     expect(readFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), 'utf8')).toBe(
