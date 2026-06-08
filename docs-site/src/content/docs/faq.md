@@ -37,6 +37,27 @@ else is left alone in both directions, and push/pull fold those into a single in
 project to `path-map.json` with its absolute path on each host (see
 [How it works](/claude-nomad/how-it-works/) for the format), push, and pull on the other host.
 
+## `nomad doctor` lists "unmapped local projects" I don't recognize. Are they broken?
+
+No, they are normal. In Claude Code, a **"project" is just any directory you have launched
+`claude` from**. The first time you run a session in a folder, Claude Code creates a matching
+directory under `~/.claude/projects/` and stores that session's transcripts (the `.jsonl` files)
+there. So the unmapped list is simply every working directory you have ever started a session in
+that is not listed in your `path-map.json`, often throwaway ones like your home folder, a repo's
+subdirectory, or a parent directory you happened to `cd` into once.
+
+They are real (each holds actual session transcripts), not corruption and not a sync error.
+claude-nomad deliberately leaves unmapped projects alone in both directions: they are never pushed
+and never pulled, so they only ever exist on the machine that created them.
+
+You do not have to do anything. Two options if you want to tidy up:
+
+- **Want a project's sessions to follow you across hosts?** Add it to `path-map.json` (see
+  [Why isn't my session showing up on the other host?](#why-isnt-my-session-showing-up-on-the-other-host)).
+- **It is throwaway?** Delete its folder under `~/.claude/projects/`. That removes the local
+  transcripts for that directory only; nothing synced is touched, and your mapped projects are
+  unaffected.
+
 ## What never leaves my machine?
 
 Credentials and ephemeral state are excluded by a hard-coded block list: OAuth tokens and MCP
