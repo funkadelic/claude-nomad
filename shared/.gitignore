@@ -1,9 +1,0 @@
-*.token
-*.key
-.env
-.env.*
-.claude.json
-settings.local.json
-*.pem
-id_rsa
-id_ed25519

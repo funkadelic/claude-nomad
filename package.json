@@ -23,7 +23,6 @@
   },
   "files": [
     "dist/",
-    "shared/.gitignore",
     ".gitleaks.toml",
     "README.md",
     "CHANGELOG.md",
