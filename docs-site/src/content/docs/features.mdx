@@ -46,11 +46,13 @@ even when they appear nested inside a directory you opted into syncing. Projects
 ## Opt-in per-project extras
 
 Beyond transcripts, a project can opt in to syncing named extras such as its `.planning/`
-directory, its `.claude/` config directory, or a project-level `CLAUDE.md`. Only whitelisted names
-are eligible, and projects that do not opt in are untouched. The `.claude/` extra is filtered so
-only config travels (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`, `rules/`); host-
-local and ephemeral state (`settings.local.json`, session transcripts, caches) is stripped on push.
-See [Usage](/claude-nomad/usage/) for how to opt a project in.
+directory, its own project-local `<repo>/.claude/` config directory, or a project-level `CLAUDE.md`.
+(That project `.claude/` next to your code is distinct from the global `~/.claude/` in your home
+folder, which claude-nomad already syncs.) Only whitelisted names are eligible, and projects that do
+not opt in are untouched. The `.claude/` extra is filtered so only config travels (`settings.json`,
+`hooks/`, `agents/`, `skills/`, `commands/`, `rules/`); host-local and ephemeral state
+(`settings.local.json`, session transcripts, caches) is stripped on push. See
+[Usage](/claude-nomad/usage/) for how to opt a project in.
 
 ## Every push is secret-scanned
 
