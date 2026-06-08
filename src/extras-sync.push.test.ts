@@ -221,4 +221,38 @@ describe('remapExtrasPush (integration)', () => {
       wouldPush: [],
     });
   });
+
+  it('.claude extra: filters settings.local.json, copies settings.json; pushed contains foo/.claude', async () => {
+    // Integration test: remapExtrasPush must use the ALWAYS_NEVER_SYNC filter
+    // on the .claude extra so host-local secrets never reach the repo.
+    const claudeDir = join(projectRoot, '.claude');
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
+    writeFileSync(join(claudeDir, 'settings.local.json'), 'secret=localonly\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.claude'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    const result = remapExtrasPush('20260522-110007');
+
+    // settings.local.json must NOT be staged into the repo.
+    expect(existsSync(join(sharedExtras, 'foo', '.claude', 'settings.local.json'))).toBe(false);
+    // settings.json must be present.
+    expect(existsSync(join(sharedExtras, 'foo', '.claude', 'settings.json'))).toBe(true);
+    expect(readFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), 'utf8')).toBe(
+      '{"model":"claude-opus-4-5"}\n',
+    );
+    // pushed must report the item.
+    expect(result).toEqual({
+      unmapped: 0,
+      skipped: 0,
+      pushed: ['foo/.claude'],
+      wouldPush: [],
+    });
+  });
 });

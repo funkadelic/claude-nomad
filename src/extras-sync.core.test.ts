@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -300,5 +300,98 @@ describe('eachExtrasTarget filters (L72/L73/L78)', () => {
     });
     expect(counts.unmapped).toBe(0);
     expect(counts.skipped).toBe(0);
+  });
+
+  it('yields a target whose dirname is .claude when extras lists [.claude] (whitelist acceptance)', async () => {
+    writeFileSync(
+      env.mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': env.projectRoot } },
+        extras: { foo: ['.claude'] },
+      }) + '\n',
+    );
+    const { loadValidatedExtras, eachExtrasTarget } = await import('./extras-sync.core.ts');
+    const v = loadValidatedExtras({});
+    expect(v).not.toBeNull();
+    const counts = { unmapped: 0, skipped: 0 };
+    const targets = [...eachExtrasTarget(v!, counts)];
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({
+      logical: 'foo',
+      localRoot: env.projectRoot,
+      dirname: '.claude',
+    });
+    expect(counts.skipped).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// copyExtrasFiltered: ALWAYS_NEVER_SYNC filter semantics
+// ---------------------------------------------------------------------------
+
+describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
+  let tmpSrc: string;
+  let tmpDst: string;
+
+  beforeEach(() => {
+    tmpSrc = mkdtempSync(join(tmpdir(), 'nomad-core-filter-src-'));
+    tmpDst = mkdtempSync(join(tmpdir(), 'nomad-core-filter-dst-'));
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmpSrc, { recursive: true, force: true });
+    rmSync(tmpDst, { recursive: true, force: true });
+  });
+
+  it('excludes settings.local.json and copies settings.json and hooks/foo.cjs', async () => {
+    // Build a src tree mirroring a real .claude/ directory.
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
+    writeFileSync(join(tmpSrc, 'settings.local.json'), 'secret=1\n');
+    mkdirSync(join(tmpSrc, 'hooks'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'hooks', 'foo.cjs'), '// hook\n');
+
+    const { copyExtrasFiltered } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst);
+
+    // Blocked: ALWAYS_NEVER_SYNC entry must not appear in dst.
+    expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(false);
+    // Allowed: non-blocked entries must be present.
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+    expect(existsSync(join(tmpDst, 'hooks', 'foo.cjs'))).toBe(true);
+  });
+
+  it('allows a todos/ dir (NEVER_SYNC-but-not-ALWAYS_NEVER_SYNC, proving EXTRAS subset semantics)', async () => {
+    // todos/ is in NEVER_SYNC but NOT in ALWAYS_NEVER_SYNC; it must pass the filter.
+    mkdirSync(join(tmpSrc, 'todos'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'todos', 'task.md'), '# task\n');
+
+    const { copyExtrasFiltered } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst);
+
+    expect(existsSync(join(tmpDst, 'todos', 'task.md'))).toBe(true);
+  });
+
+  it('allows a plans/ dir (another NEVER_SYNC-but-not-ALWAYS_NEVER_SYNC name)', async () => {
+    mkdirSync(join(tmpSrc, 'plans'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'plans', 'roadmap.md'), '# roadmap\n');
+
+    const { copyExtrasFiltered } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst);
+
+    expect(existsSync(join(tmpDst, 'plans', 'roadmap.md'))).toBe(true);
+  });
+
+  it('unfiltered copyExtras still copies settings.local.json (original behavior unchanged)', async () => {
+    writeFileSync(join(tmpSrc, 'settings.local.json'), 'secret=1\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"claude-sonnet-4-6"}\n');
+
+    const { copyExtras } = await import('./extras-sync.core.ts');
+    copyExtras(tmpSrc, tmpDst);
+
+    // copyExtras is unfiltered; the blocked file must still appear in dst.
+    expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(true);
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
   });
 });
