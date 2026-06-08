@@ -74,6 +74,31 @@ describe('remapExtrasPull (integration)', () => {
     });
   });
 
+  it('.claude extra: filters a blocked file on pull (poisoned-repo defense-in-depth)', async () => {
+    // Pull filters `.claude` against its NEVER_SYNC boundary so a repo that
+    // somehow contains a per-host file does not restore it onto the host. The
+    // copy itself never reaches the gate, so this exercises the pull-side
+    // filtered branch directly.
+    mkdirSync(join(sharedExtras, 'foo', '.claude'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), '{"model":"x"}\n');
+    writeFileSync(join(sharedExtras, 'foo', '.claude', 'settings.local.json'), 'secret=1\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.claude'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const result = remapExtrasPull('20260522-120010');
+
+    // Config is restored; the blocked per-host file is not.
+    expect(existsSync(join(projectRoot, '.claude', 'settings.json'))).toBe(true);
+    expect(existsSync(join(projectRoot, '.claude', 'settings.local.json'))).toBe(false);
+    expect(result.pulled).toEqual(['foo/.claude']);
+  });
+
   it('skips non-whitelisted dir names (SUPPORTED_EXTRAS guard) with no log line', async () => {
     mkdirSync(join(sharedExtras, 'foo', 'node_modules'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', 'node_modules', 'evil.js'), '// evil\n');
