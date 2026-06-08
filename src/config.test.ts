@@ -38,10 +38,10 @@ describe('SUPPORTED_EXTRAS and PathMap widening', () => {
     expect(config.SUPPORTED_EXTRAS).toBeDefined();
   });
 
-  it('SUPPORTED_EXTRAS equals [".planning", "CLAUDE.md"]', async () => {
+  it('SUPPORTED_EXTRAS equals [".planning", "CLAUDE.md", ".claude"]', async () => {
     vi.resetModules();
     const config = await import('./config.ts');
-    expect(config.SUPPORTED_EXTRAS).toEqual(['.planning', 'CLAUDE.md']);
+    expect(config.SUPPORTED_EXTRAS).toEqual(['.planning', 'CLAUDE.md', '.claude']);
   });
 
   it('includes CLAUDE.md so a single root file is a valid extras entry', async () => {

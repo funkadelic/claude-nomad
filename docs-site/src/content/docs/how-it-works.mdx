@@ -73,7 +73,7 @@ What `~/claude-nomad/` looks like on a configured host:
 | **Synced** | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`. |
 | **Generated** | `settings.json` | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull. |
 | **Remapped** | `projects/` session transcripts | Copied with path translation per `path-map.json`. |
-| **Per-project extras** | Whitelisted dirs like `.planning/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
+| **Per-project extras** | Whitelisted dirs like `.planning/`, `.claude/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
 | **Shared support dirs** | Opt-in global `~/.claude/` dirs like a tool's `get-shit-done/` | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. |
 | **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
 | **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
@@ -81,8 +81,9 @@ What `~/claude-nomad/` looks like on a configured host:
 Pointers and specifics:
 
 - **Synced** link names live in `SHARED_LINKS` (and the optional `sharedDirs` field in
-  `path-map.json`), **whitelisted extras** names in `SUPPORTED_EXTRAS`, and the full
-  **never-synced** set in `NEVER_SYNC` (all in `src/config.ts`).
+  `path-map.json`), **whitelisted extras** names in `SUPPORTED_EXTRAS` (currently `.planning`,
+  `CLAUDE.md`, and `.claude`), and the full **never-synced** set in `NEVER_SYNC` (all in
+  `src/config.ts`).
 - **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `.credentials.json` (OAuth
   credential store), `history.jsonl`, `settings.local.json` (per-host overrides),
   `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,
@@ -95,7 +96,10 @@ Pointers and specifics:
 - **Credentials stay blocked even inside synced extras.** A strict subset of the never-synced set
   (`.claude.json`, `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`)
   is hard-blocked even when nested inside an opted-in `shared/extras/<logical>/` tree, so a secret
-  file dropped under a synced `.planning/` directory can never ride through the extras gate.
+  file dropped under a synced `.planning/` or `.claude/` directory can never ride through the extras
+  gate. For `.claude/` specifically, the push copy filters these names out before staging, so
+  opting `.claude/` in never leaks per-host secrets (for example, `settings.local.json` is skipped
+  while `settings.json` and files under `hooks/` are copied normally).
 
 :::note
 Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
@@ -134,7 +138,7 @@ block opts a project into syncing whitelisted directories (or a single root file
     }
   },
   "extras": {
-    "my-example-repo": [".planning", "CLAUDE.md"]
+    "my-example-repo": [".planning", "CLAUDE.md", ".claude"]
   }
 }
 ```
@@ -273,11 +277,11 @@ Read these before adopting so you opt in with eyes open.
 - **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are
   left alone.
 - **Extras are opt-in and whitelisted.** Projects without an `extras` entry in `path-map.json`
-  are unaffected. Names (a directory or a single root file) outside `SUPPORTED_EXTRAS` are
-  skipped with a `skip ... not in SUPPORTED_EXTRAS` log line so an unrecognized name cannot widen
-  the sync surface. Unsafe path-map values (path-traversal in `logical` keys, non-absolute or
-  unnormalized `localRoot` values) abort the run before any file is touched, so a malformed entry
-  fails loudly instead of corrupting state.
+  are unaffected. Supported names are `.planning`, `CLAUDE.md`, and `.claude`; anything outside
+  `SUPPORTED_EXTRAS` is skipped with a `skip ... not in SUPPORTED_EXTRAS` log line so an
+  unrecognized name cannot widen the sync surface. Unsafe path-map values (path-traversal in
+  `logical` keys, non-absolute or unnormalized `localRoot` values) abort the run before any file is
+  touched, so a malformed entry fails loudly instead of corrupting state.
 - **Cross-OS `claude --resume` cwd binding.** Sessions embed the cwd where they were created, so
   Claude Code's picker's `cd ... && claude --resume <id>` line fails on a different host. Use
   `nomad doctor --resume-cmd <id>` for a host-local equivalent (see [Usage](/claude-nomad/usage/)). The
