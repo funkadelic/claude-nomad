@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { repoHome } from './config.ts';
 import {
   copyExtras,
+  copyExtrasFiltered,
   eachExtrasTarget,
   loadValidatedExtras,
   type ExtrasCounts,
@@ -31,6 +32,13 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  * @param dryRun - when `true`, collect `would` without mutating.
  * @param paths - resolves `{ src, dst }` for one target (side-specific).
  * @param backup - snapshots the dst before clobber (side-specific).
+ * @param copy - copy function to use; push passes `copyExtrasFiltered`, pull
+ *   passes `copyExtras`. Pull uses plain copy because the repo should never
+ *   contain a blocked file once push filters, so restoring from a clean repo
+ *   is a no-op for filtering. Using plain copy on pull keeps the local restore
+ *   an exact mirror of repo state and avoids a second filter pass that could
+ *   mask a repo that was somehow already poisoned (push is the single choke
+ *   point for filtering, not pull).
  * @returns the counts plus the done/would detail lists.
  */
 function runExtrasOp(
@@ -38,6 +46,7 @@ function runExtrasOp(
   dryRun: boolean,
   paths: (t: ExtrasTarget) => { src: string; dst: string },
   backup: (dst: string, localRoot: string) => void,
+  copy: (src: string, dst: string) => void,
 ): ExtrasDetail {
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
   const done: string[] = [];
@@ -51,7 +60,7 @@ function runExtrasOp(
       continue;
     }
     backup(dst, t.localRoot);
-    copyExtras(src, dst);
+    copy(src, dst);
     done.push(item);
   }
   return { ...counts, done, would };
@@ -92,6 +101,7 @@ export function remapExtrasPush(
       dst: join(repoExtras, logical, dirname),
     }),
     (dst) => backupRepoWrite(dst, ts, repo),
+    copyExtrasFiltered,
   );
   return { unmapped, skipped, pushed: done, wouldPush: would };
 }
@@ -134,6 +144,9 @@ export function remapExtrasPull(
     // Snapshot the host-side dst BEFORE copyExtras clobbers it. Anchor on
     // localRoot so the backup tree mirrors the project layout.
     (dst, localRoot) => backupExtrasWrite(dst, ts, localRoot),
+    // Pull uses unfiltered copy: the repo should never contain a blocked file
+    // once push filters, so the local restore is an exact mirror of repo state.
+    copyExtras,
   );
   return { unmapped, skipped, pulled: done, wouldPull: would };
 }

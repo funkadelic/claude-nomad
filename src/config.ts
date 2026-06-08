@@ -140,8 +140,12 @@ export function allSharedLinks(map: PathMap): string[] {
  * entry is a directory (e.g. `.planning`) or root-level file (`CLAUDE.md`)
  * copied under `shared/extras/<logical>/<name>`. Only listed names are
  * eligible for sync; widening is a one-line edit with no migration required.
+ *
+ * `.claude` is supported: the push copy filters out `ALWAYS_NEVER_SYNC`-named
+ * entries (e.g. `settings.local.json`) so host-local secrets are never staged
+ * even when the whole `.claude/` tree is opted in.
  */
-export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md'] as const;
+export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md', '.claude'] as const;
 
 /**
  * Credential and host-config file names blocked even under `shared/extras/`,

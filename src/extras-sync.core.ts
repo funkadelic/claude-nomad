@@ -1,7 +1,7 @@
 import { cpSync, existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
-import { HOST, repoHome, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import { ALWAYS_NEVER_SYNC, HOST, repoHome, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
 import { assertSafeLocalRoot, assertSafeLogical } from './extras-sync.guards.ts';
 import { log } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
@@ -94,4 +94,36 @@ export function* eachExtrasTarget(
 export function copyExtras(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+}
+
+/**
+ * Returns `true` when the path segment `name` is in `ALWAYS_NEVER_SYNC`,
+ * meaning it must be excluded even from opted-in extras trees.
+ */
+function isAlwaysNeverSyncSegment(name: string): boolean {
+  return ALWAYS_NEVER_SYNC.has(name);
+}
+
+/**
+ * Filtered mirror copy for the push side: behaves like `copyExtras` but skips
+ * any entry whose basename is in `ALWAYS_NEVER_SYNC` (e.g. `settings.local.json`,
+ * `.claude.json`). Uses `ALWAYS_NEVER_SYNC` (not the broader `NEVER_SYNC`) so
+ * legitimate per-project names like `todos/` or `plans/` inside a synced tree
+ * are still copied. The unfiltered `copyExtras` is intentionally left unchanged
+ * so `.planning` / `CLAUDE.md` extras keep their exact byte-mirror behavior.
+ *
+ * Exported so the test file can call it directly and assert filter semantics.
+ * `remapExtrasPush` is the primary public entry point.
+ *
+ * @param src - Source directory to copy from.
+ * @param dst - Destination path (wiped then rebuilt, filtered).
+ */
+export function copyExtrasFiltered(src: string, dst: string): void {
+  rmSync(dst, { recursive: true, force: true });
+  cpSync(src, dst, {
+    recursive: true,
+    force: true,
+    verbatimSymlinks: true,
+    filter: (srcEntry) => !isAlwaysNeverSyncSegment(basename(srcEntry)),
+  });
 }
