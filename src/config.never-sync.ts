@@ -37,3 +37,15 @@ export const NEVER_SYNC = new Set([
   'security',
   'sessions',
 ]);
+
+/**
+ * Denylist for the `.claude` per-project extra: the full `NEVER_SYNC` set plus
+ * `projects` (session transcripts). `projects` is deliberately absent from
+ * `NEVER_SYNC` because mapped projects sync their transcripts through the
+ * path-remap mechanism into `shared/projects/<logical>/` (a runtime allow-list
+ * entry); adding it to `NEVER_SYNC` would hard-block that destination. But a raw
+ * `.claude/` extra tree must still strip a `projects/` dir so transcripts never
+ * ride through the extras gate. Used by `extrasDenySet` (the copy filter) and
+ * `blockSetFor` (the push gate) so both agree on the `.claude` boundary.
+ */
+export const CLAUDE_EXTRA_NEVER_SYNC = new Set([...NEVER_SYNC, 'projects']);

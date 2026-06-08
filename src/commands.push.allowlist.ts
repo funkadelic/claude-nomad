@@ -1,5 +1,6 @@
 import {
   ALWAYS_NEVER_SYNC,
+  CLAUDE_EXTRA_NEVER_SYNC,
   NEVER_SYNC,
   PUSH_ALLOWED_STATIC,
   SUPPORTED_EXTRAS,
@@ -28,17 +29,34 @@ function isAllowed(path: string, allowed: readonly string[]): boolean {
 }
 
 /**
- * True when any path segment matches a hard-block entry. Outside the extras
- * tree the full `NEVER_SYNC` set applies. Inside `shared/extras/` only the
- * `ALWAYS_NEVER_SYNC` subset applies (Pitfall 6): the broader set was authored
- * against `~/.claude/` semantics for ephemeral state, so `.planning/todos/` and
- * similar legitimate GSD content must pass, but genuinely-sensitive host-local
- * files (`.credentials.json`, `settings.local.json`, `.claude.json`, ...) stay
- * blocked even when nested inside a synced extras dir.
+ * Choose the hard-block denylist for a staged path's segments. Outside the
+ * extras tree the full `NEVER_SYNC` set applies. Inside `shared/extras/` the
+ * narrow `ALWAYS_NEVER_SYNC` subset applies (Pitfall 6) so `.planning/todos/`
+ * and similar legitimate GSD content passes, EXCEPT for the `.claude` extra:
+ * its subtree mirrors `~/.claude/` semantics, so its ephemeral segment names
+ * (`projects`, `shell-snapshots`, `sessions`, `todos`, ...) get the full
+ * `NEVER_SYNC` boundary. Mirrors `extrasDenySet` in `extras-sync.core.ts` so
+ * the push gate and the copy filter agree on the boundary.
+ */
+function blockSetFor(segments: string[]): Set<string> {
+  if (segments[0] !== 'shared' || segments[1] !== 'extras') return NEVER_SYNC;
+  return segments[3] === '.claude' ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+}
+
+/**
+ * True when any path segment matches the hard-block denylist for that path (see
+ * `blockSetFor`). Genuinely-sensitive host-local files stay blocked even when
+ * nested inside a synced extras dir. Inside `shared/extras/<logical>/<dirname>/`
+ * only the content segments (index 4+) are scanned: the `<logical>` and
+ * `<dirname>` names are not denylist tokens, and a logical that happens to equal
+ * a `NEVER_SYNC` token (e.g. a project named `sessions`) must not hard-block its
+ * own legitimate files.
  */
 function isNeverSync(path: string): boolean {
-  const blockSet = path.startsWith('shared/extras/') ? ALWAYS_NEVER_SYNC : NEVER_SYNC;
-  for (const segment of path.split('/')) {
+  const segments = path.split('/');
+  const blockSet = blockSetFor(segments);
+  const scan = segments[0] === 'shared' && segments[1] === 'extras' ? segments.slice(4) : segments;
+  for (const segment of scan) {
     if (blockSet.has(segment)) return true;
   }
   return false;

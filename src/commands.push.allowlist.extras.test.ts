@@ -235,3 +235,86 @@ describe('isNeverSync: ALWAYS_NEVER_SYNC enforced under extras', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
   });
 });
+
+// The `.claude` extra mirrors `~/.claude/` semantics, so its subtree uses the
+// FULL NEVER_SYNC boundary at the push gate (not the narrow ALWAYS_NEVER_SYNC
+// subset that `.planning` gets). This backstops the copy-side filter: ephemeral
+// host-local names (sessions, shell-snapshots, todos, projects) staged under a
+// `.claude` extra are hard-blocked, while the same names under `.planning` pass.
+describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
+  let errorSpy: MockInstance<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const map: PathMap = { projects: {}, extras: { foo: ['.claude', '.planning'] } };
+
+  it('hard-blocks shell-snapshots/ under a .claude extra (NEVER_SYNC-only segment)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.claude/shell-snapshots/snap.sh\0', map),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('hard-blocks sessions/ under a .claude extra (NEVER_SYNC-only segment)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => enforceAllowList('A  shared/extras/foo/.claude/sessions/s.json\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('hard-blocks projects/ under a .claude extra (transcripts; CLAUDE_EXTRA_NEVER_SYNC adds it)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // `projects` is NOT in base NEVER_SYNC (it is the path-remap destination),
+    // so this proves the .claude denylist is the CLAUDE_EXTRA_NEVER_SYNC superset.
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.claude/projects/enc/transcript.jsonl\0', map),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('permits config (settings.json, hooks/) under a .claude extra', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.claude/settings.json\0', map),
+    ).not.toThrow();
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.claude/hooks/foo.cjs\0', map),
+    ).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT block a .claude file when the LOGICAL name collides with a NEVER_SYNC token', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    // A project legitimately named `sessions` (a NEVER_SYNC token). Only content
+    // segments under <dirname> are scanned, so its own settings.json must pass
+    // even though the logical equals a denied token.
+    const collisionMap: PathMap = { projects: {}, extras: { sessions: ['.claude'] } };
+    expect(() =>
+      enforceAllowList('A  shared/extras/sessions/.claude/settings.json\0', collisionMap),
+    ).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('still permits the SAME ephemeral name (todos/) under a .planning extra (subset preserved)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    // Regression: the per-extra denylist must not leak the .claude widening
+    // back onto .planning, whose todos/ remains legitimate GSD content.
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.planning/todos/t.md\0', map),
+    ).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+});

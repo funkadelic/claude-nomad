@@ -1,7 +1,14 @@
 import { cpSync, existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
-import { HOST, repoHome, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
+import {
+  ALWAYS_NEVER_SYNC,
+  CLAUDE_EXTRA_NEVER_SYNC,
+  HOST,
+  repoHome,
+  SUPPORTED_EXTRAS,
+  type PathMap,
+} from './config.ts';
 import { assertSafeLocalRoot, assertSafeLogical } from './extras-sync.guards.ts';
 import { log } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
@@ -94,4 +101,54 @@ export function* eachExtrasTarget(
 export function copyExtras(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+}
+
+/**
+ * Denylist of path-segment names to exclude when copying a given extra. The
+ * `.claude` extra mirrors `~/.claude/` semantics, so its subdirectory names
+ * (`projects`, `shell-snapshots`, `statsig`, `telemetry`, `sessions`, `todos`,
+ * ...) are exactly the ephemeral, host-local state that must not sync; it gets
+ * `CLAUDE_EXTRA_NEVER_SYNC` (the full `NEVER_SYNC` set plus `projects`).
+ * Content-style extras (`.planning`) keep the narrow `ALWAYS_NEVER_SYNC` subset
+ * so legitimate names like `todos`/`plans` inside a synced `.planning/` tree are
+ * not false-blocked (Pitfall 6). Mirrored by `blockSetFor` in
+ * `commands.push.allowlist.ts` so the copy filter and the push gate agree.
+ *
+ * @param dirname - The extra's whitelisted name (e.g. `.claude`, `.planning`).
+ * @returns The set of basenames to skip during the copy.
+ */
+export function extrasDenySet(dirname: string): Set<string> {
+  return dirname === '.claude' ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+}
+
+/**
+ * Filtered mirror copy for the push side: behaves like `copyExtras` but skips
+ * any non-root entry whose basename is in `blockSet`. The root `src` entry is
+ * always kept (the denylist applies to contents, not the source dir itself), so
+ * a source whose own basename collides with a denied name is still mirrored
+ * rather than silently producing an empty `dst`. Callers select `blockSet` via
+ * `extrasDenySet(dirname)`. The unfiltered `copyExtras` is intentionally left
+ * unchanged so callers wanting an exact byte-mirror keep it.
+ *
+ * Limitation: with `verbatimSymlinks: true` (load-bearing for Pitfall 1), a
+ * symlink is copied as a link without dereferencing, so the filter sees the
+ * link's own basename, not its target. A benignly-named symlink pointing at a
+ * denied file is copied verbatim (its target path, not its content); the push
+ * `gitleaks` scan is the backstop for that residual case.
+ *
+ * Exported so the test file can call it directly and assert filter semantics.
+ * `remapExtrasPush` is the primary public entry point.
+ *
+ * @param src - Source directory to copy from.
+ * @param dst - Destination path (wiped then rebuilt, filtered).
+ * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
+ */
+export function copyExtrasFiltered(src: string, dst: string, blockSet: Set<string>): void {
+  rmSync(dst, { recursive: true, force: true });
+  cpSync(src, dst, {
+    recursive: true,
+    force: true,
+    verbatimSymlinks: true,
+    filter: (srcEntry) => srcEntry === src || !blockSet.has(basename(srcEntry)),
+  });
 }
