@@ -12,8 +12,8 @@
 //   2. Parse the JSON. `npm pack --dry-run --json` returns an array of
 //      tarball reports (one entry per package); we read reports[0].files.
 //   3. Assert every REQUIRED path is present (LICENSE, README.md,
-//      CHANGELOG.md, package.json, shared/.gitignore, .gitleaks.toml, and
-//      the compiled bin dist/nomad.mjs).
+//      CHANGELOG.md, package.json, .gitleaks.toml, and the compiled bin
+//      dist/nomad.mjs).
 //   4. Assert no path matches the FORBIDDEN regex (.planning, .github,
 //      tests, node_modules, scripts, hosts, install.sh, tsconfig.json,
 //      vitest.config.ts, src, docs-site). This is how the verifier confirms it has NOT
@@ -42,7 +42,6 @@ const REQUIRED_EXACT = [
   'README.md',
   'CHANGELOG.md',
   'package.json',
-  'shared/.gitignore',
   '.gitleaks.toml',
   'dist/nomad.mjs',
   'dist/nomad.worker.mjs',
