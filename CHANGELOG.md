@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.46.0](https://github.com/funkadelic/claude-nomad/compare/v0.45.0...v0.46.0) (2026-06-08)
+
+
+### Added
+
+* **doctor:** show a progress spinner while checks run ([#266](https://github.com/funkadelic/claude-nomad/issues/266)) ([148ee4d](https://github.com/funkadelic/claude-nomad/commit/148ee4dba75224a3d98059f48130c0bc4daab55f))
+* **recovery:** show masked secret context in push recovery prompts ([#263](https://github.com/funkadelic/claude-nomad/issues/263)) ([d1de449](https://github.com/funkadelic/claude-nomad/commit/d1de449c183943a9e8efbadc354f20b7a6408c57))
+
+
+### Fixed
+
+* **links:** skip dry-run create event for already-correct symlinks ([#261](https://github.com/funkadelic/claude-nomad/issues/261)) ([4e32146](https://github.com/funkadelic/claude-nomad/commit/4e321463254d336786d4d7397ae0a0fdeb3274ae))
+
+
+### Changed
+
+* **summary:** drop glyph and "summary:" prefix from grouped-tree row ([#265](https://github.com/funkadelic/claude-nomad/issues/265)) ([5e87a18](https://github.com/funkadelic/claude-nomad/commit/5e87a183272ca3de27a80c0fd9e66089b11a4c64))
+
+
+### Testing
+
+* **recovery:** correct two inaccurate comments in recovery context tests ([#264](https://github.com/funkadelic/claude-nomad/issues/264)) ([371c43d](https://github.com/funkadelic/claude-nomad/commit/371c43dc6873b9c1d81ef477f535c47f47826e97))
+
 ## [0.45.0](https://github.com/funkadelic/claude-nomad/compare/v0.44.1...v0.45.0) (2026-06-07)
 
 
