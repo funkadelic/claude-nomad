@@ -222,13 +222,18 @@ describe('remapExtrasPush (integration)', () => {
     });
   });
 
-  it('.claude extra: filters settings.local.json, copies settings.json; pushed contains foo/.claude', async () => {
-    // Integration test: remapExtrasPush must use the ALWAYS_NEVER_SYNC filter
-    // on the .claude extra so host-local secrets never reach the repo.
+  it('.claude extra: filters NEVER_SYNC host-local state, copies config; pushed contains foo/.claude', async () => {
+    // Integration test: remapExtrasPush must filter the .claude extra against
+    // the full NEVER_SYNC boundary so host-local secrets AND ephemeral state
+    // (shell-snapshots, sessions) never reach the repo, while config does.
     const claudeDir = join(projectRoot, '.claude');
     mkdirSync(claudeDir, { recursive: true });
     writeFileSync(join(claudeDir, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
     writeFileSync(join(claudeDir, 'settings.local.json'), 'secret=localonly\n');
+    mkdirSync(join(claudeDir, 'shell-snapshots'), { recursive: true });
+    writeFileSync(join(claudeDir, 'shell-snapshots', 'snap.sh'), 'export TOKEN=abc\n');
+    mkdirSync(join(claudeDir, 'sessions'), { recursive: true });
+    writeFileSync(join(claudeDir, 'sessions', 's.json'), '{}\n');
     writeFileSync(
       mapPath,
       JSON.stringify({
@@ -240,9 +245,12 @@ describe('remapExtrasPush (integration)', () => {
     const { remapExtrasPush } = await import('./extras-sync.ts');
     const result = remapExtrasPush('20260522-110007');
 
-    // settings.local.json must NOT be staged into the repo.
+    // settings.local.json (ALWAYS_NEVER_SYNC) must NOT be staged.
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'settings.local.json'))).toBe(false);
-    // settings.json must be present.
+    // NEVER_SYNC-only ephemeral state must NOT be staged (the CR-01 fix).
+    expect(existsSync(join(sharedExtras, 'foo', '.claude', 'shell-snapshots'))).toBe(false);
+    expect(existsSync(join(sharedExtras, 'foo', '.claude', 'sessions'))).toBe(false);
+    // settings.json (config) must be present.
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'settings.json'))).toBe(true);
     expect(readFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), 'utf8')).toBe(
       '{"model":"claude-opus-4-5"}\n',
@@ -254,5 +262,27 @@ describe('remapExtrasPush (integration)', () => {
       pushed: ['foo/.claude'],
       wouldPush: [],
     });
+  });
+
+  it('.planning extra: keeps todos/ on push (NEVER_SYNC widening must not leak onto .planning)', async () => {
+    // Regression guard for the per-extra denylist: .planning keeps the narrow
+    // ALWAYS_NEVER_SYNC subset, so its legitimate todos/ GSD content still syncs.
+    const planningDir = join(projectRoot, '.planning');
+    mkdirSync(join(planningDir, 'todos'), { recursive: true });
+    writeFileSync(join(planningDir, 'todos', 'task.md'), '# task\n');
+    writeFileSync(join(planningDir, 'PLAN.md'), '# plan\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    remapExtrasPush('20260522-110008');
+
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', 'todos', 'task.md'))).toBe(true);
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'))).toBe(true);
   });
 });

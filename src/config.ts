@@ -141,9 +141,14 @@ export function allSharedLinks(map: PathMap): string[] {
  * copied under `shared/extras/<logical>/<name>`. Only listed names are
  * eligible for sync; widening is a one-line edit with no migration required.
  *
- * `.claude` is supported: the push copy filters out `ALWAYS_NEVER_SYNC`-named
- * entries (e.g. `settings.local.json`) so host-local secrets are never staged
- * even when the whole `.claude/` tree is opted in.
+ * `.claude` is supported and filtered against the full `NEVER_SYNC` boundary
+ * (not just the `ALWAYS_NEVER_SYNC` secret subset): its tree mirrors
+ * `~/.claude/` semantics, so ephemeral/host-local names (`settings.local.json`,
+ * `projects/`, `shell-snapshots/`, `statsig/`, `sessions/`, `todos/`, ...) are
+ * stripped on push, leaving only config (`settings.json`, `hooks/`, `agents/`,
+ * `skills/`, `commands/`, `rules/`). `.planning` keeps the narrow
+ * `ALWAYS_NEVER_SYNC` subset so its legitimate `todos`/`plans` content passes.
+ * See `extrasDenySet` in `extras-sync.core.ts`.
  */
 export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md', '.claude'] as const;
 

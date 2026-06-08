@@ -95,11 +95,17 @@ Pointers and specifics:
   overwritten.
 - **Credentials stay blocked even inside synced extras.** A strict subset of the never-synced set
   (`.claude.json`, `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`)
-  is hard-blocked even when nested inside an opted-in `shared/extras/<logical>/` tree, so a secret
-  file dropped under a synced `.planning/` or `.claude/` directory can never ride through the extras
-  gate. For `.claude/` specifically, the push copy filters these names out before staging, so
-  opting `.claude/` in never leaks per-host secrets (for example, `settings.local.json` is skipped
-  while `settings.json` and files under `hooks/` are copied normally).
+  is hard-blocked even when nested inside an opted-in `.planning/` extras tree, so a secret file
+  dropped under a synced `.planning/` directory can never ride through the extras gate. (`.planning/`
+  uses only this subset so its legitimate `todos/` and `plans/` content still syncs.)
+- **The `.claude/` extra is filtered against the _full_ never-synced set, not just that subset.**
+  Because a `.claude/` directory mirrors the layout of `~/.claude/`, opting it in strips every
+  ephemeral or host-local name on push (`settings.local.json`, `projects/`, `shell-snapshots/`,
+  `sessions/`, `statsig/`, `telemetry/`, `todos/`, and the rest of `NEVER_SYNC`), leaving only your
+  config (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`, `rules/`). So syncing
+  `.claude/` carries your project's Claude setup across machines without ever leaking session
+  transcripts or per-host secrets. The same boundary is enforced a second time at the push gate as a
+  backstop.
 
 :::note
 Plugins that depend on host-specific state (external binaries, API keys in env, MCP server

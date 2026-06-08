@@ -6,6 +6,7 @@ import {
   copyExtras,
   copyExtrasFiltered,
   eachExtrasTarget,
+  extrasDenySet,
   loadValidatedExtras,
   type ExtrasCounts,
   type ValidatedExtras,
@@ -32,13 +33,14 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  * @param dryRun - when `true`, collect `would` without mutating.
  * @param paths - resolves `{ src, dst }` for one target (side-specific).
  * @param backup - snapshots the dst before clobber (side-specific).
- * @param copy - copy function to use; push passes `copyExtrasFiltered`, pull
- *   passes `copyExtras`. Pull uses plain copy because the repo should never
- *   contain a blocked file once push filters, so restoring from a clean repo
- *   is a no-op for filtering. Using plain copy on pull keeps the local restore
- *   an exact mirror of repo state and avoids a second filter pass that could
- *   mask a repo that was somehow already poisoned (push is the single choke
- *   point for filtering, not pull).
+ * @param copy - copy function, receiving the target `dirname` so it can pick a
+ *   per-extra denylist. Push passes a filtered copy for every extra (each by
+ *   its `extrasDenySet`). Pull filters only `.claude` (whose tree can carry
+ *   per-host state like `settings.local.json`) and uses the exact-mirror
+ *   `copyExtras` for the others: a clean repo makes the filter a no-op, and the
+ *   exact mirror is the documented restore semantics for `.planning`. Filtering
+ *   `.claude` on pull is defense-in-depth against a repo poisoned out-of-band
+ *   (manual commit, older CLI) restoring a blocked file onto the host.
  * @returns the counts plus the done/would detail lists.
  */
 function runExtrasOp(
@@ -46,7 +48,7 @@ function runExtrasOp(
   dryRun: boolean,
   paths: (t: ExtrasTarget) => { src: string; dst: string },
   backup: (dst: string, localRoot: string) => void,
-  copy: (src: string, dst: string) => void,
+  copy: (src: string, dst: string, dirname: string) => void,
 ): ExtrasDetail {
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
   const done: string[] = [];
@@ -60,7 +62,7 @@ function runExtrasOp(
       continue;
     }
     backup(dst, t.localRoot);
-    copy(src, dst);
+    copy(src, dst, t.dirname);
     done.push(item);
   }
   return { ...counts, done, would };
@@ -101,7 +103,9 @@ export function remapExtrasPush(
       dst: join(repoExtras, logical, dirname),
     }),
     (dst) => backupRepoWrite(dst, ts, repo),
-    copyExtrasFiltered,
+    // Push filters every extra by its per-name denylist: `.claude` gets the
+    // full NEVER_SYNC boundary, `.planning` keeps the narrow ALWAYS_NEVER_SYNC.
+    (src, dst, dirname) => copyExtrasFiltered(src, dst, extrasDenySet(dirname)),
   );
   return { unmapped, skipped, pushed: done, wouldPush: would };
 }
@@ -144,9 +148,15 @@ export function remapExtrasPull(
     // Snapshot the host-side dst BEFORE copyExtras clobbers it. Anchor on
     // localRoot so the backup tree mirrors the project layout.
     (dst, localRoot) => backupExtrasWrite(dst, ts, localRoot),
-    // Pull uses unfiltered copy: the repo should never contain a blocked file
-    // once push filters, so the local restore is an exact mirror of repo state.
-    copyExtras,
+    // Pull filters `.claude` against its NEVER_SYNC boundary so a repo poisoned
+    // out-of-band cannot restore a blocked per-host file (e.g. settings.local.json)
+    // onto this host. Other extras use the exact-mirror copyExtras: the repo is
+    // clean once push filters, and exact mirror is the documented restore for
+    // `.planning`.
+    (src, dst, dirname) =>
+      dirname === '.claude'
+        ? copyExtrasFiltered(src, dst, extrasDenySet(dirname))
+        : copyExtras(src, dst),
   );
   return { unmapped, skipped, pulled: done, wouldPull: would };
 }

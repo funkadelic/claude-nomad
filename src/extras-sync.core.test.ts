@@ -352,8 +352,8 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
     mkdirSync(join(tmpSrc, 'hooks'), { recursive: true });
     writeFileSync(join(tmpSrc, 'hooks', 'foo.cjs'), '// hook\n');
 
-    const { copyExtrasFiltered } = await import('./extras-sync.core.ts');
-    copyExtrasFiltered(tmpSrc, tmpDst);
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.planning'));
 
     // Blocked: ALWAYS_NEVER_SYNC entry must not appear in dst.
     expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(false);
@@ -362,25 +362,88 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
     expect(existsSync(join(tmpDst, 'hooks', 'foo.cjs'))).toBe(true);
   });
 
-  it('allows a todos/ dir (NEVER_SYNC-but-not-ALWAYS_NEVER_SYNC, proving EXTRAS subset semantics)', async () => {
-    // todos/ is in NEVER_SYNC but NOT in ALWAYS_NEVER_SYNC; it must pass the filter.
+  it('allows a todos/ dir under the .planning denylist (NEVER_SYNC-but-not-ALWAYS_NEVER_SYNC)', async () => {
+    // todos/ is in NEVER_SYNC but NOT in ALWAYS_NEVER_SYNC; under the .planning
+    // (ALWAYS_NEVER_SYNC) denylist it must pass.
     mkdirSync(join(tmpSrc, 'todos'), { recursive: true });
     writeFileSync(join(tmpSrc, 'todos', 'task.md'), '# task\n');
 
-    const { copyExtrasFiltered } = await import('./extras-sync.core.ts');
-    copyExtrasFiltered(tmpSrc, tmpDst);
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.planning'));
 
     expect(existsSync(join(tmpDst, 'todos', 'task.md'))).toBe(true);
   });
 
-  it('allows a plans/ dir (another NEVER_SYNC-but-not-ALWAYS_NEVER_SYNC name)', async () => {
+  it('allows a plans/ dir under the .planning denylist (another NEVER_SYNC-but-not-ALWAYS name)', async () => {
     mkdirSync(join(tmpSrc, 'plans'), { recursive: true });
     writeFileSync(join(tmpSrc, 'plans', 'roadmap.md'), '# roadmap\n');
 
-    const { copyExtrasFiltered } = await import('./extras-sync.core.ts');
-    copyExtrasFiltered(tmpSrc, tmpDst);
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.planning'));
 
     expect(existsSync(join(tmpDst, 'plans', 'roadmap.md'))).toBe(true);
+  });
+
+  it('strips NEVER_SYNC-only names under the .claude denylist while keeping config', async () => {
+    // The .claude extra uses the full NEVER_SYNC boundary: ephemeral host-local
+    // names (todos/, shell-snapshots/, sessions/) must be stripped, while config
+    // (settings.json, hooks/) survives.
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
+    mkdirSync(join(tmpSrc, 'hooks'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'hooks', 'foo.cjs'), '// hook\n');
+    mkdirSync(join(tmpSrc, 'todos'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'todos', 'task.md'), '# task\n');
+    mkdirSync(join(tmpSrc, 'shell-snapshots'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'shell-snapshots', 'snap.sh'), 'export X=1\n');
+    mkdirSync(join(tmpSrc, 'sessions'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'sessions', 's.json'), '{}\n');
+
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    // Stripped: NEVER_SYNC names that the narrow ALWAYS_NEVER_SYNC subset misses.
+    expect(existsSync(join(tmpDst, 'todos'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'shell-snapshots'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'sessions'))).toBe(false);
+    // Kept: config content.
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+    expect(existsSync(join(tmpDst, 'hooks', 'foo.cjs'))).toBe(true);
+  });
+
+  it('filters a denied basename nested below the top level (depth, not just root)', async () => {
+    // The security claim is "blocked at any depth"; prove the basename filter
+    // fires on a nested entry, not only at the source root.
+    mkdirSync(join(tmpSrc, 'sub'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'sub', 'settings.local.json'), 'secret=1\n');
+    writeFileSync(join(tmpSrc, 'sub', 'keep.json'), '{"ok":1}\n');
+
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'sub', 'settings.local.json'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'sub', 'keep.json'))).toBe(true);
+  });
+
+  it('keeps the root src entry even when its basename is a denied name', async () => {
+    // The denylist applies to contents, not the source dir. A src dir whose own
+    // basename collides with a denied name (e.g. todos/) must still be mirrored,
+    // not silently produce an empty dst.
+    const deniedRoot = join(tmpSrc, 'todos');
+    mkdirSync(deniedRoot, { recursive: true });
+    writeFileSync(join(deniedRoot, 'inner.md'), '# inner\n');
+
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(deniedRoot, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'inner.md'))).toBe(true);
+  });
+
+  it('extrasDenySet returns NEVER_SYNC for .claude and ALWAYS_NEVER_SYNC for others', async () => {
+    const { extrasDenySet } = await import('./extras-sync.core.ts');
+    const { NEVER_SYNC, ALWAYS_NEVER_SYNC } = await import('./config.ts');
+    expect(extrasDenySet('.claude')).toBe(NEVER_SYNC);
+    expect(extrasDenySet('.planning')).toBe(ALWAYS_NEVER_SYNC);
+    expect(extrasDenySet('CLAUDE.md')).toBe(ALWAYS_NEVER_SYNC);
   });
 
   it('unfiltered copyExtras still copies settings.local.json (original behavior unchanged)', async () => {
