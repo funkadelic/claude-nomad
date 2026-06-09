@@ -116,6 +116,16 @@ carries one project's local Claude setup across machines; it does not change how
 `~/.claude/` is handled.
 :::
 
+:::caution[Only sync what your project's git ignores]
+Extras are for project files your project's own git does **not** track. A file committed to the
+project repo already travels with it: clone the repo on another machine and the file is there.
+Adding that same `.claude/` (or `.planning/`, or `CLAUDE.md`) to nomad makes a second copy that
+competes with git, and because a nomad pull mirrors the repo extra over your working tree
+(last write wins) it can overwrite or revert the committed version and leave the tree dirty. Opt a
+name into extras only when your project gitignores it: local-only config you want on your own
+machines, the way claude-nomad's own `.claude/` is git-ignored and synced.
+:::
+
 :::note
 Plugins that depend on host-specific state (external binaries, API keys in env, MCP server
 URLs) still need that side set up on each host. Put them in `hosts/<host>.json` or the
