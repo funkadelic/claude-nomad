@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.48.0](https://github.com/funkadelic/claude-nomad/compare/v0.47.1...v0.48.0) (2026-06-09)
+
+
+### Added
+
+* **push:** surface changed shared config in push output ([#278](https://github.com/funkadelic/claude-nomad/issues/278)) ([4774661](https://github.com/funkadelic/claude-nomad/commit/477466138e203f861e60c72cb6522f25393b3987))
+* **update:** frame update output and report new version ([#279](https://github.com/funkadelic/claude-nomad/issues/279)) ([9342de1](https://github.com/funkadelic/claude-nomad/commit/9342de1187db1fd115cc73cb2b516a9477b67a54))
+
 ## [0.47.1](https://github.com/funkadelic/claude-nomad/compare/v0.47.0...v0.47.1) (2026-06-09)
 
 
