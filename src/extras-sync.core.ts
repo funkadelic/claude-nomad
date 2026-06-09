@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 import {
@@ -154,21 +154,58 @@ export function copyExtrasFiltered(src: string, dst: string, blockSet: Set<strin
 }
 
 /**
+ * Recursively prune dst entries the repo no longer ships, mirroring
+ * `copyExtras` deletion semantics at every depth WITHOUT touching host-local
+ * deny-set files. At each level: an entry whose basename is in `blockSet` is
+ * preserved wholesale (skipped, never recursed into), so nested per-host state
+ * like `settings.local.json` or a `projects/` tree survives. A non-deny entry
+ * absent from src is removed. When both src and dst hold the same name as
+ * directories the prune recurses to clear nested stale content; when the node
+ * types differ (dst dir vs src file, or vice versa) the dst node is removed so
+ * the follow-up `cpSync` can recreate it cleanly (`cpSync` cannot overwrite a
+ * non-empty dir with a file). Presence in src is probed with `lstatSync` (no
+ * symlink follow) so a broken/relative src symlink is not misread as "absent"
+ * and used to prune a real dst entry.
+ *
+ * @param src - Source directory (repo side on pull).
+ * @param dst - Destination directory (host side on pull); assumed to exist.
+ * @param blockSet - Basenames to preserve at any depth (see `extrasDenySet`).
+ */
+function prunePreservingDenied(src: string, dst: string, blockSet: Set<string>): void {
+  for (const name of readdirSync(dst)) {
+    if (blockSet.has(name)) continue;
+    const dstPath = join(dst, name);
+    const srcStat = lstatSync(join(src, name), { throwIfNoEntry: false });
+    if (srcStat === undefined) {
+      rmSync(dstPath, { recursive: true, force: true });
+      continue;
+    }
+    const dstStat = lstatSync(dstPath);
+    if (srcStat.isDirectory() && dstStat.isDirectory()) {
+      prunePreservingDenied(join(src, name), dstPath, blockSet);
+    } else if (srcStat.isDirectory() !== dstStat.isDirectory()) {
+      rmSync(dstPath, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
  * Pull-only preserving copy variant. Unlike `copyExtras` and
  * `copyExtrasFiltered`, this function does NOT `rmSync(dst)` wholesale before
- * copying. Instead it performs a targeted pruning pass that preserves any
- * existing dst entry whose basename is in `blockSet` (host-local deny-set files
- * that push already filtered out of the repo, e.g. `settings.local.json`),
- * while still applying true-mirror deletion to synced (non-deny) dst entries
- * that are absent from src. After pruning, the same filtered `cpSync` used by
- * `copyExtrasFiltered` overwrites or creates synced files (defense-in-depth:
- * deny-set basenames from src are also stripped on the copy, guarding against a
- * repo poisoned out-of-band). A not-yet-existing dst (fresh pull) is handled
- * cleanly: cpSync creates it. Passes `verbatimSymlinks: true` so relative
- * symlink targets are not rewritten across hosts (Pitfall 1, nodejs/node issue
- * 41693). The root-src-entry-kept semantics (`srcEntry === src`) match
- * `copyExtrasFiltered` exactly. `copyExtras` and `copyExtrasFiltered` are
- * intentionally left unchanged so the push path stays an exact byte-mirror.
+ * copying. Instead it runs a recursive prune (`prunePreservingDenied`) that
+ * preserves, at any depth, every existing dst entry whose basename is in
+ * `blockSet` (host-local deny-set files that push already filtered out of the
+ * repo, e.g. `settings.local.json`), while still applying true-mirror deletion
+ * to synced (non-deny) dst entries that are absent from src. After pruning, the
+ * same filtered `cpSync` used by `copyExtrasFiltered` overwrites or creates
+ * synced files (defense-in-depth: deny-set basenames from src are also stripped
+ * on the copy, guarding against a repo poisoned out-of-band). A not-yet-existing
+ * dst (fresh pull) is handled cleanly: the prune is skipped and cpSync creates
+ * it. Passes `verbatimSymlinks: true` so relative symlink targets are not
+ * rewritten across hosts (Pitfall 1, nodejs/node issue 41693). The
+ * root-src-entry-kept semantics (`srcEntry === src`) match `copyExtrasFiltered`
+ * exactly. `copyExtras` and `copyExtrasFiltered` are intentionally left
+ * unchanged so the push path stays an exact byte-mirror.
  *
  * @param src - Source directory to copy from (repo side on pull).
  * @param dst - Destination path (host-side project dir on pull).
@@ -180,12 +217,7 @@ export function copyExtrasFilteredPreserving(
   dst: string,
   blockSet: Set<string>,
 ): void {
-  if (existsSync(dst)) {
-    for (const name of readdirSync(dst)) {
-      if (blockSet.has(name) || existsSync(join(src, name))) continue;
-      rmSync(join(dst, name), { recursive: true, force: true });
-    }
-  }
+  if (existsSync(dst)) prunePreservingDenied(src, dst, blockSet);
   cpSync(src, dst, {
     recursive: true,
     force: true,

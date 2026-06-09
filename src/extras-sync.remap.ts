@@ -38,8 +38,9 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  *   per-extra denylist. Push passes a filtered copy for every extra (each by
  *   its `extrasDenySet`). Pull routes `.claude` through
  *   `copyExtrasFilteredPreserving` (preserves host-local deny-set files already
- *   on disk, e.g. `settings.local.json`, while still mirror-pruning synced files
- *   absent from src) and uses the exact-mirror `copyExtras` for every other
+ *   on disk at any depth, e.g. `settings.local.json`, while still recursively
+ *   mirror-pruning synced files absent from src) and uses the exact-mirror
+ *   `copyExtras` for every other
  *   extra. This preservation is `.claude`-only: `.planning` and `CLAUDE.md`
  *   rarely hold host-local files, so they deliberately keep the exact-mirror
  *   semantics. Filtering `.claude` on pull is defense-in-depth against a repo
