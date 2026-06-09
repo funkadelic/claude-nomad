@@ -201,7 +201,11 @@ function prunePreservingDenied(src: string, dst: string, blockSet: Set<string>):
  * synced files (defense-in-depth: deny-set basenames from src are also stripped
  * on the copy, guarding against a repo poisoned out-of-band). A not-yet-existing
  * dst (fresh pull) is handled cleanly: the prune is skipped and cpSync creates
- * it. Passes `verbatimSymlinks: true` so relative symlink targets are not
+ * it. A dst that exists but is not a real directory (a regular file, or a
+ * symlink) is removed wholesale before the copy, matching `copyExtras` root
+ * semantics, so the recursive prune never `readdirSync`-follows a symlink and
+ * deletes content outside the project tree. Passes `verbatimSymlinks: true` so
+ * relative symlink targets are not
  * rewritten across hosts (Pitfall 1, nodejs/node issue 41693). The
  * root-src-entry-kept semantics (`srcEntry === src`) match `copyExtrasFiltered`
  * exactly. `copyExtras` and `copyExtrasFiltered` are intentionally left
@@ -217,7 +221,14 @@ export function copyExtrasFilteredPreserving(
   dst: string,
   blockSet: Set<string>,
 ): void {
-  if (existsSync(dst)) prunePreservingDenied(src, dst, blockSet);
+  const dstStat = lstatSync(dst, { throwIfNoEntry: false });
+  if (dstStat !== undefined) {
+    // A non-directory root (file or symlink) is removed wholesale so cpSync
+    // recreates it, and so the prune never readdir-follows a symlink into an
+    // external tree. Only a real directory is pruned in place.
+    if (dstStat.isDirectory()) prunePreservingDenied(src, dst, blockSet);
+    else rmSync(dst, { recursive: true, force: true });
+  }
   cpSync(src, dst, {
     recursive: true,
     force: true,

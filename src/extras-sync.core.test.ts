@@ -5,6 +5,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -655,5 +656,43 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
 
     expect(readFileSync(join(tmpDst, 'sub', 'settings.local.json'), 'utf8')).toBe('host=1\n');
     expect(existsSync(join(tmpDst, 'sub', 'keep.json'))).toBe(true);
+  });
+
+  it('Test root guard (file): a dst that is a regular file is replaced by the mirrored src dir', async () => {
+    // A non-directory root must be removed wholesale so cpSync recreates it,
+    // rather than readdirSync throwing ENOTDIR on the file.
+    const dstFile = join(tmpDst, 'asfile');
+    writeFileSync(dstFile, 'i am a file\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"a":1}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    expect(() =>
+      copyExtrasFilteredPreserving(tmpSrc, dstFile, extrasDenySet('.claude')),
+    ).not.toThrow();
+
+    expect(statSync(dstFile).isDirectory()).toBe(true);
+    expect(existsSync(join(dstFile, 'settings.json'))).toBe(true);
+  });
+
+  it('Test root guard (symlink): does not delete through a dst symlink to an external dir', async () => {
+    // If dst is a symlink to a dir, the prune must NOT follow it and delete the
+    // target's contents. The root is replaced by a real mirrored dir; the
+    // external tree is left untouched.
+    const external = mkdtempSync(join(tmpdir(), 'nomad-core-pres-ext-'));
+    writeFileSync(join(external, 'keep.txt'), 'precious\n');
+    const dstLink = join(tmpDst, 'link');
+    symlinkSync(external, dstLink);
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"a":1}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, dstLink, extrasDenySet('.claude'));
+
+    // External content survives (no readdir-follow delete).
+    expect(existsSync(join(external, 'keep.txt'))).toBe(true);
+    // dst link replaced by a real dir holding the mirrored config.
+    expect(statSync(dstLink).isDirectory()).toBe(true);
+    expect(existsSync(join(dstLink, 'settings.json'))).toBe(true);
+
+    rmSync(external, { recursive: true, force: true });
   });
 });
