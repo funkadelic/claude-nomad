@@ -1,4 +1,4 @@
-import { cpSync, existsSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 import {
@@ -145,6 +145,47 @@ export function extrasDenySet(dirname: string): Set<string> {
  */
 export function copyExtrasFiltered(src: string, dst: string, blockSet: Set<string>): void {
   rmSync(dst, { recursive: true, force: true });
+  cpSync(src, dst, {
+    recursive: true,
+    force: true,
+    verbatimSymlinks: true,
+    filter: (srcEntry) => srcEntry === src || !blockSet.has(basename(srcEntry)),
+  });
+}
+
+/**
+ * Pull-only preserving copy variant. Unlike `copyExtras` and
+ * `copyExtrasFiltered`, this function does NOT `rmSync(dst)` wholesale before
+ * copying. Instead it performs a targeted pruning pass that preserves any
+ * existing dst entry whose basename is in `blockSet` (host-local deny-set files
+ * that push already filtered out of the repo, e.g. `settings.local.json`),
+ * while still applying true-mirror deletion to synced (non-deny) dst entries
+ * that are absent from src. After pruning, the same filtered `cpSync` used by
+ * `copyExtrasFiltered` overwrites or creates synced files (defense-in-depth:
+ * deny-set basenames from src are also stripped on the copy, guarding against a
+ * repo poisoned out-of-band). A not-yet-existing dst (fresh pull) is handled
+ * cleanly: cpSync creates it. Passes `verbatimSymlinks: true` so relative
+ * symlink targets are not rewritten across hosts (Pitfall 1, nodejs/node issue
+ * 41693). The root-src-entry-kept semantics (`srcEntry === src`) match
+ * `copyExtrasFiltered` exactly. `copyExtras` and `copyExtrasFiltered` are
+ * intentionally left unchanged so the push path stays an exact byte-mirror.
+ *
+ * @param src - Source directory to copy from (repo side on pull).
+ * @param dst - Destination path (host-side project dir on pull).
+ * @param blockSet - Basenames to preserve in dst and to exclude from the src
+ *   copy (see `extrasDenySet`).
+ */
+export function copyExtrasFilteredPreserving(
+  src: string,
+  dst: string,
+  blockSet: Set<string>,
+): void {
+  if (existsSync(dst)) {
+    for (const name of readdirSync(dst)) {
+      if (blockSet.has(name) || existsSync(join(src, name))) continue;
+      rmSync(join(dst, name), { recursive: true, force: true });
+    }
+  }
   cpSync(src, dst, {
     recursive: true,
     force: true,

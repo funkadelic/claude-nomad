@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -471,5 +471,119 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
     // copyExtras is unfiltered; the blocked file must still appear in dst.
     expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(true);
     expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// copyExtrasFilteredPreserving: pull-only preserving copy semantics
+// ---------------------------------------------------------------------------
+
+describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
+  let tmpSrc: string;
+  let tmpDst: string;
+
+  beforeEach(() => {
+    tmpSrc = mkdtempSync(join(tmpdir(), 'nomad-core-pres-src-'));
+    tmpDst = mkdtempSync(join(tmpdir(), 'nomad-core-pres-dst-'));
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmpSrc, { recursive: true, force: true });
+    rmSync(tmpDst, { recursive: true, force: true });
+  });
+
+  it('Test A (regression): preserves a deny-set dst file absent from src', async () => {
+    // The core bug: settings.local.json lives on the host dst but is absent from
+    // the repo src (push filtered it out). After a pull it must still exist.
+    writeFileSync(join(tmpDst, 'settings.local.json'), 'host-local=1\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(true);
+    expect(readFileSync(join(tmpDst, 'settings.local.json'), 'utf8')).toBe('host-local=1\n');
+  });
+
+  it('Test B (true-mirror deletion): removes a non-deny dst file absent from src', async () => {
+    // A synced file that was removed from the repo must be pruned from dst.
+    writeFileSync(join(tmpDst, 'stale.json'), 'old=1\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'stale.json'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+  });
+
+  it('Test C (overwrite synced file): overwrites a non-deny file present in both src and dst', async () => {
+    writeFileSync(join(tmpDst, 'settings.json'), '{"model":"old"}\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"new"}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(readFileSync(join(tmpDst, 'settings.json'), 'utf8')).toBe('{"model":"new"}\n');
+  });
+
+  it('Test D (filter applies to src): a deny-set file in src is NOT copied to dst', async () => {
+    // Even if the repo were poisoned and contained settings.local.json, the
+    // filter must strip it from the copy (defense-in-depth).
+    writeFileSync(join(tmpSrc, 'settings.local.json'), 'secret=1\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"x"}\n');
+    // dst does NOT have settings.local.json pre-existing.
+    rmSync(join(tmpDst, 'settings.local.json'), { force: true });
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+  });
+
+  it('Test E (fresh pull): dst does not exist before the call; function copies filtered src content', async () => {
+    rmSync(tmpDst, { recursive: true, force: true });
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"fresh"}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    expect(() =>
+      copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude')),
+    ).not.toThrow();
+
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+    expect(readFileSync(join(tmpDst, 'settings.json'), 'utf8')).toBe('{"model":"fresh"}\n');
+  });
+
+  it('Test F (root src entry kept): src whose own basename is denied is still mirrored', async () => {
+    // The srcEntry === src predicate branch: the root src is always kept even
+    // when its basename collides with a blocked name.
+    const deniedRoot = join(tmpSrc, 'todos');
+    mkdirSync(deniedRoot, { recursive: true });
+    writeFileSync(join(deniedRoot, 'inner.md'), '# inner\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(deniedRoot, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'inner.md'))).toBe(true);
+  });
+
+  it('Test G (non-deny file present in both): overwritten by copy, not removed in prune pass', async () => {
+    // The prune pass skips a dst entry that also exists in src (the
+    // existsSync(join(src, name)) branch). It stays and is then overwritten.
+    writeFileSync(join(tmpDst, 'settings.json'), '{"model":"old"}\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"updated"}\n');
+    // Also add a host-local deny-set file to cover the blockSet.has branch.
+    writeFileSync(join(tmpDst, 'settings.local.json'), 'local=1\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    // Non-deny file in both: overwritten with src content.
+    expect(readFileSync(join(tmpDst, 'settings.json'), 'utf8')).toBe('{"model":"updated"}\n');
+    // Deny-set file: preserved unchanged.
+    expect(readFileSync(join(tmpDst, 'settings.local.json'), 'utf8')).toBe('local=1\n');
   });
 });
