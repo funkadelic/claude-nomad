@@ -19,7 +19,7 @@ import { NomadFatal } from './utils.ts';
  */
 export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | null {
   try {
-    return run('nomad', ['--version'], { encoding: 'utf8' }).toString().trim();
+    return run('nomad', ['--version'], { encoding: 'utf8' }).toString().trim() || null;
   } catch {
     return null;
   }

@@ -92,4 +92,9 @@ describe('readInstalledVersion', () => {
     };
     expect(readInstalledVersion(run)).toBeNull();
   });
+
+  it('returns null when the output is empty or whitespace only', () => {
+    const run = (_bin: string, _args: readonly string[]) => '   \n';
+    expect(readInstalledVersion(run)).toBeNull();
+  });
 });
