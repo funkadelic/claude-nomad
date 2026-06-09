@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.1](https://github.com/funkadelic/claude-nomad/compare/v0.47.0...v0.47.1) (2026-06-09)
+
+
+### Fixed
+
+* **extras:** preserve host-local deny-set files on .claude pull ([#276](https://github.com/funkadelic/claude-nomad/issues/276)) ([3742c3e](https://github.com/funkadelic/claude-nomad/commit/3742c3e4067c1c986e7f182011581d4c867847b0))
+
 ## [0.47.0](https://github.com/funkadelic/claude-nomad/compare/v0.46.0...v0.47.0) (2026-06-09)
 
 
