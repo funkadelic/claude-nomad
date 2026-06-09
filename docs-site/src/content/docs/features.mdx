@@ -52,7 +52,7 @@ folder, which claude-nomad already syncs.) Only whitelisted names are eligible, 
 not opt in are untouched. The `.claude/` extra is filtered so only config travels (`settings.json`,
 `hooks/`, `agents/`, `skills/`, `commands/`, `rules/`); host-local and ephemeral state
 (`settings.local.json`, session transcripts, caches) is stripped on push. Opt a name in only when
-your project gitignores it: if `.claude/` is committed to the project repo, the repo already syncs
+your project git-ignores it: if `.claude/` is committed to the project repo, the repo already syncs
 it, and adding nomad on top would clobber the committed copy. See [Usage](/claude-nomad/usage/) for
 how to opt a project in.
 

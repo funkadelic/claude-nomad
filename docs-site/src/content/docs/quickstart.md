@@ -97,7 +97,7 @@ are for the sidecar case only.
   ephemeral state (session transcripts, `settings.local.json`, caches), syncing only config.
 
 The same rule applies to `.planning/` and a project-level `CLAUDE.md`: sync them through extras only
-when the project gitignores them. See [How it works](/claude-nomad/how-it-works/) for the exact
+when the project git-ignores them. See [How it works](/claude-nomad/how-it-works/) for the exact
 fields and the filtering boundary.
 
 ## Setup: first host in detail

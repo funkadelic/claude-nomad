@@ -122,7 +122,7 @@ project repo already travels with it: clone the repo on another machine and the 
 Adding that same `.claude/` (or `.planning/`, or `CLAUDE.md`) to nomad makes a second copy that
 competes with git, and because a nomad pull mirrors the repo extra over your working tree
 (last write wins) it can overwrite or revert the committed version and leave the tree dirty. Opt a
-name into extras only when your project gitignores it: local-only config you want on your own
+name into extras only when your project git-ignores it: local-only config you want on your own
 machines, the way claude-nomad's own `.claude/` is git-ignored and synced.
 :::
 
