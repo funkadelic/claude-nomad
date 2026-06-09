@@ -15,6 +15,7 @@ import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './push-checks.ts';
 import type * as pushPreviewModule from './push-preview.ts';
 import type * as leakVerdictModule from './push-leak-verdict.ts';
+import type * as pushGlobalConfigModule from './push-global-config.ts';
 import type * as utilsModule from './utils.ts';
 
 // Coverage for cmdPush's gitleaks-scan stage: a detection on the staged tree
@@ -144,6 +145,12 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         gitOrFatal: gitOrFatalMock,
       };
     });
+    // Stub collectGlobalConfigChanges so the dry-run preview does not invoke
+    // real git diff against the temp repo (which has no HEAD commit).
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush({ dryRun: true });
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
@@ -168,6 +175,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).not.toContain('push complete');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./push-leak-verdict.ts');
+    vi.doUnmock('./push-global-config.ts');
   });
 
   it('Test 8b: dry-run preview leak renders the ✗ Leak scan row and prints the recovery block below the tree', async () => {
@@ -204,6 +212,12 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         gitStatusPorcelainZ: vi.fn(() => ' M shared/CLAUDE.md\0'),
       };
     });
+    // Stub collectGlobalConfigChanges so the dry-run preview does not invoke
+    // real git diff against the temp repo (which has no HEAD commit).
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush({ dryRun: true });
     expect(previewPushLeaksMock).toHaveBeenCalledOnce();
@@ -213,6 +227,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(errOutput(env)).toContain('nomad drop-session abc12345');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./push-preview.ts');
+    vi.doUnmock('./push-global-config.ts');
   });
 
   it('Test 8c: dry-run on a CLEAN repo (empty status) with a planted leak runs the preview, renders ✗, and sets exitCode 1', async () => {
@@ -252,6 +267,12 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       // still run despite the empty index.
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
+    // Stub collectGlobalConfigChanges so the dry-run preview does not invoke
+    // real git diff against the temp repo (which has no HEAD commit).
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush({ dryRun: true });
     // The clean-repo early return did NOT fire: the preview ran.
@@ -265,6 +286,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(logOutput(env)).not.toContain('nothing to commit');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./push-preview.ts');
+    vi.doUnmock('./push-global-config.ts');
   });
 
   it('Test 8d: dry-run on a CLEAN repo with a clean mapped session shows the ✓ no-leaks verdict and leaves exitCode unset', async () => {
@@ -296,6 +318,12 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
+    // Stub collectGlobalConfigChanges so the dry-run preview does not invoke
+    // real git diff against the temp repo (which has no HEAD commit).
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush({ dryRun: true });
     expect(previewPushLeaksMock).toHaveBeenCalledOnce();
@@ -307,6 +335,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(errOutput(env)).not.toContain('nomad drop-session');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./push-preview.ts');
+    vi.doUnmock('./push-global-config.ts');
   });
 
   it('Test 8e: dry-run with NO path-map on a clean repo renders the no-scan tree, does not die, and never calls previewPushLeaks', async () => {
@@ -339,6 +368,12 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
+    // Stub collectGlobalConfigChanges so the dry-run preview does not invoke
+    // real git diff against the temp repo (which has no HEAD commit).
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
     // Remove the default path-map.json the harness wrote.
     rmSync(join(env.repoUnderHome, 'path-map.json'));
     const { cmdPush } = await import('./commands.push.ts');
@@ -358,5 +393,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(errOutput(env)).not.toContain('path-map.json missing');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./push-preview.ts');
+    vi.doUnmock('./push-global-config.ts');
   });
 });
