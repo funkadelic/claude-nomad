@@ -49,8 +49,12 @@ documented here as accepted trade-offs rather than defended in code.
   write, and a strict subset of credential and host-config files (`.claude.json`,
   `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`) is hard-blocked
   from crossing the sync boundary even when nested inside an opted-in `shared/extras/` tree, so a
-  secret dropped under a synced `.planning/` directory cannot ride through. But the broader
-  principle holds: a host trusts whatever the repo contains.
+  secret dropped under a synced `.planning/` directory cannot ride through. The `.claude/` extra (a
+  project's own `<repo>/.claude/` directory, not the global `~/.claude/`) is filtered more strictly
+  still: it is checked against the full `NEVER_SYNC` set plus `projects/`, so opting it in strips
+  session transcripts and every per-host state directory on push, leaving only config
+  (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`, `rules/`). But the broader principle
+  holds: a host trusts whatever the repo contains.
 
 Under the intended single-user model none of these is exploitable by a remote party; they matter
 only for multi-user repos or a repo compromise, which are out of scope for the default deployment.

@@ -73,7 +73,7 @@ What `~/claude-nomad/` looks like on a configured host:
 | **Synced** | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`. |
 | **Generated** | `settings.json` | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull. |
 | **Remapped** | `projects/` session transcripts | Copied with path translation per `path-map.json`. |
-| **Per-project extras** | Whitelisted dirs like `.planning/`, `.claude/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
+| **Per-project extras** | Whitelisted dirs like `.planning/` or a project's own `<repo>/.claude/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
 | **Shared support dirs** | Opt-in global `~/.claude/` dirs like a tool's `get-shit-done/` | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. |
 | **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
 | **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
@@ -106,6 +106,25 @@ Pointers and specifics:
   `skills/`, `commands/`, `rules/`). So syncing `.claude/` carries your project's Claude setup across
   machines without ever leaking session transcripts or per-host secrets. The same boundary is
   enforced a second time at the push gate as a backstop.
+
+:::note[Which `.claude/`?]
+The `.claude` extra is a project's **own** `<repo>/.claude/` directory: the project-scoped Claude
+config that lives next to your code (`hooks/`, `agents/`, `skills/`, `commands/`, a project
+`settings.json`). That is a different directory from the global `~/.claude/` in your home folder,
+which claude-nomad already syncs through symlinks and the settings deep-merge. Opting the extra in
+carries one project's local Claude setup across machines; it does not change how the global
+`~/.claude/` is handled.
+:::
+
+:::caution[Only sync what your project's git ignores]
+Extras are for project files your project's own git does **not** track. A file committed to the
+project repo already travels with it: clone the repo on another machine and the file is there.
+Adding that same `.claude/` (or `.planning/`, or `CLAUDE.md`) to nomad makes a second copy that
+competes with git, and because a nomad pull mirrors the repo extra over your working tree
+(last write wins) it can overwrite or revert the committed version and leave the tree dirty. Opt a
+name into extras only when your project git-ignores it: local-only config you want on your own
+machines, the way claude-nomad's own `.claude/` is git-ignored and synced.
+:::
 
 :::note
 Plugins that depend on host-specific state (external binaries, API keys in env, MCP server

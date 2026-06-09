@@ -116,7 +116,8 @@ present), the content is unchanged.
 you push (and without mutating anything), two read-only options are available:
 `nomad doctor --check-shared` scans the session transcripts a push would publish;
 `nomad push --dry-run` runs the same scan AND also covers opted-in extras (`.planning`,
-`CLAUDE.md`), which `--check-shared` does not. Both stage content into a throwaway temp copy and
+`CLAUDE.md`, `.claude`), which `--check-shared` does not. Both stage content into a throwaway temp
+copy and
 never write to the sync repo. A leak-scan finding is the contrast to an early, pre-tree fatal:
 because the scan runs after the tree is built, the push aborts but the grouped tree still renders
 in full, with a `✗ gitleaks detected secrets in N session transcript(s)` row in its `Leak scan`

@@ -81,6 +81,25 @@ If you ever make the repo public, your session transcripts (which include conver
 become world-readable. **Keep it private.**
 :::
 
+## Per-project Claude config: in-repo vs sidecar
+
+Some projects keep their Claude config (a `.claude/` directory with `hooks/`, `agents/`,
+`commands/`, a project `settings.json`) **committed to the project's own git repo**. Others keep it
+as a **local sidecar**, listed in `.gitignore` so it is never committed. nomad's per-project extras
+are for the sidecar case only.
+
+- **Committed to the project repo:** do nothing in nomad. Cloning the repo on another machine
+  already brings `.claude/`, and the repo is the source of truth. Adding it to nomad's `extras`
+  would create a second, competing copy, and because a pull mirrors the synced copy over your
+  working tree (last write wins) it can overwrite or revert the committed version.
+- **Git-ignored sidecar:** add `.claude` to that project's entry in the `extras` field of
+  `path-map.json` so nomad carries it across your machines. On push nomad strips host-local and
+  ephemeral state (session transcripts, `settings.local.json`, caches), syncing only config.
+
+The same rule applies to `.planning/` and a project-level `CLAUDE.md`: sync them through extras only
+when the project git-ignores them. See [How it works](/claude-nomad/how-it-works/) for the exact
+fields and the filtering boundary.
+
 ## Setup: first host in detail
 
 `nomad init` creates the private repo via `gh`, wires it as `origin`, disables Actions, scaffolds
