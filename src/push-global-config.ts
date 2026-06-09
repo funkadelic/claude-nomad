@@ -147,7 +147,7 @@ export function collectGlobalConfigChanges(
   // Split on NUL and drop the trailing empty token.
   const tokens = raw.split('\0');
   /* c8 ignore next */
-  if (tokens[tokens.length - 1] === '') tokens.pop();
+  if (tokens.at(-1) === '') tokens.pop();
 
   let i = 0;
   while (i < tokens.length) {
