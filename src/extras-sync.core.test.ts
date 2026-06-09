@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -471,5 +480,223 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
     // copyExtras is unfiltered; the blocked file must still appear in dst.
     expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(true);
     expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// copyExtrasFilteredPreserving: pull-only preserving copy semantics
+// ---------------------------------------------------------------------------
+
+describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
+  let tmpSrc: string;
+  let tmpDst: string;
+  // An out-of-tree dir created by the symlink-root test; cleaned unconditionally
+  // in afterEach so a failed assertion cannot leak it.
+  let tmpExternal: string | undefined;
+
+  beforeEach(() => {
+    tmpSrc = mkdtempSync(join(tmpdir(), 'nomad-core-pres-src-'));
+    tmpDst = mkdtempSync(join(tmpdir(), 'nomad-core-pres-dst-'));
+    tmpExternal = undefined;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmpSrc, { recursive: true, force: true });
+    rmSync(tmpDst, { recursive: true, force: true });
+    if (tmpExternal !== undefined) rmSync(tmpExternal, { recursive: true, force: true });
+  });
+
+  it('Test A (regression): preserves a deny-set dst file absent from src', async () => {
+    // The core bug: settings.local.json lives on the host dst but is absent from
+    // the repo src (push filtered it out). After a pull it must still exist.
+    writeFileSync(join(tmpDst, 'settings.local.json'), 'host-local=1\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(true);
+    expect(readFileSync(join(tmpDst, 'settings.local.json'), 'utf8')).toBe('host-local=1\n');
+  });
+
+  it('Test B (true-mirror deletion): removes a non-deny dst file absent from src', async () => {
+    // A synced file that was removed from the repo must be pruned from dst.
+    writeFileSync(join(tmpDst, 'stale.json'), 'old=1\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"claude-opus-4-5"}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'stale.json'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+  });
+
+  it('Test C (overwrite synced file): overwrites a non-deny file present in both src and dst', async () => {
+    writeFileSync(join(tmpDst, 'settings.json'), '{"model":"old"}\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"new"}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(readFileSync(join(tmpDst, 'settings.json'), 'utf8')).toBe('{"model":"new"}\n');
+  });
+
+  it('Test D (filter applies to src): a deny-set file in src is NOT copied to dst', async () => {
+    // Even if the repo were poisoned and contained settings.local.json, the
+    // filter must strip it from the copy (defense-in-depth).
+    writeFileSync(join(tmpSrc, 'settings.local.json'), 'secret=1\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"x"}\n');
+    // dst does NOT have settings.local.json pre-existing.
+    rmSync(join(tmpDst, 'settings.local.json'), { force: true });
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'settings.local.json'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+  });
+
+  it('Test E (fresh pull): dst does not exist before the call; function copies filtered src content', async () => {
+    rmSync(tmpDst, { recursive: true, force: true });
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"fresh"}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    expect(() =>
+      copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude')),
+    ).not.toThrow();
+
+    expect(existsSync(join(tmpDst, 'settings.json'))).toBe(true);
+    expect(readFileSync(join(tmpDst, 'settings.json'), 'utf8')).toBe('{"model":"fresh"}\n');
+  });
+
+  it('Test F (root src entry kept): src whose own basename is denied is still mirrored', async () => {
+    // The srcEntry === src predicate branch: the root src is always kept even
+    // when its basename collides with a blocked name.
+    const deniedRoot = join(tmpSrc, 'todos');
+    mkdirSync(deniedRoot, { recursive: true });
+    writeFileSync(join(deniedRoot, 'inner.md'), '# inner\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(deniedRoot, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'inner.md'))).toBe(true);
+  });
+
+  it('Test G (non-deny file present in both): overwritten by copy, not removed in prune pass', async () => {
+    // The prune pass skips a dst entry that also exists in src (the
+    // existsSync(join(src, name)) branch). It stays and is then overwritten.
+    writeFileSync(join(tmpDst, 'settings.json'), '{"model":"old"}\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"model":"updated"}\n');
+    // Also add a host-local deny-set file to cover the blockSet.has branch.
+    writeFileSync(join(tmpDst, 'settings.local.json'), 'local=1\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    // Non-deny file in both: overwritten with src content.
+    expect(readFileSync(join(tmpDst, 'settings.json'), 'utf8')).toBe('{"model":"updated"}\n');
+    // Deny-set file: preserved unchanged.
+    expect(readFileSync(join(tmpDst, 'settings.local.json'), 'utf8')).toBe('local=1\n');
+  });
+
+  it('Test WR-01 (recursive prune): a nested non-deny file absent from src is removed', async () => {
+    // The prune mirrors at depth, not just the top level: a synced file removed
+    // from the repo under a shared subdir must be pruned from dst.
+    mkdirSync(join(tmpDst, 'hooks'), { recursive: true });
+    writeFileSync(join(tmpDst, 'hooks', 'stale.cjs'), 'old\n');
+    mkdirSync(join(tmpSrc, 'hooks'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'hooks', 'new.cjs'), 'new\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(existsSync(join(tmpDst, 'hooks', 'stale.cjs'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'hooks', 'new.cjs'))).toBe(true);
+  });
+
+  it('Test WR-02 (type change): a dst directory is replaced by a same-named src file', async () => {
+    // dst has a non-empty dir, src has a regular file at the same name. The prune
+    // removes the dst dir on the type mismatch so cpSync can write the file
+    // (cpSync cannot overwrite a non-empty dir with a file).
+    mkdirSync(join(tmpDst, 'foo'), { recursive: true });
+    writeFileSync(join(tmpDst, 'foo', 'inner.txt'), 'x\n');
+    writeFileSync(join(tmpSrc, 'foo'), 'file-content\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    expect(() =>
+      copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude')),
+    ).not.toThrow();
+
+    expect(statSync(join(tmpDst, 'foo')).isFile()).toBe(true);
+    expect(readFileSync(join(tmpDst, 'foo'), 'utf8')).toBe('file-content\n');
+  });
+
+  it('Test WR-02 (type change, reverse): a dst file is replaced by a same-named src directory', async () => {
+    // Mirror of the above: dst is a file, src is a directory at the same name.
+    writeFileSync(join(tmpDst, 'bar'), 'old-file\n');
+    mkdirSync(join(tmpSrc, 'bar'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'bar', 'inner.txt'), 'inner\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    expect(() =>
+      copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude')),
+    ).not.toThrow();
+
+    expect(statSync(join(tmpDst, 'bar')).isDirectory()).toBe(true);
+    expect(existsSync(join(tmpDst, 'bar', 'inner.txt'))).toBe(true);
+  });
+
+  it('Test IN-01 (nested deny-set): preserves a deny-set file nested under a shared subdir', async () => {
+    // The exact data-loss class the fix targets, at depth: a host-local
+    // settings.local.json under a shared subdir must survive the pull.
+    mkdirSync(join(tmpDst, 'sub'), { recursive: true });
+    writeFileSync(join(tmpDst, 'sub', 'settings.local.json'), 'host=1\n');
+    mkdirSync(join(tmpSrc, 'sub'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'sub', 'keep.json'), '{"a":1}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    expect(readFileSync(join(tmpDst, 'sub', 'settings.local.json'), 'utf8')).toBe('host=1\n');
+    expect(existsSync(join(tmpDst, 'sub', 'keep.json'))).toBe(true);
+  });
+
+  it('Test root guard (file): a dst that is a regular file is replaced by the mirrored src dir', async () => {
+    // A non-directory root must be removed wholesale so cpSync recreates it,
+    // rather than readdirSync throwing ENOTDIR on the file.
+    const dstFile = join(tmpDst, 'asfile');
+    writeFileSync(dstFile, 'i am a file\n');
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"a":1}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    expect(() =>
+      copyExtrasFilteredPreserving(tmpSrc, dstFile, extrasDenySet('.claude')),
+    ).not.toThrow();
+
+    expect(statSync(dstFile).isDirectory()).toBe(true);
+    expect(existsSync(join(dstFile, 'settings.json'))).toBe(true);
+  });
+
+  it('Test root guard (symlink): does not delete through a dst symlink to an external dir', async () => {
+    // If dst is a symlink to a dir, the prune must NOT follow it and delete the
+    // target's contents. The root is replaced by a real mirrored dir; the
+    // external tree is left untouched.
+    const external = mkdtempSync(join(tmpdir(), 'nomad-core-pres-ext-'));
+    tmpExternal = external; // afterEach removes it even if an assertion below fails
+    writeFileSync(join(external, 'keep.txt'), 'precious\n');
+    const dstLink = join(tmpDst, 'link');
+    symlinkSync(external, dstLink);
+    writeFileSync(join(tmpSrc, 'settings.json'), '{"a":1}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, dstLink, extrasDenySet('.claude'));
+
+    // External content survives (no readdir-follow delete).
+    expect(existsSync(join(external, 'keep.txt'))).toBe(true);
+    // dst link replaced by a real dir holding the mirrored config.
+    expect(statSync(dstLink).isDirectory()).toBe(true);
+    expect(existsSync(join(dstLink, 'settings.json'))).toBe(true);
   });
 });

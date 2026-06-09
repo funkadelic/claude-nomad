@@ -5,6 +5,7 @@ import { repoHome } from './config.ts';
 import {
   copyExtras,
   copyExtrasFiltered,
+  copyExtrasFilteredPreserving,
   eachExtrasTarget,
   extrasDenySet,
   loadValidatedExtras,
@@ -35,12 +36,16 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  * @param backup - snapshots the dst before clobber (side-specific).
  * @param copy - copy function, receiving the target `dirname` so it can pick a
  *   per-extra denylist. Push passes a filtered copy for every extra (each by
- *   its `extrasDenySet`). Pull filters only `.claude` (whose tree can carry
- *   per-host state like `settings.local.json`) and uses the exact-mirror
- *   `copyExtras` for the others: a clean repo makes the filter a no-op, and the
- *   exact mirror is the documented restore semantics for `.planning`. Filtering
- *   `.claude` on pull is defense-in-depth against a repo poisoned out-of-band
- *   (manual commit, older CLI) restoring a blocked file onto the host.
+ *   its `extrasDenySet`). Pull routes `.claude` through
+ *   `copyExtrasFilteredPreserving` (preserves host-local deny-set files already
+ *   on disk at any depth, e.g. `settings.local.json`, while still recursively
+ *   mirror-pruning synced files absent from src) and uses the exact-mirror
+ *   `copyExtras` for every other
+ *   extra. This preservation is `.claude`-only: `.planning` and `CLAUDE.md`
+ *   rarely hold host-local files, so they deliberately keep the exact-mirror
+ *   semantics. Filtering `.claude` on pull is defense-in-depth against a repo
+ *   poisoned out-of-band (manual commit, older CLI): the deny-set src filter
+ *   still strips blocked basenames from the copy even with the preserving variant.
  * @returns the counts plus the done/would detail lists.
  */
 function runExtrasOp(
@@ -148,14 +153,18 @@ export function remapExtrasPull(
     // Snapshot the host-side dst BEFORE copyExtras clobbers it. Anchor on
     // localRoot so the backup tree mirrors the project layout.
     (dst, localRoot) => backupExtrasWrite(dst, ts, localRoot),
-    // Pull filters `.claude` against its NEVER_SYNC boundary so a repo poisoned
-    // out-of-band cannot restore a blocked per-host file (e.g. settings.local.json)
-    // onto this host. Other extras use the exact-mirror copyExtras: the repo is
-    // clean once push filters, and exact mirror is the documented restore for
-    // `.planning`.
+    // Pull routes `.claude` through copyExtrasFilteredPreserving so host-local
+    // deny-set files already on disk (e.g. settings.local.json) are preserved
+    // instead of being wiped by a blanket rmSync. The same deny-set filter still
+    // strips blocked basenames from the src copy (defense-in-depth: a repo
+    // poisoned out-of-band cannot restore a blocked per-host file). Synced
+    // non-deny files that are absent from src are still mirror-pruned. This
+    // preservation is `.claude`-only; `.planning` and `CLAUDE.md` use the
+    // exact-mirror copyExtras (documented restore semantics; they rarely carry
+    // host-local files, so the exact mirror is the correct default).
     (src, dst, dirname) =>
       dirname === '.claude'
-        ? copyExtrasFiltered(src, dst, extrasDenySet(dirname))
+        ? copyExtrasFilteredPreserving(src, dst, extrasDenySet(dirname))
         : copyExtras(src, dst),
   );
   return { unmapped, skipped, pulled: done, wouldPull: would };

@@ -106,6 +106,12 @@ Pointers and specifics:
   `skills/`, `commands/`, `rules/`). So syncing `.claude/` carries your project's Claude setup across
   machines without ever leaking session transcripts or per-host secrets. The same boundary is
   enforced a second time at the push gate as a backstop.
+- **A pull keeps each machine's own per-host files.** Because those never-synced names are stripped
+  on push, they never travel between machines. On pull, the `.claude` extra preserves any of them
+  already on disk for the current host (most importantly a project's own `settings.local.json`)
+  while still mirroring the synced config over the top, at every level of the tree. So a pull
+  updates your shared `settings.json`, `hooks/`, and the rest from the repo without ever
+  overwriting or deleting the local-only settings that machine keeps to itself.
 
 :::note[Which `.claude/`?]
 The `.claude` extra is a project's **own** `<repo>/.claude/` directory: the project-scoped Claude

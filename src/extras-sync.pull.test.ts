@@ -250,6 +250,86 @@ describe('remapExtrasPull (integration)', () => {
     expect(existsSync(join(projectRoot, '.planning'))).toBe(false);
   });
 
+  it('Test H (bug regression): host-local settings.local.json survives a .claude pull', async () => {
+    // Core regression: push filtered settings.local.json out of the repo, so src
+    // only has settings.json. Before the fix, the blanket rmSync wiped the host's
+    // settings.local.json and nothing restored it. After the fix it must survive.
+    mkdirSync(join(sharedExtras, 'foo', '.claude'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), '{"model":"opus"}\n');
+    // settings.local.json intentionally absent from src (as push would produce).
+    mkdirSync(join(projectRoot, '.claude'), { recursive: true });
+    writeFileSync(join(projectRoot, '.claude', 'settings.local.json'), 'apiKey=local\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.claude'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const result = remapExtrasPull('20260608-h');
+
+    // Host-local file must survive.
+    expect(existsSync(join(projectRoot, '.claude', 'settings.local.json'))).toBe(true);
+    expect(readFileSync(join(projectRoot, '.claude', 'settings.local.json'), 'utf8')).toBe(
+      'apiKey=local\n',
+    );
+    // Repo file must be restored.
+    expect(existsSync(join(projectRoot, '.claude', 'settings.json'))).toBe(true);
+    expect(readFileSync(join(projectRoot, '.claude', 'settings.json'), 'utf8')).toBe(
+      '{"model":"opus"}\n',
+    );
+    expect(result.pulled).toEqual(['foo/.claude']);
+  });
+
+  it('Test I (true mirror still prunes synced files): stale non-deny .claude file absent from src is removed', async () => {
+    mkdirSync(join(sharedExtras, 'foo', '.claude'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), '{"model":"opus"}\n');
+    // stale.json was once synced but is now absent from the repo.
+    mkdirSync(join(projectRoot, '.claude'), { recursive: true });
+    writeFileSync(join(projectRoot, '.claude', 'stale.json'), 'old=1\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.claude'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull('20260608-i');
+
+    // Synced (non-deny) file absent from src is pruned.
+    expect(existsSync(join(projectRoot, '.claude', 'stale.json'))).toBe(false);
+    // Repo file is present.
+    expect(existsSync(join(projectRoot, '.claude', 'settings.json'))).toBe(true);
+  });
+
+  it('Test J (routing: .planning stays exact mirror): a pre-existing non-deny .planning file absent from src is removed', async () => {
+    // Confirm the non-.claude branch still uses copyExtras (exact mirror).
+    // A file present in dst/.planning but absent from src/.planning is removed.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'stale-plan.md'), 'old\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull('20260608-j');
+
+    // Exact mirror: stale-plan.md absent from src is gone.
+    expect(existsSync(join(projectRoot, '.planning', 'stale-plan.md'))).toBe(false);
+    // Repo file is present.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
+  });
+
   it('copies shared/extras/<logical>/CLAUDE.md back to <localRoot>/CLAUDE.md byte-equal', async () => {
     mkdirSync(join(sharedExtras, 'foo'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# incoming rules\n');
