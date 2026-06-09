@@ -77,6 +77,19 @@ describe('collectGlobalConfigChanges', () => {
     expect(result).toEqual([{ status: 'D', label: 'delete', path: 'shared/agents/old.md' }]);
   });
 
+  it('maps unknown status letter -> label "change" (fallback)', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => buildNameStatus([['B', 'shared/skills/foo.md']])),
+      };
+    });
+    const { collectGlobalConfigChanges } = await import('./push-global-config.ts');
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    expect(result).toEqual([{ status: 'B', label: 'change', path: 'shared/skills/foo.md' }]);
+  });
+
   it('maps rename record (R) -> label "rename", surfaces new path', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof childProcessModule>();
@@ -284,6 +297,23 @@ describe('collectGlobalConfigChanges', () => {
       return {
         ...actual,
         execFileSync: vi.fn(() => buildNameStatus([['M', 'settings.json']])),
+      };
+    });
+    const { collectGlobalConfigChanges } = await import('./push-global-config.ts');
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    expect(result).toEqual([]);
+  });
+
+  it('excludes a rename where the new path is out of scope', async () => {
+    // Rename from a skills file to a projects path: only newPath is used, and it is
+    // out of scope, so the record should not appear in the output.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() =>
+          buildRenameStatus('shared/skills/old.md', 'shared/projects/proj/session.jsonl'),
+        ),
       };
     });
     const { collectGlobalConfigChanges } = await import('./push-global-config.ts');

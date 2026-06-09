@@ -7,6 +7,7 @@ import { makePushEnv, teardownPushEnv, type PushEnv } from './commands.push.test
 
 import type * as pushChecksModule from './push-checks.ts';
 import type * as pushAllowlistModule from './commands.push.allowlist.ts';
+import type * as pushGlobalConfigModule from './push-global-config.ts';
 import type * as utilsModule from './utils.ts';
 
 // ---------------------------------------------------------------------------
@@ -227,6 +228,12 @@ describe('cmdPush: extras pipeline integration', () => {
         gitStatusPorcelainZ: vi.fn(() => ''),
       };
     });
+    // Stub collectGlobalConfigChanges so the dry-run preview does not invoke
+    // real git diff against the temp repo (which has no HEAD commit).
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush({ dryRun: true })).not.toThrow();
     expect(remapExtrasPushMock).toHaveBeenCalledWith(expect.any(String), { dryRun: true });
@@ -244,7 +251,6 @@ describe('cmdPush: extras pipeline integration', () => {
  * allow-list step runs.
  */
 function mockPipelineBase(
-  env: PushEnv,
   opts: {
     statusLine?: string;
     enforceAllowListFn?: ReturnType<typeof vi.fn>;
@@ -285,6 +291,12 @@ function mockPipelineBase(
       gitStatusPorcelainZ: vi.fn(() => status),
     };
   });
+  // Stub collectGlobalConfigChanges so tests that reach the dry-run preview
+  // or commitAndPush do not invoke real git diff against a non-git temp dir.
+  vi.doMock('./push-global-config.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof pushGlobalConfigModule>();
+    return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+  });
 }
 
 describe('cmdPush: guardResolutionModeConflicts exact-boundary tests (L178/L181)', () => {
@@ -303,7 +315,7 @@ describe('cmdPush: guardResolutionModeConflicts exact-boundary tests (L178/L181)
     // redactAll=true, original guard is false (no-die); mutant is true (dies).
     // Providing a pipeline that completes normally proves the original guard does
     // not fire for redactAll-only.
-    mockPipelineBase(env);
+    mockPipelineBase();
     vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
     const { cmdPush } = await import('./commands.push.ts');
     // The pipeline proceeds past the guard. probeGitleaks, rebaseBeforePush, etc.
@@ -314,7 +326,7 @@ describe('cmdPush: guardResolutionModeConflicts exact-boundary tests (L178/L181)
   it('does NOT die when only --allow-all is set (no --redact-all, no --allow) (kills L181 ConditionalExpression/LogicalOperator)', async () => {
     // L181 `if (allowAll && allowRule !== undefined)` mutated to `true` would
     // always die. With allowAll=true and no allowRule, original guard is false.
-    mockPipelineBase(env);
+    mockPipelineBase();
     vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
     const { cmdPush } = await import('./commands.push.ts');
     await expect(cmdPush({ allowAll: true })).resolves.toBeUndefined();
@@ -340,7 +352,7 @@ describe('cmdPush: status-based allow-list guard (L240/L260)', () => {
       /* allow */
     });
     // A status line that looks like an untracked file.
-    mockPipelineBase(env, {
+    mockPipelineBase({
       statusLine: '?? shared/path-map.json\0',
       enforceAllowListFn: enforceAllowListMock,
     });
@@ -357,7 +369,7 @@ describe('cmdPush: status-based allow-list guard (L240/L260)', () => {
     const enforceAllowListMock = vi.fn(() => {
       /* allow */
     });
-    mockPipelineBase(env, { statusLine: '', enforceAllowListFn: enforceAllowListMock });
+    mockPipelineBase({ statusLine: '', enforceAllowListFn: enforceAllowListMock });
     vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush({ dryRun: true });
