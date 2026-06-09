@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.47.0](https://github.com/funkadelic/claude-nomad/compare/v0.46.0...v0.47.0) (2026-06-09)
+
+
+### Added
+
+* **extras:** add .claude as a supported per-project extra ([#274](https://github.com/funkadelic/claude-nomad/issues/274)) ([41a79a3](https://github.com/funkadelic/claude-nomad/commit/41a79a3fa9963f2ade76ec4d89d880d9634bb0d2))
+
+
+### Changed
+
+* remove orphaned shared/ folder from package ([#267](https://github.com/funkadelic/claude-nomad/issues/267)) ([93e4119](https://github.com/funkadelic/claude-nomad/commit/93e411951df4aa600e94da8d9db4298129ad1fa2))
+
+
+### Documentation
+
+* **extras:** document .claude extra in security, features, and recovery pages ([#275](https://github.com/funkadelic/claude-nomad/issues/275)) ([232016c](https://github.com/funkadelic/claude-nomad/commit/232016c5cb14988fb3fe8dd3f1f558d49789fffb))
+* **faq:** explain unmapped local projects in nomad doctor ([#273](https://github.com/funkadelic/claude-nomad/issues/273)) ([6c2e9d4](https://github.com/funkadelic/claude-nomad/commit/6c2e9d475decb8cea3e159a3047f5f9daff24785))
+
+
+### Dependencies
+
+* bump @types/node in the dev-dependencies group ([#272](https://github.com/funkadelic/claude-nomad/issues/272)) ([951471e](https://github.com/funkadelic/claude-nomad/commit/951471e0879eee0e10756f67a9e58554dce96c52))
+* bump actions/checkout from 6.0.2 to 6.0.3 ([#269](https://github.com/funkadelic/claude-nomad/issues/269)) ([21b7490](https://github.com/funkadelic/claude-nomad/commit/21b7490b273bfe22aa76216edc5de44a49b57c59))
+* bump codecov/codecov-action from 6.0.1 to 7.0.0 ([#270](https://github.com/funkadelic/claude-nomad/issues/270)) ([905d468](https://github.com/funkadelic/claude-nomad/commit/905d46832e6d52c825419be39fac08d5408de39f))
+* bump github/codeql-action from 4.36.0 to 4.36.2 ([#271](https://github.com/funkadelic/claude-nomad/issues/271)) ([6ff50c7](https://github.com/funkadelic/claude-nomad/commit/6ff50c76d3ddc9e0cd8247f572288b722cd588b5))
+
 ## [0.46.0](https://github.com/funkadelic/claude-nomad/compare/v0.45.0...v0.46.0) (2026-06-08)
 
 
