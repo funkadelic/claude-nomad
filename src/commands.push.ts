@@ -6,6 +6,7 @@ import { enforceAllowList } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
+import { collectGlobalConfigChanges } from './push-global-config.ts';
 import { scanPushVerdict } from './push-leak-verdict.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { previewPushLeaks } from './push-preview.ts';
@@ -62,6 +63,9 @@ async function commitAndPush(
   repo: string,
 ): Promise<void> {
   gitOrFatal(['add', '-A'], 'git add', repo);
+  // Collect staged shared-config changes AFTER git add -A so the index reflects
+  // the full staged tree. Assigned onto st so renderPushTree sees the section.
+  st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: true });
   let verdict = withSpinner('Scanning for secrets', () => scanPushVerdict(repo));
   if (verdict.leak) {
     renderPushTree(st, verdict);
@@ -87,8 +91,11 @@ async function commitAndPush(
  *
  * @param st - The collected push state for the tree render.
  * @param map - The parsed path-map, or `null` when a dry-run has no map.
+ * @param repo - Resolved repo root path for collecting global-config changes.
  */
-function runDryRunPreview(st: PushState, map: PathMap | null): void {
+function runDryRunPreview(st: PushState, map: PathMap | null, repo: string): void {
+  // Dry-run stages nothing, so diff against HEAD to capture working-tree changes.
+  st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: false });
   if (map === null) {
     renderNoScanTree(st, { noMapHint: true });
     return;
@@ -227,7 +234,7 @@ export async function cmdPush(
     // both the gitlink walk and the downstream allow-list classification.
     // dryRun is forwarded so a preview push reports the same skipped count.
     const extras = withSpinner('Syncing extras', () => remapExtrasPush(ts, { dryRun }));
-    const st: PushState = { dryRun, remap, extras };
+    const st: PushState = { dryRun, remap, extras, globalConfig: [] };
     guardGitlinks(repo);
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()
     // the leading status-space and shift parsePorcelainZ's offsets.
@@ -250,7 +257,7 @@ export async function cmdPush(
     // A dry-run with no map cannot enforce nor scan: render the no-scan tree and
     // return without dying. A real push with a non-empty status still dies.
     if (!existsSync(mapPath)) {
-      if (dryRun) return runDryRunPreview(st, null);
+      if (dryRun) return runDryRunPreview(st, null, repo);
       die('path-map.json missing, cannot enforce push allow-list');
     }
     // readPathMap routes parse failures through NomadFatal so finally releases the lock.
@@ -260,7 +267,7 @@ export async function cmdPush(
     if (status) enforceAllowList(status, map);
     // dryRun skips git add / commit / push: run the read-only leak preview,
     // which prints any recovery below the rendered tree.
-    if (dryRun) return runDryRunPreview(st, map);
+    if (dryRun) return runDryRunPreview(st, map, repo);
     await commitAndPush(st, ts, map, redactAll, allowAll, allowRule, repo);
   } catch (err) {
     if (err instanceof NomadFatal) {

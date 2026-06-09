@@ -16,6 +16,7 @@ import { dim, green, infoGlyph, okGlyph } from './color.ts';
 import type { remapExtrasPush } from './extras-sync.ts';
 import { type DoctorSection, addItem, renderTree, section } from './output-tree.ts';
 import type { LeakVerdict } from './push-leak-verdict.ts';
+import type { GlobalConfigChange } from './push-global-config.ts';
 import type { remapPush } from './remap.ts';
 import { summaryRow } from './summary.ts';
 
@@ -89,29 +90,50 @@ export function buildExtrasSection(items: string[], extrasSkipped: number): Doct
 }
 
 /**
+ * Build the Global config section: one `${green(okGlyph)} <label> <path>` row
+ * per changed shared-config file. An empty `rows` array produces a zero-item
+ * section, which `renderTree` skips (matching the Sessions/Extras empty
+ * handling), so no "Global config" header prints when nothing changed.
+ *
+ * @param rows - Shared-config changes collected by `collectGlobalConfigChanges`.
+ * @returns A `Global config` `DoctorSection` (possibly empty).
+ */
+export function buildGlobalConfigSection(rows: GlobalConfigChange[]): DoctorSection {
+  const s = section('Global config');
+  for (const row of rows) {
+    addItem(s, `${green(okGlyph)} ${row.label} ${row.path}`);
+  }
+  return s;
+}
+
+/**
  * Collected per-run push state threaded through `cmdPush` so the grouped tree
  * can be assembled once at the end. `remap`/`extras` carry the detail arrays +
  * counts; `dryRun` selects the wet (`pushed`) vs would-* (`wouldPush`) arrays.
+ * `globalConfig` carries the shared-config changes for the "Global config" section.
  */
 export type PushState = {
   dryRun: boolean;
   remap: ReturnType<typeof remapPush>;
   extras: ReturnType<typeof remapExtrasPush>;
+  globalConfig: GlobalConfigChange[];
 };
 
 /**
- * Assemble the Sessions/Extras sections shared by the real and dry-run push
- * paths, selecting the wet `pushed` detail arrays or the `wouldPush` arrays
- * under `dryRun`. The Leak scan and Summary sections are appended by the caller
- * in path-specific order.
+ * Assemble the Global config / Sessions / Extras sections shared by the real
+ * and dry-run push paths. Global config leads (empty sections are dropped by
+ * `renderTree`); Sessions and Extras follow, selecting the wet `pushed` detail
+ * arrays or the `wouldPush` arrays under `dryRun`. The Leak scan and Summary
+ * sections are appended by the caller in path-specific order.
  *
  * @param st - The collected push state.
- * @returns The ordered `[Sessions, Extras]` sections (either may be empty).
+ * @returns The ordered `[Global config, Sessions, Extras]` sections (any may be empty).
  */
 function syncedSections(st: PushState): DoctorSection[] {
   const sessions = st.dryRun ? st.remap.wouldPush : st.remap.pushed;
   const extras = st.dryRun ? st.extras.wouldPush : st.extras.pushed;
   return [
+    buildGlobalConfigSection(st.globalConfig),
     buildSessionsSection(sessions, st.remap.unmapped),
     buildExtrasSection(extras, st.extras.skipped),
   ];
