@@ -490,10 +490,14 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
 describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
   let tmpSrc: string;
   let tmpDst: string;
+  // An out-of-tree dir created by the symlink-root test; cleaned unconditionally
+  // in afterEach so a failed assertion cannot leak it.
+  let tmpExternal: string | undefined;
 
   beforeEach(() => {
     tmpSrc = mkdtempSync(join(tmpdir(), 'nomad-core-pres-src-'));
     tmpDst = mkdtempSync(join(tmpdir(), 'nomad-core-pres-dst-'));
+    tmpExternal = undefined;
     vi.resetModules();
   });
 
@@ -501,6 +505,7 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
     vi.restoreAllMocks();
     rmSync(tmpSrc, { recursive: true, force: true });
     rmSync(tmpDst, { recursive: true, force: true });
+    if (tmpExternal !== undefined) rmSync(tmpExternal, { recursive: true, force: true });
   });
 
   it('Test A (regression): preserves a deny-set dst file absent from src', async () => {
@@ -679,6 +684,7 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
     // target's contents. The root is replaced by a real mirrored dir; the
     // external tree is left untouched.
     const external = mkdtempSync(join(tmpdir(), 'nomad-core-pres-ext-'));
+    tmpExternal = external; // afterEach removes it even if an assertion below fails
     writeFileSync(join(external, 'keep.txt'), 'precious\n');
     const dstLink = join(tmpDst, 'link');
     symlinkSync(external, dstLink);
@@ -692,7 +698,5 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
     // dst link replaced by a real dir holding the mirrored config.
     expect(statSync(dstLink).isDirectory()).toBe(true);
     expect(existsSync(join(dstLink, 'settings.json'))).toBe(true);
-
-    rmSync(external, { recursive: true, force: true });
   });
 });
