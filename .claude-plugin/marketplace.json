@@ -1,0 +1,17 @@
+{
+  "name": "claude-nomad",
+  "owner": {
+    "name": "Norman Yee"
+  },
+  "plugins": [
+    {
+      "name": "nomad",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/funkadelic/claude-nomad.git",
+        "path": ".claude-plugin/nomad-plugin"
+      },
+      "description": "Claude Code companion for the claude-nomad sync CLI"
+    }
+  ]
+}
