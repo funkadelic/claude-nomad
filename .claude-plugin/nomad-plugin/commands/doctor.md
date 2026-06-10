@@ -4,4 +4,4 @@ description:
 disable-model-invocation: true
 ---
 
-!`if command -v nomad >/dev/null 2>&1; then nomad doctor $ARGUMENTS; else echo "nomad not found - install with: npm i -g claude-nomad"; fi`
+!`nomad doctor $ARGUMENTS`
