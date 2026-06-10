@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0](https://github.com/funkadelic/claude-nomad/compare/v0.48.0...v0.49.0) (2026-06-10)
+
+
+### Added
+
+* **plugin:** add companion Claude Code plugin ([#281](https://github.com/funkadelic/claude-nomad/issues/281)) ([af85994](https://github.com/funkadelic/claude-nomad/commit/af859940453b6f9419d26072be4b0e04aaea1e8f))
+
 ## [0.48.0](https://github.com/funkadelic/claude-nomad/compare/v0.47.1...v0.48.0) (2026-06-09)
 
 
