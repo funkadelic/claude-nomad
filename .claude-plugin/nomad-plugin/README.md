@@ -2,8 +2,8 @@
 
 Companion Claude Code plugin for the standalone
 [claude-nomad](https://github.com/funkadelic/claude-nomad) sync CLI. Adds `/nomad:pull`,
-`/nomad:push`, and `/nomad:doctor` slash commands plus a `SessionStart` drift-warning hook to any
-Claude Code session.
+`/nomad:push`, `/nomad:doctor`, and `/nomad:clean` slash commands plus a `SessionStart`
+drift-warning hook to any Claude Code session.
 
 ## Table of contents
 
@@ -69,6 +69,13 @@ inside the plugin I/O context. To run a real push, open a terminal and run `noma
 
 Runs `nomad doctor` health checks: symlink state, settings drift, path-map validation, gitleaks
 probe, and remote reachability. Useful for diagnosing why pull or push is behaving unexpectedly.
+
+### `/nomad:clean`
+
+Prunes the host-local backup snapshots that pull and push accumulate. Runs `nomad clean --backups`.
+With no arguments it removes only snapshots older than 14 days, so recent backups are kept. Pass
+`--keep <N>` to retain the N newest snapshots instead (useful when recent backups have grown large),
+`--older-than <dur>` for a custom age cutoff, or `--dry-run` to preview what would be removed.
 
 ## SessionStart hook
 
