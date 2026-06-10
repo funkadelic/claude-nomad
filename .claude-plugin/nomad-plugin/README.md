@@ -73,7 +73,8 @@ probe, and remote reachability. Useful for diagnosing why pull or push is behavi
 ## SessionStart hook
 
 When a Claude Code session starts (including `--resume`, `/clear`, and post-compaction), the plugin
-runs `nomad doctor` in the background and injects any WARN or FAIL lines into session context. If
+runs `nomad doctor` and injects any WARN or FAIL lines into session context. The check runs at
+session start and finishes in about two seconds (bounded by a three-second network ceiling). If
 everything is clean, the hook outputs nothing. The hook never mutates `~/.claude/` and always exits
 0, so a doctor FAIL can never prevent a session from starting.
 
