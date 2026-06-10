@@ -58,6 +58,7 @@ export default defineConfig({
         { label: 'How it works', link: '/how-it-works/' },
         { label: 'Usage', link: '/usage/' },
         { label: 'Commands', link: '/commands/' },
+        { label: 'Claude Code plugin', link: '/plugin/' },
         { label: 'Recovery flows', link: '/recovery/' },
         { label: 'FAQ', link: '/faq/' },
         { label: 'Contributing', link: '/contributing/' },

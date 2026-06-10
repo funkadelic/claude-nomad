@@ -111,6 +111,21 @@ commits on a `nomad/stranded-<ts>` branch, and resets to `origin/main`, then re-
 any stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json), so
 config you care about is never silently discarded.
 
+## Claude Code plugin
+
+An optional companion plugin puts nomad one slash away inside Claude Code and warns you at session
+start when your synced setup has drifted. It is a thin layer over the CLI: install `claude-nomad`
+first, then add the plugin.
+
+```text
+/plugin marketplace add funkadelic/claude-nomad
+/plugin install nomad@claude-nomad
+```
+
+It adds `/nomad:pull`, `/nomad:diff`, `/nomad:push` (preview only), `/nomad:doctor`, and
+`/nomad:clean`, plus a session-start drift check. See the
+[plugin guide](https://funkadelic.github.io/claude-nomad/plugin/) for details.
+
 ## Requirements
 
 - Node.js 22.22.1 or newer (24 LTS recommended)
@@ -128,6 +143,8 @@ version-staleness check and `nomad doctor --check-schema`. The CLI works without
 - [Setup and migration](https://funkadelic.github.io/claude-nomad/quickstart/) -- full setup
   walkthrough, migrating an existing `~/.claude/`
 - [Commands reference](https://funkadelic.github.io/claude-nomad/commands/) -- all CLI flags
+- [Claude Code plugin](https://funkadelic.github.io/claude-nomad/plugin/) -- /nomad slash commands
+  and the session-start drift check
 - [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/) -- backups, drop-session,
   redact, gitleaks allowlist, non-interactive allow
 - [FAQ](https://funkadelic.github.io/claude-nomad/faq/) -- common questions, like the right

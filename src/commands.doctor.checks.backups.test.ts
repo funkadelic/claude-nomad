@@ -85,7 +85,8 @@ describe('reportBackupsCheck', () => {
     expect(s.items).toHaveLength(1);
     expect(s.items[0]).toContain(warnGlyph);
     expect(s.items[0]).toContain('21 dirs');
-    expect(s.items[0]).toContain('nomad clean --backups');
+    expect(s.items[0]).toContain('nomad clean --backups --keep <N>');
+    expect(s.items[0]).toContain('only prunes dirs older than 14d');
   });
 
   it('emits a warn row on the size branch when total size exceeds the threshold', () => {
