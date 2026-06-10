@@ -10,9 +10,5 @@
   // they are excluded; the plugin README stays linted like any other doc.
   "globs": ["**/*.md"],
   "gitignore": true,
-  "ignores": [
-    "CHANGELOG.md",
-    "docs-site/**",
-    ".claude-plugin/nomad-plugin/commands/**",
-  ],
+  "ignores": ["CHANGELOG.md", "docs-site/**", ".claude-plugin/nomad-plugin/commands/**"],
 }
