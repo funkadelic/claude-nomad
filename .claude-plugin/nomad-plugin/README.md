@@ -21,8 +21,9 @@ own. Install the standalone CLI separately before using the plugin:
 npm i -g claude-nomad
 ```
 
-If `nomad` is not on your PATH, the slash commands print a graceful install hint instead of running.
-The SessionStart hook stays silent on hosts where `nomad` is not installed.
+If `nomad` is not on your PATH, the slash commands fail with a shell `command not found` error (they
+shell out to `nomad` directly). The SessionStart hook, by contrast, detects the missing binary and
+stays silent, so the plugin can be enabled globally without noise on hosts that lack the CLI.
 
 ## Install
 
