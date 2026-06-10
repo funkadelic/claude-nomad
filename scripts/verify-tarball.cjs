@@ -48,18 +48,7 @@ const REQUIRED_EXACT = [
 ];
 
 const FORBIDDEN =
-  /^(\.planning|\.github|tests|node_modules|scripts|hosts|install\.sh|tsconfig\.json|vitest\.config\.ts|src|docs-site)(?:\/|$)/;
-
-let raw;
-try {
-  raw = execFileSync('npm', ['pack', '--dry-run', '--json'], {
-    cwd: REPO_ROOT,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).toString();
-} catch (err) {
-  process.stderr.write(`verify-tarball: FAIL\n  npm pack failed: ${err.message}\n`);
-  process.exit(1);
-}
+  /^(\.planning|\.github|\.claude-plugin|tests|node_modules|scripts|hosts|install\.sh|tsconfig\.json|vitest\.config\.ts|src|docs-site)(?:\/|$)/;
 
 // npm can prepend notice lines to stdout on some publish paths, so a raw
 // JSON.parse is fragile. Salvage the JSON array between the first '[' and the
@@ -80,42 +69,59 @@ function parseNpmPackJson(text) {
   }
 }
 
-let reports;
-try {
-  reports = parseNpmPackJson(raw);
-} catch (err) {
-  process.stderr.write(`verify-tarball: FAIL\n  could not parse npm pack JSON: ${err.message}\n`);
-  process.exit(1);
-}
-
-if (
-  !Array.isArray(reports) ||
-  reports.length === 0 ||
-  !reports[0] ||
-  !Array.isArray(reports[0].files)
-) {
-  process.stderr.write(
-    'verify-tarball: FAIL\n  npm pack JSON shape unexpected (expected reports[0].files array)\n',
-  );
-  process.exit(1);
-}
-
-const paths = reports[0].files.filter((f) => f && typeof f.path === 'string').map((f) => f.path);
-
-const requiredMissing = REQUIRED_EXACT.filter((p) => !paths.includes(p));
-
-const forbiddenPresent = paths.filter((p) => FORBIDDEN.test(p));
-
-if (requiredMissing.length > 0 || forbiddenPresent.length > 0) {
-  process.stderr.write('verify-tarball: FAIL\n');
-  if (requiredMissing.length > 0) {
-    process.stderr.write(`  required-missing: ${JSON.stringify(requiredMissing)}\n`);
+/* c8 ignore start */
+if (require.main === module) {
+  let raw;
+  try {
+    raw = execFileSync('npm', ['pack', '--dry-run', '--json'], {
+      cwd: REPO_ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+  } catch (err) {
+    process.stderr.write(`verify-tarball: FAIL\n  npm pack failed: ${err.message}\n`);
+    process.exit(1);
   }
-  if (forbiddenPresent.length > 0) {
-    process.stderr.write(`  forbidden-present: ${JSON.stringify(forbiddenPresent)}\n`);
-  }
-  process.exit(1);
-}
 
-process.stdout.write(`verify-tarball: OK (${paths.length} files)\n`);
-process.exit(0);
+  let reports;
+  try {
+    reports = parseNpmPackJson(raw);
+  } catch (err) {
+    process.stderr.write(`verify-tarball: FAIL\n  could not parse npm pack JSON: ${err.message}\n`);
+    process.exit(1);
+  }
+
+  if (
+    !Array.isArray(reports) ||
+    reports.length === 0 ||
+    !reports[0] ||
+    !Array.isArray(reports[0].files)
+  ) {
+    process.stderr.write(
+      'verify-tarball: FAIL\n  npm pack JSON shape unexpected (expected reports[0].files array)\n',
+    );
+    process.exit(1);
+  }
+
+  const paths = reports[0].files.filter((f) => f && typeof f.path === 'string').map((f) => f.path);
+
+  const requiredMissing = REQUIRED_EXACT.filter((p) => !paths.includes(p));
+
+  const forbiddenPresent = paths.filter((p) => FORBIDDEN.test(p));
+
+  if (requiredMissing.length > 0 || forbiddenPresent.length > 0) {
+    process.stderr.write('verify-tarball: FAIL\n');
+    if (requiredMissing.length > 0) {
+      process.stderr.write(`  required-missing: ${JSON.stringify(requiredMissing)}\n`);
+    }
+    if (forbiddenPresent.length > 0) {
+      process.stderr.write(`  forbidden-present: ${JSON.stringify(forbiddenPresent)}\n`);
+    }
+    process.exit(1);
+  }
+
+  process.stdout.write(`verify-tarball: OK (${paths.length} files)\n`);
+  process.exit(0);
+}
+/* c8 ignore stop */
+
+module.exports = { FORBIDDEN, parseNpmPackJson };
