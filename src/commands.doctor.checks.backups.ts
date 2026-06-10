@@ -101,7 +101,7 @@ export function reportBackupsCheck(
   if (count > DOCTOR_BACKUP_COUNT_WARN || sizeMb > DOCTOR_BACKUP_SIZE_WARN_MB) {
     addItem(
       section,
-      `${yellow(warnGlyph)} backups: ${count} dirs / ${sizeMb.toFixed(1)} MB (run 'nomad clean --backups')`,
+      `${yellow(warnGlyph)} backups: ${count} dirs / ${sizeMb.toFixed(1)} MB (run 'nomad clean --backups --keep <N>'; bare --backups only prunes dirs older than 14d)`,
     );
   }
 }
