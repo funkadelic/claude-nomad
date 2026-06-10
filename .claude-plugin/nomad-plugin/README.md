@@ -2,8 +2,8 @@
 
 Companion Claude Code plugin for the standalone
 [claude-nomad](https://github.com/funkadelic/claude-nomad) sync CLI. Adds `/nomad:pull`,
-`/nomad:push`, `/nomad:doctor`, and `/nomad:clean` slash commands plus a `SessionStart`
-drift-warning hook to any Claude Code session.
+`/nomad:push`, `/nomad:doctor`, `/nomad:clean`, and `/nomad:diff` slash commands plus a
+`SessionStart` drift-warning hook to any Claude Code session.
 
 ## Table of contents
 
@@ -58,6 +58,12 @@ Syncs `~/.claude/` from the shared repo. Equivalent to running `nomad pull` in a
 after switching machines or when another host has pushed an update.
 
 Accepts `--dry-run` to preview changes without applying them.
+
+### `/nomad:diff`
+
+Shows an offline, read-only preview of what a `pull` would change against the current local repo
+state. Unlike `/nomad:pull --dry-run`, it takes no lock and touches nothing, so it is safe to run
+any time to see whether a pull has pending changes.
 
 ### `/nomad:push`
 

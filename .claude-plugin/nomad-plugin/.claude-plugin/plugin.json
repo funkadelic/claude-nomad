@@ -1,6 +1,6 @@
 {
   "name": "nomad",
-  "description": "Claude Code companion for the claude-nomad sync CLI. Provides /nomad:pull, /nomad:push (dry-run), /nomad:doctor, and /nomad:clean commands, plus a SessionStart drift-warning hook.",
+  "description": "Claude Code companion for the claude-nomad sync CLI. Provides /nomad:pull, /nomad:push (dry-run), /nomad:doctor, /nomad:clean, and /nomad:diff commands, plus a SessionStart drift-warning hook.",
   "version": "1.0.0",
   "author": {
     "name": "Norman Yee"
