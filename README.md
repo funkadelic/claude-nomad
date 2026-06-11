@@ -125,7 +125,7 @@ fix.
 
 An optional companion plugin puts nomad one slash away inside Claude Code and warns you at session
 start when your synced setup has drifted. It is a thin layer over the CLI: install `claude-nomad`
-first, then add the plugin.
+first (minimum version `>= 0.35.0`), then add the plugin.
 
 ```text
 /plugin marketplace add funkadelic/claude-nomad
@@ -133,7 +133,9 @@ first, then add the plugin.
 ```
 
 It adds `/nomad:pull`, `/nomad:diff`, `/nomad:push` (preview only), `/nomad:doctor`, and
-`/nomad:clean`, plus a session-start drift check. See the
+`/nomad:clean`, plus a session-start drift check. The plugin versions independently from the CLI,
+but requires nomad `>= 0.35.0` because it calls recent subcommands (`diff`, `clean --backups`) and
+greps the doctor glyph output. See the
 [plugin guide](https://funkadelic.github.io/claude-nomad/plugin/) for details.
 
 ## Requirements
