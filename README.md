@@ -27,8 +27,11 @@ survives different file paths and your secrets never ride along.
   `claude --resume` on your laptop, and it is there. claude-nomad rewrites the machine-specific file
   paths Claude Code embeds in every transcript, so history survives projects living at different
   paths on different hosts.
-- **One shared setup, per-machine exceptions.** Agents, skills, slash commands, rules, hooks, and
-  your `CLAUDE.md` live in one place and follow you everywhere. Settings merge a shared base with a
+- **One shared setup, per-machine exceptions.** Your own skills, slash commands, rules, and your
+  `CLAUDE.md` live in one place and follow you everywhere. `hooks/` and `agents/` are installed
+  per-host by `@opengsd/gsd-core` via npm and are not synced (syncing them caused version-skew
+  churn). Skills sync as a filtered copy: your own skills travel, `gsd-*` skills are excluded (see
+  `SHARED_LINKS` and `src/skills-sync.ts` in `src/config.ts`). Settings merge a shared base with a
   per-host override, so one machine can run a different model or MCP URL without forking the rest.
 - **Every push is secret-scanned.** Only an explicit allow-list of paths ever leaves the machine,
   credentials never sync, and gitleaks scans the exact files about to be published. The push aborts
