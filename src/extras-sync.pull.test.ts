@@ -100,6 +100,32 @@ describe('remapExtrasPull (integration)', () => {
     expect(result.pulled).toEqual(['foo/.claude']);
   });
 
+  it('.planning extra: filters ALWAYS_NEVER_SYNC files on pull (poisoned-repo defense-in-depth)', async () => {
+    // Pull filters `.planning` against ALWAYS_NEVER_SYNC so a repo that
+    // contains e.g. .credentials.json does not restore it onto the host.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(
+      join(sharedExtras, 'foo', '.planning', '.credentials.json'),
+      '{"secret":"poisoned"}\n',
+    );
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const result = remapExtrasPull('20260522-120011');
+
+    // Normal content is restored; the blocked ALWAYS_NEVER_SYNC file is not.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
+    expect(existsSync(join(projectRoot, '.planning', '.credentials.json'))).toBe(false);
+    expect(result.pulled).toEqual(['foo/.planning']);
+  });
+
   it('skips non-whitelisted dir names (SUPPORTED_EXTRAS guard) with no log line', async () => {
     mkdirSync(join(sharedExtras, 'foo', 'node_modules'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', 'node_modules', 'evil.js'), '// evil\n');
@@ -466,7 +492,6 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
     // Commit one file so pre-rebase HEAD is valid.
-    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
     git(['add', '.'], repoDir);
     git(['commit', '-q', '-m', 'base'], repoDir);
     const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
@@ -621,5 +646,89 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     // PLAN.md and CLAUDE.md survive.
     expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
     expect(existsSync(join(projectRoot, 'CLAUDE.md'))).toBe(true);
+  });
+
+  it('IN-01: empty parent directory is pruned after its only file is deleted upstream', async () => {
+    // When a file in a sub-directory is deleted upstream, pruneEmptyAncestors
+    // should remove the now-empty parent up to the planning root. An anchor
+    // file at the .planning root level keeps the planning dir (and shared/extras/)
+    // alive after the git rm so requireRepoExtras still passes.
+    mkdirSync(join(sharedExtras, 'foo', '.planning', 'sub'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'sub', 'FILE.md'), '# file\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'add sub/FILE.md'], repoDir);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    git(['rm', '-q', join('shared', 'extras', 'foo', '.planning', 'sub', 'FILE.md')], repoDir);
+    git(['commit', '-q', '-m', 'delete sub/FILE.md'], repoDir);
+    const post = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    mkdirSync(join(projectRoot, '.planning', 'sub'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(projectRoot, '.planning', 'sub', 'FILE.md'), '# file\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull('20260611-in01', { prePostHeads: { pre, post } });
+
+    // File deleted.
+    expect(existsSync(join(projectRoot, '.planning', 'sub', 'FILE.md'))).toBe(false);
+    // Empty parent sub/ directory also pruned.
+    expect(existsSync(join(projectRoot, '.planning', 'sub'))).toBe(false);
+    // Planning root and its anchor file survive.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
+  });
+
+  it('CR-02 regression: backup exists before delete even when overlay src is absent (whole .planning removed upstream)', async () => {
+    // Commit a .planning file plus an anchor file in shared/extras/ root (so
+    // git rm of .planning does not make shared/extras/ itself disappear). Then
+    // remove the entire .planning dir from the repo. The src for the .planning
+    // extra is gone, so the overlay loop skips backup+copy. The delete pass
+    // must still snapshot localRoot/.planning before removing files.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    // Anchor: a file at shared/extras/foo/ level keeps shared/extras/foo/ alive
+    // after git rm of .planning/ so requireRepoExtras still passes.
+    writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# rules\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'add planning'], repoDir);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    // Remove the entire .planning directory upstream.
+    git(['rm', '-q', '-r', join('shared', 'extras', 'foo', '.planning')], repoDir);
+    git(['commit', '-q', '-m', 'remove .planning dir'], repoDir);
+    const post = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    // Seed local .planning with the file (present before pull, diverged).
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# local edit\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const ts = 'cr02-backup-test';
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull(ts, { prePostHeads: { pre, post } });
+
+    // The file was deleted from localRoot.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(false);
+
+    // A backup was taken before the delete.
+    const { encodePath } = await import('./utils.json.ts');
+    const backupDir = join(testHome, '.cache', 'claude-nomad', 'backup', ts, 'extras');
+    const encoded = encodePath(projectRoot);
+    const backupFile = join(backupDir, encoded, '.planning', 'PLAN.md');
+    expect(existsSync(backupFile)).toBe(true);
   });
 });

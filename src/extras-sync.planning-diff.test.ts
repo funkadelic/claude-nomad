@@ -149,6 +149,17 @@ describe('planningDeleteTargets', () => {
     );
   });
 
+  it('FATALs on a crafted path that collapses exactly to the .planning root (CR-01 regression)', async () => {
+    // D\0shared/extras/my-proj/.planning/x/..\0 normalizes to localRoot/.planning
+    // (exactly the planning root), which is never a valid git D target. Must throw
+    // NomadFatal rather than returning the root and allowing recursive wipe.
+    const { planningDeleteTargets } = await import('./extras-sync.planning-diff.ts');
+    const raw = 'D\0shared/extras/my-proj/.planning/x/..\0';
+    expect(() => planningDeleteTargets({ raw, logical: 'my-proj', localRoot: tmpRoot })).toThrow(
+      NomadFatal,
+    );
+  });
+
   it('calls assertSafeLogical and FATALs on a path-traversal logical', async () => {
     const { planningDeleteTargets } = await import('./extras-sync.planning-diff.ts');
     const raw = 'D\0shared/extras/bad/../foo/.planning/a.md\0';

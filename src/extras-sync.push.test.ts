@@ -323,6 +323,31 @@ describe('remapExtrasPush (integration)', () => {
     });
   });
 
+  it('.planning push: ALWAYS_NEVER_SYNC files are NOT copied into the repo working tree (WR-02 regression)', async () => {
+    // A secret file with an ALWAYS_NEVER_SYNC basename in .planning must never
+    // reach the repo working tree on push, even before the allow-list gate.
+    // The filtered overlay strips it at the copy layer so no residue accumulates.
+    const planningDir = join(projectRoot, '.planning');
+    mkdirSync(planningDir, { recursive: true });
+    writeFileSync(join(planningDir, 'PLAN.md'), '# plan\n');
+    writeFileSync(join(planningDir, '.credentials.json'), '{"secret":"keep-off-repo"}\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    remapExtrasPush('20260522-wr02-filter');
+
+    // Normal file was pushed.
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'))).toBe(true);
+    // ALWAYS_NEVER_SYNC file must NOT be in the repo working tree.
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', '.credentials.json'))).toBe(false);
+  });
+
   it('.planning extra: keeps todos/ on push (NEVER_SYNC widening must not leak onto .planning)', async () => {
     // Regression guard for the per-extra denylist: .planning keeps the narrow
     // ALWAYS_NEVER_SYNC subset, so its legitimate todos/ GSD content still syncs.

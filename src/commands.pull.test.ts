@@ -946,6 +946,10 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
   });
 
   afterEach(() => {
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
     vi.restoreAllMocks();
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
@@ -1008,9 +1012,6 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(existsSync(join(projectRoot, '.planning', 'DELETE-ME.md'))).toBe(false);
     // Non-deleted file survives.
     expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
-
-    vi.doUnmock('./links.ts');
-    vi.doUnmock('./remap.ts');
   });
 
   it('cmdPull preserves local-only .planning file (overlay semantics end-to-end)', async () => {
@@ -1039,9 +1040,6 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     // Local-only file survives (overlay does not delete it).
     expect(existsSync(join(projectRoot, '.planning', 'local-only.md'))).toBe(true);
     expect(readFileSync(join(projectRoot, '.planning', 'local-only.md'), 'utf8')).toBe('my work\n');
-
-    vi.doUnmock('./links.ts');
-    vi.doUnmock('./remap.ts');
   });
 
   it('fresh-clone-style (unborn HEAD): cmdPull completes without throw and deletes nothing', async () => {
@@ -1092,10 +1090,5 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(calls.length).toBeGreaterThan(0);
     const opts = calls[0]?.[1] as { prePostHeads?: unknown } | undefined;
     expect(opts?.prePostHeads).toBeUndefined();
-
-    vi.doUnmock('./utils.ts');
-    vi.doUnmock('./links.ts');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./extras-sync.ts');
   });
 });

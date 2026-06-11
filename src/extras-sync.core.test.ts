@@ -788,3 +788,60 @@ describe('copyExtrasOverlay non-pruning overlay copy', () => {
     expect(existsSync(join(tmpDst, 'plan.md'))).toBe(true);
   });
 });
+
+// copyExtrasOverlayFiltered: filtered overlay copy for .planning (WR-02 fix)
+// ---------------------------------------------------------------------------
+
+describe('copyExtrasOverlayFiltered filtered overlay copy', () => {
+  let tmpSrc: string;
+  let tmpDst: string;
+
+  beforeEach(() => {
+    tmpSrc = mkdtempSync(join(tmpdir(), 'nomad-core-ovflt-src-'));
+    tmpDst = mkdtempSync(join(tmpdir(), 'nomad-core-ovflt-dst-'));
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmpSrc, { recursive: true, force: true });
+    rmSync(tmpDst, { recursive: true, force: true });
+  });
+
+  it('copies allowed files and excludes blocked basenames', async () => {
+    // Blocked basename must not appear in dst; allowed files must be copied.
+    writeFileSync(join(tmpSrc, 'PLAN.md'), '# plan\n');
+    writeFileSync(join(tmpSrc, '.credentials.json'), '{"secret":"drop"}\n');
+
+    const { copyExtrasOverlayFiltered } = await import('./extras-sync.core.ts');
+    copyExtrasOverlayFiltered(tmpSrc, tmpDst, new Set(['.credentials.json']));
+
+    expect(existsSync(join(tmpDst, 'PLAN.md'))).toBe(true);
+    expect(existsSync(join(tmpDst, '.credentials.json'))).toBe(false);
+  });
+
+  it('preserves dst-only files (overlay semantics: no rmSync before copy)', async () => {
+    // A file in dst with no src counterpart must survive after the filtered overlay.
+    writeFileSync(join(tmpDst, 'dst-only.md'), 'local only\n');
+    writeFileSync(join(tmpSrc, 'PLAN.md'), '# plan\n');
+
+    const { copyExtrasOverlayFiltered } = await import('./extras-sync.core.ts');
+    copyExtrasOverlayFiltered(tmpSrc, tmpDst, new Set());
+
+    expect(existsSync(join(tmpDst, 'dst-only.md'))).toBe(true);
+    expect(existsSync(join(tmpDst, 'PLAN.md'))).toBe(true);
+  });
+
+  it('throws NomadFatal on EINVAL (file/directory type collision) instead of raw cpSync error (WR-01)', async () => {
+    // Simulate a type collision: dst has a non-empty directory at 'foo' but src
+    // has a file named 'foo'. cpSync throws EINVAL; the wrapper converts it to
+    // NomadFatal so cmdPull surfaces an actionable message.
+    writeFileSync(join(tmpSrc, 'foo'), 'file not dir\n');
+    mkdirSync(join(tmpDst, 'foo'), { recursive: true });
+    writeFileSync(join(tmpDst, 'foo', 'existing.md'), 'nested\n');
+
+    const { copyExtrasOverlayFiltered } = await import('./extras-sync.core.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => copyExtrasOverlayFiltered(tmpSrc, tmpDst, new Set())).toThrow(NomadFatal);
+  });
+});
