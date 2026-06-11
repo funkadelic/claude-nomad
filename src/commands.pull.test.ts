@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -248,7 +248,9 @@ describe('cmdPull: extras integration', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull()).not.toThrow();
-    expect(remapExtrasPullMock).toHaveBeenCalledWith(expect.any(String));
+    // remapExtrasPull receives ts as the first arg; second arg opts may contain
+    // prePostHeads (undefined here because gitOrFatal mock replaces git ops).
+    expect(remapExtrasPullMock).toHaveBeenCalledWith(expect.any(String), expect.any(Object));
   });
 
   it('dry-run skips remapExtrasPull but still runs divergenceCheckExtras (D-08 read-only contract)', async () => {
@@ -858,6 +860,239 @@ describe('cmdPull forceRemote routing', () => {
     expect(() => cmdPull({ forceRemote: true })).not.toThrow();
     expect(process.exitCode).toBe(0);
     vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdPull end-to-end: pre/post-rebase HEAD capture and .planning overlay
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a bare-origin + local-clone repo pair with a committed .planning
+ * extras file so cmdPull can exercise the full git pull --rebase + HEAD
+ * capture + remapExtrasPull chain.
+ *
+ * Scaffolds shared/settings.base.json so cmdPull preconditions pass.
+ * Sets NOMAD_REPO to `local` and HOME to `tmp` so no real filesystem is
+ * mutated.
+ *
+ * @param tmp Parent temp directory.
+ * @returns Paths: local (repo), origin, projectRoot (host project dir).
+ */
+function buildSyncedRepo(tmp: string): {
+  local: string;
+  origin: string;
+  projectRoot: string;
+} {
+  const origin = join(tmp, 'origin.git');
+  const local = join(tmp, 'local');
+  const projectRoot = join(tmp, 'project');
+  mkdirSync(origin, { recursive: true });
+  mkdirSync(projectRoot, { recursive: true });
+
+  g(['init', '-q', '-b', 'main', '--bare'], origin);
+  const seed = join(tmp, 'seed');
+  mkdirSync(seed, { recursive: true });
+  g(['init', '-q', '-b', 'main'], seed);
+  g(['config', 'user.email', 'test@example.invalid'], seed);
+  g(['config', 'user.name', 'test'], seed);
+  mkdirSync(join(seed, 'shared'), { recursive: true });
+  writeFileSync(join(seed, 'shared', 'settings.base.json'), '{}\n');
+  writeFileSync(
+    join(seed, 'path-map.json'),
+    JSON.stringify({
+      projects: { testproj: { 'test-host': projectRoot } },
+      extras: { testproj: ['.planning'] },
+    }) + '\n',
+  );
+  mkdirSync(join(seed, 'shared', 'extras', 'testproj', '.planning'), { recursive: true });
+  writeFileSync(join(seed, 'shared', 'extras', 'testproj', '.planning', 'PLAN.md'), '# plan\n');
+  g(['add', '.'], seed);
+  g(['commit', '-q', '-m', 'base'], seed);
+  g(['remote', 'add', 'origin', origin], seed);
+  g(['push', '-q', 'origin', 'main'], seed);
+
+  g(['clone', '-q', origin, local], tmp);
+  g(['config', 'user.email', 'test@example.invalid'], local);
+  g(['config', 'user.name', 'test'], local);
+
+  return { local, origin, projectRoot };
+}
+
+describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance)', () => {
+  let tmp: string;
+  let originalHome: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalNomadHost = process.env.NOMAD_HOST;
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-heads-'));
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.exitCode = 0;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('cmdPull propagates upstream-deleted .planning file to localRoot (end-to-end)', async () => {
+    const { local, origin, projectRoot } = buildSyncedRepo(tmp);
+    process.env.HOME = tmp;
+    process.env.NOMAD_REPO = local;
+
+    // Push a DELETE-ME.md to origin (so local can fetch it), then remove it.
+    const other = join(tmp, 'other');
+    g(['clone', '-q', origin, other], tmp);
+    g(['config', 'user.email', 'test@example.invalid'], other);
+    g(['config', 'user.name', 'test'], other);
+    mkdirSync(join(other, 'shared', 'extras', 'testproj', '.planning'), { recursive: true });
+    writeFileSync(
+      join(other, 'shared', 'extras', 'testproj', '.planning', 'DELETE-ME.md'),
+      'will be deleted\n',
+    );
+    g(['add', '.'], other);
+    g(['commit', '-q', '-m', 'add DELETE-ME.md'], other);
+    g(['push', '-q', 'origin', 'main'], other);
+
+    // Local must pull the addition first (so pre HEAD is after it was added).
+    g(['pull', '--rebase', '-q'], local);
+
+    // Now push the deletion from other.
+    g(['rm', '-q', join('shared', 'extras', 'testproj', '.planning', 'DELETE-ME.md')], other);
+    g(['commit', '-q', '-m', 'delete DELETE-ME.md'], other);
+    g(['push', '-q', 'origin', 'main'], other);
+
+    // Seed local .planning with the file (simulating the host state before pull).
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(projectRoot, '.planning', 'DELETE-ME.md'), 'will be deleted\n');
+
+    // Mock only the ~/.claude-touching side effects; let git ops run real.
+    mkdirSync(join(tmp, '.claude'), { recursive: true });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull();
+    expect(process.exitCode).not.toBe(1);
+
+    // End-to-end: upstream-deleted file removed from localRoot.
+    expect(existsSync(join(projectRoot, '.planning', 'DELETE-ME.md'))).toBe(false);
+    // Non-deleted file survives.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
+
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+  });
+
+  it('cmdPull preserves local-only .planning file (overlay semantics end-to-end)', async () => {
+    const { local, projectRoot } = buildSyncedRepo(tmp);
+    process.env.HOME = tmp;
+    process.env.NOMAD_REPO = local;
+
+    // Seed a local-only file not tracked by the repo.
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'local-only.md'), 'my work\n');
+
+    mkdirSync(join(tmp, '.claude'), { recursive: true });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull();
+    expect(process.exitCode).not.toBe(1);
+
+    // Local-only file survives (overlay does not delete it).
+    expect(existsSync(join(projectRoot, '.planning', 'local-only.md'))).toBe(true);
+    expect(readFileSync(join(projectRoot, '.planning', 'local-only.md'), 'utf8')).toBe('my work\n');
+
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+  });
+
+  it('fresh-clone-style (unborn HEAD): cmdPull completes without throw and deletes nothing', async () => {
+    // Simulate: NOMAD_REPO does not have commits yet (unborn HEAD). captureHead
+    // returns undefined -> capturePrePostHeads returns undefined -> overlay only.
+    // We use a mocked gitOrFatal and a mocked gitCaptureRaw that throws on
+    // rev-parse (simulating unborn HEAD) to exercise the undefined branch.
+    const testHome = join(tmp, 'home');
+    process.env.HOME = testHome;
+    delete process.env.NOMAD_REPO;
+    const repoDir = join(testHome, 'claude-nomad');
+    mkdirSync(join(repoDir, 'shared'), { recursive: true });
+    writeFileSync(join(repoDir, 'shared', 'settings.base.json'), '{}\n');
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        // rev-parse fails (unborn HEAD); gitOrFatal is the pull itself.
+        gitCaptureRaw: vi.fn(() => {
+          throw new Error('fatal: ambiguous argument HEAD');
+        }),
+        gitOrFatal: vi.fn(),
+      };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(process.exitCode).not.toBe(1);
+
+    // remapExtrasPull was called with undefined prePostHeads (no delete pass).
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const calls = (remapExtrasPull as ReturnType<typeof vi.fn>).mock.calls;
+    // opts.prePostHeads must be absent (no second arg or opts without prePostHeads).
+    expect(calls.length).toBeGreaterThan(0);
+    const opts = calls[0]?.[1] as { prePostHeads?: unknown } | undefined;
+    expect(opts?.prePostHeads).toBeUndefined();
+
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./remap.ts');
