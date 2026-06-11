@@ -308,3 +308,71 @@ export function copyExtrasFilteredPreserving(
     filter: (srcEntry) => srcEntry === src || !blockSet.has(basename(srcEntry)),
   });
 }
+
+/**
+ * Predicate-driven recursive prune variant. Like `prunePreservingDenied` but
+ * the preserve/exclude decision is an `isPreserved(name)` predicate instead of
+ * a fixed `Set`. This is required for the skills pull path: a local `gsd-*`
+ * skill present in dst but ABSENT from src must be preserved, but a src-derived
+ * blockSet would not contain it (the name was never in src) and would therefore
+ * delete it (a Phase-49-class mirror-delete). The predicate tests the `gsd-`
+ * prefix directly so presence in src is irrelevant.
+ *
+ * @param src - Source directory (repo side on pull).
+ * @param dst - Destination directory (host side on pull); assumed to exist.
+ * @param isPreserved - Returns `true` for a basename that must not be removed
+ *   from dst even when absent from src.
+ */
+function prunePreservingBy(src: string, dst: string, isPreserved: (name: string) => boolean): void {
+  for (const name of readdirSync(dst)) {
+    if (isPreserved(name)) continue;
+    const dstPath = join(dst, name);
+    const srcStat = lstatSync(join(src, name), { throwIfNoEntry: false });
+    if (srcStat === undefined) {
+      rmSync(dstPath, { recursive: true, force: true });
+      continue;
+    }
+    const dstStat = lstatSync(dstPath);
+    if (srcStat.isDirectory() && dstStat.isDirectory()) {
+      prunePreservingBy(join(src, name), dstPath, isPreserved);
+    } else if (srcStat.isDirectory() !== dstStat.isDirectory()) {
+      rmSync(dstPath, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * Predicate-driven preserving overlay copy. Like `copyExtrasFilteredPreserving`
+ * but the preserve/exclude decision is an `isPreserved(name)` predicate rather
+ * than a fixed `Set`, so entries that should be preserved can be identified
+ * without scanning src (critical for the skills pull path, where a local
+ * gsd-* skill absent from src must survive regardless). The root prune uses
+ * `prunePreservingBy`; the `cpSync` filter excludes any non-root entry for
+ * which `isPreserved(basename(entry))` is true (defense-in-depth: repo-side
+ * preserved-category entries are not overlaid). A not-yet-existing dst is
+ * handled cleanly. A dst that exists but is not a real directory is removed
+ * wholesale before the copy. Passes `verbatimSymlinks: true` (Pitfall 1,
+ * nodejs/node issue 41693).
+ *
+ * @param src - Source directory to copy from (repo side on pull).
+ * @param dst - Destination path (host-side dir on pull).
+ * @param isPreserved - Returns `true` for a basename that must be preserved in
+ *   dst and excluded from the src copy.
+ */
+export function copyExtrasFilteredPreservingBy(
+  src: string,
+  dst: string,
+  isPreserved: (name: string) => boolean,
+): void {
+  const dstStat = lstatSync(dst, { throwIfNoEntry: false });
+  if (dstStat !== undefined) {
+    if (dstStat.isDirectory()) prunePreservingBy(src, dst, isPreserved);
+    else rmSync(dst, { recursive: true, force: true });
+  }
+  cpSync(src, dst, {
+    recursive: true,
+    force: true,
+    verbatimSymlinks: true,
+    filter: (srcEntry) => srcEntry === src || !isPreserved(basename(srcEntry)),
+  });
+}

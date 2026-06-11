@@ -14,6 +14,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
+
 describe('copyExtras (file-local helper)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -313,5 +315,129 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     // No warn should be emitted because the local side was absent (early continue).
     const combined = warnLines.join('');
     expect(combined).not.toContain('diverges from origin');
+  });
+});
+
+describe('copyExtrasFilteredPreservingBy (predicate-driven preserving overlay)', () => {
+  let tmp: string;
+  let src: string;
+  let dst: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-preservingby-'));
+    src = join(tmp, 'src');
+    dst = join(tmp, 'dst');
+    mkdirSync(src, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('preserves a dst-only entry that matches the predicate (load-bearing invariant)', () => {
+    // The entry 'keep-me' exists ONLY in dst, absent from src, but the
+    // predicate returns true for it. It must survive the overlay.
+    mkdirSync(join(dst, 'keep-me'), { recursive: true });
+    writeFileSync(join(dst, 'keep-me', 'data.txt'), 'preserve me\n');
+
+    mkdirSync(join(src, 'overlay-me'), { recursive: true });
+    writeFileSync(join(src, 'overlay-me', 'data.txt'), 'new content\n');
+
+    copyExtrasFilteredPreservingBy(src, dst, (name) => name === 'keep-me');
+
+    expect(existsSync(join(dst, 'keep-me'))).toBe(true);
+    expect(readFileSync(join(dst, 'keep-me', 'data.txt'), 'utf8')).toBe('preserve me\n');
+    expect(existsSync(join(dst, 'overlay-me'))).toBe(true);
+  });
+
+  it('removes a dst entry absent from src when the predicate returns false', () => {
+    // A non-preserved dst entry absent from src is stale and must be removed.
+    mkdirSync(join(dst, 'stale'), { recursive: true });
+    writeFileSync(join(dst, 'stale', 'old.txt'), 'stale\n');
+
+    mkdirSync(join(src, 'fresh'), { recursive: true });
+    writeFileSync(join(src, 'fresh', 'new.txt'), 'new\n');
+
+    copyExtrasFilteredPreservingBy(src, dst, (name) => name === 'preserve-only-this');
+
+    expect(existsSync(join(dst, 'stale'))).toBe(false);
+    expect(existsSync(join(dst, 'fresh'))).toBe(true);
+  });
+
+  it('does NOT copy a src entry matching the predicate into dst (defense-in-depth)', () => {
+    // An entry in src that the predicate marks as preserved must not be copied.
+    mkdirSync(join(src, 'blocked'), { recursive: true });
+    writeFileSync(join(src, 'blocked', 'secret.txt'), 'secret\n');
+    mkdirSync(join(src, 'allowed'), { recursive: true });
+    writeFileSync(join(src, 'allowed', 'data.txt'), 'data\n');
+
+    copyExtrasFilteredPreservingBy(src, dst, (name) => name === 'blocked');
+
+    expect(existsSync(join(dst, 'blocked'))).toBe(false);
+    expect(existsSync(join(dst, 'allowed'))).toBe(true);
+  });
+
+  it('creates dst when it does not exist (fresh pull)', () => {
+    mkdirSync(join(src, 'item'), { recursive: true });
+    writeFileSync(join(src, 'item', 'file.txt'), 'hello\n');
+    expect(existsSync(dst)).toBe(false);
+
+    copyExtrasFilteredPreservingBy(src, dst, () => false);
+
+    expect(existsSync(join(dst, 'item'))).toBe(true);
+    expect(readFileSync(join(dst, 'item', 'file.txt'), 'utf8')).toBe('hello\n');
+  });
+
+  it('replaces a non-directory dst root (file/symlink) wholesale before copying', () => {
+    // dst is a file, not a directory: must be removed before cpSync recreates it.
+    writeFileSync(dst, 'i am a file not a dir\n');
+    mkdirSync(join(src, 'item'), { recursive: true });
+    writeFileSync(join(src, 'item', 'file.txt'), 'hello\n');
+
+    copyExtrasFilteredPreservingBy(src, dst, () => false);
+
+    expect(existsSync(join(dst, 'item'))).toBe(true);
+  });
+
+  it('recurses into matching sub-directories and removes stale nested entries', () => {
+    // dst has a sub-directory 'sub' with a stale nested file; src/sub has only fresh content.
+    mkdirSync(join(dst, 'sub'), { recursive: true });
+    writeFileSync(join(dst, 'sub', 'stale.txt'), 'stale\n');
+    writeFileSync(join(dst, 'sub', 'keep.txt'), 'keep\n');
+    mkdirSync(join(src, 'sub'), { recursive: true });
+    writeFileSync(join(src, 'sub', 'fresh.txt'), 'fresh\n');
+    // 'keep.txt' is in dst but absent from src/sub, and predicate returns false
+    // for 'keep.txt', so it should be removed by the prune pass.
+
+    copyExtrasFilteredPreservingBy(src, dst, () => false);
+
+    expect(existsSync(join(dst, 'sub', 'fresh.txt'))).toBe(true);
+    expect(existsSync(join(dst, 'sub', 'stale.txt'))).toBe(false);
+    expect(existsSync(join(dst, 'sub', 'keep.txt'))).toBe(false);
+  });
+
+  it('removes a dst entry when src has the same name as a file but dst has it as a dir', () => {
+    // Type mismatch: src has 'item' as a file, dst has 'item' as a directory.
+    // The type-mismatch branch removes dst/item so cpSync can replace it.
+    mkdirSync(join(dst, 'item'), { recursive: true });
+    writeFileSync(join(dst, 'item', 'nested.txt'), 'nested\n');
+    writeFileSync(join(src, 'item'), 'i am a file now\n');
+
+    copyExtrasFilteredPreservingBy(src, dst, () => false);
+
+    // After copy, dst/item should be the file from src, not the old directory.
+    expect(readFileSync(join(dst, 'item'), 'utf8')).toBe('i am a file now\n');
+  });
+
+  it('overwrites a dst file with a src file of the same name (both non-directories, no-op in prune)', () => {
+    // Both src and dst have 'file.txt' as a plain file. The prune pass takes no
+    // action (neither removes it nor recurses); cpSync overwrites the content.
+    mkdirSync(dst, { recursive: true });
+    writeFileSync(join(dst, 'file.txt'), 'old content\n');
+    writeFileSync(join(src, 'file.txt'), 'new content\n');
+
+    copyExtrasFilteredPreservingBy(src, dst, () => false);
+
+    expect(readFileSync(join(dst, 'file.txt'), 'utf8')).toBe('new content\n');
   });
 });
