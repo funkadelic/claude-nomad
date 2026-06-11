@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.50.0](https://github.com/funkadelic/claude-nomad/compare/v0.49.0...v0.50.0) (2026-06-11)
+
+
+### Added
+
+* **extras-sync:** overlay .planning sync so repo-only files survive ([#283](https://github.com/funkadelic/claude-nomad/issues/283)) ([8ba7e13](https://github.com/funkadelic/claude-nomad/commit/8ba7e1372a973b5d0434e7180595ddfaff2369e0))
+* **pull:** self-heal unmerged-index wedge with no active rebase ([#286](https://github.com/funkadelic/claude-nomad/issues/286)) ([977534c](https://github.com/funkadelic/claude-nomad/commit/977534c56c6160e81a835189db21913424a20242))
+* **sync:** stop double-managing gsd-owned hooks, agents, and skills ([#285](https://github.com/funkadelic/claude-nomad/issues/285)) ([aabfd8a](https://github.com/funkadelic/claude-nomad/commit/aabfd8a96ab80dc998b8df27d64f98ceaa33ec49))
+
+
+### Documentation
+
+* add GSD-aware sync page and document plugin minimum CLI version ([#287](https://github.com/funkadelic/claude-nomad/issues/287)) ([6ac4320](https://github.com/funkadelic/claude-nomad/commit/6ac4320dca12f959bd6329f0e1c813408a3b9c6a))
+* **plugin:** clarify CLI-subcommand wording in version-floor note ([#288](https://github.com/funkadelic/claude-nomad/issues/288)) ([d45adee](https://github.com/funkadelic/claude-nomad/commit/d45adeed8d01515e6cb94f6ac72feced2fb31a52))
+
 ## [0.49.0](https://github.com/funkadelic/claude-nomad/compare/v0.48.0...v0.49.0) (2026-06-10)
 
 
