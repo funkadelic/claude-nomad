@@ -64,7 +64,15 @@ export function isSkillExcluded(name: string): boolean {
  * names blocks a host-config file nested inside a user skill (WR-02), not just
  * a top-level one.
  *
- * @param src - Source skills directory (`~/.claude/skills/` on push).
+ * Precondition: `src` MUST be a real directory, not a symlink. `readdirSync`
+ * and the underlying `cpSync` follow a symlinked `src` root and would silently
+ * mirror whatever it targets into `dst`; worse, if `src` points at `dst` the
+ * rmSync-before-copy would delete the source out from under itself. The sole
+ * caller (`syncSkillsPush`) enforces this with an `lstatSync(...)` symlink guard
+ * before calling; any new caller must do the same.
+ *
+ * @param src - Source skills directory (`~/.claude/skills/` on push); must be a
+ *   real directory (see precondition above).
  * @param dst - Destination skills directory (`shared/skills/` on push).
  */
 export function copySkillsPush(src: string, dst: string): void {
