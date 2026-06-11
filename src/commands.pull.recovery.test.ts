@@ -955,6 +955,53 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     const combined = logLines.join('\n');
     expect(combined).not.toMatch(/autostash/);
   });
+
+  it('emits a WARN naming conflict-markered files when dirty paths remain after reset', () => {
+    // buildUnmergedIndexFixture leaves file.txt with <<<<<<< conflict markers in
+    // the working tree. After git reset --mixed HEAD the markers persist; the
+    // post-reset git diff should surface them so the user is not misled.
+    buildUnmergedIndexFixture(tmp);
+
+    const logLines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logLines.push(args.join(' '));
+    });
+
+    recoverUnmergedIndex(tmp);
+
+    const combined = logLines.join('\n');
+    expect(combined).toMatch(/conflict content/);
+    expect(combined).toMatch(/file\.txt/);
+  });
+
+  it('emits no dirty-file WARN when the working tree is clean after reset', () => {
+    // Construct a repo where the index has staged-but-not-yet-committed edits
+    // (no conflict markers in the working tree). Manually inject unmerged
+    // stage entries by writing the index objects directly to avoid needing
+    // conflict markers in the file content.
+    //
+    // Simpler approach: build the unmerged fixture, call git checkout file.txt
+    // to restore file.txt to HEAD content (removes markers), then call recovery.
+    // The index still has unmerged entries; after reset --mixed HEAD, git diff
+    // reports nothing because the working tree matches the (now cleared) index.
+    buildUnmergedIndexFixture(tmp);
+    // Overwrite file.txt with HEAD content so no conflict markers remain.
+    const headContent = execFileSync('git', ['show', 'HEAD:file.txt'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    writeFileSync(join(tmp, 'file.txt'), headContent);
+
+    const logLines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logLines.push(args.join(' '));
+    });
+
+    recoverUnmergedIndex(tmp);
+
+    const combined = logLines.join('\n');
+    expect(combined).not.toMatch(/conflict content/);
+  });
 });
 
 // ---------------------------------------------------------------------------

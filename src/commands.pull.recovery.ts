@@ -200,6 +200,19 @@ export function freshStrandedBranch(repo: string): string {
 export function recoverUnmergedIndex(repo: string): void {
   // Step 1: clear the stuck index (--mixed preserves working-tree content).
   gitOrFatal(['reset', '--mixed', 'HEAD'], 'git reset --mixed HEAD', repo);
+  // Step 1b: probe for residual dirty tracked paths. The --mixed reset clears
+  // the unmerged index entries but cannot remove conflict markers that were
+  // already written into the working-tree files. A subsequent git pull
+  // --rebase --autostash may succeed without touching those files, leaving
+  // <<<<<<< / ======= / >>>>>>> markers permanently in tracked content.
+  const dirty = gitCapture(['diff', '--name-only', '-z'], repo).split('\0').filter(Boolean);
+  if (dirty.length > 0) {
+    log(
+      'index cleared, but these files still carry conflict content from the torn-down ' +
+        'rebase; review and resolve before the next pull:\n' +
+        dirty.map((p) => `  ${p}`).join('\n'),
+    );
+  }
   // Step 2: surface orphaned autostash if present, but never auto-pop (D-4).
   if (orphanedAutostashPresent(repo)) {
     log(
