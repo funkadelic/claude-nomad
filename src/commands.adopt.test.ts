@@ -216,6 +216,24 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(errOutput(env)).toBe('');
   });
 
+  // B7: hooks and agents are now in RESERVED_SHARED (gsd-owned); isValidAdoptName
+  // rejects them before membership is even checked.
+  it('rejects "hooks" as an invalid adopt name (B7: blocked by RESERVED_SHARED)', async () => {
+    mkdirSync(join(env.claudeHome, 'hooks'), { recursive: true });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('hooks')).toThrow('exit:1');
+    expect(errOutput(env)).toContain('invalid name');
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('rejects "agents" as an invalid adopt name (B7: blocked by RESERVED_SHARED)', async () => {
+    mkdirSync(join(env.claudeHome, 'agents'), { recursive: true });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('agents')).toThrow('exit:1');
+    expect(errOutput(env)).toContain('invalid name');
+    expect(diffCached(env)).toBe('');
+  });
+
   // V-06: already a symlink -> no-op with "already adopted" message
   it('is a no-op when ~/.claude/<name> is already a symlink', async () => {
     addSharedDir(env, 'my-dir');
