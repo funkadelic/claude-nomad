@@ -90,6 +90,7 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('./push-preview.ts');
   vi.doUnmock('./remap.ts');
   vi.doUnmock('./extras-sync.ts');
+  vi.doUnmock('./skills-sync.ts');
   vi.doUnmock('./utils.ts');
   vi.doUnmock('./utils.lockfile.ts');
   vi.doUnmock('./commands.push.allowlist.ts');

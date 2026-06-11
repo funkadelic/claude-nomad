@@ -9,6 +9,7 @@ import {
 import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
+import { syncSkillsPull } from './skills-sync.ts';
 import { renderTree, section, addItem } from './output-tree.ts';
 import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
@@ -86,6 +87,7 @@ function applyWetPull(
 ): void {
   applySharedLinks(ts, map);
   const { label } = regenerateSettings(ts);
+  syncSkillsPull(ts);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
   const extrasResult = remapExtrasPull(ts, { prePostHeads });
   // Combine session-unmapped and extras-unmapped into one user-visible count;

@@ -6,6 +6,7 @@ import { enforceAllowList } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
+import { syncSkillsPush } from './skills-sync.ts';
 import { collectGlobalConfigChanges } from './push-global-config.ts';
 import { scanPushVerdict } from './push-leak-verdict.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
@@ -234,6 +235,11 @@ export async function cmdPush(
     // both the gitlink walk and the downstream allow-list classification.
     // dryRun is forwarded so a preview push reports the same skipped count.
     const extras = withSpinner('Syncing extras', () => remapExtrasPush(ts, { dryRun }));
+    // syncSkillsPush runs between remapExtrasPush and guardGitlinks so the
+    // produced shared/skills content is visible to both the gitlink walk and
+    // the downstream allow-list classification. dryRun is forwarded: under
+    // dryRun, copySkillsPush writes nothing (mirroring remapPush/remapExtrasPush).
+    if (!dryRun) syncSkillsPush();
     const st: PushState = { dryRun, remap, extras, globalConfig: [] };
     guardGitlinks(repo);
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()
