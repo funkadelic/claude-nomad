@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as wedgeModule from './commands.pull.wedge.ts';
+import type * as recoveryModule from './commands.pull.recovery.ts';
 
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
@@ -132,6 +133,13 @@ describe('cmdPull: extras integration', () => {
     mkdirSync(join(testHome, '.claude'), { recursive: true });
     writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
     vi.resetModules();
+    // classifyWedge calls unmergedIndexPresent (execFileSync git diff) which
+    // fails on a non-git temp dir. Mock it to return null (clean repo) so the
+    // extras integration tests focus on their own scope.
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, classifyWedge: vi.fn(() => null) };
+    });
     vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
     });
@@ -143,6 +151,7 @@ describe('cmdPull: extras integration', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./remap.ts');
@@ -554,6 +563,7 @@ describe('cmdPull wedge preflight', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./commands.pull.recovery.ts');
     vi.doUnmock('./utils.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
@@ -568,7 +578,7 @@ describe('cmdPull wedge preflight', () => {
     const backupBase = join(testHome, '.cache', 'claude-nomad', 'backup');
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, detectWedge: vi.fn(() => 'rebase') };
+      return { ...actual, classifyWedge: vi.fn(() => 'rebase') };
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
@@ -580,7 +590,7 @@ describe('cmdPull wedge preflight', () => {
   it('emits a message naming the mid-rebase state and pointing at --force-remote', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, detectWedge: vi.fn(() => 'rebase') };
+      return { ...actual, classifyWedge: vi.fn(() => 'rebase') };
     });
     // fail() routes through console.error; capture it here.
     const errorLines: string[] = [];
@@ -598,7 +608,7 @@ describe('cmdPull wedge preflight', () => {
   it('emits a message naming the mid-merge state on a mid-merge repo', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, detectWedge: vi.fn(() => 'merge') };
+      return { ...actual, classifyWedge: vi.fn(() => 'merge') };
     });
     const errorLines: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
@@ -614,7 +624,7 @@ describe('cmdPull wedge preflight', () => {
   it('does NOT call git pull when the repo is wedged', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, detectWedge: vi.fn(() => 'rebase') };
+      return { ...actual, classifyWedge: vi.fn(() => 'rebase') };
     });
     const gitOrFatalSpy = vi.fn();
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -629,7 +639,7 @@ describe('cmdPull wedge preflight', () => {
   it('proceeds normally (no die) on a clean repo', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, detectWedge: vi.fn(() => null) };
+      return { ...actual, classifyWedge: vi.fn(() => null) };
     });
     // Mock gitOrFatal so git pull does not actually run (no real repo).
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -831,7 +841,7 @@ describe('cmdPull forceRemote routing', () => {
   });
 
   it('clean repo: forceRemote is ignored (no recovery attempted)', async () => {
-    // Use a mocked detectWedge returning null to confirm the recovery path is skipped.
+    // Use a mocked classifyWedge returning null to confirm the recovery path is skipped.
     const testHome = join(tmp, 'home');
     process.env.HOME = testHome;
     delete process.env.NOMAD_REPO;
@@ -840,7 +850,7 @@ describe('cmdPull forceRemote routing', () => {
     writeFileSync(join(repoHome, 'shared', 'settings.base.json'), '{}\n');
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, detectWedge: vi.fn(() => null) };
+      return { ...actual, classifyWedge: vi.fn(() => null) };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -867,6 +877,195 @@ describe('cmdPull forceRemote routing', () => {
     vi.doUnmock('./links.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleWedge unmerged-index dispatch (classifyWedge integration)
+// ---------------------------------------------------------------------------
+
+/**
+ * Tests for the new unmerged-index dispatch in handleWedge. These mock
+ * classifyWedge (the new combinator) and recoverUnmergedIndex so no real git
+ * repo is needed; behavior under forceRemote=true/false is isolated cleanly.
+ */
+describe('handleWedge unmerged-index dispatch', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-index-wedge-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    vi.resetModules();
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./commands.pull.recovery.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    process.exitCode = 0;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('default path (forceRemote=false) dies with the runbook and does NOT mutate the index', async () => {
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, classifyWedge: vi.fn(() => 'unmerged-index') };
+    });
+    const errorLines: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errorLines.push(args.join(' '));
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull({ forceRemote: false });
+    expect(process.exitCode).toBe(1);
+    const combined = errorLines.join('\n');
+    // Runbook must name the manual recovery steps (D-2).
+    expect(combined).toMatch(/git reset --mixed HEAD/);
+    expect(combined).toMatch(/git stash list/);
+    expect(combined).toMatch(/nomad pull --force-remote/);
+    expect(combined).toMatch(/FAQ/);
+  });
+
+  it('default path does NOT call recoverUnmergedIndex (non-destructive per D-2)', async () => {
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, classifyWedge: vi.fn(() => 'unmerged-index') };
+    });
+    const recoverUnmergedIndexSpy = vi.fn();
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return { ...actual, recoverUnmergedIndex: recoverUnmergedIndexSpy };
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull({ forceRemote: false });
+    expect(recoverUnmergedIndexSpy).not.toHaveBeenCalled();
+  });
+
+  it('forceRemote=true calls recoverUnmergedIndex and NOT recoverForceRemote', async () => {
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, classifyWedge: vi.fn(() => 'unmerged-index') };
+    });
+    const recoverUnmergedIndexSpy = vi.fn();
+    const recoverForceRemoteSpy = vi.fn();
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return {
+        ...actual,
+        recoverUnmergedIndex: recoverUnmergedIndexSpy,
+        recoverForceRemote: recoverForceRemoteSpy,
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull({ forceRemote: true });
+    expect(recoverUnmergedIndexSpy).toHaveBeenCalledWith(repoUnderHome);
+    expect(recoverForceRemoteSpy).not.toHaveBeenCalled();
+  });
+
+  it('forceRemote=true on a rebase-marker state routes to recoverForceRemote, NOT recoverUnmergedIndex', async () => {
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, classifyWedge: vi.fn(() => 'rebase') };
+    });
+    const recoverUnmergedIndexSpy = vi.fn();
+    const recoverForceRemoteSpy = vi.fn();
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return {
+        ...actual,
+        recoverUnmergedIndex: recoverUnmergedIndexSpy,
+        recoverForceRemote: recoverForceRemoteSpy,
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull({ forceRemote: true });
+    expect(recoverForceRemoteSpy).toHaveBeenCalledWith('rebase', repoUnderHome);
+    expect(recoverUnmergedIndexSpy).not.toHaveBeenCalled();
+  });
+
+  it('classifyWedge returning null is a no-op (no die, no recovery)', async () => {
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, classifyWedge: vi.fn(() => null) };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(process.exitCode).toBe(0);
   });
 });
 
@@ -939,6 +1138,14 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     tmp = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-heads-'));
     process.env.NOMAD_HOST = 'test-host';
     vi.resetModules();
+    // Some tests in this suite use non-git directories where classifyWedge's
+    // execFileSync probe would fail. Mock classifyWedge to return null (clean)
+    // so those tests are unaffected. Tests that use real git repos (buildSyncedRepo)
+    // are always clean and would return null anyway.
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, classifyWedge: vi.fn(() => null) };
+    });
     vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
     });
@@ -949,6 +1156,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
   });
 
   afterEach(() => {
+    vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./remap.ts');

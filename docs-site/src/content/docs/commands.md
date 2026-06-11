@@ -31,7 +31,7 @@ and pull opted-in per-project extras. Errors out if scaffold missing.
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), no writes.                                                                            |
-| `--force-remote` | Recover from a wedged repo (stuck mid-rebase or mid-merge): abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull. Refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). Cannot combine with `--dry-run`. |
+| `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
 
 ## `diff`
 
@@ -161,18 +161,21 @@ sets `process.exitCode = 1` (`⚠︎` does not). Output ends with a **Summary** 
 every warning and failure and closes with a one-line verdict (`✓ healthy`, or warning/failure
 counts), so the last line always answers "am I healthy?". Includes a release-version staleness
 check (an info line says when the latest version could not be determined, so a skipped check is
-not mistaken
-for "current"), a Hook targets check that fails (`✗`, exit 1) when `settings.json` references a
-hook command whose script under `~/.claude/` is missing on this host, a wedged-repo check that
-fails (`✗`, exit 1) when the sync repo is stuck mid-rebase or mid-merge from a previous failed
-pull (the line carries a `nomad pull --force-remote` recovery hint), plus a set of `⚠︎`-only
-checks: gitleaks version drift; on a private GitHub repo, re-enabled Actions;
-optional-dependency presence (`gh` and the curl-or-wget HTTP fetcher); a backups-cache size/count
-nudge toward `nomad clean --backups`; an ESM/CommonJS hook-scope mismatch; a Node-engine
-floor check; and a hook command that runs a Node script under a synced (symlinked) directory
-without `--preserve-symlinks-main`. The Path map section lists both the projects mapped for this host and any local
-project directories with no path-map entry (what `nomad push` counts as "unmapped"; they are
-left alone in both directions).
+not mistaken for "current"), a Hook targets check that fails (`✗`, exit 1) when `settings.json`
+references a hook command whose script under `~/.claude/` is missing on this host, a wedged-repo
+check that fails (`✗`, exit 1) in two cases: the sync repo is stuck mid-rebase or mid-merge from
+a previous failed pull, OR the git index has unmerged entries with no active rebase or merge (the
+sibling state where the operation was torn down but the index was left stuck); both FAIL lines
+carry a `nomad pull --force-remote` recovery hint. A separate `⚠︎` warn fires when an orphaned
+autostash entry is found in `git stash list` (a stash entry left by a `--autostash` rebase that
+was interrupted before completion); the warn is non-blocking and points at the `git stash pop`
+or `git stash drop` runbook. Other `⚠︎`-only checks: gitleaks version drift; on a private GitHub
+repo, re-enabled Actions; optional-dependency presence (`gh` and the curl-or-wget HTTP fetcher);
+a backups-cache size/count nudge toward `nomad clean --backups`; an ESM/CommonJS hook-scope
+mismatch; a Node-engine floor check; and a hook command that runs a Node script under a synced
+(symlinked) directory without `--preserve-symlinks-main`. The Path map section lists both the
+projects mapped for this host and any local project directories with no path-map entry (what
+`nomad push` counts as "unmapped"; they are left alone in both directions).
 
 | Flag                | Description                                                                                                                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

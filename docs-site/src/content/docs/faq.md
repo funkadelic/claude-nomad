@@ -114,8 +114,21 @@ fatal: Exiting because of an unresolved conflict.
 ✗  git pull --rebase failed
 ```
 
-This means a **previous** pull's rebase hit a conflict and was never resolved, leaving your sync
-repo (`~/claude-nomad/`) stuck mid-rebase. Every pull since then has died on the same wall.
+There are two distinct states that produce this error. Check which one you are in before
+running any recovery command.
+
+### State 1: stuck mid-rebase or mid-merge
+
+A previous pull's rebase (or merge) hit a conflict and was never resolved. The sync repo has an
+in-progress operation that git is waiting on: `.git/rebase-merge/`, `.git/rebase-apply/`, or
+`.git/MERGE_HEAD` is present inside `~/claude-nomad/`.
+
+You can confirm this with:
+
+```bash
+$ ls ~/claude-nomad/.git/rebase-merge 2>/dev/null && echo "mid-rebase" || \
+  ls ~/claude-nomad/.git/MERGE_HEAD  2>/dev/null && echo "mid-merge"
+```
 
 **Automated recovery (recommended):** `nomad pull --force-remote` automates the sequence below.
 It aborts the in-progress rebase or merge, safety-diffs stranded commits and dirty tracked
@@ -142,6 +155,55 @@ $ nomad pull
 If the safety check shows local-only commits that DO touch synced config, cherry-pick or copy
 those changes out before the `reset --hard`; they exist nowhere else. When in doubt, the repo is
 plain git, so anything discarded is still in `git reflog` until git prunes it.
+
+### State 2: unmerged index with no active operation
+
+The rebase or merge was torn down (the marker files are gone) but the git index still holds
+unmerged entries from the conflict (stage-2 and stage-3 versions of the same file). There is
+nothing to abort. Running `git rebase --abort` will say "No rebase in progress" and do nothing.
+This is the sibling state to State 1 and is just as stuck.
+
+You can confirm this with:
+
+```bash
+$ cd ~/claude-nomad
+$ git diff --diff-filter=U --name-only    # non-empty = unmerged index entries present
+```
+
+If that lists files and the State 1 marker check above is empty, you are in State 2.
+
+An orphaned autostash may also be present. The pull that conflicted saved your working-tree
+changes to the git stash before rebasing (via `--autostash`). When the rebase was interrupted
+without completing, that stash entry was never automatically restored. Check:
+
+```bash
+$ git stash list   # look for a line containing "autostash"
+```
+
+**Automated recovery (recommended):** `nomad pull --force-remote` handles this state too. It
+clears the stuck index via `git reset --mixed HEAD` (preserving your working-tree edits), reports
+any orphaned autostash entry with a hint so you can decide what to do with it, then re-pulls.
+Unlike State 1, there is nothing to abort and no stranded commits to park, so recovery is simpler.
+
+**Manual runbook:**
+
+```bash
+$ cd ~/claude-nomad
+$ git reset --mixed HEAD    # clear the stuck index; your working-tree edits are preserved
+
+# Review working-tree files for leftover conflict markers (<<<<<<<, =======, >>>>>>>):
+$ git diff --name-only      # files with unstaged changes likely still carry markers
+
+# If git stash list shows an autostash entry, decide what to do with it:
+$ git stash pop             # restore the autostashed changes (may re-conflict; review first)
+$ git stash drop            # discard the autostash if you do not need those changes
+
+$ nomad pull
+```
+
+Use `git reset --mixed HEAD` here, not `git reset --hard`. The `--mixed` form clears only the
+index, leaving your working-tree files as-is, so any work in progress is not discarded. The
+`--hard` form would throw away working-tree edits too.
 
 ## A hook that worked before nomad now fails with "Cannot find module"
 

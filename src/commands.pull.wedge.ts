@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -16,6 +17,20 @@ import { join } from 'node:path';
 export type WedgeMode = 'rebase' | 'merge' | null;
 
 /**
+ * Extended wedge state that includes the unmerged-index-no-active-rebase state.
+ *
+ * - `'rebase'`: mid-rebase (marker files present).
+ * - `'merge'`: mid-merge (`MERGE_HEAD` present, no rebase marker).
+ * - `'unmerged-index'`: the index has unmerged stage-2/3 entries but no
+ *   active rebase/merge marker. The common post-torn-down-rebase dead end.
+ * - `null`: clean state.
+ *
+ * `WedgeMode` is a strict subset (`'rebase' | 'merge' | null`). The
+ * `NonNullable<WedgeMode>` contract in `recoverForceRemote` is unchanged.
+ */
+export type WedgeState = 'rebase' | 'merge' | 'unmerged-index' | null;
+
+/**
  * Detect whether a git repository is wedged mid-rebase or mid-merge by
  * probing the marker files/dirs in `.git/`. Pure read-only: no git exec, no
  * mutation.
@@ -31,4 +46,127 @@ export function detectWedge(repo: string): WedgeMode {
   if (existsSync(join(g, 'rebase-merge')) || existsSync(join(g, 'rebase-apply'))) return 'rebase';
   if (existsSync(join(g, 'MERGE_HEAD'))) return 'merge';
   return null;
+}
+
+/**
+ * Probe the git index for unmerged entries (stage-2/3 blobs). Shell-free
+ * argv-array invocation mirroring the `gitCapture`/`gitStatusPorcelainZ`
+ * convention in `commands.pull.recovery.ts`.
+ *
+ * Returns `true` when `git diff --diff-filter=U --name-only -z` produces
+ * non-empty output (at least one NUL-terminated path), `false` otherwise.
+ * Returns `false` on any exec failure (git absent, non-git dir): the caller
+ * treats "can't tell" as "not wedged" and lets the downstream `gitOrFatal`
+ * produce the real error.
+ *
+ * @param repo Absolute path to the repository root.
+ * @returns `true` if the index contains unmerged entries, `false` if clean.
+ */
+export function unmergedIndexPresent(repo: string): boolean {
+  let raw: string;
+  try {
+    raw = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
+      cwd: repo,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
+    }).toString();
+  } catch {
+    return false; // non-git dir or git absent: defer to gitOrFatal for the real error
+  }
+  return raw.split('\0').some(Boolean);
+}
+
+/**
+ * Classify the current wedge state, extending `detectWedge` with the
+ * unmerged-index-no-active-rebase case.
+ *
+ * Precedence (D-1 from Phase 51 locked decisions):
+ * 1. If `detectWedge` returns a non-null marker state (`'rebase'` or
+ *    `'merge'`), return it verbatim. An active rebase/merge that also has
+ *    unmerged index entries is still a marker state.
+ * 2. If the index has unmerged entries (`unmergedIndexPresent`), return
+ *    `'unmerged-index'`.
+ * 3. Otherwise return `null` (clean).
+ *
+ * `detectWedge` is unchanged (pure file-marker probe, no git exec).
+ *
+ * @param repo Absolute path to the repository root.
+ * @returns The active wedge state, or `null` if the repo is clean.
+ */
+export function classifyWedge(repo: string): WedgeState {
+  const mode = detectWedge(repo);
+  if (mode !== null) return mode;
+  return unmergedIndexPresent(repo) ? 'unmerged-index' : null;
+}
+
+/**
+ * Build the manual-recovery runbook for the unmerged-index-no-active-rebase
+ * wedge state. Shared between the pull-side die() and the push-side preflight
+ * so the text has one source of truth.
+ *
+ * The only caller-specific token is the resume command in step 3:
+ * `'nomad pull'` on the pull side, `'nomad push'` on the push side.
+ *
+ * @param resumeCmd The `nomad <subcommand>` to re-run after manual recovery.
+ * @returns The actionable runbook string for `die()` / NomadFatal.
+ */
+export function unmergedIndexRunbookText(resumeCmd: string): string {
+  return (
+    'repo has an unmerged index with no active rebase or merge in progress ' +
+    '(torn-down rebase left stage-2/3 entries behind).\n\n' +
+    'Manual recovery:\n' +
+    '  1. git reset --mixed HEAD   (clears the stuck index; preserves working-tree files)\n' +
+    '  2. git stash list           (look for an orphaned autostash entry)\n' +
+    '     git stash pop            (restore the autostash) or\n' +
+    '     git stash drop           (discard it)\n' +
+    `  3. ${resumeCmd}\n\n` +
+    "Auto-recover: run 'nomad pull --force-remote' to apply step 1 automatically\n" +
+    '(see FAQ: "Every pull fails with unmerged files")'
+  );
+}
+
+/**
+ * Build the runbook message for the mid-rebase or mid-merge wedge state.
+ * Shared between the pull-side `handleWedge` die() and the push-side
+ * `wedgePreflight` so the text has one source of truth (mirrors the dedup
+ * pattern of `unmergedIndexRunbookText`).
+ *
+ * @param state `'mid-rebase'` or `'mid-merge'` from the WedgeMode classifier.
+ * @returns The actionable runbook string for `die()` / NomadFatal.
+ */
+export function wedgeMarkerRunbookText(state: 'mid-rebase' | 'mid-merge'): string {
+  return (
+    `repo is ${state} from a previous failed pull; ` +
+    `run 'nomad pull --force-remote' to auto-recover, ` +
+    `or resolve manually (see FAQ: "Every pull fails with unmerged files")`
+  );
+}
+
+/**
+ * Scan `git stash list` for an entry matching git's autostash subject format.
+ * Returns `true` when such an entry is present.
+ *
+ * This is a pure presence detector per Phase 51 D-4: it NEVER pops, drops,
+ * or otherwise mutates the stash. Git writes dropped autostash entries as
+ * `stash@{N}: On <branch>: autostash` (or `stash@{N}: autostash` on a
+ * detached HEAD). The match anchors on the trailing `: autostash` field to
+ * avoid false-positives from user stashes whose message merely mentions the
+ * word (e.g. `git stash push -m "wip on autostash detection feature"`).
+ * Returns `false` on any exec failure (git absent, non-git dir).
+ *
+ * @param repo Absolute path to the repository root.
+ * @returns `true` if any stash entry has git's autostash subject, else `false`.
+ */
+export function orphanedAutostashPresent(repo: string): boolean {
+  let raw: string;
+  try {
+    raw = execFileSync('git', ['stash', 'list'], {
+      cwd: repo,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
+    }).toString();
+  } catch {
+    return false; // non-git dir or git absent: not our problem to surface here
+  }
+  return raw.split('\n').some((line) => /:\s*autostash$/.test(line));
 }

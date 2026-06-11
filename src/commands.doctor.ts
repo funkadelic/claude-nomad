@@ -16,6 +16,7 @@ import { reportNeverSync, reportPathMap } from './commands.doctor.checks.pathmap
 import {
   reportGitleaksProbe,
   reportGitlinks,
+  reportOrphanedAutostash,
   reportRebaseClean,
   reportRebaseState,
   reportRemote,
@@ -95,6 +96,7 @@ function gatherDoctorSections(opts: {
   reportRemote(repository);
   reportRebaseClean(repository);
   reportRebaseState(repository);
+  reportOrphanedAutostash(repository);
   reportActionsDrift(repository);
 
   const nomadVersion = section('Nomad Version');
