@@ -219,4 +219,52 @@ describe('orphanedAutostashPresent', () => {
     execFileSync('git', ['stash', 'push', '-m', 'my ordinary stash entry'], { cwd: tmp });
     expect(orphanedAutostashPresent(tmp)).toBe(false);
   });
+
+  it('returns false for a user stash whose message contains "autostash" mid-sentence (false-positive guard)', () => {
+    // A stash like "wip on autostash detection feature" must NOT match:
+    // the regex anchors on the trailing `: autostash` form git uses.
+    writeFileSync(join(tmp, 'a.ts'), 'dirty\n');
+    execFileSync('git', ['stash', 'push', '-m', 'wip on autostash detection feature'], {
+      cwd: tmp,
+    });
+    expect(orphanedAutostashPresent(tmp)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// unmergedIndexPresent / orphanedAutostashPresent - non-git dir resilience (WR-02)
+// ---------------------------------------------------------------------------
+
+describe('unmergedIndexPresent - non-git dir returns false', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-nonrepo-'));
+    // NOT a git repo: no initRepo call.
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('returns false on a non-git directory (no stack trace thrown)', () => {
+    expect(unmergedIndexPresent(tmp)).toBe(false);
+  });
+});
+
+describe('orphanedAutostashPresent - non-git dir returns false', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-nonrepo-stash-'));
+    // NOT a git repo: no initRepo call.
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('returns false on a non-git directory (no stack trace thrown)', () => {
+    expect(orphanedAutostashPresent(tmp)).toBe(false);
+  });
 });

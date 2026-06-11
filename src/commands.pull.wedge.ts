@@ -55,19 +55,25 @@ export function detectWedge(repo: string): WedgeMode {
  *
  * Returns `true` when `git diff --diff-filter=U --name-only -z` produces
  * non-empty output (at least one NUL-terminated path), `false` otherwise.
+ * Returns `false` on any exec failure (git absent, non-git dir): the caller
+ * treats "can't tell" as "not wedged" and lets the downstream `gitOrFatal`
+ * produce the real error.
  *
  * @param repo Absolute path to the repository root.
  * @returns `true` if the index contains unmerged entries, `false` if clean.
  */
 export function unmergedIndexPresent(repo: string): boolean {
-  const raw = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
-    cwd: repo,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-    .toString()
-    .split('\0')
-    .filter(Boolean);
-  return raw.length > 0;
+  let raw: string;
+  try {
+    raw = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
+      cwd: repo,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
+    }).toString();
+  } catch {
+    return false; // non-git dir or git absent: defer to gitOrFatal for the real error
+  }
+  return raw.split('\0').filter(Boolean).length > 0;
 }
 
 /**
@@ -94,21 +100,29 @@ export function classifyWedge(repo: string): WedgeState {
 }
 
 /**
- * Scan `git stash list` for an entry whose subject contains the literal
- * `autostash` token. Returns `true` when such an entry is present.
+ * Scan `git stash list` for an entry matching git's autostash subject format.
+ * Returns `true` when such an entry is present.
  *
  * This is a pure presence detector per Phase 51 D-4: it NEVER pops, drops,
- * or otherwise mutates the stash. The match is case-sensitive lowercase,
- * matching how git writes dropped autostash entries
- * (`stash@{N}: On <branch>: autostash`).
+ * or otherwise mutates the stash. Git writes dropped autostash entries as
+ * `stash@{N}: On <branch>: autostash` (or `stash@{N}: autostash` on a
+ * detached HEAD). The match anchors on the trailing `: autostash` field to
+ * avoid false-positives from user stashes whose message merely mentions the
+ * word (e.g. `git stash push -m "wip on autostash detection feature"`).
+ * Returns `false` on any exec failure (git absent, non-git dir).
  *
  * @param repo Absolute path to the repository root.
- * @returns `true` if any stash entry subject contains `autostash`, else `false`.
+ * @returns `true` if any stash entry has git's autostash subject, else `false`.
  */
 export function orphanedAutostashPresent(repo: string): boolean {
-  const raw = execFileSync('git', ['stash', 'list'], {
-    cwd: repo,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).toString();
-  return raw.split('\n').some((line) => line.includes('autostash'));
+  let raw: string;
+  try {
+    raw = execFileSync('git', ['stash', 'list'], {
+      cwd: repo,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+  } catch {
+    return false; // non-git dir or git absent: not our problem to surface here
+  }
+  return raw.split('\n').some((line) => /:\s*autostash$/.test(line));
 }
