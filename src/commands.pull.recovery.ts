@@ -17,7 +17,7 @@
 import { execFileSync } from 'node:child_process';
 
 import { PUSH_ALLOWED_STATIC } from './config.ts';
-import { type WedgeMode } from './commands.pull.wedge.ts';
+import { type WedgeMode, orphanedAutostashPresent } from './commands.pull.wedge.ts';
 import { die, gitOrFatal, gitStatusPorcelainZ, log } from './utils.ts';
 import { nowTimestamp } from './utils.fs.ts';
 
@@ -174,6 +174,40 @@ export function freshStrandedBranch(repo: string): string {
   let n = 1;
   while (exists(`${base}-${n}`)) n++;
   return `${base}-${n}`;
+}
+
+/**
+ * Recover from the unmerged-index-no-active-rebase wedge state under
+ * `nomad pull --force-remote`.
+ *
+ * This is a DISTINCT, smaller recovery path than `recoverForceRemote`. There
+ * is no active rebase or merge to abort and (in the common case) no diverged
+ * commits to park. The stuck index is the only problem.
+ *
+ * Steps (per Phase 51 D-3 locked decision):
+ * 1. `git reset --mixed HEAD` - clears the unmerged stage-2/3 entries while
+ *    preserving working-tree content. NOT `--hard` (would discard edits) and
+ *    NOT `--merge` (unpredictable for the pure stuck-index case per D-3).
+ * 2. If an orphaned autostash entry is present in `git stash list`, emit a
+ *    note with `git stash pop` (restore) / `git stash drop` (discard) hints.
+ *    Never auto-pop (per D-4): auto-popping risks re-introducing the original
+ *    conflict mid-recovery.
+ * 3. Return void; control falls back to cmdPull, whose subsequent
+ *    `git pull --rebase --autostash` now runs cleanly.
+ *
+ * @param repo Absolute path to REPO_HOME.
+ */
+export function recoverUnmergedIndex(repo: string): void {
+  // Step 1: clear the stuck index (--mixed preserves working-tree content).
+  gitOrFatal(['reset', '--mixed', 'HEAD'], 'git reset --mixed HEAD', repo);
+  // Step 2: surface orphaned autostash if present, but never auto-pop (D-4).
+  if (orphanedAutostashPresent(repo)) {
+    log(
+      'orphaned autostash preserved in the stash list; ' +
+        'run "git stash pop" to restore or "git stash drop" to discard it, ' +
+        'then re-run "nomad pull"',
+    );
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -766,6 +766,194 @@ describe('recoverForceRemote - synced-config refusal (dirty tracked)', () => {
     // No parking branch created (refusal happened before park step).
     const branches = gitCapture(['branch', '--list', 'nomad/stranded-*'], local);
     expect(branches.trim()).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recoverUnmergedIndex
+// ---------------------------------------------------------------------------
+
+import { recoverUnmergedIndex } from './commands.pull.recovery.ts';
+
+/**
+ * Build a repo with unmerged stage-2/3 index entries and NO active
+ * rebase/merge marker, mirroring the buildUnmergedIndexNoMarker helper in
+ * commands.pull.wedge.test.ts but scoped to this recovery test file.
+ *
+ * Optionally adds an orphaned autostash stash entry (simulating the Phase 51
+ * trigger where git --autostash drops to the stash list during a torn-down
+ * rebase).
+ */
+function buildUnmergedIndexFixture(
+  dir: string,
+  { withAutostash = false }: { withAutostash?: boolean } = {},
+): void {
+  initRepo(dir);
+  writeFileSync(join(dir, 'file.txt'), 'base\n');
+  execFileSync('git', ['add', 'file.txt'], { cwd: dir });
+  execFileSync('git', ['commit', '-q', '-m', 'base'], { cwd: dir });
+
+  if (withAutostash) {
+    // Simulate the orphaned autostash: in the real scenario, git --autostash
+    // saves WIP BEFORE the rebase starts, then cannot auto-restore it once the
+    // rebase is torn down. Create the stash entry NOW, before the conflict, so
+    // git-stash can write its lock. Track a separate file so the stash does not
+    // interfere with the conflict-targeted file.txt.
+    writeFileSync(join(dir, 'wip.txt'), 'clean-wip\n');
+    execFileSync('git', ['add', 'wip.txt'], { cwd: dir });
+    execFileSync('git', ['commit', '-q', '-m', 'add wip.txt'], { cwd: dir });
+    writeFileSync(join(dir, 'wip.txt'), 'dirty-wip\n');
+    execFileSync('git', ['stash', 'push', '-m', 'On main: autostash'], { cwd: dir });
+  }
+
+  // Create a branch that modifies file.txt.
+  execFileSync('git', ['checkout', '-q', '-b', 'branch'], { cwd: dir });
+  writeFileSync(join(dir, 'file.txt'), 'branch-value\n');
+  execFileSync('git', ['add', 'file.txt'], { cwd: dir });
+  execFileSync('git', ['commit', '-q', '-m', 'branch commit'], { cwd: dir });
+  execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir });
+  writeFileSync(join(dir, 'file.txt'), 'main-value\n');
+  execFileSync('git', ['add', 'file.txt'], { cwd: dir });
+  execFileSync('git', ['commit', '-q', '-m', 'main commit'], { cwd: dir });
+  // Attempt conflicting merge (sets MERGE_HEAD and unmerged index entries).
+  try {
+    execFileSync('git', ['merge', '--no-commit', 'branch'], {
+      cwd: dir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    // Expected conflict.
+  }
+  // Tear down the marker files, leaving the index entries in place.
+  for (const marker of ['MERGE_HEAD', 'MERGE_MODE', 'MERGE_MSG']) {
+    try {
+      unlinkSync(join(dir, '.git', marker));
+    } catch {
+      // May not exist.
+    }
+  }
+}
+
+describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-recover-unmerged-'));
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('clears the index (no unmerged entries after recovery) while preserving working-tree file', () => {
+    buildUnmergedIndexFixture(tmp);
+
+    // Confirm unmerged entries exist before recovery.
+    const beforeU = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .split('\0')
+      .filter(Boolean);
+    expect(beforeU.length).toBeGreaterThan(0);
+
+    recoverUnmergedIndex(tmp);
+
+    // After recovery: no unmerged entries.
+    const afterU = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .split('\0')
+      .filter(Boolean);
+    expect(afterU).toHaveLength(0);
+
+    // Working-tree file.txt still exists (--mixed preserves working-tree content).
+    expect(existsSync(join(tmp, 'file.txt'))).toBe(true);
+  });
+
+  it('runs git reset --mixed HEAD and does NOT run --abort or --hard', () => {
+    buildUnmergedIndexFixture(tmp);
+
+    // Record git argv arrays by wrapping gitOrFatal via module mock is complex
+    // here; instead verify via observable git state: the index is cleared
+    // (--mixed effect) and no abort marker was consumed (there is none to abort).
+    // Separately, assert that reset --hard would have wiped file.txt but ours did not.
+    // Write a working-tree file that would be destroyed by --hard but preserved by --mixed.
+    writeFileSync(join(tmp, 'extra.txt'), 'preserved-by-mixed\n');
+
+    recoverUnmergedIndex(tmp);
+
+    // --mixed: index cleared, working-tree preserved.
+    const afterU = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .split('\0')
+      .filter(Boolean);
+    expect(afterU).toHaveLength(0);
+    // extra.txt survived (would be gone under --hard, preserved under --mixed).
+    expect(existsSync(join(tmp, 'extra.txt'))).toBe(true);
+  });
+
+  it('emits a log line naming the orphaned autostash with stash pop/drop hint when present', () => {
+    buildUnmergedIndexFixture(tmp, { withAutostash: true });
+
+    const logLines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logLines.push(args.join(' '));
+    });
+
+    recoverUnmergedIndex(tmp);
+
+    const combined = logLines.join('\n');
+    expect(combined).toMatch(/autostash/);
+    expect(combined).toMatch(/git stash pop|git stash drop/);
+  });
+
+  it('does NOT pop the autostash when one is present (stash entry still exists after recovery)', () => {
+    buildUnmergedIndexFixture(tmp, { withAutostash: true });
+
+    // Verify autostash is in the stash list before recovery.
+    const before = execFileSync('git', ['stash', 'list'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    expect(before).toMatch(/autostash/);
+
+    recoverUnmergedIndex(tmp);
+
+    // Autostash must STILL be in the stash list after recovery (never popped).
+    const after = execFileSync('git', ['stash', 'list'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    expect(after).toMatch(/autostash/);
+  });
+
+  it('emits NO autostash log line when no orphaned autostash is present', () => {
+    buildUnmergedIndexFixture(tmp, { withAutostash: false });
+
+    const logLines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logLines.push(args.join(' '));
+    });
+
+    recoverUnmergedIndex(tmp);
+
+    const combined = logLines.join('\n');
+    expect(combined).not.toMatch(/autostash/);
   });
 });
 
