@@ -23,7 +23,7 @@ import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
-import { classifyWedge } from './commands.pull.wedge.ts';
+import { classifyWedge, unmergedIndexRunbookText } from './commands.pull.wedge.ts';
 import { NomadFatal } from './utils.ts';
 
 /**
@@ -157,18 +157,7 @@ export function probeGitleaks(): string {
  */
 function wedgePreflight(wedge: NonNullable<ReturnType<typeof classifyWedge>>): string {
   if (wedge === 'unmerged-index') {
-    return (
-      'repo has an unmerged index with no active rebase or merge in progress ' +
-      '(torn-down rebase left stage-2/3 entries behind).\n\n' +
-      'Manual recovery:\n' +
-      '  1. git reset --mixed HEAD   (clears the stuck index; preserves working-tree files)\n' +
-      '  2. git stash list           (look for an orphaned autostash entry)\n' +
-      '     git stash pop            (restore the autostash) or\n' +
-      '     git stash drop           (discard it)\n' +
-      '  3. nomad push\n\n' +
-      "Auto-recover: run 'nomad pull --force-remote' to apply step 1 automatically\n" +
-      '(see FAQ: "Every pull fails with unmerged files")'
-    );
+    return unmergedIndexRunbookText('nomad push');
   }
   const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
   return (

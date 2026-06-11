@@ -15,7 +15,7 @@ import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
-import { classifyWedge } from './commands.pull.wedge.ts';
+import { classifyWedge, unmergedIndexRunbookText } from './commands.pull.wedge.ts';
 import { recoverForceRemote, recoverUnmergedIndex } from './commands.pull.recovery.ts';
 import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
@@ -108,27 +108,6 @@ function applyWetPull(
 }
 
 /**
- * Build the D-2 runbook message for the unmerged-index-no-active-rebase state.
- * Extracted so the die() body stays readable and the complexity gate passes.
- *
- * @returns The actionable runbook string for `die()`.
- */
-function unmergedIndexRunbook(): string {
-  return (
-    'repo has an unmerged index with no active rebase or merge in progress ' +
-    '(torn-down rebase left stage-2/3 entries behind).\n\n' +
-    'Manual recovery:\n' +
-    '  1. git reset --mixed HEAD   (clears the stuck index; preserves working-tree files)\n' +
-    '  2. git stash list           (look for an orphaned autostash entry)\n' +
-    '     git stash pop            (restore the autostash) or\n' +
-    '     git stash drop           (discard it)\n' +
-    '  3. nomad pull\n\n' +
-    "Auto-recover: run 'nomad pull --force-remote' to apply step 1 automatically\n" +
-    '(see FAQ: "Every pull fails with unmerged files")'
-  );
-}
-
-/**
  * Handle the wedge state detected in `REPO_HOME`. Dispatches all three
  * `WedgeState` values returned by `classifyWedge`:
  *
@@ -154,7 +133,7 @@ function handleWedge(repo: string, forceRemote: boolean): void {
     if (forceRemote) {
       recoverUnmergedIndex(repo);
     } else {
-      die(unmergedIndexRunbook());
+      die(unmergedIndexRunbookText('nomad pull'));
     }
     return;
   }

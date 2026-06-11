@@ -100,6 +100,32 @@ export function classifyWedge(repo: string): WedgeState {
 }
 
 /**
+ * Build the manual-recovery runbook for the unmerged-index-no-active-rebase
+ * wedge state. Shared between the pull-side die() and the push-side preflight
+ * so the text has one source of truth.
+ *
+ * The only caller-specific token is the resume command in step 3:
+ * `'nomad pull'` on the pull side, `'nomad push'` on the push side.
+ *
+ * @param resumeCmd The `nomad <subcommand>` to re-run after manual recovery.
+ * @returns The actionable runbook string for `die()` / NomadFatal.
+ */
+export function unmergedIndexRunbookText(resumeCmd: string): string {
+  return (
+    'repo has an unmerged index with no active rebase or merge in progress ' +
+    '(torn-down rebase left stage-2/3 entries behind).\n\n' +
+    'Manual recovery:\n' +
+    '  1. git reset --mixed HEAD   (clears the stuck index; preserves working-tree files)\n' +
+    '  2. git stash list           (look for an orphaned autostash entry)\n' +
+    '     git stash pop            (restore the autostash) or\n' +
+    '     git stash drop           (discard it)\n' +
+    `  3. ${resumeCmd}\n\n` +
+    "Auto-recover: run 'nomad pull --force-remote' to apply step 1 automatically\n" +
+    '(see FAQ: "Every pull fails with unmerged files")'
+  );
+}
+
+/**
  * Scan `git stash list` for an entry matching git's autostash subject format.
  * Returns `true` when such an entry is present.
  *
