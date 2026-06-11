@@ -55,9 +55,15 @@ function scaffoldRepo(root: string): string {
   return repo;
 }
 
-/** Return the diff of shared/hooks relative to HEAD in `repo` (empty = no churn). */
-function hooksGitDiff(repo: string): string {
-  return execFileSync('git', ['diff', 'HEAD', '--', 'shared/hooks'], {
+/**
+ * Return the diff of shared/hooks between two refs (empty = no churn in that
+ * interval). Comparing committed refs (not the working tree against HEAD) is
+ * load-bearing: after a commit the tree is clean, so a working-tree diff would
+ * read empty even when the commit itself touched shared/hooks, making the
+ * assertion vacuous. Commit-to-commit deltas catch the churn the commit added.
+ */
+function hooksGitDiff(repo: string, fromRef: string, toRef: string): string {
+  return execFileSync('git', ['diff', fromRef, toRef, '--', 'shared/hooks'], {
     cwd: repo,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -95,8 +101,9 @@ describe('gsd-asset churn: no shared/hooks diff after hooks drop (B8)', () => {
     runGit(repo, ['add', 'shared/skills/my-skill.md']);
     runGit(repo, ['commit', '-m', 'host-A: push skills update']);
 
-    // shared/hooks was never touched: diff must be empty
-    expect(hooksGitDiff(repo)).toBe('');
+    // shared/hooks was never touched: the diff the push commit introduced
+    // (parent..HEAD) must be empty.
+    expect(hooksGitDiff(repo, 'HEAD~1', 'HEAD')).toBe('');
   });
 
   it('host-B push on top of host-A produces no diff on shared/hooks (no churn)', () => {
@@ -113,14 +120,11 @@ describe('gsd-asset churn: no shared/hooks diff after hooks drop (B8)', () => {
     runGit(repo, ['add', 'shared/skills/skill-b.md']);
     runGit(repo, ['commit', '-m', 'host-B: add skill-b']);
 
-    // Diff of shared/hooks relative to initial HEAD must be empty on both commits
-    const diffLatest = execFileSync('git', ['diff', 'HEAD~2', 'HEAD', '--', 'shared/hooks'], {
-      cwd: repo,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-      .toString()
-      .trim();
-    expect(diffLatest).toBe('');
+    // Each host's commit must introduce zero shared/hooks churn. Check the two
+    // commits' deltas independently (host-A: HEAD~2..HEAD~1, host-B:
+    // HEAD~1..HEAD) so an add-then-remove that nets to zero cannot hide churn.
+    expect(hooksGitDiff(repo, 'HEAD~2', 'HEAD~1')).toBe('');
+    expect(hooksGitDiff(repo, 'HEAD~1', 'HEAD')).toBe('');
   });
 
   it('staging shared/hooks/* is rejected by enforceAllowList (negative control)', async () => {
