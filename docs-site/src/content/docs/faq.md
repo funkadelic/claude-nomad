@@ -145,33 +145,40 @@ plain git, so anything discarded is still in `git reflog` until git prunes it.
 SessionStart:startup hook error
 Error: Cannot find module '../some-tool/lib/helper.cjs'
 Require stack:
-- /home/you/claude-nomad/shared/hooks/check-update.js
+- /home/you/claude-nomad/shared/my-tool/check-update.js
 ```
 
 The giveaway is the require stack: the failing script shows up under your **sync repo**
 (`~/claude-nomad/shared/...`) instead of `~/.claude/...`.
 
-Here is what happens. On a synced host, directories like `~/.claude/hooks/` are symlinks into the
-sync repo. When Node runs a script, it resolves symlinks first, so the script "believes" it lives
-in `~/claude-nomad/shared/hooks/`. If the tool that installed the hook loads another file by a
-path relative to its own location (say `require('../tool-runtime/helper.cjs')`, expecting to find
-`~/.claude/tool-runtime/` next door), the lookup happens inside the sync repo, where that
-directory does not exist. The hook crashes with `MODULE_NOT_FOUND`.
+Here is what happens. On a synced host, a directory added via `sharedDirs` (see
+[Shared support dirs](/claude-nomad/how-it-works/#shared-support-dirs-shareddirs)) is a symlink
+into the sync repo. When Node runs a script from it, it resolves symlinks first, so the script
+"believes" it lives in `~/claude-nomad/shared/my-tool/`. If the tool loads another file by a path
+relative to its own location (say `require('../tool-runtime/helper.cjs')`, expecting to find
+`~/.claude/tool-runtime/` next door), the lookup happens inside the sync repo, where that directory
+does not exist. The hook crashes with `MODULE_NOT_FOUND`.
 
 For Node hooks the fix is one flag, `--preserve-symlinks-main`, which tells Node to keep the
 symlinked path so relative lookups resolve back under `~/.claude/`:
 
 ```json
-"command": "node --preserve-symlinks-main \"$HOME/.claude/hooks/check-update.js\""
+"command": "node --preserve-symlinks-main \"$HOME/.claude/my-tool/check-update.js\""
 ```
 
 Make that edit in `shared/settings.base.json` in your sync repo, not in `~/.claude/settings.json`
 (see the first question for why), then push and pull as usual.
 
-Any tool that installs files into a synced directory (`hooks/`, `skills/`, and friends) and
-references other `~/.claude/` paths relative to its own file location can hit this, often right
-after the tool updates itself. You do not have to spot it yourself: `nomad doctor` warns about
-hook commands with this shape and prints the same fix hint.
+Any tool that stores hook scripts in a `sharedDirs`-symlinked directory and references other
+`~/.claude/` paths relative to its own file location can hit this, often right after the tool
+updates itself. You do not have to spot it yourself: `nomad doctor` warns about hook commands with
+this shape and prints the same fix hint.
+
+:::note
+`hooks/` and `agents/` are **not** synced by nomad. They are installed per-host by
+`@opengsd/gsd-core` via npm and are marked reserved so they cannot be re-added through `sharedDirs`.
+See [gsd-owned directories: hooks/agents not synced](#gsd-owned-directories-hooksagents-not-synced).
+:::
 
 ## Is nomad update different from npm update -g claude-nomad?
 
@@ -226,3 +233,69 @@ One nuance: because push is last-write-wins, if the *same file* genuinely change
 the host that pushes last clobbers the other's version in the sync repo (the older copy survives
 only in git history). If you suspect a real both-sides edit on something you care about, run
 `nomad diff` first and reconcile by hand before pushing.
+
+## gsd-owned directories: hooks/agents not synced
+
+`hooks/` and `agents/` under `~/.claude/` are owned and installed by `@opengsd/gsd-core` (the GSD
+tool) per host via `npm i -g @opengsd/gsd-core`. Because every host runs `npm install`
+independently, each host always gets a self-consistent set of hook scripts for its own gsd version.
+Syncing these directories was pure churn: two hosts on different gsd versions would overwrite each
+other's versioned scripts on every push/pull cycle.
+
+As of this version, nomad drops `hooks/` and `agents/` from the sync set entirely. If you upgrade
+from an older version that did sync them, the repo trees at `shared/hooks/` and `shared/agents/`
+stay in place as inert history. You do not need to delete them from the repo. Nomad will not touch
+them on push or pull.
+
+**Skills** are handled differently: your own skills (any `~/.claude/skills/` entry that does not
+start with `gsd-`) still sync, but as a filtered copy rather than a symlink. The `gsd-*` skills are
+excluded from both push and pull; gsd reinstalls them per host via npm.
+
+## I upgraded nomad and now nomad doctor shows a migration hint for hooks or agents
+
+After upgrading to a version that drops `hooks` and `agents` from the sync set, any host that
+previously synced them will still have a `~/.claude/hooks` symlink pointing at the old
+`shared/hooks/` tree. That symlink is harmless: gsd's per-host install creates the real directory
+it needs regardless of what is at that path.
+
+`nomad doctor` detects the leftover symlink and emits a migration hint:
+
+```text
+⚠︎ ~/.claude/hooks is a symlink left over from the pre-upgrade sync era
+   gsd (@opengsd/gsd-core) now owns this directory and installs it per host via npm.
+   Remove the symlink and let gsd reinstall a real directory on its next run:
+   rm ~/.claude/hooks
+```
+
+To resolve it, run the command shown in the hint:
+
+```bash
+$ rm ~/.claude/hooks
+```
+
+Gsd reinstalls a real `~/.claude/hooks/` directory the next time it runs (on session start, or
+when you run any gsd command). The same applies to `~/.claude/agents`. After removing both, run
+`nomad doctor` again to confirm the hints are gone.
+
+The hint is informational only (a WARN, not a FAIL) and does not affect pull or push.
+
+## Can I pin a gsd version to keep hook scripts byte-identical across hosts?
+
+Yes, though it is optional and fragile as a primary strategy.
+
+If all your hosts run the exact same `@opengsd/gsd-core` version, the `gsd-*` files gsd installs
+are byte-identical on every machine. This means even if a sync path accidentally carried them, the
+result would be a no-op. Pinning one version is useful as an extra layer of defense while you
+transition, or in a team setting where you want to coordinate gsd upgrades.
+
+To pin:
+
+```bash
+$ npm i -g @opengsd/gsd-core@<version>   # run on every host
+```
+
+**Why this is not the primary fix:** the moment you update gsd on one host, that host's `gsd-*`
+files diverge from the others. The defense only holds for as long as every host stays on the same
+version, which is hard to guarantee over time. The structural fix (dropping `hooks/` and `agents/`
+from the sync set) is the reliable solution; version pinning is an optional complement, not a
+replacement.
