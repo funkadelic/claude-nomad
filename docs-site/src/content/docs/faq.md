@@ -90,6 +90,10 @@ repo state you already have checked out. `nomad pull --dry-run` does the network
 first, so it shows what the next real pull would actually apply. Use `diff` for a quick local
 look, `--dry-run` for the authoritative preview.
 
+One thing neither preview writes: your `skills/` directory. Skills are copy-synced only on a
+real (non-dry-run) pull, so `--dry-run` never touches `~/.claude/skills`. The preview still
+reports every other planned change (symlink moves, `settings.json` diff, transcript overwrites).
+
 ## Backups are piling up in ~/.cache/claude-nomad. Is that a problem?
 
 Every pull and push snapshots what it is about to overwrite into
