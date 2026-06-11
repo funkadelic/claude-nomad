@@ -218,16 +218,15 @@ describe('cmdDoctor sharedDirs symlink row', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('degrades to { projects: {} } when path-map.json is missing (hooks + static rows still emit)', async () => {
+  it('degrades to { projects: {} } when path-map.json is missing (static rows still emit)', async () => {
     // No path-map.json written. cmdDoctor's tolerant read must fall back to an
-    // empty map so the static SHARED_LINKS rows (including hooks) still render
-    // instead of throwing.
+    // empty map so the static SHARED_LINKS rows still render instead of throwing.
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    // hooks is in SHARED_LINKS; it should appear as an info/warn/ok row.
+    // CLAUDE.md is in SHARED_LINKS; it should appear as an info/warn/ok row.
     // We only assert that no throw occurred and that output contains link-related rows.
-    expect(out).toContain('hooks');
+    expect(out).toContain('CLAUDE.md');
     expect(process.exitCode).not.toBeUndefined();
   });
 });

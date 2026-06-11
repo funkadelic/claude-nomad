@@ -99,15 +99,22 @@ export const GITLEAKS_PINNED_VERSION = '8.30.1';
 // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 export const HOST = (process.env.NOMAD_HOST || hostname()).toLowerCase();
 
-/** Names under `shared/` that are symlinked into `~/.claude/` on every pull. */
+/**
+ * Names under `shared/` that are symlinked into `~/.claude/` on every pull.
+ * `hooks` and `agents` are intentionally absent: gsd (`@opengsd/gsd-core`)
+ * installs versioned hook scripts and agent files per-host via npm, so nomad
+ * must not symlink those dirs wholesale (each host's gsd version would write
+ * churn into the synced repo and two hosts on different gsd versions would
+ * collide on the pre-push rebase). gsd owns the real `~/.claude/{hooks,agents}`
+ * dirs going forward; `RESERVED_SHARED` in `config.sharedDirs.guard.ts` keeps
+ * both names blocked so a user cannot re-add them via the `sharedDirs` field.
+ */
 export const SHARED_LINKS = [
   'CLAUDE.md',
-  'agents',
   'skills',
   'commands',
   'rules',
   'my-statusline.cjs',
-  'hooks',
 ] as const;
 
 /**
@@ -188,16 +195,27 @@ export { KNOWN_SETTINGS_KEYS } from './settings-keys.ts';
  * `shared/projects/<logical>/` entries are added at runtime in
  * `enforceAllowList`.
  */
+/**
+ * Static half of the push allow-list. Entries with trailing `/` are prefix
+ * matches; others are exact matches. The `hosts/` entry has special-case
+ * handling in `isAllowed` to limit it to `hosts/<name>.json` (single-level
+ * `.json` files only, no credentials). Data-driven
+ * `shared/projects/<logical>/` entries are added at runtime in
+ * `enforceAllowList`.
+ *
+ * `shared/hooks/` and `shared/agents/` are intentionally absent: gsd owns
+ * those dirs per-host and an out-of-band gsd write to those repo trees must
+ * not be pushable (Pitfall 4). `shared/skills/` remains allowed because
+ * user-authored skills live there.
+ */
 export const PUSH_ALLOWED_STATIC = [
   'shared/CLAUDE.md',
   'shared/my-statusline.cjs',
   'shared/settings.base.json',
-  'shared/agents/',
   'shared/skills/',
   'shared/commands/',
   'shared/rules/',
   'shared/.gitignore',
-  'shared/hooks/',
   'hosts/',
   'path-map.json',
   '.gitleaksignore', // written by nomad push Allow action (D-04)

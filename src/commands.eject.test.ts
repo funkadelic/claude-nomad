@@ -357,19 +357,20 @@ describe('cmdEject', () => {
     // Use sharedDirs to control ordering: allSharedLinks puts SHARED_LINKS
     // first; CLAUDE.md materializes, then a later name fails. Point a later
     // managed name at a target we make unreadable so cpSync dereference fails.
+    // agents is no longer in SHARED_LINKS (gsd-owned); use skills instead.
     const okTarget = join(repoHome, 'shared', 'CLAUDE.md');
     writeFileSync(okTarget, 'ok');
     symlinkSync(okTarget, join(claudeHome, 'CLAUDE.md'));
-    const badTarget = join(repoHome, 'shared', 'agents');
+    const badTarget = join(repoHome, 'shared', 'skills');
     mkdirSync(badTarget, { recursive: true });
     const badNested = join(badTarget, 'secret.md');
     writeFileSync(badNested, 'x');
-    symlinkSync(badTarget, join(claudeHome, 'agents'));
+    symlinkSync(badTarget, join(claudeHome, 'skills'));
     chmodSync(badNested, 0o000); // unreadable; dereference copy fails
 
     try {
       expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
-      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('failed to materialize agents'));
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('failed to materialize skills'));
       expect(errSpy).toHaveBeenCalledWith(
         expect.stringContaining('already materialized: CLAUDE.md'),
       );

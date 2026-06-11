@@ -320,9 +320,10 @@ describe('cmdInit snapshot mode', () => {
   });
 
   it('copies present SHARED_LINKS into shared/ and keeps .gitkeep where source is absent', async () => {
+    // agents is no longer in SHARED_LINKS (gsd-owned); snapshot only copies skills/commands/rules.
     seedClaudeHome(env.testHome, {
       claudeMd: '# real claude md\n',
-      agents: { 'foo.md': 'foo body\n' },
+      agents: { 'foo.md': 'foo body\n' }, // present in ~/.claude/ but NOT snapshotted (not in SHARED_LINKS)
       skills: { 'bar.md': 'bar body\n' },
       myStatusline: 'module.exports = () => "x";\n',
     });
@@ -330,7 +331,9 @@ describe('cmdInit snapshot mode', () => {
     cmdInit({ snapshot: true, run: makeOriginExistsRun() });
     const repo = join(env.testHome, 'claude-nomad');
     expect(readFileSync(join(repo, 'shared', 'CLAUDE.md'), 'utf8')).toBe('# real claude md\n');
-    expect(readFileSync(join(repo, 'shared', 'agents', 'foo.md'), 'utf8')).toBe('foo body\n');
+    // agents is NOT in SHARED_LINKS; snapshot does not copy it, so .gitkeep remains.
+    expect(existsSync(join(repo, 'shared', 'agents', 'foo.md'))).toBe(false);
+    expect(existsSync(join(repo, 'shared', 'agents', '.gitkeep'))).toBe(true);
     expect(readFileSync(join(repo, 'shared', 'skills', 'bar.md'), 'utf8')).toBe('bar body\n');
     expect(readFileSync(join(repo, 'shared', 'my-statusline.cjs'), 'utf8')).toBe(
       'module.exports = () => "x";\n',
@@ -338,23 +341,22 @@ describe('cmdInit snapshot mode', () => {
     // No source for commands/ or rules/, so the .gitkeep placeholders survive.
     expect(readFileSync(join(repo, 'shared', 'commands', '.gitkeep'), 'utf8')).toBe('');
     expect(readFileSync(join(repo, 'shared', 'rules', '.gitkeep'), 'utf8')).toBe('');
-    // After a successful copy into agents/ and skills/, the .gitkeep marker
-    // was removed because the directory now carries real content.
-    expect(existsSync(join(repo, 'shared', 'agents', '.gitkeep'))).toBe(false);
+    // After a successful copy into skills/, the .gitkeep marker was removed.
     expect(existsSync(join(repo, 'shared', 'skills', '.gitkeep'))).toBe(false);
   });
 
   it('snapshotIntoShared copies a directory shared-link when the destination carries no .gitkeep', async () => {
     // Drive snapshotIntoShared directly, bypassing the cmdInit scaffold that
     // always writes a .gitkeep first. With no scaffold the destination
-    // shared/agents/ has no .gitkeep, so the `existsSync(gk)` guard takes its
+    // shared/skills/ has no .gitkeep, so the `existsSync(gk)` guard takes its
     // false branch (skip the rmSync) before cpSync copies the source in. That
     // branch is unreachable through cmdInit, which seeds the marker every time.
-    seedClaudeHome(env.testHome, { agents: { 'foo.md': 'foo body\n' } });
+    // agents is no longer in SHARED_LINKS (gsd-owned); use skills instead.
+    seedClaudeHome(env.testHome, { skills: { 'foo.md': 'foo body\n' } });
     const { snapshotIntoShared } = await import('./init.snapshot.ts');
     snapshotIntoShared({ projects: {} });
     const repo = join(env.testHome, 'claude-nomad');
-    expect(readFileSync(join(repo, 'shared', 'agents', 'foo.md'), 'utf8')).toBe('foo body\n');
+    expect(readFileSync(join(repo, 'shared', 'skills', 'foo.md'), 'utf8')).toBe('foo body\n');
   });
 
   it('writes the verbatim settings.json into hosts/<HOST>.json via writeJsonAtomic', async () => {

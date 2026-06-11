@@ -186,11 +186,11 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(existsSync(join(env.repoHome, 'shared', 'get-shit-done'))).toBe(false);
   });
 
-  // Membership coverage: SHARED_LINKS path -- "hooks" is a static SHARED_LINKS member
-  it('proceeds past membership check when name is in SHARED_LINKS (hooks)', async () => {
-    // hooks is in SHARED_LINKS; absent from CLAUDE_HOME -> "nothing to adopt" no-op
+  // Membership coverage: SHARED_LINKS path -- "skills" is a static SHARED_LINKS member
+  it('proceeds past membership check when name is in SHARED_LINKS (skills)', async () => {
+    // skills is in SHARED_LINKS; absent from CLAUDE_HOME -> "nothing to adopt" no-op
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(() => cmdAdopt('skills')).not.toThrow();
     // The nothing-to-adopt branch: no error, no staging
     expect(diffCached(env)).toBe('');
     expect(errOutput(env)).toBe('');
@@ -211,7 +211,7 @@ describe('cmdAdopt (precondition matrix)', () => {
   it('tolerates a missing path-map.json for a SHARED_LINKS name', async () => {
     rmSync(join(env.repoHome, 'path-map.json'));
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(() => cmdAdopt('skills')).not.toThrow();
     expect(diffCached(env)).toBe('');
     expect(errOutput(env)).toBe('');
   });
@@ -236,9 +236,9 @@ describe('cmdAdopt (precondition matrix)', () => {
 
   // V-05: absent from CLAUDE_HOME -> no-op, exit 0 (nothing to adopt is not an error)
   it('is a no-op when ~/.claude/<name> does not exist', async () => {
-    // Use "hooks" (SHARED_LINKS member) but don't create it under claudeHome
+    // Use "skills" (SHARED_LINKS member) but don't create it under claudeHome
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(() => cmdAdopt('skills')).not.toThrow();
     const out = logOutput(env);
     expect(out).toContain('nothing to adopt');
     expect(diffCached(env)).toBe('');
@@ -494,11 +494,11 @@ describe('cmdAdopt (happy path and move sequence)', () => {
   it('readMapIfPresent fallback has a projects key when path-map.json is absent', async () => {
     rmSync(join(env.repoHome, 'path-map.json'));
     // Use a SHARED_LINKS name so it reaches isConfiguredTarget without name-validation fail.
-    // hooks is in SHARED_LINKS, so even with empty sharedDirs it passes membership.
+    // skills is in SHARED_LINKS, so even with empty sharedDirs it passes membership.
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    // Should not throw -- the fallback { projects: {} } means hooks is found in SHARED_LINKS.
+    // Should not throw -- the fallback { projects: {} } means skills is found in SHARED_LINKS.
     // If fallback was {} (no projects key), isConfiguredTarget would crash.
-    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(() => cmdAdopt('skills')).not.toThrow();
     expect(errOutput(env)).toBe('');
   });
 });

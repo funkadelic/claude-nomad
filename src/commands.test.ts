@@ -144,9 +144,10 @@ describe('enforceAllowList', () => {
   // In -z mode quoted paths are NOT used; filenames with spaces remain
   // literal. Earlier code used slice(3).trim() on LF output, which left
   // literal double-quotes in the path. The current parser keeps spaces
-  // literal so the shared/agents/ prefix matches the filename directly.
-  it('matches literal filename containing spaces against shared/agents/ prefix', () => {
-    const status = z(['?? shared/agents/My Agent.md']);
+  // literal so the shared/skills/ prefix matches the filename directly.
+  it('matches literal filename containing spaces against shared/skills/ prefix', () => {
+    // shared/agents/ was removed from PUSH_ALLOWED_STATIC (gsd-owned); use shared/skills/ instead.
+    const status = z(['?? shared/skills/My Skill.md']);
     const map: PathMap = { projects: {} };
     enforceAllowList(status, map);
     expect(exitSpy).not.toHaveBeenCalled();

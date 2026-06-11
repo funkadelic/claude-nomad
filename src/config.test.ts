@@ -58,32 +58,55 @@ describe('SUPPORTED_EXTRAS and PathMap widening', () => {
   });
 });
 
-describe('SHARED_LINKS includes hooks', () => {
-  it('contains "hooks" as a member of the sync set', async () => {
+describe('SHARED_LINKS membership after hooks/agents drop', () => {
+  it('does NOT contain "hooks" (gsd-owned per-host, dropped from sync)', async () => {
     vi.resetModules();
     const config = await import('./config.ts');
-    expect(config.SHARED_LINKS).toContain('hooks');
+    expect(config.SHARED_LINKS).not.toContain('hooks');
   });
 
-  it('still contains all original SHARED_LINKS members', async () => {
+  it('does NOT contain "agents" (gsd-owned per-host, dropped from sync)', async () => {
     vi.resetModules();
     const config = await import('./config.ts');
-    for (const name of [
-      'CLAUDE.md',
-      'agents',
-      'skills',
-      'commands',
-      'rules',
-      'my-statusline.cjs',
-    ]) {
+    expect(config.SHARED_LINKS).not.toContain('agents');
+  });
+
+  it('still contains CLAUDE.md, skills, commands, rules, my-statusline.cjs', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    for (const name of ['CLAUDE.md', 'skills', 'commands', 'rules', 'my-statusline.cjs']) {
       expect(config.SHARED_LINKS).toContain(name);
     }
   });
 
-  it('PUSH_ALLOWED_STATIC includes "shared/hooks/"', async () => {
+  it('PUSH_ALLOWED_STATIC does NOT include "shared/hooks/"', async () => {
     vi.resetModules();
     const config = await import('./config.ts');
-    expect(config.PUSH_ALLOWED_STATIC).toContain('shared/hooks/');
+    expect(config.PUSH_ALLOWED_STATIC).not.toContain('shared/hooks/');
+  });
+
+  it('PUSH_ALLOWED_STATIC does NOT include "shared/agents/"', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    expect(config.PUSH_ALLOWED_STATIC).not.toContain('shared/agents/');
+  });
+
+  it('PUSH_ALLOWED_STATIC still includes "shared/skills/"', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    expect(config.PUSH_ALLOWED_STATIC).toContain('shared/skills/');
+  });
+
+  it('isValidSharedDir("hooks") returns false (RESERVED_SHARED block still in place)', async () => {
+    vi.resetModules();
+    const { isValidSharedDir } = await import('./config.sharedDirs.guard.ts');
+    expect(isValidSharedDir('hooks')).toBe(false);
+  });
+
+  it('isValidSharedDir("agents") returns false (RESERVED_SHARED block still in place)', async () => {
+    vi.resetModules();
+    const { isValidSharedDir } = await import('./config.sharedDirs.guard.ts');
+    expect(isValidSharedDir('agents')).toBe(false);
   });
 
   it('PUSH_ALLOWED_STATIC includes ".gitleaks.overlay.toml" as an exact name', async () => {
