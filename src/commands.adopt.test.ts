@@ -186,11 +186,11 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(existsSync(join(env.repoHome, 'shared', 'get-shit-done'))).toBe(false);
   });
 
-  // Membership coverage: SHARED_LINKS path -- "hooks" is a static SHARED_LINKS member
-  it('proceeds past membership check when name is in SHARED_LINKS (hooks)', async () => {
-    // hooks is in SHARED_LINKS; absent from CLAUDE_HOME -> "nothing to adopt" no-op
+  // Membership coverage: SHARED_LINKS path -- "commands" is a static SHARED_LINKS member
+  it('proceeds past membership check when name is in SHARED_LINKS (commands)', async () => {
+    // commands is in SHARED_LINKS; absent from CLAUDE_HOME -> "nothing to adopt" no-op
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(() => cmdAdopt('commands')).not.toThrow();
     // The nothing-to-adopt branch: no error, no staging
     expect(diffCached(env)).toBe('');
     expect(errOutput(env)).toBe('');
@@ -211,9 +211,35 @@ describe('cmdAdopt (precondition matrix)', () => {
   it('tolerates a missing path-map.json for a SHARED_LINKS name', async () => {
     rmSync(join(env.repoHome, 'path-map.json'));
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(() => cmdAdopt('commands')).not.toThrow();
     expect(diffCached(env)).toBe('');
     expect(errOutput(env)).toBe('');
+  });
+
+  // B7: hooks and agents are now in RESERVED_SHARED (gsd-owned); isValidAdoptName
+  // rejects them before membership is even checked.
+  it('rejects "hooks" as an invalid adopt name (B7: blocked by RESERVED_SHARED)', async () => {
+    mkdirSync(join(env.claudeHome, 'hooks'), { recursive: true });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('hooks')).toThrow('exit:1');
+    expect(errOutput(env)).toContain('invalid name');
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('rejects "agents" as an invalid adopt name (B7: blocked by RESERVED_SHARED)', async () => {
+    mkdirSync(join(env.claudeHome, 'agents'), { recursive: true });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('agents')).toThrow('exit:1');
+    expect(errOutput(env)).toContain('invalid name');
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('rejects "skills" as an invalid adopt name (copy-synced, blocked by RESERVED_SHARED)', async () => {
+    mkdirSync(join(env.claudeHome, 'skills'), { recursive: true });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('skills')).toThrow('exit:1');
+    expect(errOutput(env)).toContain('invalid name');
+    expect(diffCached(env)).toBe('');
   });
 
   // V-06: already a symlink -> no-op with "already adopted" message
@@ -236,9 +262,9 @@ describe('cmdAdopt (precondition matrix)', () => {
 
   // V-05: absent from CLAUDE_HOME -> no-op, exit 0 (nothing to adopt is not an error)
   it('is a no-op when ~/.claude/<name> does not exist', async () => {
-    // Use "hooks" (SHARED_LINKS member) but don't create it under claudeHome
+    // Use "commands" (SHARED_LINKS member) but don't create it under claudeHome
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(() => cmdAdopt('commands')).not.toThrow();
     const out = logOutput(env);
     expect(out).toContain('nothing to adopt');
     expect(diffCached(env)).toBe('');
@@ -494,11 +520,11 @@ describe('cmdAdopt (happy path and move sequence)', () => {
   it('readMapIfPresent fallback has a projects key when path-map.json is absent', async () => {
     rmSync(join(env.repoHome, 'path-map.json'));
     // Use a SHARED_LINKS name so it reaches isConfiguredTarget without name-validation fail.
-    // hooks is in SHARED_LINKS, so even with empty sharedDirs it passes membership.
+    // commands is in SHARED_LINKS, so even with empty sharedDirs it passes membership.
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    // Should not throw -- the fallback { projects: {} } means hooks is found in SHARED_LINKS.
+    // Should not throw -- the fallback { projects: {} } means commands is found in SHARED_LINKS.
     // If fallback was {} (no projects key), isConfiguredTarget would crash.
-    expect(() => cmdAdopt('hooks')).not.toThrow();
+    expect(() => cmdAdopt('commands')).not.toThrow();
     expect(errOutput(env)).toBe('');
   });
 });

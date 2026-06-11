@@ -1045,6 +1045,112 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(readFileSync(join(projectRoot, '.planning', 'local-only.md'), 'utf8')).toBe('my work\n');
   });
 
+  it('cmdPull: skills e2e -- user skill overlaid, local gsd-* survives on WET pull', async () => {
+    // End-to-end: syncSkillsPull is called on the WET path. A user skill
+    // present in shared/skills is overlaid into ~/.claude/skills, and a
+    // pre-existing local gsd-* skill is preserved (not deleted).
+    const testHome2 = join(tmp, 'home2');
+    process.env.HOME = testHome2;
+    delete process.env.NOMAD_REPO;
+    const repoDir2 = join(testHome2, 'claude-nomad');
+    const claudeDir2 = join(testHome2, '.claude');
+    const sharedSkills = join(repoDir2, 'shared', 'skills');
+    const localSkills = join(claudeDir2, 'skills');
+    mkdirSync(join(repoDir2, 'shared'), { recursive: true });
+    writeFileSync(join(repoDir2, 'shared', 'settings.base.json'), '{}\n');
+    mkdirSync(claudeDir2, { recursive: true });
+    // Scaffold shared/skills with a user skill (not gsd-prefixed).
+    mkdirSync(sharedSkills, { recursive: true });
+    writeFileSync(join(sharedSkills, 'graphify'), '# graphify\n');
+    // Scaffold ~/.claude/skills as a real dir with a local gsd-* skill already there.
+    mkdirSync(localSkills, { recursive: true });
+    writeFileSync(join(localSkills, 'gsd-executor'), '# gsd executor\n');
+
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn(), gitCaptureRaw: vi.fn(() => '') };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(process.exitCode).not.toBe(1);
+
+    // User skill overlaid from shared/skills into ~/.claude/skills.
+    expect(existsSync(join(localSkills, 'graphify'))).toBe(true);
+    expect(readFileSync(join(localSkills, 'graphify'), 'utf8')).toBe('# graphify\n');
+    // Local gsd-* skill preserved (not deleted by overlay).
+    expect(existsSync(join(localSkills, 'gsd-executor'))).toBe(true);
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+  });
+
+  it('cmdPull: skills e2e -- dry-run copies nothing into ~/.claude/skills', async () => {
+    // Dry-run contract: syncSkillsPull is WET-only; under dryRun computePreview
+    // runs and no files are written to ~/.claude/skills.
+    const testHome3 = join(tmp, 'home3');
+    process.env.HOME = testHome3;
+    delete process.env.NOMAD_REPO;
+    const repoDir3 = join(testHome3, 'claude-nomad');
+    const claudeDir3 = join(testHome3, '.claude');
+    const sharedSkills3 = join(repoDir3, 'shared', 'skills');
+    const localSkills3 = join(claudeDir3, 'skills');
+    mkdirSync(join(repoDir3, 'shared'), { recursive: true });
+    writeFileSync(join(repoDir3, 'shared', 'settings.base.json'), '{}\n');
+    mkdirSync(claudeDir3, { recursive: true });
+    mkdirSync(sharedSkills3, { recursive: true });
+    writeFileSync(join(sharedSkills3, 'graphify'), '# graphify\n');
+    // ~/.claude/skills does not exist yet.
+    expect(existsSync(localSkills3)).toBe(false);
+    writeFileSync(join(repoDir3, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn(), gitCaptureRaw: vi.fn(() => '') };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./preview.ts', () => ({
+      computePreview: vi.fn(() => ({ unmapped: 0 })),
+    }));
+
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull({ dryRun: true })).not.toThrow();
+
+    // Dry-run: no files written to ~/.claude/skills (zero-mutation contract).
+    expect(existsSync(localSkills3)).toBe(false);
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('./preview.ts');
+  });
+
   it('fresh-clone-style (unborn HEAD): cmdPull completes without throw and deletes nothing', async () => {
     // Simulate: NOMAD_REPO does not have commits yet (unborn HEAD). captureHead
     // returns undefined -> capturePrePostHeads returns undefined -> overlay only.

@@ -101,9 +101,18 @@ describe('classifyTouched - synced-config classification', () => {
     expect(synced).toContain('path-map.json');
   });
 
-  it('prefix entry: shared/agents/x.md is synced (matches shared/agents/ prefix)', () => {
-    const { synced } = classifyTouched(['shared/agents/x.md']);
-    expect(synced).toContain('shared/agents/x.md');
+  it('prefix entry: shared/skills/x.md is synced (matches shared/skills/ prefix)', () => {
+    // shared/agents/ was removed from PUSH_ALLOWED_STATIC (gsd-owned); use shared/skills/ instead.
+    const { synced } = classifyTouched(['shared/skills/x.md']);
+    expect(synced).toContain('shared/skills/x.md');
+  });
+
+  it('prefix entry: shared/agents/x.md is NOT synced (shared/agents/ removed from allow-list)', () => {
+    // shared/agents/ was removed from PUSH_ALLOWED_STATIC; an out-of-band gsd write must not
+    // be classified as a synced-config path anymore.
+    const { synced, toolSource } = classifyTouched(['shared/agents/x.md']);
+    expect(synced).not.toContain('shared/agents/x.md');
+    expect(toolSource).toContain('shared/agents/x.md');
   });
 
   it('prefix lookalike: shared-evil/x does NOT match (no false prefix hit)', () => {

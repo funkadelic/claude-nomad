@@ -189,16 +189,28 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     vi.restoreAllMocks();
   });
 
-  it('permits shared/hooks/foo.sh via the static PUSH_ALLOWED_STATIC prefix', async () => {
-    // shared/hooks/ was added to PUSH_ALLOWED_STATIC in plan 25-01; it is a
-    // static allow-list entry, so no sharedDirs map entry is needed.
+  it('rejects shared/hooks/foo.sh (shared/hooks/ removed from PUSH_ALLOWED_STATIC)', async () => {
+    // shared/hooks/ was removed from PUSH_ALLOWED_STATIC because gsd owns hooks per-host;
+    // an out-of-band gsd write to shared/hooks/ must be rejected.
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {} };
-    // Should NOT throw for shared/hooks/foo.sh
-    expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).not.toThrow();
-    // The static entry does not grant shared/hooks itself without trailing slash.
-    expect(() => enforceAllowList('M  shared/other/file.sh\0', map)).toThrow(NomadFatal);
+    expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).toThrow(NomadFatal);
+  });
+
+  it('rejects shared/agents/gsd-bar.md (shared/agents/ removed from PUSH_ALLOWED_STATIC)', async () => {
+    // shared/agents/ was removed from PUSH_ALLOWED_STATIC for the same reason as shared/hooks/.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  shared/agents/gsd-bar.md\0', map)).toThrow(NomadFatal);
+  });
+
+  it('still permits shared/skills/graphify/SKILL.md (shared/skills/ stays in allow-list)', async () => {
+    // shared/skills/ is kept in PUSH_ALLOWED_STATIC because user-authored skills live there.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  shared/skills/graphify/SKILL.md\0', map)).not.toThrow();
   });
 
   it('permits shared/gsd/ and shared/gsd/cli.js when map.sharedDirs includes "gsd"', async () => {

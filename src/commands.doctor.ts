@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  reportDroppedNamesMigration,
   reportHostAndPaths,
   reportRepoState,
   reportSharedLinks,
@@ -69,6 +70,7 @@ function gatherDoctorSections(opts: {
   const rawMap = existsSync(mapPath) ? readJsonSafe<PathMap>(mapPath, mapPath, links) : null;
   const map: PathMap = rawMap ?? { projects: {} };
   reportSharedLinks(links, map);
+  reportDroppedNamesMigration(links);
 
   const hooksScan = section('Hook targets');
   reportHooksTargetCheck(hooksScan);

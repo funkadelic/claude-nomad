@@ -13,7 +13,14 @@ import {
   warnGlyph,
   yellow,
 } from './color.ts';
-import { allSharedLinks, claudeHome, HOST, repoHome, type PathMap } from './config.ts';
+import {
+  allSharedLinks,
+  claudeHome,
+  GSD_DROPPED_NAMES,
+  HOST,
+  repoHome,
+  type PathMap,
+} from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 
@@ -186,5 +193,38 @@ export function reportSharedLinks(section: DoctorSection, map: PathMap): void {
     const { line, fail } = classifySharedLink(name, p);
     addItem(section, line);
     if (fail) process.exitCode = 1;
+  }
+}
+
+/**
+ * Non-destructive migration probe for dirs that were dropped from SHARED_LINKS.
+ * For each name in GSD_DROPPED_NAMES, lstat `~/.claude/<name>`: if the path
+ * exists AND is a symbolic link (leftover from the old symlink era), emit a
+ * WARN/info migration hint telling the user to remove the symlink and let gsd
+ * reinstall a real dir. Does NOT set process.exitCode (this is migration
+ * guidance, not a FAIL). Emits nothing when the name is absent, is a real
+ * directory, or is any non-symlink path (migration already done or never applied).
+ *
+ * The probe intentionally does NOT key off repoHasSharedSource: the repo trees
+ * for hooks/agents are left in place as inert history (D-4 part 4), so
+ * repoHasSharedSource stays true. Reusing classifySymlinkTarget would render a
+ * healthy "ok <name>: symlink" line instead of migration guidance.
+ */
+export function reportDroppedNamesMigration(section: DoctorSection): void {
+  const claude = claudeHome();
+  for (const name of GSD_DROPPED_NAMES) {
+    const p = join(claude, name);
+    let stat;
+    try {
+      stat = lstatSync(p);
+    } catch {
+      continue; // absent or unreadable: no leftover symlink, nothing to emit
+    }
+    if (!stat.isSymbolicLink()) continue; // real dir (gsd already owns it)
+    addItem(
+      section,
+      `${yellow(warnGlyph)} ${name}: gsd now owns this dir per-host (was a nomad symlink); ` +
+        `run \`rm ~/.claude/${name}\` and let gsd reinstall a real dir`,
+    );
   }
 }

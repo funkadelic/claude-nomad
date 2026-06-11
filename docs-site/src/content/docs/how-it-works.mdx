@@ -16,11 +16,9 @@ import { FileTree } from '@astrojs/starlight/components';
 - claude-nomad-config/ your private config repo
   - shared/ your config, synced to every host
     - CLAUDE.md
-    - agents/
-    - skills/
+    - skills/ your own skills (gsd-* excluded)
     - commands/
     - rules/
-    - hooks/
     - settings.base.json
     - projects/
   - hosts/
@@ -49,11 +47,9 @@ What `~/claude-nomad/` looks like on a configured host:
   - shared/ synced to every machine
     - CLAUDE.md
     - settings.base.json baseline settings
-    - agents/
-    - skills/
+    - skills/ your own skills (gsd-* excluded from sync)
     - commands/
     - rules/
-    - hooks/ hook scripts, symlinked into ~/.claude/hooks/
     - my-statusline.cjs any script you want symlinked into ~/.claude/
     - .gitignore blocks `.claude.json`, `settings.local.json`, `*.token`, `*.key`, `*.pem`, `id_rsa`, `id_ed25519`, `.env`, `.env.*`
     - projects/ session transcripts under logical names
@@ -70,20 +66,23 @@ What `~/claude-nomad/` looks like on a configured host:
 
 | Category | Items | Behavior |
 | -------- | ----- | -------- |
-| **Synced** | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`. |
+| **Synced (symlinked)** | `CLAUDE.md`, `commands/`, `rules/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`. |
+| **Synced (filtered copy)** | `skills/` | Copied to/from `shared/skills/` on every pull/push; your own skills travel, `gsd-*` skills are excluded (they are installed per-host by the `@opengsd/gsd-core` tool via npm). |
 | **Generated** | `settings.json` | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull. |
 | **Remapped** | `projects/` session transcripts | Copied with path translation per `path-map.json`. |
 | **Per-project extras** | Whitelisted dirs like `.planning/` or a project's own `<repo>/.claude/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; copied to/from `shared/extras/<logical>/`. `.planning` syncs as an additive overlay (repo-only and local-only files survive); `.claude` keeps host-local files on pull; other extras mirror. |
 | **Shared support dirs** | Opt-in global `~/.claude/` dirs like a tool's `get-shit-done/` | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. |
+| **gsd-owned (not synced)** | `hooks/`, `agents/` | Installed per-host by `@opengsd/gsd-core` via npm. Not synced; syncing them caused cross-host churn when two machines ran different gsd versions. |
 | **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
 | **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
 
 Pointers and specifics:
 
-- **Synced** link names live in `SHARED_LINKS` (and the optional `sharedDirs` field in
-  `path-map.json`), **whitelisted extras** names in `SUPPORTED_EXTRAS` (currently `.planning`,
-  `CLAUDE.md`, and `.claude`), and the full **never-synced** set in `NEVER_SYNC` (all in
-  `src/config.ts`).
+- **Synced (symlinked)** link names live in `SHARED_LINKS` (and the optional `sharedDirs` field in
+  `path-map.json`); the **skills filtered copy** is driven by `src/skills-sync.ts`
+  (`syncSkillsPull`/`syncSkillsPush`); **whitelisted extras** names in `SUPPORTED_EXTRAS`
+  (currently `.planning`, `CLAUDE.md`, and `.claude`); and the full **never-synced** set in
+  `NEVER_SYNC` (all in `src/config.ts`).
 - **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `.credentials.json` (OAuth
   credential store), `history.jsonl`, `settings.local.json` (per-host overrides),
   `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,
@@ -102,24 +101,24 @@ Pointers and specifics:
   Because a `.claude/` directory mirrors the layout of `~/.claude/`, opting it in strips every
   ephemeral or host-local name on push: the whole `NEVER_SYNC` set plus session transcripts under
   `projects/` (`settings.local.json`, `projects/`, `shell-snapshots/`, `sessions/`, `statsig/`,
-  `telemetry/`, `todos/`, ...), leaving only your config (`settings.json`, `hooks/`, `agents/`,
-  `skills/`, `commands/`, `rules/`). So syncing `.claude/` carries your project's Claude setup across
-  machines without ever leaking session transcripts or per-host secrets. The same boundary is
-  enforced a second time at the push gate as a backstop.
+  `telemetry/`, `todos/`, ...), leaving only your config (`settings.json`, `skills/`, `commands/`,
+  `rules/`). So syncing `.claude/` carries your project's Claude setup across machines without ever
+  leaking session transcripts or per-host secrets. The same boundary is enforced a second time at
+  the push gate as a backstop.
 - **A pull keeps each machine's own per-host files.** Because those never-synced names are stripped
   on push, they never travel between machines. On pull, the `.claude` extra preserves any of them
   already on disk for the current host (most importantly a project's own `settings.local.json`)
   while still mirroring the synced config over the top, at every level of the tree. So a pull
-  updates your shared `settings.json`, `hooks/`, and the rest from the repo without ever
-  overwriting or deleting the local-only settings that machine keeps to itself.
+  updates your shared `settings.json` and the rest from the repo without ever overwriting or
+  deleting the local-only settings that machine keeps to itself.
 
 :::note[Which `.claude/`?]
 The `.claude` extra is a project's **own** `<repo>/.claude/` directory: the project-scoped Claude
-config that lives next to your code (`hooks/`, `agents/`, `skills/`, `commands/`, a project
-`settings.json`). That is a different directory from the global `~/.claude/` in your home folder,
-which claude-nomad already syncs through symlinks and the settings deep-merge. Opting the extra in
-carries one project's local Claude setup across machines; it does not change how the global
-`~/.claude/` is handled.
+config that lives next to your code (`skills/`, `commands/`, a project `settings.json`). That is a
+different directory from the global `~/.claude/` in your home folder, which claude-nomad already
+syncs through symlinks, skills copy-sync, and the settings deep-merge. Opting the extra in carries
+one project's local Claude setup across machines; it does not change how the global `~/.claude/` is
+handled.
 :::
 
 :::caution[Only sync what your project's git ignores]
@@ -139,15 +138,18 @@ plugin's own per-host config.
 :::
 
 :::note[Important]
-Syncing a tool's `skills/` or `commands/` files copies the command shims, not the engine
-behind them. If a tool keeps a binary or runtime outside `~/.claude/` (installed with
-`npm i -g`, a setup script, and so on), nomad does not carry that part, so the synced
-commands appear on a new host but fail until the tool itself is installed there. Install such
-tools once per host. For example, if you sync the GSD (`get-shit-done`) skills, run
-`npm i -g get-shit-done-cc` on each host, pinned to the version that matches your committed
-skills. Claude Code marketplace plugins (such as superpowers) are the exception: they are
-listed in `enabledPlugins`, synced via `settings.base.json`, and re-downloaded by Claude Code
-automatically, so they need no manual install.
+Syncing your own `skills/` or `commands/` files copies the command shims, not the engine behind
+them. If a tool keeps a binary or runtime outside `~/.claude/` (installed with `npm i -g`, a setup
+script, and so on), nomad does not carry that part, so the synced commands appear on a new host but
+fail until the tool itself is installed there. Install such tools once per host.
+
+`gsd-*` skills (`@opengsd/gsd-core`) are excluded from sync automatically: the tool installs them
+per-host via `npm i -g @opengsd/gsd-core`, so they do not need to (and should not) travel through
+nomad. Only your own skills (unprefixed or non-`gsd-` names) are copied.
+
+Claude Code marketplace plugins (such as superpowers) are the exception: they are listed in
+`enabledPlugins`, synced via `settings.base.json`, and re-downloaded by Claude Code automatically,
+so they need no manual install.
 :::
 
 ## Path remapping
@@ -218,14 +220,13 @@ the pull copy lands, so an unexpected overwrite is always recoverable.
 ## Shared support dirs (sharedDirs)
 
 Some tools install a `hooks` block into `settings.json` whose commands point at scripts under
-`~/.claude/hooks/` (and sometimes a support directory such as `~/.claude/get-shit-done/`). Because
-`settings.json` is regenerated on every pull, that hook configuration travels to every host, but
-the scripts it points at did not, so hooks broke on a freshly configured host. `~/.claude/hooks/`
-is now a built-in synced link (it rides the same symlink model as `skills/` and `agents/`), so
-hook scripts travel automatically.
+`~/.claude/hooks/`. The `hooks/` and `agents/` directories are managed directly by
+`@opengsd/gsd-core` per host via npm install, so nomad no longer syncs them. If you use a
+different tool that stores its hook scripts in a custom directory under `~/.claude/`, you can
+opt that directory in through `sharedDirs`.
 
-For any other global `~/.claude/` support directory a tool needs, the optional top-level
-`sharedDirs` field in `path-map.json` opts it into the same symlink sync:
+For any global `~/.claude/` support directory a tool needs, the optional top-level `sharedDirs`
+field in `path-map.json` opts it into symlink sync:
 
 ```json
 {
@@ -245,20 +246,22 @@ without it behaves exactly as before.
 
 Entries are validated before anything is linked. A name is accepted only if it is a single path
 segment (no `/`, no `..`), is not one of the never-synced names, and does not collide with a
-reserved `shared/` name (`settings.base.json`, the built-in synced links, `hooks`, `hosts`,
-`path-map.json`). An invalid entry is dropped with a warning rather than aborting the run. The
-contents still go through the same gitleaks scan as everything else on push, so do not point
-`sharedDirs` at a directory that holds credentials.
+reserved `shared/` name (`settings.base.json`, the built-in synced links, `hooks`, `agents`,
+`skills`, `hosts`, `path-map.json`). Note that `hooks`, `agents`, and `skills` are reserved and
+cannot be re-added through `sharedDirs`: `hooks` and `agents` are gsd-owned per-host, and
+`skills` is handled by the filtered copy-sync. An invalid entry is dropped with a warning rather
+than aborting the run. The contents still go through the same gitleaks scan as everything else on
+push, so do not point `sharedDirs` at a directory that holds credentials.
 
 First-time setup on an already-configured repo: a symlink can only form once the directory exists
-under `shared/`. On a fresh repo `nomad init --snapshot` handles this for you. To add `hooks/` (or
-a new `sharedDirs` entry) to a repo that is already set up, move it into `shared/` once on the
-host that has it, then let the normal flow take over:
+under `shared/`. On a fresh repo `nomad init --snapshot` handles this for you. To add a new
+`sharedDirs` entry to a repo that is already set up, move it into `shared/` once on the host that
+has it, then let the normal flow take over:
 
 ```bash
-$ mv ~/.claude/hooks ~/claude-nomad/shared/hooks   # one-time, on the source host
-$ nomad pull                                        # re-creates ~/.claude/hooks as a symlink
-$ nomad push                                        # shares it with your other hosts
+$ mv ~/.claude/my-tool ~/claude-nomad/shared/my-tool   # one-time, on the source host
+$ nomad pull                                            # re-creates ~/.claude/my-tool as a symlink
+$ nomad push                                            # shares it with your other hosts
 ```
 
 `nomad pull` never writes back to the remote, so it will not seed `shared/` for you; the

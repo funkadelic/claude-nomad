@@ -218,16 +218,15 @@ describe('cmdDoctor sharedDirs symlink row', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('degrades to { projects: {} } when path-map.json is missing (hooks + static rows still emit)', async () => {
+  it('degrades to { projects: {} } when path-map.json is missing (static rows still emit)', async () => {
     // No path-map.json written. cmdDoctor's tolerant read must fall back to an
-    // empty map so the static SHARED_LINKS rows (including hooks) still render
-    // instead of throwing.
+    // empty map so the static SHARED_LINKS rows still render instead of throwing.
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    // hooks is in SHARED_LINKS; it should appear as an info/warn/ok row.
+    // CLAUDE.md is in SHARED_LINKS; it should appear as an info/warn/ok row.
     // We only assert that no throw occurred and that output contains link-related rows.
-    expect(out).toContain('hooks');
+    expect(out).toContain('CLAUDE.md');
     expect(process.exitCode).not.toBeUndefined();
   });
 });
@@ -374,6 +373,109 @@ describe('reportHostAndPaths NOMAD_REPO info line (direct)', () => {
     expect(rows).toContain('repo:');
     // claude home line must also be present (kills L64 StringLiteral mutation).
     expect(rows).toContain('claude home:');
+  });
+});
+
+describe('reportDroppedNamesMigration migration probe (direct)', () => {
+  // Tests that exercise reportDroppedNamesMigration directly for the
+  // dropped-names migration probe: hooks and agents were removed from
+  // SHARED_LINKS; leftover symlinks at ~/.claude/hooks or ~/.claude/agents
+  // should emit a WARN-level migration hint. The probe must NEVER set
+  // process.exitCode (it is informational guidance, not a FAIL).
+
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let originalNoColor: string | undefined;
+  let testHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-dropped-names-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    process.env.NOMAD_REPO = join(testHome, 'claude-nomad');
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NOMAD_REPO', originalNomadRepo);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('emits a WARN line for a leftover hooks symlink without setting exitCode (B5)', async () => {
+    // A leftover ~/.claude/hooks symlink from the old era must produce a
+    // migration hint. exitCode must stay 0 (guidance, not a FAIL).
+    const target = join(testHome, 'some-target');
+    mkdirSync(target, { recursive: true });
+    symlinkSync(target, join(testHome, '.claude', 'hooks'));
+
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportDroppedNamesMigration } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportDroppedNamesMigration(sec);
+
+    const rows = sec.items.join('\n');
+    expect(rows).toContain('hooks');
+    expect(rows).toContain('gsd now owns this dir per-host');
+    expect(rows).toContain('rm ~/.claude/hooks');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a WARN line for a leftover agents symlink without setting exitCode (B6)', async () => {
+    // Same as B5 but for agents.
+    const target = join(testHome, 'some-target');
+    mkdirSync(target, { recursive: true });
+    symlinkSync(target, join(testHome, '.claude', 'agents'));
+
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportDroppedNamesMigration } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportDroppedNamesMigration(sec);
+
+    const rows = sec.items.join('\n');
+    expect(rows).toContain('agents');
+    expect(rows).toContain('gsd now owns this dir per-host');
+    expect(rows).toContain('rm ~/.claude/agents');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits nothing and leaves exitCode unchanged when no leftover symlinks exist (clean host)', async () => {
+    // A host that already migrated (no hooks/agents paths at all) must produce
+    // zero output rows from the probe.
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportDroppedNamesMigration } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportDroppedNamesMigration(sec);
+
+    expect(sec.items).toHaveLength(0);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits nothing when hooks/agents exist as real directories (gsd already owns them)', async () => {
+    // If gsd has already created a real directory at ~/.claude/hooks, the probe
+    // must skip it (migration already done). Only symlinks trigger the hint.
+    mkdirSync(join(testHome, '.claude', 'hooks'), { recursive: true });
+    mkdirSync(join(testHome, '.claude', 'agents'), { recursive: true });
+
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportDroppedNamesMigration } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportDroppedNamesMigration(sec);
+
+    expect(sec.items).toHaveLength(0);
+    expect(process.exitCode).toBe(0);
   });
 });
 

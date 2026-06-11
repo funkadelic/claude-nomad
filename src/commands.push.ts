@@ -6,6 +6,7 @@ import { enforceAllowList } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
+import { syncSkillsPush } from './skills-sync.ts';
 import { collectGlobalConfigChanges } from './push-global-config.ts';
 import { scanPushVerdict } from './push-leak-verdict.ts';
 import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
@@ -150,6 +151,15 @@ function runDryRunPreview(st: PushState, map: PathMap | null, repo: string): voi
  * `verdictRow` lands in the Leak scan section and whose `recovery` (if any)
  * prints below the tree; `process.exitCode = 1` is set on findings.
  *
+ * Dry-run skills gap (intentional, WR-03): `syncSkillsPush()` is gated behind
+ * `if (!dryRun)`, so a dry-run mutates nothing under `shared/skills/`. As a
+ * result the dry-run "Global config" section (which now treats `shared/skills`
+ * as a global-config prefix) does NOT list pending skills edits, and the
+ * dry-run leak preview does not scan skills (see `previewPushLeaks`). A real
+ * push copies and stages skills, so they appear under Global config and are
+ * scanned then. Preserving the zero-mutation dry-run contract is why skills are
+ * not surfaced in the preview.
+ *
  * The dry-run preview runs REGARDLESS of `REPO_HOME` `git status`: in dry-run
  * nothing is copied into `shared/`, so an empty status is the normal case for
  * the headline target (a clean repo with new mapped sessions). `previewPushLeaks`
@@ -234,6 +244,11 @@ export async function cmdPush(
     // both the gitlink walk and the downstream allow-list classification.
     // dryRun is forwarded so a preview push reports the same skipped count.
     const extras = withSpinner('Syncing extras', () => remapExtrasPush(ts, { dryRun }));
+    // syncSkillsPush runs between remapExtrasPush and guardGitlinks so the
+    // produced shared/skills content is visible to both the gitlink walk and
+    // the downstream allow-list classification. dryRun is forwarded: under
+    // dryRun, copySkillsPush writes nothing (mirroring remapPush/remapExtrasPush).
+    if (!dryRun) syncSkillsPush();
     const st: PushState = { dryRun, remap, extras, globalConfig: [] };
     guardGitlinks(repo);
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()

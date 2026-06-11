@@ -65,16 +65,17 @@ describe('collectGlobalConfigChanges', () => {
   });
 
   it('maps status D -> label "delete"', async () => {
+    // shared/agents/ was removed from SHARED_LINKS (gsd-owned); use shared/skills/ instead.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof childProcessModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => buildNameStatus([['D', 'shared/agents/old.md']])),
+        execFileSync: vi.fn(() => buildNameStatus([['D', 'shared/skills/old.md']])),
       };
     });
     const { collectGlobalConfigChanges } = await import('./push-global-config.ts');
     const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
-    expect(result).toEqual([{ status: 'D', label: 'delete', path: 'shared/agents/old.md' }]);
+    expect(result).toEqual([{ status: 'D', label: 'delete', path: 'shared/skills/old.md' }]);
   });
 
   it('maps unknown status letter -> label "change" (fallback)', async () => {
@@ -144,7 +145,8 @@ describe('collectGlobalConfigChanges', () => {
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/skills/foo.md' }]);
   });
 
-  it('includes shared/agents/* (in-scope directory)', async () => {
+  it('excludes shared/agents/* (gsd-owned, removed from SHARED_LINKS scope)', async () => {
+    // shared/agents/ was removed from SHARED_LINKS; it is no longer an in-scope directory.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof childProcessModule>();
       return {
@@ -154,7 +156,7 @@ describe('collectGlobalConfigChanges', () => {
     });
     const { collectGlobalConfigChanges } = await import('./push-global-config.ts');
     const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
-    expect(result).toEqual([{ status: 'A', label: 'add', path: 'shared/agents/my-agent.md' }]);
+    expect(result).toEqual([]);
   });
 
   it('includes shared/commands/* (in-scope directory)', async () => {
@@ -183,7 +185,8 @@ describe('collectGlobalConfigChanges', () => {
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/rules/my-rule.md' }]);
   });
 
-  it('includes shared/hooks/* (in-scope directory)', async () => {
+  it('excludes shared/hooks/* (gsd-owned, removed from SHARED_LINKS scope)', async () => {
+    // shared/hooks/ was removed from SHARED_LINKS; it is no longer an in-scope directory.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof childProcessModule>();
       return {
@@ -193,7 +196,7 @@ describe('collectGlobalConfigChanges', () => {
     });
     const { collectGlobalConfigChanges } = await import('./push-global-config.ts');
     const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
-    expect(result).toEqual([{ status: 'A', label: 'add', path: 'shared/hooks/pre-push' }]);
+    expect(result).toEqual([]);
   });
 
   it('includes shared/CLAUDE.md (in-scope file)', async () => {

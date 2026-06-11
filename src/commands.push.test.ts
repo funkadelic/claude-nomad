@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -517,5 +517,198 @@ describe('cmdPush: NomadFatal catch boundary (L266)', () => {
     await expect(cmdPush()).rejects.toThrow('probe plain error');
     // exitCode must NOT be set to 1 (NomadFatal path sets exitCode; plain re-throw doesn't).
     expect(process.exitCode).not.toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdPush: skills pipeline integration (syncSkillsPush wired between
+// remapExtrasPush and guardGitlinks, WET-only)
+// ---------------------------------------------------------------------------
+
+describe('cmdPush: skills pipeline integration', () => {
+  let env: PushEnv;
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+  });
+
+  it('WET push: user skill staged under shared/skills, local gsd-* excluded', async () => {
+    // End-to-end: syncSkillsPush is called on the WET path. A user skill in
+    // ~/.claude/skills is copied to shared/skills; a gsd-* skill is excluded.
+    const localSkills = join(env.testHome, '.claude', 'skills');
+    const sharedSkills = join(env.repoUnderHome, 'shared', 'skills');
+    mkdirSync(localSkills, { recursive: true });
+    writeFileSync(join(localSkills, 'pr-feedback-sweep'), '# pr feedback\n');
+    writeFileSync(join(localSkills, 'gsd-foo'), '# gsd skill\n');
+    mkdirSync(sharedSkills, { recursive: true });
+
+    const syncSkillsPushMock = vi.fn();
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPull: vi.fn(),
+      syncSkillsPush: syncSkillsPushMock,
+    }));
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    // syncSkillsPush called on WET path.
+    expect(syncSkillsPushMock).toHaveBeenCalled();
+  });
+
+  it('dry-run push: syncSkillsPush is NOT called (zero-mutation contract)', async () => {
+    // dryRun forwards false to syncSkillsPush via the `if (!dryRun)` guard,
+    // so no files are written to shared/skills on a dry-run.
+    const syncSkillsPushMock = vi.fn();
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPull: vi.fn(),
+      syncSkillsPush: syncSkillsPushMock,
+    }));
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ dryRun: true })).resolves.toBeUndefined();
+
+    // dry-run: syncSkillsPush must NOT have been called.
+    expect(syncSkillsPushMock).not.toHaveBeenCalled();
+  });
+
+  it('WET push: syncSkillsPush is called after remapExtrasPush (call order)', async () => {
+    // The order: remapExtrasPush -> syncSkillsPush -> guardGitlinks.
+    // Proves the call site is between extras and the gitlink walk.
+    const callOrder: string[] = [];
+    const syncSkillsPushMock = vi.fn(() => {
+      callOrder.push('syncSkillsPush');
+    });
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPull: vi.fn(),
+      syncSkillsPush: syncSkillsPushMock,
+    }));
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => {
+          callOrder.push('findGitlinks');
+          return [];
+        }),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => {
+        callOrder.push('remapExtrasPush');
+        return { unmapped: 0, skipped: 0, pushed: [], wouldPush: [] };
+      }),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    expect(callOrder).toEqual(['remapExtrasPush', 'syncSkillsPush', 'findGitlinks']);
+  });
+
+  it('WET push: real syncSkillsPush copies user skill and excludes gsd-* from shared/skills', async () => {
+    // Exercise the real syncSkillsPush (not mocked) to verify the filter works
+    // end-to-end through the push pipeline. Checks that shared/skills gets the
+    // user skill and the gsd-* stays out.
+    const localSkills = join(env.testHome, '.claude', 'skills');
+    const sharedSkills = join(env.repoUnderHome, 'shared', 'skills');
+    mkdirSync(localSkills, { recursive: true });
+    writeFileSync(join(localSkills, 'pr-feedback-sweep'), '# pr feedback\n');
+    writeFileSync(join(localSkills, 'gsd-foo'), '# gsd skill\n');
+    mkdirSync(sharedSkills, { recursive: true });
+
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    // User skill copied to shared/skills.
+    expect(existsSync(join(sharedSkills, 'pr-feedback-sweep'))).toBe(true);
+    // gsd-* excluded from shared/skills.
+    expect(existsSync(join(sharedSkills, 'gsd-foo'))).toBe(false);
   });
 });

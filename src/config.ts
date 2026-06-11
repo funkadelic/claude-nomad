@@ -99,16 +99,42 @@ export const GITLEAKS_PINNED_VERSION = '8.30.1';
 // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 export const HOST = (process.env.NOMAD_HOST || hostname()).toLowerCase();
 
-/** Names under `shared/` that are symlinked into `~/.claude/` on every pull. */
-export const SHARED_LINKS = [
-  'CLAUDE.md',
-  'agents',
-  'skills',
-  'commands',
-  'rules',
-  'my-statusline.cjs',
-  'hooks',
-] as const;
+/**
+ * Names under `shared/` that are symlinked into `~/.claude/` on every pull.
+ * `hooks` and `agents` are intentionally absent: gsd (`@opengsd/gsd-core`)
+ * installs versioned hook scripts and agent files per-host via npm, so nomad
+ * must not symlink those dirs wholesale (each host's gsd version would write
+ * churn into the synced repo and two hosts on different gsd versions would
+ * collide on the pre-push rebase). gsd owns the real `~/.claude/{hooks,agents}`
+ * dirs going forward; `RESERVED_SHARED` in `config.sharedDirs.guard.ts` keeps
+ * both names blocked so a user cannot re-add them via the `sharedDirs` field.
+ *
+ * `skills` is also absent: it is copy-synced (filtered, gsd-* prefix excluded)
+ * rather than symlinked. The copy model keeps the one-symlink-per-shared-dir
+ * invariant intact for doctor/eject/adopt, while `syncSkillsPull`/
+ * `syncSkillsPush` in `skills-sync.ts` handle the overlay and mirror. See D-2
+ * in the phase-50 context for the rationale.
+ */
+export const SHARED_LINKS = ['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs'] as const;
+
+/**
+ * Ownership prefix shared by every gsd-installed skill, agent, and hook script.
+ * Detection is prefix-only: any name starting with `gsd-` is gsd-owned (covers
+ * all gsd skills/agents/hook scripts; the user-authored skills are unprefixed).
+ * Single source of truth for the gsd-ownership signal; consumed by
+ * `isGsdOwned`/`isSkillExcluded` in `skills-sync.ts`.
+ */
+export const GSD_PREFIX = 'gsd-';
+
+/**
+ * Names previously in `SHARED_LINKS` that gsd (`@opengsd/gsd-core`) now owns
+ * per-host (see the `SHARED_LINKS` comment for why they were dropped). A
+ * leftover symlink at `~/.claude/<name>` is a pre-phase-50 migration artefact
+ * the doctor probe flags. Co-located with `SHARED_LINKS` and `GSD_PREFIX` so the
+ * gsd-ownership model lives in one module; consumed by
+ * `reportDroppedNamesMigration` in `commands.doctor.checks.repo.ts`.
+ */
+export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
 
 /**
  * Returns the union of `SHARED_LINKS` and any validated entries from
@@ -188,16 +214,27 @@ export { KNOWN_SETTINGS_KEYS } from './settings-keys.ts';
  * `shared/projects/<logical>/` entries are added at runtime in
  * `enforceAllowList`.
  */
+/**
+ * Static half of the push allow-list. Entries with trailing `/` are prefix
+ * matches; others are exact matches. The `hosts/` entry has special-case
+ * handling in `isAllowed` to limit it to `hosts/<name>.json` (single-level
+ * `.json` files only, no credentials). Data-driven
+ * `shared/projects/<logical>/` entries are added at runtime in
+ * `enforceAllowList`.
+ *
+ * `shared/hooks/` and `shared/agents/` are intentionally absent: gsd owns
+ * those dirs per-host and an out-of-band gsd write to those repo trees must
+ * not be pushable (Pitfall 4). `shared/skills/` remains allowed because
+ * user-authored skills live there.
+ */
 export const PUSH_ALLOWED_STATIC = [
   'shared/CLAUDE.md',
   'shared/my-statusline.cjs',
   'shared/settings.base.json',
-  'shared/agents/',
   'shared/skills/',
   'shared/commands/',
   'shared/rules/',
   'shared/.gitignore',
-  'shared/hooks/',
   'hosts/',
   'path-map.json',
   '.gitleaksignore', // written by nomad push Allow action (D-04)
