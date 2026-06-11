@@ -38,8 +38,9 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  * @param paths - resolves `{ src, dst }` for one target (side-specific).
  * @param backup - snapshots the dst before clobber (side-specific).
  * @param copy - copy function, receiving the target `dirname` so it can pick a
- *   per-extra denylist. Push passes a filtered copy for every extra (each by
- *   its `extrasDenySet`). Pull routes `.claude` through
+ *   per-extra copy variant. Push routes `.planning` through
+ *   `copyExtrasOverlay` (overlay-only; repo-only files survive) and all other
+ *   extras through `copyExtrasFiltered` (their `extrasDenySet`). Pull routes `.claude` through
  *   `copyExtrasFilteredPreserving` (preserves host-local deny-set files already
  *   on disk at any depth, e.g. `settings.local.json`, while still recursively
  *   mirror-pruning synced files absent from src), routes `.planning` through
@@ -88,6 +89,16 @@ function runExtrasOp(
  * `path-map.json` without an `extras` key returns empty arrays and zero counts
  * cleanly.
  *
+ * Copy semantics per extra type:
+ * - `.planning`: overlay-only (`copyExtrasOverlay`; no `rmSync`). A repo-side
+ *   file absent locally survives the push; local edits still propagate (overlay
+ *   overwrites). Push-side delete detection is DEFERRED (per-host last-synced
+ *   manifest, backlog candidate). ALWAYS_NEVER_SYNC names are blocked at the
+ *   push allow-list gate, not the copy layer (the gate is the security boundary).
+ * - All others: `copyExtrasFiltered` with per-extra denylist (`.claude` gets
+ *   the full `NEVER_SYNC` boundary; others get the narrow `ALWAYS_NEVER_SYNC`
+ *   subset). This is the existing exact-mirror (rmSync-before-copy) behavior.
+ *
  * @param ts - backup timestamp namespace.
  * @param opts.dryRun - when `true`, collect `wouldPush` without mutating.
  */
@@ -111,9 +122,23 @@ export function remapExtrasPush(
       dst: join(repoExtras, logical, dirname),
     }),
     (dst) => backupRepoWrite(dst, ts, repo),
-    // Push filters every extra by its per-name denylist: `.claude` gets the
-    // full NEVER_SYNC boundary, `.planning` keeps the narrow ALWAYS_NEVER_SYNC.
-    (src, dst, dirname) => copyExtrasFiltered(src, dst, extrasDenySet(dirname)),
+    // Push copy routing per extra type:
+    //   `.planning`: copyExtrasOverlay (no rmSync) so repo-only files (absent
+    //     locally) survive the push. Local edits still propagate (overlay
+    //     overwrites existing repo entries). Push-side delete detection is
+    //     DEFERRED by design (per-host last-synced manifest, backlog candidate).
+    //     Security note: the ALWAYS_NEVER_SYNC deny-set previously applied by
+    //     copyExtrasFiltered is now enforced exclusively at the push gate
+    //     (enforceAllowList / blockSetFor in commands.push.allowlist.ts), which
+    //     hard-blocks ALWAYS_NEVER_SYNC basenames inside shared/extras/ regardless
+    //     of copy-side filtering. The gate is the security boundary (CLAUDE.md /
+    //     Phase 33 audit F4); bare overlay is therefore safe for .planning.
+    //   All others: copyExtrasFiltered with per-extra denylist (`.claude` gets
+    //     CLAUDE_EXTRA_NEVER_SYNC; every other extra gets ALWAYS_NEVER_SYNC).
+    (src, dst, dirname) =>
+      dirname === '.planning'
+        ? copyExtrasOverlay(src, dst)
+        : copyExtrasFiltered(src, dst, extrasDenySet(dirname)),
   );
   return { unmapped, skipped, pushed: done, wouldPush: would };
 }
