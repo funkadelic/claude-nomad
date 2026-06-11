@@ -151,6 +151,15 @@ function runDryRunPreview(st: PushState, map: PathMap | null, repo: string): voi
  * `verdictRow` lands in the Leak scan section and whose `recovery` (if any)
  * prints below the tree; `process.exitCode = 1` is set on findings.
  *
+ * Dry-run skills gap (intentional, WR-03): `syncSkillsPush()` is gated behind
+ * `if (!dryRun)`, so a dry-run mutates nothing under `shared/skills/`. As a
+ * result the dry-run "Global config" section (which now treats `shared/skills`
+ * as a global-config prefix) does NOT list pending skills edits, and the
+ * dry-run leak preview does not scan skills (see `previewPushLeaks`). A real
+ * push copies and stages skills, so they appear under Global config and are
+ * scanned then. Preserving the zero-mutation dry-run contract is why skills are
+ * not surfaced in the preview.
+ *
  * The dry-run preview runs REGARDLESS of `REPO_HOME` `git status`: in dry-run
  * nothing is copied into `shared/`, so an empty status is the normal case for
  * the headline target (a clean repo with new mapped sessions). `previewPushLeaks`
