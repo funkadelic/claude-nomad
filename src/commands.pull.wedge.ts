@@ -73,7 +73,7 @@ export function unmergedIndexPresent(repo: string): boolean {
   } catch {
     return false; // non-git dir or git absent: defer to gitOrFatal for the real error
   }
-  return raw.split('\0').filter(Boolean).length > 0;
+  return raw.split('\0').some(Boolean);
 }
 
 /**
