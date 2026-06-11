@@ -16,10 +16,52 @@ import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
 import { detectWedge } from './commands.pull.wedge.ts';
 import { recoverForceRemote } from './commands.pull.recovery.ts';
-import { die, fail, gitOrFatal, log, NomadFatal } from './utils.ts';
+import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
+
+/**
+ * Capture one REPO_HOME HEAD SHA. Returns the trimmed SHA, or `undefined` when
+ * the repo has no commits yet (unborn HEAD / fresh clone). Swallows the error
+ * so the caller can treat `undefined` as "no pre-state" and skip the delete
+ * pass entirely (overlay-only is the safe default for a first-ever pull).
+ *
+ * @param repo - Absolute path to REPO_HOME for the git invocation.
+ * @returns Trimmed HEAD SHA, or `undefined` on unborn-HEAD / git error.
+ */
+function captureHead(repo: string): string | undefined {
+  try {
+    return gitCaptureRaw(['rev-parse', 'HEAD'], repo).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Capture the pre/post-rebase HEAD pair for `.planning` delete-propagation.
+ * Calls the provided `rebase` thunk (which runs `git pull --rebase`) between
+ * the two captures so both HEADs are taken with the caller's git invocation
+ * in between. Returns `{ pre, post }` when both succeed, or `undefined` when
+ * either capture yields no SHA (fresh clone / unborn HEAD).
+ *
+ * Extracting this helper keeps `cmdPull`'s cognitive complexity within the
+ * sonarjs/cognitive-complexity limit of 15.
+ *
+ * @param repo - Absolute path to REPO_HOME.
+ * @param rebase - Thunk that runs the actual `git pull --rebase --autostash`.
+ * @returns `{ pre, post }` pair, or `undefined` on missing HEAD.
+ */
+function capturePrePostHeads(
+  repo: string,
+  rebase: () => void,
+): { pre: string; post: string } | undefined {
+  const pre = captureHead(repo);
+  rebase();
+  const post = captureHead(repo);
+  if (pre === undefined || post === undefined) return undefined;
+  return { pre, post };
+}
 
 /**
  * Run the WET (non-dry-run) pull side effects in order and render the
@@ -33,12 +75,19 @@ import { readPathMap } from './utils.json.ts';
  * extras-skipped count drive the Summary row exactly as `emitSummary` did.
  *
  * @param ts - backup timestamp namespace shared by every WET side effect.
+ * @param prePostHeads - pre/post-rebase HEADs captured by `cmdPull`; threads
+ *   into `remapExtrasPull` to drive upstream-deletion propagation for .planning
+ *   extras. `undefined` when the pre-rebase capture failed (fresh clone).
  */
-function applyWetPull(ts: string, map: PathMap): void {
+function applyWetPull(
+  ts: string,
+  map: PathMap,
+  prePostHeads?: { pre: string; post: string },
+): void {
   applySharedLinks(ts, map);
   const { label } = regenerateSettings(ts);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
-  const extrasResult = remapExtrasPull(ts);
+  const extrasResult = remapExtrasPull(ts, { prePostHeads });
   // Combine session-unmapped and extras-unmapped into one user-visible count;
   // from the operator's perspective both mean "couldn't sync this for the
   // host". extras-skipped (non-whitelisted dirname) stays separate because it
@@ -180,7 +229,15 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
         ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
         : `pull on host=${HOST} (backup=${ts})`,
     );
-    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', repo);
+    // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
+    // --autostash between them. capturePrePostHeads handles the unborn-HEAD
+    // case (fresh clone, no commits) by returning undefined; when undefined
+    // the delete pass in remapExtrasPull is skipped (overlay only, safe).
+    // When pre === post (already up to date) the diff is empty and nothing
+    // is deleted (benign no-op).
+    const prePostHeads = capturePrePostHeads(repo, () => {
+      gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', repo);
+    });
     // Read path-map.json for sharedDirs/symlink threading. Falls back to a
     // no-sharedDirs map when the file is absent (fresh-clone before init).
     // A parse failure routes through NomadFatal -> catch -> lock release.
@@ -199,7 +256,7 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
       computePreview(ts, map, 'pull');
       log('dry-run complete; no mutation');
     } else {
-      applyWetPull(ts, map);
+      applyWetPull(ts, map, prePostHeads);
     }
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the

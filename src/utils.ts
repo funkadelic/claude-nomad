@@ -103,6 +103,26 @@ export const gitStatusPorcelainZ = (
 };
 
 /**
+ * Shell-free, untrimmed git stdout capture. Returns the raw output string
+ * WITHOUT calling `.trim()` so that NUL-delimited records (e.g. from
+ * `git diff --name-status -z`) are preserved exactly as git produced them.
+ * Trimming would corrupt the first or last NUL-delimited field. This is the
+ * NUL-preserving sibling of `gitStatusPorcelainZ`, used by the `.planning`
+ * diff parser (`extras-sync.planning-diff.ts`).
+ *
+ * @param args - Git arguments (excludes the 'git' binary name itself).
+ * @param cwd - Working directory for the git invocation; defaults to the process cwd.
+ * @returns The raw, untrimmed stdout string from the git invocation.
+ */
+export function gitCaptureRaw(args: readonly string[], cwd?: string): string {
+  return execFileSync('git', args as string[], {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+  }).toString();
+}
+
+/**
  * Run `git <args>` in `cwd`, forwarding stderr and converting non-zero exits
  * to `NomadFatal`. Without this wrap, an ExecException would bubble past the
  * cmdPull/cmdPush NomadFatal-only catch blocks and surface as a stack trace;

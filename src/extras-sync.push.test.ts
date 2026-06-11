@@ -144,7 +144,10 @@ describe('remapExtrasPush (integration)', () => {
     expect(existsSync(join(sharedExtras, 'foo'))).toBe(false);
   });
 
-  it('backs up prior shared/extras content to .../backup/<ts>/repo/ before clobber', async () => {
+  it('backs up prior shared/extras content to .../backup/<ts>/repo/ before copy', async () => {
+    // Overlay push: old.md is repo-only (no local counterpart). The backup
+    // still snapshots the dst before the copy; but the overlay leaves old.md
+    // alive in the repo (no rmSync) while new.md is written from the local src.
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.planning', 'old.md'), 'old\n');
     mkdirSync(join(projectRoot, '.planning'), { recursive: true });
@@ -173,9 +176,61 @@ describe('remapExtrasPush (integration)', () => {
     expect(existsSync(backupOld)).toBe(true);
     expect(readFileSync(backupOld, 'utf8')).toBe('old\n');
 
-    // Mirror copy: old is gone from the repo side, new is in its place.
-    expect(existsSync(join(sharedExtras, 'foo', '.planning', 'old.md'))).toBe(false);
+    // Overlay copy: old.md survives in the repo (repo-only files are preserved).
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', 'old.md'))).toBe(true);
     expect(readFileSync(join(sharedExtras, 'foo', '.planning', 'new.md'), 'utf8')).toBe('new\n');
+  });
+
+  it('.planning push overlay: a repo-only file (absent locally) survives the push (TDD acceptance 3)', async () => {
+    // Seed a repo-side file with NO local counterpart. The overlay must leave
+    // it untouched. This is the primary TDD acceptance criterion for plan 03.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'repo-only.md'), 'repo content\n');
+    // Local .planning exists but does NOT contain repo-only.md.
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'local.md'), 'local\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    remapExtrasPush('20260522-tdd3-survive');
+
+    // repo-only.md must still exist in the repo after the push.
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', 'repo-only.md'))).toBe(true);
+    expect(readFileSync(join(sharedExtras, 'foo', '.planning', 'repo-only.md'), 'utf8')).toBe(
+      'repo content\n',
+    );
+    // The local file was also copied into the repo (overlay overwrite).
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', 'local.md'))).toBe(true);
+  });
+
+  it('.planning push overlay: a local edit is copied into the repo (overlay overwrite preserved)', async () => {
+    // A file exists in both local and repo with different content. After push,
+    // the repo should have the local version (overlay overwrites existing entries).
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), 'old repo version\n');
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), 'new local version\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    remapExtrasPush('20260522-tdd3-overwrite');
+
+    // The local edit overwrote the repo file.
+    expect(readFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), 'utf8')).toBe(
+      'new local version\n',
+    );
   });
 
   it('silently skips dirnames whose src directory does not exist on this host', async () => {
@@ -266,6 +321,31 @@ describe('remapExtrasPush (integration)', () => {
       pushed: ['foo/.claude'],
       wouldPush: [],
     });
+  });
+
+  it('.planning push: ALWAYS_NEVER_SYNC files are NOT copied into the repo working tree (WR-02 regression)', async () => {
+    // A secret file with an ALWAYS_NEVER_SYNC basename in .planning must never
+    // reach the repo working tree on push, even before the allow-list gate.
+    // The filtered overlay strips it at the copy layer so no residue accumulates.
+    const planningDir = join(projectRoot, '.planning');
+    mkdirSync(planningDir, { recursive: true });
+    writeFileSync(join(planningDir, 'PLAN.md'), '# plan\n');
+    writeFileSync(join(planningDir, '.credentials.json'), '{"secret":"keep-off-repo"}\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPush } = await import('./extras-sync.ts');
+    remapExtrasPush('20260522-wr02-filter');
+
+    // Normal file was pushed.
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'))).toBe(true);
+    // ALWAYS_NEVER_SYNC file must NOT be in the repo working tree.
+    expect(existsSync(join(sharedExtras, 'foo', '.planning', '.credentials.json'))).toBe(false);
   });
 
   it('.planning extra: keeps todos/ on push (NEVER_SYNC widening must not leak onto .planning)', async () => {

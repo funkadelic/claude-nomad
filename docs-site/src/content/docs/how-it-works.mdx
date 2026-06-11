@@ -73,7 +73,7 @@ What `~/claude-nomad/` looks like on a configured host:
 | **Synced** | `CLAUDE.md`, `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, `my-statusline.cjs` | Symlinked into `~/.claude/` from `shared/`. |
 | **Generated** | `settings.json` | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull. |
 | **Remapped** | `projects/` session transcripts | Copied with path translation per `path-map.json`. |
-| **Per-project extras** | Whitelisted dirs like `.planning/` or a project's own `<repo>/.claude/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; mirrored to/from `shared/extras/<logical>/`. |
+| **Per-project extras** | Whitelisted dirs like `.planning/` or a project's own `<repo>/.claude/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; copied to/from `shared/extras/<logical>/`. `.planning` syncs as an additive overlay (repo-only and local-only files survive); `.claude` keeps host-local files on pull; other extras mirror. |
 | **Shared support dirs** | Opt-in global `~/.claude/` dirs like a tool's `get-shit-done/` | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. |
 | **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
 | **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
@@ -126,7 +126,7 @@ carries one project's local Claude setup across machines; it does not change how
 Extras are for project files your project's own git does **not** track. A file committed to the
 project repo already travels with it: clone the repo on another machine and the file is there.
 Adding that same `.claude/` (or `.planning/`, or `CLAUDE.md`) to nomad makes a second copy that
-competes with git, and because a nomad pull mirrors the repo extra over your working tree
+competes with git, and because a nomad pull writes the repo extra onto your working tree
 (last write wins) it can overwrite or revert the committed version and leave the tree dirty. Opt a
 name into extras only when your project git-ignores it: local-only config you want on your own
 machines, the way claude-nomad's own `.claude/` is git-ignored and synced.
@@ -195,8 +195,22 @@ whitelist is skipped with a log line, so an unrecognized name cannot widen the s
 On `nomad push`, opted-in content at `<localRoot>/<name>` (a directory subtree or a single file)
 is copied to `shared/extras/<logical>/<name>` and goes through the same staged-tree gitleaks scan
 as everything else. On `nomad pull`, the reverse copy runs after `git pull --rebase`, and just
-before it overwrites your working tree a divergence check compares the incoming content against
-your local copy and prints a per-file WARN naming anything that differs.
+before it writes your working tree a divergence check compares the incoming content against your
+local copy and prints a per-file WARN naming anything that differs.
+
+How the copy treats files that exist on only one side depends on the extra:
+
+- **`.planning`** syncs as an additive overlay in both directions: the copy adds and updates files
+  but never blind-deletes, so a `.planning/` file that lives only in the repo (one another host
+  pushed) survives a push from a host that lacks it, and local-only work in progress survives a
+  pull. Genuine upstream deletions still propagate on pull: nomad diffs the repo's pre- and
+  post-rebase HEADs and removes locally only the files the rebase actually deleted. That delete
+  pass is skipped on `--dry-run` and on a fresh clone where there is no pre-rebase HEAD to diff
+  against, so only the overlay runs in those cases.
+- **`.claude`** mirrors the synced config on pull but preserves any host-local files already on
+  disk (most importantly a project's own `settings.local.json`), as described above.
+- **Other extras** (such as a root `CLAUDE.md`) are an exact mirror: the destination is replaced
+  with the source.
 
 Your existing local content is backed up under `~/.cache/claude-nomad/backup/<ts>/extras/` before
 the pull copy lands, so an unexpected overwrite is always recoverable.

@@ -139,3 +139,48 @@ describe('item', () => {
     expect(out).not.toContain('ℹ︎');
   });
 });
+
+describe('gitCaptureRaw (mocked child_process)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+  });
+
+  /**
+   * Verify gitCaptureRaw returns stdout without trimming (NUL-safe).
+   * The critical property: .trim() would corrupt NUL-delimited records
+   * from git diff --name-status -z.
+   */
+  it('returns stdout as-is without trimming (NUL-preserving)', async () => {
+    const rawOutput = 'M\0shared/extras/foo/.planning/a.md\0';
+    vi.resetModules();
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from(rawOutput)) };
+    });
+    const { gitCaptureRaw } = await import('./utils.ts');
+    const result = gitCaptureRaw(['diff', '--name-status', '-z', 'HEAD~1', 'HEAD']);
+    expect(result).toBe(rawOutput);
+  });
+
+  /**
+   * Verify cwd is forwarded to execFileSync so git runs in the repo directory.
+   */
+  it('passes cwd to execFileSync when provided', async () => {
+    vi.resetModules();
+    let capturedOpts: unknown;
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_cmd: unknown, _args: unknown, opts: unknown) => {
+          capturedOpts = opts;
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { gitCaptureRaw } = await import('./utils.ts');
+    gitCaptureRaw(['status'], '/repo/path');
+    expect((capturedOpts as { cwd?: string }).cwd).toBe('/repo/path');
+  });
+});

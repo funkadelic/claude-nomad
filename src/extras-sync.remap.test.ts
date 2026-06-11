@@ -93,6 +93,25 @@ describe('remapExtrasPush: wet push creates shared/extras/ when absent (L85 Bool
     expect(result.wouldPush).toContain('testproject/.planning');
     expect(result.pushed).toHaveLength(0);
   });
+
+  it('.planning dry-run: a repo-only file is not deleted and no copy occurs', async () => {
+    // Seed a repo-only file in shared/extras/ alongside the local .planning
+    // content. A dry-run push must leave both untouched and report wouldPush.
+    const repoExtras = join(repoHome, 'shared', 'extras');
+    mkdirSync(join(repoExtras, 'testproject', '.planning'), { recursive: true });
+    writeFileSync(join(repoExtras, 'testproject', '.planning', 'repo-only.md'), 'repo content\n');
+
+    const { remapExtrasPush } = await import('./extras-sync.remap.ts');
+    const result = remapExtrasPush('20260516-dry-overlay', { dryRun: true });
+
+    // No copies were made: local .planning was NOT overlaid onto the repo.
+    expect(existsSync(join(repoExtras, 'testproject', '.planning', 'STATE.md'))).toBe(false);
+    // The repo-only file survived (no rmSync even in dry-run).
+    expect(existsSync(join(repoExtras, 'testproject', '.planning', 'repo-only.md'))).toBe(true);
+    // The item was recorded in wouldPush.
+    expect(result.wouldPush).toContain('testproject/.planning');
+    expect(result.pushed).toHaveLength(0);
+  });
 });
 
 describe('remapExtrasPull: returns empty when shared/extras/ is absent (L121 BooleanLiteral)', () => {

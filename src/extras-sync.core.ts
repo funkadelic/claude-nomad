@@ -10,7 +10,7 @@ import {
   type PathMap,
 } from './config.ts';
 import { assertSafeLocalRoot, assertSafeLogical } from './extras-sync.guards.ts';
-import { log } from './utils.ts';
+import { log, NomadFatal } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
 
 /** Parsed `path-map.json` plus its validated `extras` block. */
@@ -88,6 +88,78 @@ export function* eachExtrasTarget(
       }
       yield { logical, localRoot, dirname };
     }
+  }
+}
+
+/**
+ * Overlay (additive/overwrite) copy for `.planning`: calls `cpSync` with no
+ * preceding `rmSync` and no prune pass, so dst-only files survive by design.
+ * This is the pull-side copy for the `.planning` extra; deletion of files
+ * removed from the upstream repo is driven separately by the git-diff D set
+ * (plan 02), NOT by this function. Contrast with `copyExtras` (true mirror
+ * via `rmSync` before copy) and `copyExtrasFilteredPreserving` (prune-but-
+ * preserve-deny-set variant). Passes `verbatimSymlinks: true` to keep
+ * relative symlink targets unrewritten across hosts (Pitfall 1; nodejs/node
+ * issue 41693).
+ *
+ * @param src - Source directory to copy from (repo side on pull).
+ * @param dst - Destination path (host-side project dir); dst-only files
+ *   survive unchanged after the overlay.
+ */
+export function copyExtrasOverlay(src: string, dst: string): void {
+  cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+}
+
+/**
+ * Filtered overlay copy for `.planning`: like `copyExtrasOverlay` but skips
+ * any non-root entry whose basename is in `blockSet`. Applied on both the
+ * push side (prevents ALWAYS_NEVER_SYNC files from entering the repo working
+ * tree even before the allow-list gate fires) and the pull side (defense-in-
+ * depth against a repo poisoned out-of-band). No preceding `rmSync`; dst-only
+ * files survive by design. The root `src` entry is always kept (denylist
+ * applies to contents, not the source dir itself). Passes `verbatimSymlinks:
+ * true` to keep relative symlink targets unrewritten across hosts.
+ *
+ * If `cpSync` throws `EINVAL` (a file/directory type collision where a path
+ * changed type upstream, e.g. directory `foo/` became file `foo`), it is
+ * re-thrown as a `NomadFatal` naming the colliding path so the user gets an
+ * actionable message instead of a raw stack trace.
+ *
+ * @param src - Source directory to copy from.
+ * @param dst - Destination path; dst-only files survive unchanged.
+ * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
+ */
+export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Set<string>): void {
+  try {
+    cpSync(src, dst, {
+      recursive: true,
+      force: true,
+      verbatimSymlinks: true,
+      filter: (srcEntry) => srcEntry === src || !blockSet.has(basename(srcEntry)),
+    });
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    // cpSync tried to overwrite a non-empty directory with a file (or vice
+    // versa) -- a file/dir type change upstream. The code varies by platform
+    // and Node version: EINVAL/ENOTEMPTY on current runtimes, the
+    // ERR_FS_CP_* family in Node's documented error set. Convert any of them
+    // to NomadFatal so the user gets an actionable message instead of a raw
+    // stack trace.
+    /* c8 ignore start -- collision codes are platform/Node-version-specific */
+    if (
+      e.code === 'EINVAL' ||
+      e.code === 'ENOTEMPTY' ||
+      e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
+      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
+    ) {
+      throw new NomadFatal(
+        `copyExtrasOverlayFiltered: type collision copying ${JSON.stringify(src)} -> ` +
+          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
+          `changed upstream; run nomad pull --force-remote to recover`,
+      );
+    }
+    throw err; // other I/O error; propagate as-is
+    /* c8 ignore stop */
   }
 }
 
