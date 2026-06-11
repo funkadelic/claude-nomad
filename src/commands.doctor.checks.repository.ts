@@ -16,7 +16,7 @@ import {
 } from './color.ts';
 import { repoHome } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
-import { detectWedge } from './commands.pull.wedge.ts';
+import { classifyWedge, orphanedAutostashPresent } from './commands.pull.wedge.ts';
 import { findGitlinks } from './push-checks.ts';
 import { gitStatusPorcelainZ } from './utils.ts';
 
@@ -115,30 +115,67 @@ export function reportRebaseClean(section: DoctorSection): void {
 }
 
 /**
- * FAILs (sets `process.exitCode = 1`) when `REPO_HOME` is wedged mid-rebase
- * or mid-merge. A wedged repo blocks every subsequent `nomad pull`; the FAIL
- * line points at `nomad pull --force-remote` for auto-recovery. On a clean
- * repo, emits nothing (no-news-good-news, matching `reportRebaseClean`).
+ * FAILs (sets `process.exitCode = 1`) when `REPO_HOME` is wedged. Extends the
+ * Phase 41 mid-rebase/mid-merge FAIL to cover the `'unmerged-index'` state
+ * (torn-down rebase that left stage-2/3 entries in the index with no active
+ * rebase/merge marker). All three wedge states hard-block every
+ * `nomad pull`/`nomad push`; all three point at `nomad pull --force-remote`
+ * for auto-recovery. On a clean repo, emits nothing (D-5).
  *
- * Wraps the `detectWedge` probe in try/catch and swallows errors so a
- * missing or non-git `REPO_HOME` does not double-report alongside the
- * `reportRepoState` FAIL that already surfaces that condition.
+ * Uses `classifyWedge` (not `detectWedge`) so the unmerged-index state is
+ * detected via the git exec probe, not just marker files.
+ *
+ * Wraps in try/catch and swallows errors so a missing or non-git `REPO_HOME`
+ * does not double-report alongside the `reportRepoState` FAIL.
  */
 export function reportRebaseState(section: DoctorSection): void {
   try {
-    const wedge = detectWedge(repoHome());
-    if (wedge !== null) {
+    const wedge = classifyWedge(repoHome());
+    if (wedge === null) return;
+    if (wedge === 'unmerged-index') {
+      addItem(
+        section,
+        `${red(failGlyph)} repo has an unmerged index with no active rebase: run 'nomad pull --force-remote' to auto-recover`,
+      );
+    } else {
       const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
       addItem(
         section,
         `${red(failGlyph)} repo is ${state}: run 'nomad pull --force-remote' to auto-recover`,
       );
-      process.exitCode = 1;
+    }
+    process.exitCode = 1;
+    /* c8 ignore start */
+  } catch {
+    // classifyWedge failure on a missing or non-repo REPO_HOME is already
+    // surfaced by reportRepoState. Swallowing avoids double-reporting.
+  }
+  /* c8 ignore stop */
+}
+
+/**
+ * WARNs (non-blocking) when `REPO_HOME`'s stash list contains an orphaned
+ * autostash entry. An orphaned autostash is non-blocking lost-work cruft
+ * (the stash entry preserves the user's work; no git operation is blocked by
+ * its presence). Does NOT set `process.exitCode` (per D-5).
+ *
+ * Mirrors `reportRebaseClean`'s WARN pattern. Runs separately from
+ * `reportRebaseState` so both can fire in the same doctor run independently.
+ *
+ * @param sec The `DoctorSection` to append the WARN item to.
+ */
+export function reportOrphanedAutostash(sec: DoctorSection): void {
+  try {
+    if (orphanedAutostashPresent(repoHome())) {
+      addItem(
+        sec,
+        `${yellow(warnGlyph)} repo has an orphaned autostash entry: run 'git stash pop' to restore or 'git stash drop' to discard`,
+      );
     }
     /* c8 ignore start */
   } catch {
-    // detectWedge failure on a missing or non-repo REPO_HOME is already
-    // surfaced by reportRepoState. Swallowing avoids double-reporting.
+    // orphanedAutostashPresent failure on a missing or non-repo REPO_HOME is
+    // already surfaced by reportRepoState. Swallowing avoids double-reporting.
   }
   /* c8 ignore stop */
 }
