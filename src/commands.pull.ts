@@ -15,7 +15,11 @@ import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
-import { classifyWedge, unmergedIndexRunbookText } from './commands.pull.wedge.ts';
+import {
+  classifyWedge,
+  unmergedIndexRunbookText,
+  wedgeMarkerRunbookText,
+} from './commands.pull.wedge.ts';
 import { recoverForceRemote, recoverUnmergedIndex } from './commands.pull.recovery.ts';
 import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
@@ -143,11 +147,7 @@ function handleWedge(repo: string, forceRemote: boolean): void {
     return;
   }
   const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
-  die(
-    `repo is ${state} from a previous failed pull; ` +
-      `run 'nomad pull --force-remote' to auto-recover, ` +
-      `or resolve manually (see FAQ: "Every pull fails with unmerged files")`,
-  );
+  die(wedgeMarkerRunbookText(state));
 }
 
 /**

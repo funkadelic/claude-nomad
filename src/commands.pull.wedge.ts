@@ -126,6 +126,23 @@ export function unmergedIndexRunbookText(resumeCmd: string): string {
 }
 
 /**
+ * Build the runbook message for the mid-rebase or mid-merge wedge state.
+ * Shared between the pull-side `handleWedge` die() and the push-side
+ * `wedgePreflight` so the text has one source of truth (mirrors the dedup
+ * pattern of `unmergedIndexRunbookText`).
+ *
+ * @param state `'mid-rebase'` or `'mid-merge'` from the WedgeMode classifier.
+ * @returns The actionable runbook string for `die()` / NomadFatal.
+ */
+export function wedgeMarkerRunbookText(state: 'mid-rebase' | 'mid-merge'): string {
+  return (
+    `repo is ${state} from a previous failed pull; ` +
+    `run 'nomad pull --force-remote' to auto-recover, ` +
+    `or resolve manually (see FAQ: "Every pull fails with unmerged files")`
+  );
+}
+
+/**
  * Scan `git stash list` for an entry matching git's autostash subject format.
  * Returns `true` when such an entry is present.
  *

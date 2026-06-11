@@ -23,7 +23,11 @@ import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
-import { classifyWedge, unmergedIndexRunbookText } from './commands.pull.wedge.ts';
+import {
+  classifyWedge,
+  unmergedIndexRunbookText,
+  wedgeMarkerRunbookText,
+} from './commands.pull.wedge.ts';
 import { NomadFatal } from './utils.ts';
 
 /**
@@ -160,11 +164,7 @@ function wedgePreflight(wedge: NonNullable<ReturnType<typeof classifyWedge>>): s
     return unmergedIndexRunbookText('nomad push');
   }
   const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
-  return (
-    `repo is ${state} from a previous failed pull; ` +
-    `run 'nomad pull --force-remote' to auto-recover, ` +
-    `or resolve manually (see FAQ: "Every pull fails with unmerged files")`
-  );
+  return wedgeMarkerRunbookText(state);
 }
 
 /**
