@@ -108,14 +108,14 @@ export const HOST = (process.env.NOMAD_HOST || hostname()).toLowerCase();
  * collide on the pre-push rebase). gsd owns the real `~/.claude/{hooks,agents}`
  * dirs going forward; `RESERVED_SHARED` in `config.sharedDirs.guard.ts` keeps
  * both names blocked so a user cannot re-add them via the `sharedDirs` field.
+ *
+ * `skills` is also absent: it is copy-synced (filtered, gsd-* prefix excluded)
+ * rather than symlinked. The copy model keeps the one-symlink-per-shared-dir
+ * invariant intact for doctor/eject/adopt, while `syncSkillsPull`/
+ * `syncSkillsPush` in `skills-sync.ts` handle the overlay and mirror. See D-2
+ * in the phase-50 context for the rationale.
  */
-export const SHARED_LINKS = [
-  'CLAUDE.md',
-  'skills',
-  'commands',
-  'rules',
-  'my-statusline.cjs',
-] as const;
+export const SHARED_LINKS = ['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs'] as const;
 
 /**
  * Returns the union of `SHARED_LINKS` and any validated entries from

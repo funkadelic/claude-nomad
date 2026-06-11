@@ -145,18 +145,19 @@ describe('cmdEject', () => {
   });
 
   it('materialize dir: symlinked directory becomes a real directory tree', () => {
+    // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
     const { claudeHome, repoHome } = makeTempRoots();
-    const { nestedFile } = makeLinkedDir(claudeHome, repoHome, 'skills');
+    const { nestedFile } = makeLinkedDir(claudeHome, repoHome, 'commands');
 
     cmdEject({}, { claudeHome, repoHome });
 
-    const linkPath = join(claudeHome, 'skills');
+    const linkPath = join(claudeHome, 'commands');
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
     expect(lstatSync(linkPath).isDirectory()).toBe(true);
-    const nestedContents = readFileSync(join(claudeHome, 'skills', 'nested.md'), 'utf8');
-    expect(nestedContents).toBe('# skills');
-    expect(readFileSync(nestedFile, 'utf8')).toBe('# skills');
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: skills'));
+    const nestedContents = readFileSync(join(claudeHome, 'commands', 'nested.md'), 'utf8');
+    expect(nestedContents).toBe('# commands');
+    expect(readFileSync(nestedFile, 'utf8')).toBe('# commands');
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: commands'));
   });
 
   it('skip-real: already-real file is left untouched and reported', () => {
@@ -253,7 +254,7 @@ describe('cmdEject', () => {
   it('repo-untouched: repoHome/shared files are not mutated after live eject', () => {
     const { claudeHome, repoHome } = makeTempRoots();
     makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'original');
-    makeLinkedDir(claudeHome, repoHome, 'skills');
+    makeLinkedDir(claudeHome, repoHome, 'commands');
 
     const before = snapshotDir(join(repoHome, 'shared'));
     cmdEject({}, { claudeHome, repoHome });
@@ -357,20 +358,22 @@ describe('cmdEject', () => {
     // Use sharedDirs to control ordering: allSharedLinks puts SHARED_LINKS
     // first; CLAUDE.md materializes, then a later name fails. Point a later
     // managed name at a target we make unreadable so cpSync dereference fails.
-    // agents is no longer in SHARED_LINKS (gsd-owned); use skills instead.
+    // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
     const okTarget = join(repoHome, 'shared', 'CLAUDE.md');
     writeFileSync(okTarget, 'ok');
     symlinkSync(okTarget, join(claudeHome, 'CLAUDE.md'));
-    const badTarget = join(repoHome, 'shared', 'skills');
+    const badTarget = join(repoHome, 'shared', 'commands');
     mkdirSync(badTarget, { recursive: true });
     const badNested = join(badTarget, 'secret.md');
     writeFileSync(badNested, 'x');
-    symlinkSync(badTarget, join(claudeHome, 'skills'));
+    symlinkSync(badTarget, join(claudeHome, 'commands'));
     chmodSync(badNested, 0o000); // unreadable; dereference copy fails
 
     try {
       expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
-      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('failed to materialize skills'));
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('failed to materialize commands'),
+      );
       expect(errSpy).toHaveBeenCalledWith(
         expect.stringContaining('already materialized: CLAUDE.md'),
       );

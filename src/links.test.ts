@@ -262,12 +262,12 @@ describe('applySharedLinks auto-move', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('backs up a pre-existing real DIR and replaces it with a symlink in one call (skills)', async () => {
-    // agents is no longer in SHARED_LINKS (gsd-owned per-host); use skills instead.
-    mkdirSync(join(sharedDir, 'skills'), { recursive: true });
-    writeFileSync(join(sharedDir, 'skills', 'foo.md'), '# shared skill\n');
-    mkdirSync(join(claudeDir, 'skills'), { recursive: true });
-    writeFileSync(join(claudeDir, 'skills', 'preexisting.md'), '# local content\n');
+  it('backs up a pre-existing real DIR and replaces it with a symlink in one call (commands)', async () => {
+    // skills is no longer in SHARED_LINKS (copy-synced via syncSkillsPull/Push); use commands instead.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'preexisting.md'), '# local content\n');
 
     const { applySharedLinks } = await import('./links.ts');
     applySharedLinks('20260516-000000', { projects: {} });
@@ -278,16 +278,46 @@ describe('applySharedLinks auto-move', () => {
       'claude-nomad',
       'backup',
       '20260516-000000',
-      'skills',
+      'commands',
       'preexisting.md',
     );
     expect(existsSync(backupFile)).toBe(true);
     expect(readFileSync(backupFile, 'utf8')).toBe('# local content\n');
 
-    const linkPath = join(claudeDir, 'skills');
+    const linkPath = join(claudeDir, 'commands');
     const linkStat = lstatSync(linkPath);
     expect(linkStat.isSymbolicLink()).toBe(true);
-    expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'skills'));
+    expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'commands'));
+  });
+
+  it('does NOT create a symlink for skills (copy-synced, dropped from SHARED_LINKS)', async () => {
+    // skills was removed from SHARED_LINKS; applySharedLinks must leave a pre-existing
+    // local ~/.claude/skills dir completely untouched (no backup, no symlink).
+    mkdirSync(join(sharedDir, 'skills'), { recursive: true });
+    writeFileSync(join(sharedDir, 'skills', 'graphify'), '# graphify\n');
+    mkdirSync(join(claudeDir, 'skills'), { recursive: true });
+    writeFileSync(join(claudeDir, 'skills', 'local.md'), '# local\n');
+    // Ensure at least one SHARED_LINKS source exists so the function is not a no-op.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000', { projects: {} });
+
+    // ~/.claude/skills must still be a plain directory (not a symlink).
+    const skillsPath = join(claudeDir, 'skills');
+    expect(lstatSync(skillsPath).isDirectory()).toBe(true);
+    expect(lstatSync(skillsPath).isSymbolicLink()).toBe(false);
+
+    // No backup was made for skills.
+    const backupSkills = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      '20260516-000000',
+      'skills',
+    );
+    expect(existsSync(backupSkills)).toBe(false);
   });
 
   it('does NOT create a symlink for agents (gsd-owned, dropped from SHARED_LINKS)', async () => {
@@ -424,32 +454,32 @@ describe('applySharedLinks auto-move', () => {
     expect(existsSync(backupCommands)).toBe(false);
   });
 
-  it('handles multiple non-symlink conflicts in a single pass (skills + commands)', async () => {
-    // agents is no longer in SHARED_LINKS; use skills + commands to cover the multi-conflict path.
-    mkdirSync(join(sharedDir, 'skills'), { recursive: true });
-    writeFileSync(join(sharedDir, 'skills', 's.md'), '# shared s\n');
+  it('handles multiple non-symlink conflicts in a single pass (rules + commands)', async () => {
+    // skills is no longer in SHARED_LINKS; use rules + commands to cover the multi-conflict path.
+    mkdirSync(join(sharedDir, 'rules'), { recursive: true });
+    writeFileSync(join(sharedDir, 'rules', 's.md'), '# shared rules\n');
     mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(sharedDir, 'commands', 'c.md'), '# shared c\n');
 
-    mkdirSync(join(claudeDir, 'skills'), { recursive: true });
-    writeFileSync(join(claudeDir, 'skills', 'bar.md'), '# local skills\n');
+    mkdirSync(join(claudeDir, 'rules'), { recursive: true });
+    writeFileSync(join(claudeDir, 'rules', 'bar.md'), '# local rules\n');
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'baz.md'), '# local commands\n');
 
     const { applySharedLinks } = await import('./links.ts');
     applySharedLinks('20260516-000000', { projects: {} });
 
-    const skillsLink = join(claudeDir, 'skills');
+    const rulesLink = join(claudeDir, 'rules');
     const commandsLink = join(claudeDir, 'commands');
-    expect(lstatSync(skillsLink).isSymbolicLink()).toBe(true);
+    expect(lstatSync(rulesLink).isSymbolicLink()).toBe(true);
     expect(lstatSync(commandsLink).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(skillsLink)).toBe(join(sharedDir, 'skills'));
+    expect(readlinkSync(rulesLink)).toBe(join(sharedDir, 'rules'));
     expect(readlinkSync(commandsLink)).toBe(join(sharedDir, 'commands'));
 
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
-    expect(existsSync(join(backupRoot, 'skills', 'bar.md'))).toBe(true);
+    expect(existsSync(join(backupRoot, 'rules', 'bar.md'))).toBe(true);
     expect(existsSync(join(backupRoot, 'commands', 'baz.md'))).toBe(true);
-    expect(readFileSync(join(backupRoot, 'skills', 'bar.md'), 'utf8')).toBe('# local skills\n');
+    expect(readFileSync(join(backupRoot, 'rules', 'bar.md'), 'utf8')).toBe('# local rules\n');
     expect(readFileSync(join(backupRoot, 'commands', 'baz.md'), 'utf8')).toBe('# local commands\n');
   });
 });

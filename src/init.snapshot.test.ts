@@ -62,20 +62,20 @@ describe('snapshotIntoShared: file vs directory routing (L30) and .gitkeep remov
   });
 
   it('copies a directory src via cpSync (not copyFileSync) when isDirectory() is true (L30)', async () => {
-    // ~/.claude/skills/ is a directory. snapshotIntoShared must route it through
+    // ~/.claude/commands/ is a directory. snapshotIntoShared must route it through
     // cpSync. A ConditionalExpression-false mutation would call copyFileSync on it,
     // which throws EISDIR (cannot copy a directory with copyFileSync).
-    // agents is no longer in SHARED_LINKS (gsd-owned); use skills instead.
-    const skillsDir = join(claudeDir, 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(join(skillsDir, 'my-skill.md'), '# my skill\n');
+    // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
+    const commandsDir = join(claudeDir, 'commands');
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(join(commandsDir, 'my-cmd.md'), '# my cmd\n');
 
     const { snapshotIntoShared } = await import('./init.snapshot.ts');
     expect(() => snapshotIntoShared({ projects: {} })).not.toThrow();
 
-    // Verify cpSync wrote the file into shared/skills/.
-    expect(readFileSync(join(repoHome, 'shared', 'skills', 'my-skill.md'), 'utf8')).toBe(
-      '# my skill\n',
+    // Verify cpSync wrote the file into shared/commands/.
+    expect(readFileSync(join(repoHome, 'shared', 'commands', 'my-cmd.md'), 'utf8')).toBe(
+      '# my cmd\n',
     );
   });
 
@@ -93,15 +93,15 @@ describe('snapshotIntoShared: file vs directory routing (L30) and .gitkeep remov
   });
 
   it('removes .gitkeep before cpSync when it exists (L38: existsSync guard)', async () => {
-    // shared/skills/.gitkeep exists (the normal scaffold). snapshotIntoShared
+    // shared/commands/.gitkeep exists (the normal scaffold). snapshotIntoShared
     // must remove it before cpSync so the dst directory is empty. If existsSync
     // were true (BooleanLiteral mutation), rmSync on an absent .gitkeep would throw.
-    // agents is no longer in SHARED_LINKS (gsd-owned); use skills instead.
-    const skillsDir = join(claudeDir, 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(join(skillsDir, 'my-skill.md'), '# skill\n');
+    // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
+    const commandsDir = join(claudeDir, 'commands');
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(join(commandsDir, 'my-cmd.md'), '# cmd\n');
 
-    const gkPath = join(repoHome, 'shared', 'skills', '.gitkeep');
+    const gkPath = join(repoHome, 'shared', 'commands', '.gitkeep');
     expect(existsSync(gkPath)).toBe(true);
 
     const { snapshotIntoShared } = await import('./init.snapshot.ts');
@@ -109,25 +109,25 @@ describe('snapshotIntoShared: file vs directory routing (L30) and .gitkeep remov
 
     // .gitkeep was removed; the real content is there now.
     expect(existsSync(gkPath)).toBe(false);
-    expect(existsSync(join(repoHome, 'shared', 'skills', 'my-skill.md'))).toBe(true);
+    expect(existsSync(join(repoHome, 'shared', 'commands', 'my-cmd.md'))).toBe(true);
   });
 
   it('does NOT throw when .gitkeep is absent before cpSync (L38: existsSync guard skips rmSync)', async () => {
-    // shared/skills/ exists but .gitkeep was already removed (e.g. a re-run
+    // shared/commands/ exists but .gitkeep was already removed (e.g. a re-run
     // after an aborted snapshot). Without the existsSync guard, rmSync would
     // throw ENOENT on the absent .gitkeep. With the guard, rmSync is skipped.
-    // agents is no longer in SHARED_LINKS (gsd-owned); use skills instead.
-    const skillsDir = join(claudeDir, 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(join(skillsDir, 'my-skill.md'), '# skill\n');
+    // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
+    const commandsDir = join(claudeDir, 'commands');
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(join(commandsDir, 'my-cmd.md'), '# cmd\n');
 
     // Remove the .gitkeep manually to simulate the absent case.
-    const gkPath = join(repoHome, 'shared', 'skills', '.gitkeep');
+    const gkPath = join(repoHome, 'shared', 'commands', '.gitkeep');
     rmSync(gkPath);
     expect(existsSync(gkPath)).toBe(false);
 
     const { snapshotIntoShared } = await import('./init.snapshot.ts');
     expect(() => snapshotIntoShared({ projects: {} })).not.toThrow();
-    expect(existsSync(join(repoHome, 'shared', 'skills', 'my-skill.md'))).toBe(true);
+    expect(existsSync(join(repoHome, 'shared', 'commands', 'my-cmd.md'))).toBe(true);
   });
 });

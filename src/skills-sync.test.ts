@@ -1,8 +1,17 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copySkillsPull, copySkillsPush, isGsdOwned } from './skills-sync.ts';
 
@@ -171,5 +180,164 @@ describe('copySkillsPull', () => {
 
     expect(existsSync(dst)).toBe(true);
     expect(readdirSync(dst).sort()).toEqual(['graphify']);
+  });
+});
+
+describe('syncSkillsPull', () => {
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedSkills: string;
+  let localSkills: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-sync-skills-pull-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = testHome;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedSkills = join(repoUnderHome, 'shared', 'skills');
+    localSkills = join(testHome, '.claude', 'skills');
+    mkdirSync(sharedSkills, { recursive: true });
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('overlays a user skill from shared/skills into ~/.claude/skills', async () => {
+    mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    syncSkillsPull('20260101-120000');
+    expect(existsSync(join(localSkills, 'graphify'))).toBe(true);
+  });
+
+  it('preserves a pre-existing local gsd-* skill on pull', async () => {
+    mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    mkdirSync(join(localSkills, 'gsd-local'), { recursive: true });
+    writeFileSync(join(localSkills, 'gsd-local', 'SKILL.md'), '# gsd-local\n');
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    syncSkillsPull('20260101-120000');
+    expect(existsSync(join(localSkills, 'gsd-local'))).toBe(true);
+    expect(existsSync(join(localSkills, 'graphify'))).toBe(true);
+  });
+
+  it('migrates a ~/.claude/skills symlink to a real dir and backs it up', async () => {
+    // Simulate the symlink era: ~/.claude/skills is a symlink to shared/skills.
+    const backupBase = join(testHome, '.cache', 'claude-nomad', 'backup');
+    mkdirSync(backupBase, { recursive: true });
+    // Create the symlink target first.
+    mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    // Create the symlink (pointing anywhere -- just needs to be a symlink).
+    symlinkSync(sharedSkills, localSkills);
+    expect(lstatSync(localSkills).isSymbolicLink()).toBe(true);
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    const ts = '20260101-120000';
+    syncSkillsPull(ts);
+    // After migration, localSkills must be a real directory, not a symlink.
+    const stat = lstatSync(localSkills);
+    expect(stat.isSymbolicLink()).toBe(false);
+    expect(stat.isDirectory()).toBe(true);
+    // A backup entry must exist for the symlink (backupBeforeWrite contract).
+    // backupBeforeWrite stores at backupBase/<ts>/<rel> where rel = relative(claudeHome(), absPath).
+    // claudeHome() = testHome/.claude, absPath = testHome/.claude/skills, so rel = 'skills'.
+    const backupEntry = join(backupBase, ts, 'skills');
+    expect(existsSync(backupEntry)).toBe(true);
+  });
+
+  it('is idempotent: a second call with localSkills already a real dir does not re-backup', async () => {
+    mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    mkdirSync(localSkills, { recursive: true });
+    const backupBase = join(testHome, '.cache', 'claude-nomad', 'backup');
+    mkdirSync(backupBase, { recursive: true });
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    const ts = '20260101-120001';
+    syncSkillsPull(ts);
+    syncSkillsPull(ts);
+    // A real dir was never a symlink, so no backup entry for it.
+    const backupEntry = join(backupBase, ts, '.claude', 'skills');
+    expect(existsSync(backupEntry)).toBe(false);
+  });
+
+  it('is a no-op when shared/skills does not exist', async () => {
+    // Remove the shared/skills dir so there is nothing to overlay.
+    rmSync(sharedSkills, { recursive: true, force: true });
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    // Must not throw and must not create localSkills.
+    syncSkillsPull('20260101-120000');
+    expect(existsSync(localSkills)).toBe(false);
+  });
+});
+
+describe('syncSkillsPush', () => {
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedSkills: string;
+  let localSkills: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-sync-skills-push-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = testHome;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedSkills = join(repoUnderHome, 'shared', 'skills');
+    localSkills = join(testHome, '.claude', 'skills');
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    mkdirSync(localSkills, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('copies a user skill from ~/.claude/skills into shared/skills', async () => {
+    mkdirSync(join(localSkills, 'pr-feedback-sweep'), { recursive: true });
+    writeFileSync(join(localSkills, 'pr-feedback-sweep', 'SKILL.md'), '# pr-feedback-sweep\n');
+    const { syncSkillsPush } = await import('./skills-sync.ts');
+    syncSkillsPush();
+    expect(existsSync(join(sharedSkills, 'pr-feedback-sweep'))).toBe(true);
+  });
+
+  it('excludes a local gsd-* skill from shared/skills on push', async () => {
+    mkdirSync(join(localSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(localSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    mkdirSync(join(localSkills, 'gsd-foo'), { recursive: true });
+    writeFileSync(join(localSkills, 'gsd-foo', 'SKILL.md'), '# gsd-foo\n');
+    const { syncSkillsPush } = await import('./skills-sync.ts');
+    syncSkillsPush();
+    expect(existsSync(join(sharedSkills, 'graphify'))).toBe(true);
+    expect(existsSync(join(sharedSkills, 'gsd-foo'))).toBe(false);
+  });
+
+  it('removes a stale gsd-* entry from shared/skills on first push (one-time cleanup)', async () => {
+    // A stale gsd-* in the repo from the symlink era must be removed by the
+    // push mirror (copySkillsPush uses rm-then-filter).
+    mkdirSync(join(sharedSkills, 'gsd-stale'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'gsd-stale', 'old.md'), 'stale\n');
+    mkdirSync(join(localSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(localSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    const { syncSkillsPush } = await import('./skills-sync.ts');
+    syncSkillsPush();
+    expect(existsSync(join(sharedSkills, 'gsd-stale'))).toBe(false);
+    expect(existsSync(join(sharedSkills, 'graphify'))).toBe(true);
+  });
+
+  it('is a no-op when ~/.claude/skills does not exist', async () => {
+    rmSync(localSkills, { recursive: true, force: true });
+    const { syncSkillsPush } = await import('./skills-sync.ts');
+    // Must not throw and must not create sharedSkills.
+    syncSkillsPush();
+    expect(existsSync(sharedSkills)).toBe(false);
   });
 });

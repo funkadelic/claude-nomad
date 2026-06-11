@@ -12,11 +12,11 @@ import { type Env, makeDoctorEnv, restoreEnv } from './commands.doctor.checks.te
  * mirroring the topology that triggers the --preserve-symlinks-main bug.
  * Optionally write script files under the repo tree.
  *
- * `hooks` is no longer in SHARED_LINKS (gsd-owned per-host), so tests that
- * exercise the WARN path must use `skills` (still in SHARED_LINKS) instead.
+ * `hooks` and `skills` are no longer in SHARED_LINKS, so tests that
+ * exercise the WARN path must use `commands` (still in SHARED_LINKS) instead.
  *
  * @param testHome - Sandbox home from makeDoctorEnv.
- * @param dir - The shared dir name to create and symlink (default: 'skills').
+ * @param dir - The shared dir name to create and symlink (default: 'commands').
  * @param files - Map of filename -> content to write under shared/<dir>.
  */
 function buildSharedTree(testHome: string, dir: string, files: Record<string, string> = {}): void {
@@ -28,9 +28,9 @@ function buildSharedTree(testHome: string, dir: string, files: Record<string, st
   symlinkSync(sharedDir, join(testHome, '.claude', dir));
 }
 
-/** Convenience: build a shared/skills tree (the canonical SHARED_LINKS dir for probe tests). */
+/** Convenience: build a shared/commands tree (the canonical SHARED_LINKS dir for probe tests). */
 function buildSkillsTree(testHome: string, files: Record<string, string> = {}): void {
-  buildSharedTree(testHome, 'skills', files);
+  buildSharedTree(testHome, 'commands', files);
 }
 
 /**
@@ -92,7 +92,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/run.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/run.js` }],
     });
     const { out } = await runCheck();
     expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
@@ -109,7 +109,7 @@ describe('reportPreserveSymlinksCheck', () => {
       PostToolUse: [
         {
           type: 'command',
-          command: `node --preserve-symlinks-main ~/.claude/skills/run.js`,
+          command: `node --preserve-symlinks-main ~/.claude/commands/run.js`,
         },
       ],
     });
@@ -132,7 +132,7 @@ describe('reportPreserveSymlinksCheck', () => {
   it('does not warn for a non-node command even if the script is under the hooks dir', async () => {
     buildSkillsTree(env.testHome, { 'run.sh': '#!/bin/sh\necho hi\n' });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `~/.claude/skills/run.sh` }],
+      PostToolUse: [{ type: 'command', command: `~/.claude/commands/run.sh` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -143,7 +143,7 @@ describe('reportPreserveSymlinksCheck', () => {
   it('does not warn for bash wrapping a script under the hooks dir (not a node invocation)', async () => {
     buildSkillsTree(env.testHome, { 'x.sh': '' });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `bash ~/.claude/skills/x.sh` }],
+      PostToolUse: [{ type: 'command', command: `bash ~/.claude/commands/x.sh` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -205,7 +205,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
     });
     writeHooksSettings(env.testHome, {
-      SessionStart: [{ type: 'command', command: `node ~/.claude/skills/run.js` }],
+      SessionStart: [{ type: 'command', command: `node ~/.claude/commands/run.js` }],
     });
     await runCheck();
     expect(process.exitCode).toBeUndefined();
@@ -216,7 +216,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'lib.cjs': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/lib.cjs` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/lib.cjs` }],
     });
     const { out } = await runCheck();
     expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
@@ -229,13 +229,13 @@ describe('reportPreserveSymlinksCheck', () => {
   // -------------------------------------------------------------------------
 
   it('warns when the script has a broken relative require (target missing from realpath dir)', async () => {
-    // The script lives in shared/skills/ (realpath); gsd-core/ does NOT exist
+    // The script lives in shared/commands/ (realpath); gsd-core/ does NOT exist
     // as a sibling of shared/ in the repo tree, so the require target is missing.
     buildSkillsTree(env.testHome, {
       'session-start.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
     });
     writeHooksSettings(env.testHome, {
-      SessionStart: [{ type: 'command', command: `node ~/.claude/skills/session-start.js` }],
+      SessionStart: [{ type: 'command', command: `node ~/.claude/commands/session-start.js` }],
     });
     const { out } = await runCheck();
     expect(out).toContain(`${warnGlyph} hooks/SessionStart:`);
@@ -248,7 +248,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'self-contained.js': `const fs = require('node:fs');\nconst pc = require('picocolors');\nmodule.exports = {};\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/self-contained.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/self-contained.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -261,7 +261,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'no-requires.js': `console.log('hello');\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/no-requires.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/no-requires.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -277,7 +277,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'uses-sibling.js': `const s = require('../sibling.cjs');\nmodule.exports = s;\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/uses-sibling.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/uses-sibling.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -291,7 +291,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'commented.js': `// const x = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = {};\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/commented.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/commented.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -304,7 +304,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'string-require.js': `const s = "require('../gsd-core/bin/lib/package-identity.cjs')";\nmodule.exports = {};\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/string-require.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/string-require.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -313,20 +313,20 @@ describe('reportPreserveSymlinksCheck', () => {
   });
 
   it('silently skips and leaves exitCode undefined when the script is unreadable', async () => {
-    // Write a settings.json pointing at a non-existent script under ~/.claude/skills/.
-    // hooks is no longer in SHARED_LINKS; use skills (still SHARED_LINKS) for the topology.
+    // Write a settings.json pointing at a non-existent script under ~/.claude/commands/.
+    // hooks and skills are no longer in SHARED_LINKS; use commands (still SHARED_LINKS) for the topology.
     writeHooksSettings(env.testHome, {
       PostToolUse: [
         {
           type: 'command',
-          command: `node ${join(env.testHome, '.claude', 'skills', 'ghost.js')}`,
+          command: `node ${join(env.testHome, '.claude', 'commands', 'ghost.js')}`,
         },
       ],
     });
-    // Create the skills dir but NOT the script file, and create symlink
-    const sharedSkills = join(env.testHome, 'claude-nomad', 'shared', 'skills');
-    mkdirSync(sharedSkills, { recursive: true });
-    symlinkSync(sharedSkills, join(env.testHome, '.claude', 'skills'));
+    // Create the commands dir but NOT the script file, and create symlink
+    const sharedCommands = join(env.testHome, 'claude-nomad', 'shared', 'commands');
+    mkdirSync(sharedCommands, { recursive: true });
+    symlinkSync(sharedCommands, join(env.testHome, '.claude', 'commands'));
     const { out } = await runCheck();
     // ghost.js does not exist on disk. realpathSync throws in
     // relativeRequireTargetsBroken -> returns false -> no WARN.
@@ -342,7 +342,7 @@ describe('reportPreserveSymlinksCheck', () => {
     const content = filler + `const x = require('../gsd-core/bin/lib/package-identity.cjs');\n`;
     buildSkillsTree(env.testHome, { 'large.js': content });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/large.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/large.js` }],
     });
     const { out } = await runCheck();
     // The require at byte ~60KB is within the 64KB bound, so it should be found.
@@ -358,7 +358,7 @@ describe('reportPreserveSymlinksCheck', () => {
     const content = filler + `const x = require('../gsd-core/bin/lib/package-identity.cjs');\n`;
     buildSkillsTree(env.testHome, { 'too-large.js': content });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/too-large.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/too-large.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -374,7 +374,7 @@ describe('reportPreserveSymlinksCheck', () => {
     writeHooksSettings(env.testHome, {
       PostToolUse: [
         {
-          hooks: [{ type: 'command', command: `node ~/.claude/skills/grouped.js` }],
+          hooks: [{ type: 'command', command: `node ~/.claude/commands/grouped.js` }],
         },
       ],
     });
@@ -393,7 +393,7 @@ describe('reportPreserveSymlinksCheck', () => {
       join(env.testHome, '.claude', 'settings.json'),
       JSON.stringify({
         hooks: {
-          PostToolUse: [null, 42, { type: 'command', command: `node ~/.claude/skills/ok.js` }],
+          PostToolUse: [null, 42, { type: 'command', command: `node ~/.claude/commands/ok.js` }],
         },
       }) + '\n',
     );
@@ -420,7 +420,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'esm-hook.js': `import pkg from '../gsd-core/bin/lib/package-identity.cjs';\nexport default pkg;\n`,
     });
     writeHooksSettings(env.testHome, {
-      SessionStart: [{ type: 'command', command: `node ~/.claude/skills/esm-hook.js` }],
+      SessionStart: [{ type: 'command', command: `node ~/.claude/commands/esm-hook.js` }],
     });
     const { out } = await runCheck();
     expect(out).toContain(`${warnGlyph} hooks/SessionStart:`);
@@ -436,7 +436,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'ext-probe.js': `const s = require('../sibling');\nmodule.exports = s;\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/ext-probe.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/ext-probe.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -481,7 +481,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'str-import.js': `const msg = "import pkg from '../gsd-core/bin/lib/x.cjs'";\nmodule.exports = {};\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/str-import.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/str-import.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -498,7 +498,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'idx-probe.js': `const s = require('../libdir');\nmodule.exports = s;\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/idx-probe.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/idx-probe.js` }],
     });
     const { out } = await runCheck();
     expect(out).not.toContain(`${warnGlyph}`);
@@ -525,10 +525,10 @@ describe('reportPreserveSymlinksCheck', () => {
       'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/skills/run.js` }],
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/run.js` }],
     });
     const { out } = await runCheck();
-    // Falls back to static SHARED_LINKS, 'hooks' is still included -> still warns
+    // Falls back to static SHARED_LINKS; commands is still in it -> still warns
     expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
     expect(process.exitCode).toBeUndefined();
   });
@@ -544,7 +544,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node \${HOME}/.claude/skills/run.js` }],
+      PostToolUse: [{ type: 'command', command: `node \${HOME}/.claude/commands/run.js` }],
     });
     const { out } = await runCheck();
     expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
@@ -558,7 +558,7 @@ describe('reportPreserveSymlinksCheck', () => {
       'run.js': `const pkg = require('../gsd-core/bin/lib/package-identity.cjs');\nmodule.exports = pkg;\n`,
     });
     writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node $HOME/.claude/skills/run.js` }],
+      PostToolUse: [{ type: 'command', command: `node $HOME/.claude/commands/run.js` }],
     });
     const { out } = await runCheck();
     expect(out).toContain(`${warnGlyph} hooks/PostToolUse:`);
@@ -613,7 +613,7 @@ describe('reportPreserveSymlinksCheck', () => {
       PostToolUse: [
         {
           type: 'command',
-          command: `node --no-warnings --experimental-vm-modules ~/.claude/skills/flagged.js`,
+          command: `node --no-warnings --experimental-vm-modules ~/.claude/commands/flagged.js`,
         },
       ],
     });
@@ -637,7 +637,7 @@ describe('reportPreserveSymlinksCheck', () => {
       PostToolUse: [
         {
           type: 'command',
-          command: `node --preserve-symlinks-main ~/.claude/skills/run.js`,
+          command: `node --preserve-symlinks-main ~/.claude/commands/run.js`,
         },
       ],
     });
@@ -658,7 +658,7 @@ describe('reportPreserveSymlinksCheck', () => {
       PostToolUse: [
         {
           type: 'command',
-          command: `node ~/.claude/skills/run.js --preserve-symlinks-main`,
+          command: `node ~/.claude/commands/run.js --preserve-symlinks-main`,
         },
       ],
     });

@@ -71,10 +71,16 @@ describe('SHARED_LINKS membership after hooks/agents drop', () => {
     expect(config.SHARED_LINKS).not.toContain('agents');
   });
 
-  it('still contains CLAUDE.md, skills, commands, rules, my-statusline.cjs', async () => {
+  it('does NOT contain "skills" (copy-synced via syncSkillsPull/Push, not a symlink)', async () => {
     vi.resetModules();
     const config = await import('./config.ts');
-    for (const name of ['CLAUDE.md', 'skills', 'commands', 'rules', 'my-statusline.cjs']) {
+    expect(config.SHARED_LINKS).not.toContain('skills');
+  });
+
+  it('still contains CLAUDE.md, commands, rules, my-statusline.cjs', async () => {
+    vi.resetModules();
+    const config = await import('./config.ts');
+    for (const name of ['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs']) {
       expect(config.SHARED_LINKS).toContain(name);
     }
   });

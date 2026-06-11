@@ -72,7 +72,7 @@ function buildPrefixSets(hostname: string): {
     const p = `shared/${name}`;
     // Heuristic: names without a dot are treated as directories. File names
     // in SHARED_LINKS are CLAUDE.md and my-statusline.cjs; everything else
-    // (agents, skills, commands, rules, hooks) is a directory.
+    // (commands, rules) is a directory.
     if (name.includes('.')) {
       exactPrefixes.add(p);
     } else {
@@ -82,6 +82,11 @@ function buildPrefixSets(hostname: string): {
 
   // settings.base.json is a file, not a directory.
   exactPrefixes.add('shared/settings.base.json');
+
+  // shared/skills/ is copy-synced (syncSkillsPush) rather than symlinked, so it
+  // is not in SHARED_LINKS, but skills changes are still global-config changes
+  // and must appear in the push output section.
+  dirPrefixes.push('shared/skills');
 
   // The current host's override file.
   exactPrefixes.add(`hosts/${hostname}.json`);

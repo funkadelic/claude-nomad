@@ -1,6 +1,9 @@
-import { readdirSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
+import { claudeHome, repoHome } from './config.ts';
 import { copyExtrasFiltered, copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
+import { backupBeforeWrite } from './utils.fs.ts';
 
 /** The ownership prefix shared by all gsd-installed skills, agents, and hook scripts. */
 const GSD_PREFIX = 'gsd-';
@@ -69,4 +72,57 @@ export function copySkillsPush(src: string, dst: string): void {
  */
 export function copySkillsPull(src: string, dst: string): void {
   copyExtrasFilteredPreservingBy(src, dst, isGsdOwned);
+}
+
+/**
+ * Pull-side path-resolving wrapper for `skills/` copy-sync. Resolves
+ * `repoHome()`/`claudeHome()` at call time (the lazy-resolution convention),
+ * then:
+ *   1. Migration: if `~/.claude/skills` is a symlink (left over from the
+ *      whole-dir-symlink era), back it up via `backupBeforeWrite(linkPath, ts)`
+ *      and replace it with a real directory before calling `copySkillsPull`.
+ *      This ensures gsd's locally-reinstalled `gsd-*` skills and the user
+ *      skills can coexist in a real directory tree. The migration is idempotent:
+ *      if `~/.claude/skills` is already a real directory (or absent), the
+ *      backup-and-replace step is skipped.
+ *   2. Overlay: calls `copySkillsPull(sharedSkills, localSkills)` to overlay
+ *      non-gsd skills from `shared/skills/` into `~/.claude/skills/`,
+ *      preserving local `gsd-*` skills.
+ *
+ * No-op when `shared/skills/` does not exist (nothing to overlay; mirrors
+ * `applySharedLinks`'s skip when the repo has no `shared/<name>` counterpart).
+ *
+ * @param ts - Backup timestamp passed to `backupBeforeWrite` for the symlink
+ *   migration. Use the pull invocation's `freshBackupTs` result.
+ */
+export function syncSkillsPull(ts: string): void {
+  const sharedSkills = join(repoHome(), 'shared', 'skills');
+  if (!existsSync(sharedSkills)) return;
+  const localSkills = join(claudeHome(), 'skills');
+  const dstStat = lstatSync(localSkills, { throwIfNoEntry: false });
+  if (dstStat?.isSymbolicLink() === true) {
+    backupBeforeWrite(localSkills, ts);
+    rmSync(localSkills, { recursive: true, force: true });
+    mkdirSync(localSkills, { recursive: true });
+  }
+  copySkillsPull(sharedSkills, localSkills);
+}
+
+/**
+ * Push-side path-resolving wrapper for `skills/` copy-sync. Resolves
+ * `repoHome()`/`claudeHome()` at call time, then calls
+ * `copySkillsPush(localSkills, sharedSkills)` to mirror only non-gsd user
+ * skills from `~/.claude/skills/` into `shared/skills/`. No-op when
+ * `~/.claude/skills` does not exist.
+ *
+ * The push mirror is a rm-then-filtered-copy (`copyExtrasFiltered`), so stale
+ * `gsd-*` entries deposited in `shared/skills/` during the symlink era are
+ * removed automatically on the first `syncSkillsPush` call. No separate prune
+ * step is needed; this is the one-time stale-gsd-* cleanup mechanism.
+ */
+export function syncSkillsPush(): void {
+  const localSkills = join(claudeHome(), 'skills');
+  if (!existsSync(localSkills)) return;
+  const sharedSkills = join(repoHome(), 'shared', 'skills');
+  copySkillsPush(localSkills, sharedSkills);
 }
