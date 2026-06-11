@@ -115,6 +115,12 @@ describe('SHARED_LINKS membership after hooks/agents drop', () => {
     expect(isValidSharedDir('agents')).toBe(false);
   });
 
+  it('isValidSharedDir("skills") returns false (skills are copy-synced, not shared-link managed)', async () => {
+    vi.resetModules();
+    const { isValidSharedDir } = await import('./config.sharedDirs.guard.ts');
+    expect(isValidSharedDir('skills')).toBe(false);
+  });
+
   it('PUSH_ALLOWED_STATIC includes ".gitleaks.overlay.toml" as an exact name', async () => {
     vi.resetModules();
     const config = await import('./config.ts');
