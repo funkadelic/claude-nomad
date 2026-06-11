@@ -118,6 +118,7 @@ export function gitCaptureRaw(args: readonly string[], cwd?: string): string {
   return execFileSync('git', args as string[], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
   }).toString();
 }
 

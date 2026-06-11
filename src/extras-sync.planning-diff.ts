@@ -162,10 +162,12 @@ export function planningDeleteTargets(opts: {
     // Normalize to resolve any .. segments introduced by crafted repo content.
     const resolved = normalize(candidate);
 
-    // Containment check: the resolved path must be within localRoot/.planning/.
-    // Use the sep-terminated boundary to prevent prefix-lookalike attacks
-    // (e.g. localRoot/.planningX/ would share the prefix without the sep guard).
-    if (resolved !== planningRoot && !resolved.startsWith(planningRootBoundary)) {
+    // Containment check: the resolved path must be a strict child of
+    // localRoot/.planning/. The root itself is never a legitimate D target
+    // (git diff emits file paths only), so equality is rejected too. Use the
+    // sep-terminated boundary to prevent prefix-lookalike attacks (e.g.
+    // localRoot/.planningX/ would share the prefix without the sep guard).
+    if (!resolved.startsWith(planningRootBoundary)) {
       throw new NomadFatal(
         `planningDeleteTargets: resolved path ${JSON.stringify(resolved)} escapes localRoot/.planning for logical ${JSON.stringify(logical)} -- refusing delete`,
       );

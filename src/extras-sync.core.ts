@@ -10,7 +10,7 @@ import {
   type PathMap,
 } from './config.ts';
 import { assertSafeLocalRoot, assertSafeLogical } from './extras-sync.guards.ts';
-import { log } from './utils.ts';
+import { log, NomadFatal } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
 
 /** Parsed `path-map.json` plus its validated `extras` block. */
@@ -108,6 +108,52 @@ export function* eachExtrasTarget(
  */
 export function copyExtrasOverlay(src: string, dst: string): void {
   cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+}
+
+/**
+ * Filtered overlay copy for `.planning`: like `copyExtrasOverlay` but skips
+ * any non-root entry whose basename is in `blockSet`. Applied on both the
+ * push side (prevents ALWAYS_NEVER_SYNC files from entering the repo working
+ * tree even before the allow-list gate fires) and the pull side (defense-in-
+ * depth against a repo poisoned out-of-band). No preceding `rmSync`; dst-only
+ * files survive by design. The root `src` entry is always kept (denylist
+ * applies to contents, not the source dir itself). Passes `verbatimSymlinks:
+ * true` to keep relative symlink targets unrewritten across hosts.
+ *
+ * If `cpSync` throws `EINVAL` (a file/directory type collision where a path
+ * changed type upstream, e.g. directory `foo/` became file `foo`), it is
+ * re-thrown as a `NomadFatal` naming the colliding path so the user gets an
+ * actionable message instead of a raw stack trace.
+ *
+ * @param src - Source directory to copy from.
+ * @param dst - Destination path; dst-only files survive unchanged.
+ * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
+ */
+export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Set<string>): void {
+  try {
+    cpSync(src, dst, {
+      recursive: true,
+      force: true,
+      verbatimSymlinks: true,
+      filter: (srcEntry) => srcEntry === src || !blockSet.has(basename(srcEntry)),
+    });
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    // EINVAL on macOS / ENOTEMPTY on Linux: cpSync tried to overwrite a
+    // non-empty directory with a file (or vice versa) -- a file/dir type
+    // change upstream. Convert to NomadFatal so the user gets an actionable
+    // message instead of a raw stack trace.
+    /* c8 ignore next -- EINVAL (macOS) / ENOTEMPTY (Linux) are platform-specific */
+    if (e.code === 'EINVAL' || e.code === 'ENOTEMPTY') {
+      throw new NomadFatal(
+        `copyExtrasOverlayFiltered: type collision copying ${JSON.stringify(src)} -> ` +
+          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
+          `changed upstream; run nomad pull --force-remote to recover`,
+      );
+    }
+    /* c8 ignore next */
+    throw err; // other I/O error; propagate as-is
+  }
 }
 
 /**
