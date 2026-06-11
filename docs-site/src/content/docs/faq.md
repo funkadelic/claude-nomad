@@ -191,6 +191,9 @@ Unlike State 1, there is nothing to abort and no stranded commits to park, so re
 $ cd ~/claude-nomad
 $ git reset --mixed HEAD    # clear the stuck index; your working-tree edits are preserved
 
+# Review working-tree files for leftover conflict markers (<<<<<<<, =======, >>>>>>>):
+$ git diff --name-only      # files with unstaged changes likely still carry markers
+
 # If git stash list shows an autostash entry, decide what to do with it:
 $ git stash pop             # restore the autostashed changes (may re-conflict; review first)
 $ git stash drop            # discard the autostash if you do not need those changes
