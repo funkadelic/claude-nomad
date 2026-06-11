@@ -15,8 +15,8 @@ import { computePreview } from './preview.ts';
 import { remapPull } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
-import { detectWedge } from './commands.pull.wedge.ts';
-import { recoverForceRemote } from './commands.pull.recovery.ts';
+import { classifyWedge } from './commands.pull.wedge.ts';
+import { recoverForceRemote, recoverUnmergedIndex } from './commands.pull.recovery.ts';
 import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -108,22 +108,57 @@ function applyWetPull(
 }
 
 /**
- * Handle the wedge state detected in `REPO_HOME`. If `forceRemote` is set,
- * delegate to the recovery orchestrator (`recoverForceRemote`) which aborts
- * the in-progress rebase/merge, runs a safety diff, parks stranded commits,
- * and resets to `origin/main`. Without `forceRemote`, die with an actionable
- * message pointing at `--force-remote` and the FAQ.
+ * Build the D-2 runbook message for the unmerged-index-no-active-rebase state.
+ * Extracted so the die() body stays readable and the complexity gate passes.
  *
- * Called inside the `cmdPull` try block so any `NomadFatal` thrown (by `die`
- * or by `recoverForceRemote`) propagates to the existing catch and the lock
- * is released in `finally`. No-op when the repo is clean (wedge is `null`).
+ * @returns The actionable runbook string for `die()`.
+ */
+function unmergedIndexRunbook(): string {
+  return (
+    'repo has an unmerged index with no active rebase or merge in progress ' +
+    '(torn-down rebase left stage-2/3 entries behind).\n\n' +
+    'Manual recovery:\n' +
+    '  1. git reset --mixed HEAD   (clears the stuck index; preserves working-tree files)\n' +
+    '  2. git stash list           (look for an orphaned autostash entry)\n' +
+    '     git stash pop            (restore the autostash) or\n' +
+    '     git stash drop           (discard it)\n' +
+    '  3. nomad pull\n\n' +
+    "Auto-recover: run 'nomad pull --force-remote' to apply step 1 automatically\n" +
+    '(see FAQ: "Every pull fails with unmerged files")'
+  );
+}
+
+/**
+ * Handle the wedge state detected in `REPO_HOME`. Dispatches all three
+ * `WedgeState` values returned by `classifyWedge`:
+ *
+ * - `'rebase'` / `'merge'`: under `--force-remote`, delegates to
+ *   `recoverForceRemote` (abort + safety-diff + park + reset --hard).
+ *   Without `--force-remote`, dies with an actionable message.
+ * - `'unmerged-index'`: under `--force-remote`, delegates to
+ *   `recoverUnmergedIndex` (reset --mixed HEAD + autostash surface only,
+ *   per D-3 -- NOT recoverForceRemote). Without `--force-remote`, dies with
+ *   the D-2 runbook (non-destructive).
+ * - `null`: no-op (clean repo).
+ *
+ * Called inside the `cmdPull` try block so any `NomadFatal` thrown propagates
+ * to the existing catch and the lock is released in `finally`.
  *
  * @param repo        Absolute path to `REPO_HOME`.
  * @param forceRemote Whether `--force-remote` was passed.
  */
 function handleWedge(repo: string, forceRemote: boolean): void {
-  const wedge = detectWedge(repo);
+  const wedge = classifyWedge(repo);
   if (wedge === null) return;
+  if (wedge === 'unmerged-index') {
+    if (forceRemote) {
+      recoverUnmergedIndex(repo);
+    } else {
+      die(unmergedIndexRunbook());
+    }
+    return;
+  }
+  // wedge is 'rebase' or 'merge': NonNullable<WedgeMode> contract satisfied.
   if (forceRemote) {
     recoverForceRemote(wedge, repo);
     return;
