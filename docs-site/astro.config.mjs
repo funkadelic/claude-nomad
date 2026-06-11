@@ -56,6 +56,7 @@ export default defineConfig({
         { label: 'Features', link: '/features/' },
         { label: 'Quickstart', link: '/quickstart/' },
         { label: 'How it works', link: '/how-it-works/' },
+        { label: 'GSD-aware sync', link: '/gsd-aware-sync/' },
         { label: 'Usage', link: '/usage/' },
         { label: 'Commands', link: '/commands/' },
         { label: 'Claude Code plugin', link: '/plugin/' },

@@ -18,6 +18,12 @@ The plugin runs the `nomad` CLI under the hood, so install the CLI before using 
 npm i -g claude-nomad
 ```
 
+**Minimum CLI version: `>= 0.35.0`.** The plugin versions independently from the CLI (no lockstep
+coupling), but it calls recent subcommands (`nomad diff`, `nomad clean --backups`) and relies on
+the doctor glyph output format that the session-start hook greps. A CLI older than 0.35.0 makes
+some commands error or produce no output. Run `npm i -g claude-nomad` to update to the latest
+version if needed.
+
 If `nomad` is not installed, the slash commands fail with a `command not found` error from the shell,
 and the session-start check stays silent. So you can enable the plugin everywhere without it
 complaining on machines that do not use nomad.

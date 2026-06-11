@@ -56,6 +56,10 @@ your project git-ignores it: if `.claude/` is committed to the project repo, the
 it, and adding nomad on top would clobber the committed copy. See [Usage](/claude-nomad/usage/) for
 how to opt a project in.
 
+If you run GSD (`@opengsd/gsd-core`), the `.planning` overlay sync and the handling of gsd-owned
+files are wired for you out of the box. See [GSD-aware sync](/claude-nomad/gsd-aware-sync/) for the
+details.
+
 ## Every push is secret-scanned
 
 Conversation transcripts can contain pasted API keys, tokens, and passwords. Before anything is

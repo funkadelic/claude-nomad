@@ -21,6 +21,11 @@ own. Install the standalone CLI separately before using the plugin:
 npm i -g claude-nomad
 ```
 
+**Minimum version: `>= 0.35.0`.** The plugin versions independently from the CLI (no lockstep), but
+it calls recent subcommands (`/nomad:diff`, `/nomad:clean --backups`) and greps the doctor glyph
+output format that the SessionStart hook uses. A CLI older than 0.35.0 makes some of those commands
+error silently. Run `npm i -g claude-nomad` to update to the latest version.
+
 If `nomad` is not on your PATH, the slash commands fail with a shell `command not found` error (they
 shell out to `nomad` directly). The SessionStart hook, by contrast, detects the missing binary and
 stays silent, so the plugin can be enabled globally without noise on hosts that lack the CLI.
