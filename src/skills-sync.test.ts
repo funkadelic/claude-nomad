@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { copySkillsPull, copySkillsPush, isGsdOwned } from './skills-sync.ts';
+import { copySkillsPull, copySkillsPush, isGsdOwned, isSkillExcluded } from './skills-sync.ts';
 
 describe('isGsdOwned', () => {
   it('returns true for a gsd-prefixed name', () => {
@@ -42,6 +42,24 @@ describe('isGsdOwned', () => {
 
   it('returns false for empty string', () => {
     expect(isGsdOwned('')).toBe(false);
+  });
+});
+
+describe('isSkillExcluded', () => {
+  it('excludes a gsd-owned name', () => {
+    expect(isSkillExcluded('gsd-foo')).toBe(true);
+  });
+
+  it('excludes an ALWAYS_NEVER_SYNC name (settings.local.json)', () => {
+    expect(isSkillExcluded('settings.local.json')).toBe(true);
+  });
+
+  it('excludes a credentials file name', () => {
+    expect(isSkillExcluded('.credentials.json')).toBe(true);
+  });
+
+  it('does not exclude a user skill name', () => {
+    expect(isSkillExcluded('graphify')).toBe(false);
   });
 });
 
@@ -101,6 +119,18 @@ describe('copySkillsPush', () => {
 
     expect(existsSync(dst)).toBe(true);
     expect(readdirSync(dst)).toEqual([]);
+  });
+
+  it('excludes a NEVER_SYNC file nested inside a user skill (WR-02)', () => {
+    mkdirSync(join(src, 'graphify'), { recursive: true });
+    writeFileSync(join(src, 'graphify', 'SKILL.md'), '# graphify\n');
+    // A stray host-config file nested under a user skill must not ride into dst.
+    writeFileSync(join(src, 'graphify', 'settings.local.json'), '{}\n');
+
+    copySkillsPush(src, dst);
+
+    expect(existsSync(join(dst, 'graphify', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(dst, 'graphify', 'settings.local.json'))).toBe(false);
   });
 });
 
@@ -180,6 +210,19 @@ describe('copySkillsPull', () => {
 
     expect(existsSync(dst)).toBe(true);
     expect(readdirSync(dst).sort()).toEqual(['graphify']);
+  });
+
+  it('does not overlay a NEVER_SYNC file nested in src into dst (WR-02)', () => {
+    // A poisoned repo carrying a host-config file under a user skill must not
+    // restore it onto the host on pull.
+    mkdirSync(join(src, 'graphify'), { recursive: true });
+    writeFileSync(join(src, 'graphify', 'SKILL.md'), '# graphify\n');
+    writeFileSync(join(src, 'graphify', 'settings.local.json'), '{}\n');
+
+    copySkillsPull(src, dst);
+
+    expect(existsSync(join(dst, 'graphify', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(dst, 'graphify', 'settings.local.json'))).toBe(false);
   });
 });
 

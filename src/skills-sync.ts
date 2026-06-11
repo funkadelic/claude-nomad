@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome, repoHome } from './config.ts';
+import { ALWAYS_NEVER_SYNC, claudeHome, repoHome } from './config.ts';
 import { copyExtrasFiltered, copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
 
@@ -26,6 +26,25 @@ export function isGsdOwned(name: string): boolean {
 }
 
 /**
+ * Skills-copy exclusion predicate composing the gsd-ownership filter with the
+ * `ALWAYS_NEVER_SYNC` denylist. A basename is excluded from the push mirror and
+ * preserved on pull when it is either gsd-owned (the prefix) OR a hard-blocked
+ * sensitive name (`settings.local.json`, `.credentials.json`, ...). The
+ * `ALWAYS_NEVER_SYNC` check applies at every depth via the recursive `cpSync`
+ * filter, so a stray host-config file nested inside a user skill cannot ride
+ * into `shared/skills/` on push. Mirrors the extras path's `extrasDenySet`
+ * boundary rather than inventing a new one (the `gitleaks` scan only catches
+ * credential-shaped content; non-secret names like `settings.local.json` need
+ * this name-based filter).
+ *
+ * @param name - Basename of a skill entry (at any depth) to test.
+ * @returns `true` if the entry must be excluded/preserved.
+ */
+export function isSkillExcluded(name: string): boolean {
+  return isGsdOwned(name) || ALWAYS_NEVER_SYNC.has(name);
+}
+
+/**
  * Push-side filtered mirror for `skills/`. Copies all non-gsd skills from
  * `src` into `dst`, mirroring the repo side. Pre-existing gsd-owned entries in
  * `dst` (stale repo entries deposited during the symlink era) are removed as
@@ -39,12 +58,21 @@ export function isGsdOwned(name: string): boolean {
  * inside `copyExtrasFiltered` ensures stale repo gsd-* entries from the symlink
  * era are removed.
  *
+ * The blockSet unions the gsd-owned top-level names with the whole
+ * `ALWAYS_NEVER_SYNC` denylist. `copyExtrasFiltered`'s `cpSync` filter tests
+ * every entry's basename at every depth, so seeding the set with the denylist
+ * names blocks a host-config file nested inside a user skill (WR-02), not just
+ * a top-level one.
+ *
  * @param src - Source skills directory (`~/.claude/skills/` on push).
  * @param dst - Destination skills directory (`shared/skills/` on push).
  */
 export function copySkillsPush(src: string, dst: string): void {
   const srcNames = readdirSync(src, { encoding: 'utf8' });
-  const blockSet = new Set<string>(srcNames.filter((n) => isGsdOwned(n)));
+  const blockSet = new Set<string>([
+    ...srcNames.filter((n) => isGsdOwned(n)),
+    ...ALWAYS_NEVER_SYNC,
+  ]);
   copyExtrasFiltered(src, dst, blockSet);
 }
 
@@ -67,11 +95,15 @@ export function copySkillsPush(src: string, dst: string): void {
  * absent from src would not be in that set and would be rmSync-deleted (a
  * Phase-49-class mirror-delete violating D-2).
  *
+ * The preserve/exclude predicate is `isSkillExcluded` (gsd-ownership composed
+ * with `ALWAYS_NEVER_SYNC`), mirroring the push-side boundary so a poisoned repo
+ * cannot overlay a sensitive host-config name into `~/.claude/skills/` (WR-02).
+ *
  * @param src - Source skills directory (`shared/skills/` on pull).
  * @param dst - Destination skills directory (`~/.claude/skills/` on pull).
  */
 export function copySkillsPull(src: string, dst: string): void {
-  copyExtrasFilteredPreservingBy(src, dst, isGsdOwned);
+  copyExtrasFilteredPreservingBy(src, dst, isSkillExcluded);
 }
 
 /**
