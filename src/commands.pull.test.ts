@@ -250,7 +250,10 @@ describe('cmdPull: extras integration', () => {
     expect(() => cmdPull()).not.toThrow();
     // remapExtrasPull receives ts as the first arg; second arg opts may contain
     // prePostHeads (undefined here because gitOrFatal mock replaces git ops).
-    expect(remapExtrasPullMock).toHaveBeenCalledWith(expect.any(String), expect.any(Object));
+    expect(remapExtrasPullMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ prePostHeads: undefined }),
+    );
   });
 
   it('dry-run skips remapExtrasPull but still runs divergenceCheckExtras (D-08 read-only contract)', async () => {
