@@ -15,7 +15,7 @@ import {
 } from './extras-sync.core.ts';
 import { planningDeleteTargets } from './extras-sync.planning-diff.ts';
 import { backupExtrasWrite, backupRepoWrite } from './utils.fs.ts';
-import { gitCaptureRaw } from './utils.ts';
+import { gitCaptureRaw, NomadFatal } from './utils.ts';
 
 /** Detail lists returned by an extras op: items copied (wet) and would-copy (dry). */
 type ExtrasDetail = ExtrasCounts & { done: string[]; would: string[] };
@@ -188,18 +188,30 @@ function propagatePlanningDeletes(
   const repoExtras = join(repo, 'shared', 'extras');
   for (const t of eachExtrasTarget(v, { unmapped: 0, skipped: 0 })) {
     if (t.dirname !== '.planning') continue;
-    const raw = gitCaptureRaw(
-      [
-        'diff',
-        '--name-status',
-        '-z',
-        prePostHeads.pre,
-        prePostHeads.post,
-        '--',
-        `shared/extras/${t.logical}/.planning/`,
-      ],
-      repo,
-    );
+    let raw: string;
+    try {
+      raw = gitCaptureRaw(
+        [
+          'diff',
+          '--name-status',
+          '-z',
+          prePostHeads.pre,
+          prePostHeads.post,
+          '--',
+          `shared/extras/${t.logical}/.planning/`,
+        ],
+        repo,
+      );
+    } catch (err) {
+      const e = err as Error & { stderr?: Buffer };
+      /* c8 ignore start -- stderr is always piped to a Buffer here; guard is defensive */
+      if (e.stderr) process.stderr.write(e.stderr);
+      /* c8 ignore stop */
+      throw new NomadFatal(
+        `git diff failed while propagating .planning deletes for ${t.logical}; ` +
+          `run nomad pull --force-remote to recover`,
+      );
+    }
     const targets = planningDeleteTargets({ raw, logical: t.logical, localRoot: t.localRoot });
     if (targets.length === 0) continue;
 

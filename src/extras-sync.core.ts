@@ -139,20 +139,27 @@ export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Se
     });
   } catch (err) {
     const e = err as NodeJS.ErrnoException;
-    // EINVAL on macOS / ENOTEMPTY on Linux: cpSync tried to overwrite a
-    // non-empty directory with a file (or vice versa) -- a file/dir type
-    // change upstream. Convert to NomadFatal so the user gets an actionable
-    // message instead of a raw stack trace.
-    /* c8 ignore next -- EINVAL (macOS) / ENOTEMPTY (Linux) are platform-specific */
-    if (e.code === 'EINVAL' || e.code === 'ENOTEMPTY') {
+    // cpSync tried to overwrite a non-empty directory with a file (or vice
+    // versa) -- a file/dir type change upstream. The code varies by platform
+    // and Node version: EINVAL/ENOTEMPTY on current runtimes, the
+    // ERR_FS_CP_* family in Node's documented error set. Convert any of them
+    // to NomadFatal so the user gets an actionable message instead of a raw
+    // stack trace.
+    /* c8 ignore start -- collision codes are platform/Node-version-specific */
+    if (
+      e.code === 'EINVAL' ||
+      e.code === 'ENOTEMPTY' ||
+      e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
+      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
+    ) {
       throw new NomadFatal(
         `copyExtrasOverlayFiltered: type collision copying ${JSON.stringify(src)} -> ` +
           `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
           `changed upstream; run nomad pull --force-remote to recover`,
       );
     }
-    /* c8 ignore next */
     throw err; // other I/O error; propagate as-is
+    /* c8 ignore stop */
   }
 }
 

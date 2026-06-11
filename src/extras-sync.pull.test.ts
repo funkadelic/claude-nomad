@@ -953,4 +953,32 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
       rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it('git diff failure during delete-propagation surfaces as NomadFatal', async () => {
+    // A valid repo + committed .planning file lets the overlay copy succeed so
+    // propagatePlanningDeletes reaches `git diff`. A well-formed but nonexistent
+    // pre-rebase SHA makes `git diff` exit non-zero; the raw ExecException must
+    // be normalized to NomadFatal rather than bubbling a stack trace.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'base'], repoDir);
+    const post = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const badPre = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+    expect(() =>
+      remapExtrasPull('20260611-diff-fail', { prePostHeads: { pre: badPre, post } }),
+    ).toThrow(NomadFatal);
+  });
 });
