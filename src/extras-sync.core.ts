@@ -92,6 +92,25 @@ export function* eachExtrasTarget(
 }
 
 /**
+ * Overlay (additive/overwrite) copy for `.planning`: calls `cpSync` with no
+ * preceding `rmSync` and no prune pass, so dst-only files survive by design.
+ * This is the pull-side copy for the `.planning` extra; deletion of files
+ * removed from the upstream repo is driven separately by the git-diff D set
+ * (plan 02), NOT by this function. Contrast with `copyExtras` (true mirror
+ * via `rmSync` before copy) and `copyExtrasFilteredPreserving` (prune-but-
+ * preserve-deny-set variant). Passes `verbatimSymlinks: true` to keep
+ * relative symlink targets unrewritten across hosts (Pitfall 1; nodejs/node
+ * issue 41693).
+ *
+ * @param src - Source directory to copy from (repo side on pull).
+ * @param dst - Destination path (host-side project dir); dst-only files
+ *   survive unchanged after the overlay.
+ */
+export function copyExtrasOverlay(src: string, dst: string): void {
+  cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+}
+
+/**
  * Recursive mirror copy: `rmSync` then `cpSync` so dst-only entries are
  * removed (true mirror, not just overwrite). Passes `verbatimSymlinks: true`
  * to keep relative symlink targets unrewritten across hosts (Pitfall 1;
