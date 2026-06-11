@@ -31,7 +31,11 @@ import { nowTimestamp } from './utils.fs.ts';
  * @returns Trimmed stdout string.
  */
 export function gitCapture(args: readonly string[], cwd: string): string {
-  return execFileSync('git', args as string[], { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+  return execFileSync('git', args as string[], {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+  })
     .toString()
     .trim();
 }

@@ -146,6 +146,7 @@ export function orphanedAutostashPresent(repo: string): boolean {
     raw = execFileSync('git', ['stash', 'list'], {
       cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
     }).toString();
   } catch {
     return false; // non-git dir or git absent: not our problem to surface here
