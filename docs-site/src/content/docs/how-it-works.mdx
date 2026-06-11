@@ -76,6 +76,10 @@ What `~/claude-nomad/` looks like on a configured host:
 | **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
 | **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
 
+If you run GSD (`@opengsd/gsd-core`), the `.planning` overlay, the `gsd-*` skill exclusion, and the
+unsynced `hooks/` and `agents/` are all part of nomad's GSD-aware handling. See
+[GSD-aware sync](/claude-nomad/gsd-aware-sync/) for what nomad does for a GSD machine out of the box.
+
 Pointers and specifics:
 
 - **Synced (symlinked)** link names live in `SHARED_LINKS` (and the optional `sharedDirs` field in

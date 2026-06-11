@@ -150,6 +150,8 @@ version-staleness check and `nomad doctor --check-schema`. The CLI works without
 
 - [How it works](https://funkadelic.github.io/claude-nomad/how-it-works/) -- path remapping,
   settings merge, what syncs and what doesn't
+- [GSD-aware sync](https://funkadelic.github.io/claude-nomad/gsd-aware-sync/) -- what nomad does for
+  GSD users out of the box
 - [Setup and migration](https://funkadelic.github.io/claude-nomad/quickstart/) -- full setup
   walkthrough, migrating an existing `~/.claude/`
 - [Commands reference](https://funkadelic.github.io/claude-nomad/commands/) -- all CLI flags
