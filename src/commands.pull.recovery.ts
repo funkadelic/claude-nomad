@@ -209,6 +209,11 @@ export function recoverUnmergedIndex(repo: string): void {
   // already written into the working-tree files. A subsequent git pull
   // --rebase --autostash may succeed without touching those files, leaving
   // <<<<<<< / ======= / >>>>>>> markers permanently in tracked content.
+  // Note: `git diff` (no --cached) is unstaged-only by design -- after
+  // --mixed HEAD the formerly-unmerged entries land as unstaged modifications,
+  // which is the scope this probe needs. Any file that was `git add`-ed after
+  // a partial conflict resolution would be staged, not unstaged, and would not
+  // be surfaced here; that corner is unlikely in the torn-down-rebase scenario.
   const dirty = gitCapture(['diff', '--name-only', '-z'], repo).split('\0').filter(Boolean);
   if (dirty.length > 0) {
     log(
