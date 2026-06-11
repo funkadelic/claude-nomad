@@ -15,6 +15,11 @@ import { backupBeforeWrite } from './utils.fs.ts';
  * The three user-authored skills (`graphify`, `patch-coverage-check`,
  * `pr-feedback-sweep`) are unprefixed and return `false`.
  *
+ * Foot-gun (IN-01): the prefix is the only signal, so a user who authors a
+ * skill literally named `gsd-*` will have it treated as gsd-owned: silently
+ * excluded from the push mirror and never synced. Name user skills without the
+ * `gsd-` prefix.
+ *
  * @param name - Basename of the skill/agent/hook directory or file to test.
  * @returns `true` if the name is gsd-owned; `false` if it is user-authored.
  */
