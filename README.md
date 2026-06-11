@@ -44,8 +44,11 @@ survives different file paths and your secrets never ride along.
   when `~/.claude/settings.json` no longer matches the base+host merge nomad would write, the
   silent-clobber case, with `nomad pull` as the fix), each with a fix hint.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
-  recovers a sync repo stuck mid-rebase while parking your stranded work on a branch, refusing
-  entirely if shared config is at risk.
+  recovers two kinds of stuck sync repo: a repo stuck mid-rebase or mid-merge (aborts the operation,
+  parks stranded work on a branch, refuses if shared config is at risk), and a repo where the rebase
+  was interrupted but the git index was left with unmerged entries and no active operation (clears
+  the index via `git reset --mixed HEAD`, surfaces any orphaned stash entry left by the interrupted
+  autostash, never discards working-tree edits).
 - **Easy off.** `nomad eject` replaces every managed `~/.claude/` symlink with a real copy in one
   step, so your setup keeps working after you delete the sync checkout and uninstall the CLI.
 
@@ -108,11 +111,15 @@ All allow paths always re-scan after writing the allowlist; a surviving finding 
 push. See [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/) for the full
 decision tree.
 
-If a previous `nomad pull` left the sync repo stuck mid-rebase or mid-merge, run
-`nomad pull --force-remote` to auto-recover. It aborts the in-progress operation, parks stranded
-commits on a `nomad/stranded-<ts>` branch, and resets to `origin/main`, then re-pulls. It refuses if
-any stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json), so
-config you care about is never silently discarded.
+If a previous `nomad pull` left the sync repo in a stuck state, run `nomad pull --force-remote` to
+auto-recover. It handles two cases: a repo stuck mid-rebase or mid-merge (aborts the in-progress
+operation, parks stranded commits on a `nomad/stranded-<ts>` branch, resets to `origin/main`, then
+re-pulls; refuses if stranded or dirty tracked changes touch synced config), and a repo where the
+rebase was torn down but the git index still has unmerged entries with no active rebase or merge in
+progress (clears the stuck index via `git reset --mixed HEAD`, preserving working-tree edits,
+surfaces any orphaned autostash entry, then re-pulls). Run `nomad doctor` first if you are unsure
+which state you are in; the Repository section names the specific problem and points at the right
+fix.
 
 ## Claude Code plugin
 
