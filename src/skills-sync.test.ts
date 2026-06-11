@@ -340,4 +340,24 @@ describe('syncSkillsPush', () => {
     syncSkillsPush();
     expect(existsSync(sharedSkills)).toBe(false);
   });
+
+  it('does not throw or wipe shared/skills when ~/.claude/skills is still a symlink', async () => {
+    // Pre-phase-50 live-symlink state: a host upgraded but not yet pulled has
+    // ~/.claude/skills pointing into shared/skills. Pushing through it must not
+    // rmSync the symlink's own target and crash (CR-01 regression).
+    mkdirSync(sharedSkills, { recursive: true });
+    mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    rmSync(localSkills, { recursive: true, force: true });
+    symlinkSync(sharedSkills, localSkills);
+    expect(lstatSync(localSkills).isSymbolicLink()).toBe(true);
+
+    const { syncSkillsPush } = await import('./skills-sync.ts');
+    expect(() => syncSkillsPush()).not.toThrow();
+
+    // shared/skills and its content must survive untouched (not wiped).
+    expect(existsSync(join(sharedSkills, 'graphify', 'SKILL.md'))).toBe(true);
+    // The symlink is left in place for the next pull to migrate.
+    expect(lstatSync(localSkills).isSymbolicLink()).toBe(true);
+  });
 });
