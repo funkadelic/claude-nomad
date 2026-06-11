@@ -42,7 +42,7 @@ export function divergenceCheckExtras(ts: string): void {
     if (diff.length === 0) continue;
     const projectBackupRoot = join(backupRoot, encodePath(localRoot));
     warn(
-      `local ${dirname} for ${logical} diverges from origin in ${diff.length} file(s); next remapExtrasPull will overwrite them (backups at ${projectBackupRoot}/)`,
+      `local ${dirname} for ${logical} diverges from origin in ${diff.length} file(s); next remapExtrasPull will merge changes (.planning overlays, .claude/.CLAUDE.md mirror; backups at ${projectBackupRoot}/)`,
     );
     for (const f of diff) warn(`  ${f}`);
   }

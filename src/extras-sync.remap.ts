@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoHome } from './config.ts';
@@ -6,13 +6,16 @@ import {
   copyExtras,
   copyExtrasFiltered,
   copyExtrasFilteredPreserving,
+  copyExtrasOverlay,
   eachExtrasTarget,
   extrasDenySet,
   loadValidatedExtras,
   type ExtrasCounts,
   type ValidatedExtras,
 } from './extras-sync.core.ts';
+import { planningDeleteTargets } from './extras-sync.planning-diff.ts';
 import { backupExtrasWrite, backupRepoWrite } from './utils.fs.ts';
+import { gitCaptureRaw } from './utils.ts';
 
 /** Detail lists returned by an extras op: items copied (wet) and would-copy (dry). */
 type ExtrasDetail = ExtrasCounts & { done: string[]; would: string[] };
@@ -39,13 +42,13 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  *   its `extrasDenySet`). Pull routes `.claude` through
  *   `copyExtrasFilteredPreserving` (preserves host-local deny-set files already
  *   on disk at any depth, e.g. `settings.local.json`, while still recursively
- *   mirror-pruning synced files absent from src) and uses the exact-mirror
- *   `copyExtras` for every other
- *   extra. This preservation is `.claude`-only: `.planning` and `CLAUDE.md`
- *   rarely hold host-local files, so they deliberately keep the exact-mirror
- *   semantics. Filtering `.claude` on pull is defense-in-depth against a repo
- *   poisoned out-of-band (manual commit, older CLI): the deny-set src filter
- *   still strips blocked basenames from the copy even with the preserving variant.
+ *   mirror-pruning synced files absent from src), routes `.planning` through
+ *   `copyExtrasOverlay` (additive/overwrite so local-only files survive; the
+ *   git-diff delete pass in `remapExtrasPull` propagates upstream deletions
+ *   separately), and uses the exact-mirror `copyExtras` for every other extra.
+ *   Filtering `.claude` on pull is defense-in-depth against a repo poisoned
+ *   out-of-band (manual commit, older CLI): the deny-set src filter still
+ *   strips blocked basenames from the copy even with the preserving variant.
  * @returns the counts plus the done/would detail lists.
  */
 function runExtrasOp(
@@ -128,21 +131,33 @@ export function remapExtrasPush(
  * `path-map.json` without an `extras` key, or a missing `shared/extras/`, both
  * produce a clean no-op.
  *
+ * `.planning` extras use an overlay-then-delete-propagation model:
+ * `copyExtrasOverlay` (no upfront rmSync) keeps local-only files alive, and
+ * the optional `prePostHeads` pair drives a targeted delete pass based on
+ * `git diff --name-status -z <pre> <post>`. Without `prePostHeads` (fresh
+ * clone / unborn HEAD), only the overlay runs and nothing is deleted.
+ *
  * @param ts - backup timestamp namespace.
- * @param opts.dryRun - when `true`, collect `wouldPull` without mutating.
+ * @param opts.dryRun - when `true`, collect `wouldPull` without mutating; no
+ *   overlay, no git diff, no deletes.
+ * @param opts.prePostHeads - pre/post-rebase REPO_HOME HEADs captured by
+ *   `cmdPull`; drives the upstream-deletion propagation for `.planning` extras.
+ *   When absent, the delete pass is skipped entirely.
  */
 export function remapExtrasPull(
   ts: string,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; prePostHeads?: { pre: string; post: string } } = {},
 ): ExtrasCounts & { pulled: string[]; wouldPull: string[] } {
   const dryRun = opts.dryRun === true;
+  const { prePostHeads } = opts;
   const v = loadValidatedExtras({
     requireRepoExtras: true,
     missingMsg: 'no path-map or repo extras dir; skipping extras remap',
   });
   if (v === null) return { unmapped: 0, skipped: 0, pulled: [], wouldPull: [] };
 
-  const repoExtras = join(repoHome(), 'shared', 'extras');
+  const repo = repoHome();
+  const repoExtras = join(repo, 'shared', 'extras');
   const { unmapped, skipped, done, would } = runExtrasOp(
     v,
     dryRun,
@@ -153,19 +168,46 @@ export function remapExtrasPull(
     // Snapshot the host-side dst BEFORE copyExtras clobbers it. Anchor on
     // localRoot so the backup tree mirrors the project layout.
     (dst, localRoot) => backupExtrasWrite(dst, ts, localRoot),
-    // Pull routes `.claude` through copyExtrasFilteredPreserving so host-local
-    // deny-set files already on disk (e.g. settings.local.json) are preserved
-    // instead of being wiped by a blanket rmSync. The same deny-set filter still
-    // strips blocked basenames from the src copy (defense-in-depth: a repo
-    // poisoned out-of-band cannot restore a blocked per-host file). Synced
-    // non-deny files that are absent from src are still mirror-pruned. This
-    // preservation is `.claude`-only; `.planning` and `CLAUDE.md` use the
-    // exact-mirror copyExtras (documented restore semantics; they rarely carry
-    // host-local files, so the exact mirror is the correct default).
-    (src, dst, dirname) =>
-      dirname === '.claude'
-        ? copyExtrasFilteredPreserving(src, dst, extrasDenySet(dirname))
-        : copyExtras(src, dst),
+    // Pull routing per extra type:
+    //   `.claude`: copyExtrasFilteredPreserving preserves host-local deny-set
+    //     files (e.g. settings.local.json) while mirror-pruning synced entries.
+    //   `.planning`: copyExtrasOverlay (no rmSync) keeps local-only files; the
+    //     delete pass below propagates upstream removals via the git-diff D set.
+    //   All others: copyExtras (exact mirror; rarely carry host-local files).
+    (src, dst, dirname) => {
+      if (dirname === '.claude')
+        return copyExtrasFilteredPreserving(src, dst, extrasDenySet(dirname));
+      if (dirname === '.planning') return copyExtrasOverlay(src, dst);
+      return copyExtras(src, dst);
+    },
   );
+
+  // Delete-propagation pass for .planning: run the git-diff D set against
+  // each target's localRoot to remove files deleted upstream. This runs after
+  // the overlay so the copy and the delete are both visible in the same
+  // invocation. Skipped entirely on dryRun (zero-mutation contract) and when
+  // prePostHeads is absent (fresh clone / no pre-state).
+  if (!dryRun && prePostHeads !== undefined) {
+    for (const t of eachExtrasTarget(v, { unmapped: 0, skipped: 0 })) {
+      if (t.dirname !== '.planning') continue;
+      const raw = gitCaptureRaw(
+        [
+          'diff',
+          '--name-status',
+          '-z',
+          prePostHeads.pre,
+          prePostHeads.post,
+          '--',
+          `shared/extras/${t.logical}/.planning/`,
+        ],
+        repo,
+      );
+      const targets = planningDeleteTargets({ raw, logical: t.logical, localRoot: t.localRoot });
+      for (const target of targets) {
+        rmSync(target, { recursive: true, force: true });
+      }
+    }
+  }
+
   return { unmapped, skipped, pulled: done, wouldPull: would };
 }

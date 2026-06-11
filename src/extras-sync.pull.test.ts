@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -209,8 +210,8 @@ describe('remapExtrasPull (integration)', () => {
     expect(existsSync(backupOld)).toBe(true);
     expect(readFileSync(backupOld, 'utf8')).toBe('old\n');
 
-    // Mirror copy: old is gone, new is in place.
-    expect(existsSync(join(projectRoot, '.planning', 'old.md'))).toBe(false);
+    // Overlay: old.md survives (no delete pass without prePostHeads); new.md is added.
+    expect(existsSync(join(projectRoot, '.planning', 'old.md'))).toBe(true);
     expect(readFileSync(join(projectRoot, '.planning', 'new.md'), 'utf8')).toBe('new\n');
   });
 
@@ -306,13 +307,14 @@ describe('remapExtrasPull (integration)', () => {
     expect(existsSync(join(projectRoot, '.claude', 'settings.json'))).toBe(true);
   });
 
-  it('Test J (routing: .planning stays exact mirror): a pre-existing non-deny .planning file absent from src is removed', async () => {
-    // Confirm the non-.claude branch still uses copyExtras (exact mirror).
-    // A file present in dst/.planning but absent from src/.planning is removed.
+  it('Test J (routing: .planning uses overlay semantics): a local-only .planning file absent from src survives', async () => {
+    // Confirm the .planning branch uses copyExtrasOverlay (not copyExtras).
+    // A file present only in dst/.planning and absent from src/.planning is
+    // preserved by the overlay; without prePostHeads there is no delete pass.
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
     mkdirSync(join(projectRoot, '.planning'), { recursive: true });
-    writeFileSync(join(projectRoot, '.planning', 'stale-plan.md'), 'old\n');
+    writeFileSync(join(projectRoot, '.planning', 'local-only.md'), 'local work\n');
     writeFileSync(
       mapPath,
       JSON.stringify({
@@ -324,9 +326,12 @@ describe('remapExtrasPull (integration)', () => {
     const { remapExtrasPull } = await import('./extras-sync.ts');
     remapExtrasPull('20260608-j');
 
-    // Exact mirror: stale-plan.md absent from src is gone.
-    expect(existsSync(join(projectRoot, '.planning', 'stale-plan.md'))).toBe(false);
-    // Repo file is present.
+    // Overlay: local-only.md absent from src is preserved (no delete pass without prePostHeads).
+    expect(existsSync(join(projectRoot, '.planning', 'local-only.md'))).toBe(true);
+    expect(readFileSync(join(projectRoot, '.planning', 'local-only.md'), 'utf8')).toBe(
+      'local work\n',
+    );
+    // Repo file is also present.
     expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
   });
 
@@ -384,5 +389,237 @@ describe('remapExtrasPull (integration)', () => {
     expect(readFileSync(backupOld, 'utf8')).toBe('# original rules\n');
 
     expect(readFileSync(join(projectRoot, 'CLAUDE.md'), 'utf8')).toBe('# replacement rules\n');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TDD acceptance tests: overlay + delete-propagation via prePostHeads
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: run a git command with explicit cwd; throws on non-zero exit.
+ *
+ * @param args Git arguments.
+ * @param cwd Working directory.
+ */
+function git(args: string[], cwd: string): void {
+  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+/**
+ * Helper: capture trimmed stdout of a git command.
+ *
+ * @param args Git arguments.
+ * @param cwd Working directory.
+ * @returns Trimmed stdout string.
+ */
+function gitOut(args: string[], cwd: string): string {
+  return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    .toString()
+    .trim();
+}
+
+describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', () => {
+  let originalHome: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoDir: string;
+  let sharedExtras: string;
+  let projectRoot: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-extras-pull-heads-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoDir = join(testHome, 'claude-nomad');
+    process.env.NOMAD_REPO = repoDir;
+    sharedExtras = join(repoDir, 'shared', 'extras');
+    projectRoot = join(testHome, 'fake-project');
+    mkdirSync(sharedExtras, { recursive: true });
+    mkdirSync(projectRoot, { recursive: true });
+
+    // Initialise a real git repo in repoDir so rev-parse and git diff work.
+    git(['init', '-q', '-b', 'main'], repoDir);
+    git(['config', 'user.email', 'test@example.invalid'], repoDir);
+    git(['config', 'user.name', 'test'], repoDir);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('TDD-1: local-only .planning file absent from repo survives remapExtrasPull', async () => {
+    // A file git never tracked is in neither the diff nor the repo tree.
+    // Even with prePostHeads provided (empty diff), it must survive.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    // Commit one file so pre-rebase HEAD is valid.
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'base'], repoDir);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
+    const post = pre; // no change; diff is empty
+
+    // Seed a local-only file not tracked by git.
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'local-only.md'), 'my local work\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull('20260611-tdd1', { prePostHeads: { pre, post } });
+
+    expect(existsSync(join(projectRoot, '.planning', 'local-only.md'))).toBe(true);
+    expect(readFileSync(join(projectRoot, '.planning', 'local-only.md'), 'utf8')).toBe(
+      'my local work\n',
+    );
+    // Repo file also copied.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
+  });
+
+  it('TDD-2: upstream-deleted .planning file IS removed locally via prePostHeads diff', async () => {
+    // Commit a .planning file (pre state), then git rm + commit it (post state).
+    // remapExtrasPull with { pre, post } must remove the file from localRoot.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'DELETE-ME.md'), 'will be deleted\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'add planning files'], repoDir);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    // Simulate upstream deletion: git rm + commit.
+    git(['rm', '-q', join('shared', 'extras', 'foo', '.planning', 'DELETE-ME.md')], repoDir);
+    // Also remove the file from disk (git rm did that).
+    git(['commit', '-q', '-m', 'delete DELETE-ME.md'], repoDir);
+    const post = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    // Seed the local .planning directory with the file (it was there before pull).
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(projectRoot, '.planning', 'DELETE-ME.md'), 'will be deleted\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    // Restore the file in shared/extras for the overlay copy (post-rebase state).
+    // In a real pull the src is the post-rebase repo; here we must ensure the
+    // overlay src only has PLAN.md (DELETE-ME.md was git-rm'd).
+    // The repo disk already removed DELETE-ME.md via git rm; src is correct.
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull('20260611-tdd2', { prePostHeads: { pre, post } });
+
+    // TDD acceptance 2: upstream-deleted file is removed from localRoot.
+    expect(existsSync(join(projectRoot, '.planning', 'DELETE-ME.md'))).toBe(false);
+    // Non-deleted file survives.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
+  });
+
+  it('TDD-3: first-ever pull (no prePostHeads) overlays only and deletes nothing', async () => {
+    // Without prePostHeads the delete pass is skipped entirely.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'local-only.md'), 'never tracked\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    // No prePostHeads: first-ever pull / no pre-state.
+    remapExtrasPull('20260611-tdd3');
+
+    // Local-only file survives (no delete pass).
+    expect(existsSync(join(projectRoot, '.planning', 'local-only.md'))).toBe(true);
+    // Repo file copied.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
+  });
+
+  it('TDD-4: dryRun skips overlay and delete pass (zero-mutation contract)', async () => {
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const result = remapExtrasPull('20260611-tdd4', {
+      dryRun: true,
+      prePostHeads: { pre: 'abc', post: 'def' },
+    });
+
+    // dryRun: nothing written to localRoot, would-list populated.
+    expect(existsSync(join(projectRoot, '.planning'))).toBe(false);
+    expect(result.wouldPull).toContain('foo/.planning');
+    expect(result.pulled).toHaveLength(0);
+  });
+
+  it('TDD-5: non-.planning extras in the delete-pass loop are skipped (branch coverage)', async () => {
+    // When a project has both .planning and CLAUDE.md extras, the delete-pass
+    // loop skips CLAUDE.md (dirname !== .planning) and only processes .planning.
+    // This covers the `if (t.dirname !== '.planning') continue` branch.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'DELETE-ME.md'), 'gone\n');
+    mkdirSync(join(sharedExtras, 'foo'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# rules\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'initial'], repoDir);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    // Delete DELETE-ME.md upstream.
+    git(['rm', '-q', join('shared', 'extras', 'foo', '.planning', 'DELETE-ME.md')], repoDir);
+    git(['commit', '-q', '-m', 'delete DELETE-ME.md'], repoDir);
+    const post = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    // Seed both extras locally.
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(projectRoot, '.planning', 'DELETE-ME.md'), 'gone\n');
+    writeFileSync(join(projectRoot, 'CLAUDE.md'), '# original rules\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning', 'CLAUDE.md'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull('20260611-tdd5', { prePostHeads: { pre, post } });
+
+    // DELETE-ME.md removed by the .planning delete pass.
+    expect(existsSync(join(projectRoot, '.planning', 'DELETE-ME.md'))).toBe(false);
+    // PLAN.md and CLAUDE.md survive.
+    expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
+    expect(existsSync(join(projectRoot, 'CLAUDE.md'))).toBe(true);
   });
 });
