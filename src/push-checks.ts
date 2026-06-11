@@ -23,6 +23,7 @@ import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
+import { classifyWedge } from './commands.pull.wedge.ts';
 import { NomadFatal } from './utils.ts';
 
 /**
@@ -143,9 +144,49 @@ export function probeGitleaks(): string {
 }
 
 /**
+ * Build the wedge preflight message for a given WedgeState. Extracted to keep
+ * `rebaseBeforePush` under the cognitive-complexity-15 gate.
+ *
+ * - `'unmerged-index'`: names `git reset --mixed HEAD` and the autostash
+ *   runbook, then points at `nomad pull --force-remote` for auto-recovery.
+ * - `'rebase'` / `'merge'`: names the in-progress state and points at
+ *   `nomad pull --force-remote` (mirrors the pull-side `handleWedge` wording).
+ *
+ * Push has no `--force-remote` of its own (D-6); recovery lives on the pull
+ * side only.
+ */
+function wedgePreflight(wedge: NonNullable<ReturnType<typeof classifyWedge>>): string {
+  if (wedge === 'unmerged-index') {
+    return (
+      'repo has an unmerged index with no active rebase or merge in progress ' +
+      '(torn-down rebase left stage-2/3 entries behind).\n\n' +
+      'Manual recovery:\n' +
+      '  1. git reset --mixed HEAD   (clears the stuck index; preserves working-tree files)\n' +
+      '  2. git stash list           (look for an orphaned autostash entry)\n' +
+      '     git stash pop            (restore the autostash) or\n' +
+      '     git stash drop           (discard it)\n' +
+      '  3. nomad push\n\n' +
+      "Auto-recover: run 'nomad pull --force-remote' to apply step 1 automatically\n" +
+      '(see FAQ: "Every pull fails with unmerged files")'
+    );
+  }
+  const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
+  return (
+    `repo is ${state} from a previous failed pull; ` +
+    `run 'nomad pull --force-remote' to auto-recover, ` +
+    `or resolve manually (see FAQ: "Every pull fails with unmerged files")`
+  );
+}
+
+/**
  * Run `git pull --rebase --autostash` in REPO_HOME before push.
  * The `--autostash` absorbs dirty trees (in-progress path-map.json edits,
  * host overrides) so users do not need to commit-or-stash first.
+ *
+ * Before the rebase, runs a wedge preflight via `classifyWedge`: if the repo
+ * is already wedged (unmerged index, mid-rebase, or mid-merge), throws
+ * NomadFatal with a runbook BEFORE any git mutation. Push has no
+ * `--force-remote`; auto-recovery is always `nomad pull --force-remote` (D-6).
  *
  * On failure, forwards git's stderr so the user sees the actual reason
  * (conflict, no-upstream, unreachable remote, auth failure, etc.), then
@@ -162,6 +203,8 @@ export function probeGitleaks(): string {
  * @param repo Repo root resolved once by the calling command.
  */
 export function rebaseBeforePush(repo: string): void {
+  const wedge = classifyWedge(repo);
+  if (wedge !== null) throw new NomadFatal(wedgePreflight(wedge));
   try {
     execFileSync('git', ['pull', '--rebase', '--autostash'], {
       cwd: repo,

@@ -1,4 +1,13 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -359,18 +368,22 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
   });
 
   it('rebaseBeforePush throws without forwarding stderr when the error carries no stderr buffer', async () => {
-    // Cover the line-172 falsey branch (`if (e.stderr)` false). git fails
-    // with no captured stderr (e.g., signal-killed before output). The
-    // FATAL fires with the standard rebase message and no spurious stderr
-    // forwarding lands.
-    // Kills the ConditionalExpression->true mutation on line 172: with true,
-    // `process.stderr.write(undefined)` is called even when e.stderr is absent.
+    // Cover the falsey `if (e.stderr)` branch. git fails with no captured stderr
+    // (e.g., signal-killed before output). The FATAL fires with the standard rebase
+    // message and no spurious stderr forwarding lands.
+    // The classifyWedge probe (git diff --diff-filter=U) must return empty so the
+    // preflight passes and the git pull --rebase call is the one that throws.
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
-          // Throw an error with NO .stderr property.
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const argv = args ?? [];
+          // classifyWedge probe: git diff --diff-filter=U -> empty (no unmerged entries).
+          if (argv[0] === 'diff' && argv.includes('--diff-filter=U')) return Buffer.from('');
+          // git stash list (orphanedAutostashPresent) -> empty (no autostash).
+          if (argv[0] === 'stash' && argv[1] === 'list') return Buffer.from('');
+          // git pull --rebase: throw with NO .stderr property.
           throw new Error('git terminated');
         }),
       };
@@ -379,8 +392,6 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     const stderrCallCountBefore = stderrSpy.mock.calls.length;
     expect(() => rebaseBeforePush('/repo')).toThrow(/rebase failed/);
     // process.stderr.write must NOT have been called at all (no stderr to forward).
-    // This assertion is stricter than checking for non-empty content; it catches the
-    // ConditionalExpression->true mutation which calls write(undefined).
     const stderrCallsAfter = stderrSpy.mock.calls.slice(stderrCallCountBefore);
     expect(stderrCallsAfter.length).toBe(0);
   });
@@ -401,11 +412,19 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
   });
 
   it('rebaseBeforePush throws NomadFatal with corrected wording on conflict and forwards stderr', async () => {
+    // The classifyWedge probe must return empty (clean repo) so the preflight passes
+    // and the conflict surfaces from git pull --rebase (the existing behavior).
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const argv = args ?? [];
+          // classifyWedge probe: git diff --diff-filter=U -> empty (clean index).
+          if (argv[0] === 'diff' && argv.includes('--diff-filter=U')) return Buffer.from('');
+          // git stash list -> empty.
+          if (argv[0] === 'stash' && argv[1] === 'list') return Buffer.from('');
+          // git pull --rebase: throw conflict error with stderr.
           const err = new Error('Command failed') as NodeJS.ErrnoException & {
             stderr?: Buffer;
           };
@@ -538,5 +557,125 @@ describe('gitleaksInstallHint (platform-aware install scaffold)', () => {
     expect(out).toContain('https://github.com/gitleaks/gitleaks/releases');
     expect(out).not.toContain('brew install');
     expect(out).not.toMatch(/mkdir -p ~\/\.local\/bin/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Real-git helpers for rebaseBeforePush wedge preflight tests
+// ---------------------------------------------------------------------------
+
+/** Create a real git repo at `dir` with user identity configured. */
+function initPushTestRepo(dir: string): void {
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir });
+  execFileSync('git', ['config', 'user.name', 'test'], { cwd: dir });
+}
+
+/** Write and commit a file in the repo. */
+function makePushTestCommit(repo: string, file: string, content: string, message: string): void {
+  writeFileSync(join(repo, file), content);
+  execFileSync('git', ['add', file], { cwd: repo });
+  execFileSync('git', ['commit', '-q', '-m', message], { cwd: repo });
+}
+
+/**
+ * Build a repo with unmerged stage-2/3 index entries but NO active
+ * rebase/merge marker (the torn-down-rebase dead end from Phase 51 D-1).
+ */
+function buildPushUnmergedIndex(dir: string): void {
+  initPushTestRepo(dir);
+  makePushTestCommit(dir, 'f.txt', 'base\n', 'base');
+  execFileSync('git', ['checkout', '-q', '-b', 'br'], { cwd: dir });
+  makePushTestCommit(dir, 'f.txt', 'branch-val\n', 'branch');
+  execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir });
+  makePushTestCommit(dir, 'f.txt', 'main-val\n', 'main');
+  try {
+    execFileSync('git', ['merge', '--no-commit', 'br'], {
+      cwd: dir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    // Expected conflict.
+  }
+  // Tear down the merge marker, leaving the unmerged index entries.
+  for (const marker of ['MERGE_HEAD', 'MERGE_MODE', 'MERGE_MSG']) {
+    try {
+      unlinkSync(join(dir, '.git', marker));
+    } catch {
+      // May not exist.
+    }
+  }
+}
+
+describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-push-wedge-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('throws NomadFatal on an unmerged-index repo BEFORE reaching git pull --rebase', async () => {
+    // Build the torn-down-rebase fixture: index is unmerged, no marker.
+    buildPushUnmergedIndex(tmp);
+    const { rebaseBeforePush } = await import('./push-checks.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // Must throw NomadFatal (preflight, not a post-rebase conflict).
+    expect(() => rebaseBeforePush(tmp)).toThrow(NomadFatal);
+    // Must name the manual recovery step.
+    expect(() => rebaseBeforePush(tmp)).toThrow(/git reset --mixed HEAD/);
+    // Must point at the pull-side auto-recovery (push has no --force-remote).
+    expect(() => rebaseBeforePush(tmp)).toThrow(/nomad pull --force-remote/);
+  });
+
+  it('throws NomadFatal on a mid-rebase repo pointing at nomad pull --force-remote', async () => {
+    // A repo with .git/rebase-merge present (mid-rebase state).
+    initPushTestRepo(tmp);
+    makePushTestCommit(tmp, 'a.ts', 'x\n', 'init');
+    mkdirSync(join(tmp, '.git', 'rebase-merge'));
+    const { rebaseBeforePush } = await import('./push-checks.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => rebaseBeforePush(tmp)).toThrow(NomadFatal);
+    expect(() => rebaseBeforePush(tmp)).toThrow(/mid-rebase/);
+    expect(() => rebaseBeforePush(tmp)).toThrow(/nomad pull --force-remote/);
+  });
+
+  it('throws NomadFatal on a mid-merge repo pointing at nomad pull --force-remote', async () => {
+    // A repo with .git/MERGE_HEAD present (mid-merge state).
+    initPushTestRepo(tmp);
+    makePushTestCommit(tmp, 'a.ts', 'x\n', 'init');
+    writeFileSync(join(tmp, '.git', 'MERGE_HEAD'), 'deadbeef\n');
+    const { rebaseBeforePush } = await import('./push-checks.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => rebaseBeforePush(tmp)).toThrow(NomadFatal);
+    expect(() => rebaseBeforePush(tmp)).toThrow(/mid-merge/);
+    expect(() => rebaseBeforePush(tmp)).toThrow(/nomad pull --force-remote/);
+  });
+
+  it('does not fire the wedge preflight on a clean committed repo (classifyWedge returns null)', async () => {
+    // A clean repo: classifyWedge returns null so the preflight must not throw.
+    // The git pull --rebase that follows will fail for lack of a remote/upstream --
+    // that's the existing post-preflight behavior. We assert the thrown error is
+    // the generic "rebase failed" message, NOT the wedge preflight message.
+    initPushTestRepo(tmp);
+    makePushTestCommit(tmp, 'a.ts', 'x\n', 'init');
+    const { rebaseBeforePush } = await import('./push-checks.ts');
+    // No remote: git pull --rebase fails after the preflight passes.
+    // The error must be the generic post-rebase message, not the wedge message.
+    let thrown: Error | null = null;
+    try {
+      rebaseBeforePush(tmp);
+    } catch (err) {
+      thrown = err as Error;
+    }
+    expect(thrown).not.toBeNull();
+    // Must be the generic rebase-failed message (preflight passed).
+    expect(thrown?.message).toMatch(/rebase failed/);
+    // Must NOT be the wedge preflight messages.
+    expect(thrown?.message).not.toMatch(/git reset --mixed HEAD/);
+    expect(thrown?.message).not.toMatch(/mid-rebase|mid-merge/);
   });
 });
