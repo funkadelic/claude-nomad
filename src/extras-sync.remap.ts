@@ -155,7 +155,12 @@ function deletePlanningTarget(target: string, planningRoot: string, repoCounterp
   const parentReal = tryRealpath(dirname(target));
   if (parentReal === undefined) return; // parent gone; target already missing
   const rootReal = tryRealpath(planningRoot);
+  /* c8 ignore start */
+  // Architecturally unreachable: if parentReal is defined, planningRoot (an
+  // ancestor of dirname(target)) must also exist, so rootReal is always
+  // defined at this point. Guard kept as defense-in-depth.
   if (rootReal === undefined) return; // planning root gone; nothing to do
+  /* c8 ignore stop */
   if (!isInsidePlanningRoot(parentReal, rootReal)) return;
 
   rmSync(target, { recursive: true, force: true });
