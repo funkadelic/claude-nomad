@@ -118,6 +118,25 @@ export const HOST = (process.env.NOMAD_HOST || hostname()).toLowerCase();
 export const SHARED_LINKS = ['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs'] as const;
 
 /**
+ * Ownership prefix shared by every gsd-installed skill, agent, and hook script.
+ * Detection is prefix-only: any name starting with `gsd-` is gsd-owned (covers
+ * all gsd skills/agents/hook scripts; the user-authored skills are unprefixed).
+ * Single source of truth for the gsd-ownership signal; consumed by
+ * `isGsdOwned`/`isSkillExcluded` in `skills-sync.ts`.
+ */
+export const GSD_PREFIX = 'gsd-';
+
+/**
+ * Names previously in `SHARED_LINKS` that gsd (`@opengsd/gsd-core`) now owns
+ * per-host (see the `SHARED_LINKS` comment for why they were dropped). A
+ * leftover symlink at `~/.claude/<name>` is a pre-phase-50 migration artefact
+ * the doctor probe flags. Co-located with `SHARED_LINKS` and `GSD_PREFIX` so the
+ * gsd-ownership model lives in one module; consumed by
+ * `reportDroppedNamesMigration` in `commands.doctor.checks.repo.ts`.
+ */
+export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
+
+/**
  * Returns the union of `SHARED_LINKS` and any validated entries from
  * `map.sharedDirs`. Entries that fail the `isValidSharedDir` guard (path
  * separators, NEVER_SYNC names, reserved shared/ names) are dropped with a

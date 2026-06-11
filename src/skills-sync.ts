@@ -1,12 +1,9 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ALWAYS_NEVER_SYNC, claudeHome, repoHome } from './config.ts';
+import { ALWAYS_NEVER_SYNC, claudeHome, GSD_PREFIX, repoHome } from './config.ts';
 import { copyExtrasFiltered, copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
-
-/** The ownership prefix shared by all gsd-installed skills, agents, and hook scripts. */
-const GSD_PREFIX = 'gsd-';
 
 /**
  * Returns `true` when a skill (or agent/hook) basename is owned by gsd rather

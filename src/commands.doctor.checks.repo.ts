@@ -13,7 +13,14 @@ import {
   warnGlyph,
   yellow,
 } from './color.ts';
-import { allSharedLinks, claudeHome, HOST, repoHome, type PathMap } from './config.ts';
+import {
+  allSharedLinks,
+  claudeHome,
+  GSD_DROPPED_NAMES,
+  HOST,
+  repoHome,
+  type PathMap,
+} from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 
@@ -188,14 +195,6 @@ export function reportSharedLinks(section: DoctorSection, map: PathMap): void {
     if (fail) process.exitCode = 1;
   }
 }
-
-/**
- * Names that were previously in SHARED_LINKS but are now owned per-host by gsd
- * (`@opengsd/gsd-core`). These dirs must not be symlinked into the repo; gsd
- * installs them directly. A leftover symlink from the old symlink era is a
- * migration artefact: the user should remove it and let gsd reinstall a real dir.
- */
-const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
 
 /**
  * Non-destructive migration probe for dirs that were dropped from SHARED_LINKS.
