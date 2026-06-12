@@ -3,7 +3,7 @@ title: GSD-aware sync
 description: What nomad does for GSD users out of the box, from .planning overlay sync to gsd-owned hook exclusion.
 ---
 
-If you use [GSD (`@opengsd/gsd-core`)](https://www.npmjs.com/package/@opengsd/gsd-core) alongside
+If you use [gsd-core (`@opengsd/gsd-core`)](https://opengsd.net/products/gsd-core) alongside
 claude-nomad, several sync behaviors are wired specifically for you, and they are active without
 any extra configuration.
 
