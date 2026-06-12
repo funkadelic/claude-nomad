@@ -23,10 +23,14 @@ function isWarnLine(item: string): boolean {
 /**
  * Build the Summary section from every section rendered before it. Repeats
  * each WARN/FAIL line verbatim (child-marker stripped so repeated lines render
- * flat), then closes with the verdict line:
- *   - `✗ N failure(s), M warning(s)` when any FAIL line exists
- *   - `⚠︎ M warning(s)` when only WARN lines exist
- *   - `✓ healthy` when neither
+ * flat), then closes with the verdict line. The count verdicts carry NO status
+ * glyph (only severity color) so the tally does not read as one more finding
+ * row; the repeated WARN/FAIL rows above it keep their glyphs, so the doubled
+ * glyph count for actual problems is unchanged:
+ *   - `N failure(s), M warning(s)` (red) when any FAIL line exists
+ *   - `M warning(s)` (yellow) when only WARN lines exist
+ *   - `✓ healthy` when neither (the only Summary row, so it cannot be mistaken
+ *     for a finding)
  */
 export function buildVerdictSection(sections: DoctorSection[]): DoctorSection {
   const summary = section('Summary');
@@ -35,12 +39,9 @@ export function buildVerdictSection(sections: DoctorSection[]): DoctorSection {
   const warnings = lines.filter(isWarnLine);
   for (const line of [...failures, ...warnings]) addItem(summary, line);
   if (failures.length > 0) {
-    addItem(
-      summary,
-      `${red(failGlyph)} ${failures.length} failure(s), ${warnings.length} warning(s)`,
-    );
+    addItem(summary, red(`${failures.length} failure(s), ${warnings.length} warning(s)`));
   } else if (warnings.length > 0) {
-    addItem(summary, `${yellow(warnGlyph)} ${warnings.length} warning(s)`);
+    addItem(summary, yellow(`${warnings.length} warning(s)`));
   } else {
     addItem(summary, `${green(okGlyph)} healthy`);
   }

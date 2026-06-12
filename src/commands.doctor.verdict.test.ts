@@ -20,10 +20,7 @@ describe('buildVerdictSection', () => {
     addItem(a, `${okGlyph} fine`);
     addItem(a, `${warnGlyph} drifting (run nomad update)`);
     const summary = buildVerdictSection([a]);
-    expect(summary.items).toEqual([
-      `${warnGlyph} drifting (run nomad update)`,
-      `${warnGlyph} 1 warning(s)`,
-    ]);
+    expect(summary.items).toEqual([`${warnGlyph} drifting (run nomad update)`, `1 warning(s)`]);
   });
 
   it('lists failures before warnings and closes with both counts', () => {
@@ -35,7 +32,7 @@ describe('buildVerdictSection', () => {
     expect(summary.items).toEqual([
       `${failGlyph} hard problem`,
       `${warnGlyph} soft problem`,
-      `${failGlyph} 1 failure(s), 1 warning(s)`,
+      `1 failure(s), 1 warning(s)`,
     ]);
   });
 
@@ -52,6 +49,6 @@ describe('buildVerdictSection', () => {
     const a = section('A');
     addItem(a, `${failGlyph} broke while warning ${warnGlyph}`);
     const summary = buildVerdictSection([a]);
-    expect(summary.items[summary.items.length - 1]).toBe(`${failGlyph} 1 failure(s), 0 warning(s)`);
+    expect(summary.items[summary.items.length - 1]).toBe(`1 failure(s), 0 warning(s)`);
   });
 });
