@@ -54,12 +54,12 @@
 
   <text x="648" y="212" class="mono-muted">host: <tspan class="mono">macbook</tspan></text>
 
-  <text x="648" y="248" class="mono-green">✓<tspan class="mono">  CLAUDE.md</tspan><tspan class="mono-muted" x="980" y="248">symlink OK</tspan></text>
-  <text x="648" y="272" class="mono-green">✓<tspan class="mono">  agents/</tspan><tspan class="mono-muted" x="980" y="272">symlink OK</tspan></text>
-  <text x="648" y="296" class="mono-green">✓<tspan class="mono">  commands/</tspan><tspan class="mono-muted" x="980" y="296">symlink OK</tspan></text>
-  <text x="648" y="320" class="mono-green">✓<tspan class="mono">  hooks/</tspan><tspan class="mono-muted" x="980" y="320">symlink OK</tspan></text>
-  <text x="648" y="344" class="mono-green">✓<tspan class="mono">  rules/</tspan><tspan class="mono-muted" x="980" y="344">symlink OK</tspan></text>
-  <text x="648" y="368" class="mono-green">✓<tspan class="mono">  skills/</tspan><tspan class="mono-muted" x="980" y="368">symlink OK</tspan></text>
+  <text x="648" y="248" class="mono-green">✓<tspan class="mono">  CLAUDE.md</tspan><tspan class="mono-muted" x="980" y="248">synced</tspan></text>
+  <text x="648" y="272" class="mono-green">✓<tspan class="mono">  commands/</tspan><tspan class="mono-muted" x="980" y="272">synced</tspan></text>
+  <text x="648" y="296" class="mono-green">✓<tspan class="mono">  rules/</tspan><tspan class="mono-muted" x="980" y="296">synced</tspan></text>
+  <text x="648" y="320" class="mono-green">✓<tspan class="mono">  skills/</tspan><tspan class="mono-muted" x="980" y="320">synced</tspan></text>
+  <text x="648" y="344" class="mono-green">✓<tspan class="mono">  settings.json</tspan><tspan class="mono-muted" x="980" y="344">merged</tspan></text>
+  <text x="648" y="368" class="mono-green">✓<tspan class="mono">  my-statusline</tspan><tspan class="mono-muted" x="980" y="368">synced</tspan></text>
 
   <text x="648" y="402" class="mono-muted">projects: <tspan class="mono">4 mapped</tspan>, sessions: <tspan class="mono">47 remapped</tspan></text>
 
