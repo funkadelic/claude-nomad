@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.50.1](https://github.com/funkadelic/claude-nomad/compare/v0.50.0...v0.50.1) (2026-06-12)
+
+
+### Changed
+
+* **doctor:** tidy summary verdict and dependency-version lines ([#289](https://github.com/funkadelic/claude-nomad/issues/289)) ([43d38a7](https://github.com/funkadelic/claude-nomad/commit/43d38a7bbf1780cd0e1e1b5e6bd85f9d75de7630))
+
+
+### Documentation
+
+* **hero:** plain-language status rows, drop gsd-owned files ([#291](https://github.com/funkadelic/claude-nomad/issues/291)) ([c144b0d](https://github.com/funkadelic/claude-nomad/commit/c144b0d01eea801d39b012ad3d4b3780d2ffafd1))
+* **how-it-works:** use neutral sharedDirs example, not a gsd dir ([#292](https://github.com/funkadelic/claude-nomad/issues/292)) ([e000ecf](https://github.com/funkadelic/claude-nomad/commit/e000ecf67e814855d09c664b9dae6ce5d8287a97))
+* **recipes:** add recipes page with example configs ([#293](https://github.com/funkadelic/claude-nomad/issues/293)) ([c339372](https://github.com/funkadelic/claude-nomad/commit/c3393723062bd9e639acff31e5236a9ff2ac2802))
+
 ## [0.50.0](https://github.com/funkadelic/claude-nomad/compare/v0.49.0...v0.50.0) (2026-06-11)
 
 
