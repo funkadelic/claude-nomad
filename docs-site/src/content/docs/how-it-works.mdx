@@ -71,7 +71,7 @@ What `~/claude-nomad/` looks like on a configured host:
 | **Generated** | `settings.json` | Deep-merge of `settings.base.json` with `hosts/<hostname>.json`; rewritten every pull. |
 | **Remapped** | `projects/` session transcripts | Copied with path translation per `path-map.json`. |
 | **Per-project extras** | Whitelisted dirs like `.planning/` or a project's own `<repo>/.claude/`, or a root file like `CLAUDE.md` | Opt-in via the `extras` field in `path-map.json`; copied to/from `shared/extras/<logical>/`. `.planning` syncs as an additive overlay (repo-only and local-only files survive); `.claude` keeps host-local files on pull; other extras mirror. |
-| **Shared support dirs** | Opt-in global `~/.claude/` dirs like a tool's `get-shit-done/` | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. |
+| **Shared support dirs** | Opt-in global `~/.claude/` dirs that another tool installs (e.g. `my-tool/`) | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. |
 | **gsd-owned (not synced)** | `hooks/`, `agents/` | Installed per-host by `@opengsd/gsd-core` via npm. Not synced; syncing them caused cross-host churn when two machines ran different gsd versions. |
 | **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
 | **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
@@ -239,7 +239,7 @@ field in `path-map.json` opts it into symlink sync:
       "<your-mac>": "/Users/you/code/my-example-repo"
     }
   },
-  "sharedDirs": ["get-shit-done"]
+  "sharedDirs": ["my-tool"]
 }
 ```
 
