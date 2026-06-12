@@ -63,7 +63,6 @@
   <text x="346" y="200" class="mono-green">✓<tspan class="mono">  rules/</tspan><tspan class="mono-muted" x="490" y="200">synced</tspan></text>
   <text x="346" y="215" class="mono-green">✓<tspan class="mono">  skills/</tspan><tspan class="mono-muted" x="490" y="215">synced</tspan></text>
   <text x="346" y="230" class="mono-green">✓<tspan class="mono">  settings.json</tspan><tspan class="mono-muted" x="490" y="230">merged</tspan></text>
-  <text x="346" y="245" class="mono-green">✓<tspan class="mono">  my-statusline</tspan><tspan class="mono-muted" x="490" y="245">synced</tspan></text>
 
   <text x="346" y="266" class="mono-muted">projects: <tspan class="mono">4 mapped</tspan>, sessions: <tspan class="mono">47 remapped</tspan></text>
 
