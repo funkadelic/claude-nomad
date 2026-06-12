@@ -156,6 +156,8 @@ version-staleness check and `nomad doctor --check-schema`. The CLI works without
   GSD users out of the box
 - [Setup and migration](https://funkadelic.github.io/claude-nomad/quickstart/) -- full setup
   walkthrough, migrating an existing `~/.claude/`
+- [Recipes](https://funkadelic.github.io/claude-nomad/recipes/) -- copy-pasteable example configs
+  for common setups, from scratch to cross-OS remapping and GSD integration
 - [Commands reference](https://funkadelic.github.io/claude-nomad/commands/) -- all CLI flags
 - [Claude Code plugin](https://funkadelic.github.io/claude-nomad/plugin/) -- /nomad slash commands
   and the session-start drift check
