@@ -128,7 +128,8 @@ describe('cmdDoctor node-engine check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${okGlyph} node: v22.22.1 (satisfies >=22.22.1)`);
+    expect(out).toContain(`${okGlyph} node: v22.22.1`);
+    expect(out).not.toContain('satisfies');
     expect(process.exitCode === 1).toBe(false);
   });
 
@@ -140,7 +141,7 @@ describe('cmdDoctor node-engine check', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor();
     const out = joinedLog(env.logSpy);
-    expect(out).toContain(`${okGlyph} node: v24.0.0 (satisfies >=22.22.1)`);
+    expect(out).toContain(`${okGlyph} node: v24.0.0`);
     expect(process.exitCode === 1).toBe(false);
   });
 
