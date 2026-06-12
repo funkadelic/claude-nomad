@@ -41,7 +41,7 @@
 <text x="40" y="135" class="tag-white">Sync your Claude Code setup.</text>
 <text x="40" y="158" class="tag-green">Same environment. Any machine.</text>
 
-<text x="40" y="195" class="sub">Agents, skills, commands, rules, hooks, settings,</text>
+<text x="40" y="195" class="sub">CLAUDE.md, skills, commands, rules, settings,</text>
 <text x="40" y="212" class="sub">and session history <tspan class="sub-green">- synced to every host.</tspan></text>
 
 <g transform="translate(0, -25)">

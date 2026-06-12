@@ -37,7 +37,7 @@
 <text x="52" y="296" class="tag-green">Same environment. Any machine.</text>
 
 <!-- subtext -->
-<text x="52" y="362" class="sub">Agents, skills, commands, rules, hooks, settings,</text>
+<text x="52" y="362" class="sub">CLAUDE.md, skills, commands, rules, settings,</text>
 <text x="52" y="396" class="sub">and session history <tspan class="sub-green">- synced to every host.</tspan></text>
 
 <!-- terminal window -->
