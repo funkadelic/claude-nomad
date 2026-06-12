@@ -15,43 +15,40 @@ describe('buildVerdictSection', () => {
     expect(summary.items).toEqual([`${okGlyph} healthy`]);
   });
 
-  it('repeats WARN lines and closes with the warning count when no failures exist', () => {
+  it('leads with the warning count and nests each WARN line beneath it', () => {
     const a = section('A');
     addItem(a, `${okGlyph} fine`);
     addItem(a, `${warnGlyph} drifting (run nomad update)`);
     const summary = buildVerdictSection([a]);
-    expect(summary.items).toEqual([
-      `${warnGlyph} drifting (run nomad update)`,
-      `${warnGlyph} 1 warning(s)`,
-    ]);
+    expect(summary.items).toEqual([`1 warning(s)`, `\t${warnGlyph} drifting (run nomad update)`]);
   });
 
-  it('lists failures before warnings and closes with both counts', () => {
+  it('leads with both counts and nests failures before warnings', () => {
     const a = section('A');
     addItem(a, `${warnGlyph} soft problem`);
     const b = section('B');
     addItem(b, `${failGlyph} hard problem`);
     const summary = buildVerdictSection([a, b]);
     expect(summary.items).toEqual([
-      `${failGlyph} hard problem`,
-      `${warnGlyph} soft problem`,
-      `${failGlyph} 1 failure(s), 1 warning(s)`,
+      `1 failure(s), 1 warning(s)`,
+      `\t${failGlyph} hard problem`,
+      `\t${warnGlyph} soft problem`,
     ]);
   });
 
-  it('strips the child-item marker so repeated nested problems render flat', () => {
+  it('nests each finding exactly one level under the verdict, even when nested in its source', () => {
     const a = section('A');
     addItem(a, 'parent');
     addChildItem(a, `${warnGlyph} nested problem`);
     const summary = buildVerdictSection([a]);
-    expect(summary.items[0]).toBe(`${warnGlyph} nested problem`);
-    expect(summary.items[0].startsWith('\t')).toBe(false);
+    expect(summary.items[0]).toBe(`1 warning(s)`);
+    expect(summary.items[1]).toBe(`\t${warnGlyph} nested problem`);
   });
 
   it('counts a line carrying both glyphs as a failure, not a warning', () => {
     const a = section('A');
     addItem(a, `${failGlyph} broke while warning ${warnGlyph}`);
     const summary = buildVerdictSection([a]);
-    expect(summary.items[summary.items.length - 1]).toBe(`${failGlyph} 1 failure(s), 0 warning(s)`);
+    expect(summary.items[0]).toBe(`1 failure(s), 0 warning(s)`);
   });
 });

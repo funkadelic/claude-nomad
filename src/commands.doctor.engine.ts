@@ -9,7 +9,8 @@ import { compareSemver } from './commands.doctor.version.ts';
  * Soft host-fitness check appended to the Version section of `nomad doctor`.
  * Compares the running node version (`process.version`) to the minimum required
  * by `engines.node` in `package.json`, emitting one of:
- *   - `✓ node: vX.Y.Z (satisfies >=A.B.C)` when current >= required
+ *   - `✓ node: vX.Y.Z` when current >= required (the green glyph signals pass,
+ *     so the satisfied range is omitted as noise)
  *   - `⚠︎ node: vX.Y.Z (below required >=A.B.C, run \`nvm install\`)` when below
  * Every failure path (missing engines, unsupported range syntax, unreadable
  * `package.json`) is a SILENT skip; this module never sets `process.exitCode`
@@ -58,7 +59,7 @@ function readEnginesNode(): string | null {
  * comparing `process.version` to the minimum required by `engines.node`.
  *
  * Logs one of:
- * - `✓ node: vX.Y.Z (satisfies >=A.B.C)` when current is at or above the minimum
+ * - `✓ node: vX.Y.Z` when current is at or above the minimum
  * - `⚠︎ node: vX.Y.Z (below required >=A.B.C, run \`nvm install\`)` when below
  *
  * Any failure to read `package.json`, locate `engines.node`, or parse the
@@ -86,5 +87,5 @@ export function reportNodeEngineCheck(section: DoctorSection): void {
     );
     return;
   }
-  addItem(section, `${green(okGlyph)} node: ${process.version} (satisfies >=${min})`);
+  addItem(section, `${green(okGlyph)} node: ${process.version}`);
 }

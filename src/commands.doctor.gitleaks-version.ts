@@ -12,7 +12,8 @@ import type { SpawnSyncFn } from './gh-actions.ts';
  * `nomad doctor`. Parses `gitleaks version` stdout and compares its
  * major.minor against `GITLEAKS_PINNED_VERSION` (the value CI installs),
  * emitting one of:
- *   - `✓ gitleaks: X.Y.Z (matches pinned A.B)` when major.minor agree
+ *   - `✓ gitleaks: X.Y.Z` when major.minor agree (the green glyph signals pass,
+ *     so the pin echo is omitted as noise)
  *   - `⚠︎ gitleaks: <local> -> <pin> (CI pins this; local drift may change scan results)`
  *     when major.minor diverge
  * Only major.minor is compared: a patch-only difference is treated as OK,
@@ -88,8 +89,8 @@ function readGitleaksVersion(
  * `GITLEAKS_PINNED_VERSION`.
  *
  * Logs one of:
- * - `✓ gitleaks: X.Y.Z (matches pinned A.B)` when the major.minor agree
- *   (including a patch-only difference from the pin)
+ * - `✓ gitleaks: X.Y.Z` when the major.minor agree (including a patch-only
+ *   difference from the pin)
  * - `⚠︎ gitleaks: <local> -> <pin> (...)` when the major.minor diverge
  *
  * A missing gitleaks binary, a subprocess error, or output that does not match
@@ -122,7 +123,7 @@ export function reportGitleaksVersionCheck(
   // triple-segment contract returns an undecidable 0).
   const sameMajorMinor = local[0] === pin[0] && local[1] === pin[1];
   if (sameMajorMinor) {
-    addItem(section, `${green(okGlyph)} gitleaks: ${raw} (matches pinned ${pin[0]}.${pin[1]})`);
+    addItem(section, `${green(okGlyph)} gitleaks: ${raw}`);
     return;
   }
   addItem(
