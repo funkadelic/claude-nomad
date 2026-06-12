@@ -58,6 +58,7 @@ export default defineConfig({
         { label: 'How it works', link: '/how-it-works/' },
         { label: 'GSD-aware sync', link: '/gsd-aware-sync/' },
         { label: 'Usage', link: '/usage/' },
+        { label: 'Recipes', link: '/recipes/' },
         { label: 'Commands', link: '/commands/' },
         { label: 'Claude Code plugin', link: '/plugin/' },
         { label: 'Recovery flows', link: '/recovery/' },
