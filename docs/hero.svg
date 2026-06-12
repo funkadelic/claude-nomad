@@ -41,7 +41,7 @@
 <text x="40" y="135" class="tag-white">Sync your Claude Code setup.</text>
 <text x="40" y="158" class="tag-green">Same environment. Any machine.</text>
 
-<text x="40" y="195" class="sub">Agents, skills, commands, rules, hooks, settings,</text>
+<text x="40" y="195" class="sub">CLAUDE.md, skills, commands, rules, settings,</text>
 <text x="40" y="212" class="sub">and session history <tspan class="sub-green">- synced to every host.</tspan></text>
 
 <g transform="translate(0, -25)">
@@ -58,12 +58,11 @@
 
   <text x="346" y="144" class="mono-muted">host: <tspan class="mono">macbook</tspan></text>
 
-  <text x="346" y="170" class="mono-green">✓<tspan class="mono">  CLAUDE.md</tspan><tspan class="mono-muted" x="490" y="170">symlink OK</tspan></text>
-  <text x="346" y="185" class="mono-green">✓<tspan class="mono">  agents/</tspan><tspan class="mono-muted" x="490" y="185">symlink OK</tspan></text>
-  <text x="346" y="200" class="mono-green">✓<tspan class="mono">  commands/</tspan><tspan class="mono-muted" x="490" y="200">symlink OK</tspan></text>
-  <text x="346" y="215" class="mono-green">✓<tspan class="mono">  hooks/</tspan><tspan class="mono-muted" x="490" y="215">symlink OK</tspan></text>
-  <text x="346" y="230" class="mono-green">✓<tspan class="mono">  rules/</tspan><tspan class="mono-muted" x="490" y="230">symlink OK</tspan></text>
-  <text x="346" y="245" class="mono-green">✓<tspan class="mono">  skills/</tspan><tspan class="mono-muted" x="490" y="245">symlink OK</tspan></text>
+  <text x="346" y="170" class="mono-green">✓<tspan class="mono">  CLAUDE.md</tspan><tspan class="mono-muted" x="490" y="170">synced</tspan></text>
+  <text x="346" y="185" class="mono-green">✓<tspan class="mono">  commands/</tspan><tspan class="mono-muted" x="490" y="185">synced</tspan></text>
+  <text x="346" y="200" class="mono-green">✓<tspan class="mono">  rules/</tspan><tspan class="mono-muted" x="490" y="200">synced</tspan></text>
+  <text x="346" y="215" class="mono-green">✓<tspan class="mono">  skills/</tspan><tspan class="mono-muted" x="490" y="215">synced</tspan></text>
+  <text x="346" y="230" class="mono-green">✓<tspan class="mono">  settings.json</tspan><tspan class="mono-muted" x="490" y="230">merged</tspan></text>
 
   <text x="346" y="266" class="mono-muted">projects: <tspan class="mono">4 mapped</tspan>, sessions: <tspan class="mono">47 remapped</tspan></text>
 
