@@ -198,12 +198,13 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).toThrow(NomadFatal);
   });
 
-  it('rejects shared/agents/gsd-bar.md (shared/agents/ removed from PUSH_ALLOWED_STATIC)', async () => {
-    // shared/agents/ was removed from PUSH_ALLOWED_STATIC for the same reason as shared/hooks/.
+  it('silently drops shared/agents/gsd-bar.md (gsd-prefixed agent, not a violation)', async () => {
+    // shared/agents/ is gsd-owned per-host; gsd-prefixed files are silently dropped
+    // (not treated as allow-list violations), matching the GSD_DROPPED_NAMES intent.
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
-    const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {} };
-    expect(() => enforceAllowList('M  shared/agents/gsd-bar.md\0', map)).toThrow(NomadFatal);
+    expect(() => enforceAllowList('M  shared/agents/gsd-bar.md\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it('still permits shared/skills/graphify/SKILL.md (shared/skills/ stays in allow-list)', async () => {
@@ -238,6 +239,216 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('is in NEVER_SYNC and must never be pushed'),
     );
+  });
+});
+
+// Issue #294: gsd-core installs ~14 hook scripts and ~33 agent files into the
+// nomad repo's shared/hooks/ and shared/agents/ trees (those dirs are symlinked
+// from ~/.claude/ per host). After phase 50 dropped hooks/agents from
+// SHARED_LINKS, those gsd-owned paths stopped being in PUSH_ALLOWED_STATIC and
+// each push produced 51 allow-list violations, permanently wedging push.
+// Fix: paths under GSD_DROPPED_NAMES dirs that are gsd-owned (gsd-prefixed
+// basename, or known support files: managed-hooks-registry.cjs, package.json,
+// lib/) are silently dropped -- not violations -- by enforceAllowList.
+describe('enforceAllowList gsd-dropped path handling (issue #294)', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('silently drops shared/hooks/gsd-prompt-guard.js (gsd-prefixed hook)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('A  shared/hooks/gsd-prompt-guard.js\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('silently drops shared/agents/gsd-debug.md (gsd-prefixed agent)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('A  shared/agents/gsd-debug.md\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('silently drops shared/hooks/managed-hooks-registry.cjs (gsd support file, not gsd-prefixed)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() =>
+      enforceAllowList('A  shared/hooks/managed-hooks-registry.cjs\0', map),
+    ).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('silently drops shared/hooks/package.json (gsd support file, not gsd-prefixed)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('A  shared/hooks/package.json\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('silently drops shared/hooks/lib/git-cmd.js (gsd lib/ subtree, not gsd-prefixed)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('A  shared/hooks/lib/git-cmd.js\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('still rejects a bare shared/hooks/lib file (only the lib/ subtree is gsd-owned)', async () => {
+    // `lib` matches gsd only as a directory prefix (shared/hooks/lib/...). A user
+    // file literally named `lib` directly under shared/hooks/ must NOT be silently
+    // dropped from a push; it stays a violation.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('A  shared/hooks/lib\0', map)).toThrow(NomadFatal);
+  });
+
+  it('still rejects shared/hooks/foo.sh (non-gsd-prefixed, not a support file)', async () => {
+    // User-authored hooks would be dangerous to push (gsd owns hooks per-host).
+    // Only gsd-owned names are silently dropped; foreign names stay violations.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).toThrow(NomadFatal);
+  });
+
+  it('still rejects shared/agents/my-agent.md (non-gsd-prefixed agent)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  shared/agents/my-agent.md\0', map)).toThrow(NomadFatal);
+  });
+
+  it('handles a realistic 51-file gsd payload without throwing (regression for #294)', async () => {
+    // Simulate the full gsd-core payload: 14 gsd-prefixed hooks + managed-hooks-registry.cjs
+    // + package.json + 2 lib/ files + 33 gsd-prefixed agents = 51 paths.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const hooks = Array.from({ length: 14 }, (_, i) => `A  shared/hooks/gsd-hook-${i}.js\0`).join(
+      '',
+    );
+    const support =
+      'A  shared/hooks/managed-hooks-registry.cjs\0' +
+      'A  shared/hooks/package.json\0' +
+      'A  shared/hooks/lib/git-cmd.js\0' +
+      'A  shared/hooks/lib/gsd-graphify-rebuild.sh\0';
+    const agents = Array.from(
+      { length: 33 },
+      (_, i) => `A  shared/agents/gsd-agent-${i}.md\0`,
+    ).join('');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList(hooks + support + agents, map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+// End-to-end regression for issue #294 (commit-suppression gap): after git add -A
+// stages the gsd payload, the unstage step in commitAndPush must remove gsd-owned
+// paths from the index before commit. This test uses a real git repo to exercise
+// the full index round-trip: stage everything with `git add -A`, run the same
+// isGsdDropped + parsePorcelainZ + git restore --staged logic that commitAndPush
+// now uses, and assert the gsd paths are absent from the index while a non-gsd
+// file under shared/hooks/ (which would trigger the enforceAllowList gate) is
+// likewise kept out of the commit via the gate rejection path.
+describe('commitAndPush gsd-dropped unstage (issue #294 commit-suppression)', () => {
+  let repo: string;
+
+  beforeEach(() => {
+    vi.doUnmock('node:child_process');
+    vi.resetModules();
+    repo = mkdtempSync(join(tmpdir(), 'nomad-294-'));
+    runGit(repo, ['init', '-q']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test']);
+    // Commit a minimal initial state so HEAD exists and the index has a base.
+    mkdirSync(join(repo, 'shared', 'hooks'), { recursive: true });
+    mkdirSync(join(repo, 'shared', 'agents'), { recursive: true });
+    mkdirSync(join(repo, 'shared', 'hooks', 'lib'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'CLAUDE.md'), '# shared\n');
+    runGit(repo, ['add', 'shared/CLAUDE.md']);
+    runGit(repo, ['commit', '-q', '-m', 'init']);
+    // Write the gsd payload (untracked, like a fresh gsd-core install would).
+    writeFileSync(join(repo, 'shared', 'hooks', 'gsd-prompt-guard.js'), '// hook\n');
+    writeFileSync(join(repo, 'shared', 'hooks', 'gsd-tool-check.sh'), '# hook\n');
+    writeFileSync(join(repo, 'shared', 'hooks', 'managed-hooks-registry.cjs'), '// registry\n');
+    writeFileSync(join(repo, 'shared', 'hooks', 'package.json'), '{"name":"hooks"}\n');
+    writeFileSync(join(repo, 'shared', 'hooks', 'lib', 'git-cmd.js'), '// lib\n');
+    writeFileSync(join(repo, 'shared', 'agents', 'gsd-debug.md'), '# agent\n');
+    writeFileSync(join(repo, 'shared', 'agents', 'gsd-planner.md'), '# agent\n');
+    // A non-gsd file that must NOT end up in the index (gate rejects it upstream,
+    // but to verify the predicate boundary we check it is isGsdDropped===false).
+    writeFileSync(join(repo, 'shared', 'hooks', 'user-hook.sh'), '# user\n');
+  });
+
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('gsd-dropped paths are absent from the index after unstage; non-gsd paths remain untracked', async () => {
+    const { execFileSync: realExec } = await import('node:child_process');
+    const { parsePorcelainZ, isGsdDropped } = await import('./commands.push.allowlist.ts');
+
+    // Stage everything (mirrors git add -A in commitAndPush).
+    realExec('git', ['add', '-A'], { cwd: repo, stdio: 'pipe' });
+
+    // Collect staged paths and filter gsd-dropped ones (mirrors commitAndPush logic).
+    const status = realExec('git', ['status', '--porcelain=v1', '-z'], {
+      cwd: repo,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    const staged = parsePorcelainZ(status);
+    const toDrop = staged.filter((p) => isGsdDropped(p));
+
+    // There must be gsd-dropped paths to unstage (otherwise the test proves nothing).
+    expect(toDrop.length).toBeGreaterThan(0);
+    expect(toDrop).toContain('shared/hooks/gsd-prompt-guard.js');
+    expect(toDrop).toContain('shared/hooks/managed-hooks-registry.cjs');
+    expect(toDrop).toContain('shared/hooks/package.json');
+    expect(toDrop).toContain('shared/hooks/lib/git-cmd.js');
+    expect(toDrop).toContain('shared/agents/gsd-debug.md');
+
+    // Unstage (mirrors commitAndPush).
+    realExec('git', ['restore', '--staged', '--', ...toDrop], { cwd: repo, stdio: 'pipe' });
+
+    // Verify: gsd paths are no longer staged. Use `git diff --cached --name-only -z`
+    // which lists ONLY index-staged paths (index vs HEAD), not untracked files.
+    // After restore --staged, gsd files return to untracked -- absent from cached diff.
+    const cachedDiff = realExec('git', ['diff', '--cached', '--name-only', '-z'], {
+      cwd: repo,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .split('\0')
+      .filter(Boolean);
+
+    // gsd-owned paths must be absent from the staged index.
+    expect(cachedDiff).not.toContain('shared/hooks/gsd-prompt-guard.js');
+    expect(cachedDiff).not.toContain('shared/hooks/gsd-tool-check.sh');
+    expect(cachedDiff).not.toContain('shared/hooks/managed-hooks-registry.cjs');
+    expect(cachedDiff).not.toContain('shared/hooks/package.json');
+    expect(cachedDiff).not.toContain('shared/hooks/lib/git-cmd.js');
+    expect(cachedDiff).not.toContain('shared/agents/gsd-debug.md');
+    expect(cachedDiff).not.toContain('shared/agents/gsd-planner.md');
+
+    // The non-gsd file is NOT gsd-dropped (enforceAllowList would reject it upstream).
+    expect(isGsdDropped('shared/hooks/user-hook.sh')).toBe(false);
+    // user-hook.sh IS still staged (git add -A staged it; it's not in toDrop).
+    expect(cachedDiff).toContain('shared/hooks/user-hook.sh');
+  });
+
+  it('isGsdDropped returns false for shared/hooks/user-hook.sh (non-gsd gate boundary)', async () => {
+    const { isGsdDropped } = await import('./commands.push.allowlist.ts');
+    // This boundary ensures the commit-suppression step does not swallow files
+    // that enforceAllowList is supposed to reject (Pitfall 4 guard preserved).
+    expect(isGsdDropped('shared/hooks/user-hook.sh')).toBe(false);
+    expect(isGsdDropped('shared/agents/my-agent.md')).toBe(false);
   });
 });
 

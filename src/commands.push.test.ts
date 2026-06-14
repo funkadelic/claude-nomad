@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makePushEnv, teardownPushEnv, type PushEnv } from './commands.push.test-helpers.ts';
 
+import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './push-checks.ts';
 import type * as pushAllowlistModule from './commands.push.allowlist.ts';
 import type * as pushGlobalConfigModule from './push-global-config.ts';
+import type * as leakVerdictModule from './push-leak-verdict.ts';
 import type * as utilsModule from './utils.ts';
 
 // ---------------------------------------------------------------------------
@@ -710,5 +712,190 @@ describe('cmdPush: skills pipeline integration', () => {
     expect(existsSync(join(sharedSkills, 'pr-feedback-sweep'))).toBe(true);
     // gsd-* excluded from shared/skills.
     expect(existsSync(join(sharedSkills, 'gsd-foo'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdPush: gsd-dropped unstage in commitAndPush (issue #294 commit-suppression)
+// ---------------------------------------------------------------------------
+// Verifies that commitAndPush calls `git restore --staged` for gsd-dropped paths
+// so they are removed from the index before commit. The first gitStatusPorcelainZ
+// call (in cmdPush body, untrackedAll:true) returns an allow-listed path so the
+// flow proceeds past the early-return. The second call (inside commitAndPush,
+// no untrackedAll) returns a gsd-dropped path, triggering the restore branch.
+
+describe('cmdPush: gsd-dropped paths are unstaged before commit (issue #294)', () => {
+  let env: PushEnv;
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+    vi.doUnmock('./push-leak-verdict.ts');
+  });
+
+  it('calls git restore --staged for gsd-dropped paths but still commits real changes', async () => {
+    // Two gitStatusPorcelainZ calls in the WET push path:
+    //   call 1 (cmdPush body, untrackedAll:true): allow-list classification.
+    //   call 2 (commitAndPush, no untrackedAll): staged-tree scan for gsd drop.
+    // Call 1 returns an allow-listed path so the flow does NOT short-circuit.
+    // Call 2 returns a gsd-prefixed hook path AND a real staged session path, so
+    // toDrop is non-empty (restore fires) but staged.length > toDrop.length, so
+    // the empty-index short-circuit does NOT fire and the commit proceeds.
+    let statusCallCount = 0;
+    const gsdPath = 'shared/hooks/gsd-prompt-guard.js';
+    const realPath = 'shared/projects/demo/0001.jsonl';
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        // Call 1: allow-listed path for the pre-stage allow-list check.
+        // Call 2: gsd-dropped path + a real staged path for the post-add-A scan.
+        gitStatusPorcelainZ: vi.fn(() => {
+          statusCallCount++;
+          if (statusCallCount === 1) return `M  shared/CLAUDE.md\0`;
+          return `A  ${gsdPath}\0A  ${realPath}\0`;
+        }),
+      };
+    });
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
+    // Mock execFileSync so git commands (add -A, restore --staged, commit, push)
+    // do not touch the real filesystem. Capture calls to verify restore --staged.
+    const execFileSyncCalls: string[][] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((...args: unknown[]) => {
+          const argv = args as [string, string[], ...unknown[]];
+          if (argv[0] === 'git') execFileSyncCalls.push(argv[1]);
+          return Buffer.from('');
+        }),
+      };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    // Verify git restore --staged was called with the gsd-dropped path only.
+    const restoreCall = execFileSyncCalls.find(
+      (args) => args[0] === 'restore' && args[1] === '--staged',
+    );
+    expect(restoreCall).toBeDefined();
+    expect(restoreCall).toContain(gsdPath);
+    expect(restoreCall).not.toContain(realPath);
+    // git add -A must have fired before the restore.
+    const addCall = execFileSyncCalls.find((args) => args[0] === 'add' && args[1] === '-A');
+    expect(addCall).toBeDefined();
+    // A real staged change remains, so the commit must still proceed.
+    const commitCall = execFileSyncCalls.find((args) => args[0] === 'commit');
+    expect(commitCall).toBeDefined();
+  });
+
+  it('does not commit an empty index when the gsd payload is the only change (issue #294)', async () => {
+    // Pure #294 repro: a fresh host whose sole pending change is gsd's per-host
+    // reinstall. Both status calls return only gsd-dropped paths, so after the
+    // restore the index is empty. commitAndPush must short-circuit cleanly rather
+    // than run `git commit` on an empty index (which would throw NomadFatal).
+    let statusCallCount = 0;
+    const gsdHook = 'shared/hooks/gsd-prompt-guard.js';
+    const gsdAgent = 'shared/agents/gsd-debug.md';
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        // Both calls return only gsd-dropped paths: the allow-list classification
+        // passes (silent skip) and the post-add-A staged set is entirely gsd.
+        gitStatusPorcelainZ: vi.fn(() => {
+          statusCallCount++;
+          return `A  ${gsdHook}\0A  ${gsdAgent}\0`;
+        }),
+      };
+    });
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
+    const execFileSyncCalls: string[][] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((...args: unknown[]) => {
+          const argv = args as [string, string[], ...unknown[]];
+          if (argv[0] === 'git') execFileSyncCalls.push(argv[1]);
+          return Buffer.from('');
+        }),
+      };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    // restore --staged fired for the gsd paths, but no commit / push followed.
+    const restoreCall = execFileSyncCalls.find(
+      (args) => args[0] === 'restore' && args[1] === '--staged',
+    );
+    expect(restoreCall).toBeDefined();
+    expect(restoreCall).toContain(gsdHook);
+    expect(restoreCall).toContain(gsdAgent);
+    expect(execFileSyncCalls.find((args) => args[0] === 'commit')).toBeUndefined();
+    expect(execFileSyncCalls.find((args) => args[0] === 'push')).toBeUndefined();
+    expect(statusCallCount).toBe(2);
   });
 });
