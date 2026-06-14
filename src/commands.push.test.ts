@@ -892,6 +892,8 @@ describe('cmdPush: gsd-dropped paths are unstaged before commit (issue #294)', (
       (args) => args[0] === 'restore' && args[1] === '--staged',
     );
     expect(restoreCall).toBeDefined();
+    expect(restoreCall).toContain(gsdHook);
+    expect(restoreCall).toContain(gsdAgent);
     expect(execFileSyncCalls.find((args) => args[0] === 'commit')).toBeUndefined();
     expect(execFileSyncCalls.find((args) => args[0] === 'push')).toBeUndefined();
     expect(statusCallCount).toBe(2);
