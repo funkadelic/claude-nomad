@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { backupBase, HOST, type PathMap, repoHome } from './config.ts';
-import { enforceAllowList } from './commands.push.allowlist.ts';
+import { enforceAllowList, isGsdDropped, parsePorcelainZ } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
@@ -64,6 +64,25 @@ async function commitAndPush(
   repo: string,
 ): Promise<void> {
   gitOrFatal(['add', '-A'], 'git add', repo);
+  // Unstage gsd-dropped paths immediately after staging: gsd reinstalls these
+  // per-host automatically, so they must never enter the shared commit. Uses the
+  // same isGsdDropped predicate that enforceAllowList uses to skip them, keeping
+  // the gate and the commit suppression in sync via a single source of truth.
+  const staged = parsePorcelainZ(gitStatusPorcelainZ(repo));
+  const toDrop = staged.filter((p) => isGsdDropped(p));
+  if (toDrop.length > 0) {
+    gitOrFatal(['restore', '--staged', '--', ...toDrop], 'git restore --staged', repo);
+  }
+  // If the gsd payload was the only staged change, the index is now empty and a
+  // commit would fail with "nothing to commit". This is the pure issue #294 case
+  // (a host whose sole pending change is gsd's per-host reinstall): render the
+  // no-scan tree and return a clean no-op push instead of dying. toDrop is a
+  // subset of staged, so equal lengths means every staged path was dropped.
+  if (staged.length === toDrop.length) {
+    log('nothing to commit');
+    renderNoScanTree(st);
+    return;
+  }
   // Collect staged shared-config changes AFTER git add -A so the index reflects
   // the full staged tree. Assigned onto st so renderPushTree sees the section.
   st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: true });

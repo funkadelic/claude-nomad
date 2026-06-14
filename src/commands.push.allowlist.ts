@@ -1,6 +1,8 @@
 import {
   ALWAYS_NEVER_SYNC,
   CLAUDE_EXTRA_NEVER_SYNC,
+  GSD_DROPPED_NAMES,
+  GSD_PREFIX,
   NEVER_SYNC,
   PUSH_ALLOWED_STATIC,
   SUPPORTED_EXTRAS,
@@ -60,6 +62,50 @@ function isNeverSync(path: string): boolean {
     if (blockSet.has(segment)) return true;
   }
   return false;
+}
+
+/**
+ * Exact gsd support files that sit directly inside `shared/hooks/` but are NOT
+ * `gsd-`-prefixed (they are listed in gsd's `managed-hooks-registry.cjs`).
+ * Matched only as `shared/hooks/<file>` (no deeper nesting).
+ */
+const GSD_HOOKS_SUPPORT_FILES = new Set(['managed-hooks-registry.cjs', 'package.json']);
+
+/**
+ * gsd's helper subtree under `shared/hooks/`. Matched only for paths nested
+ * inside it (`shared/hooks/lib/...`), never a bare `shared/hooks/lib` file, so a
+ * user file that happens to be named `lib` is not silently dropped from a push.
+ */
+const GSD_HOOKS_SUPPORT_DIR = 'lib';
+
+/**
+ * True when `path` is a gsd-owned asset under a `GSD_DROPPED_NAMES` directory
+ * (`shared/hooks/` or `shared/agents/`). Returns true for:
+ * - Any path whose immediate child basename starts with `GSD_PREFIX` (`gsd-`).
+ * - Inside `shared/hooks/` only, gsd support infrastructure that is not
+ *   gsd-prefixed: the exact files `managed-hooks-registry.cjs` and
+ *   `package.json`, and anything nested under `lib/` (gsd's internal helper
+ *   scripts). Derived from the live ground truth of a gsd-core 1.3.0 install,
+ *   re-verified unchanged through 1.4.5.
+ *
+ * Paths matching this predicate are silently skipped by `enforceAllowList` --
+ * they are not violations, because gsd reinstalls them per-host automatically
+ * and nomad must not treat them as sync candidates.
+ */
+export function isGsdDropped(path: string): boolean {
+  // path is like "shared/hooks/gsd-foo.js" or "shared/agents/gsd-bar.md"
+  // segments: ["shared", "hooks", "gsd-foo.js"] (index 0, 1, 2)
+  const segments = path.split('/');
+  if (segments[0] !== 'shared' || segments.length < 3) return false;
+  const dirName = segments[1];
+  if (!(GSD_DROPPED_NAMES as readonly string[]).includes(dirName)) return false;
+  const childName = segments[2]; // immediate child of shared/<droppedName>/
+  if (childName.startsWith(GSD_PREFIX)) return true;
+  if (dirName !== 'hooks') return false;
+  // hooks-only, non-prefixed gsd support infrastructure: exact support files
+  // sitting directly under shared/hooks/, or anything nested under lib/.
+  if (segments.length === 3) return GSD_HOOKS_SUPPORT_FILES.has(childName);
+  return childName === GSD_HOOKS_SUPPORT_DIR;
 }
 
 /**
@@ -131,6 +177,9 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   for (const path of parsePorcelainZ(statusPorcelain)) {
     if (isNeverSync(path)) {
       neverSyncHits.push(path);
+    } else if (isGsdDropped(path)) {
+      // gsd-owned asset under a GSD_DROPPED_NAMES dir: silently skip.
+      // gsd reinstalls these per-host; they are not sync candidates.
     } else if (!isAllowed(path, allowed)) {
       violations.push(path);
     }
