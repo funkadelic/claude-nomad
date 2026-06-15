@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.50.2](https://github.com/funkadelic/claude-nomad/compare/v0.50.1...v0.50.2) (2026-06-15)
+
+
+### Fixed
+
+* **push:** skip gsd-dropped hooks and agents from shared push ([#295](https://github.com/funkadelic/claude-nomad/issues/295)) ([b8f6665](https://github.com/funkadelic/claude-nomad/commit/b8f66658dd47dac40bfafd9899206a481d04a87a))
+
+
+### Dependencies
+
+* bump SonarSource/sonarqube-scan-action from 8.1.0 to 8.2.0 ([#297](https://github.com/funkadelic/claude-nomad/issues/297)) ([fdb681c](https://github.com/funkadelic/claude-nomad/commit/fdb681c4d346b9bd82b34fe6d9dee2d202186473))
+* bump the dev-dependencies group with 5 updates ([#298](https://github.com/funkadelic/claude-nomad/issues/298)) ([0909a02](https://github.com/funkadelic/claude-nomad/commit/0909a025b698162c7a695354465046973ee93ab4))
+
 ## [0.50.1](https://github.com/funkadelic/claude-nomad/compare/v0.50.0...v0.50.1) (2026-06-12)
 
 
