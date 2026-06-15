@@ -154,7 +154,7 @@ jobs:
           ${{ steps.gate.outputs.skip != 'true'
           && env.SONAR_TOKEN != '' && matrix.node-version == '24'
           && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8
         with:
           args: -Dsonar.projectVersion=${{ steps.pkgver.outputs.version }}
         env:
