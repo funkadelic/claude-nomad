@@ -24,12 +24,51 @@ export function readJson<T>(path: string): T {
  * a TOCTOU race rather than the expected absent-file case.
  */
 export function readPathMap(mapPath: string): PathMap {
+  let parsed: unknown;
   try {
-    return readJson<PathMap>(mapPath);
+    parsed = readJson<unknown>(mapPath);
   } catch (err) {
     const verb = err instanceof SyntaxError ? 'parse' : 'read';
     throw new NomadFatal(`could not ${verb} path-map.json: ${(err as Error).message}`);
   }
+  const shapeError = validatePathMapShape(parsed);
+  if (shapeError !== null) throw new NomadFatal(shapeError);
+  return parsed as PathMap;
+}
+
+/**
+ * Validate the structural shape of a parsed `path-map.json` value: the top
+ * level is an object, `projects` is an object, each project's hosts is an
+ * object, and every host value is a string. Returns null when the shape is
+ * valid, or a human-readable reason. Centralizes the walk previously duplicated
+ * verbatim in `resume.ts`, the doctor path-map check, and the bare cast in
+ * `readPathMap`, so the error vocabulary is uniform across the CLI.
+ *
+ * The optional `extras`/`sharedDirs` fields are not checked here; their
+ * consumers (`extras-sync`, `allSharedLinks`) guard those independently.
+ *
+ * @param raw The JSON-parsed candidate value.
+ * @returns null when valid, else a `path-map.json invalid schema: ...` reason.
+ */
+export function validatePathMapShape(raw: unknown): string | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return 'path-map.json invalid schema: top-level value must be an object';
+  }
+  const projects: unknown = (raw as { projects?: unknown }).projects;
+  if (projects === null || typeof projects !== 'object' || Array.isArray(projects)) {
+    return 'path-map.json invalid schema: "projects" must be an object';
+  }
+  for (const [name, hosts] of Object.entries(projects as Record<string, unknown>)) {
+    if (hosts === null || typeof hosts !== 'object' || Array.isArray(hosts)) {
+      return `path-map.json invalid schema: project "${name}" hosts must be an object`;
+    }
+    for (const [host, value] of Object.entries(hosts as Record<string, unknown>)) {
+      if (typeof value !== 'string') {
+        return `path-map.json invalid schema: project "${name}" host "${host}" path must be a string`;
+      }
+    }
+  }
+  return null;
 }
 
 /** Deep merge: source overrides target. Arrays replace, objects merge recursively. */

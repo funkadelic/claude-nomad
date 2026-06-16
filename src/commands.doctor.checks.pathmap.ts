@@ -9,7 +9,7 @@ import {
   readJsonSafe,
   type DoctorSection,
 } from './commands.doctor.format.ts';
-import { encodePath } from './utils.json.ts';
+import { encodePath, validatePathMapShape } from './utils.json.ts';
 
 /**
  * Path-map reporters for `cmdDoctor`: the mapped-projects listing, the
@@ -95,36 +95,14 @@ export function reportPathMap(section: DoctorSection): void {
   const map = readJsonSafe<PathMap>(mapPath, mapPath, section);
   if (map === null) return;
   // Guard non-object `projects` and per-project non-object `hosts` so the
-  // helpers' `hosts[HOST]` / `Object.values(hosts)` cannot throw mid-output
-  // and break the tolerant-doctor contract.
-  const projects: unknown = (map as { projects?: unknown }).projects;
-  if (projects === null || typeof projects !== 'object' || Array.isArray(projects)) {
-    addItem(
-      section,
-      `${red(failGlyph)} path-map.json invalid schema: "projects" must be an object`,
-    );
+  // helpers' `hosts[HOST]` / `Object.values(hosts)` cannot throw mid-output and
+  // break the tolerant-doctor contract. Shares the shape walk with `readPathMap`
+  // and `resume.ts` via `validatePathMapShape` for one uniform error vocabulary.
+  const shapeError = validatePathMapShape(map);
+  if (shapeError !== null) {
+    addItem(section, `${red(failGlyph)} ${shapeError}`);
     process.exitCode = 1;
     return;
-  }
-  for (const [name, hosts] of Object.entries(projects as Record<string, unknown>)) {
-    if (hosts === null || typeof hosts !== 'object' || Array.isArray(hosts)) {
-      addItem(
-        section,
-        `${red(failGlyph)} path-map.json invalid schema: project "${name}" hosts must be an object`,
-      );
-      process.exitCode = 1;
-      return;
-    }
-    for (const [hostName, mappedPath] of Object.entries(hosts as Record<string, unknown>)) {
-      if (typeof mappedPath !== 'string') {
-        addItem(
-          section,
-          `${red(failGlyph)} path-map.json invalid schema: project "${name}" host "${hostName}" path must be a string`,
-        );
-        process.exitCode = 1;
-        return;
-      }
-    }
   }
   reportMappedProjects(section, map);
   reportUnmappedProjects(section, map);
