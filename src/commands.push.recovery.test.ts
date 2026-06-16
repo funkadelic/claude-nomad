@@ -1895,14 +1895,89 @@ describe('redactAllFindings - batch redaction branches', () => {
     expect(() => redactAllFindings([], 'ts-x', map, () => Date.now())).not.toThrow();
   });
 
-  it('skips findings with no resolvable session id', async () => {
+  it('aborts the whole batch (no scan, no mutation) when a finding has no session id', async () => {
     const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {} };
     const scanSpy = vi.fn().mockReturnValue([]);
     const finding = makeFinding({ File: 'shared/other/not-a-session.txt' });
-    redactAllFindings([finding], 'ts-x', map, () => Date.now(), scanSpy);
-    // sid === null short-circuits before applyRedact, so scan is never called.
+    // sid === null is a deterministic refusal: --redact-all is all-or-nothing,
+    // so the preflight throws before any scan or mutation.
+    expect(() => redactAllFindings([finding], 'ts-x', map, () => Date.now(), scanSpy)).toThrow(
+      NomadFatal,
+    );
     expect(scanSpy).not.toHaveBeenCalled();
+  });
+
+  it('aborts before mutating any session when another session transcript is missing', async () => {
+    const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const original = readFileSync(transcriptPath, 'utf8');
+    const scanSpy = vi.fn().mockReturnValue([]);
+    // A redactable mapped session plus a second session whose local transcript
+    // does not exist (refused). The mapped session must NOT be rewritten.
+    const mapped = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 1 });
+    const missing = makeFinding({ File: 'shared/projects/other/sid999.jsonl', StartLine: 1 });
+
+    expect(() =>
+      redactAllFindings([mapped, missing], 'ts-x', map, () => farFuture, scanSpy),
+    ).toThrow(NomadFatal);
+    // Preflight runs before any redaction, so neither the scan nor the rewrite ran.
+    expect(scanSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(original);
+  });
+
+  it('aborts (no mutation) when a session looks active (recently modified)', async () => {
+    const { transcriptPath, map } = makeApplyRedactFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const original = readFileSync(transcriptPath, 'utf8');
+    const scanSpy = vi.fn().mockReturnValue([]);
+    const f = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 1 });
+    // nowMs ~= file mtime (just written), so the live-session guard refuses.
+    expect(() => redactAllFindings([f], 'ts-x', map, () => Date.now(), scanSpy)).toThrow(
+      NomadFatal,
+    );
+    expect(scanSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(original);
+  });
+
+  it('aborts (no mutation) when a session resolves locally but maps to no staged copy', async () => {
+    // resolveLiveTranscript reads the on-disk path-map (otherproject) so it can
+    // locate the transcript; the map passed to redactAllFindings only has
+    // myproject, so resolveStagedDir finds no prefix match -> unmapped refusal.
+    const encodedDir = join(testHome, '.claude', 'projects', '-home-norm-git-otherproject');
+    mkdirSync(encodedDir, { recursive: true });
+    const transcript = join(encodedDir, 'sid999.jsonl');
+    writeFileSync(transcript, '{"text":"x"}\n');
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { otherproject: { 'test-host': '/home/norm/git/otherproject' } },
+      }),
+    );
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } };
+    const farFuture = Date.now() + 10 * 60 * 1000;
+    const scanSpy = vi.fn().mockReturnValue([]);
+    const f = makeFinding({ File: 'shared/projects/otherproject/sid999.jsonl', StartLine: 1 });
+    expect(() => redactAllFindings([f], 'ts-x', map, () => farFuture, scanSpy)).toThrow(NomadFatal);
+    expect(scanSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcript, 'utf8')).toBe('{"text":"x"}\n');
   });
 
   it('redacts the first finding per session and de-duplicates the rest', async () => {

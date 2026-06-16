@@ -60,6 +60,44 @@ function resolveStagedDir(
 }
 
 /**
+ * Deterministic redactability preflight for one finding: NO scan, NO mutation.
+ * Mirrors the refusal gates in `applyRedact` that do not require scanning or
+ * writing, reusing the same primitives (`resolveLiveTranscript`, the subtree
+ * mtime helpers, and the traversal-guarded `resolveStagedDir`): missing session
+ * id, unlocatable transcript, an active (recently modified) session subtree,
+ * and an unmapped staged destination. Returns a human-readable refusal reason
+ * when the finding could not be redacted, or null when it would proceed.
+ *
+ * Used by `redactAllFindings` to make `--redact-all` all-or-nothing: if any
+ * session is refused for one of these reasons, the batch aborts before mutating
+ * any local transcript, instead of scrubbing some sessions and then aborting
+ * later on the caller's re-scan. The scan-dependent refusals (gitleaks failure,
+ * nothing-to-redact) remain in `applyRedact`; they cannot be known without
+ * scanning and are caught by the post-redaction re-scan.
+ *
+ * @param f Finding to preflight (used for session-id extraction).
+ * @param map Parsed path-map for staged-tree path resolution.
+ * @param nowMs Injectable clock for the live-session mtime check.
+ * @returns A refusal reason string, or null when the finding can be redacted.
+ */
+export function preflightRedactable(f: Finding, map: PathMap, nowMs: () => number): string | null {
+  const sid = sessionIdFromFinding(f);
+  if (sid === null) return 'a finding has no resolvable session id (not a session transcript)';
+  const localPath = resolveLiveTranscript(sid);
+  if (localPath === null) return `session ${sid}: local transcript not found`;
+  const sessionDir = join(dirname(localPath), sid);
+  const subtreeFiles = listSubtreeFiles(sessionDir);
+  const subtreeMtime = newestSubtreeMtimeMs(localPath, subtreeFiles, (p) => statSync(p).mtimeMs);
+  if (isRecentlyModified(subtreeMtime, nowMs())) {
+    return `session ${sid}: looks active (modified within the last 5 minutes)`;
+  }
+  if (resolveStagedDir(localPath, map, claudeHome(), repoHome()) === null) {
+    return `session ${sid}: not mapped to a staged copy`;
+  }
+  return null;
+}
+
+/**
  * Apply the Redact action for one finding. Resolves the local transcript,
  * checks the live-session guard across the WHOLE subtree (main + every file
  * under `<sid>/`), re-scans each file in the subtree without `--redact` to
