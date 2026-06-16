@@ -1417,11 +1417,13 @@ describe.skipIf(!hasGitleaks)('allowlist regression fixture', () => {
     execFileSync('git', ['config', 'user.name', 'test'], { cwd: repoUnderHome });
 
     // Place the real PAT inside a session JSONL so the session-aware FATAL
-    // surfaces the session id. The four allowlist-pattern files live at
-    // unrelated top-level paths. Assemble the PAT at runtime from split
-    // fragments so the contiguous token shape never appears in source-
-    // controlled bytes (Betterleaks and other secret scanners flag committed
-    // PAT-shaped literals even in test fixtures).
+    // surfaces the session id. The four noise-pattern files also live under the
+    // synced session path, since the tool-output noise allowlist is now scoped
+    // to `shared/projects/<logical>/.../*.jsonl` (it no longer suppresses
+    // globally). Assemble the PAT at runtime from split fragments so the
+    // contiguous token shape never appears in source-controlled bytes
+    // (Betterleaks and other secret scanners flag committed PAT-shaped literals
+    // even in test fixtures).
     const sessionDir = join(repoUnderHome, 'shared', 'projects', 'foo');
     mkdirSync(sessionDir, { recursive: true });
     const sid = 'sid-allowlist-regression';
@@ -1432,21 +1434,23 @@ describe.skipIf(!hasGitleaks)('allowlist regression fixture', () => {
     const fakePat = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');
     writeFileSync(join(sessionDir, `${sid}.jsonl`), `{"role":"user","text":"${fakePat}"}\n`);
 
-    // One staged file per allowlist pattern. Each MUST be suppressed.
+    // One staged session file per allowlist pattern, all under the synced
+    // session path where the noise allowlist now applies. Each MUST be
+    // suppressed.
     // Sonar issue key: AY + >=20 base64-like chars.
-    writeFileSync(join(repoUnderHome, 'sonar.txt'), 'AYabcdefghijklmnopqrst_xyz\n');
+    writeFileSync(join(sessionDir, 'noise-sonar.jsonl'), 'AYabcdefghijklmnopqrst_xyz\n');
     // gitleaks fingerprint format: <file-path-with-extension>:<rule-id>:<line>.
     // The path component MUST contain a file-extension token; arbitrary
     // colon-separated alphanumerics (e.g., user:password:port) are not
     // suppressed by the tightened allowlist regex.
-    writeFileSync(join(repoUnderHome, 'gl-fingerprint.txt'), 'src/foo.ts:generic-api-key:42\n');
+    writeFileSync(join(sessionDir, 'noise-fingerprint.jsonl'), 'src/foo.ts:generic-api-key:42\n');
     // npm audit advisory hash anchored on JSON id field.
     writeFileSync(
-      join(repoUnderHome, 'audit.json'),
+      join(sessionDir, 'noise-audit.jsonl'),
       '{"id": "abcdef0123456789abcdef0123456789abcdef01"}\n',
     );
     // Coverage line-key: key=<hash> <path>:<line>.
-    writeFileSync(join(repoUnderHome, 'coverage.txt'), 'key=deadbeef12 src/foo.ts:99\n');
+    writeFileSync(join(sessionDir, 'noise-coverage.jsonl'), 'key=deadbeef12 src/foo.ts:99\n');
 
     execFileSync('git', ['add', '-A'], { cwd: repoUnderHome });
 
@@ -1471,10 +1475,10 @@ describe.skipIf(!hasGitleaks)('allowlist regression fixture', () => {
     // The four allowlist patterns must NOT appear in the FATAL message,
     // they were suppressed inside the gitleaks process before reaching the
     // findings array. No `Also found:` section should be populated by them.
-    expect(msg).not.toContain('sonar.txt');
-    expect(msg).not.toContain('gl-fingerprint.txt');
-    expect(msg).not.toContain('audit.json');
-    expect(msg).not.toContain('coverage.txt');
+    expect(msg).not.toContain('noise-sonar.jsonl');
+    expect(msg).not.toContain('noise-fingerprint.jsonl');
+    expect(msg).not.toContain('noise-audit.jsonl');
+    expect(msg).not.toContain('noise-coverage.jsonl');
   });
 
   it('does not allowlist a credential-shaped colon tuple co-located with a real PAT', async () => {
