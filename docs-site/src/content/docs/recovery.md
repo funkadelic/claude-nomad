@@ -75,6 +75,13 @@ scrubbing (the exact path when `path-map.json` maps the project to the current h
 `~/.claude/projects/` source, not the staged tree, so it keeps flagging the secret until the local
 transcript is scrubbed.
 
+If the session was already shipped by an earlier push, `nomad drop-session` also prints a warning
+that un-staging it locally does not remove the secret from commits already on the remote. Full
+remediation in that case means rotating the credential and rewriting history (for example with
+`git filter-repo`) then force-pushing, coordinating with anyone else who has cloned the repo. The
+check is best-effort: it looks at the upstream tracking ref, so it only fires once that session is
+in pushed history.
+
 ## nomad redact
 
 Rewrites the secret span in the local source transcripts for a session in place, replacing each
@@ -95,7 +102,10 @@ fix for a gitleaks finding: `nomad drop-session` only removes the staged copy, b
 re-copies from local on the next push, so the secret resurfaces. Redacting the local source means
 future pushes carry clean content.
 
-What it does NOT do: rotate credentials. Always rotate the secret at its provider first.
+What it does NOT do: rotate credentials. Always rotate the secret at its provider first. It also
+does not rewrite commits already on the remote: if the session was published by an earlier push,
+`nomad redact` prints a warning that rewriting the local copy does not scrub pushed history, which
+still needs a history rewrite plus force-push after you rotate.
 
 Safety checks:
 
