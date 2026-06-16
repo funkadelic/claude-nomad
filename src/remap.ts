@@ -5,7 +5,7 @@ import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { die, item, log } from './utils.ts';
 import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
-import { encodePath, readJson } from './utils.json.ts';
+import { encodePath, readPathMap } from './utils.json.ts';
 
 /**
  * Suffix for the sibling staging directory used by `atomicMirror`. Stray dirs
@@ -147,7 +147,7 @@ export function remapPull(
     return { unmapped: 0, pulled, wouldPull };
   }
 
-  const map = readJson<PathMap>(mapPath);
+  const map = readPathMap(mapPath);
   const localProjects = join(claude, 'projects');
   if (!dryRun) mkdirSync(localProjects, { recursive: true });
 
@@ -267,7 +267,7 @@ export function remapPush(
     return { unmapped: 0, collisions: 0, pushed, wouldPush };
   }
 
-  const map = readJson<PathMap>(mapPath);
+  const map = readPathMap(mapPath);
   const localProjects = join(claude, 'projects');
   const repoProjects = join(repo, 'shared', 'projects');
 

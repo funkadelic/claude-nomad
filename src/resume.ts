@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { fail } from './utils.ts';
-import { readJson } from './utils.json.ts';
+import { readJson, validatePathMapShape } from './utils.json.ts';
 
 type TranscriptLine = { type?: string; cwd?: string };
 
@@ -50,7 +50,7 @@ export function resumeCmd(sessionId: string): void {
     process.exit(1);
   }
   const map = readJson<unknown>(mapPath);
-  const schemaError = validatePathMap(map);
+  const schemaError = validatePathMapShape(map);
   if (schemaError !== null) {
     fail(schemaError);
     process.exit(1);
@@ -91,34 +91,6 @@ function extractRecordedCwd(jsonlPath: string): string | null {
       if (typeof obj.cwd === 'string' && obj.cwd.length > 0) return obj.cwd;
     } catch {
       // Skip non-JSON or partial lines; transcripts can be appended mid-write.
-    }
-  }
-  return null;
-}
-
-/**
- * Validate that `raw` parses as `{ projects: { [logical]: { [host]: string } } }`
- * deeply enough that downstream iteration cannot throw. Returns `null` on
- * success or a human-readable reason on failure. Type-narrow callers must
- * cast to `PathMap` after a `null` return; the cast is sound because every
- * branch the consumers walk is verified here.
- */
-function validatePathMap(raw: unknown): string | null {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    return 'path-map.json invalid schema: top-level value must be an object';
-  }
-  const projects: unknown = (raw as { projects?: unknown }).projects;
-  if (projects === null || typeof projects !== 'object' || Array.isArray(projects)) {
-    return 'path-map.json invalid schema: "projects" must be an object';
-  }
-  for (const [name, hosts] of Object.entries(projects as Record<string, unknown>)) {
-    if (hosts === null || typeof hosts !== 'object' || Array.isArray(hosts)) {
-      return `path-map.json invalid schema: project "${name}" hosts must be an object`;
-    }
-    for (const [host, value] of Object.entries(hosts as Record<string, unknown>)) {
-      if (typeof value !== 'string') {
-        return `path-map.json invalid schema: project "${name}" host "${host}" path must be a string`;
-      }
     }
   }
   return null;

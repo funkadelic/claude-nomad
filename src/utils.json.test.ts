@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { deepMerge, encodePath, sortKeysDeep } from './utils.json.ts';
+import { deepMerge, encodePath, sortKeysDeep, validatePathMapShape } from './utils.json.ts';
 
 /**
  * JSON/string helper coverage, split off from utils.test.ts to mirror the
@@ -176,5 +176,68 @@ describe('readPathMap error labels', () => {
     expect(caught).toBeInstanceOf(NomadFatal);
     expect((caught as Error).message).toMatch(/could not read path-map\.json/);
     expect((caught as Error).message).not.toMatch(/could not parse/);
+  });
+
+  it('throws a NomadFatal schema error for valid JSON with an invalid shape', async () => {
+    const mapPath = join(testDir, 'path-map.json');
+    // Parses fine, but `projects` is an array, not an object.
+    writeFileSync(mapPath, '{"projects": []}');
+
+    const { readPathMap } = await import('./utils.json.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let caught: unknown;
+    try {
+      readPathMap(mapPath);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    expect((caught as Error).message).toMatch(/invalid schema: "projects" must be an object/);
+  });
+
+  it('returns the parsed map for valid JSON with a valid shape', async () => {
+    const mapPath = join(testDir, 'path-map.json');
+    writeFileSync(mapPath, '{"projects": {"proj": {"host-a": "/abs/path"}}}');
+
+    const { readPathMap } = await import('./utils.json.ts');
+    expect(readPathMap(mapPath)).toEqual({ projects: { proj: { 'host-a': '/abs/path' } } });
+  });
+});
+
+describe('validatePathMapShape', () => {
+  it('returns null for a valid shape', () => {
+    expect(validatePathMapShape({ projects: { p: { 'host-a': '/x' } } })).toBeNull();
+    // Empty projects is valid (the doctor safe-default and a fresh scaffold).
+    expect(validatePathMapShape({ projects: {} })).toBeNull();
+  });
+
+  it('rejects a non-object top-level value', () => {
+    for (const bad of [null, 'str', 42, []]) {
+      expect(validatePathMapShape(bad)).toMatch(/top-level value must be an object/);
+    }
+  });
+
+  it('rejects a missing or non-object projects field', () => {
+    expect(validatePathMapShape({})).toMatch(/"projects" must be an object/);
+    expect(validatePathMapShape({ projects: null })).toMatch(/"projects" must be an object/);
+    expect(validatePathMapShape({ projects: [] })).toMatch(/"projects" must be an object/);
+  });
+
+  it('rejects a project whose hosts value is not an object', () => {
+    expect(validatePathMapShape({ projects: { p: 'x' } })).toMatch(
+      /project "p" hosts must be an object/,
+    );
+    expect(validatePathMapShape({ projects: { p: ['x'] } })).toMatch(
+      /project "p" hosts must be an object/,
+    );
+    expect(validatePathMapShape({ projects: { p: null } })).toMatch(
+      /project "p" hosts must be an object/,
+    );
+  });
+
+  it('rejects a host whose path value is not a string', () => {
+    expect(validatePathMapShape({ projects: { p: { 'host-a': 5 } } })).toMatch(
+      /project "p" host "host-a" path must be a string/,
+    );
   });
 });
