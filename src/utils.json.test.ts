@@ -42,6 +42,37 @@ describe('deepMerge', () => {
     const merged = deepMerge(target, { model: null });
     expect(merged.model).toBeNull();
   });
+
+  it('does not pollute Object.prototype via a __proto__ payload', () => {
+    // JSON.parse surfaces __proto__ as an own enumerable property (the vector a
+    // poisoned settings.base.json would use), unlike an object literal.
+    const poisoned = JSON.parse('{"__proto__": {"polluted": true}}') as Record<string, unknown>;
+    const base: Record<string, unknown> = { model: 'sonnet' };
+    deepMerge(base, poisoned);
+    const probe: Record<string, unknown> = {};
+    expect(probe.polluted).toBeUndefined();
+    expect(Object.prototype).not.toHaveProperty('polluted');
+  });
+
+  it('does not copy through a literal __proto__ key', () => {
+    const poisoned = JSON.parse('{"__proto__": {"x": 1}, "model": "opus"}') as Record<
+      string,
+      unknown
+    >;
+    const base: Record<string, unknown> = { model: 'sonnet' };
+    const merged = deepMerge(base, poisoned);
+    expect(Object.keys(merged)).toEqual(['model']);
+    expect(merged.model).toBe('opus');
+  });
+
+  it('does not copy through constructor or prototype keys', () => {
+    const poisoned = JSON.parse(
+      '{"constructor": {"bad": 1}, "prototype": {"bad": 2}, "a": 1}',
+    ) as Record<string, unknown>;
+    const base: Record<string, unknown> = {};
+    const merged = deepMerge(base, poisoned);
+    expect(Object.keys(merged)).toEqual(['a']);
+  });
 });
 
 describe('sortKeysDeep', () => {

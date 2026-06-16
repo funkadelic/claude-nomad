@@ -36,6 +36,11 @@ export function readPathMap(mapPath: string): PathMap {
 export function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
   const out: Record<string, unknown> = { ...target };
   for (const [key, value] of Object.entries(source)) {
+    // Skip prototype-pollution vectors. Settings JSON is parsed from the
+    // untrusted synced repo, and assigning these keys would mutate (or shadow)
+    // Object.prototype for the running process and persist into
+    // ~/.claude/settings.json on the next pull.
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
     const existing = out[key];
     const bothObjects =
       value !== null &&
