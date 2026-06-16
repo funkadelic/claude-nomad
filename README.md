@@ -100,6 +100,8 @@ When `nomad push` detects a potential secret, it drops into an interactive menu 
 a recovery hint (non-TTY/CI). Three non-interactive recovery paths are available without the menu:
 
 - `nomad push --redact-all` -- scrub every finding from the local transcript in place, then push.
+  All-or-nothing: if any finding cannot be redacted (an active session, or one that does not map to
+  a synced transcript), nothing is changed and the push stops so you can handle those sessions.
 - `nomad push --allow <rule>` -- record findings matching one gitleaks rule id as false positives
   (appends their fingerprints to `.gitleaksignore`), then re-scan and push.
 - `nomad push --allow-all` -- record every current finding as a false positive, then re-scan and

@@ -12,11 +12,11 @@ import { isAbsolute, resolve, sep } from 'node:path';
 import type { PathMap } from './config.ts';
 import { repoHome } from './config.ts';
 import { appendGitleaksIgnore } from './commands.redact.core.ts';
-import { applyRedact } from './commands.push.recovery.redact.ts';
+import { applyRedact, preflightRedactable } from './commands.push.recovery.redact.ts';
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
-import { log } from './utils.ts';
+import { log, NomadFatal } from './utils.ts';
 import {
   type FindingAction,
   type PromptFn,
@@ -244,9 +244,16 @@ export function dispatchActions(
 
 /**
  * Batch-redact all findings non-interactively (the `--redact-all` path).
- * Does not require a TTY. Findings with no resolvable session id are skipped.
- * Sessions are de-duplicated: the first finding per session triggers the
- * rewrite.
+ * Does not require a TTY. Sessions are de-duplicated: the first finding per
+ * session triggers the rewrite.
+ *
+ * All-or-nothing: a no-mutation preflight (`preflightRedactable`) runs over
+ * every distinct session first. If any finding is refused for a deterministic
+ * reason (no session id, unlocatable transcript, an active session, or an
+ * unmapped staged copy), the whole batch throws `NomadFatal` BEFORE any local
+ * transcript is rewritten. Without this, an earlier session would be scrubbed
+ * on disk and the push would only abort later on the re-scan, leaving surprising
+ * partial local state from a flag the user expects to be all-or-nothing.
  *
  * @param findings All findings from the current verdict.
  * @param ts Backup timestamp.
@@ -261,6 +268,24 @@ export function redactAllFindings(
   nowMs: () => number,
   scan: (p: string) => Finding[] | null = scanFile,
 ): void {
+  const refusals: string[] = [];
+  const preflighted = new Set<string>();
+  for (const f of findings) {
+    const dedupeKey = sessionIdFromFinding(f) ?? findingKey(f);
+    if (preflighted.has(dedupeKey)) continue;
+    preflighted.add(dedupeKey);
+    const reason = preflightRedactable(f, map, nowMs);
+    if (reason !== null) refusals.push(reason);
+  }
+  if (refusals.length > 0) {
+    throw new NomadFatal(
+      `--redact-all cannot redact every finding, so no changes were made:\n` +
+        refusals.map((r) => `  - ${r}`).join('\n') +
+        `\n  Re-run without --redact-all to triage these interactively (Drop session / Skip),` +
+        ` or end any active session and retry.`,
+    );
+  }
+
   const redactedSids = new Set<string>();
   for (const f of findings) {
     const sid = sessionIdFromFinding(f);
