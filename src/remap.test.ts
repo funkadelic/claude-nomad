@@ -175,6 +175,62 @@ describe('remapPull (integration)', () => {
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
     expect(existsSync(backupRoot)).toBe(false);
   });
+
+  it('leaves no .nomad-tmp staging dir after a successful pull', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 's.jsonl'), '{"a":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPull } = await import('./remap.ts');
+    remapPull('20260516-000000');
+
+    expect(existsSync(join(claudeProjects, '-tmp-foo'))).toBe(true);
+    expect(existsSync(join(claudeProjects, '-tmp-foo.nomad-tmp'))).toBe(false);
+  });
+
+  it('clears a stray staging dir left by a prior interrupted copy', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 's.jsonl'), '{"new":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    // Simulate a copy interrupted before its rename swap: a populated sibling.
+    const stray = join(claudeProjects, '-tmp-foo.nomad-tmp');
+    mkdirSync(stray, { recursive: true });
+    writeFileSync(join(stray, 'garbage.jsonl'), '{"stale":1}\n');
+
+    const { remapPull } = await import('./remap.ts');
+    remapPull('20260516-000000');
+
+    expect(existsSync(stray)).toBe(false);
+    expect(readFileSync(join(claudeProjects, '-tmp-foo', 's.jsonl'), 'utf8')).toBe('{"new":1}\n');
+    expect(existsSync(join(claudeProjects, '-tmp-foo', 'garbage.jsonl'))).toBe(false);
+  });
+
+  it('remapPush ignores a stray .nomad-tmp staging dir (not pushed, not counted unmapped)', async () => {
+    const encodedLocal = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 's.jsonl'), '{"a":1}\n');
+    // A stray staging dir left by an interrupted pull sits beside the real dir.
+    const stray = join(claudeProjects, '-tmp-foo.nomad-tmp');
+    mkdirSync(stray, { recursive: true });
+    writeFileSync(join(stray, 'partial.jsonl'), '{"p":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260516-000000');
+
+    expect(result.unmapped).toBe(0);
+    expect(result.pushed).toEqual(['foo']);
+    expect(existsSync(join(sharedProjects, 'foo', 's.jsonl'))).toBe(true);
+  });
 });
 
 describe('remapPull dry-run and unmapped count', () => {

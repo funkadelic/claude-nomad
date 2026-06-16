@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
@@ -8,14 +8,45 @@ import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
 
 /**
- * Recursive mirror copy: removes `dst` first, then copies `src` into it.
- * `cpSync(force:true)` overwrites matching files but does not delete
- * dst-only entries; the upfront `rmSync` makes the operation a true mirror
- * so `dst` reflects `src` exactly rather than accumulating stale files.
+ * Suffix for the sibling staging directory used by `atomicMirror`. Stray dirs
+ * with this suffix are leftovers from a copy interrupted before its final
+ * rename; the next mirror of the same `dst` removes them, and the push readdir
+ * loop skips them so they never count as projects.
+ */
+const TMP_SUFFIX = '.nomad-tmp';
+
+/**
+ * Atomic mirror copy: fully populate a sibling temp dir, then swap it into
+ * place with a single `renameSync`. The temp dir is a sibling of `dst` (same
+ * parent, so same filesystem) which keeps the rename atomic with no EXDEV
+ * cross-device fallback.
+ *
+ * Replaces the previous rm-then-copy: that wiped `dst` and then ran the long
+ * `cpSync` into the empty dir, so an interrupt (Ctrl-C during a large copy,
+ * crash, ENOSPC) left `dst` empty or half-written. Here an interrupt leaves
+ * the live `dst` untouched and only a stray `<dst>.nomad-tmp` behind.
+ *
+ * `force:true` is preserved for parity with the prior call options though the
+ * temp dir is always fresh. The leading `rmSync(tmp)` clears any leftover from
+ * a previously interrupted run before copying.
+ */
+function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSync>[2]): void {
+  const tmp = `${dst}${TMP_SUFFIX}`;
+  rmSync(tmp, { recursive: true, force: true });
+  cpSync(src, tmp, options);
+  rmSync(dst, { recursive: true, force: true });
+  renameSync(tmp, dst);
+}
+
+/**
+ * Recursive mirror copy. `cpSync(force:true)` overwrites matching files but
+ * does not delete dst-only entries, so the copy goes through `atomicMirror`
+ * (copy to a temp sibling, then rename-swap) to make `dst` reflect `src`
+ * exactly rather than accumulating stale files, without the interrupt window
+ * of a wipe-then-copy.
  */
 function copyDir(src: string, dst: string): void {
-  rmSync(dst, { recursive: true, force: true });
-  cpSync(src, dst, { recursive: true, force: true });
+  atomicMirror(src, dst, { recursive: true, force: true });
 }
 
 /**
@@ -28,11 +59,12 @@ function copyDir(src: string, dst: string): void {
  * cpSync invokes the filter on src === src first, and a false return
  * there would abort the whole copy). Used by remapPush only; remapPull
  * keeps the unfiltered copyDir because the repo side is already curated
- * by the push gate.
+ * by the push gate. Uses the same atomic temp-then-rename swap as copyDir;
+ * the filter keys off `relative(src, ...)` so it is unaffected by the staging
+ * destination.
  */
 export function copyDirJsonlOnly(src: string, dst: string): void {
-  rmSync(dst, { recursive: true, force: true });
-  cpSync(src, dst, {
+  atomicMirror(src, dst, {
     recursive: true,
     force: true,
     filter: (srcPath) => {
@@ -247,6 +279,9 @@ export function remapPush(
   if (!dryRun) mkdirSync(repoProjects, { recursive: true });
 
   for (const dir of readdirSync(localProjects)) {
+    // Ignore staging dirs left by a copy interrupted before its rename swap;
+    // they are not projects and a later remap of the real dir cleans them up.
+    if (dir.endsWith(TMP_SUFFIX)) continue;
     const logical = reverse.get(dir);
     if (!logical) {
       unmapped++;
