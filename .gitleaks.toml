@@ -6,14 +6,26 @@
 [extend]
 useDefault = true
 
+# Path-scoped: this tool-output noise (gitleaks fingerprints, coverage
+# line-keys, npm audit JSON id hashes, Sonar issue keys) accumulates in Claude
+# Code session transcripts when a conversation runs those tools. Two of these
+# regexes are structurally generic enough that, left global, they could suppress
+# a real credential that happened to sit in a `path:word:digit` or hex-`id`
+# context anywhere in the repo. Scoping to `shared/projects/<logical>/.../*.jsonl`
+# with `condition = "AND"` (matching every other block below) confines the
+# suppression to synced transcripts: a real secret in a source file still fires.
 [[allowlists]]
-description = "claude-nomad: structurally-distinguishable tool-output noise"
+description = "claude-nomad: structurally-distinguishable tool-output noise in synced session transcripts"
 regexes = [
     '''AY[A-Za-z0-9_-]{20,}''',
     '''[\w./-]+\.[A-Za-z0-9]+:[\w-]+:\d+''',
     '''"id"\s*:\s*"[a-f0-9]{40,64}"''',
     '''key=[a-f0-9]{8,} [\w./-]+\.\w+:\d+''',
 ]
+paths = [
+    '''^shared/projects/[^/]+/.*\.jsonl$''',
+]
+condition = "AND"
 
 # Path-scoped: the documented test-fixture github-pat literal AND the three
 # entropy-variant placeholders (zero-suffix, alphabet, repeat-A) accumulate
