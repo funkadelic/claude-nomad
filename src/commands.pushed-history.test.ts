@@ -71,6 +71,16 @@ describe('sessionInPushedHistory / warnIfSessionPushed (real git)', () => {
     expect(sessionInPushedHistory('sid-sub', local)).toBe(true);
   });
 
+  it('returns true for a deeply nested <id>/ subtree file in pushed history', async () => {
+    // The pathspec glob must match files more than one level below <id>/ (e.g.
+    // subagents/ or tool-results/), so secrets in deep subtree files are not
+    // missed. Guards against a future switch to `:(glob)` magic, under which
+    // `*` would stop matching `/`.
+    const { local } = buildPushedRepo(tmp, [join('sid-sub', 'subagents', 'agent.jsonl')]);
+    const { sessionInPushedHistory } = await import('./commands.pushed-history.ts');
+    expect(sessionInPushedHistory('sid-sub', local)).toBe(true);
+  });
+
   it('returns false for a session absent from pushed history', async () => {
     const { local } = buildPushedRepo(tmp, ['sid-flat.jsonl']);
     const { sessionInPushedHistory } = await import('./commands.pushed-history.ts');
