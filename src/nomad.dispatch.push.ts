@@ -1,4 +1,4 @@
-import { extractFlagValue } from './nomad.dispatch.ts';
+import { applyBool, extractFlagValue, REJECT, type TokenResult } from './nomad.dispatch.helpers.ts';
 
 /** Parsed result from {@link parsePushArgs}. */
 export type PushArgs = {
@@ -19,25 +19,6 @@ type PushParseState = {
   allowAll: boolean;
   allowRule: string | undefined;
 };
-
-/** Outcome of applying a single argv token: parse-ok plus the index increment. */
-type TokenResult = { ok: boolean; advance: number };
-
-/** Shorthand failure result (no advance). */
-const REJECT: TokenResult = { ok: false, advance: 0 };
-
-/**
- * Apply a boolean flag to the parse state. Rejects a duplicate.
- *
- * @param seen Whether the flag was already seen.
- * @param set Setter that marks the flag present in the state.
- * @returns `{ ok, advance }`; advance is 1 on success.
- */
-function applyBool(seen: boolean, set: () => void): TokenResult {
-  if (seen) return REJECT;
-  set();
-  return { ok: true, advance: 1 };
-}
 
 /**
  * Gitleaks rule-id shape: a leading word character (`\w`, i.e. alphanumeric or
