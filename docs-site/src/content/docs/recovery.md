@@ -115,6 +115,10 @@ Safety checks:
   the session to end.
 - Before every rewrite, a backup is written to `~/.cache/claude-nomad/backup/<timestamp>/`, so
   the original content is recoverable.
+- If a finding's secret value cannot be located verbatim in the file (for example the scanner
+  reported a truncated or normalized span), the file is left unchanged and a `no redaction applied`
+  warning is printed instead of a silent success. Inspect it by hand; the push re-scan still blocks
+  a real leak.
 - `--dry-run` prints the planned redactions and writes nothing.
 
 This command is safe to re-run: if the span was already redacted (the replacement token is already
@@ -236,17 +240,15 @@ back, so an aborted push leaves no allowlist lines behind. `--redact-all`, `--al
 
 `gitleaks protect` runs against the staged tree on every `nomad push` and can flag
 structurally-distinguishable tool-output noise as `generic-api-key`. The repo-root
-`.gitleaks.toml` pre-allows several such patterns so routine pushes are not blocked:
+`.gitleaks.toml` pre-allows several such patterns so routine pushes are not blocked. Every
+allowlist block is path-scoped to synced session transcripts
+(`shared/projects/<project>/.../*.jsonl`) with `condition = "AND"`, so a pattern can only suppress
+a finding inside a transcript, never a bare token in a source file or anywhere else in the repo:
 
 - Sonar issue keys (`AY` prefix + 20+ url-safe chars).
-- gitleaks fingerprint format (`<context>:<rule>:<line>` emitted by gitleaks's own reports).
+- gitleaks fingerprint format (`<path>.<ext>:<rule>:<line>` emitted by gitleaks's own reports).
 - npm audit advisory hashes (anchored on the JSON shape `"id":"<40..64 hex>"`).
 - Coverage-report line-keys (`key=<hex> <path>:<line>`).
-
-A second group of entries is scoped to synced session transcripts
-(`shared/projects/<project>/*.jsonl`) and anchored on the surrounding output structure, so none
-of them can allow a bare token sitting anywhere else:
-
 - The documented test-fixture GitHub PAT literal and its scrub placeholders, which accumulate in
   transcripts whenever a conversation touches the docs that quote them.
 - SonarCloud issue-listing output (`key: <id>` immediately followed by `rule: <lang>:S<n>`), the
@@ -255,22 +257,27 @@ of them can allow a bare token sitting anywhere else:
   SHA256:<43-char base64>`, as printed by `git log --show-signature`). A fingerprint is a hash of
   a public key, not a credential.
 
-The file extends the default gitleaks ruleset, so real high-entropy secrets like `ghp_*`,
-`sk_live_*`, `xoxb-*`, and `AKIA*` still fire. The allowlist patterns are structurally
-distinguishable from real-secret formats: a malformed credential cannot match an allowlist regex
-by accident.
+The PAT-fixture entry matches exact documented literals, and the last two (SonarCloud
+issue-listing output and SSH public-key fingerprints) are additionally anchored on their
+surrounding output structure via `regexTarget = "line"`, so none can allow a bare token even within
+a transcript. The file extends the default gitleaks ruleset, so real high-entropy secrets like
+`ghp_*`, `sk_live_*`, `xoxb-*`, and `AKIA*` still fire. The allowlist patterns are structurally
+distinguishable from real-secret formats: a malformed credential cannot accidentally match an
+allowlist regex.
 
 ```toml
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "claude-nomad: structurally-distinguishable tool-output noise"
+description = "claude-nomad: structurally-distinguishable tool-output noise in synced session transcripts"
 regexes = [
     '''AY[A-Za-z0-9_-]{20,}''',
-    '''[\w-]+:[\w-]+:\d+''',
+    '''[\w./-]+\.[A-Za-z0-9]+:[\w-]+:\d+''',
     # ...see .gitleaks.toml at the repo root for the full list
 ]
+paths = ['''^shared/projects/[^/]+/.*\.jsonl$''']
+condition = "AND"
 ```
 
 File location: `.gitleaks.toml` ships bundled with the CLI binary. At runtime both `probeGitleaks`
