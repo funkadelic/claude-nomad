@@ -11,7 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 
 import { backupBase, claudeHome } from './config.ts';
 import { encodePath } from './utils.json.ts';
@@ -93,15 +93,18 @@ export function ensureSymlink(linkPath: string, target: string): void {
 /**
  * Snapshot `absPath` into `destRoot/<rel>` (where `rel = relative(anchor,
  * absPath)`) before a destructive write. No-op if the source is missing or
- * resolves outside `anchor` (a `..`-prefixed or empty `rel`). Recursive for
- * directories; `force: false` so a same-`ts` collision drops the second copy
- * rather than overwriting an earlier snapshot. Shared core behind the three
- * scoped wrappers below, which differ only by their anchor and `destRoot`.
+ * resolves outside `anchor`. The escape guard tests `..` at a path-segment
+ * boundary (`rel === '..'` or a `..<sep>` prefix) rather than a bare
+ * `startsWith('..')`, so a legitimate sibling entry whose name merely begins
+ * with `..` (e.g. `..config`) is still backed up. Recursive for directories;
+ * `force: false` so a same-`ts` collision drops the second copy rather than
+ * overwriting an earlier snapshot. Shared core behind the three scoped
+ * wrappers below, which differ only by their anchor and `destRoot`.
  */
 function backupUnder(absPath: string, anchor: string, destRoot: string): void {
   if (!existsSync(absPath)) return;
   const rel = relative(anchor, absPath);
-  if (rel.startsWith('..') || rel === '') return;
+  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return;
   const dst = join(destRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });

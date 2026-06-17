@@ -54,6 +54,18 @@ describe('backupBeforeWrite', () => {
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 
+  it('backs up an entry whose name begins with ".." (not treated as an escape)', () => {
+    // Regression: the segment-boundary escape guard must allow a legitimate
+    // sibling whose name merely starts with ".." (e.g. "..config"); the prior
+    // bare startsWith("..") wrongly skipped it.
+    const src = join(testHome, '.claude', '..config');
+    writeFileSync(src, 'cfg');
+    backupBeforeWrite(src, ts);
+    const dst = join(testHome, '.cache', 'claude-nomad', 'backup', ts, '..config');
+    expect(existsSync(dst)).toBe(true);
+    expect(readFileSync(dst, 'utf8')).toBe('cfg');
+  });
+
   it('recursively copies a directory under claudeHome()', () => {
     const agentsDir = join(testHome, '.claude', 'agents');
     mkdirSync(agentsDir, { recursive: true });
