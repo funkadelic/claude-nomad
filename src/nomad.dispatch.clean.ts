@@ -1,4 +1,4 @@
-import { extractFlagValue } from './nomad.dispatch.ts';
+import { applyBool, extractFlagValue, REJECT, type TokenResult } from './nomad.dispatch.helpers.ts';
 
 /** Parsed result from {@link parseCleanArgs}. */
 export type CleanArgs = {
@@ -17,12 +17,6 @@ type CleanParseState = {
   olderThan: string | undefined;
   keep: number | undefined;
 };
-
-/** Outcome of applying a single argv token: parse-ok plus the index increment. */
-type TokenResult = { ok: boolean; advance: number };
-
-/** Shorthand failure result (no advance). */
-const REJECT: TokenResult = { ok: false, advance: 0 };
 
 /**
  * Apply the `--older-than <dur>` value flag to the parse state. Rejects a
@@ -59,20 +53,6 @@ function applyKeep(argv: string[], i: number, st: CleanParseState): TokenResult 
   if (val === null || !/^\d+$/.test(val)) return REJECT;
   st.keep = Number(val);
   return { ok: true, advance: 2 };
-}
-
-/**
- * Apply a boolean flag (`--backups` / `--dry-run`) to the parse state via the
- * given `seen` getter/setter. Rejects a duplicate.
- *
- * @param seen Whether the flag was already seen.
- * @param set Setter that marks the flag present in the state.
- * @returns `{ ok, advance }`; advance is 1 on success.
- */
-function applyBool(seen: boolean, set: () => void): TokenResult {
-  if (seen) return REJECT;
-  set();
-  return { ok: true, advance: 1 };
 }
 
 /**

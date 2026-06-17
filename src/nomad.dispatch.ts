@@ -1,3 +1,5 @@
+import { extractFlagValue, REJECT, type TokenResult } from './nomad.dispatch.helpers.ts';
+
 /** Parsed result from {@link parseInitArgs}. */
 export type InitArgs = {
   /** True when `--snapshot` was present. */
@@ -7,21 +9,6 @@ export type InitArgs = {
   /** Optional repo name supplied via `--repo <name>`. */
   repoName: string | undefined;
 };
-
-/**
- * Extract the value following a `--flag <value>` pair. Returns the value
- * string on success, or `null` when the next token is missing or starts with
- * `--` (which would indicate the flag was supplied without a value).
- *
- * @param argv The full process argv array.
- * @param i Index of the flag token; the value is read from `i + 1`.
- * @returns The value token, or `null` when absent or itself a `--` flag.
- */
-export function extractFlagValue(argv: string[], i: number): string | null {
-  const val = argv[i + 1];
-  if (val === undefined || val.startsWith('--')) return null;
-  return val;
-}
 
 /** Internal state threaded through the parseInitArgs loop. */
 type InitParseState = {
@@ -39,33 +26,29 @@ type InitParseState = {
  * `--repo` with no valid value). Advances `i` by mutation via the returned
  * increment: 1 for boolean flags, 2 for `--repo <value>`.
  */
-function applyInitToken(
-  argv: string[],
-  i: number,
-  st: InitParseState,
-): { ok: boolean; advance: number } {
+function applyInitToken(argv: string[], i: number, st: InitParseState): TokenResult {
   const token = argv[i];
   if (token === '--snapshot') {
-    if (st.sawSnapshot) return { ok: false, advance: 0 };
+    if (st.sawSnapshot) return REJECT;
     st.sawSnapshot = true;
     st.snapshot = true;
     return { ok: true, advance: 1 };
   }
   if (token === '--keep-actions') {
-    if (st.sawKeepActions) return { ok: false, advance: 0 };
+    if (st.sawKeepActions) return REJECT;
     st.sawKeepActions = true;
     st.keepActions = true;
     return { ok: true, advance: 1 };
   }
   if (token === '--repo') {
-    if (st.sawRepo) return { ok: false, advance: 0 };
+    if (st.sawRepo) return REJECT;
     st.sawRepo = true;
     const val = extractFlagValue(argv, i);
-    if (val === null) return { ok: false, advance: 0 };
+    if (val === null) return REJECT;
     st.repoName = val;
     return { ok: true, advance: 2 };
   }
-  return { ok: false, advance: 0 };
+  return REJECT;
 }
 
 /**
@@ -143,8 +126,8 @@ export function parseRedactArgs(argv: string[]): RedactArgs | null {
     } else if (token === '--rule') {
       if (sawRule) return null;
       sawRule = true;
-      const val = argv[i + 1];
-      if (val === undefined || val.startsWith('--')) return null;
+      const val = extractFlagValue(argv, i);
+      if (val === null) return null;
       rule = val;
       i += 2;
     } else {
