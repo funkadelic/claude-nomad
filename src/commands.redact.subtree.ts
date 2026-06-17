@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { applyRedactions } from './commands.redact.core.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
+import { log } from './utils.ts';
 
 /**
  * Recurse into `dir` and collect absolute paths of every regular file,
@@ -147,7 +148,20 @@ export function applySubtreeRedactions(
   if (!dryRun && total > 0) {
     for (const { path: filePath, findings } of dirty) {
       backupBeforeWrite(filePath, ts);
-      writeFileSync(filePath, applyRedactions(readFileSync(filePath, 'utf8'), findings), 'utf8');
+      const before = readFileSync(filePath, 'utf8');
+      const after = applyRedactions(before, findings);
+      // applyRedactions locates secrets by their `Match` value, not by column.
+      // If a finding's Match cannot be found in the file (e.g. a truncated or
+      // normalized span from the scanner), the file is unchanged despite having
+      // findings, so a "redacted" report would be misleading. Surface it; the
+      // staged-tree re-scan still blocks a real leak that slipped through.
+      if (after === before) {
+        log(
+          `warning: no redaction applied to ${filePath}: finding match values were not located ` +
+            `in the file. Inspect it manually; the push re-scan still blocks a real leak.`,
+        );
+      }
+      writeFileSync(filePath, after, 'utf8');
     }
   }
   return { total, dirty };
