@@ -261,7 +261,7 @@ describe('reportRebaseState', () => {
   it('emits a FAIL line and sets exitCode=1 on a mid-rebase repo', async () => {
     // Create .git/rebase-merge to simulate a wedged rebase state.
     mkdirSync(join(env.testHome, 'claude-nomad', '.git', 'rebase-merge'));
-    const { reportRebaseState } = await import('./commands.doctor.checks.repository.ts');
+    const { reportRebaseState } = await import('./commands.doctor.checks.git-state.ts');
     const { section } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseState(sec);
@@ -279,7 +279,7 @@ describe('reportRebaseState', () => {
   it('emits a FAIL line and sets exitCode=1 on a mid-merge repo', async () => {
     // Create .git/MERGE_HEAD to simulate a wedged merge state.
     writeFileSync(join(env.testHome, 'claude-nomad', '.git', 'MERGE_HEAD'), 'deadbeef\n');
-    const { reportRebaseState } = await import('./commands.doctor.checks.repository.ts');
+    const { reportRebaseState } = await import('./commands.doctor.checks.git-state.ts');
     const { section } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseState(sec);
@@ -294,7 +294,7 @@ describe('reportRebaseState', () => {
 
   it('emits nothing and leaves exitCode=0 on a clean repo', async () => {
     // No marker files: clean repo.
-    const { reportRebaseState } = await import('./commands.doctor.checks.repository.ts');
+    const { reportRebaseState } = await import('./commands.doctor.checks.git-state.ts');
     const { section } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseState(sec);
@@ -357,7 +357,7 @@ describe('reportRebaseClean', () => {
       cwd: repoDir,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const { reportRebaseClean } = await import('./commands.doctor.checks.repository.ts');
+    const { reportRebaseClean } = await import('./commands.doctor.checks.git-state.ts');
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseClean(sec);
@@ -377,7 +377,7 @@ describe('reportRebaseClean', () => {
       cwd: repoDir,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const { reportRebaseClean } = await import('./commands.doctor.checks.repository.ts');
+    const { reportRebaseClean } = await import('./commands.doctor.checks.git-state.ts');
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseClean(sec);
@@ -425,7 +425,7 @@ describe('reportRebaseState unmerged-index FAIL', () => {
   it('emits a FAIL line and sets exitCode=1 on an unmerged-index repo', async () => {
     // Build the unmerged-index-no-marker fixture inside the REPO_HOME repo.
     addUnmergedIndex(tmp);
-    const { reportRebaseState } = await import('./commands.doctor.checks.repository.ts');
+    const { reportRebaseState } = await import('./commands.doctor.checks.git-state.ts');
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseState(sec);
@@ -440,7 +440,7 @@ describe('reportRebaseState unmerged-index FAIL', () => {
   it('preserves the existing mid-rebase FAIL on a mid-rebase repo', async () => {
     makeDocCommit(tmp, 'a.ts', 'x\n', 'init');
     mkdirSync(join(tmp, '.git', 'rebase-merge'));
-    const { reportRebaseState } = await import('./commands.doctor.checks.repository.ts');
+    const { reportRebaseState } = await import('./commands.doctor.checks.git-state.ts');
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseState(sec);
@@ -454,7 +454,7 @@ describe('reportRebaseState unmerged-index FAIL', () => {
   it('emits nothing and leaves exitCode=0 on a clean committed repo (no new FAIL)', async () => {
     // Clean repo: no marker, no unmerged index.
     makeDocCommit(tmp, 'a.ts', 'x\n', 'init');
-    const { reportRebaseState } = await import('./commands.doctor.checks.repository.ts');
+    const { reportRebaseState } = await import('./commands.doctor.checks.git-state.ts');
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseState(sec);
@@ -501,7 +501,7 @@ describe('reportOrphanedAutostash WARN', () => {
 
   it('emits a WARN line when an orphaned autostash is present and does NOT set exitCode', async () => {
     addOrphanedAutostash(tmp);
-    const { reportOrphanedAutostash } = await import('./commands.doctor.checks.repository.ts');
+    const { reportOrphanedAutostash } = await import('./commands.doctor.checks.git-state.ts');
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportOrphanedAutostash(sec);
@@ -517,7 +517,7 @@ describe('reportOrphanedAutostash WARN', () => {
 
   it('emits nothing and leaves exitCode=0 on a clean repo (no autostash entry)', async () => {
     // No stash entries at all.
-    const { reportOrphanedAutostash } = await import('./commands.doctor.checks.repository.ts');
+    const { reportOrphanedAutostash } = await import('./commands.doctor.checks.git-state.ts');
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportOrphanedAutostash(sec);
@@ -533,7 +533,7 @@ describe('reportOrphanedAutostash WARN', () => {
     // Now build the unmerged-index state.
     addUnmergedIndex(tmp);
     const { reportRebaseState, reportOrphanedAutostash } =
-      await import('./commands.doctor.checks.repository.ts');
+      await import('./commands.doctor.checks.git-state.ts');
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportRebaseState(sec);

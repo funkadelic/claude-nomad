@@ -21,7 +21,7 @@ import { findGitlinks } from './push-checks.ts';
 import { gitStatusPorcelainZ } from './utils.ts';
 
 /**
- * Repository-state reporters for `cmdDoctor`: the gitleaks presence probe, the
+ * Git-state reporters for `cmdDoctor`: the gitleaks presence probe, the
  * nested-gitlink scan of `shared/`, the remote-origin line, and the
  * rebase-clean-tree WARN. Each helper appends items to its target
  * `DoctorSection` and signals failure by setting `process.exitCode = 1`.
