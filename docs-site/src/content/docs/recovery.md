@@ -257,11 +257,13 @@ a finding inside a transcript, never a bare token in a source file or anywhere e
   SHA256:<43-char base64>`, as printed by `git log --show-signature`). A fingerprint is a hash of
   a public key, not a credential.
 
-The last three are additionally anchored on their surrounding output structure (via
-`regexTarget = "line"`) so they cannot allow a bare token even within a transcript. The file
-extends the default gitleaks ruleset, so real high-entropy secrets like `ghp_*`, `sk_live_*`,
-`xoxb-*`, and `AKIA*` still fire. The allowlist patterns are structurally distinguishable from
-real-secret formats: a malformed credential cannot match an allowlist regex by accident.
+The PAT-fixture entry matches exact documented literals, and the last two (SonarCloud
+issue-listing output and SSH public-key fingerprints) are additionally anchored on their
+surrounding output structure via `regexTarget = "line"`, so none can allow a bare token even within
+a transcript. The file extends the default gitleaks ruleset, so real high-entropy secrets like
+`ghp_*`, `sk_live_*`, `xoxb-*`, and `AKIA*` still fire. The allowlist patterns are structurally
+distinguishable from real-secret formats: a malformed credential cannot accidentally match an
+allowlist regex.
 
 ```toml
 [extend]
