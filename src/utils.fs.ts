@@ -11,7 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 
 import { backupBase, claudeHome } from './config.ts';
 import { encodePath } from './utils.json.ts';
@@ -91,18 +91,31 @@ export function ensureSymlink(linkPath: string, target: string): void {
 }
 
 /**
+ * Snapshot `absPath` into `destRoot/<rel>` (where `rel = relative(anchor,
+ * absPath)`) before a destructive write. No-op if the source is missing or
+ * resolves outside `anchor`. The escape guard tests `..` at a path-segment
+ * boundary (`rel === '..'` or a `..<sep>` prefix) rather than a bare
+ * `startsWith('..')`, so a legitimate sibling entry whose name merely begins
+ * with `..` (e.g. `..config`) is still backed up. Recursive for directories;
+ * `force: false` so a same-`ts` collision drops the second copy rather than
+ * overwriting an earlier snapshot. Shared core behind the three scoped
+ * wrappers below, which differ only by their anchor and `destRoot`.
+ */
+function backupUnder(absPath: string, anchor: string, destRoot: string): void {
+  if (!existsSync(absPath)) return;
+  const rel = relative(anchor, absPath);
+  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return;
+  const dst = join(destRoot, rel);
+  mkdirSync(dirname(dst), { recursive: true });
+  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+}
+
+/**
  * Snapshot `absPath` into `backupBase()/<ts>/<rel>` before destructive write.
  * No-op if source missing or outside claudeHome(). Recursive for directories.
  */
 export function backupBeforeWrite(absPath: string, ts: string): void {
-  if (!existsSync(absPath)) return;
-  const claude = claudeHome();
-  const rel = relative(claude, absPath);
-  if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(backupBase(), ts);
-  const dst = join(backupRoot, rel);
-  mkdirSync(dirname(dst), { recursive: true });
-  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+  backupUnder(absPath, claudeHome(), join(backupBase(), ts));
 }
 
 /**
@@ -112,13 +125,7 @@ export function backupBeforeWrite(absPath: string, ts: string): void {
  * dump is distinguishable from `claudeHome()` backups in the same `ts` dir.
  */
 export function backupRepoWrite(absPath: string, ts: string, repoHome: string): void {
-  if (!existsSync(absPath)) return;
-  const rel = relative(repoHome, absPath);
-  if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(backupBase(), ts, 'repo');
-  const dst = join(backupRoot, rel);
-  mkdirSync(dirname(dst), { recursive: true });
-  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+  backupUnder(absPath, repoHome, join(backupBase(), ts, 'repo'));
 }
 
 /**
@@ -143,11 +150,5 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
  * collision would silently drop the second snapshot).
  */
 export function backupExtrasWrite(absPath: string, ts: string, projectRoot: string): void {
-  if (!existsSync(absPath)) return;
-  const rel = relative(projectRoot, absPath);
-  if (rel.startsWith('..') || rel === '') return;
-  const backupRoot = join(backupBase(), ts, 'extras');
-  const dst = join(backupRoot, encodePath(projectRoot), rel);
-  mkdirSync(dirname(dst), { recursive: true });
-  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+  backupUnder(absPath, projectRoot, join(backupBase(), ts, 'extras', encodePath(projectRoot)));
 }
