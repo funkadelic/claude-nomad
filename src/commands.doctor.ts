@@ -20,7 +20,7 @@ import {
   reportRebaseClean,
   reportRebaseState,
   reportRemote,
-} from './commands.doctor.checks.repository.ts';
+} from './commands.doctor.checks.git-state.ts';
 import { reportBackupsCheck } from './commands.doctor.checks.backups.ts';
 import { reportCheckSchema } from './commands.doctor.check-schema.ts';
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
