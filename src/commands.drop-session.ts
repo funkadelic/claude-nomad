@@ -5,6 +5,7 @@ import { join, relative } from 'node:path';
 import { repoHome } from './config.ts';
 import { expandStagedDir, isInIndex, isTrackedInHead } from './commands.drop-session.git.ts';
 import { reportScrubHint } from './commands.drop-session.scrub-hint.ts';
+import { warnIfSessionPushed } from './commands.pushed-history.ts';
 import { die, fail, item, NomadFatal } from './utils.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
@@ -59,6 +60,9 @@ export function cmdDropSession(id: string): void {
     }
     for (const rel of matches) unstageOne(rel, repo);
     reportScrubHint(id, matches);
+    // If a prior push already shipped this session, un-staging it locally does
+    // not remove the secret from the remote; surface the history-rewrite path.
+    warnIfSessionPushed(id, repo);
   } catch (err) {
     // Defensive escape hatch: only fires if a non-NomadFatal error escapes
     // the try block. All execFileSync mutation failures are wrapped in

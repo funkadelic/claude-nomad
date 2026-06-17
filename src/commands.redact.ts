@@ -8,6 +8,7 @@ import {
   listSubtreeFiles,
   newestSubtreeMtimeMs,
 } from './commands.redact.subtree.ts';
+import { warnIfSessionPushed } from './commands.pushed-history.ts';
 import { type Finding, scanFile } from './push-gitleaks.scan.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
@@ -165,6 +166,9 @@ export function cmdRedact(
     }
 
     log(`redacted ${totalCount} finding(s) in ${localPath} (backup: ${ts})`);
+    // Redacting the local copy does not rewrite commits already on the remote;
+    // warn when this session was published by an earlier push.
+    warnIfSessionPushed(id, repo);
   } catch (err) {
     /* c8 ignore next 3 */
     if (!(err instanceof NomadFatal)) {
