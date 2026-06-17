@@ -4,7 +4,20 @@ import { dirname, join } from 'node:path';
 import { home } from './config.ts';
 import { warn } from './utils.ts';
 
-/** Returns the lock file path resolved under the current HOME at call time. */
+/**
+ * Returns the lock file path resolved under the current HOME at call time.
+ *
+ * The lock is keyed on HOME, not on `REPO_HOME`, because the mutating commands
+ * it guards (`pull`/`push`) write HOME-scoped state (`~/.claude/settings.json`,
+ * symlinks, `~/.claude/projects/`) in addition to the repo. For the normal
+ * single-user setup HOME and the repo move together, so this is correct.
+ *
+ * Caveat: a `NOMAD_REPO` override decouples them. Two concurrent invocations
+ * pointed at the same `NOMAD_REPO` but launched under different HOME values
+ * would acquire different locks yet mutate the same repo. Do not combine a
+ * `NOMAD_REPO` override with concurrent default-HOME runs; the override is a
+ * single-checkout developer convenience, not a concurrency mechanism.
+ */
 function lockFilePath(): string {
   return join(home(), '.cache', 'claude-nomad', 'nomad.lock');
 }

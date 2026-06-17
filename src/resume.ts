@@ -21,6 +21,14 @@ type TranscriptLine = { type?: string; cwd?: string };
  * invariant validated in the end-to-end sync phase). All errors go to stderr
  * prefixed with the red `✗` fail glyph; success goes to stdout as a bare
  * shell line (no glyph) so `eval "$(...)"` works.
+ *
+ * Error paths exit directly via `process.exit(1)` rather than throwing
+ * `NomadFatal` like the mutating commands do. That is intentional and safe ONLY
+ * because this command is lockless and read-only: there is no lock to release
+ * in a `finally`, so the `NomadFatal` + top-level-catch contract that protects
+ * `pull`/`push`/`redact` buys nothing here. If any locked or mutating step is
+ * ever added to this command, switch these to `die()`/`NomadFatal` so the lock
+ * releases on every exit path.
  */
 export function resumeCmd(sessionId: string): void {
   if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || sessionId.length > 128) {
