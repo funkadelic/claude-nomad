@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // listSubtreeFiles
@@ -211,6 +211,35 @@ describe('applySubtreeRedactions', () => {
     const { readFileSync } = await import('node:fs');
     expect(readFileSync(mainPath, 'utf8')).toContain('[REDACTED:r1]');
     expect(readFileSync(mainPath, 'utf8')).not.toContain('real-secret');
+  });
+
+  it('warns and leaves the file unchanged when a finding match is not located', async () => {
+    const { applySubtreeRedactions } = await import('./commands.redact.subtree.ts');
+    const mainPath = join(tmpDir, 'sid.jsonl');
+    const original = '{"text":"clean content"}\n';
+    writeFileSync(mainPath, original);
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((m?: unknown) => {
+      logged.push(String(m));
+    });
+
+    // A finding whose Match value does not appear in the file: applyRedactions
+    // locates nothing, so the rewrite is a no-op and the warning must fire.
+    const { total } = applySubtreeRedactions(
+      mainPath,
+      [{ StartLine: 1, Match: 'not-in-the-file', RuleID: 'r1' }],
+      [],
+      undefined,
+      'ts-x',
+      () => [],
+      false,
+    );
+    spy.mockRestore();
+
+    expect(total).toBe(1);
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync(mainPath, 'utf8')).toBe(original);
+    expect(logged.some((l) => l.includes('no redaction applied'))).toBe(true);
   });
 
   it('redacts a subtree file when scan returns a finding', async () => {
