@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.50.3](https://github.com/funkadelic/claude-nomad/compare/v0.50.2...v0.50.3) (2026-06-17)
+
+
+### Fixed
+
+* **gitleaks:** scope tool-output noise allowlist to session transcripts ([#305](https://github.com/funkadelic/claude-nomad/issues/305)) ([ca76680](https://github.com/funkadelic/claude-nomad/commit/ca766803a425d21747f959606d6436989ce249e6))
+* **push:** make --redact-all all-or-nothing ([#302](https://github.com/funkadelic/claude-nomad/issues/302)) ([f2cffeb](https://github.com/funkadelic/claude-nomad/commit/f2cffeb9204b68fb046ee55c9768e065272fb431))
+* **push:** warn when drop-session/redact target is already in pushed history ([#304](https://github.com/funkadelic/claude-nomad/issues/304)) ([739676f](https://github.com/funkadelic/claude-nomad/commit/739676ffbf1345fc7ff124ac7eafb9802ba09be4))
+* **redact:** warn when a finding match is not located in the file ([#310](https://github.com/funkadelic/claude-nomad/issues/310)) ([db1442b](https://github.com/funkadelic/claude-nomad/commit/db1442b311db04944b655ece91a56ef23a39abe1))
+* **remap:** make session-transcript mirror copy atomic ([4fc518f](https://github.com/funkadelic/claude-nomad/commit/4fc518fd80ce7fffb56ba2a6d135e6f6b795bc91))
+* **utils:** guard deepMerge against prototype pollution ([#299](https://github.com/funkadelic/claude-nomad/issues/299)) ([8e57539](https://github.com/funkadelic/claude-nomad/commit/8e575393a320386dd7329aab8071fd84557ec4e9))
+
+
+### Changed
+
+* **config:** centralize path-map.json shape validation ([#306](https://github.com/funkadelic/claude-nomad/issues/306)) ([88edda3](https://github.com/funkadelic/claude-nomad/commit/88edda3f45954d4dc89d65e2ec55a7d9d5b6b3f8))
+* **dispatch:** share argv token-parser primitives ([#307](https://github.com/funkadelic/claude-nomad/issues/307)) ([9f62b51](https://github.com/funkadelic/claude-nomad/commit/9f62b5156bbc3b7e03f8a81fe0f844cbeb1da3fa))
+* **doctor:** rename repository check module to git-state ([#309](https://github.com/funkadelic/claude-nomad/issues/309)) ([b6a0d5c](https://github.com/funkadelic/claude-nomad/commit/b6a0d5c8461c2f63af7d77464db9558271d46f46))
+* **utils:** dedup backup helpers and document lock/exit conventions ([#308](https://github.com/funkadelic/claude-nomad/issues/308)) ([4c2d59d](https://github.com/funkadelic/claude-nomad/commit/4c2d59d97c875851733175e4b4346e5714c48a32))
+
+
+### Documentation
+
+* **recovery:** reflect session-scoped allowlist and redact no-match warning ([#311](https://github.com/funkadelic/claude-nomad/issues/311)) ([7faf564](https://github.com/funkadelic/claude-nomad/commit/7faf5647d7dfd30822950d687fd8be15b5c49910))
+
+
+### Testing
+
+* **push:** add full-pipeline cmdPush E2E against real git and gitleaks ([#303](https://github.com/funkadelic/claude-nomad/issues/303)) ([3c01262](https://github.com/funkadelic/claude-nomad/commit/3c012629e7b99dcf4c5e679d93acb353ee6c3409))
+
 ## [0.50.2](https://github.com/funkadelic/claude-nomad/compare/v0.50.1...v0.50.2) (2026-06-15)
 
 
