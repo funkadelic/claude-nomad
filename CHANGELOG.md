@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.1](https://github.com/funkadelic/claude-nomad/compare/v0.51.0...v0.51.1) (2026-06-18)
+
+
+### Fixed
+
+* **doctor:** handle diverged settings keys honestly instead of advising blind pull ([#315](https://github.com/funkadelic/claude-nomad/issues/315)) ([39f8148](https://github.com/funkadelic/claude-nomad/commit/39f81480285693e08575f5ab4ecbb8b182eeb233))
+
 ## [0.51.0](https://github.com/funkadelic/claude-nomad/compare/v0.50.3...v0.51.0) (2026-06-18)
 
 
