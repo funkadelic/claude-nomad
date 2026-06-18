@@ -104,6 +104,19 @@ export const DEFAULT_HELP = [
   row('       --dry-run', 'List what would be materialized without writing anything.'),
   '',
   row(
+    '  capture-settings',
+    'Promote local-only settings.json keys into the shared repo so they survive',
+  ),
+  cont('the next pull. Backs up the destination, writes atomically, then regenerates'),
+  cont('settings.json so local matches. Idempotent when no local-only keys remain.'),
+  row('       --host', 'Write into hosts/<HOST>.json (host-specific values) instead of'),
+  cont('shared/settings.base.json (default; normalizes absolute node launcher paths).'),
+  row(
+    '       --dry-run',
+    'Show the destination and keys that would be written without changing anything.',
+  ),
+  '',
+  row(
     '  redact <session-id>',
     'Rewrite the secret span in the local source transcript for a session,',
   ),
