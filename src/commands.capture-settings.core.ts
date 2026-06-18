@@ -103,6 +103,14 @@ export type SettingsDrift = {
  * vs `settings` into `behind`, `ahead`, and `changed` buckets. Each bucket is
  * sorted with `localeCompare(_, 'en')` for stable output.
  *
+ * The `changed` comparison normalizes node launcher paths on both sides first
+ * (`normalizeNodePathsDeep`), so a key that differs only by a host-specific
+ * absolute launcher (`/.../bin/node`) versus the canonical bare `node` (the
+ * churn an external installer writes) is NOT reported as changed. A key still
+ * lands in `changed` when its values differ for any reason other than that
+ * launcher-path normalization. `behind`/`ahead` are presence-based and so are
+ * unaffected by normalization.
+ *
  * No filesystem access. No side effects.
  *
  * @param merged - Recomputed `deepMerge(base, host)` object.
@@ -121,7 +129,9 @@ export function classifySettingsDrift(
   for (const key of Object.keys(merged)) {
     if (!settingsKeys.has(key)) {
       behind.push(key);
-    } else if (!deepEqual(merged[key], settings[key])) {
+    } else if (
+      !deepEqual(normalizeNodePathsDeep(merged[key]), normalizeNodePathsDeep(settings[key]))
+    ) {
       changed.push(key);
     }
   }
@@ -196,30 +206,44 @@ export function partitionByCaptureExclusion(keys: string[]): {
 // ---------------------------------------------------------------------------
 
 /**
- * Regex matching an absolute launcher path ending in `bin/node` (or Windows
- * `bin\node`). The leading `(?:[A-Za-z]:)?[\\/]` anchor requires a posix root
- * (`/`), a Windows backslash root, or a drive letter, so a relative command
- * such as `./bin/node` is left untouched (it is an intentional value, not a
- * machine-specific absolute launcher path).
+ * Regex matching a string that is ENTIRELY an absolute launcher path ending in
+ * `bin/node` (or Windows `bin\node`). The leading `(?:[A-Za-z]:)?[\\/]` anchor
+ * requires a posix root (`/`), a Windows backslash root, or a drive letter, so a
+ * relative command such as `./bin/node` is left untouched (it is an intentional
+ * value, not a machine-specific absolute launcher path).
  */
 const BIN_NODE_RE = /^(?:[A-Za-z]:)?[\\/](?:.*[\\/])?bin[\\/]node$/;
 
 /**
- * Rewrite any string whose value is an absolute launcher path ending in
- * `bin/node` to the bare string `'node'`. Recurses into nested objects and
- * arrays so hook `command` values are normalized throughout.
+ * Regex matching an absolute `bin/node` launcher as the LEADING token of a
+ * command line (optionally double-quoted), followed by whitespace, e.g. the
+ * `"/home/u/.nvm/.../bin/node"` in `"/home/u/.nvm/.../bin/node" "$HOME/x.js"`.
+ * Path segments use `[^"\s]` so the match cannot run past the token into the
+ * rest of the command. The whole-string form is handled by `BIN_NODE_RE`.
+ */
+const LEADING_BIN_NODE_RE = /^"?(?:[A-Za-z]:)?[\\/](?:[^"\s]*[\\/])?bin[\\/]node"?(?=\s)/;
+
+/**
+ * Rewrite an absolute node launcher path to the bare string `'node'`, both when
+ * the whole string IS the launcher path and when it is the leading token of a
+ * command line. The bare-`node` form is the canonical, host-portable launcher;
+ * an absolute `/.../bin/node` is host-specific churn an external installer
+ * writes. Recurses into nested objects and arrays so hook `command` values are
+ * normalized throughout.
  *
  * - `/home/user/.nvm/versions/node/v20/bin/node` becomes `'node'`.
- * - `/usr/bin/node` becomes `'node'`.
- * - `'node'` (bare) stays `'node'`.
- * - `'npx'` stays `'npx'`.
+ * - `'/usr/bin/node' "$HOME/x.js"` becomes `'node "$HOME/x.js"'`.
+ * - `'node'` (bare) and `'node --flag x'` stay unchanged.
+ * - `'npx'` stays `'npx'`; `'bash "/x/bin/node.sh"'` stays unchanged.
  *
  * @param value - Any JSON-compatible value.
  * @returns The value with matching strings normalized.
  */
 export function normalizeNodePathsDeep(value: unknown): unknown {
   if (typeof value === 'string') {
-    return BIN_NODE_RE.test(value) ? 'node' : value;
+    if (BIN_NODE_RE.test(value)) return 'node';
+    const lead = LEADING_BIN_NODE_RE.exec(value);
+    return lead ? 'node' + value.slice(lead[0].length) : value;
   }
   if (Array.isArray(value)) {
     return value.map(normalizeNodePathsDeep);
