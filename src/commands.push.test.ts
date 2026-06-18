@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1051,5 +1051,319 @@ describe('reportSettingsAheadDrift', () => {
     expect(combined).toContain('statusLine');
     expect(combined).toContain('nomad capture-settings');
     expect(combined).not.toContain('env');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripGsdHooksFromBase: write-path base strip (D-04)
+// ---------------------------------------------------------------------------
+
+describe('stripGsdHooksFromBase (push write-path base strip)', () => {
+  let env: PushEnv;
+
+  const gsdEntry = {
+    type: 'command',
+    command: 'node /home/u/.claude/hooks/gsd-context-monitor.js',
+  };
+  const userEntry = { type: 'command', command: 'node /home/u/my-hooks/my-personal-hook.js' };
+
+  /**
+   * Write shared/settings.base.json in the sandbox repo.
+   *
+   * @param content - Object to serialize as the base content.
+   */
+  function writeBase(content: unknown): void {
+    mkdirSync(join(env.repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(env.repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify(content, null, 2) + '\n',
+    );
+  }
+
+  /**
+   * Read and parse shared/settings.base.json from the sandbox repo.
+   *
+   * @returns Parsed content.
+   */
+  function readBase(): unknown {
+    const raw = readFileSync(join(env.repoUnderHome, 'shared', 'settings.base.json'), 'utf8');
+    return JSON.parse(raw) as unknown;
+  }
+
+  /**
+   * Run cmdPush through the WET path with all git/remap/scan mocks in place.
+   * The base rewrite (stripGsdHooksFromBase) happens before commitAndPush's
+   * git add -A, so it is visible in the file on disk after the call.
+   *
+   * @returns Combined errSpy output.
+   */
+  async function runWetPush(): Promise<string> {
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPush: vi.fn(),
+      copySkillsPull: vi.fn(),
+    }));
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    // gitStatusPorcelainZ: first call (allow-list) returns a staged base path,
+    // second call (commitAndPush gsd-drop scan) returns the same path.
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => `M  shared/settings.base.json\0`),
+      };
+    });
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await cmdPush();
+    return errOutput(env);
+  }
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+    vi.doUnmock('./push-leak-verdict.ts');
+    vi.doUnmock('./skills-sync.ts');
+    vi.doUnmock('./push-global-config.ts');
+  });
+
+  it('Test 1: base with gsd + user entries is rewritten to keep only user entries, backup taken', async () => {
+    const baseWithMixed = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry, userEntry] }],
+      },
+    };
+    writeBase(baseWithMixed);
+    const mtimeBefore = statSync(join(env.repoUnderHome, 'shared', 'settings.base.json')).mtimeMs;
+
+    await runWetPush();
+
+    const result = readBase() as Record<string, unknown>;
+    // gsd entry must be gone, user entry must survive.
+    const hooks = result.hooks as Record<string, unknown[]>;
+    expect(hooks).toBeDefined();
+    const preToolUseMatchers = hooks.PreToolUse as { hooks: unknown[] }[];
+    expect(preToolUseMatchers).toBeDefined();
+    expect(preToolUseMatchers[0].hooks).toHaveLength(1);
+    expect(preToolUseMatchers[0].hooks[0]).toMatchObject({ command: userEntry.command });
+    // mtime must have changed (file was rewritten).
+    const mtimeAfter = statSync(join(env.repoUnderHome, 'shared', 'settings.base.json')).mtimeMs;
+    expect(mtimeAfter).toBeGreaterThanOrEqual(mtimeBefore);
+  });
+
+  it('Test 2 (idempotent): base with no gsd entries is NOT rewritten (no mtime change)', async () => {
+    const cleanBase = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [userEntry] }],
+      },
+    };
+    writeBase(cleanBase);
+    const mtimeBefore = statSync(join(env.repoUnderHome, 'shared', 'settings.base.json')).mtimeMs;
+
+    await runWetPush();
+
+    // File must not be rewritten: mtime stays the same.
+    const mtimeAfter = statSync(join(env.repoUnderHome, 'shared', 'settings.base.json')).mtimeMs;
+    expect(mtimeAfter).toBe(mtimeBefore);
+    // Content must be unchanged.
+    const result = readBase() as Record<string, unknown>;
+    expect(result.model).toBe('sonnet');
+  });
+
+  it('Test 3: base with only gsd entries is rewritten with hooks key removed entirely', async () => {
+    const gsdOnlyBase = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry] }],
+      },
+    };
+    writeBase(gsdOnlyBase);
+
+    await runWetPush();
+
+    const result = readBase() as Record<string, unknown>;
+    // hooks key must be absent (all entries stripped, empty -> removed).
+    expect(result.hooks).toBeUndefined();
+    expect(result.model).toBe('sonnet');
+  });
+
+  it('Test 4: base with absent/malformed hooks block is not rewritten (fail-safe)', async () => {
+    const noHooksBase = { model: 'sonnet', theme: 'dark' };
+    writeBase(noHooksBase);
+    const mtimeBefore = statSync(join(env.repoUnderHome, 'shared', 'settings.base.json')).mtimeMs;
+
+    await runWetPush();
+
+    // No rewrite since there are no hooks to strip.
+    const mtimeAfter = statSync(join(env.repoUnderHome, 'shared', 'settings.base.json')).mtimeMs;
+    expect(mtimeAfter).toBe(mtimeBefore);
+    const result = readBase() as Record<string, unknown>;
+    expect(result.theme).toBe('dark');
+  });
+
+  it('Test 5: real push with gsd-laden base produces a clean base (gsd entries absent from file)', async () => {
+    // Integration: base has gsd-only hooks; after push the file lacks them.
+    const gsdOnlyBase = {
+      model: 'sonnet',
+      hooks: {
+        Stop: [{ matcher: '', hooks: [gsdEntry] }],
+      },
+    };
+    writeBase(gsdOnlyBase);
+
+    await runWetPush();
+
+    const result = readBase() as Record<string, unknown>;
+    expect(result.hooks).toBeUndefined();
+    expect(result.model).toBe('sonnet');
+  });
+
+  it('Test 6 (non-destructive on pull): regenerateSettings never rewrites shared/settings.base.json', async () => {
+    // The base strip is push-only (D-04); regenerateSettings (pull-side) must
+    // never touch shared/settings.base.json even when it holds gsd hook entries.
+    const gsdOnlyBase = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry] }],
+      },
+    };
+    writeBase(gsdOnlyBase);
+    // Write a minimal settings.json so regenerateSettings has a target.
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const basePath = join(env.repoUnderHome, 'shared', 'settings.base.json');
+    const rawBefore = readFileSync(basePath, 'utf8');
+
+    // Import regenerateSettings (the pull-side fn) and run it.
+    vi.resetModules();
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('test-ts');
+
+    // The base file must be byte-for-byte unchanged.
+    const rawAfter = readFileSync(basePath, 'utf8');
+    expect(rawAfter).toBe(rawBefore);
+  });
+
+  it('absent base: stripGsdHooksFromBase silently skips when base file missing', async () => {
+    // Do NOT write a base file. The base path does not exist.
+    // cmdPush will reach stripGsdHooksFromBase and silently skip.
+    // We verify no error is thrown and the rest of the pipeline completes.
+    await expect(runWetPush()).resolves.not.toThrow();
+    // No base file to assert on, but the test verifies the absent-base
+    // early return does not crash or set exitCode.
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('malformed base: stripGsdHooksFromBase silently skips when base is unparseable JSON', async () => {
+    // Write a base that is not valid JSON.
+    mkdirSync(join(env.repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(join(env.repoUnderHome, 'shared', 'settings.base.json'), '{ NOT VALID JSON\n');
+    // cmdPush must not throw or set exitCode from the malformed base.
+    await expect(runWetPush()).resolves.not.toThrow();
+    expect(process.exitCode).toBeUndefined();
+    // File content must be unchanged (no rewrite on parse failure).
+    const raw = readFileSync(join(env.repoUnderHome, 'shared', 'settings.base.json'), 'utf8');
+    expect(raw).toBe('{ NOT VALID JSON\n');
+  });
+
+  it('Test 7 (dry-run): a push --dry-run does NOT rewrite the base', async () => {
+    const gsdOnlyBase = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry] }],
+      },
+    };
+    writeBase(gsdOnlyBase);
+    const mtimeBefore = statSync(join(env.repoUnderHome, 'shared', 'settings.base.json')).mtimeMs;
+
+    // Dry-run: only rebaseBeforePush + leak preview, no file writes.
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPush: vi.fn(),
+      copySkillsPull: vi.fn(),
+    }));
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => `M  shared/settings.base.json\0`),
+      };
+    });
+    vi.doMock('./push-preview.ts', () => ({
+      previewPushLeaks: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+    }));
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await cmdPush({ dryRun: true });
+
+    // Base must be unchanged: dry-run never mutates files.
+    const mtimeAfter = statSync(join(env.repoUnderHome, 'shared', 'settings.base.json')).mtimeMs;
+    expect(mtimeAfter).toBe(mtimeBefore);
+    const result = readBase() as Record<string, unknown>;
+    // gsd hook entry must still be present (no strip on dry-run).
+    const hooks = result.hooks as Record<string, unknown[]>;
+    expect(hooks).toBeDefined();
   });
 });

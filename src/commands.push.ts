@@ -10,6 +10,7 @@ import { enforceAllowList, isGsdDropped, parsePorcelainZ } from './commands.push
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
 import { syncSkillsPush } from './skills-sync.ts';
 import { collectGlobalConfigChanges } from './push-global-config.ts';
 import { scanPushVerdict } from './push-leak-verdict.ts';
@@ -18,9 +19,42 @@ import { previewPushLeaks } from './push-preview.ts';
 import { remapPush } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, warn } from './utils.ts';
-import { freshBackupTs } from './utils.fs.ts';
+import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson, readPathMap } from './utils.json.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
+
+/**
+ * Idempotent gsd-hook strip for the push write-path. Reads
+ * `shared/settings.base.json`, applies `stripGsdHookEntries`, and on a real
+ * change backs up via `backupRepoWrite` then writes atomically via
+ * `writeJsonAtomic`. If the stripped result deep-equals the original (no gsd
+ * entries present) the function returns without writing (no backup, no mtime
+ * change). Best-effort: a missing or unparseable base is silently skipped.
+ *
+ * Must only be called on the REAL-push path (!dryRun). The function is
+ * push-only by design (D-04 constraint): pull stays non-destructive per Phase
+ * 50 precedent.
+ *
+ * @param repo - Resolved repo root path for this invocation.
+ * @param backup - Resolved backup root path for this invocation.
+ */
+function stripGsdHooksFromBase(repo: string, backup: string): void {
+  const basePath = join(repo, 'shared', 'settings.base.json');
+  if (!existsSync(basePath)) return;
+  let base: Record<string, unknown>;
+  try {
+    base = readJson<Record<string, unknown>>(basePath);
+  } catch {
+    return; // unparseable: skip silently (best-effort, T-55-05)
+  }
+  const stripped = stripGsdHookEntries(base);
+  // Deep-equal check via JSON.stringify of sort-stable content: if the output
+  // is identical, the base is already clean and no write is needed (idempotent).
+  if (JSON.stringify(stripped) === JSON.stringify(base)) return;
+  const ts = freshBackupTs(backup);
+  backupRepoWrite(basePath, ts, repo);
+  writeJsonAtomic(basePath, stripped);
+}
 
 /**
  * Read-only ahead-drift check for the push flow. Loads the repo's base +
@@ -349,6 +383,12 @@ export async function cmdPush(
     // dryRun skips git add / commit / push: run the read-only leak preview,
     // which prints any recovery below the rendered tree.
     if (dryRun) return runDryRunPreview(st, map, repo);
+    // Strip gsd-owned hook entries from the committed base before staging so
+    // each host's shared/settings.base.json self-cleans on its next push
+    // (D-04). Runs on the REAL-push path only (!dryRun, already gated above).
+    // The rewritten base is already on PUSH_ALLOWED_STATIC so no allow-list
+    // change is needed. The call is idempotent: a clean base is a no-op.
+    stripGsdHooksFromBase(repo, backup);
     await commitAndPush(st, ts, map, redactAll, allowAll, allowRule, repo);
   } catch (err) {
     if (err instanceof NomadFatal) {
