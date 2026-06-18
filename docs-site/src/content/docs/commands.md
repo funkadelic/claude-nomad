@@ -243,9 +243,15 @@ The settings merge-drift check (`⚠︎`-only, never exit 1) runs in the Setting
 `nomad doctor` immediately after the host-overrides row. It recomputes the same
 `deepMerge(shared/settings.base.json, hosts/<NOMAD_HOST>.json)` that `nomad pull` would write,
 then deep-compares the result against `~/.claude/settings.json`. A `⚠︎` warning fires when
-merged keys are missing from the live file or hold a changed value, the signature of an external
+merged keys are missing from the live file, the signature of an external
 writer (for example a Claude Code onboarding flow) silently clobbering `settings.json` and
-dropping managed keys; the fix is `nomad pull`. A separate `ℹ︎` info line lists local-only keys
+dropping managed keys; the fix is `nomad pull`. A second warning fires when a key is present on
+both sides but its value diverged: this is genuinely ambiguous (the repo or your local file could
+be the newer one), so the hint points at `nomad diff` to inspect, and notes that `nomad pull` would
+overwrite local with the repo while editing the base/host file keeps the local value. The
+comparison normalizes node launcher paths first, so a hook that differs only by a bare `node`
+versus an absolute `/.../bin/node` (host-specific churn an installer writes) does not register as
+drift. A separate info line lists local-only keys
 absent from the merge as promotion candidates for `shared/settings.base.json` or
 `hosts/<NOMAD_HOST>.json`, since those are typically transient state written between pulls (for
 example notification toggles), not an error; when this host has no `hosts/<NOMAD_HOST>.json` at
