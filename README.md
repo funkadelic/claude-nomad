@@ -129,8 +129,10 @@ If an external tool (such as Claude Code or GSD) wrote new keys into your `~/.cl
 that are not yet in your shared repo, run `nomad capture-settings` to promote them before the next
 `nomad pull` overwrites them. With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of
 `shared/settings.base.json` (useful for machine-specific values such as absolute paths). `--dry-run`
-shows what would be written without touching anything. `nomad push` also warns when it detects
-ahead-drift so you have a prompt to act before the push completes.
+shows what would be written without touching anything. Before it writes, `capture-settings` shows
+the destination and the keys and asks you to confirm; pass `--yes` (or `-y`) to skip the prompt,
+which is required when running without an interactive terminal. `nomad push` also warns when it
+detects ahead-drift so you have a prompt to act before the push completes.
 
 ## Claude Code plugin
 

@@ -6,25 +6,51 @@ describe('parseCaptureSettingsArgs', () => {
   const base = ['node', 'nomad.ts', 'capture-settings'];
 
   it('returns defaults when no flags are provided', () => {
-    expect(parseCaptureSettingsArgs(base)).toEqual({ host: false, dryRun: false });
+    expect(parseCaptureSettingsArgs(base)).toEqual({ host: false, dryRun: false, yes: false });
   });
 
   it('sets host=true for --host', () => {
-    expect(parseCaptureSettingsArgs([...base, '--host'])).toEqual({ host: true, dryRun: false });
+    expect(parseCaptureSettingsArgs([...base, '--host'])).toEqual({
+      host: true,
+      dryRun: false,
+      yes: false,
+    });
   });
 
   it('sets dryRun=true for --dry-run', () => {
-    expect(parseCaptureSettingsArgs([...base, '--dry-run'])).toEqual({ host: false, dryRun: true });
+    expect(parseCaptureSettingsArgs([...base, '--dry-run'])).toEqual({
+      host: false,
+      dryRun: true,
+      yes: false,
+    });
   });
 
-  it('accepts both --host and --dry-run in any order', () => {
-    expect(parseCaptureSettingsArgs([...base, '--host', '--dry-run'])).toEqual({
-      host: true,
-      dryRun: true,
+  it('sets yes=true for --yes', () => {
+    expect(parseCaptureSettingsArgs([...base, '--yes'])).toEqual({
+      host: false,
+      dryRun: false,
+      yes: true,
     });
-    expect(parseCaptureSettingsArgs([...base, '--dry-run', '--host'])).toEqual({
+  });
+
+  it('sets yes=true for the -y alias', () => {
+    expect(parseCaptureSettingsArgs([...base, '-y'])).toEqual({
+      host: false,
+      dryRun: false,
+      yes: true,
+    });
+  });
+
+  it('accepts --host, --dry-run, and --yes in any order', () => {
+    expect(parseCaptureSettingsArgs([...base, '--host', '--dry-run', '--yes'])).toEqual({
       host: true,
       dryRun: true,
+      yes: true,
+    });
+    expect(parseCaptureSettingsArgs([...base, '--yes', '--dry-run', '--host'])).toEqual({
+      host: true,
+      dryRun: true,
+      yes: true,
     });
   });
 
@@ -34,6 +60,11 @@ describe('parseCaptureSettingsArgs', () => {
 
   it('returns null for a duplicate --dry-run', () => {
     expect(parseCaptureSettingsArgs([...base, '--dry-run', '--dry-run'])).toBeNull();
+  });
+
+  it('returns null for a duplicate --yes (including the -y alias)', () => {
+    expect(parseCaptureSettingsArgs([...base, '--yes', '--yes'])).toBeNull();
+    expect(parseCaptureSettingsArgs([...base, '--yes', '-y'])).toBeNull();
   });
 
   it('returns null for an unknown flag', () => {

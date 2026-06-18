@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from './config.ts';
 import { buildCaptureSubset } from './commands.capture-settings.core.ts';
@@ -7,7 +8,10 @@ import { regenerateSettings } from './links.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
-import { die, log, NomadFatal } from './utils.ts';
+import { die, log, NomadFatal, warn } from './utils.ts';
+
+/** Confirmation seam: given the destination label and sorted key list, return true to proceed. */
+export type CaptureConfirm = (destLabel: string, keys: string[]) => Promise<boolean>;
 
 /** Options for the `nomad capture-settings` subcommand. */
 export type CaptureSettingsOpts = {
@@ -15,7 +19,45 @@ export type CaptureSettingsOpts = {
   host: boolean;
   /** When true, print what would change without writing anything. */
   dryRun: boolean;
+  /** When true, skip the interactive confirmation prompt (required for non-interactive use). */
+  yes?: boolean;
+  /**
+   * Confirmation seam. Defaults to a TTY-guarded readline y/N prompt; injected
+   * by tests for deterministic accept/decline behaviour. Ignored when `yes` is
+   * true or `dryRun` is true (no write happens).
+   */
+  confirm?: CaptureConfirm;
 };
+
+/* c8 ignore start */
+/**
+ * Default confirmation: on an interactive TTY, print the destination and keys
+ * then read a y/N answer; in a non-interactive shell, refuse and instruct the
+ * user to pass `--yes`. c8-ignored because it drives real stdin/readline; the
+ * accept/decline branches are covered through the injected `confirm` seam.
+ *
+ * @param destLabel - Repo-relative destination being written.
+ * @param keys - Sorted list of keys that would be promoted.
+ * @returns True when the user confirms the write.
+ */
+async function confirmCapture(destLabel: string, keys: string[]): Promise<boolean> {
+  if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
+    warn(
+      `refusing to write ${destLabel} without confirmation in a non-interactive shell; ` +
+        're-run with --yes (or --dry-run to preview)',
+    );
+    return false;
+  }
+  log(`About to promote ${keys.length} key(s) into ${destLabel}: ${keys.join(', ')}`);
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question('Proceed? [y/N] ');
+    return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
+}
+/* c8 ignore stop */
 
 /**
  * Resolve the repo destination path and the current content of that file.
@@ -45,9 +87,14 @@ function resolveCaptureDestination(
  * `backupRepoWrite`, writes atomically, then calls `regenerateSettings` so
  * the local file matches. Idempotent when no ahead-only keys remain.
  *
- * @param opts Command options (host destination flag, dry-run flag).
+ * Before any wet write the user must confirm (destination + key list), unless
+ * `--yes` is passed or the run is `--dry-run`. In a non-interactive shell the
+ * default confirmation refuses, so an unattended run does not silently fan a
+ * key out to every host; pass `--yes` to opt in.
+ *
+ * @param opts Command options (host destination flag, dry-run flag, yes flag, confirm seam).
  */
-export function cmdCaptureSettings(opts: CaptureSettingsOpts): void {
+export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<void> {
   const { host: useHost, dryRun } = opts;
 
   const repo = repoHome();
@@ -83,11 +130,21 @@ export function cmdCaptureSettings(opts: CaptureSettingsOpts): void {
 
     const { destPath, existing } = resolveCaptureDestination(repo, useHost);
     const newContent = deepMerge(existing, subset as Partial<typeof existing>);
+    const dest = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
+    const keys = Object.keys(subset).sort();
 
     if (dryRun) {
-      const dest = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
-      log(`dry-run: would write ${dest} with keys: ${Object.keys(subset).sort().join(', ')}`);
+      log(`dry-run: would write ${dest} with keys: ${keys.join(', ')}`);
       return;
+    }
+
+    if (opts.yes !== true) {
+      const confirm = opts.confirm ?? confirmCapture;
+      const proceed = await confirm(dest, keys);
+      if (!proceed) {
+        log('capture aborted; nothing written');
+        return;
+      }
     }
 
     const ts = freshBackupTs(backupBase());
@@ -99,8 +156,7 @@ export function cmdCaptureSettings(opts: CaptureSettingsOpts): void {
     // just captured would be contradictory, and any keys still classified ahead
     // here are the excluded credential keys that capture intentionally refuses.
     regenerateSettings(ts, { suppressDriftWarn: true });
-    const dest = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
-    log(`captured ${Object.keys(subset).length} key(s) into ${dest} (backup: ${ts})`);
+    log(`captured ${keys.length} key(s) into ${dest} (backup: ${ts})`);
   } catch (err) {
     /* c8 ignore next 3 */
     if (!(err instanceof NomadFatal)) {

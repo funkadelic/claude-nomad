@@ -109,12 +109,14 @@ export const DEFAULT_HELP = [
   ),
   cont('the next pull. Backs up the destination, writes atomically, then regenerates'),
   cont('settings.json so local matches. Idempotent when no local-only keys remain.'),
+  cont('Prompts for confirmation before writing (shows the destination and keys).'),
   row('       --host', 'Write into hosts/<HOST>.json (host-specific values) instead of'),
   cont('shared/settings.base.json (default; normalizes absolute node launcher paths).'),
   row(
     '       --dry-run',
     'Show the destination and keys that would be written without changing anything.',
   ),
+  row('       --yes, -y', 'Skip the confirmation prompt (required in a non-interactive shell).'),
   '',
   row(
     '  redact <session-id>',

@@ -170,14 +170,18 @@ try {
       break;
     }
     case 'capture-settings': {
-      // parseCaptureSettingsArgs accepts --host and --dry-run; rejects
-      // duplicates, unknown tokens, and extra positional arguments.
+      // parseCaptureSettingsArgs accepts --host, --dry-run, and --yes/-y;
+      // rejects duplicates, unknown tokens, and extra positional arguments.
       const captureArgs = parseCaptureSettingsArgs(process.argv);
       if (captureArgs === null) {
-        console.error('usage: nomad capture-settings [--host] [--dry-run]');
+        console.error('usage: nomad capture-settings [--host] [--dry-run] [--yes]');
         process.exit(1);
       }
-      cmdCaptureSettings({ host: captureArgs.host, dryRun: captureArgs.dryRun });
+      await cmdCaptureSettings({
+        host: captureArgs.host,
+        dryRun: captureArgs.dryRun,
+        yes: captureArgs.yes,
+      });
       break;
     }
     case 'doctor':

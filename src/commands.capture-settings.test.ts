@@ -85,7 +85,7 @@ describe('cmdCaptureSettings', () => {
     writeFileSync(env.settingsPath, JSON.stringify({ model: 'sonnet', myKey: 'myVal' }) + '\n');
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: false });
+    await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
 
     const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
     expect(base.myKey).toBe('myVal');
@@ -105,7 +105,7 @@ describe('cmdCaptureSettings', () => {
     });
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: false });
+    await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
 
     expect(logs.join('\n')).toContain('nothing to capture');
   });
@@ -119,7 +119,7 @@ describe('cmdCaptureSettings', () => {
     writeFileSync(env.settingsPath, JSON.stringify({ model: 'sonnet', hostKey: 'hostVal' }) + '\n');
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: true, dryRun: false });
+    await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
 
     const hostPath = join(env.hostsDir, 'test-host.json');
     expect(existsSync(hostPath)).toBe(true);
@@ -135,7 +135,7 @@ describe('cmdCaptureSettings', () => {
     expect(existsSync(hostPath)).toBe(false);
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: true, dryRun: false });
+    await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
 
     expect(existsSync(hostPath)).toBe(true);
   });
@@ -155,7 +155,7 @@ describe('cmdCaptureSettings', () => {
     );
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: false });
+    await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
 
     const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
     const hooks = base.hooks as { PreToolUse: [{ command: string }] };
@@ -174,7 +174,7 @@ describe('cmdCaptureSettings', () => {
     );
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: true, dryRun: false });
+    await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
 
     const hostPath = join(env.hostsDir, 'test-host.json');
     const hostFile = JSON.parse(readFileSync(hostPath, 'utf8')) as Record<string, unknown>;
@@ -191,7 +191,7 @@ describe('cmdCaptureSettings', () => {
     writeFileSync(env.settingsPath, JSON.stringify({ model: 'sonnet', myKey: 'v' }) + '\n');
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: false });
+    await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
 
     const backupRoot = join(env.testHome, '.cache', 'claude-nomad', 'backup');
     const entries = existsSync(backupRoot) ? (await import('node:fs')).readdirSync(backupRoot) : [];
@@ -214,7 +214,7 @@ describe('cmdCaptureSettings', () => {
     });
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: true });
+    await cmdCaptureSettings({ host: false, dryRun: true });
 
     // Base file must be unchanged
     expect(readFileSync(env.basePath, 'utf8')).toBe(originalContent);
@@ -235,7 +235,7 @@ describe('cmdCaptureSettings', () => {
     });
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: true, dryRun: true });
+    await cmdCaptureSettings({ host: true, dryRun: true });
 
     const out = logs.join('\n');
     expect(out).toContain('dry-run');
@@ -256,7 +256,7 @@ describe('cmdCaptureSettings', () => {
     });
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: false });
+    await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
 
     expect(logs.join('\n')).toContain('nothing to capture');
   });
@@ -266,7 +266,7 @@ describe('cmdCaptureSettings', () => {
     // No basePath written
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    expect(() => cmdCaptureSettings({ host: false, dryRun: false })).toThrow(
+    await expect(cmdCaptureSettings({ host: false, dryRun: false })).rejects.toThrow(
       "repo not initialized; run 'nomad init' to scaffold",
     );
   });
@@ -288,7 +288,7 @@ describe('cmdCaptureSettings', () => {
     );
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: false });
+    await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
 
     const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
     expect(Object.hasOwn(base, 'apiKeyHelper')).toBe(false);
@@ -315,7 +315,7 @@ describe('cmdCaptureSettings', () => {
     });
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: false });
+    await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
 
     const captured = writes.join('');
     expect(captured).not.toContain('nomad capture-settings');
@@ -336,7 +336,7 @@ describe('cmdCaptureSettings', () => {
     );
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: false, dryRun: false });
+    await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
 
     const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
     expect(base.model).toBe('sonnet');
@@ -354,7 +354,7 @@ describe('cmdCaptureSettings', () => {
     );
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    cmdCaptureSettings({ host: true, dryRun: false });
+    await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
 
     const hostFile = JSON.parse(readFileSync(hostPath, 'utf8')) as Record<string, unknown>;
     expect(hostFile.existingHostKey).toBe('hostVal');
@@ -369,7 +369,7 @@ describe('cmdCaptureSettings', () => {
     // Point NOMAD_REPO at a non-existent path
     process.env.NOMAD_REPO = join(env.testHome, 'no-such-repo');
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    expect(() => cmdCaptureSettings({ host: false, dryRun: false })).toThrow();
+    await expect(cmdCaptureSettings({ host: false, dryRun: false })).rejects.toThrow();
   });
 
   it('exits 0 when lock cannot be acquired (contention skip)', async () => {
@@ -387,8 +387,66 @@ describe('cmdCaptureSettings', () => {
     });
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
-    expect(() => cmdCaptureSettings({ host: false, dryRun: false })).toThrow('process.exit called');
+    await expect(cmdCaptureSettings({ host: false, dryRun: false })).rejects.toThrow(
+      'process.exit called',
+    );
     expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Confirmation prompt
+  // -------------------------------------------------------------------------
+
+  it('writes when the confirmation seam approves, passing the destination and sorted keys', async () => {
+    writeFileSync(env.basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
+    writeFileSync(
+      env.settingsPath,
+      JSON.stringify({ model: 'sonnet', bKey: '2', aKey: '1' }) + '\n',
+    );
+
+    let seen: { dest: string; keys: string[] } | null = null;
+    const confirm = (dest: string, keys: string[]): Promise<boolean> => {
+      seen = { dest, keys };
+      return Promise.resolve(true);
+    };
+
+    const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
+    await cmdCaptureSettings({ host: false, dryRun: false, confirm });
+
+    expect(seen).toEqual({ dest: 'shared/settings.base.json', keys: ['aKey', 'bKey'] });
+    const baseFile = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
+    expect(baseFile.aKey).toBe('1');
+    expect(baseFile.bKey).toBe('2');
+  });
+
+  it('aborts without writing when the confirmation seam declines', async () => {
+    const originalContent = JSON.stringify({ model: 'sonnet' }) + '\n';
+    writeFileSync(env.basePath, originalContent);
+    writeFileSync(env.settingsPath, JSON.stringify({ model: 'sonnet', myKey: 'v' }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
+    await cmdCaptureSettings({ host: false, dryRun: false, confirm: () => Promise.resolve(false) });
+
+    expect(readFileSync(env.basePath, 'utf8')).toBe(originalContent);
+    expect(logs.join('\n')).toContain('capture aborted');
+  });
+
+  it('refuses to write without --yes in a non-interactive shell (default confirm)', async () => {
+    const originalContent = JSON.stringify({ model: 'sonnet' }) + '\n';
+    writeFileSync(env.basePath, originalContent);
+    writeFileSync(env.settingsPath, JSON.stringify({ model: 'sonnet', myKey: 'v' }) + '\n');
+
+    // No confirm seam injected and no --yes: the default TTY-guarded confirm runs.
+    // The vitest process is non-interactive, so it must refuse and write nothing.
+    const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
+    await cmdCaptureSettings({ host: false, dryRun: false });
+
+    expect(readFileSync(env.basePath, 'utf8')).toBe(originalContent);
   });
 
   afterEach(() => {

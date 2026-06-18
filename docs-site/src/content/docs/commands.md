@@ -100,7 +100,7 @@ and backup cache. `eject` never writes to the sync repo, never invokes git, and 
 
 ## `capture-settings`
 
-`nomad capture-settings [--host] [--dry-run]`
+`nomad capture-settings [--host] [--dry-run] [--yes]`
 
 Promote local-only `~/.claude/settings.json` keys into the shared repo so they survive the next
 `nomad pull`. Use this when an external tool (such as Claude Code or GSD) added new keys to your
@@ -109,10 +109,20 @@ writing the destination file, `capture-settings` calls `regenerateSettings` so t
 `settings.json` immediately matches the updated repo state. Idempotent: when no local-only keys
 remain the command exits cleanly with a message and writes nothing.
 
+Because the default destination (`shared/settings.base.json`) syncs to every host, the command
+shows the destination and the keys it will promote and asks for confirmation before writing. Pass
+`--yes` to skip the prompt; in a non-interactive shell the prompt cannot be answered, so the
+command refuses to write unless `--yes` is given.
+
+Credential- and secret-bearing keys (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`,
+`otelHeadersHelper`, and `env`) are never promoted, so a secret placed in live settings cannot ride
+into the shared repo.
+
 | Flag        | Description                                                                                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--host`    | Write into `hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json`. Use for host-specific values (absolute paths, machine-local model preferences). |
 | `--dry-run` | Show the destination file and keys that would be written without changing anything.                                                                           |
+| `--yes`, `-y` | Skip the confirmation prompt. Required when running without an interactive terminal.                                                                        |
 
 ## `redact`
 
