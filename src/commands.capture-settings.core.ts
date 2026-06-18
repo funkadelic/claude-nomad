@@ -113,6 +113,11 @@ export type SettingsDrift = {
  * launcher-path normalization. `behind`/`ahead` are presence-based and so are
  * unaffected by normalization.
  *
+ * gsd-owned hook entries are stripped from both `merged` and `settings` before
+ * classification (D-05). A key that differs only by gsd-installed hook entries
+ * (permanent self-heal churn) is not reported as behind/ahead/changed. A
+ * genuine user-authored hook entry is still classified correctly.
+ *
  * No filesystem access. No side effects.
  *
  * @param merged - Recomputed `deepMerge(base, host)` object.
