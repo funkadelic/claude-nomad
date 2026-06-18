@@ -98,6 +98,22 @@ and backup cache. `eject` never writes to the sync repo, never invokes git, and 
 | ----------- | ---------------------------------------------------------------------------- |
 | `--dry-run` | List what would be materialized without touching the filesystem.             |
 
+## `capture-settings`
+
+`nomad capture-settings [--host] [--dry-run]`
+
+Promote local-only `~/.claude/settings.json` keys into the shared repo so they survive the next
+`nomad pull`. Use this when an external tool (such as Claude Code or GSD) added new keys to your
+live settings file that are not yet in `shared/settings.base.json` or your host override. After
+writing the destination file, `capture-settings` calls `regenerateSettings` so the local
+`settings.json` immediately matches the updated repo state. Idempotent: when no local-only keys
+remain the command exits cleanly with a message and writes nothing.
+
+| Flag        | Description                                                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--host`    | Write into `hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json`. Use for host-specific values (absolute paths, machine-local model preferences). |
+| `--dry-run` | Show the destination file and keys that would be written without changing anything.                                                                           |
+
 ## `redact`
 
 `nomad redact <session-id> [--rule <id>] [--dry-run]`

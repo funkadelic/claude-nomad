@@ -156,6 +156,14 @@ still renders in full with a fail-glyph `Leak scan` row and the recovery block b
 with no entry in `path-map.json` for this host count as unmapped and fold into the collapsed
 info-count row; the hint points at `nomad doctor`, which lists them by logical name.
 
+Settings drift comes in two directions. When your live `~/.claude/settings.json` is missing keys
+that the repo merge would write, you are behind: `nomad pull` will restore them. When your live
+file has keys not yet in the repo (an external tool such as Claude Code or GSD added them), you are
+ahead: run `nomad capture-settings` to promote those keys into `shared/settings.base.json` (or
+`hosts/<NOMAD_HOST>.json` with `--host`) before the next pull overwrites them. Both `nomad doctor`
+and `nomad pull` warn on each direction with the matching fix command. `nomad push` also warns on
+ahead-drift so you have a prompt to act before the commit completes.
+
 `nomad pull --dry-run` keeps its own readable preview format (a unified diff of the
 `settings.json` changes plus the transcripts a real pull would overwrite) rather than the grouped
 tree, so that preview stays easy to scan; only a real `nomad pull` prints the tree above.

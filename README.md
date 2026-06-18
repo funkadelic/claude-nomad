@@ -40,9 +40,11 @@ survives different file paths and your secrets never ride along.
   `--dry-run` on pull and push prints the plan without writing anything.
 - **One command tells you what is wrong.** `nomad doctor` is a read-only health check: wedged sync
   repo, broken hook references, hooks that would crash on session start because of a missing
-  `--preserve-symlinks-main` flag, version drift, oversized backup cache, and settings drift (warns
-  when `~/.claude/settings.json` no longer matches the base+host merge nomad would write, the
-  silent-clobber case, with `nomad pull` as the fix), each with a fix hint.
+  `--preserve-symlinks-main` flag, version drift, oversized backup cache, and settings drift in both
+  directions: keys present in the repo merge but absent from your live `settings.json` (behind; the
+  next `nomad pull` would delete them, fix: `nomad pull`) and keys present locally but not yet in
+  the repo (ahead; local-only additions, fix: `nomad capture-settings`). Each issue includes a fix
+  hint.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
   recovers two kinds of stuck sync repo: a repo stuck mid-rebase or mid-merge (aborts the operation,
   parks stranded work on a branch, refuses if shared config is at risk), and a repo where the rebase
@@ -122,6 +124,13 @@ progress (clears the stuck index via `git reset --mixed HEAD`, preserving workin
 surfaces any orphaned autostash entry, then re-pulls). Run `nomad doctor` first if you are unsure
 which state you are in; the Repository section names the specific problem and points at the right
 fix.
+
+If an external tool (such as Claude Code or GSD) wrote new keys into your `~/.claude/settings.json`
+that are not yet in your shared repo, run `nomad capture-settings` to promote them before the next
+`nomad pull` overwrites them. With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of
+`shared/settings.base.json` (useful for machine-specific values such as absolute paths). `--dry-run`
+shows what would be written without touching anything. `nomad push` also warns when it detects
+ahead-drift so you have a prompt to act before the push completes.
 
 ## Claude Code plugin
 
