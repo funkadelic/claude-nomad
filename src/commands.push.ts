@@ -10,7 +10,7 @@ import { enforceAllowList, isGsdDropped, parsePorcelainZ } from './commands.push
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
-import { stripGsdHookEntries } from './hooks-filter.ts';
+import { baseHasGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import { syncSkillsPush } from './skills-sync.ts';
 import { collectGlobalConfigChanges } from './push-global-config.ts';
 import { scanPushVerdict } from './push-leak-verdict.ts';
@@ -46,10 +46,10 @@ function stripGsdHooksFromBase(repo: string, backup: string): void {
   } catch {
     return; // unparseable: skip silently (best-effort)
   }
+  // Use the single shared predicate so an empty hooks: {} scaffold is NOT treated
+  // as dirty (no gsd entries present means nothing to strip).
+  if (!baseHasGsdHookEntries(base)) return;
   const stripped = stripGsdHookEntries(base);
-  // Deep-equal check via JSON.stringify of sort-stable content: if the output
-  // is identical, the base is already clean and no write is needed (idempotent).
-  if (JSON.stringify(stripped) === JSON.stringify(base)) return;
   const ts = freshBackupTs(backup);
   backupRepoWrite(basePath, ts, repo);
   writeJsonAtomic(basePath, stripped);
@@ -347,7 +347,17 @@ export async function cmdPush(
     // produced shared/skills content is visible to both the gitlink walk and
     // the downstream allow-list classification. dryRun is forwarded: under
     // dryRun, copySkillsPush writes nothing (mirroring remapPush/remapExtrasPush).
-    if (!dryRun) syncSkillsPush();
+    // Both steps are real-push-only (zero-mutation dry-run contract). Run them
+    // together so their shared !dryRun guard counts as one branch in sonarjs.
+    // stripGsdHooksFromBase runs BEFORE the status snapshot (below) so a host
+    // whose only outstanding change is a dirty base (gsd entries from an earlier
+    // era) creates its own pending change and is not short-circuited by the
+    // empty-status early return. The rewritten base is on PUSH_ALLOWED_STATIC so
+    // no allow-list change is needed. Both calls are idempotent.
+    if (!dryRun) {
+      syncSkillsPush();
+      stripGsdHooksFromBase(repo, backup);
+    }
     const st: PushState = { dryRun, remap, extras, globalConfig: [] };
     guardGitlinks(repo);
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()
@@ -382,12 +392,6 @@ export async function cmdPush(
     // dryRun skips git add / commit / push: run the read-only leak preview,
     // which prints any recovery below the rendered tree.
     if (dryRun) return runDryRunPreview(st, map, repo);
-    // Strip gsd-owned hook entries from the committed base before staging so
-    // each host's shared/settings.base.json self-cleans on its next push.
-    // Runs on the REAL-push path only (!dryRun, already gated above).
-    // The rewritten base is already on PUSH_ALLOWED_STATIC so no allow-list
-    // change is needed. The call is idempotent: a clean base is a no-op.
-    stripGsdHooksFromBase(repo, backup);
     await commitAndPush(st, ts, map, redactAll, allowAll, allowRule, repo);
   } catch (err) {
     if (err instanceof NomadFatal) {

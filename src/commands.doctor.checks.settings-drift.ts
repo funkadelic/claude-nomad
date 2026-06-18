@@ -8,7 +8,7 @@ import {
 } from './commands.capture-settings.core.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { claudeHome, HOST, repoHome } from './config.ts';
-import { stripGsdHookEntries } from './hooks-filter.ts';
+import { baseHasGsdHookEntries } from './hooks-filter.ts';
 import { deepMerge } from './utils.json.ts';
 
 /**
@@ -91,11 +91,9 @@ function tryReadJson(filePath: string): Record<string, unknown> | null {
  * committed sync repo still holds at least one gsd-owned hook entry. The note
  * tells the user the base self-cleans on their next `nomad push`.
  *
- * Detection uses `stripGsdHookEntries` (the same shared walker reused at all
- * other call sites): residual gsd entries are present when the stripped result
- * deep-differs from the original base. The deep-compare is via JSON.stringify
- * on the same sort-stable structure that `stripGsdHooksFromBase` uses, so the
- * two are consistent.
+ * Detection uses `baseHasGsdHookEntries` (the single shared predicate that both
+ * this note and `stripGsdHooksFromBase` on the push path use), so the two call
+ * sites agree: a note fires if and only if a push would rewrite the base.
  *
  * Emits `dim(infoGlyph)` (NOT a `warnGlyph` WARN). Never sets
  * `process.exitCode`. Emits nothing when the base is clean, absent, or
@@ -110,8 +108,9 @@ export function reportHooksBaseSelfCleanNote(section: DoctorSection): void {
   const basePath = join(repoHome(), 'shared', 'settings.base.json');
   const base = tryReadJson(basePath);
   if (base === null) return; // absent or unparseable: skip silently
-  const stripped = stripGsdHookEntries(base);
-  if (JSON.stringify(stripped) === JSON.stringify(base)) return; // already clean
+  // Use the single shared predicate so an empty hooks: {} scaffold is NOT treated
+  // as dirty (no gsd entries present means nothing will self-clean on push).
+  if (!baseHasGsdHookEntries(base)) return; // already clean
   addItem(
     section,
     `${dim(infoGlyph)} gsd now owns hook entries per-host; shared/settings.base.json self-cleans on your next 'nomad push'`,

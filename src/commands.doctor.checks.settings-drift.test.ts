@@ -831,4 +831,27 @@ describe('reportHooksBaseSelfCleanNote', () => {
     const { items } = await runNote();
     expect(items).toHaveLength(0);
   });
+
+  it('base with empty hooks: {} scaffold (no gsd entries) emits nothing (IN-01)', async () => {
+    // An empty hooks block has NO gsd entries, so the note must not fire and
+    // the push must not rewrite the base (nothing to clean). Before the fix,
+    // stripGsdHookEntries dropped the empty hooks key -> JSON.stringify diff ->
+    // spurious note and rewrite.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
+    );
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('base with hooks: { Event: [] } (empty event, no gsd entries) emits nothing (IN-01)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', hooks: { PreToolUse: [] } }) + '\n',
+    );
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+  });
 });
