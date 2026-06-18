@@ -143,27 +143,33 @@ export function classifySettingsDrift(
 // ---------------------------------------------------------------------------
 
 /**
- * Top-level settings keys that are never eligible for capture into the shared
- * repo. Mirrors `ALWAYS_NEVER_SYNC` from `config.ts`: credential and host-local
- * state must not ride into the repo even if present in live settings.json.
+ * Top-level `settings.json` keys that are never eligible for capture into the
+ * shared repo. These are the credential- and secret-bearing keys of the Claude
+ * Code settings schema: each either resolves to a secret (a key-returning helper
+ * script) or commonly holds inline secrets (`env`, where `ANTHROPIC_API_KEY`,
+ * `AWS_*`, and tokens live). Auto-promoting any of them would sync a credential
+ * to every host, violating the capture invariant.
  *
- * A unit test pins this set against `ALWAYS_NEVER_SYNC` so parity is detected
- * at test time rather than at PR review.
+ * This is deliberately a set of settings.json KEY names (e.g. `apiKeyHelper`),
+ * NOT the file-name members of `ALWAYS_NEVER_SYNC` (e.g. `.credentials.json`):
+ * the two namespaces never overlap, so guarding capture with the file-name set
+ * would exclude nothing. `env` is excluded wholesale; a user who wants to share
+ * non-secret env vars can hand-edit the base file.
  */
 export const CAPTURE_EXCLUDED_KEYS: ReadonlySet<string> = new Set([
-  '.claude.json',
-  '.credentials.json',
-  'settings.local.json',
-  'history.jsonl',
-  'stats-cache.json',
+  'apiKeyHelper',
+  'awsAuthRefresh',
+  'awsCredentialExport',
+  'otelHeadersHelper',
+  'env',
 ]);
 
 // ---------------------------------------------------------------------------
 // Node-path normalizer
 // ---------------------------------------------------------------------------
 
-/** Regex matching an absolute path ending in `bin/node` (path-separator before node). */
-const BIN_NODE_RE = /[\\/]node$/;
+/** Regex matching an absolute launcher path ending in `bin/node` (or Windows `bin\node`). */
+const BIN_NODE_RE = /[\\/]bin[\\/]node$/;
 
 /**
  * Rewrite any string whose value is an absolute launcher path ending in

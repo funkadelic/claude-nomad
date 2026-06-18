@@ -279,14 +279,20 @@ describe('cmdCaptureSettings', () => {
     writeFileSync(env.basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
     writeFileSync(
       env.settingsPath,
-      JSON.stringify({ model: 'sonnet', '.credentials.json': 'secret', myKey: 'safe' }) + '\n',
+      JSON.stringify({
+        model: 'sonnet',
+        apiKeyHelper: '/home/me/bin/get-key.sh',
+        env: { ANTHROPIC_API_KEY: 'sk-secret' },
+        myKey: 'safe',
+      }) + '\n',
     );
 
     const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
     cmdCaptureSettings({ host: false, dryRun: false });
 
     const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
-    expect(Object.hasOwn(base, '.credentials.json')).toBe(false);
+    expect(Object.hasOwn(base, 'apiKeyHelper')).toBe(false);
+    expect(Object.hasOwn(base, 'env')).toBe(false);
     expect(base.myKey).toBe('safe');
   });
 

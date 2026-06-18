@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALWAYS_NEVER_SYNC } from './config.ts';
 import {
   buildCaptureSubset,
   CAPTURE_EXCLUDED_KEYS,
@@ -15,7 +14,7 @@ import {
  * - classifySettingsDrift: behind/ahead/changed buckets and sort order.
  * - buildCaptureSubset: ahead-only promotion, secret exclusion, node-path normalization.
  * - normalizeNodePathsDeep: absolute-path matching, bare-string pass-through, recursion.
- * - CAPTURE_EXCLUDED_KEYS parity with ALWAYS_NEVER_SYNC.
+ * - CAPTURE_EXCLUDED_KEYS covers the credential- and secret-bearing settings keys.
  */
 
 // ---------------------------------------------------------------------------
@@ -215,39 +214,38 @@ describe('buildCaptureSubset', () => {
     expect(subset).toEqual({});
   });
 
-  it('excludes CAPTURE_EXCLUDED_KEYS even when locally-only (secret exclusion)', () => {
-    // history.jsonl is a ALWAYS_NEVER_SYNC member
+  it('excludes apiKeyHelper even when locally-only (secret exclusion)', () => {
     const merged = { a: 1 };
-    const settings = { a: 1, 'history.jsonl': 'sensitive' };
+    const settings = { a: 1, apiKeyHelper: '/home/me/bin/get-key.sh' };
     const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
-    expect(subset).not.toHaveProperty('history.jsonl');
+    expect(subset).not.toHaveProperty('apiKeyHelper');
     expect(subset).toEqual({});
   });
 
-  it('excludes .credentials.json from capture', () => {
+  it('excludes a secret-bearing env block from capture (the core leak vector)', () => {
     const merged = {};
-    const settings = { '.credentials.json': 'secret' };
-    const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
-    expect(subset).toEqual({});
-  });
-
-  it('excludes settings.local.json from capture', () => {
-    const merged = {};
-    const settings = { 'settings.local.json': 'host-local' };
+    const settings = { env: { ANTHROPIC_API_KEY: 'sk-secret', AWS_SECRET_ACCESS_KEY: 'abc' } };
     const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
     expect(subset).toEqual({});
   });
 
-  it('excludes .claude.json from capture', () => {
+  it('excludes awsCredentialExport from capture', () => {
     const merged = {};
-    const settings = { '.claude.json': 'oauth' };
+    const settings = { awsCredentialExport: '/home/me/bin/aws-creds.sh' };
     const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
     expect(subset).toEqual({});
   });
 
-  it('excludes stats-cache.json from capture', () => {
+  it('excludes awsAuthRefresh from capture', () => {
     const merged = {};
-    const settings = { 'stats-cache.json': 'cache' };
+    const settings = { awsAuthRefresh: 'aws sso login' };
+    const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
+    expect(subset).toEqual({});
+  });
+
+  it('excludes otelHeadersHelper from capture', () => {
+    const merged = {};
+    const settings = { otelHeadersHelper: '/home/me/bin/otel-headers.sh' };
     const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
     expect(subset).toEqual({});
   });
@@ -268,28 +266,33 @@ describe('buildCaptureSubset', () => {
 
   it('captures non-excluded ahead keys alongside excluded ones', () => {
     const merged = { safe: 1 };
-    const settings = { safe: 1, newKey: 'value', '.credentials.json': 'secret' };
+    const settings = { safe: 1, newKey: 'value', apiKeyHelper: '/home/me/bin/get-key.sh' };
     const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
     expect(subset).toEqual({ newKey: 'value' });
   });
 });
 
 // ---------------------------------------------------------------------------
-// CAPTURE_EXCLUDED_KEYS parity with ALWAYS_NEVER_SYNC
+// CAPTURE_EXCLUDED_KEYS covers credential- and secret-bearing settings keys
 // ---------------------------------------------------------------------------
 
 describe('CAPTURE_EXCLUDED_KEYS', () => {
-  it('is a superset of or equal to ALWAYS_NEVER_SYNC members', () => {
-    for (const key of ALWAYS_NEVER_SYNC) {
-      expect(CAPTURE_EXCLUDED_KEYS.has(key)).toBe(true);
-    }
+  it('contains the credential- and secret-bearing settings keys', () => {
+    expect(CAPTURE_EXCLUDED_KEYS.has('apiKeyHelper')).toBe(true);
+    expect(CAPTURE_EXCLUDED_KEYS.has('awsAuthRefresh')).toBe(true);
+    expect(CAPTURE_EXCLUDED_KEYS.has('awsCredentialExport')).toBe(true);
+    expect(CAPTURE_EXCLUDED_KEYS.has('otelHeadersHelper')).toBe(true);
+    expect(CAPTURE_EXCLUDED_KEYS.has('env')).toBe(true);
   });
 
-  it('contains all five expected sensitive keys', () => {
-    expect(CAPTURE_EXCLUDED_KEYS.has('.claude.json')).toBe(true);
-    expect(CAPTURE_EXCLUDED_KEYS.has('.credentials.json')).toBe(true);
-    expect(CAPTURE_EXCLUDED_KEYS.has('settings.local.json')).toBe(true);
-    expect(CAPTURE_EXCLUDED_KEYS.has('history.jsonl')).toBe(true);
-    expect(CAPTURE_EXCLUDED_KEYS.has('stats-cache.json')).toBe(true);
+  it('holds settings.json key names, not ALWAYS_NEVER_SYNC file names', () => {
+    // The guard operates on top-level settings keys; file names would never
+    // appear there, so excluding them would protect nothing.
+    expect(CAPTURE_EXCLUDED_KEYS.has('.credentials.json')).toBe(false);
+    expect(CAPTURE_EXCLUDED_KEYS.has('settings.local.json')).toBe(false);
+  });
+
+  it('does not over-exclude a benign shared key', () => {
+    expect(CAPTURE_EXCLUDED_KEYS.has('model')).toBe(false);
   });
 });
