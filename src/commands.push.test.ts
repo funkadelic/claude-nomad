@@ -939,6 +939,35 @@ describe('reportSettingsAheadDrift', () => {
     expect(combined).toContain('nomad capture-settings');
   });
 
+  it('folds a host override into the merge before computing ahead-drift', async () => {
+    const { repoUnderHome, testHome } = env;
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    mkdirSync(join(repoUnderHome, 'hosts'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'claude-opus-4-5' }),
+    );
+    // Host override supplies statusLine, so it is part of the merge and is NOT
+    // ahead-drift; only localOnlyKey remains local-only.
+    writeFileSync(
+      join(repoUnderHome, 'hosts', 'test-host.json'),
+      JSON.stringify({ statusLine: { type: 'command' } }),
+    );
+    writeFileSync(
+      join(testHome, '.claude', 'settings.json'),
+      JSON.stringify({
+        model: 'claude-opus-4-5',
+        statusLine: { type: 'command' },
+        localOnlyKey: 'local-value',
+      }),
+    );
+    const { reportSettingsAheadDrift } = await import('./commands.push.ts');
+    reportSettingsAheadDrift(repoUnderHome);
+    const combined = errOutput(env);
+    expect(combined).toContain('localOnlyKey');
+    expect(combined).not.toContain('statusLine');
+  });
+
   it('emits no warn when live settings matches the merge', async () => {
     const { repoUnderHome, testHome } = env;
     mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
