@@ -195,8 +195,14 @@ export function partitionByCaptureExclusion(keys: string[]): {
 // Node-path normalizer
 // ---------------------------------------------------------------------------
 
-/** Regex matching an absolute launcher path ending in `bin/node` (or Windows `bin\node`). */
-const BIN_NODE_RE = /[\\/]bin[\\/]node$/;
+/**
+ * Regex matching an absolute launcher path ending in `bin/node` (or Windows
+ * `bin\node`). The leading `(?:[A-Za-z]:)?[\\/]` anchor requires a posix root
+ * (`/`), a Windows backslash root, or a drive letter, so a relative command
+ * such as `./bin/node` is left untouched (it is an intentional value, not a
+ * machine-specific absolute launcher path).
+ */
+const BIN_NODE_RE = /^(?:[A-Za-z]:)?[\\/](?:.*[\\/])?bin[\\/]node$/;
 
 /**
  * Rewrite any string whose value is an absolute launcher path ending in

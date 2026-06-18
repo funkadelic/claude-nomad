@@ -188,6 +188,15 @@ describe('normalizeNodePathsDeep', () => {
   it('matches windows-style path separator before node', () => {
     expect(normalizeNodePathsDeep('C:\\Program Files\\nodejs\\bin\\node')).toBe('node');
   });
+
+  it('leaves a relative bin/node command unchanged (absolute paths only)', () => {
+    expect(normalizeNodePathsDeep('./bin/node')).toBe('./bin/node');
+    expect(normalizeNodePathsDeep('bin/node')).toBe('bin/node');
+  });
+
+  it('matches a root-level /bin/node absolute path', () => {
+    expect(normalizeNodePathsDeep('/bin/node')).toBe('node');
+  });
 });
 
 // ---------------------------------------------------------------------------
