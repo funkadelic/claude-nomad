@@ -703,3 +703,132 @@ describe('cmdDoctor Settings section: drift row wiring', () => {
     expect(out).toContain(okGlyph);
   });
 });
+
+// ---------------------------------------------------------------------------
+// reportHooksBaseSelfCleanNote (D-07 one-time migration info-line)
+// ---------------------------------------------------------------------------
+
+describe('reportHooksBaseSelfCleanNote', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  const gsdEntry = {
+    type: 'command',
+    command: 'node /home/u/.claude/hooks/gsd-context-monitor.js',
+  };
+  const userEntry = {
+    type: 'command',
+    command: 'node /home/u/my-hooks/my-personal-hook.js',
+  };
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = undefined;
+    env = makeDoctorEnv({ host: 'test-host', writeBase: false, writeSettings: false });
+  });
+
+  afterEach(() => {
+    process.exitCode = undefined;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Run reportHooksBaseSelfCleanNote through a fresh module graph.
+   *
+   * @returns Section items joined by newline.
+   */
+  async function runNote(): Promise<{ out: string; items: string[] }> {
+    vi.resetModules();
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportHooksBaseSelfCleanNote } =
+      await import('./commands.doctor.checks.settings-drift.ts');
+    const sec = section('Settings');
+    reportHooksBaseSelfCleanNote(sec);
+    return { out: sec.items.join('\n'), items: sec.items };
+  }
+
+  it('Test 1: base with >= 1 gsd hook entry emits a dim info line (not a WARN)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry] }],
+        },
+      }) + '\n',
+    );
+    const { out } = await runNote();
+    expect(out).toContain(infoGlyph);
+    expect(out).toContain("self-cleans on your next 'nomad push'");
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('Test 2: base with no gsd hook entries emits nothing (already clean)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [{ matcher: 'Bash', hooks: [userEntry] }],
+        },
+      }) + '\n',
+    );
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('Test 3: absent base emits nothing (best-effort skip)', async () => {
+    // No base file written.
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('Test 3b: unparseable base emits nothing (best-effort skip)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      '{ NOT VALID JSON\n',
+    );
+    let threw = false;
+    try {
+      await runNote();
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('Test 4: the note never sets process.exitCode (guidance only)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { Stop: [{ matcher: '', hooks: [gsdEntry] }] },
+      }) + '\n',
+    );
+    const { out } = await runNote();
+    expect(out).toContain(infoGlyph);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('base with no hooks key at all emits nothing', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+  });
+});

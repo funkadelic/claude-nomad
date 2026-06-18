@@ -309,6 +309,26 @@ Never hand-edit `~/.claude/settings.json` on a synced host. It's regenerated on 
 in the repo instead.
 :::
 
+### Hook entries in settings
+
+GSD (`@opengsd/gsd-core`) installs its hook commands into `~/.claude/settings.json` per host via
+npm and manages them on every session start. These entries (scripts whose basename starts with
+`gsd-`) are **not** meant to sync across hosts: each host needs a version-current set installed
+by GSD itself, and syncing them would cause permanent drift warnings as GSD self-heals a newer
+set on each session.
+
+What nomad does for you:
+
+- **On pull:** gsd-owned hook entries are filtered out of the generated `~/.claude/settings.json`
+  so the file GSD manages stays pristine.
+- **On push:** if `shared/settings.base.json` still holds leftover gsd hook entries from an
+  earlier era, nomad rewrites it to drop them before staging (a one-time self-clean; idempotent
+  on a clean base).
+- **Your own hooks still sync.** A hook entry you write yourself (whose script basename does not
+  start with `gsd-`) travels through `nomad capture-settings` exactly like any other ahead key:
+  run `nomad capture-settings` to promote it into the base, then it travels on every subsequent
+  pull.
+
 `nomad doctor` warns when `settings.json` no longer matches the base+host merge nomad would
 write, naming the missing or changed keys: the symptom of another tool rewriting the file out
 from under you (the same clobber the warning above describes, except done by software). The fix

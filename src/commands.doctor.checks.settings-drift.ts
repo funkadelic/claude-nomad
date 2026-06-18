@@ -8,6 +8,7 @@ import {
 } from './commands.capture-settings.core.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { claudeHome, HOST, repoHome } from './config.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
 import { deepMerge } from './utils.json.ts';
 
 /**
@@ -79,6 +80,42 @@ function tryReadJson(filePath: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// D-07 migration info-line
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit a one-time informational note while `shared/settings.base.json` in the
+ * committed sync repo still holds at least one gsd-owned hook entry. The note
+ * tells the user the base self-cleans on their next `nomad push` (D-04).
+ *
+ * Detection uses `stripGsdHookEntries` (the same 55-01 walker reused at all
+ * other call sites): residual gsd entries are present when the stripped result
+ * deep-differs from the original base. The deep-compare is via JSON.stringify
+ * on the same sort-stable structure that `stripGsdHooksFromBase` uses, so the
+ * two are consistent.
+ *
+ * Emits `dim(infoGlyph)` (NOT a `warnGlyph` WARN). Never sets
+ * `process.exitCode`. Emits nothing when the base is clean, absent, or
+ * unparseable (best-effort, T-55-05).
+ *
+ * Mirrors `reportDroppedNamesMigration`: non-destructive guidance that
+ * resolves itself once the write-path strip has run.
+ *
+ * @param section - The doctor section to append items to.
+ */
+export function reportHooksBaseSelfCleanNote(section: DoctorSection): void {
+  const basePath = join(repoHome(), 'shared', 'settings.base.json');
+  const base = tryReadJson(basePath);
+  if (base === null) return; // absent or unparseable: skip silently
+  const stripped = stripGsdHookEntries(base);
+  if (JSON.stringify(stripped) === JSON.stringify(base)) return; // already clean
+  addItem(
+    section,
+    `${dim(infoGlyph)} gsd now owns hook entries per-host; shared/settings.base.json self-cleans on your next 'nomad push'`,
+  );
 }
 
 // ---------------------------------------------------------------------------
