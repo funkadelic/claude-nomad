@@ -356,6 +356,29 @@ describe('buildCaptureSubset', () => {
     const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
     expect(subset).toEqual({ newKey: 'value' });
   });
+
+  it('strips gsd hook entries from the captured hooks block (WR-02)', () => {
+    // Live settings has a matcher holding BOTH a gsd entry and a user entry.
+    // The base is clean (no hooks). buildCaptureSubset must promote a hooks block
+    // containing ONLY the user entry; gsd entries must not ride into the base.
+    const gsdEntry = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+    const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
+    const merged: Record<string, unknown> = { model: 'sonnet' };
+    const settings = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry, userEntry] }],
+      },
+    };
+    const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
+    expect(subset).toHaveProperty('hooks');
+    const hooks = subset.hooks as Record<string, unknown[]>;
+    const matchers = hooks.PreToolUse as { hooks: unknown[] }[];
+    expect(matchers).toHaveLength(1);
+    // Only the user entry must be in the captured block.
+    expect(matchers[0].hooks).toHaveLength(1);
+    expect((matchers[0].hooks[0] as Record<string, unknown>).command).toBe(userEntry.command);
+  });
 });
 
 // ---------------------------------------------------------------------------

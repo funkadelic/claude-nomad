@@ -327,11 +327,17 @@ export function buildCaptureSubset(
   settings: Record<string, unknown>,
   opts: CaptureSubsetOpts,
 ): Record<string, unknown> {
+  // Strip gsd-owned hook entries from the live settings before promoting any
+  // value. classifySettingsDrift already strips both sides to avoid false drift
+  // from gsd-only hook churn; buildCaptureSubset must read from the same
+  // stripped view so a captured hooks block never re-introduces gsd entries into
+  // the base (which the push self-clean would then have to strip again).
+  const filtered = stripGsdHookEntries(settings);
   const { ahead } = classifySettingsDrift(merged, settings);
   const out: Record<string, unknown> = {};
   for (const key of ahead) {
     if (CAPTURE_EXCLUDED_KEYS.has(key)) continue;
-    const raw = settings[key];
+    const raw = filtered[key];
     out[key] = opts.normalizeNodePath ? normalizeNodePathsDeep(raw) : raw;
   }
   return out;
