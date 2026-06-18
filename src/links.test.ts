@@ -302,6 +302,33 @@ describe('regenerateSettings (integration)', () => {
     expect(captured).toContain('nomad capture-settings');
     expect(captured).toContain('statusLine');
   });
+
+  it('does NOT advise capture when settings is ahead only via a capture-excluded key', async () => {
+    // ahead-only drift whose sole local-only key is excluded from capture (env):
+    // advising nomad capture-settings would be a no-op and would name a
+    // secret-bearing key, so no ahead-drift WARN fires.
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'sonnet', env: { ANTHROPIC_API_KEY: 'sk-secret' } }) + '\n',
+    );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    const captured = writes.join('');
+    expect(captured).not.toContain('nomad capture-settings');
+    expect(captured).not.toContain('env');
+  });
 });
 
 describe('applySharedLinks auto-move', () => {

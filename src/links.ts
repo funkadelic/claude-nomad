@@ -2,7 +2,10 @@ import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from './config.ts';
-import { classifySettingsDrift } from './commands.capture-settings.core.ts';
+import {
+  classifySettingsDrift,
+  partitionByCaptureExclusion,
+} from './commands.capture-settings.core.ts';
 import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
@@ -193,9 +196,10 @@ export function regenerateSettings(
             `Run 'nomad pull' to restore them.`,
         );
       }
-      if (drift.ahead.length > 0) {
+      const { promotable } = partitionByCaptureExclusion(drift.ahead);
+      if (promotable.length > 0) {
         warn(
-          `existing settings.json has local-only keys ${JSON.stringify(drift.ahead)}. ` +
+          `existing settings.json has local-only keys ${JSON.stringify(promotable)}. ` +
             `Run 'nomad capture-settings' to promote them into the repo before they are overwritten.`,
         );
       }
