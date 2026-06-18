@@ -11,10 +11,15 @@ import { GSD_PREFIX } from './config.ts';
  * - `node --preserve-symlinks-main /a/hooks/gsd-workflow-guard.js` (node + flag)
  * - `/home/u/.nvm/versions/node/v24/bin/node /a/hooks/gsd-config-reload.js` (absolute nvm path)
  * - `bash /a/hooks/gsd-graphify-update.sh` (bash launcher)
+ * - `CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js` (env-prefixed)
+ * - `/a/hooks/gsd-x.js` (launcher-less, shebang executable)
  *
- * Algorithm: split the command on whitespace, skip the first token (launcher),
- * skip any leading-dash flag tokens, take the first non-flag token as the
- * script path. Return `basename.startsWith(GSD_PREFIX)`.
+ * Algorithm: split the command on whitespace, skip any leading `KEY=value`
+ * environment-assignment tokens (no path separator, contains `=`), then skip
+ * the launcher token, skip flag tokens, and take the first non-flag token as
+ * the script path. For a single-token command that contains a path separator,
+ * evaluate that token's basename directly (launcher-less shebang form).
+ * Return `basename.startsWith(GSD_PREFIX)`.
  *
  * Fail-safe: if no script token is found the command is unparseable; return
  * `false` so a user entry is never silently dropped.
@@ -24,10 +29,36 @@ import { GSD_PREFIX } from './config.ts';
  */
 export function isGsdHookEntry(command: string): boolean {
   const tokens = command.trim().split(/\s+/);
-  // tokens[0] is the launcher (node, bash, /abs/path/to/node, ...)
-  // Walk remaining tokens, skip flags (start with '-'), take first non-flag.
-  for (let i = 1; i < tokens.length; i++) {
-    const token = tokens[i];
+  if (tokens.length === 0 || tokens[0] === '') return false;
+
+  // Skip leading KEY=value env-assignment tokens. A token is an env assignment
+  // when its key part (everything before the first '=') matches a shell
+  // identifier: starts with a letter or underscore, contains only letters,
+  // digits, and underscores, and has no path separator in the key portion.
+  const envAssign = /^[A-Za-z_][A-Za-z0-9_]*=/;
+  let i = 0;
+  while (i < tokens.length && envAssign.test(tokens[i])) {
+    i++;
+  }
+
+  // Single-token form (no launcher): evaluate the token's basename directly when
+  // it contains a path separator or already starts with GSD_PREFIX.
+  if (i >= tokens.length - 1) {
+    const single = tokens[i] ?? '';
+    const hasPath = single.includes('/') || single.includes('\\');
+    if (hasPath || single.startsWith(GSD_PREFIX)) {
+      const lastSlash = Math.max(single.lastIndexOf('/'), single.lastIndexOf('\\'));
+      const basename = lastSlash >= 0 ? single.slice(lastSlash + 1) : single;
+      return basename.startsWith(GSD_PREFIX);
+    }
+    // Bare launcher token (e.g. `node`) with no script: unparseable -> false.
+    return false;
+  }
+
+  // Multi-token form: tokens[i] is the launcher; walk remaining tokens, skip
+  // flags (start with '-'), take first non-flag as the script path.
+  for (let j = i + 1; j < tokens.length; j++) {
+    const token = tokens[j];
     if (token.startsWith('-')) continue;
     // Extract the basename of the script path (works for / and \ separators).
     const lastSlash = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
@@ -77,7 +108,9 @@ function filterEventMatchers(matchers: unknown): unknown[] | null {
   const kept: Record<string, unknown>[] = [];
   for (const entry of matchers) {
     const result = filterMatcherEntry(entry);
-    if (result !== null) kept.push(result);
+    // Use loose != null to drop both null and undefined (sparse-array holes
+    // yield undefined from for...of; strict !== null would push them as null).
+    if (result != null) kept.push(result);
   }
   return kept.length === 0 ? null : kept;
 }
@@ -126,4 +159,51 @@ export function stripGsdHookEntries(settings: Record<string, unknown>): Record<s
     if (Object.keys(filteredHooks).length > 0) out[key] = filteredHooks;
   }
   return out;
+}
+
+/**
+ * Walk one matcher entry's inner `hooks` array and return `true` when at least
+ * one inner hook entry is gsd-owned. Returns `false` when entry is not a plain
+ * object, lacks an inner `hooks` array, or the array is empty or user-only.
+ *
+ * @param entry - One element of an event's matcher array.
+ * @returns `true` if the entry contains a gsd-owned inner hook command.
+ */
+function matcherHasGsdEntry(entry: unknown): boolean {
+  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  const entryObj = entry as Record<string, unknown>;
+  if (!Array.isArray(entryObj.hooks)) return false;
+  for (const h of entryObj.hooks as unknown[]) {
+    if (h === null || typeof h !== 'object' || Array.isArray(h)) continue;
+    const hookObj = h as Record<string, unknown>;
+    const cmd = hookObj.command;
+    if (isGsdHookEntry(typeof cmd === 'string' ? cmd : '')) return true;
+  }
+  return false;
+}
+
+/**
+ * Returns `true` only when the `hooks` block in `settings` contains at least
+ * one gsd-owned inner hook entry (as detected by `isGsdHookEntry`). Returns
+ * `false` for a missing `hooks` key, an empty `hooks: {}` scaffold, or a
+ * `hooks` block that contains only user-authored entries.
+ *
+ * Use this in place of the `JSON.stringify(stripped) === JSON.stringify(base)`
+ * dirty-check so call sites agree on the single predicate definition and an
+ * empty `hooks: {}` scaffold is not treated as "dirty."
+ *
+ * @param settings - Parsed settings object (e.g. the committed base JSON).
+ * @returns `true` if at least one gsd-owned hook entry is present.
+ */
+export function baseHasGsdHookEntries(settings: Record<string, unknown>): boolean {
+  const hooksVal = settings.hooks;
+  if (hooksVal === null || typeof hooksVal !== 'object' || Array.isArray(hooksVal)) return false;
+  const hooksObj = hooksVal as Record<string, unknown>;
+  for (const matchers of Object.values(hooksObj)) {
+    if (!Array.isArray(matchers)) continue;
+    for (const entry of matchers) {
+      if (matcherHasGsdEntry(entry)) return true;
+    }
+  }
+  return false;
 }

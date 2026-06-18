@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isGsdHookEntry, stripGsdHookEntries } from './hooks-filter.ts';
+import { baseHasGsdHookEntries, isGsdHookEntry, stripGsdHookEntries } from './hooks-filter.ts';
 
 // ---------------------------------------------------------------------------
 // isGsdHookEntry -- Test 1-7
@@ -51,6 +51,46 @@ describe('isGsdHookEntry', () => {
     // Covers the lastSlash < 0 branch in isGsdHookEntry (token is just a basename).
     expect(isGsdHookEntry('node gsd-hook.js')).toBe(true);
     expect(isGsdHookEntry('node my-hook.js')).toBe(false);
+  });
+
+  it('env-prefixed gsd command -> true (WR-03)', () => {
+    // CLAUDE_PROJECT_DIR=/x is a KEY=value token; the detector must skip it and
+    // identify `node` as the launcher and `gsd-x.js` as the script.
+    expect(isGsdHookEntry('CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('env-prefixed user command -> false (WR-03)', () => {
+    expect(isGsdHookEntry('MY_VAR=1 node /a/hooks/my-personal-hook.js')).toBe(false);
+  });
+
+  it('multiple env-prefix tokens then gsd script -> true (WR-03)', () => {
+    expect(isGsdHookEntry('FOO=bar BAZ=qux node /a/hooks/gsd-monitor.js')).toBe(true);
+  });
+
+  it('single-token gsd script path (no launcher) -> true (WR-04)', () => {
+    // A shebang-executable invoked directly: no separate launcher token.
+    expect(isGsdHookEntry('/a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('single-token bare launcher (no script) -> false (WR-04)', () => {
+    // `node` alone has no path separator and no gsd- prefix: unparseable -> false.
+    expect(isGsdHookEntry('node')).toBe(false);
+  });
+
+  it('single-token user script path -> false (WR-04)', () => {
+    expect(isGsdHookEntry('/a/hooks/my-personal-hook.js')).toBe(false);
+  });
+
+  it('single-token gsd- prefix with no path separator -> true', () => {
+    // Covers the `lastSlash < 0` else branch in the single-token path.
+    expect(isGsdHookEntry('gsd-hook.js')).toBe(true);
+  });
+
+  it('all-env-assignment command (no script token) -> false (fail-safe)', () => {
+    // Covers the `tokens[i] ?? ''` nullish branch when i >= tokens.length
+    // (every token was an env assignment and no script token remains).
+    expect(isGsdHookEntry('FOO=bar')).toBe(false);
+    expect(isGsdHookEntry('FOO=bar BAZ=qux')).toBe(false);
   });
 });
 
@@ -232,5 +272,128 @@ describe('stripGsdHookEntries', () => {
     // command is absent so isGsdHookEntry('') = false -> entry preserved
     const event = hooks.PreToolUse as unknown[];
     expect(event).toHaveLength(1);
+  });
+
+  it('sparse-array hole in event array -> dropped (not serialized as null) (IN-03)', () => {
+    // Calling filterEventMatchers with a sparse array directly: an undefined hole
+    // must be dropped by the loose != null guard, not pushed as null.
+    // Simulate via a regular array containing undefined.
+    const undefinedEntry = undefined as unknown;
+    const input = {
+      hooks: {
+        PreToolUse: [undefinedEntry, { matcher: '', hooks: [userHook()] }],
+      },
+    };
+    const result = stripGsdHookEntries(input);
+    const hooks = result.hooks as Record<string, unknown>;
+    const event = hooks.PreToolUse as unknown[];
+    // undefined hole should be dropped; only the user-hook matcher remains.
+    expect(event).toHaveLength(1);
+    expect(event[0]).not.toBeNull();
+    expect(event[0]).not.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// baseHasGsdHookEntries -- predicate used at self-clean call sites
+// ---------------------------------------------------------------------------
+
+describe('baseHasGsdHookEntries', () => {
+  it('returns true when the hooks block contains at least one gsd entry', () => {
+    const base = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdHook()] }],
+      },
+    };
+    expect(baseHasGsdHookEntries(base)).toBe(true);
+  });
+
+  it('returns false when the hooks block contains only user entries', () => {
+    const base = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [userHook()] }],
+      },
+    };
+    expect(baseHasGsdHookEntries(base)).toBe(false);
+  });
+
+  it('returns false for an empty hooks: {} scaffold (no gsd entries present)', () => {
+    // IN-01: an empty hooks object has no gsd entries, so the predicate must
+    // return false (no note, no rewrite).
+    expect(baseHasGsdHookEntries({ model: 'sonnet', hooks: {} })).toBe(false);
+  });
+
+  it('returns false for a hooks block with empty event arrays', () => {
+    expect(baseHasGsdHookEntries({ hooks: { PreToolUse: [] } })).toBe(false);
+  });
+
+  it('returns false when the hooks key is absent', () => {
+    expect(baseHasGsdHookEntries({ model: 'sonnet' })).toBe(false);
+  });
+
+  it('returns false when hooks is not a plain object', () => {
+    expect(baseHasGsdHookEntries({ hooks: 'not-an-object' })).toBe(false);
+    expect(baseHasGsdHookEntries({ hooks: null })).toBe(false);
+    expect(baseHasGsdHookEntries({ hooks: [] })).toBe(false);
+  });
+
+  it('returns true when gsd entry is in a mixed matcher (gsd + user)', () => {
+    const base = {
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdHook(), userHook()] }],
+      },
+    };
+    expect(baseHasGsdHookEntries(base)).toBe(true);
+  });
+
+  it('returns false when the event value is not an array (non-array matchers)', () => {
+    // Covers the `if (!Array.isArray(matchers)) continue` branch in baseHasGsdHookEntries.
+    const base = { hooks: { PreToolUse: 'not-an-array' } };
+    expect(baseHasGsdHookEntries(base)).toBe(false);
+  });
+
+  it('matcherHasGsdEntry: non-object entry -> false', () => {
+    // The null entry in a matchers array -> matcherHasGsdEntry returns false ->
+    // not counted as a gsd entry.
+    const base = {
+      hooks: {
+        PreToolUse: [null],
+      },
+    };
+    expect(baseHasGsdHookEntries(base)).toBe(false);
+  });
+
+  it('matcherHasGsdEntry: entry with non-array hooks -> false', () => {
+    // Covers the !Array.isArray(entryObj.hooks) branch in matcherHasGsdEntry.
+    const base = {
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: 'not-an-array' }],
+      },
+    };
+    expect(baseHasGsdHookEntries(base)).toBe(false);
+  });
+
+  it('matcherHasGsdEntry: inner hook with non-string command -> not gsd (fail-safe)', () => {
+    // Covers the `typeof cmd === 'string' ? cmd : ''` branch: when command is
+    // absent or non-string, isGsdHookEntry('') returns false.
+    const base = {
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command' }] }],
+      },
+    };
+    expect(baseHasGsdHookEntries(base)).toBe(false);
+  });
+
+  it('matcherHasGsdEntry: inner hook that is null -> skipped (fail-safe)', () => {
+    // Covers the `h === null` branch inside matcherHasGsdEntry.
+    const base = {
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [null, gsdHook()] }],
+      },
+    };
+    // null is skipped; gsdHook() is detected -> true.
+    expect(baseHasGsdHookEntries(base)).toBe(true);
   });
 });
