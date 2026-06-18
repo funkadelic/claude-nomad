@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { KNOWN_SETTINGS_KEYS } from './config.ts';
 import {
   buildCaptureSubset,
   CAPTURE_EXCLUDED_KEYS,
   classifySettingsDrift,
   normalizeNodePathsDeep,
+  partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
 
 /**
@@ -294,5 +296,44 @@ describe('CAPTURE_EXCLUDED_KEYS', () => {
 
   it('does not over-exclude a benign shared key', () => {
     expect(CAPTURE_EXCLUDED_KEYS.has('model')).toBe(false);
+  });
+
+  it('every excluded key is a known settings.json schema key (schema-coupling guard)', () => {
+    // If a future settings-schema sync renames one of these keys, the exclusion
+    // would silently go stale; this pins the coupling so the rename is caught.
+    const known = new Set(KNOWN_SETTINGS_KEYS);
+    for (const key of CAPTURE_EXCLUDED_KEYS) {
+      expect(known.has(key)).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// partitionByCaptureExclusion
+// ---------------------------------------------------------------------------
+
+describe('partitionByCaptureExclusion', () => {
+  it('splits keys into promotable and excluded, preserving input order', () => {
+    const result = partitionByCaptureExclusion(['myKey', 'env', 'other', 'apiKeyHelper']);
+    expect(result.promotable).toEqual(['myKey', 'other']);
+    expect(result.excluded).toEqual(['env', 'apiKeyHelper']);
+  });
+
+  it('returns all keys as promotable when none are excluded', () => {
+    expect(partitionByCaptureExclusion(['a', 'b'])).toEqual({
+      promotable: ['a', 'b'],
+      excluded: [],
+    });
+  });
+
+  it('returns all keys as excluded when every key is a credential key', () => {
+    expect(partitionByCaptureExclusion(['env', 'apiKeyHelper'])).toEqual({
+      promotable: [],
+      excluded: ['env', 'apiKeyHelper'],
+    });
+  });
+
+  it('returns empty partitions for an empty input', () => {
+    expect(partitionByCaptureExclusion([])).toEqual({ promotable: [], excluded: [] });
   });
 });

@@ -165,6 +165,32 @@ export const CAPTURE_EXCLUDED_KEYS: ReadonlySet<string> = new Set([
   'env',
 ]);
 
+/**
+ * Partition a key list into the keys capture would promote (`promotable`) and
+ * the keys it refuses (`excluded`, members of `CAPTURE_EXCLUDED_KEYS`). Input
+ * order is preserved in both outputs.
+ *
+ * Used by the doctor and push drift surfaces so their "run nomad
+ * capture-settings" advice names only keys capture can actually promote, and
+ * never names an excluded credential key (which would both mis-advise an action
+ * that no-ops and disclose a secret-bearing key name).
+ *
+ * @param keys - Candidate key list (typically the `ahead` drift bucket).
+ * @returns `{ promotable, excluded }` partition.
+ */
+export function partitionByCaptureExclusion(keys: string[]): {
+  promotable: string[];
+  excluded: string[];
+} {
+  const promotable: string[] = [];
+  const excluded: string[] = [];
+  for (const key of keys) {
+    if (CAPTURE_EXCLUDED_KEYS.has(key)) excluded.push(key);
+    else promotable.push(key);
+  }
+  return { promotable, excluded };
+}
+
 // ---------------------------------------------------------------------------
 // Node-path normalizer
 // ---------------------------------------------------------------------------

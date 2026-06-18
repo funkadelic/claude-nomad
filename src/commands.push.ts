@@ -2,7 +2,10 @@ import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { backupBase, claudeHome, HOST, type PathMap, repoHome } from './config.ts';
-import { classifySettingsDrift } from './commands.capture-settings.core.ts';
+import {
+  classifySettingsDrift,
+  partitionByCaptureExclusion,
+} from './commands.capture-settings.core.ts';
 import { enforceAllowList, isGsdDropped, parsePorcelainZ } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
@@ -26,6 +29,10 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  * merge (the host is AHEAD), emits one `warn` line naming the local-only keys
  * and pointing at `nomad capture-settings`.
  *
+ * Only keys capture would actually promote are reported: credential- and
+ * secret-bearing keys (`CAPTURE_EXCLUDED_KEYS`) are filtered out, so the warning
+ * neither advises an action that would no-op nor names a secret-bearing key.
+ *
  * Best-effort and tolerant: any missing file or parse error is a silent skip.
  * Never mutates anything; never sets `process.exitCode`.
  *
@@ -43,8 +50,9 @@ export function reportSettingsAheadDrift(repo: string): void {
     const merged = deepMerge(base, overrides);
     const settings = readJson<Record<string, unknown>>(settingsPath);
     const { ahead } = classifySettingsDrift(merged, settings);
-    if (ahead.length === 0) return;
-    const keys = JSON.stringify(ahead);
+    const { promotable } = partitionByCaptureExclusion(ahead);
+    if (promotable.length === 0) return;
+    const keys = JSON.stringify(promotable);
     warn(
       `settings.json has local-only keys ${keys} not in the repo. ` +
         `Run 'nomad capture-settings' to promote them (or 'nomad capture-settings --host' for host-specific values).`,

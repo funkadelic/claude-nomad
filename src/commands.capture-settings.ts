@@ -8,7 +8,7 @@ import { regenerateSettings } from './links.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
-import { die, log, NomadFatal, warn } from './utils.ts';
+import { die, log, warn } from './utils.ts';
 
 /** Confirmation seam: given the destination label and sorted key list, return true to proceed. */
 export type CaptureConfirm = (destLabel: string, keys: string[]) => Promise<boolean>;
@@ -157,13 +157,10 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     // here are the excluded credential keys that capture intentionally refuses.
     regenerateSettings(ts, { suppressDriftWarn: true });
     log(`captured ${keys.length} key(s) into ${dest} (backup: ${ts})`);
-  } catch (err) {
-    /* c8 ignore next 3 */
-    if (!(err instanceof NomadFatal)) {
-      throw err;
-    }
-    die(err.message);
   } finally {
+    // Release the lock on every exit path. Any NomadFatal propagates to the
+    // top-level handler in nomad.ts (which prints it and exits 1); re-wrapping
+    // it here would only discard the original error.
     releaseLock(handle);
   }
 }

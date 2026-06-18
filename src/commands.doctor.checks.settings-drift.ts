@@ -2,7 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
-import { classifySettingsDrift } from './commands.capture-settings.core.ts';
+import {
+  classifySettingsDrift,
+  partitionByCaptureExclusion,
+} from './commands.capture-settings.core.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { claudeHome, HOST, repoHome } from './config.ts';
 import { deepMerge } from './utils.json.ts';
@@ -96,10 +99,11 @@ function tryReadJson(filePath: string): Record<string, unknown> | null {
  * - `⚠︎` WARN when merged keys are absent from settings (external clobber).
  * - `⚠︎` WARN when merged keys are present but value-changed.
  * - `ℹ︎` info when settings has extra local-only keys (promotion candidates).
- *   Suppressed when no host file exists: `reportHostOverrides` already FAILs
- *   on the same unbased keys in that case, and a softer info row about the
- *   identical keys would contradict it.
- * - `✓` ok when settings matches the merge exactly.
+ *   Promotable keys are named with capture advice; excluded credential/host-local
+ *   keys get a separate count-only row (no names, no advice). Suppressed when no
+ *   host file exists: `reportHostOverrides` already FAILs on the same unbased keys
+ *   in that case, and a softer info row about the identical keys would contradict it.
+ * - ok row when settings matches the merge exactly.
  *
  * Never sets `process.exitCode`. Never throws.
  *
@@ -160,8 +164,9 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
   const merged = deepMerge(base, hostObj ?? {});
 
   const { missing, changed, extra } = diffMergedSettings(merged, settings);
+  const { promotable, excluded } = partitionByCaptureExclusion(extra);
 
-  emitDriftRows(section, missing, changed, extra, hostExists);
+  emitDriftRows(section, missing, changed, promotable, excluded, hostExists);
 }
 
 /**
@@ -174,17 +179,26 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
  * keys would contradict that verdict. The ok row is not emitted in that case
  * either (extras exist, so settings does not match the merge exactly).
  *
+ * The local-only keys are split into `promotable` (capture would promote
+ * these) and `excluded` (credential/host-local keys capture refuses). The
+ * promote row names only `promotable` keys and advises `nomad capture-settings`;
+ * `excluded` keys get a separate count-only row (no key names, no capture
+ * advice) so the report neither mis-advises an action that no-ops nor discloses
+ * a secret-bearing key name.
+ *
  * @param section - Doctor section to append to.
  * @param missing - Keys in merged absent from settings.
  * @param changed - Keys in both with different values.
- * @param extra - Keys in settings absent from merged.
- * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the extra-keys row).
+ * @param promotable - Local-only keys capture would promote.
+ * @param excluded - Local-only keys capture refuses (credential/host-local).
+ * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the local-only rows).
  */
 function emitDriftRows(
   section: DoctorSection,
   missing: string[],
   changed: string[],
-  extra: string[],
+  promotable: string[],
+  excluded: string[],
   hostFileExists: boolean,
 ): void {
   if (missing.length > 0) {
@@ -199,13 +213,24 @@ function emitDriftRows(
       `${yellow(warnGlyph)} settings.json drift: merged keys with changed values: ${changed.join(', ')} (run 'nomad pull')`,
     );
   }
-  if (extra.length > 0 && hostFileExists) {
+  if (promotable.length > 0 && hostFileExists) {
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${extra.length} local-only key(s) not in base+host merge: ${extra.join(', ')} (run 'nomad capture-settings' to promote them into the repo)`,
+      `${dim(infoGlyph)} settings.json has ${promotable.length} local-only key(s) not in base+host merge: ${promotable.join(', ')} (run 'nomad capture-settings' to promote them into the repo)`,
     );
   }
-  if (missing.length === 0 && changed.length === 0 && extra.length === 0) {
+  if (excluded.length > 0 && hostFileExists) {
+    addItem(
+      section,
+      `${dim(infoGlyph)} settings.json has ${excluded.length} local-only key(s) outside the sync set (credential or host-local; nomad does not promote these)`,
+    );
+  }
+  if (
+    missing.length === 0 &&
+    changed.length === 0 &&
+    promotable.length === 0 &&
+    excluded.length === 0
+  ) {
     addItem(section, `${green(okGlyph)} settings.json matches base+host merge`);
   }
 }

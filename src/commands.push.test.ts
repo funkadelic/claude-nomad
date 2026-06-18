@@ -980,4 +980,47 @@ describe('reportSettingsAheadDrift', () => {
     expect(() => reportSettingsAheadDrift(repoUnderHome)).not.toThrow();
     expect(errOutput(env)).toBe('');
   });
+
+  it('emits no warn when the only local-only key is excluded from capture (env)', async () => {
+    const { repoUnderHome, testHome } = env;
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'claude-opus-4-5' }),
+    );
+    // env is ahead but excluded from capture: advising capture-settings would
+    // no-op and would name a secret-bearing key, so no warn fires.
+    writeFileSync(
+      join(testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'claude-opus-4-5', env: { ANTHROPIC_API_KEY: 'sk-secret' } }),
+    );
+    const { reportSettingsAheadDrift } = await import('./commands.push.ts');
+    reportSettingsAheadDrift(repoUnderHome);
+    const combined = errOutput(env);
+    expect(combined).toBe('');
+    expect(combined).not.toContain('env');
+  });
+
+  it('warns for the promotable key only when ahead-drift mixes promotable and excluded keys', async () => {
+    const { repoUnderHome, testHome } = env;
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'claude-opus-4-5' }),
+    );
+    writeFileSync(
+      join(testHome, '.claude', 'settings.json'),
+      JSON.stringify({
+        model: 'claude-opus-4-5',
+        statusLine: { type: 'command' },
+        env: { ANTHROPIC_API_KEY: 'sk-secret' },
+      }),
+    );
+    const { reportSettingsAheadDrift } = await import('./commands.push.ts');
+    reportSettingsAheadDrift(repoUnderHome);
+    const combined = errOutput(env);
+    expect(combined).toContain('statusLine');
+    expect(combined).toContain('nomad capture-settings');
+    expect(combined).not.toContain('env');
+  });
 });
