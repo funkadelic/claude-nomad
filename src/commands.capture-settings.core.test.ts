@@ -357,7 +357,7 @@ describe('buildCaptureSubset', () => {
     expect(subset).toEqual({ newKey: 'value' });
   });
 
-  it('strips gsd hook entries from the captured hooks block (WR-02)', () => {
+  it('strips gsd hook entries from the captured hooks block', () => {
     // Live settings has a matcher holding BOTH a gsd entry and a user entry.
     // The base is clean (no hooks). buildCaptureSubset must promote a hooks block
     // containing ONLY the user entry; gsd entries must not ride into the base.

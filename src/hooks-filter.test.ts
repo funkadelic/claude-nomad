@@ -53,31 +53,31 @@ describe('isGsdHookEntry', () => {
     expect(isGsdHookEntry('node my-hook.js')).toBe(false);
   });
 
-  it('env-prefixed gsd command -> true (WR-03)', () => {
+  it('env-prefixed gsd command -> true', () => {
     // CLAUDE_PROJECT_DIR=/x is a KEY=value token; the detector must skip it and
     // identify `node` as the launcher and `gsd-x.js` as the script.
     expect(isGsdHookEntry('CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js')).toBe(true);
   });
 
-  it('env-prefixed user command -> false (WR-03)', () => {
+  it('env-prefixed user command -> false', () => {
     expect(isGsdHookEntry('MY_VAR=1 node /a/hooks/my-personal-hook.js')).toBe(false);
   });
 
-  it('multiple env-prefix tokens then gsd script -> true (WR-03)', () => {
+  it('multiple env-prefix tokens then gsd script -> true', () => {
     expect(isGsdHookEntry('FOO=bar BAZ=qux node /a/hooks/gsd-monitor.js')).toBe(true);
   });
 
-  it('single-token gsd script path (no launcher) -> true (WR-04)', () => {
+  it('single-token gsd script path (no launcher) -> true', () => {
     // A shebang-executable invoked directly: no separate launcher token.
     expect(isGsdHookEntry('/a/hooks/gsd-x.js')).toBe(true);
   });
 
-  it('single-token bare launcher (no script) -> false (WR-04)', () => {
+  it('single-token bare launcher (no script) -> false', () => {
     // `node` alone has no path separator and no gsd- prefix: unparseable -> false.
     expect(isGsdHookEntry('node')).toBe(false);
   });
 
-  it('single-token user script path -> false (WR-04)', () => {
+  it('single-token user script path -> false', () => {
     expect(isGsdHookEntry('/a/hooks/my-personal-hook.js')).toBe(false);
   });
 
@@ -274,7 +274,7 @@ describe('stripGsdHookEntries', () => {
     expect(event).toHaveLength(1);
   });
 
-  it('sparse-array hole in event array -> dropped (not serialized as null) (IN-03)', () => {
+  it('sparse-array hole in event array -> dropped (not serialized as null)', () => {
     // Calling filterEventMatchers with a sparse array directly: an undefined hole
     // must be dropped by the loose != null guard, not pushed as null.
     // Simulate via a regular array containing undefined.
@@ -320,7 +320,7 @@ describe('baseHasGsdHookEntries', () => {
   });
 
   it('returns false for an empty hooks: {} scaffold (no gsd entries present)', () => {
-    // IN-01: an empty hooks object has no gsd entries, so the predicate must
+    // An empty hooks object has no gsd entries, so the predicate must
     // return false (no note, no rewrite).
     expect(baseHasGsdHookEntries({ model: 'sonnet', hooks: {} })).toBe(false);
   });

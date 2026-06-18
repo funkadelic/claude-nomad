@@ -1307,7 +1307,7 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
     expect(raw).toBe('{ NOT VALID JSON\n');
   });
 
-  it('empty hooks: {} scaffold is NOT rewritten (IN-01: no gsd entries means no strip)', async () => {
+  it('empty hooks: {} scaffold is NOT rewritten (no gsd entries means no strip)', async () => {
     // An empty hooks block has NO gsd entries. The push must NOT rewrite the
     // base (no backup, no mtime change) because baseHasGsdHookEntries returns
     // false for an empty scaffold.
@@ -1325,7 +1325,7 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
     expect(result.model).toBe('sonnet');
   });
 
-  it('Test 8 (WR-01): base strip runs BEFORE the empty-status early-return, allowing a clean tree to commit a dirty base', async () => {
+  it('base strip runs BEFORE the empty-status early-return, allowing a clean tree to commit a dirty base', async () => {
     // Scenario: the only outstanding change is the committed base having gsd
     // hook entries. Before the fix, gitStatusPorcelainZ returned empty -> early
     // return before strip. Now the strip runs BEFORE the status snapshot, so a
