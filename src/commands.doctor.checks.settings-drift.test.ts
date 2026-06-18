@@ -330,7 +330,7 @@ describe('reportSettingsDriftCheck', () => {
     const { out } = await runCheck();
     expect(out).toContain(infoGlyph);
     expect(out).toContain('agentPushNotifEnabled');
-    expect(out).toContain('promotion candidates');
+    expect(out).toContain('nomad capture-settings');
     expect(out).not.toContain(warnGlyph);
     expect(process.exitCode).toBeUndefined();
   });

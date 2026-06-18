@@ -278,7 +278,7 @@ function emitDriftRows(
   if (extra.length > 0 && hostFileExists) {
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${extra.length} local-only key(s) not in base+host merge: ${extra.join(', ')} (promotion candidates for shared/settings.base.json or hosts/${host}.json)`,
+      `${dim(infoGlyph)} settings.json has ${extra.length} local-only key(s) not in base+host merge: ${extra.join(', ')} (run 'nomad capture-settings' to promote them into the repo)`,
     );
   }
   if (missing.length === 0 && changed.length === 0 && extra.length === 0) {

@@ -116,7 +116,7 @@ describe('regenerateSettings (integration)', () => {
     expect(newContent).toEqual({ model: 'sonnet', hooks: {} });
   });
 
-  it('fires stderr WARN when host file is missing AND prior settings has unbased keys', async () => {
+  it('fires ahead-drift WARN advising nomad capture-settings when settings has local-only keys', async () => {
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
@@ -138,8 +138,8 @@ describe('regenerateSettings (integration)', () => {
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
     const captured = writes.join('');
-    expect(captured).toContain('⚠︎ no hosts/');
-    expect(captured).toContain('unbased keys ["statusLine"]');
+    expect(captured).toContain('nomad capture-settings');
+    expect(captured).toContain('statusLine');
     expect(existsSync(join(claudeDir, 'settings.json'))).toBe(true);
   });
 
@@ -198,19 +198,61 @@ describe('regenerateSettings (integration)', () => {
     );
   });
 
-  it('does NOT fire drift WARN when a host override file exists, even if settings has unbased keys', async () => {
-    // Regression guard for L143: `!hasOverrides && existsSync(settingsPath)`.
-    // When hosts/test-host.json exists, hasOverrides=true. The condition must
-    // be false regardless of whether settings.json has unbased keys.
-    // A ConditionalExpression-true or LogicalOperator-|| mutation would fire the
-    // drift WARN even with a host file present.
+  it('fires behind-drift WARN advising nomad pull when merged keys are missing from settings', async () => {
+    // behind-drift: merged has a key that is absent from settings -> pull hint
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
+    );
+    writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ model: 'sonnet' }) + '\n');
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    const captured = writes.join('');
+    expect(captured).toContain('nomad pull');
+    expect(captured).toContain('hooks');
+    expect(captured).not.toContain('nomad capture-settings');
+  });
+
+  it('does NOT fire any drift WARN when settings exactly matches merged', async () => {
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
-    // Host override file exists (hasOverrides=true).
+    writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ model: 'sonnet' }) + '\n');
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    const captured = writes.join('');
+    expect(captured).not.toContain('⚠︎');
+  });
+
+  it('fires direction-aware WARNs when a host override exists and settings has both missing and ahead-only keys', async () => {
+    // Direction-aware drift: with a host override present and a settings that
+    // diverges both ways, both behind-drift (nomad pull) and ahead-drift
+    // (nomad capture-settings) WARNs are emitted.
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    // Host override file exists.
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
-    // Prior settings.json has an unbased key ('statusLine' not in base).
+    // merged = { model: 'sonnet', hooks: {} }
+    // settings has statusLine (ahead) and model changed, but hooks is behind (missing).
     writeFileSync(
       join(claudeDir, 'settings.json'),
       JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
@@ -225,9 +267,13 @@ describe('regenerateSettings (integration)', () => {
     });
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
-    // No drift WARN should have been emitted.
-    expect(writes.join('')).not.toContain('⚠︎');
-    expect(writes.join('')).not.toContain('unbased keys');
+    const captured = writes.join('');
+    // behind: hooks is missing from settings -> nomad pull
+    expect(captured).toContain('nomad pull');
+    expect(captured).toContain('hooks');
+    // ahead: statusLine is local-only -> nomad capture-settings
+    expect(captured).toContain('nomad capture-settings');
+    expect(captured).toContain('statusLine');
   });
 });
 
