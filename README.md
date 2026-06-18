@@ -42,7 +42,7 @@ survives different file paths and your secrets never ride along.
   repo, broken hook references, hooks that would crash on session start because of a missing
   `--preserve-symlinks-main` flag, version drift, oversized backup cache, and settings drift in both
   directions: keys present in the repo merge but absent from your live `settings.json` (behind; the
-  next `nomad pull` would delete them, fix: `nomad pull`) and keys present locally but not yet in
+  next `nomad pull` will restore them, fix: `nomad pull`) and keys present locally but not yet in
   the repo (ahead; local-only additions, fix: `nomad capture-settings`). Each issue includes a fix
   hint.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`

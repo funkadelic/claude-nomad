@@ -84,7 +84,8 @@ without writing anything. Nothing has to be taken on faith.
 stuck mid-rebase, hook references pointing at scripts missing on this host, hooks that would
 crash at session start because a Node script under a synced directory needs
 `--preserve-symlinks-main`, a `settings.json` that no longer matches the base+host merge nomad
-would write (the silent-clobber case, fixed with `nomad pull`), version drift between your
+would write (settings drift, reported in both directions: keys missing locally point at
+`nomad pull`, local-only additions point at `nomad capture-settings`), version drift between your
 install and the latest release, gitleaks drift against CI, and a backup cache that needs
 pruning. Each failing line carries a fix hint, and extra flags go deeper:
 `--check-shared` secret-scans what a push would publish, `--check-schema` validates your settings
