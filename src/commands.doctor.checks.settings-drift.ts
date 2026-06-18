@@ -235,7 +235,7 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
 
   const { missing, changed, extra } = diffMergedSettings(merged, settings);
 
-  emitDriftRows(section, missing, changed, extra, host, hostExists);
+  emitDriftRows(section, missing, changed, extra, hostExists);
 }
 
 /**
@@ -252,7 +252,6 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
  * @param missing - Keys in merged absent from settings.
  * @param changed - Keys in both with different values.
  * @param extra - Keys in settings absent from merged.
- * @param host - Current host identifier for the promotion-candidate hint.
  * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the extra-keys row).
  */
 function emitDriftRows(
@@ -260,7 +259,6 @@ function emitDriftRows(
   missing: string[],
   changed: string[],
   extra: string[],
-  host: string,
   hostFileExists: boolean,
 ): void {
   if (missing.length > 0) {
