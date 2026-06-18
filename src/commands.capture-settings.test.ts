@@ -296,6 +296,34 @@ describe('cmdCaptureSettings', () => {
     expect(base.myKey).toBe('safe');
   });
 
+  it('does not re-advise capture-settings after a capture when only excluded keys remain ahead', async () => {
+    writeFileSync(env.basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
+    // myKey is capturable; env stays ahead (excluded) and must not trigger a
+    // contradictory "run nomad capture-settings" WARN from the post-capture resync.
+    writeFileSync(
+      env.settingsPath,
+      JSON.stringify({ model: 'sonnet', myKey: 'safe', env: { ANTHROPIC_API_KEY: 'sk-secret' } }) +
+        '\n',
+    );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    const { cmdCaptureSettings } = await import('./commands.capture-settings.ts');
+    cmdCaptureSettings({ host: false, dryRun: false });
+
+    const captured = writes.join('');
+    expect(captured).not.toContain('nomad capture-settings');
+    const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
+    expect(base.myKey).toBe('safe');
+    expect(Object.hasOwn(base, 'env')).toBe(false);
+  });
+
   // -------------------------------------------------------------------------
   // Merging into existing destination
   // -------------------------------------------------------------------------

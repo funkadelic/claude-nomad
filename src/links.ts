@@ -144,12 +144,25 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
  * grouped tree. The dry-run `would write settings.json ...` log and the
  * drift WARN are unchanged (the WET success log is the only thing that moved).
  *
+ * `opts.suppressDriftWarn` (default `false`): skip the pull-side drift WARN
+ * block. Used by `nomad capture-settings`, which calls this purely to resync the
+ * local file right after promoting keys into the repo: re-emitting a "run nomad
+ * capture-settings" hint in the same run would be contradictory, and the only
+ * keys still classified `ahead` at that point are the deliberately-excluded
+ * credential keys (which capture refuses), so the hint would advise an action
+ * that cannot succeed.
+ *
  * @param ts - backup timestamp namespace for `backupBeforeWrite`.
  * @param opts.dryRun - when `true`, log the would-write line and skip mutation.
+ * @param opts.suppressDriftWarn - when `true`, skip the pull-side drift WARN block.
  * @returns `{ label }` describing the override source for the Settings row.
  */
-export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}): { label: string } {
+export function regenerateSettings(
+  ts: string,
+  opts: { dryRun?: boolean; suppressDriftWarn?: boolean } = {},
+): { label: string } {
   const dryRun = opts.dryRun === true;
+  const suppressDriftWarn = opts.suppressDriftWarn === true;
   const repo = repoHome();
   const claude = claudeHome();
   const basePath = join(repo, 'shared', 'settings.base.json');
@@ -170,7 +183,7 @@ export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}):
   // NOT abort. The WARN runs in dry-run mode too: the user sees the same drift
   // signal they would see on a real pull. Malformed prior settings.json must
   // not block regeneration; the whole point is to overwrite from base+overrides.
-  if (existsSync(settingsPath)) {
+  if (!suppressDriftWarn && existsSync(settingsPath)) {
     try {
       const existing = readJson<Record<string, unknown>>(settingsPath);
       const drift = classifySettingsDrift(merged, existing);

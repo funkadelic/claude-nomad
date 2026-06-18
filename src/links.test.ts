@@ -143,6 +143,33 @@ describe('regenerateSettings (integration)', () => {
     expect(existsSync(join(claudeDir, 'settings.json'))).toBe(true);
   });
 
+  it('suppresses the drift WARN when suppressDriftWarn is set (post-capture resync)', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    // settings has a local-only key that would normally fire the ahead-drift WARN.
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
+    );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000', { suppressDriftWarn: true });
+    const captured = writes.join('');
+    expect(captured).not.toContain('nomad capture-settings');
+    expect(captured).not.toContain('⚠︎');
+    // The resync still happens.
+    expect(existsSync(join(claudeDir, 'settings.json'))).toBe(true);
+  });
+
   it('does NOT fire WARN when host file is missing but prior settings only has base keys', async () => {
     writeFileSync(
       join(sharedDir, 'settings.base.json'),

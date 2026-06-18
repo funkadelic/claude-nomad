@@ -94,8 +94,11 @@ export function cmdCaptureSettings(opts: CaptureSettingsOpts): void {
     backupRepoWrite(destPath, ts, repo);
     writeJsonAtomic(destPath, newContent);
 
-    const regenTs = ts;
-    regenerateSettings(regenTs);
+    // Resync the local file from the now-updated repo source. Suppress the
+    // pull-side drift WARN: re-advising 'nomad capture-settings' in the run that
+    // just captured would be contradictory, and any keys still classified ahead
+    // here are the excluded credential keys that capture intentionally refuses.
+    regenerateSettings(ts, { suppressDriftWarn: true });
     const dest = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
     log(`captured ${Object.keys(subset).length} key(s) into ${dest} (backup: ${ts})`);
   } catch (err) {
