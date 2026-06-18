@@ -207,12 +207,15 @@ export function partitionByCaptureExclusion(keys: string[]): {
 
 /**
  * Regex matching a string that is ENTIRELY an absolute launcher path ending in
- * `bin/node` (or Windows `bin\node`). The leading `(?:[A-Za-z]:)?[\\/]` anchor
- * requires a posix root (`/`), a Windows backslash root, or a drive letter, so a
- * relative command such as `./bin/node` is left untouched (it is an intentional
- * value, not a machine-specific absolute launcher path).
+ * `bin/node` (or Windows `bin\node`), with optional surrounding double quotes.
+ * The leading `(?:[A-Za-z]:)?[\\/]` anchor requires a posix root (`/`), a Windows
+ * backslash root, or a drive letter, so a relative command such as `./bin/node`
+ * is left untouched (it is an intentional value, not a machine-specific absolute
+ * launcher path). The `.*` interior crosses spaces, so a quoted path containing
+ * spaces (e.g. `"C:\Program Files\nodejs\bin\node"`) is matched in this
+ * whole-string form.
  */
-const BIN_NODE_RE = /^(?:[A-Za-z]:)?[\\/](?:.*[\\/])?bin[\\/]node$/;
+const BIN_NODE_RE = /^"?(?:[A-Za-z]:)?[\\/](?:.*[\\/])?bin[\\/]node"?$/;
 
 /**
  * Regex matching an absolute `bin/node` launcher as the LEADING token of a
@@ -235,6 +238,17 @@ const LEADING_BIN_NODE_RE = /^"?(?:[A-Za-z]:)?[\\/](?:[^"\s]*[\\/])?bin[\\/]node
  * - `'/usr/bin/node' "$HOME/x.js"` becomes `'node "$HOME/x.js"'`.
  * - `'node'` (bare) and `'node --flag x'` stay unchanged.
  * - `'npx'` stays `'npx'`; `'bash "/x/bin/node.sh"'` stays unchanged.
+ *
+ * Known limits, all benign because the only effect of a miss is that a node-path
+ * difference is reported as drift rather than silently normalized away:
+ * - A launcher path with INTERNAL spaces (e.g. Windows `Program Files`) is
+ *   normalized only in the whole-string form, not as the leading token of a
+ *   longer command line (the leading-token matcher stops at the first space).
+ *   An unquoted path with a space is not a valid shell command anyway.
+ * - Two DIFFERENT absolute launchers (e.g. node-v18 vs node-v20 paths) both
+ *   normalize to bare `node`, so a deliberately version-pinned launcher is
+ *   treated as equal. This is intentional: bare `node` is the canonical form and
+ *   nomad already normalizes launcher paths when capturing into the base.
  *
  * @param value - Any JSON-compatible value.
  * @returns The value with matching strings normalized.

@@ -262,6 +262,14 @@ describe('normalizeNodePathsDeep', () => {
       'bash "/home/u/.claude/hooks/x.sh"',
     );
   });
+
+  it('normalizes a quoted whole-string launcher with no trailing argument', () => {
+    expect(normalizeNodePathsDeep('"/usr/bin/node"')).toBe('node');
+  });
+
+  it('normalizes a quoted whole-string Windows launcher containing a space', () => {
+    expect(normalizeNodePathsDeep('"C:\\Program Files\\nodejs\\bin\\node"')).toBe('node');
+  });
 });
 
 // ---------------------------------------------------------------------------
