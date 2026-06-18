@@ -1055,7 +1055,7 @@ describe('reportSettingsAheadDrift', () => {
 });
 
 // ---------------------------------------------------------------------------
-// stripGsdHooksFromBase: write-path base strip (D-04)
+// stripGsdHooksFromBase: write-path base strip
 // ---------------------------------------------------------------------------
 
 describe('stripGsdHooksFromBase (push write-path base strip)', () => {
@@ -1258,7 +1258,7 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
   });
 
   it('Test 6 (non-destructive on pull): regenerateSettings never rewrites shared/settings.base.json', async () => {
-    // The base strip is push-only (D-04); regenerateSettings (pull-side) must
+    // The base strip is push-only; regenerateSettings (pull-side) must
     // never touch shared/settings.base.json even when it holds gsd hook entries.
     const gsdOnlyBase = {
       model: 'sonnet',

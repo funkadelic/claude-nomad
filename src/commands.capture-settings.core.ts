@@ -114,7 +114,7 @@ export type SettingsDrift = {
  * unaffected by normalization.
  *
  * gsd-owned hook entries are stripped from both `merged` and `settings` before
- * classification (D-05). A key that differs only by gsd-installed hook entries
+ * classification. A key that differs only by gsd-installed hook entries
  * (permanent self-heal churn) is not reported as behind/ahead/changed. A
  * genuine user-authored hook entry is still classified correctly.
  *
@@ -131,7 +131,7 @@ export function classifySettingsDrift(
   // Strip gsd-owned hook entries from both sides before classification so that
   // a key that differs only by gsd-installed hooks (permanent self-heal churn)
   // is not reported as changed/behind/ahead. Layered on top of the existing
-  // normalizeNodePathsDeep pass in the changed bucket below (D-05).
+  // normalizeNodePathsDeep pass in the changed bucket below.
   const filteredMerged = stripGsdHookEntries(merged);
   const filteredSettings = stripGsdHookEntries(settings);
 

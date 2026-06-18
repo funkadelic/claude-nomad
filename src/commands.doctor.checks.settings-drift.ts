@@ -83,15 +83,15 @@ function tryReadJson(filePath: string): Record<string, unknown> | null {
 }
 
 // ---------------------------------------------------------------------------
-// D-07 migration info-line
+// Migration info-line
 // ---------------------------------------------------------------------------
 
 /**
  * Emit a one-time informational note while `shared/settings.base.json` in the
  * committed sync repo still holds at least one gsd-owned hook entry. The note
- * tells the user the base self-cleans on their next `nomad push` (D-04).
+ * tells the user the base self-cleans on their next `nomad push`.
  *
- * Detection uses `stripGsdHookEntries` (the same 55-01 walker reused at all
+ * Detection uses `stripGsdHookEntries` (the same shared walker reused at all
  * other call sites): residual gsd entries are present when the stripped result
  * deep-differs from the original base. The deep-compare is via JSON.stringify
  * on the same sort-stable structure that `stripGsdHooksFromBase` uses, so the
@@ -99,7 +99,7 @@ function tryReadJson(filePath: string): Record<string, unknown> | null {
  *
  * Emits `dim(infoGlyph)` (NOT a `warnGlyph` WARN). Never sets
  * `process.exitCode`. Emits nothing when the base is clean, absent, or
- * unparseable (best-effort, T-55-05).
+ * unparseable (best-effort).
  *
  * Mirrors `reportDroppedNamesMigration`: non-destructive guidance that
  * resolves itself once the write-path strip has run.

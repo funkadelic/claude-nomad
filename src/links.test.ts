@@ -1061,7 +1061,7 @@ describe('regenerateSettings dry-run', () => {
 });
 
 // ---------------------------------------------------------------------------
-// gsd hook entry filtering in regenerateSettings (D-01 / D-03)
+// gsd hook entry filtering in regenerateSettings
 // ---------------------------------------------------------------------------
 
 /** A gsd-owned hook entry (command has gsd- script basename). */
@@ -1071,7 +1071,7 @@ const gsdEntry2 = { type: 'command', command: 'node /a/hooks/gsd-workflow-guard.
 /** A user-authored hook entry (no gsd- script basename). */
 const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
 
-describe('regenerateSettings gsd-hook filtering (D-01/D-03)', () => {
+describe('regenerateSettings gsd-hook filtering', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let testHome: string;

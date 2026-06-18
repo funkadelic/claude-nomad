@@ -423,10 +423,10 @@ describe('partitionByCaptureExclusion', () => {
 });
 
 // ---------------------------------------------------------------------------
-// classifySettingsDrift gsd-hook filtering (D-05)
+// classifySettingsDrift gsd-hook filtering
 // ---------------------------------------------------------------------------
 
-describe('classifySettingsDrift gsd-hook filtering (D-05)', () => {
+describe('classifySettingsDrift gsd-hook filtering', () => {
   const gsdEntry = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
   const gsdEntry2 = { type: 'command', command: 'node /a/hooks/gsd-workflow-guard.js' };
   const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
@@ -485,16 +485,16 @@ describe('classifySettingsDrift gsd-hook filtering (D-05)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-06: round-trip and capture ordering (base-clean precondition for capture)
+// round-trip and capture ordering (base-clean precondition for capture)
 // ---------------------------------------------------------------------------
 
-describe('D-06: capture ordering and round-trip for personal hooks', () => {
+describe('capture ordering and round-trip for personal hooks', () => {
   const gsdEntry = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
   const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
   const matcher = (hooks: unknown[]) => ({ matcher: 'Bash', hooks });
 
   it('Test 5 (round-trip): user hook is capturable from a CLEAN base and survives re-merge', () => {
-    // D-06 round-trip: starting from a clean base (no hooks key), a user adds
+    // Round-trip: starting from a clean base (no hooks key), a user adds
     // a non-gsd hook to live settings. After stripping both sides, the base has
     // no hooks and settings has the user hook -> hooks is `ahead`, so
     // buildCaptureSubset promotes it. A subsequent merge of the promoted base
@@ -527,13 +527,13 @@ describe('D-06: capture ordering and round-trip for personal hooks', () => {
   });
 
   it('Test 6 (ordering): residual gsd entry in base forces hooks into `changed` (not capturable)', () => {
-    // D-06 ordering edge case: if a residual gsd entry lingers in the base
+    // Ordering edge case: if a residual gsd entry lingers in the base
     // (pre-clean), hooks is present on both sides. After stripping, the base
     // loses hooks but settings retains the user hook. Since classifySettingsDrift
     // strips both sides at entry, hooks appears only in settings -> `ahead`.
     //
     // However, the plan clarifies: the ordering dependency is about what happens
-    // WITHOUT the D-05 filter (the raw, pre-strip perspective). With D-05 active
+    // WITHOUT the gsd-hook filter (the raw, pre-strip perspective). With it active
     // in classifySettingsDrift, the strip already handles this. The test pins
     // the key invariant: when a residual gsd entry is in the base AND the user
     // has only the same gsd entry in live settings (no personal hook), hooks
@@ -563,8 +563,8 @@ describe('D-06: capture ordering and round-trip for personal hooks', () => {
   });
 
   it('Test 7: after base is stripped clean, user hook classifies `ahead` and is capturable', () => {
-    // D-06 positive complement of Test 6: once the base has no hooks key (the
-    // D-04 push strip has run), a live user hook is `ahead` and buildCaptureSubset
+    // Positive complement of Test 6: once the base has no hooks key (the
+    // push strip has run), a live user hook is `ahead` and buildCaptureSubset
     // promotes it (confirming base-clean unblocks the capture path).
     const cleanBase: Record<string, unknown> = { model: 'sonnet' };
     const liveWithUserHook = {

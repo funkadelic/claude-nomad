@@ -17,7 +17,7 @@ import { GSD_PREFIX } from './config.ts';
  * script path. Return `basename.startsWith(GSD_PREFIX)`.
  *
  * Fail-safe: if no script token is found the command is unparseable; return
- * `false` so a user entry is never silently dropped (T-55-01 accept).
+ * `false` so a user entry is never silently dropped.
  *
  * @param command - Raw `command` string from a hook entry.
  * @returns `true` if gsd-owned; `false` if user-authored or unparseable.
@@ -90,7 +90,7 @@ function filterEventMatchers(matchers: unknown): unknown[] | null {
  * Return a COPY of `settings` with every gsd-owned hook entry removed from
  * the `hooks` block. Non-`hooks` keys pass through untouched by reference.
  *
- * D-03 prune order (innermost-first):
+ * Prune order (innermost-first):
  * 1. Drop each inner `hooks[]` command entry where `isGsdHookEntry` returns
  *    `true`.
  * 2. Drop the matcher entry when its inner `hooks` array becomes empty.
@@ -100,7 +100,7 @@ function filterEventMatchers(matchers: unknown): unknown[] | null {
  * Fail-safe: a `hooks` value that is not a plain object, an event value that
  * is not an array, or a matcher entry that lacks an inner `hooks` array is
  * passed through unchanged. The function never throws, never mutates its
- * input, and never corrupts a shape it does not recognize (T-55-02 mitigate).
+ * input, and never corrupts a shape it does not recognize.
  *
  * @param settings - Parsed settings object (e.g. `deepMerge(base, host)`).
  * @returns A new object with gsd-owned hook entries removed.

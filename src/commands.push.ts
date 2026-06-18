@@ -32,8 +32,7 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
  * change). Best-effort: a missing or unparseable base is silently skipped.
  *
  * Must only be called on the REAL-push path (!dryRun). The function is
- * push-only by design (D-04 constraint): pull stays non-destructive per Phase
- * 50 precedent.
+ * push-only by design: pull stays non-destructive per Phase 50 precedent.
  *
  * @param repo - Resolved repo root path for this invocation.
  * @param backup - Resolved backup root path for this invocation.
@@ -45,7 +44,7 @@ function stripGsdHooksFromBase(repo: string, backup: string): void {
   try {
     base = readJson<Record<string, unknown>>(basePath);
   } catch {
-    return; // unparseable: skip silently (best-effort, T-55-05)
+    return; // unparseable: skip silently (best-effort)
   }
   const stripped = stripGsdHookEntries(base);
   // Deep-equal check via JSON.stringify of sort-stable content: if the output
@@ -121,7 +120,7 @@ function guardGitlinks(repo: string): void {
 /**
  * Staged-tree leak gate + commit/push. Stages with `git add -A`, scans, and
  * on a leak renders the ✗ tree row then delegates to `resolveLeakFindings`
- * (TTY interactive menu or non-TTY FATAL throw, D-01 preserved). On a clean
+ * (TTY interactive menu or non-TTY FATAL throw). On a clean
  * scan commits, pushes, and renders the `✓ no leaks` row.
  *
  * @param st - Push state for the tree render.
@@ -248,7 +247,7 @@ function runDryRunPreview(st: PushState, map: PathMap | null, repo: string): voi
  * `verdictRow` lands in the Leak scan section and whose `recovery` (if any)
  * prints below the tree; `process.exitCode = 1` is set on findings.
  *
- * Dry-run skills gap (intentional, WR-03): `syncSkillsPush()` is gated behind
+ * Dry-run skills gap (intentional): `syncSkillsPush()` is gated behind
  * `if (!dryRun)`, so a dry-run mutates nothing under `shared/skills/`. As a
  * result the dry-run "Global config" section (which now treats `shared/skills`
  * as a global-config prefix) does NOT list pending skills edits, and the
@@ -315,7 +314,7 @@ export async function cmdPush(
   const allowAll = opts.allowAll === true;
   const allowRule = opts.allowRule;
   guardResolutionModeConflicts(dryRun, redactAll, allowAll, allowRule);
-  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  // Resolve roots once per command invocation (TOCTOU mitigation).
   const repo = repoHome();
   const backup = backupBase();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
@@ -384,8 +383,8 @@ export async function cmdPush(
     // which prints any recovery below the rendered tree.
     if (dryRun) return runDryRunPreview(st, map, repo);
     // Strip gsd-owned hook entries from the committed base before staging so
-    // each host's shared/settings.base.json self-cleans on its next push
-    // (D-04). Runs on the REAL-push path only (!dryRun, already gated above).
+    // each host's shared/settings.base.json self-cleans on its next push.
+    // Runs on the REAL-push path only (!dryRun, already gated above).
     // The rewritten base is already on PUSH_ALLOWED_STATIC so no allow-list
     // change is needed. The call is idempotent: a clean base is a no-op.
     stripGsdHooksFromBase(repo, backup);

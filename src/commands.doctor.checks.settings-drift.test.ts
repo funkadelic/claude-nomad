@@ -705,7 +705,7 @@ describe('cmdDoctor Settings section: drift row wiring', () => {
 });
 
 // ---------------------------------------------------------------------------
-// reportHooksBaseSelfCleanNote (D-07 one-time migration info-line)
+// reportHooksBaseSelfCleanNote (one-time migration info-line)
 // ---------------------------------------------------------------------------
 
 describe('reportHooksBaseSelfCleanNote', () => {
