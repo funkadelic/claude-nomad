@@ -164,6 +164,14 @@ ahead: run `nomad capture-settings` to promote those keys into `shared/settings.
 and `nomad pull` warn on each direction with the matching fix command. `nomad push` also warns on
 ahead-drift so you have a prompt to act before the commit completes.
 
+A third case is when a key exists on both sides but its value diverged. This one is genuinely
+ambiguous (either the repo or your local file could be the newer copy), so `nomad doctor` does not
+blindly tell you to pull: it points at `nomad diff` to inspect, and notes that `nomad pull` would
+overwrite local with the repo while editing the base or host file keeps the local value. The
+comparison normalizes node launcher paths first, so a hook that differs only by a bare `node`
+versus an absolute `/.../bin/node` path (the host-specific churn an external installer writes) is
+not reported as drift.
+
 `nomad pull --dry-run` keeps its own readable preview format (a unified diff of the
 `settings.json` changes plus the transcripts a real pull would overwrite) rather than the grouped
 tree, so that preview stays easy to scan; only a real `nomad pull` prints the tree above.

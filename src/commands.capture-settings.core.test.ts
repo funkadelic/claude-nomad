@@ -124,6 +124,47 @@ describe('classifySettingsDrift', () => {
     const drift = classifySettingsDrift({ a: [1, 2] }, { a: { 0: 1, 1: 2 } });
     expect(drift.changed).toEqual(['a']);
   });
+
+  it('does NOT report changed when a key differs only by node launcher path form', () => {
+    // bare `node` (canonical) vs an absolute `/.../bin/node` launcher (the churn
+    // an external installer writes) normalize equal, so no changed drift.
+    const merged = {
+      hooks: { PreToolUse: [{ hooks: [{ command: 'node "$HOME/.claude/hooks/x.js"' }] }] },
+    };
+    const settings = {
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              { command: '/home/u/.nvm/versions/node/v24/bin/node "$HOME/.claude/hooks/x.js"' },
+            ],
+          },
+        ],
+      },
+    };
+    const drift = classifySettingsDrift(merged, settings);
+    expect(drift.changed).toEqual([]);
+    expect(drift.behind).toEqual([]);
+    expect(drift.ahead).toEqual([]);
+  });
+
+  it('still reports changed when values differ beyond node-path normalization', () => {
+    // Same node-path normalization, but settings carries an extra hook entry, so
+    // the key genuinely diverges and stays in changed.
+    const merged = {
+      hooks: { PreToolUse: [{ hooks: [{ command: 'node "$HOME/.claude/hooks/x.js"' }] }] },
+    };
+    const settings = {
+      hooks: {
+        PreToolUse: [
+          { hooks: [{ command: '/usr/bin/node "$HOME/.claude/hooks/x.js"' }] },
+          { hooks: [{ command: 'node "$HOME/.claude/hooks/extra.js"' }] },
+        ],
+      },
+    };
+    const drift = classifySettingsDrift(merged, settings);
+    expect(drift.changed).toEqual(['hooks']);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -196,6 +237,38 @@ describe('normalizeNodePathsDeep', () => {
 
   it('matches a root-level /bin/node absolute path', () => {
     expect(normalizeNodePathsDeep('/bin/node')).toBe('node');
+  });
+
+  it('normalizes a quoted absolute launcher as the leading token of a command', () => {
+    expect(
+      normalizeNodePathsDeep(
+        '"/home/u/.nvm/versions/node/v24/bin/node" "$HOME/.claude/hooks/x.js"',
+      ),
+    ).toBe('node "$HOME/.claude/hooks/x.js"');
+  });
+
+  it('normalizes an unquoted absolute launcher leading token, preserving flags', () => {
+    expect(normalizeNodePathsDeep('/usr/bin/node --preserve-symlinks-main "$HOME/x.js"')).toBe(
+      'node --preserve-symlinks-main "$HOME/x.js"',
+    );
+  });
+
+  it('leaves a bare-node command line unchanged', () => {
+    expect(normalizeNodePathsDeep('node "$HOME/x.js"')).toBe('node "$HOME/x.js"');
+  });
+
+  it('leaves a non-node leading token (bash) unchanged', () => {
+    expect(normalizeNodePathsDeep('bash "/home/u/.claude/hooks/x.sh"')).toBe(
+      'bash "/home/u/.claude/hooks/x.sh"',
+    );
+  });
+
+  it('normalizes a quoted whole-string launcher with no trailing argument', () => {
+    expect(normalizeNodePathsDeep('"/usr/bin/node"')).toBe('node');
+  });
+
+  it('normalizes a quoted whole-string Windows launcher containing a space', () => {
+    expect(normalizeNodePathsDeep('"C:\\Program Files\\nodejs\\bin\\node"')).toBe('node');
   });
 });
 

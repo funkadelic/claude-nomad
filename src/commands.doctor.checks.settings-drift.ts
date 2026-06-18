@@ -210,7 +210,7 @@ function emitDriftRows(
   if (changed.length > 0) {
     addItem(
       section,
-      `${yellow(warnGlyph)} settings.json drift: merged keys with changed values: ${changed.join(', ')} (run 'nomad pull')`,
+      `${yellow(warnGlyph)} settings.json drift: ${changed.join(', ')} diverged from the base+host merge (run 'nomad diff' to inspect; 'nomad pull' overwrites local with the repo, or edit the base/host file to keep local)`,
     );
   }
   if (promotable.length > 0 && hostFileExists) {

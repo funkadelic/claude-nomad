@@ -309,8 +309,38 @@ describe('reportSettingsDriftCheck', () => {
     const { out } = await runCheck();
     expect(out).toContain(warnGlyph);
     expect(out).toContain('model');
-    expect(out).toContain('nomad pull');
-    expect(out).toContain('merged keys with changed values');
+    expect(out).toContain('nomad diff');
+    expect(out).toContain('diverged from the base+host merge');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('reads clean when hooks differ only by node launcher path form (no changed warn)', async () => {
+    // base uses canonical bare `node`; the live file carries the same hook with
+    // an absolute launcher path an external installer wrote. These normalize
+    // equal, so the check must report a match, not changed drift.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        hooks: { PreToolUse: [{ hooks: [{ command: 'node "$HOME/.claude/hooks/x.js"' }] }] },
+      }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                { command: '/home/u/.nvm/versions/node/v24/bin/node "$HOME/.claude/hooks/x.js"' },
+              ],
+            },
+          ],
+        },
+      }) + '\n',
+    );
+    const { out } = await runCheck();
+    expect(out).toContain('settings.json matches base+host merge');
+    expect(out).not.toContain('diverged');
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -450,7 +480,7 @@ describe('reportSettingsDriftCheck', () => {
     );
     const { out } = await runCheck();
     expect(out).toContain('merged keys missing locally');
-    expect(out).toContain('merged keys with changed values');
+    expect(out).toContain('diverged from the base+host merge');
     expect(process.exitCode).toBeUndefined();
   });
 
