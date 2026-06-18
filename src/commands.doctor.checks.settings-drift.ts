@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
+import { classifySettingsDrift } from './commands.capture-settings.core.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { claudeHome, HOST, repoHome } from './config.ts';
 import { deepMerge } from './utils.json.ts';
@@ -18,63 +19,6 @@ import { deepMerge } from './utils.json.ts';
  */
 
 // ---------------------------------------------------------------------------
-// Deep-equality helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Compare two arrays element-by-element, recursing into each element.
- *
- * @param a - First array.
- * @param b - Second array.
- * @returns True when arrays have equal length and pairwise-equal elements.
- */
-function arraysEqual(a: unknown[], b: unknown[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (!deepEqual(a[i], b[i])) return false;
-  }
-  return true;
-}
-
-/**
- * Compare two plain objects by key-set then per-key recursion.
- *
- * @param a - First object.
- * @param b - Second object.
- * @returns True when both objects have the same keys and pairwise-equal values.
- */
-function objectsEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-  if (aKeys.length !== bKeys.length) return false;
-  for (const k of aKeys) {
-    if (!Object.hasOwn(b, k)) return false;
-    if (!deepEqual(a[k], b[k])) return false;
-  }
-  return true;
-}
-
-/**
- * Dep-free deep equality: scalars and null use strict equality; arrays compare
- * length then element-wise recursively; plain objects compare key-set then
- * recurse per key; mismatched shapes are not equal.
- *
- * @param a - First value.
- * @param b - Second value.
- * @returns True when `a` and `b` are deeply equal.
- */
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a === null || b === null) return false;
-  if (Array.isArray(a) && Array.isArray(b)) return arraysEqual(a, b);
-  if (Array.isArray(a) || Array.isArray(b)) return false;
-  if (typeof a === 'object' && typeof b === 'object') {
-    return objectsEqual(a as Record<string, unknown>, b as Record<string, unknown>);
-  }
-  return false;
-}
-
-// ---------------------------------------------------------------------------
 // Pure comparator
 // ---------------------------------------------------------------------------
 
@@ -89,10 +33,14 @@ export type SettingsDiff = {
 };
 
 /**
- * Pure comparator. Partitions top-level keys of `merged` vs `settings` into
- * three buckets: `missing` (merged key absent from settings), `changed` (key
- * in both with deep-different value), and `extra` (settings key absent from
- * merged). Each bucket is sorted with `localeCompare(_, 'en')` for stable output.
+ * Pure comparator in doctor's local vocabulary (`missing`/`changed`/`extra`).
+ *
+ * This is a thin adapter over `classifySettingsDrift` (the single shared
+ * classifier in `commands.capture-settings.core.ts`): the core's `behind`
+ * bucket is doctor's `missing`, and the core's `ahead` bucket is doctor's
+ * `extra`. Keeping one classifier prevents the doctor and capture/push surfaces
+ * from drifting apart; the rename preserves doctor's stable public shape and
+ * sorted-bucket guarantee.
  *
  * No filesystem access. No side effects.
  *
@@ -104,30 +52,8 @@ export function diffMergedSettings(
   merged: Record<string, unknown>,
   settings: Record<string, unknown>,
 ): SettingsDiff {
-  const missing: string[] = [];
-  const changed: string[] = [];
-  const extra: string[] = [];
-  const settingsKeys = new Set(Object.keys(settings));
-
-  for (const key of Object.keys(merged)) {
-    if (!settingsKeys.has(key)) {
-      missing.push(key);
-    } else if (!deepEqual(merged[key], settings[key])) {
-      changed.push(key);
-    }
-  }
-
-  const mergedKeys = new Set(Object.keys(merged));
-  for (const key of Object.keys(settings)) {
-    if (!mergedKeys.has(key)) extra.push(key);
-  }
-
-  const collator = (a: string, b: string): number => a.localeCompare(b, 'en');
-  return {
-    missing: missing.toSorted(collator),
-    changed: changed.toSorted(collator),
-    extra: extra.toSorted(collator),
-  };
+  const { behind, changed, ahead } = classifySettingsDrift(merged, settings);
+  return { missing: behind, changed, extra: ahead };
 }
 
 // ---------------------------------------------------------------------------

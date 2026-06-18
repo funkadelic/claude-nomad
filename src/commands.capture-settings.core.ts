@@ -11,8 +11,9 @@
  */
 
 // ---------------------------------------------------------------------------
-// Deep-equality helpers (dep-free; mirrors the contract in
-// commands.doctor.checks.settings-drift.ts to keep this module pure)
+// Deep-equality helpers (dep-free). This module owns the single drift
+// classifier; the doctor settings-drift check adapts `classifySettingsDrift`
+// rather than carrying its own copy.
 // ---------------------------------------------------------------------------
 
 /**
