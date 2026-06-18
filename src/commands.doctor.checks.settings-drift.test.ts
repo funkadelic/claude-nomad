@@ -91,9 +91,18 @@ describe('diffMergedSettings', () => {
   });
 
   it('reproduces the motivating incident: merged has model/hooks/statusLine/enabledPlugins, settings has only two notif keys', () => {
+    // Use a user-authored hook entry so the hooks key survives stripping and
+    // remains in the missing bucket (an empty hooks block would be stripped out).
     const merged = {
       model: 'claude-sonnet',
-      hooks: { PostToolUse: [] },
+      hooks: {
+        PostToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [{ type: 'command', command: 'node /x/my-hook.js' }],
+          },
+        ],
+      },
       statusLine: 'on',
       enabledPlugins: ['plugin-a'],
     };
@@ -102,7 +111,7 @@ describe('diffMergedSettings', () => {
       inputNeededNotifEnabled: false,
     };
     const result = diffMergedSettings(merged, settings);
-    // missing: all four merged keys, sorted
+    // missing: all four merged keys (hooks survives strip because it has a user entry), sorted
     expect(result.missing).toEqual(['enabledPlugins', 'hooks', 'model', 'statusLine']);
     // extra: the two notif keys, sorted
     expect(result.extra).toEqual(['agentPushNotifEnabled', 'inputNeededNotifEnabled']);
@@ -281,9 +290,18 @@ describe('reportSettingsDriftCheck', () => {
   });
 
   it('emits a yellow warn for missing merged key with nomad pull hint', async () => {
+    // Use a user-authored hook entry so the hooks key survives stripping and
+    // shows up as missing from settings. An empty `hooks: {}` would be stripped.
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
-      JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [
+            { matcher: 'Bash', hooks: [{ type: 'command', command: 'node /x/my-hook.js' }] },
+          ],
+        },
+      }) + '\n',
     );
     writeFileSync(
       join(env.testHome, '.claude', 'settings.json'),
@@ -580,10 +598,19 @@ describe('cmdDoctor Settings section: drift row wiring', () => {
     process.env.NO_COLOR = '1';
     process.exitCode = undefined;
     env = makeDoctorEnv({ host: 'test-host', writeBase: false, writeSettings: false });
-    // Provide minimal settings.base.json so loadBaseSettings does not FAIL
+    // Provide minimal settings.base.json so loadBaseSettings does not FAIL.
+    // Use a user-authored hook entry so the hooks key survives stripping and
+    // appears as missing in settings (an empty hooks block would be stripped).
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
-      JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [
+            { matcher: 'Bash', hooks: [{ type: 'command', command: 'node /x/my-hook.js' }] },
+          ],
+        },
+      }) + '\n',
     );
     // settings.json drops 'hooks' -> drift WARN expected
     writeFileSync(
@@ -631,5 +658,48 @@ describe('cmdDoctor Settings section: drift row wiring', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain(secretValue);
+  });
+
+  it('Test 8: gsd-only hooks divergence produces no changed row (doctor path)', async () => {
+    // Override base so it has gsd-only hooks; settings has a different gsd hook
+    // set (the self-heal scenario). After stripping both sides, hooks is absent
+    // from both -> no drift row. The doctor adapter inherits this via classifySettingsDrift.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Bash',
+              hooks: [{ type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' }],
+            },
+          ],
+        },
+      }) + '\n',
+    );
+    // Live settings has a different gsd hook set.
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          Stop: [
+            {
+              matcher: '',
+              hooks: [{ type: 'command', command: 'node /a/hooks/gsd-workflow-guard.js' }],
+            },
+          ],
+        },
+      }) + '\n',
+    );
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    const { joinedLog } = await import('./commands.doctor.checks.test-helpers.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // No drift row for hooks: the gsd-only divergence is filtered out.
+    expect(out).not.toContain(warnGlyph + ' settings.json drift');
+    expect(out).toContain(okGlyph);
   });
 });

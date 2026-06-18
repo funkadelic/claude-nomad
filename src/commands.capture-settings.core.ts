@@ -10,6 +10,8 @@
  * - `CAPTURE_EXCLUDED_KEYS`: sensitive keys never eligible for capture.
  */
 
+import { stripGsdHookEntries } from './hooks-filter.ts';
+
 // ---------------------------------------------------------------------------
 // Deep-equality helpers (dep-free). This module owns the single drift
 // classifier; the doctor settings-drift check adapts `classifySettingsDrift`
@@ -121,23 +123,33 @@ export function classifySettingsDrift(
   merged: Record<string, unknown>,
   settings: Record<string, unknown>,
 ): SettingsDrift {
+  // Strip gsd-owned hook entries from both sides before classification so that
+  // a key that differs only by gsd-installed hooks (permanent self-heal churn)
+  // is not reported as changed/behind/ahead. Layered on top of the existing
+  // normalizeNodePathsDeep pass in the changed bucket below (D-05).
+  const filteredMerged = stripGsdHookEntries(merged);
+  const filteredSettings = stripGsdHookEntries(settings);
+
   const behind: string[] = [];
   const ahead: string[] = [];
   const changed: string[] = [];
-  const settingsKeys = new Set(Object.keys(settings));
+  const settingsKeys = new Set(Object.keys(filteredSettings));
 
-  for (const key of Object.keys(merged)) {
+  for (const key of Object.keys(filteredMerged)) {
     if (!settingsKeys.has(key)) {
       behind.push(key);
     } else if (
-      !deepEqual(normalizeNodePathsDeep(merged[key]), normalizeNodePathsDeep(settings[key]))
+      !deepEqual(
+        normalizeNodePathsDeep(filteredMerged[key]),
+        normalizeNodePathsDeep(filteredSettings[key]),
+      )
     ) {
       changed.push(key);
     }
   }
 
-  const mergedKeys = new Set(Object.keys(merged));
-  for (const key of Object.keys(settings)) {
+  const mergedKeys = new Set(Object.keys(filteredMerged));
+  for (const key of Object.keys(filteredSettings)) {
     if (!mergedKeys.has(key)) ahead.push(key);
   }
 

@@ -419,3 +419,65 @@ describe('partitionByCaptureExclusion', () => {
     expect(partitionByCaptureExclusion([])).toEqual({ promotable: [], excluded: [] });
   });
 });
+
+// ---------------------------------------------------------------------------
+// classifySettingsDrift gsd-hook filtering (D-05)
+// ---------------------------------------------------------------------------
+
+describe('classifySettingsDrift gsd-hook filtering (D-05)', () => {
+  const gsdEntry = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+  const gsdEntry2 = { type: 'command', command: 'node /a/hooks/gsd-workflow-guard.js' };
+  const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
+  const matcher = (hooks: unknown[]) => ({ matcher: 'Bash', hooks });
+
+  it('Test 5: merged has gsd hooks, settings has different gsd hooks, no user hooks -> hooks in no bucket', () => {
+    // Both sides have gsd-only hooks (different sets); after stripping both
+    // become empty -> not behind, not ahead, not changed.
+    const merged = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry])] },
+    };
+    const settings = {
+      model: 'sonnet',
+      hooks: { Stop: [matcher([gsdEntry2])] },
+    };
+    const drift = classifySettingsDrift(merged, settings);
+    expect(drift.behind).not.toContain('hooks');
+    expect(drift.ahead).not.toContain('hooks');
+    expect(drift.changed).not.toContain('hooks');
+  });
+
+  it('Test 6: live settings has a user hook absent from merged (merged has only gsd hooks) -> hooks in ahead', () => {
+    // After stripping: merged loses hooks key, settings retains user hook ->
+    // hooks is ahead (local-only), capturable.
+    const merged = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry])] },
+    };
+    const settings = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([userEntry])] },
+    };
+    const drift = classifySettingsDrift(merged, settings);
+    expect(drift.ahead).toContain('hooks');
+    expect(drift.behind).not.toContain('hooks');
+    expect(drift.changed).not.toContain('hooks');
+  });
+
+  it('Test 7: both sides share identical user hook plus differing gsd hooks -> hooks not in changed', () => {
+    // After stripping gsd entries: both sides retain the same user hook ->
+    // deep-equal, so not changed.
+    const merged = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry, userEntry])] },
+    };
+    const settings = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry2, userEntry])] },
+    };
+    const drift = classifySettingsDrift(merged, settings);
+    expect(drift.changed).not.toContain('hooks');
+    expect(drift.behind).not.toContain('hooks');
+    expect(drift.ahead).not.toContain('hooks');
+  });
+});
