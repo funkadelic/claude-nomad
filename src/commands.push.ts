@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { backupBase, HOST, type PathMap, repoHome } from './config.ts';
+import { backupBase, claudeHome, HOST, type PathMap, repoHome } from './config.ts';
+import { classifySettingsDrift } from './commands.capture-settings.core.ts';
 import { enforceAllowList, isGsdDropped, parsePorcelainZ } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
@@ -13,10 +14,45 @@ import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts'
 import { previewPushLeaks } from './push-preview.ts';
 import { remapPush } from './remap.ts';
 import { withSpinner } from './spinner.ts';
-import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
+import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, warn } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
-import { readPathMap } from './utils.json.ts';
+import { deepMerge, readJson, readPathMap } from './utils.json.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
+
+/**
+ * Read-only ahead-drift check for the push flow. Loads the repo's base +
+ * host settings, computes the expected merge, and compares it against the live
+ * `~/.claude/settings.json`. When the live file has keys not present in the
+ * merge (the host is AHEAD), emits one `warn` line naming the local-only keys
+ * and pointing at `nomad capture-settings`.
+ *
+ * Best-effort and tolerant: any missing file or parse error is a silent skip.
+ * Never mutates anything; never sets `process.exitCode`.
+ *
+ * @param repo - Resolved repo root path for this invocation.
+ */
+export function reportSettingsAheadDrift(repo: string): void {
+  const basePath = join(repo, 'shared', 'settings.base.json');
+  if (!existsSync(basePath)) return;
+  const settingsPath = join(claudeHome(), 'settings.json');
+  if (!existsSync(settingsPath)) return;
+  try {
+    const base = readJson<Record<string, unknown>>(basePath);
+    const hostPath = join(repo, 'hosts', `${HOST}.json`);
+    const overrides = existsSync(hostPath) ? readJson<Record<string, unknown>>(hostPath) : {};
+    const merged = deepMerge(base, overrides);
+    const settings = readJson<Record<string, unknown>>(settingsPath);
+    const { ahead } = classifySettingsDrift(merged, settings);
+    if (ahead.length === 0) return;
+    const keys = JSON.stringify(ahead);
+    warn(
+      `settings.json has local-only keys ${keys} not in the repo. ` +
+        `Run 'nomad capture-settings' to promote them (or 'nomad capture-settings --host' for host-specific values).`,
+    );
+  } catch {
+    // Malformed JSON or unreadable file: skip silently (best-effort).
+  }
+}
 
 /**
  * Walk `shared/` for nested `.git` entries copied in from a host's encoded
@@ -245,6 +281,9 @@ export async function cmdPush(
   if (handle === null) process.exit(0);
   try {
     console.log(dryRun ? `push on host=${HOST} (dry-run)` : `push on host=${HOST}`);
+    // Non-mutating ahead-drift check: inform before the pipeline mutates anything.
+    // Best-effort: a missing or malformed settings.json is silently skipped.
+    reportSettingsAheadDrift(repo);
     // Probe at top of flow: fail fast if gitleaks is missing, before any mutation.
     probeGitleaks();
     // Rebase BEFORE any local mutation: surfaces remote conflicts against the

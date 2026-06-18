@@ -3,7 +3,12 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { makePushEnv, teardownPushEnv, type PushEnv } from './commands.push.test-helpers.ts';
+import {
+  errOutput,
+  makePushEnv,
+  teardownPushEnv,
+  type PushEnv,
+} from './commands.push.test-helpers.ts';
 
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './push-checks.ts';
@@ -897,5 +902,82 @@ describe('cmdPush: gsd-dropped paths are unstaged before commit (issue #294)', (
     expect(execFileSyncCalls.find((args) => args[0] === 'commit')).toBeUndefined();
     expect(execFileSyncCalls.find((args) => args[0] === 'push')).toBeUndefined();
     expect(statusCallCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reportSettingsAheadDrift: ahead-drift warn surface
+// ---------------------------------------------------------------------------
+
+describe('reportSettingsAheadDrift', () => {
+  let env: PushEnv;
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+  });
+
+  it('emits a warn when live settings has local-only keys (ahead-drift)', async () => {
+    const { repoUnderHome, testHome } = env;
+    // Scaffold: base has one key, live settings has an extra key not in the merge.
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'claude-opus-4-5' }),
+    );
+    writeFileSync(
+      join(testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'claude-opus-4-5', localOnlyKey: 'local-value' }),
+    );
+    const { reportSettingsAheadDrift } = await import('./commands.push.ts');
+    reportSettingsAheadDrift(repoUnderHome);
+    const combined = errOutput(env);
+    expect(combined).toContain('localOnlyKey');
+    expect(combined).toContain('nomad capture-settings');
+  });
+
+  it('emits no warn when live settings matches the merge', async () => {
+    const { repoUnderHome, testHome } = env;
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'claude-opus-4-5' }),
+    );
+    writeFileSync(
+      join(testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'claude-opus-4-5' }),
+    );
+    const { reportSettingsAheadDrift } = await import('./commands.push.ts');
+    reportSettingsAheadDrift(repoUnderHome);
+    expect(errOutput(env)).toBe('');
+  });
+
+  it('silently skips when settings.json is absent', async () => {
+    const { repoUnderHome } = env;
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'claude-opus-4-5' }),
+    );
+    // No settings.json written.
+    const { reportSettingsAheadDrift } = await import('./commands.push.ts');
+    expect(() => reportSettingsAheadDrift(repoUnderHome)).not.toThrow();
+    expect(errOutput(env)).toBe('');
+  });
+
+  it('silently skips when settings.json is malformed (zero mutation)', async () => {
+    const { repoUnderHome, testHome } = env;
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'claude-opus-4-5' }),
+    );
+    writeFileSync(join(testHome, '.claude', 'settings.json'), '{INVALID JSON');
+    const { reportSettingsAheadDrift } = await import('./commands.push.ts');
+    expect(() => reportSettingsAheadDrift(repoUnderHome)).not.toThrow();
+    expect(errOutput(env)).toBe('');
   });
 });
