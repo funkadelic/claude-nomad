@@ -330,8 +330,57 @@ describe('reportSettingsDriftCheck', () => {
     const { out } = await runCheck();
     expect(out).toContain(infoGlyph);
     expect(out).toContain('agentPushNotifEnabled');
-    expect(out).toContain('promotion candidates');
+    expect(out).toContain('nomad capture-settings');
     expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('emits a name-free count row for excluded local-only keys (no capture advice, no secret name)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'sonnet', env: { ANTHROPIC_API_KEY: 'sk-secret' } }) + '\n',
+    );
+    const { out } = await runCheck();
+    expect(out).toContain('outside the sync set');
+    // Excluded keys are never named and never advised for capture.
+    expect(out).not.toContain('nomad capture-settings');
+    expect(out).not.toContain('env');
+    expect(out).not.toContain('sk-secret');
+    expect(out).not.toContain('settings.json matches base+host merge');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('names only promotable keys and counts excluded keys when local-only keys are mixed', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        statusLine: { type: 'command' },
+        env: { ANTHROPIC_API_KEY: 'sk-secret' },
+      }) + '\n',
+    );
+    const { out } = await runCheck();
+    expect(out).toContain('statusLine');
+    expect(out).toContain('nomad capture-settings');
+    expect(out).toContain('outside the sync set');
+    expect(out).not.toContain('env');
+    expect(out).not.toContain('sk-secret');
     expect(process.exitCode).toBeUndefined();
   });
 

@@ -16,6 +16,7 @@
 
 import { cmdAdopt } from './commands.adopt.ts';
 import { cmdAllow } from './commands.allow.ts';
+import { cmdCaptureSettings } from './commands.capture-settings.ts';
 import { cmdClean } from './commands.clean.ts';
 import { cmdEject } from './commands.eject.ts';
 import { cmdDoctor } from './commands.doctor.ts';
@@ -28,6 +29,7 @@ import { home } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
+import { parseCaptureSettingsArgs } from './nomad.dispatch.capture-settings.ts';
 import { parseEjectArgs } from './nomad.dispatch.eject.ts';
 import { parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
 import { parseAllowArgs } from './nomad.dispatch.allow.ts';
@@ -165,6 +167,21 @@ try {
         process.exit(1);
       }
       cmdEject({ dryRun: ejectArgs.dryRun });
+      break;
+    }
+    case 'capture-settings': {
+      // parseCaptureSettingsArgs accepts --host, --dry-run, and --yes/-y;
+      // rejects duplicates, unknown tokens, and extra positional arguments.
+      const captureArgs = parseCaptureSettingsArgs(process.argv);
+      if (captureArgs === null) {
+        console.error('usage: nomad capture-settings [--host] [--dry-run] [--yes]');
+        process.exit(1);
+      }
+      await cmdCaptureSettings({
+        host: captureArgs.host,
+        dryRun: captureArgs.dryRun,
+        yes: captureArgs.yes,
+      });
       break;
     }
     case 'doctor':

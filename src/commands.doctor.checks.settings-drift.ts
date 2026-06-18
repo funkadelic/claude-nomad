@@ -2,6 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
+import {
+  classifySettingsDrift,
+  partitionByCaptureExclusion,
+} from './commands.capture-settings.core.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { claudeHome, HOST, repoHome } from './config.ts';
 import { deepMerge } from './utils.json.ts';
@@ -18,63 +22,6 @@ import { deepMerge } from './utils.json.ts';
  */
 
 // ---------------------------------------------------------------------------
-// Deep-equality helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Compare two arrays element-by-element, recursing into each element.
- *
- * @param a - First array.
- * @param b - Second array.
- * @returns True when arrays have equal length and pairwise-equal elements.
- */
-function arraysEqual(a: unknown[], b: unknown[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (!deepEqual(a[i], b[i])) return false;
-  }
-  return true;
-}
-
-/**
- * Compare two plain objects by key-set then per-key recursion.
- *
- * @param a - First object.
- * @param b - Second object.
- * @returns True when both objects have the same keys and pairwise-equal values.
- */
-function objectsEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-  if (aKeys.length !== bKeys.length) return false;
-  for (const k of aKeys) {
-    if (!Object.hasOwn(b, k)) return false;
-    if (!deepEqual(a[k], b[k])) return false;
-  }
-  return true;
-}
-
-/**
- * Dep-free deep equality: scalars and null use strict equality; arrays compare
- * length then element-wise recursively; plain objects compare key-set then
- * recurse per key; mismatched shapes are not equal.
- *
- * @param a - First value.
- * @param b - Second value.
- * @returns True when `a` and `b` are deeply equal.
- */
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a === null || b === null) return false;
-  if (Array.isArray(a) && Array.isArray(b)) return arraysEqual(a, b);
-  if (Array.isArray(a) || Array.isArray(b)) return false;
-  if (typeof a === 'object' && typeof b === 'object') {
-    return objectsEqual(a as Record<string, unknown>, b as Record<string, unknown>);
-  }
-  return false;
-}
-
-// ---------------------------------------------------------------------------
 // Pure comparator
 // ---------------------------------------------------------------------------
 
@@ -89,10 +36,14 @@ export type SettingsDiff = {
 };
 
 /**
- * Pure comparator. Partitions top-level keys of `merged` vs `settings` into
- * three buckets: `missing` (merged key absent from settings), `changed` (key
- * in both with deep-different value), and `extra` (settings key absent from
- * merged). Each bucket is sorted with `localeCompare(_, 'en')` for stable output.
+ * Pure comparator in doctor's local vocabulary (`missing`/`changed`/`extra`).
+ *
+ * This is a thin adapter over `classifySettingsDrift` (the single shared
+ * classifier in `commands.capture-settings.core.ts`): the core's `behind`
+ * bucket is doctor's `missing`, and the core's `ahead` bucket is doctor's
+ * `extra`. Keeping one classifier prevents the doctor and capture/push surfaces
+ * from drifting apart; the rename preserves doctor's stable public shape and
+ * sorted-bucket guarantee.
  *
  * No filesystem access. No side effects.
  *
@@ -104,30 +55,8 @@ export function diffMergedSettings(
   merged: Record<string, unknown>,
   settings: Record<string, unknown>,
 ): SettingsDiff {
-  const missing: string[] = [];
-  const changed: string[] = [];
-  const extra: string[] = [];
-  const settingsKeys = new Set(Object.keys(settings));
-
-  for (const key of Object.keys(merged)) {
-    if (!settingsKeys.has(key)) {
-      missing.push(key);
-    } else if (!deepEqual(merged[key], settings[key])) {
-      changed.push(key);
-    }
-  }
-
-  const mergedKeys = new Set(Object.keys(merged));
-  for (const key of Object.keys(settings)) {
-    if (!mergedKeys.has(key)) extra.push(key);
-  }
-
-  const collator = (a: string, b: string): number => a.localeCompare(b, 'en');
-  return {
-    missing: missing.toSorted(collator),
-    changed: changed.toSorted(collator),
-    extra: extra.toSorted(collator),
-  };
+  const { behind, changed, ahead } = classifySettingsDrift(merged, settings);
+  return { missing: behind, changed, extra: ahead };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,10 +99,11 @@ function tryReadJson(filePath: string): Record<string, unknown> | null {
  * - `⚠︎` WARN when merged keys are absent from settings (external clobber).
  * - `⚠︎` WARN when merged keys are present but value-changed.
  * - `ℹ︎` info when settings has extra local-only keys (promotion candidates).
- *   Suppressed when no host file exists: `reportHostOverrides` already FAILs
- *   on the same unbased keys in that case, and a softer info row about the
- *   identical keys would contradict it.
- * - `✓` ok when settings matches the merge exactly.
+ *   Promotable keys are named with capture advice; excluded credential/host-local
+ *   keys get a separate count-only row (no names, no advice). Suppressed when no
+ *   host file exists: `reportHostOverrides` already FAILs on the same unbased keys
+ *   in that case, and a softer info row about the identical keys would contradict it.
+ * - ok row when settings matches the merge exactly.
  *
  * Never sets `process.exitCode`. Never throws.
  *
@@ -234,8 +164,9 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
   const merged = deepMerge(base, hostObj ?? {});
 
   const { missing, changed, extra } = diffMergedSettings(merged, settings);
+  const { promotable, excluded } = partitionByCaptureExclusion(extra);
 
-  emitDriftRows(section, missing, changed, extra, host, hostExists);
+  emitDriftRows(section, missing, changed, promotable, excluded, hostExists);
 }
 
 /**
@@ -248,19 +179,26 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
  * keys would contradict that verdict. The ok row is not emitted in that case
  * either (extras exist, so settings does not match the merge exactly).
  *
+ * The local-only keys are split into `promotable` (capture would promote
+ * these) and `excluded` (credential/host-local keys capture refuses). The
+ * promote row names only `promotable` keys and advises `nomad capture-settings`;
+ * `excluded` keys get a separate count-only row (no key names, no capture
+ * advice) so the report neither mis-advises an action that no-ops nor discloses
+ * a secret-bearing key name.
+ *
  * @param section - Doctor section to append to.
  * @param missing - Keys in merged absent from settings.
  * @param changed - Keys in both with different values.
- * @param extra - Keys in settings absent from merged.
- * @param host - Current host identifier for the promotion-candidate hint.
- * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the extra-keys row).
+ * @param promotable - Local-only keys capture would promote.
+ * @param excluded - Local-only keys capture refuses (credential/host-local).
+ * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the local-only rows).
  */
 function emitDriftRows(
   section: DoctorSection,
   missing: string[],
   changed: string[],
-  extra: string[],
-  host: string,
+  promotable: string[],
+  excluded: string[],
   hostFileExists: boolean,
 ): void {
   if (missing.length > 0) {
@@ -275,13 +213,24 @@ function emitDriftRows(
       `${yellow(warnGlyph)} settings.json drift: merged keys with changed values: ${changed.join(', ')} (run 'nomad pull')`,
     );
   }
-  if (extra.length > 0 && hostFileExists) {
+  if (promotable.length > 0 && hostFileExists) {
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${extra.length} local-only key(s) not in base+host merge: ${extra.join(', ')} (promotion candidates for shared/settings.base.json or hosts/${host}.json)`,
+      `${dim(infoGlyph)} settings.json has ${promotable.length} local-only key(s) not in base+host merge: ${promotable.join(', ')} (run 'nomad capture-settings' to promote them into the repo)`,
     );
   }
-  if (missing.length === 0 && changed.length === 0 && extra.length === 0) {
+  if (excluded.length > 0 && hostFileExists) {
+    addItem(
+      section,
+      `${dim(infoGlyph)} settings.json has ${excluded.length} local-only key(s) outside the sync set (credential or host-local; nomad does not promote these)`,
+    );
+  }
+  if (
+    missing.length === 0 &&
+    changed.length === 0 &&
+    promotable.length === 0 &&
+    excluded.length === 0
+  ) {
     addItem(section, `${green(okGlyph)} settings.json matches base+host merge`);
   }
 }

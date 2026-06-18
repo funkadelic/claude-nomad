@@ -2,6 +2,10 @@ import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from './config.ts';
+import {
+  classifySettingsDrift,
+  partitionByCaptureExclusion,
+} from './commands.capture-settings.core.ts';
 import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
@@ -143,12 +147,25 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
  * grouped tree. The dry-run `would write settings.json ...` log and the
  * drift WARN are unchanged (the WET success log is the only thing that moved).
  *
+ * `opts.suppressDriftWarn` (default `false`): skip the pull-side drift WARN
+ * block. Used by `nomad capture-settings`, which calls this purely to resync the
+ * local file right after promoting keys into the repo: re-emitting a "run nomad
+ * capture-settings" hint in the same run would be contradictory, and the only
+ * keys still classified `ahead` at that point are the deliberately-excluded
+ * credential keys (which capture refuses), so the hint would advise an action
+ * that cannot succeed.
+ *
  * @param ts - backup timestamp namespace for `backupBeforeWrite`.
  * @param opts.dryRun - when `true`, log the would-write line and skip mutation.
+ * @param opts.suppressDriftWarn - when `true`, skip the pull-side drift WARN block.
  * @returns `{ label }` describing the override source for the Settings row.
  */
-export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}): { label: string } {
+export function regenerateSettings(
+  ts: string,
+  opts: { dryRun?: boolean; suppressDriftWarn?: boolean } = {},
+): { label: string } {
   const dryRun = opts.dryRun === true;
+  const suppressDriftWarn = opts.suppressDriftWarn === true;
   const repo = repoHome();
   const claude = claudeHome();
   const basePath = join(repo, 'shared', 'settings.base.json');
@@ -164,22 +181,26 @@ export function regenerateSettings(ts: string, opts: { dryRun?: boolean } = {}):
 
   const settingsPath = join(claude, 'settings.json');
 
-  // Pull-side surface: warn-then-proceed when no host file matches AND
-  // existing settings has top-level keys not in base. Informational only;
-  // pull does NOT abort. The matching doctor-side FAIL with non-zero exit
-  // lives in `cmdDoctor`. The WARN runs in dry-run mode too: the user sees
-  // the same drift signal they would see on a real pull.
-  if (!hasOverrides && existsSync(settingsPath)) {
-    // Best-effort drift report. Malformed prior settings.json must not block
-    // regeneration: the whole point here is to overwrite it from base+overrides.
+  // Pull-side drift surface: classify existing settings against the merged
+  // result and emit direction-specific guidance. Informational only; pull does
+  // NOT abort. The WARN runs in dry-run mode too: the user sees the same drift
+  // signal they would see on a real pull. Malformed prior settings.json must
+  // not block regeneration; the whole point is to overwrite from base+overrides.
+  if (!suppressDriftWarn && existsSync(settingsPath)) {
     try {
       const existing = readJson<Record<string, unknown>>(settingsPath);
-      const baseKeys = new Set(Object.keys(base));
-      const drift = Object.keys(existing).filter((k) => !baseKeys.has(k));
-      if (drift.length > 0) {
+      const drift = classifySettingsDrift(merged, existing);
+      if (drift.behind.length > 0) {
         warn(
-          `no hosts/${HOST}.json found; existing settings has unbased keys ${JSON.stringify(drift)}. ` +
-            `Set NOMAD_HOST to match a hosts/*.json or rerun 'nomad doctor' for candidates.`,
+          `existing settings.json is missing merged keys ${JSON.stringify(drift.behind)}. ` +
+            `Run 'nomad pull' to restore them.`,
+        );
+      }
+      const { promotable } = partitionByCaptureExclusion(drift.ahead);
+      if (promotable.length > 0) {
+        warn(
+          `existing settings.json has local-only keys ${JSON.stringify(promotable)}. ` +
+            `Run 'nomad capture-settings' to promote them into the repo before they are overwritten.`,
         );
       }
     } catch {
