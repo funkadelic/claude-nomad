@@ -131,7 +131,7 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     const { destPath, existing } = resolveCaptureDestination(repo, useHost);
     const newContent = deepMerge(existing, subset as Partial<typeof existing>);
     const dest = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
-    const keys = Object.keys(subset).sort();
+    const keys = Object.keys(subset).sort((a, b) => a.localeCompare(b, 'en'));
 
     if (dryRun) {
       log(`dry-run: would write ${dest} with keys: ${keys.join(', ')}`);
