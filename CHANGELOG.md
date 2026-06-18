@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.51.0](https://github.com/funkadelic/claude-nomad/compare/v0.50.3...v0.51.0) (2026-06-18)
+
+
+### Added
+
+* **capture-settings:** direction-aware settings drift detection and capture command ([#314](https://github.com/funkadelic/claude-nomad/issues/314)) ([512c1a2](https://github.com/funkadelic/claude-nomad/commit/512c1a27a3a573b3c2684bae21e577a50a58a098))
+
+
+### Changed
+
+* **deps:** regenerate package-lock.json ([#312](https://github.com/funkadelic/claude-nomad/issues/312)) ([a80a974](https://github.com/funkadelic/claude-nomad/commit/a80a9740be72a1cad6e7865697548274ff0fbe51))
+
 ## [0.50.3](https://github.com/funkadelic/claude-nomad/compare/v0.50.2...v0.50.3) (2026-06-17)
 
 
