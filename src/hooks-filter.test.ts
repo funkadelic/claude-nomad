@@ -81,6 +81,23 @@ describe('isGsdHookEntry', () => {
     expect(isGsdHookEntry('/a/hooks/my-personal-hook.js')).toBe(false);
   });
 
+  it('launcher-less gsd script WITH trailing flag -> true', () => {
+    // The script token carries args; classification keys off the script, not the args.
+    expect(isGsdHookEntry('/a/hooks/gsd-x.js --flag')).toBe(true);
+  });
+
+  it('launcher-less user script with a gsd-prefixed ARGUMENT -> false', () => {
+    // Must NOT claim a user script as gsd-owned just because an argument starts
+    // with gsd-; the only safe failure is keeping the user entry.
+    expect(isGsdHookEntry('/a/hooks/my-hook.sh gsd-arg')).toBe(false);
+  });
+
+  it('absolute launcher binary running a gsd script -> true', () => {
+    // First token has a path but its basename is a known launcher (node), so the
+    // script token after it is what gates ownership.
+    expect(isGsdHookEntry('/usr/bin/node /a/hooks/gsd-x.js')).toBe(true);
+  });
+
   it('single-token gsd- prefix with no path separator -> true', () => {
     // Covers the `lastSlash < 0` else branch in the single-token path.
     expect(isGsdHookEntry('gsd-hook.js')).toBe(true);

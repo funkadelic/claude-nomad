@@ -1,6 +1,24 @@
 import { GSD_PREFIX } from './config.ts';
 
 /**
+ * Launcher binaries that may precede a script token. Used to tell a launcher
+ * that carries a path (e.g. `/usr/bin/node script.js`) apart from a
+ * launcher-less script that carries a path (e.g. `/a/hooks/gsd-x.js --flag`).
+ */
+const KNOWN_LAUNCHER_BASENAMES = new Set(['node', 'bash', 'sh']);
+
+/**
+ * Basename of a path token (handles both `/` and `\` separators).
+ *
+ * @param token - A command token that may be a path.
+ * @returns The last path segment, or the token unchanged when it has no separator.
+ */
+function scriptBasename(token: string): string {
+  const lastSlash = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
+  return lastSlash >= 0 ? token.slice(lastSlash + 1) : token;
+}
+
+/**
  * Returns `true` when a hook entry's `command` string references a script
  * whose basename starts with `gsd-`, indicating the entry was installed by
  * gsd (`@opengsd/gsd-core`) rather than authored by the user.
@@ -14,12 +32,15 @@ import { GSD_PREFIX } from './config.ts';
  * - `CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js` (env-prefixed)
  * - `/a/hooks/gsd-x.js` (launcher-less, shebang executable)
  *
- * Algorithm: split the command on whitespace, skip any leading `KEY=value`
- * environment-assignment tokens (no path separator, contains `=`), then skip
- * the launcher token, skip flag tokens, and take the first non-flag token as
- * the script path. For a single-token command that contains a path separator,
- * evaluate that token's basename directly (launcher-less shebang form).
- * Return `basename.startsWith(GSD_PREFIX)`.
+ * Algorithm: split the command on whitespace and skip any leading `KEY=value`
+ * environment-assignment tokens. If the first remaining token is itself the
+ * script (it carries a path and is not a known launcher binary, or its basename
+ * already starts with `gsd-`), classify off that token's basename directly. This
+ * covers launcher-less commands with or without trailing args/flags, and keys
+ * off the script itself so a trailing `gsd-`-prefixed argument can never mark a
+ * user script as gsd-owned. Otherwise the first token is the launcher: skip flag
+ * tokens and take the first non-flag token as the script path. Return
+ * `basename.startsWith(GSD_PREFIX)`.
  *
  * Fail-safe: if no script token is found the command is unparseable; return
  * `false` so a user entry is never silently dropped.
@@ -33,37 +54,31 @@ export function isGsdHookEntry(command: string): boolean {
 
   // Skip leading KEY=value env-assignment tokens. A token is an env assignment
   // when its key part (everything before the first '=') matches a shell
-  // identifier: starts with a letter or underscore, contains only letters,
-  // digits, and underscores, and has no path separator in the key portion.
-  const envAssign = /^[A-Za-z_][A-Za-z0-9_]*=/;
+  // identifier: starts with a letter or underscore, then word characters.
+  const envAssign = /^[A-Za-z_]\w*=/;
   let i = 0;
   while (i < tokens.length && envAssign.test(tokens[i])) {
     i++;
   }
 
-  // Single-token form (no launcher): evaluate the token's basename directly when
-  // it contains a path separator or already starts with GSD_PREFIX.
-  if (i >= tokens.length - 1) {
-    const single = tokens[i] ?? '';
-    const hasPath = single.includes('/') || single.includes('\\');
-    if (hasPath || single.startsWith(GSD_PREFIX)) {
-      const lastSlash = Math.max(single.lastIndexOf('/'), single.lastIndexOf('\\'));
-      const basename = lastSlash >= 0 ? single.slice(lastSlash + 1) : single;
-      return basename.startsWith(GSD_PREFIX);
-    }
-    // Bare launcher token (e.g. `node`) with no script: unparseable -> false.
-    return false;
+  const first = tokens[i] ?? '';
+  const firstBase = scriptBasename(first);
+  const firstHasPath = first.includes('/') || first.includes('\\');
+
+  // Launcher-less form: the first non-env token is itself the script. True when it
+  // carries a path and is not a known launcher binary, or its basename already
+  // starts with GSD_PREFIX. Covers `/a/hooks/gsd-x.js`, the same with trailing
+  // args/flags, and a bare `gsd-x.js`. Classifying off the script token means a
+  // trailing gsd-prefixed ARGUMENT can never mark a user script as gsd-owned.
+  if ((firstHasPath && !KNOWN_LAUNCHER_BASENAMES.has(firstBase)) || first.startsWith(GSD_PREFIX)) {
+    return firstBase.startsWith(GSD_PREFIX);
   }
 
-  // Multi-token form: tokens[i] is the launcher; walk remaining tokens, skip
-  // flags (start with '-'), take first non-flag as the script path.
+  // Otherwise tokens[i] is the launcher: skip flag tokens, take the first
+  // non-flag token as the script path. A launcher with no script -> false.
   for (let j = i + 1; j < tokens.length; j++) {
-    const token = tokens[j];
-    if (token.startsWith('-')) continue;
-    // Extract the basename of the script path (works for / and \ separators).
-    const lastSlash = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
-    const basename = lastSlash >= 0 ? token.slice(lastSlash + 1) : token;
-    return basename.startsWith(GSD_PREFIX);
+    if (tokens[j].startsWith('-')) continue;
+    return scriptBasename(tokens[j]).startsWith(GSD_PREFIX);
   }
   return false;
 }
