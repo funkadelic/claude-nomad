@@ -154,7 +154,9 @@ Other hosts then `nomad pull` to adopt the same config.
 If you use GSD (`@opengsd/gsd-core`), most of the integration is automatic: `gsd-*` skills are
 excluded from sync (the tool installs them per-host), and `hooks/` and `agents/` are gsd-owned per
 host and are not synced at all, which avoids cross-host churn when two machines run different gsd
-versions. The one manual step is installing gsd on each machine:
+versions. GSD's hook entries inside `settings.json` are likewise filtered out of the generated file
+on pull and self-cleaned from `shared/settings.base.json` on push, so they no longer surface as a
+recurring drift warning. The one manual step is installing gsd on each machine:
 
 ```bash
 npm i -g @opengsd/gsd-core

@@ -345,6 +345,27 @@ when you run any gsd command). The same applies to `~/.claude/agents`. After rem
 
 The hint is informational only (a WARN, not a FAIL) and does not affect pull or push.
 
+## nomad doctor says settings.base.json will self-clean gsd hook entries on my next push
+
+This is separate from the leftover-symlink hint above. GSD registers its hook commands as entries
+inside `~/.claude/settings.json` and re-applies them on every session start, so those entries are
+managed per host, not synced. Nomad filters gsd-owned hook entries (whose script basename starts
+with `gsd-`) out of the generated settings on pull, which is why the old recurring "hooks diverged"
+drift warning is gone.
+
+If your committed `shared/settings.base.json` was written by an older nomad that still carried those
+entries, `nomad doctor` shows a one-time info line (not a warning, and it never changes the exit
+code) reading:
+
+```text
+gsd now owns hook entries per-host; shared/settings.base.json self-cleans on your next 'nomad push'
+```
+
+You do not need to do anything special: the next `nomad push` rewrites the base to drop the gsd
+entries (backed up first, idempotent, never on pull or `--dry-run`), and the note disappears once
+the base is clean. A hook you wrote yourself (basename not starting with `gsd-`) is untouched and
+still syncs via `nomad capture-settings`.
+
 ## Can I pin a gsd version to keep hook scripts byte-identical across hosts?
 
 Yes, though it is optional and fragile as a primary strategy.

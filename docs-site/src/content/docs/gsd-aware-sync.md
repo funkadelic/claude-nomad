@@ -16,6 +16,7 @@ see [How it works](/claude-nomad/how-it-works/).
 
 - [.planning overlay sync](#planning-overlay-sync)
 - [gsd-owned hooks and agents are not synced](#gsd-owned-hooks-and-agents-are-not-synced)
+- [gsd-owned hook entries in settings are not synced](#gsd-owned-hook-entries-in-settings-are-not-synced)
 - [gsd-prefixed skills are excluded](#gsd-prefixed-skills-are-excluded)
 - [Version-pin stopgap](#version-pin-stopgap)
 - [.claude extras filtering](#claude-extras-filtering)
@@ -54,6 +55,34 @@ This behavior is implemented in `src/extras-sync.ts`. It applies to any project 
 This is implemented in `src/links.ts` (the `SHARED_LINKS` constant). The names `hooks` and
 `agents` are also reserved in the `sharedDirs` validation logic, so you cannot accidentally
 re-add them through the opt-in path.
+
+## gsd-owned hook entries in settings are not synced
+
+Separate from the `hooks/` directory above, GSD also registers its hook commands as entries inside
+`~/.claude/settings.json` (under the `hooks` key), and it re-applies them on every session start
+with host-correct launcher paths and whatever hook set the installed gsd version ships. Because
+those entries are managed per host by GSD, syncing them is the same churn as syncing the script
+files: the generated merge would always lag the live file, and `nomad doctor` would report a
+permanent "hooks diverged" drift that no pull could resolve.
+
+Nomad treats a hook entry as gsd-owned when its command runs a script whose basename starts with
+`gsd-`. What that means for you:
+
+- **On pull:** gsd-owned hook entries are filtered out of the generated `~/.claude/settings.json`,
+  so the `hooks` block GSD manages is left for GSD to own. The spurious "hooks diverged" warning is
+  gone because nomad no longer writes a stale set to compare against.
+- **On push:** if your committed `shared/settings.base.json` still holds leftover gsd hook entries
+  from an earlier version of nomad, the next `nomad push` rewrites the base to drop them before
+  staging. It is a one-time self-clean, backed up first and idempotent once the base is clean, and
+  it never runs on pull or `--dry-run`. While the committed base still has them, `nomad doctor`
+  shows a one-time info line (not a warning) telling you the base self-cleans on your next push.
+- **Your own hooks still sync.** A hook entry you write yourself (whose script basename does not
+  start with `gsd-`) is ordinary ahead-only state: run `nomad capture-settings` to promote it into
+  `shared/settings.base.json`, and it then travels on every subsequent pull like any other setting.
+
+This is implemented in `src/hooks-filter.ts` (the `isGsdHookEntry` detector and the
+`stripGsdHookEntries` walker), wired into the pull-side settings write, the drift comparison, and
+the push-time base self-clean.
 
 ## gsd-prefixed skills are excluded
 
