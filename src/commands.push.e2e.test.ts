@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { encodePath } from './utils.json.ts';
+import { buildPushRepo, g, gitOut, plantLocalSession } from './test-support/git.ts';
 
 /**
  * Full-pipeline cmdPush acceptance against a real bare-origin + clone pair and
@@ -24,74 +24,6 @@ const hasGitleaks = ((): boolean => {
     return false;
   }
 })();
-
-/** Run a git command in `cwd`; throws on non-zero exit. */
-function g(args: string[], cwd: string): void {
-  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
-}
-
-/** Capture stdout of a git command; throws on non-zero exit. */
-function gitOut(args: string[], cwd: string): string {
-  return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    .toString()
-    .trim();
-}
-
-/**
- * Build a bare origin plus a local clone with `shared/settings.base.json` and a
- * `path-map.json` mapping logical `testproj` to a host project root, so cmdPush
- * preconditions and the allow-list pass.
- *
- * @param tmp Parent temp directory.
- * @returns Paths: local (the synced repo), origin (bare), projectRoot.
- */
-function buildPushRepo(tmp: string): { local: string; origin: string; projectRoot: string } {
-  const origin = join(tmp, 'origin.git');
-  const local = join(tmp, 'local');
-  const projectRoot = join(tmp, 'project');
-  mkdirSync(origin, { recursive: true });
-  mkdirSync(projectRoot, { recursive: true });
-
-  g(['init', '-q', '-b', 'main', '--bare'], origin);
-  const seed = join(tmp, 'seed');
-  mkdirSync(join(seed, 'shared'), { recursive: true });
-  g(['init', '-q', '-b', 'main'], seed);
-  g(['config', 'user.email', 'test@example.invalid'], seed);
-  g(['config', 'user.name', 'test'], seed);
-  writeFileSync(join(seed, 'shared', 'settings.base.json'), '{}\n');
-  writeFileSync(
-    join(seed, 'path-map.json'),
-    JSON.stringify({ projects: { testproj: { 'test-host': projectRoot } } }) + '\n',
-  );
-  g(['add', '.'], seed);
-  g(['commit', '-q', '-m', 'base'], seed);
-  g(['remote', 'add', 'origin', origin], seed);
-  g(['push', '-q', 'origin', 'main'], seed);
-
-  g(['clone', '-q', origin, local], tmp);
-  g(['config', 'user.email', 'test@example.invalid'], local);
-  g(['config', 'user.name', 'test'], local);
-
-  return { local, origin, projectRoot };
-}
-
-/**
- * Plant a local session transcript under
- * `HOME/.claude/projects/<encoded projectRoot>/<sid>.jsonl` so remapPush copies
- * it into `shared/projects/testproj/` on push.
- *
- * @param home Resolved HOME for this invocation.
- * @param projectRoot Host project root the session belongs to.
- * @param content Transcript file content.
- * @returns The session id of the planted transcript.
- */
-function plantLocalSession(home: string, projectRoot: string, content: string): string {
-  const sid = 'sid-e2e-001';
-  const dir = join(home, '.claude', 'projects', encodePath(projectRoot));
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${sid}.jsonl`), content);
-  return sid;
-}
 
 describe.skipIf(!hasGitleaks)('cmdPush end-to-end (real git + real gitleaks)', () => {
   let tmp: string;
