@@ -33,6 +33,10 @@ survives different file paths and your secrets never ride along.
   churn). Skills sync as a filtered copy: your own skills travel, `gsd-*` skills are excluded (see
   `SHARED_LINKS` and `src/skills-sync.ts` in `src/config.ts`). Settings merge a shared base with a
   per-host override, so one machine can run a different model or MCP URL without forking the rest.
+  GSD-owned hook entries (scripts whose basename starts with `gsd-`) are filtered out of the
+  generated `~/.claude/settings.json` during pull and stripped from `shared/settings.base.json` on
+  the next push; GSD reinstalls the correct per-host hook set itself. A non-gsd hook you add to your
+  live settings syncs normally via `nomad capture-settings`.
 - **Every push is secret-scanned.** Only an explicit allow-list of paths ever leaves the machine,
   credentials never sync, and gitleaks scans the exact files about to be published. The push aborts
   on any hit, with an interactive menu to redact, allow, or drop the finding.

@@ -262,6 +262,13 @@ leaks values. It skips with a `ℹ︎` when `settings.json` is absent or when
 `shared/settings.base.json` is absent or unparseable; a malformed `settings.json` is skipped
 silently, since doctor's settings load already fails (`✗`, exit 1) on the same file.
 
+Also in the Settings section, a one-time info line (never a warning, never exit 1) appears while the
+committed `shared/settings.base.json` still holds gsd-owned hook entries (commands whose script
+basename starts with `gsd-`). GSD manages those entries per host, so nomad filters them out of the
+generated `settings.json` on pull and rewrites the committed base to drop them on the next real
+`nomad push` (backed up first, idempotent, never on pull or `--dry-run`). The note resolves itself
+once the base is clean. See [GSD-aware sync](/claude-nomad/gsd-aware-sync/) for the full picture.
+
 ## Global flags
 
 `nomad --version`

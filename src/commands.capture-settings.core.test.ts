@@ -8,6 +8,8 @@ import {
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
+import { deepMerge } from './utils.json.ts';
 
 /**
  * Behavior tests for the pure direction-aware settings drift core.
@@ -354,6 +356,29 @@ describe('buildCaptureSubset', () => {
     const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
     expect(subset).toEqual({ newKey: 'value' });
   });
+
+  it('strips gsd hook entries from the captured hooks block', () => {
+    // Live settings has a matcher holding BOTH a gsd entry and a user entry.
+    // The base is clean (no hooks). buildCaptureSubset must promote a hooks block
+    // containing ONLY the user entry; gsd entries must not ride into the base.
+    const gsdEntry = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+    const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
+    const merged: Record<string, unknown> = { model: 'sonnet' };
+    const settings = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry, userEntry] }],
+      },
+    };
+    const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: false });
+    expect(subset).toHaveProperty('hooks');
+    const hooks = subset.hooks as Record<string, unknown[]>;
+    const matchers = hooks.PreToolUse as { hooks: unknown[] }[];
+    expect(matchers).toHaveLength(1);
+    // Only the user entry must be in the captured block.
+    expect(matchers[0].hooks).toHaveLength(1);
+    expect((matchers[0].hooks[0] as Record<string, unknown>).command).toBe(userEntry.command);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -417,5 +442,169 @@ describe('partitionByCaptureExclusion', () => {
 
   it('returns empty partitions for an empty input', () => {
     expect(partitionByCaptureExclusion([])).toEqual({ promotable: [], excluded: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifySettingsDrift gsd-hook filtering
+// ---------------------------------------------------------------------------
+
+describe('classifySettingsDrift gsd-hook filtering', () => {
+  const gsdEntry = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+  const gsdEntry2 = { type: 'command', command: 'node /a/hooks/gsd-workflow-guard.js' };
+  const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
+  const matcher = (hooks: unknown[]) => ({ matcher: 'Bash', hooks });
+
+  it('Test 5: merged has gsd hooks, settings has different gsd hooks, no user hooks -> hooks in no bucket', () => {
+    // Both sides have gsd-only hooks (different sets); after stripping both
+    // become empty -> not behind, not ahead, not changed.
+    const merged = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry])] },
+    };
+    const settings = {
+      model: 'sonnet',
+      hooks: { Stop: [matcher([gsdEntry2])] },
+    };
+    const drift = classifySettingsDrift(merged, settings);
+    expect(drift.behind).not.toContain('hooks');
+    expect(drift.ahead).not.toContain('hooks');
+    expect(drift.changed).not.toContain('hooks');
+  });
+
+  it('Test 6: live settings has a user hook absent from merged (merged has only gsd hooks) -> hooks in ahead', () => {
+    // After stripping: merged loses hooks key, settings retains user hook ->
+    // hooks is ahead (local-only), capturable.
+    const merged = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry])] },
+    };
+    const settings = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([userEntry])] },
+    };
+    const drift = classifySettingsDrift(merged, settings);
+    expect(drift.ahead).toContain('hooks');
+    expect(drift.behind).not.toContain('hooks');
+    expect(drift.changed).not.toContain('hooks');
+  });
+
+  it('Test 7: both sides share identical user hook plus differing gsd hooks -> hooks not in changed', () => {
+    // After stripping gsd entries: both sides retain the same user hook ->
+    // deep-equal, so not changed.
+    const merged = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry, userEntry])] },
+    };
+    const settings = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry2, userEntry])] },
+    };
+    const drift = classifySettingsDrift(merged, settings);
+    expect(drift.changed).not.toContain('hooks');
+    expect(drift.behind).not.toContain('hooks');
+    expect(drift.ahead).not.toContain('hooks');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// round-trip and capture ordering (base-clean precondition for capture)
+// ---------------------------------------------------------------------------
+
+describe('capture ordering and round-trip for personal hooks', () => {
+  const gsdEntry = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+  const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
+  const matcher = (hooks: unknown[]) => ({ matcher: 'Bash', hooks });
+
+  it('Test 5 (round-trip): user hook is capturable from a CLEAN base and survives re-merge', () => {
+    // Round-trip: starting from a clean base (no hooks key), a user adds
+    // a non-gsd hook to live settings. After stripping both sides, the base has
+    // no hooks and settings has the user hook -> hooks is `ahead`, so
+    // buildCaptureSubset promotes it. A subsequent merge of the promoted base
+    // + empty host retains the user hook.
+    const cleanBase: Record<string, unknown> = { model: 'sonnet' };
+    const liveSettings = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([userEntry])] },
+    };
+
+    // Phase 1: classify; hooks should be `ahead` (user-only, capturable).
+    const drift = classifySettingsDrift(cleanBase, liveSettings);
+    expect(drift.ahead).toContain('hooks');
+    expect(drift.changed).not.toContain('hooks');
+    expect(drift.behind).not.toContain('hooks');
+
+    // Phase 2: build capture subset; hooks must appear.
+    const captured = buildCaptureSubset(cleanBase, liveSettings, { normalizeNodePath: false });
+    expect(captured).toHaveProperty('hooks');
+
+    // Phase 3: simulate pull by merging the captured base with an empty host
+    // override, then strip gsd entries (the pull-side filter). The user hook
+    // must survive.
+    const merged = deepMerge(captured, {});
+    const regenerated = stripGsdHookEntries(merged);
+    const hooks = regenerated.hooks as Record<string, unknown[]>;
+    expect(hooks).toBeDefined();
+    const preToolMatchers = hooks.PreToolUse as { hooks: unknown[] }[];
+    expect(preToolMatchers[0].hooks[0]).toMatchObject({ command: userEntry.command });
+  });
+
+  it('Test 6 (ordering): residual gsd entry in base forces hooks into `changed` (not capturable)', () => {
+    // Ordering edge case: if a residual gsd entry lingers in the base
+    // (pre-clean), hooks is present on both sides. After stripping, the base
+    // loses hooks but settings retains the user hook. Since classifySettingsDrift
+    // strips both sides at entry, hooks appears only in settings -> `ahead`.
+    //
+    // However, the plan clarifies: the ordering dependency is about what happens
+    // WITHOUT the gsd-hook filter (the raw, pre-strip perspective). With it active
+    // in classifySettingsDrift, the strip already handles this. The test pins
+    // the key invariant: when a residual gsd entry is in the base AND the user
+    // has only the same gsd entry in live settings (no personal hook), hooks
+    // ends up in NO bucket (both sides strip to empty -> neither ahead nor changed).
+    // This confirms that a user who has only gsd hooks and a dirty base is NOT
+    // mistakenly told to capture.
+    const dirtyBase = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([gsdEntry])] },
+    };
+    const liveSettingsGsdOnly = {
+      model: 'sonnet',
+      hooks: { Stop: [matcher([gsdEntry])] },
+    };
+
+    const drift = classifySettingsDrift(dirtyBase, liveSettingsGsdOnly);
+    // After stripping both sides -> no hooks on either -> not in any bucket.
+    expect(drift.ahead).not.toContain('hooks');
+    expect(drift.changed).not.toContain('hooks');
+    expect(drift.behind).not.toContain('hooks');
+
+    // buildCaptureSubset must NOT return a hooks key for the gsd-only case.
+    const captured = buildCaptureSubset(dirtyBase, liveSettingsGsdOnly, {
+      normalizeNodePath: false,
+    });
+    expect(captured).not.toHaveProperty('hooks');
+  });
+
+  it('Test 7: after base is stripped clean, user hook classifies `ahead` and is capturable', () => {
+    // Positive complement of Test 6: once the base has no hooks key (the
+    // push strip has run), a live user hook is `ahead` and buildCaptureSubset
+    // promotes it (confirming base-clean unblocks the capture path).
+    const cleanBase: Record<string, unknown> = { model: 'sonnet' };
+    const liveWithUserHook = {
+      model: 'sonnet',
+      hooks: { PreToolUse: [matcher([userEntry])] },
+    };
+
+    const drift = classifySettingsDrift(cleanBase, liveWithUserHook);
+    expect(drift.ahead).toContain('hooks');
+    expect(drift.changed).not.toContain('hooks');
+    expect(drift.behind).not.toContain('hooks');
+
+    const captured = buildCaptureSubset(cleanBase, liveWithUserHook, { normalizeNodePath: false });
+    expect(captured).toHaveProperty('hooks');
+    // The captured hooks block must contain the user entry.
+    const hooks = captured.hooks as Record<string, unknown[]>;
+    const preToolMatchers = hooks.PreToolUse as { hooks: unknown[] }[];
+    expect(preToolMatchers[0].hooks[0]).toMatchObject({ command: userEntry.command });
   });
 });

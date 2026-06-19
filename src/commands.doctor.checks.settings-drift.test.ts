@@ -91,9 +91,18 @@ describe('diffMergedSettings', () => {
   });
 
   it('reproduces the motivating incident: merged has model/hooks/statusLine/enabledPlugins, settings has only two notif keys', () => {
+    // Use a user-authored hook entry so the hooks key survives stripping and
+    // remains in the missing bucket (an empty hooks block would be stripped out).
     const merged = {
       model: 'claude-sonnet',
-      hooks: { PostToolUse: [] },
+      hooks: {
+        PostToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [{ type: 'command', command: 'node /x/my-hook.js' }],
+          },
+        ],
+      },
       statusLine: 'on',
       enabledPlugins: ['plugin-a'],
     };
@@ -102,7 +111,7 @@ describe('diffMergedSettings', () => {
       inputNeededNotifEnabled: false,
     };
     const result = diffMergedSettings(merged, settings);
-    // missing: all four merged keys, sorted
+    // missing: all four merged keys (hooks survives strip because it has a user entry), sorted
     expect(result.missing).toEqual(['enabledPlugins', 'hooks', 'model', 'statusLine']);
     // extra: the two notif keys, sorted
     expect(result.extra).toEqual(['agentPushNotifEnabled', 'inputNeededNotifEnabled']);
@@ -281,9 +290,18 @@ describe('reportSettingsDriftCheck', () => {
   });
 
   it('emits a yellow warn for missing merged key with nomad pull hint', async () => {
+    // Use a user-authored hook entry so the hooks key survives stripping and
+    // shows up as missing from settings. An empty `hooks: {}` would be stripped.
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
-      JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [
+            { matcher: 'Bash', hooks: [{ type: 'command', command: 'node /x/my-hook.js' }] },
+          ],
+        },
+      }) + '\n',
     );
     writeFileSync(
       join(env.testHome, '.claude', 'settings.json'),
@@ -580,10 +598,19 @@ describe('cmdDoctor Settings section: drift row wiring', () => {
     process.env.NO_COLOR = '1';
     process.exitCode = undefined;
     env = makeDoctorEnv({ host: 'test-host', writeBase: false, writeSettings: false });
-    // Provide minimal settings.base.json so loadBaseSettings does not FAIL
+    // Provide minimal settings.base.json so loadBaseSettings does not FAIL.
+    // Use a user-authored hook entry so the hooks key survives stripping and
+    // appears as missing in settings (an empty hooks block would be stripped).
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
-      JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [
+            { matcher: 'Bash', hooks: [{ type: 'command', command: 'node /x/my-hook.js' }] },
+          ],
+        },
+      }) + '\n',
     );
     // settings.json drops 'hooks' -> drift WARN expected
     writeFileSync(
@@ -631,5 +658,200 @@ describe('cmdDoctor Settings section: drift row wiring', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain(secretValue);
+  });
+
+  it('Test 8: gsd-only hooks divergence produces no changed row (doctor path)', async () => {
+    // Override base so it has gsd-only hooks; settings has a different gsd hook
+    // set (the self-heal scenario). After stripping both sides, hooks is absent
+    // from both -> no drift row. The doctor adapter inherits this via classifySettingsDrift.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Bash',
+              hooks: [{ type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' }],
+            },
+          ],
+        },
+      }) + '\n',
+    );
+    // Live settings has a different gsd hook set.
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          Stop: [
+            {
+              matcher: '',
+              hooks: [{ type: 'command', command: 'node /a/hooks/gsd-workflow-guard.js' }],
+            },
+          ],
+        },
+      }) + '\n',
+    );
+    vi.resetModules();
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    const { joinedLog } = await import('./commands.doctor.checks.test-helpers.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    // No drift row for hooks: the gsd-only divergence is filtered out.
+    expect(out).not.toContain(warnGlyph + ' settings.json drift');
+    expect(out).toContain(okGlyph);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reportHooksBaseSelfCleanNote (one-time migration info-line)
+// ---------------------------------------------------------------------------
+
+describe('reportHooksBaseSelfCleanNote', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  const gsdEntry = {
+    type: 'command',
+    command: 'node /home/u/.claude/hooks/gsd-context-monitor.js',
+  };
+  const userEntry = {
+    type: 'command',
+    command: 'node /home/u/my-hooks/my-personal-hook.js',
+  };
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = undefined;
+    env = makeDoctorEnv({ host: 'test-host', writeBase: false, writeSettings: false });
+  });
+
+  afterEach(() => {
+    process.exitCode = undefined;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Run reportHooksBaseSelfCleanNote through a fresh module graph.
+   *
+   * @returns Section items joined by newline.
+   */
+  async function runNote(): Promise<{ out: string; items: string[] }> {
+    vi.resetModules();
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportHooksBaseSelfCleanNote } =
+      await import('./commands.doctor.checks.settings-drift.ts');
+    const sec = section('Settings');
+    reportHooksBaseSelfCleanNote(sec);
+    return { out: sec.items.join('\n'), items: sec.items };
+  }
+
+  it('Test 1: base with >= 1 gsd hook entry emits a dim info line (not a WARN)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry] }],
+        },
+      }) + '\n',
+    );
+    const { out } = await runNote();
+    expect(out).toContain(infoGlyph);
+    expect(out).toContain("self-cleans on your next 'nomad push'");
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('Test 2: base with no gsd hook entries emits nothing (already clean)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          PreToolUse: [{ matcher: 'Bash', hooks: [userEntry] }],
+        },
+      }) + '\n',
+    );
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('Test 3: absent base emits nothing (best-effort skip)', async () => {
+    // No base file written.
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('Test 3b: unparseable base emits nothing (best-effort skip)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      '{ NOT VALID JSON\n',
+    );
+    let threw = false;
+    try {
+      await runNote();
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('Test 4: the note never sets process.exitCode (guidance only)', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { Stop: [{ matcher: '', hooks: [gsdEntry] }] },
+      }) + '\n',
+    );
+    const { out } = await runNote();
+    expect(out).toContain(infoGlyph);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('base with no hooks key at all emits nothing', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+  });
+
+  it('base with empty hooks: {} scaffold (no gsd entries) emits nothing', async () => {
+    // An empty hooks block has NO gsd entries, so the note must not fire and
+    // the push must not rewrite the base (nothing to clean). Before the fix,
+    // stripGsdHookEntries dropped the empty hooks key -> JSON.stringify diff ->
+    // spurious note and rewrite.
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
+    );
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('base with hooks: { Event: [] } (empty event, no gsd entries) emits nothing', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', hooks: { PreToolUse: [] } }) + '\n',
+    );
+    const { items } = await runNote();
+    expect(items).toHaveLength(0);
   });
 });

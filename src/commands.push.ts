@@ -10,6 +10,7 @@ import { enforceAllowList, isGsdDropped, parsePorcelainZ } from './commands.push
 import { resolveLeakFindings } from './commands.push.recovery.ts';
 import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
 import { remapExtrasPush } from './extras-sync.ts';
+import { baseHasGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import { syncSkillsPush } from './skills-sync.ts';
 import { collectGlobalConfigChanges } from './push-global-config.ts';
 import { scanPushVerdict } from './push-leak-verdict.ts';
@@ -18,9 +19,41 @@ import { previewPushLeaks } from './push-preview.ts';
 import { remapPush } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, warn } from './utils.ts';
-import { freshBackupTs } from './utils.fs.ts';
+import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson, readPathMap } from './utils.json.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
+
+/**
+ * Idempotent gsd-hook strip for the push write-path. Reads
+ * `shared/settings.base.json`, applies `stripGsdHookEntries`, and on a real
+ * change backs up via `backupRepoWrite` then writes atomically via
+ * `writeJsonAtomic`. If the stripped result deep-equals the original (no gsd
+ * entries present) the function returns without writing (no backup, no mtime
+ * change). Best-effort: a missing or unparseable base is silently skipped.
+ *
+ * Must only be called on the REAL-push path (!dryRun). The function is
+ * push-only by design: pull stays non-destructive per Phase 50 precedent.
+ *
+ * @param repo - Resolved repo root path for this invocation.
+ * @param backup - Resolved backup root path for this invocation.
+ */
+function stripGsdHooksFromBase(repo: string, backup: string): void {
+  const basePath = join(repo, 'shared', 'settings.base.json');
+  if (!existsSync(basePath)) return;
+  let base: Record<string, unknown>;
+  try {
+    base = readJson<Record<string, unknown>>(basePath);
+  } catch {
+    return; // unparseable: skip silently (best-effort)
+  }
+  // Use the single shared predicate so an empty hooks: {} scaffold is NOT treated
+  // as dirty (no gsd entries present means nothing to strip).
+  if (!baseHasGsdHookEntries(base)) return;
+  const stripped = stripGsdHookEntries(base);
+  const ts = freshBackupTs(backup);
+  backupRepoWrite(basePath, ts, repo);
+  writeJsonAtomic(basePath, stripped);
+}
 
 /**
  * Read-only ahead-drift check for the push flow. Loads the repo's base +
@@ -87,7 +120,7 @@ function guardGitlinks(repo: string): void {
 /**
  * Staged-tree leak gate + commit/push. Stages with `git add -A`, scans, and
  * on a leak renders the ✗ tree row then delegates to `resolveLeakFindings`
- * (TTY interactive menu or non-TTY FATAL throw, D-01 preserved). On a clean
+ * (TTY interactive menu or non-TTY FATAL throw). On a clean
  * scan commits, pushes, and renders the `✓ no leaks` row.
  *
  * @param st - Push state for the tree render.
@@ -214,7 +247,7 @@ function runDryRunPreview(st: PushState, map: PathMap | null, repo: string): voi
  * `verdictRow` lands in the Leak scan section and whose `recovery` (if any)
  * prints below the tree; `process.exitCode = 1` is set on findings.
  *
- * Dry-run skills gap (intentional, WR-03): `syncSkillsPush()` is gated behind
+ * Dry-run skills gap (intentional): `syncSkillsPush()` is gated behind
  * `if (!dryRun)`, so a dry-run mutates nothing under `shared/skills/`. As a
  * result the dry-run "Global config" section (which now treats `shared/skills`
  * as a global-config prefix) does NOT list pending skills edits, and the
@@ -281,7 +314,7 @@ export async function cmdPush(
   const allowAll = opts.allowAll === true;
   const allowRule = opts.allowRule;
   guardResolutionModeConflicts(dryRun, redactAll, allowAll, allowRule);
-  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  // Resolve roots once per command invocation (TOCTOU mitigation).
   const repo = repoHome();
   const backup = backupBase();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
@@ -314,7 +347,17 @@ export async function cmdPush(
     // produced shared/skills content is visible to both the gitlink walk and
     // the downstream allow-list classification. dryRun is forwarded: under
     // dryRun, copySkillsPush writes nothing (mirroring remapPush/remapExtrasPush).
-    if (!dryRun) syncSkillsPush();
+    // Both steps are real-push-only (zero-mutation dry-run contract). Run them
+    // together so their shared !dryRun guard counts as one branch in sonarjs.
+    // stripGsdHooksFromBase runs BEFORE the status snapshot (below) so a host
+    // whose only outstanding change is a dirty base (gsd entries from an earlier
+    // era) creates its own pending change and is not short-circuited by the
+    // empty-status early return. The rewritten base is on PUSH_ALLOWED_STATIC so
+    // no allow-list change is needed. Both calls are idempotent.
+    if (!dryRun) {
+      syncSkillsPush();
+      stripGsdHooksFromBase(repo, backup);
+    }
     const st: PushState = { dryRun, remap, extras, globalConfig: [] };
     guardGitlinks(repo);
     // Routed through the shell-free, untrimmed helper because `sh` would .trim()

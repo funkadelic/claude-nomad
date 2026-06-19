@@ -49,16 +49,18 @@ describe('regenerateSettings (integration)', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('writes settings.json with base + host overrides applied', async () => {
+  it('writes settings.json with base + host overrides applied (empty hooks stripped)', async () => {
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
+    // An empty hooks object carries no entries; after stripping it is removed.
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
     const { regenerateSettings } = await import('./links.ts');
     const result = regenerateSettings('20260516-000000');
     const written = readFileSync(join(claudeDir, 'settings.json'), 'utf8');
-    expect(written).toBe(JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n');
+    // Empty hooks block is stripped from the written file.
+    expect(written).toBe(JSON.stringify({ model: 'sonnet' }, null, 2) + '\n');
     // The wet success log moved to a returned label (cmdPull renders the
     // Settings tree row from it). With a host override present the label is
     // `<HOST>.json`.
@@ -113,7 +115,8 @@ describe('regenerateSettings (integration)', () => {
       string,
       unknown
     >;
-    expect(newContent).toEqual({ model: 'sonnet', hooks: {} });
+    // Empty hooks block is stripped from the written file.
+    expect(newContent).toEqual({ model: 'sonnet' });
   });
 
   it('fires ahead-drift WARN advising nomad capture-settings when settings has local-only keys', async () => {
@@ -226,10 +229,11 @@ describe('regenerateSettings (integration)', () => {
   });
 
   it('fires behind-drift WARN advising nomad pull when merged keys are missing from settings', async () => {
-    // behind-drift: merged has a key that is absent from settings -> pull hint
+    // behind-drift: merged has a non-gsd key absent from settings -> pull hint.
+    // Use `statusLine` (not hooks) so the strip does not remove the divergent key.
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
-      JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
+      JSON.stringify({ model: 'sonnet', statusLine: { type: 'command' } }) + '\n',
     );
     writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ model: 'sonnet' }) + '\n');
     const writes: string[] = [];
@@ -244,7 +248,7 @@ describe('regenerateSettings (integration)', () => {
     regenerateSettings('20260516-000000');
     const captured = writes.join('');
     expect(captured).toContain('nomad pull');
-    expect(captured).toContain('hooks');
+    expect(captured).toContain('statusLine');
     expect(captured).not.toContain('nomad capture-settings');
   });
 
@@ -271,15 +275,16 @@ describe('regenerateSettings (integration)', () => {
   it('fires direction-aware WARNs when a host override exists and settings has both missing and ahead-only keys', async () => {
     // Direction-aware drift: with a host override present and a settings that
     // diverges both ways, both behind-drift (nomad pull) and ahead-drift
-    // (nomad capture-settings) WARNs are emitted.
+    // (nomad capture-settings) WARNs are emitted. Use `verboseOutput` (a
+    // non-hooks key) for the behind case so the strip does not remove it.
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
-    // Host override file exists.
-    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
-    // merged = { model: 'sonnet', hooks: {} }
-    // settings has statusLine (ahead) and model changed, but hooks is behind (missing).
+    // Host override with a non-hooks key so the behind-drift WARN still fires.
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ verboseOutput: true }) + '\n');
+    // merged = { model: 'sonnet', verboseOutput: true }
+    // settings has statusLine (ahead) but not verboseOutput (behind).
     writeFileSync(
       join(claudeDir, 'settings.json'),
       JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
@@ -295,9 +300,9 @@ describe('regenerateSettings (integration)', () => {
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
     const captured = writes.join('');
-    // behind: hooks is missing from settings -> nomad pull
+    // behind: verboseOutput is missing from settings -> nomad pull
     expect(captured).toContain('nomad pull');
-    expect(captured).toContain('hooks');
+    expect(captured).toContain('verboseOutput');
     // ahead: statusLine is local-only -> nomad capture-settings
     expect(captured).toContain('nomad capture-settings');
     expect(captured).toContain('statusLine');
@@ -1030,25 +1035,195 @@ describe('regenerateSettings dry-run', () => {
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
-    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
+    // Empty hooks object is stripped on write; use a non-hooks key to verify
+    // the host override is applied.
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ verboseOutput: true }) + '\n');
 
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
     expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(
-      JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n',
+      JSON.stringify({ model: 'sonnet', verboseOutput: true }, null, 2) + '\n',
     );
 
     // Overwrite again with explicit dryRun:false and {}.
     writeFileSync(join(claudeDir, 'settings.json'), '{}\n');
     regenerateSettings('20260516-000001', { dryRun: false });
     expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(
-      JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n',
+      JSON.stringify({ model: 'sonnet', verboseOutput: true }, null, 2) + '\n',
     );
 
     writeFileSync(join(claudeDir, 'settings.json'), '{}\n');
     regenerateSettings('20260516-000002', {});
     expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(
-      JSON.stringify({ model: 'sonnet', hooks: {} }, null, 2) + '\n',
+      JSON.stringify({ model: 'sonnet', verboseOutput: true }, null, 2) + '\n',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gsd hook entry filtering in regenerateSettings
+// ---------------------------------------------------------------------------
+
+/** A gsd-owned hook entry (command has gsd- script basename). */
+const gsdEntry = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+/** A second distinct gsd entry. */
+const gsdEntry2 = { type: 'command', command: 'node /a/hooks/gsd-workflow-guard.js' };
+/** A user-authored hook entry (no gsd- script basename). */
+const userEntry = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
+
+describe('regenerateSettings gsd-hook filtering', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let hostsDir: string;
+  let sharedDir: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-hook-filter-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    hostsDir = join(repoUnderHome, 'hosts');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(hostsDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('Test 1: base has gsd hooks + user hook -> written file retains only the user hook', async () => {
+    const base = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry, gsdEntry2, userEntry] }],
+      },
+    };
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify(base) + '\n');
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000');
+    const written = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const hooksBlock = written.hooks as Record<string, unknown>;
+    const matchers = hooksBlock.PreToolUse as unknown[];
+    const inner = (matchers[0] as Record<string, unknown>).hooks as unknown[];
+    expect(inner).toHaveLength(1);
+    expect((inner[0] as Record<string, unknown>).command).toBe('node /a/hooks/my-personal-hook.js');
+  });
+
+  it('Test 2: base has only gsd-owned hooks -> written file has no hooks key', async () => {
+    const base = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry, gsdEntry2] }],
+      },
+    };
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify(base) + '\n');
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000');
+    const written = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(written).not.toHaveProperty('hooks');
+  });
+
+  it('Test 3: host override has a gsd hook -> merged result is still filtered (runs on merged)', async () => {
+    // Base has no hooks; the gsd hook comes in via the host override.
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(hostsDir, 'test-host.json'),
+      JSON.stringify({
+        hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry] }] },
+      }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000');
+    const written = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(written).not.toHaveProperty('hooks');
+  });
+
+  it('Test 4: gsd-only divergence between base and live settings does NOT fire a spurious WARN', async () => {
+    // Base has only gsd hooks; live settings has different gsd hooks.
+    // After stripping both sides the hooks key is absent everywhere -> no drift.
+    const base = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdEntry] }],
+      },
+    };
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify(base) + '\n');
+    // Live settings has a DIFFERENT gsd hook set (as gsd self-heals).
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { Stop: [{ matcher: '', hooks: [gsdEntry2] }] },
+      }) + '\n',
+    );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000');
+    // No WARN should fire for the hooks divergence.
+    expect(writes.join('')).not.toContain('⚠︎');
+  });
+
+  it('Test 4b: genuine user hook in live settings still triggers the ahead-WARN', async () => {
+    // Base has no hooks; live settings has a user-authored hook -> ahead drift.
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    // Host file exists so the ahead-WARN is emitted (gates on hostFileExists).
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({}) + '\n');
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [userEntry] }] },
+      }) + '\n',
+    );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000');
+    const captured = writes.join('');
+    // The genuine user hook is ahead-only -> nomad capture-settings WARN.
+    expect(captured).toContain('nomad capture-settings');
+    expect(captured).toContain('hooks');
   });
 });

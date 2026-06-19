@@ -10,6 +10,8 @@
  * - `CAPTURE_EXCLUDED_KEYS`: sensitive keys never eligible for capture.
  */
 
+import { stripGsdHookEntries } from './hooks-filter.ts';
+
 // ---------------------------------------------------------------------------
 // Deep-equality helpers (dep-free). This module owns the single drift
 // classifier; the doctor settings-drift check adapts `classifySettingsDrift`
@@ -111,6 +113,11 @@ export type SettingsDrift = {
  * launcher-path normalization. `behind`/`ahead` are presence-based and so are
  * unaffected by normalization.
  *
+ * gsd-owned hook entries are stripped from both `merged` and `settings` before
+ * classification. A key that differs only by gsd-installed hook entries
+ * (permanent self-heal churn) is not reported as behind/ahead/changed. A
+ * genuine user-authored hook entry is still classified correctly.
+ *
  * No filesystem access. No side effects.
  *
  * @param merged - Recomputed `deepMerge(base, host)` object.
@@ -121,23 +128,33 @@ export function classifySettingsDrift(
   merged: Record<string, unknown>,
   settings: Record<string, unknown>,
 ): SettingsDrift {
+  // Strip gsd-owned hook entries from both sides before classification so that
+  // a key that differs only by gsd-installed hooks (permanent self-heal churn)
+  // is not reported as changed/behind/ahead. Layered on top of the existing
+  // normalizeNodePathsDeep pass in the changed bucket below.
+  const filteredMerged = stripGsdHookEntries(merged);
+  const filteredSettings = stripGsdHookEntries(settings);
+
   const behind: string[] = [];
   const ahead: string[] = [];
   const changed: string[] = [];
-  const settingsKeys = new Set(Object.keys(settings));
+  const settingsKeys = new Set(Object.keys(filteredSettings));
 
-  for (const key of Object.keys(merged)) {
+  for (const key of Object.keys(filteredMerged)) {
     if (!settingsKeys.has(key)) {
       behind.push(key);
     } else if (
-      !deepEqual(normalizeNodePathsDeep(merged[key]), normalizeNodePathsDeep(settings[key]))
+      !deepEqual(
+        normalizeNodePathsDeep(filteredMerged[key]),
+        normalizeNodePathsDeep(filteredSettings[key]),
+      )
     ) {
       changed.push(key);
     }
   }
 
-  const mergedKeys = new Set(Object.keys(merged));
-  for (const key of Object.keys(settings)) {
+  const mergedKeys = new Set(Object.keys(filteredMerged));
+  for (const key of Object.keys(filteredSettings)) {
     if (!mergedKeys.has(key)) ahead.push(key);
   }
 
@@ -310,11 +327,17 @@ export function buildCaptureSubset(
   settings: Record<string, unknown>,
   opts: CaptureSubsetOpts,
 ): Record<string, unknown> {
+  // Strip gsd-owned hook entries from the live settings before promoting any
+  // value. classifySettingsDrift already strips both sides to avoid false drift
+  // from gsd-only hook churn; buildCaptureSubset must read from the same
+  // stripped view so a captured hooks block never re-introduces gsd entries into
+  // the base (which the push self-clean would then have to strip again).
+  const filtered = stripGsdHookEntries(settings);
   const { ahead } = classifySettingsDrift(merged, settings);
   const out: Record<string, unknown> = {};
   for (const key of ahead) {
     if (CAPTURE_EXCLUDED_KEYS.has(key)) continue;
-    const raw = settings[key];
+    const raw = filtered[key];
     out[key] = opts.normalizeNodePath ? normalizeNodePathsDeep(raw) : raw;
   }
   return out;

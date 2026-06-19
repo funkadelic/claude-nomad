@@ -8,6 +8,7 @@ import {
 } from './commands.capture-settings.core.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { claudeHome, HOST, repoHome } from './config.ts';
+import { baseHasGsdHookEntries } from './hooks-filter.ts';
 import { deepMerge } from './utils.json.ts';
 
 /**
@@ -79,6 +80,41 @@ function tryReadJson(filePath: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Migration info-line
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit a one-time informational note while `shared/settings.base.json` in the
+ * committed sync repo still holds at least one gsd-owned hook entry. The note
+ * tells the user the base self-cleans on their next `nomad push`.
+ *
+ * Detection uses `baseHasGsdHookEntries` (the single shared predicate that both
+ * this note and `stripGsdHooksFromBase` on the push path use), so the two call
+ * sites agree: a note fires if and only if a push would rewrite the base.
+ *
+ * Emits `dim(infoGlyph)` (NOT a `warnGlyph` WARN). Never sets
+ * `process.exitCode`. Emits nothing when the base is clean, absent, or
+ * unparseable (best-effort).
+ *
+ * Mirrors `reportDroppedNamesMigration`: non-destructive guidance that
+ * resolves itself once the write-path strip has run.
+ *
+ * @param section - The doctor section to append items to.
+ */
+export function reportHooksBaseSelfCleanNote(section: DoctorSection): void {
+  const basePath = join(repoHome(), 'shared', 'settings.base.json');
+  const base = tryReadJson(basePath);
+  if (base === null) return; // absent or unparseable: skip silently
+  // Use the single shared predicate so an empty hooks: {} scaffold is NOT treated
+  // as dirty (no gsd entries present means nothing will self-clean on push).
+  if (!baseHasGsdHookEntries(base)) return; // already clean
+  addItem(
+    section,
+    `${dim(infoGlyph)} gsd now owns hook entries per-host; shared/settings.base.json self-cleans on your next 'nomad push'`,
+  );
 }
 
 // ---------------------------------------------------------------------------

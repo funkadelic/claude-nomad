@@ -6,6 +6,7 @@ import {
   classifySettingsDrift,
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
 import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
@@ -216,6 +217,6 @@ export function regenerateSettings(
   }
 
   backupBeforeWrite(settingsPath, ts);
-  writeJsonAtomic(settingsPath, merged);
+  writeJsonAtomic(settingsPath, stripGsdHookEntries(merged));
   return { label: overrideLabel };
 }
