@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.1](https://github.com/funkadelic/claude-nomad/compare/v0.52.0...v0.52.1) (2026-06-19)
+
+
+### Testing
+
+* integration-test harness and two-host round-trip journey ([#319](https://github.com/funkadelic/claude-nomad/issues/319)) ([baf1f3f](https://github.com/funkadelic/claude-nomad/commit/baf1f3f5d2b0901f1dc960e39fd15dde2870e7af))
+
 ## [0.52.0](https://github.com/funkadelic/claude-nomad/compare/v0.51.1...v0.52.0) (2026-06-19)
 
 
