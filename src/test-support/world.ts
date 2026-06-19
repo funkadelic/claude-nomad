@@ -76,6 +76,12 @@ export function makeWorld(tmp: string): {
       HOME: home,
       NOMAD_REPO: repo,
       NOMAD_HOST: hostname,
+      // Neutralize the real global/system gitconfig for the spawned nomad's own
+      // git calls (push/pull), so a host-level commit.gpgsign or core.hooksPath
+      // cannot break or hang the journey.
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_SYSTEM: '/dev/null',
+      GIT_TERMINAL_PROMPT: '0',
     };
 
     return { home, claudeHome, repo, hostname, env };

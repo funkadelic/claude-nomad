@@ -5,24 +5,38 @@ import { join } from 'node:path';
 import { encodePath } from '../utils.json.ts';
 
 /**
- * Run a git command in `cwd`. Throws on non-zero exit.
+ * Hermetic environment for every harness git invocation. Neutralizes the real
+ * global and system gitconfig (so a host with `commit.gpgsign=true` or a global
+ * `core.hooksPath` cannot break or hang fixture setup) and disables interactive
+ * prompts, while preserving `process.env` so PATH still resolves the git binary.
+ */
+const GIT_ENV: NodeJS.ProcessEnv = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+  GIT_TERMINAL_PROMPT: '0',
+};
+
+/**
+ * Run a git command in `cwd` under the hermetic git env. Throws on non-zero exit.
  *
  * @param args - Git subcommand and arguments as an argv array.
  * @param cwd - Working directory for the command.
  */
 export function g(args: string[], cwd: string): void {
-  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('git', args, { cwd, env: GIT_ENV, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
 /**
- * Capture stdout of a git command in `cwd`. Throws on non-zero exit.
+ * Capture stdout of a git command in `cwd` under the hermetic git env. Throws on
+ * non-zero exit.
  *
  * @param args - Git subcommand and arguments as an argv array.
  * @param cwd - Working directory for the command.
  * @returns Trimmed stdout string.
  */
 export function gitOut(args: string[], cwd: string): string {
-  return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+  return execFileSync('git', args, { cwd, env: GIT_ENV, stdio: ['ignore', 'pipe', 'pipe'] })
     .toString()
     .trim();
 }
