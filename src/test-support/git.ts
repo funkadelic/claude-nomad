@@ -41,6 +41,23 @@ export function gitOut(args: string[], cwd: string): string {
     .trim();
 }
 
+/** Canonical author email used by every harness git repo. */
+const TEST_GIT_EMAIL = 'test@example.invalid';
+/** Canonical author name used by every harness git repo. */
+const TEST_GIT_NAME = 'test';
+
+/**
+ * Set the canonical test git identity (`test@example.invalid` / `test`) on the
+ * repo at `cwd`. Centralizes the identity so a cloned repo (which does not pass
+ * through `gitInit`) configures the same author as a freshly initialized one.
+ *
+ * @param cwd - An existing git repository (init'd or cloned).
+ */
+export function setTestIdentity(cwd: string): void {
+  g(['config', 'user.email', TEST_GIT_EMAIL], cwd);
+  g(['config', 'user.name', TEST_GIT_NAME], cwd);
+}
+
 /**
  * Initialize a git repo at `cwd` with the canonical test identity
  * (`test@example.invalid` / `test`). Centralizes the init-plus-identity
@@ -50,8 +67,7 @@ export function gitOut(args: string[], cwd: string): string {
  */
 export function gitInit(cwd: string): void {
   g(['init', '-q', '-b', 'main'], cwd);
-  g(['config', 'user.email', 'test@example.invalid'], cwd);
-  g(['config', 'user.name', 'test'], cwd);
+  setTestIdentity(cwd);
 }
 
 /**
@@ -96,16 +112,19 @@ export function buildPushRepo(tmp: string): { local: string; origin: string; pro
   g(['push', '-q', 'origin', 'main'], seed);
 
   g(['clone', '-q', origin, local], tmp);
-  g(['config', 'user.email', 'test@example.invalid'], local);
-  g(['config', 'user.name', 'test'], local);
+  setTestIdentity(local);
 
   return { local, origin, projectRoot };
 }
 
+/** Monotonic counter backing the unique session ids minted by {@link plantLocalSession}. */
+let sessionSeq = 0;
+
 /**
  * Plant a local session transcript under
  * `<home>/.claude/projects/<encoded projectRoot>/<sid>.jsonl` so `remapPush`
- * copies it into `shared/projects/<logical>/` on push.
+ * copies it into `shared/projects/<logical>/` on push. Each call mints a fresh
+ * `sid` from a monotonic counter so planting two sessions never collides.
  *
  * @param home - Resolved HOME for this invocation.
  * @param projectRoot - Host project root the session belongs to.
@@ -113,7 +132,7 @@ export function buildPushRepo(tmp: string): { local: string; origin: string; pro
  * @returns The session id of the planted transcript.
  */
 export function plantLocalSession(home: string, projectRoot: string, content: string): string {
-  const sid = 'sid-e2e-001';
+  const sid = `sid-e2e-${String(++sessionSeq).padStart(3, '0')}`;
   const dir = join(home, '.claude', 'projects', encodePath(projectRoot));
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${sid}.jsonl`), content);

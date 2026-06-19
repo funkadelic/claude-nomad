@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { g, gitInit, makeBareOrigin } from './git.ts';
+import { g, gitInit, makeBareOrigin, setTestIdentity } from './git.ts';
 
 /**
  * All state needed to drive a single synthetic nomad host. The `env` object is
@@ -68,8 +68,7 @@ export function makeWorld(tmp: string): {
 
     mkdirSync(home, { recursive: true });
     g(['clone', '-q', origin, repo], tmp);
-    g(['config', 'user.email', 'test@example.invalid'], repo);
-    g(['config', 'user.name', 'test'], repo);
+    setTestIdentity(repo);
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -117,10 +116,19 @@ export function runNomad(
     ['--disable-warning=ExperimentalWarning', entry, ...args],
     { encoding: 'utf8', env: host.env },
   );
+  // A null status means the child never exited normally (signal-killed or it
+  // failed to spawn), which is distinct from a clean non-zero exit. Surface it
+  // loudly rather than masquerading as exit(1). The journey never triggers this.
+  /* c8 ignore start */
+  if (result.status === null) {
+    throw new Error(
+      `nomad subprocess did not exit normally: signal=${result.signal ?? 'none'}` +
+        (result.error ? `, error=${result.error.message}` : ''),
+    );
+  }
+  /* c8 ignore stop */
   return {
-    /* c8 ignore start */
-    status: result.status ?? 1,
-    /* c8 ignore stop */
+    status: result.status,
     stdout: result.stdout,
     stderr: result.stderr,
   };

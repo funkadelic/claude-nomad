@@ -5,7 +5,13 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildPushRepo, g, gitOut, plantLocalSession } from './test-support/git.ts';
+import {
+  buildPushRepo,
+  g,
+  gitOut,
+  plantLocalSession,
+  setTestIdentity,
+} from './test-support/git.ts';
 
 /**
  * Full-pipeline cmdPush acceptance against a real bare-origin + clone pair and
@@ -36,6 +42,9 @@ describe.skipIf(!hasGitleaks)('cmdPush end-to-end (real git + real gitleaks)', (
     originalNomadRepo = process.env.NOMAD_REPO;
     originalNomadHost = process.env.NOMAD_HOST;
     tmp = mkdtempSync(join(tmpdir(), 'nomad-cmdpush-e2e-'));
+    // Known baseline so the success-path assertion can require exitCode stayed 0
+    // rather than merely "not 1" (cmdPush leaves exitCode untouched on success).
+    process.exitCode = 0;
     process.env.NOMAD_HOST = 'test-host';
     vi.resetModules();
     vi.spyOn(console, 'log').mockImplementation(() => {
@@ -68,8 +77,7 @@ describe.skipIf(!hasGitleaks)('cmdPush end-to-end (real git + real gitleaks)', (
     // push that lands on top of this proves the rebase ran before the push.
     const other = join(tmp, 'other');
     g(['clone', '-q', origin, other], tmp);
-    g(['config', 'user.email', 'test@example.invalid'], other);
-    g(['config', 'user.name', 'test'], other);
+    setTestIdentity(other);
     writeFileSync(join(other, 'upstream.txt'), 'from upstream\n');
     g(['add', '.'], other);
     g(['commit', '-q', '-m', 'upstream commit'], other);
@@ -80,7 +88,7 @@ describe.skipIf(!hasGitleaks)('cmdPush end-to-end (real git + real gitleaks)', (
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush();
 
-    expect(process.exitCode).not.toBe(1);
+    expect(process.exitCode).toBe(0);
 
     // A fresh clone of origin must contain BOTH the diverged upstream file and
     // the freshly synced session: the push fast-forwarded onto the rebased base.
