@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.0](https://github.com/funkadelic/claude-nomad/compare/v0.51.1...v0.52.0) (2026-06-19)
+
+
+### Added
+
+* stop syncing gsd-owned hook entries from settings.base.json ([#317](https://github.com/funkadelic/claude-nomad/issues/317)) ([31f5f79](https://github.com/funkadelic/claude-nomad/commit/31f5f79b16245dd792a12a7fc315661c34bae610))
+
 ## [0.51.1](https://github.com/funkadelic/claude-nomad/compare/v0.51.0...v0.51.1) (2026-06-18)
 
 
