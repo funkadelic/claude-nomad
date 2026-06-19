@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.2](https://github.com/funkadelic/claude-nomad/compare/v0.52.1...v0.52.2) (2026-06-19)
+
+
+### Testing
+
+* skip round-trip integration test when gitleaks is absent ([#321](https://github.com/funkadelic/claude-nomad/issues/321)) ([2e57c90](https://github.com/funkadelic/claude-nomad/commit/2e57c907cd56bb45fdd320ad05faa54813cb25b8))
+
 ## [0.52.1](https://github.com/funkadelic/claude-nomad/compare/v0.52.0...v0.52.1) (2026-06-19)
 
 
