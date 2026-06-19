@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -47,6 +47,18 @@ export function makeWorld(tmp: string): {
   makeHost: (name: string) => Host;
 } {
   const origin = makeBareOrigin(tmp);
+
+  // Seed the bare origin with an initial empty commit so `main` exists before
+  // any host clones it. Without this, `git pull --rebase` inside `nomad push`
+  // fails with "no such ref" because origin has no branches to track.
+  const seed = join(tmp, '.world-seed');
+  mkdirSync(seed, { recursive: true });
+  gitInit(seed);
+  writeFileSync(join(seed, '.gitkeep'), '');
+  g(['add', '.'], seed);
+  g(['commit', '-q', '-m', 'seed'], seed);
+  g(['remote', 'add', 'origin', origin], seed);
+  g(['push', '-q', 'origin', 'main'], seed);
 
   function makeHost(name: string): Host {
     const home = join(tmp, name);
