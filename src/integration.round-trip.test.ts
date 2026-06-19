@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { deepMerge, encodePath } from './utils.json.ts';
-import { g, plantLocalSession } from './test-support/git.ts';
+import { g, gitOut, plantLocalSession } from './test-support/git.ts';
 import { makeWorld, runNomad } from './test-support/world.ts';
 
 /**
@@ -77,6 +77,15 @@ describe.skipIf(!hasGit)('two-host round-trip (init -> push on A, pull on B)', (
     g(['add', '-A'], a.repo);
     g(['commit', '-q', '-m', 'nomad init scaffold'], a.repo);
     g(['push', '-q', 'origin', 'main'], a.repo);
+
+    // Assert init --snapshot actually scaffolded the settings split, so a
+    // regression in what init writes fails here rather than only surfacing
+    // downstream as a confusing settings or symlink mismatch on B.
+    const scaffolded = gitOut(['show', '--name-only', '--format=', 'HEAD'], a.repo);
+    expect(scaffolded, 'init scaffold missing settings.base.json').toContain(
+      'shared/settings.base.json',
+    );
+    expect(scaffolded, 'init scaffold missing hosts/host-a.json').toContain('hosts/host-a.json');
 
     // Update A's path-map.json to map the logical project under BOTH hosts so
     // remapPush (on A) and remapPull (on B) both resolve the transcript.

@@ -126,10 +126,16 @@ let sessionSeq = 0;
  * copies it into `shared/projects/<logical>/` on push. Each call mints a fresh
  * `sid` from a monotonic counter so planting two sessions never collides.
  *
+ * The returned id is unique per process run, NOT stable per test: the counter is
+ * module-scope and is never reset between tests or across importing files. Always
+ * use the returned `sid` for assertions; never hardcode a literal like
+ * `sid-e2e-001`, which would pass in isolation but break once another planting
+ * test runs first.
+ *
  * @param home - Resolved HOME for this invocation.
  * @param projectRoot - Host project root the session belongs to.
  * @param content - Transcript file content.
- * @returns The session id of the planted transcript.
+ * @returns The session id of the planted transcript (unique per process run).
  */
 export function plantLocalSession(home: string, projectRoot: string, content: string): string {
   const sid = `sid-e2e-${String(++sessionSeq).padStart(3, '0')}`;
