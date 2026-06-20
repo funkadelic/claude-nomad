@@ -19,6 +19,28 @@ function scriptBasename(token: string): string {
 }
 
 /**
+ * Strip a single matching pair of surrounding ASCII quotes (double or single)
+ * from a command token. Hook commands frequently wrap launcher and script
+ * paths in double quotes (e.g. `"/abs/path/node" "/abs/path/gsd-x.js"`); the
+ * whitespace tokenizer keeps those quotes attached, so the basenames would
+ * otherwise read as `node"` / `gsd-x.js"` and evade both launcher detection
+ * and the `gsd-` prefix check. No-op for an unquoted token.
+ *
+ * @param token - A single whitespace-delimited command token.
+ * @returns The token with one balanced pair of surrounding quotes removed.
+ */
+function stripQuotes(token: string): string {
+  if (token.length >= 2) {
+    const head = token.at(0);
+    const tail = token.at(-1);
+    if ((head === '"' && tail === '"') || (head === "'" && tail === "'")) {
+      return token.slice(1, -1);
+    }
+  }
+  return token;
+}
+
+/**
  * Returns `true` when a hook entry's `command` string references a script
  * whose basename starts with `gsd-`, indicating the entry was installed by
  * gsd (`@opengsd/gsd-core`) rather than authored by the user.
@@ -31,8 +53,10 @@ function scriptBasename(token: string): string {
  * - `bash /a/hooks/gsd-graphify-update.sh` (bash launcher)
  * - `CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js` (env-prefixed)
  * - `/a/hooks/gsd-x.js` (launcher-less, shebang executable)
+ * - `"/abs/path/node" "/abs/path/gsd-x.js"` (launcher and script both quoted)
  *
- * Algorithm: split the command on whitespace and skip any leading `KEY=value`
+ * Algorithm: split the command on whitespace, strip a balanced pair of
+ * surrounding quotes from each candidate token, and skip any leading `KEY=value`
  * environment-assignment tokens. If the first remaining token is itself the
  * script (it carries a path and is not a known launcher binary, or its basename
  * already starts with `gsd-`), classify off that token's basename directly. This
@@ -61,7 +85,7 @@ export function isGsdHookEntry(command: string): boolean {
     i++;
   }
 
-  const first = tokens[i] ?? '';
+  const first = stripQuotes(tokens[i] ?? '');
   const firstBase = scriptBasename(first);
   const firstHasPath = first.includes('/') || first.includes('\\');
 
@@ -78,7 +102,7 @@ export function isGsdHookEntry(command: string): boolean {
   // non-flag token as the script path. A launcher with no script -> false.
   for (let j = i + 1; j < tokens.length; j++) {
     if (tokens[j].startsWith('-')) continue;
-    return scriptBasename(tokens[j]).startsWith(GSD_PREFIX);
+    return scriptBasename(stripQuotes(tokens[j])).startsWith(GSD_PREFIX);
   }
   return false;
 }
