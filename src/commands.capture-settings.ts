@@ -11,7 +11,7 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { die, log, warn } from './utils.ts';
 
 /** Confirmation seam: given the destination label and sorted key list, return true to proceed. */
-export type CaptureConfirm = (destLabel: string, keys: string[]) => Promise<boolean>;
+type CaptureConfirm = (destLabel: string, keys: string[]) => Promise<boolean>;
 
 /** Options for the `nomad capture-settings` subcommand. */
 export type CaptureSettingsOpts = {
