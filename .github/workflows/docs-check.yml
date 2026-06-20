@@ -1,0 +1,44 @@
+name: Docs check
+permissions:
+  contents: read
+
+on:
+  # Include labeled/unlabeled so adding or removing the `docs-not-needed`
+  # bypass label re-evaluates the gate without needing a new commit.
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs-sync:
+    # Skip on private mirrors (matching the other PR workflows) and bypass
+    # entirely when the PR carries the `docs-not-needed` label.
+    if: >-
+      ${{ !github.event.repository.private &&
+      !contains(github.event.pull_request.labels.*.name, 'docs-not-needed') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # Full history so the PR base sha is present for the diff.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '22'
+
+      # No `npm ci`: the script uses only built-in Node modules and git.
+      # BASE_SHA is passed via env (not interpolated into the run line) per
+      # workflow-injection hygiene, even though a base sha is trusted hex.
+      - name: Check docs are updated alongside the CLI surface
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/check-docs-sync.cjs --base "$BASE_SHA"
