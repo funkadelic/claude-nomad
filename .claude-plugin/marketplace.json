@@ -1,5 +1,6 @@
 {
   "name": "claude-nomad",
+  "description": "Claude Code companion plugin for claude-nomad: sync ~/.claude/ across machines with pull/push/doctor/diff/clean commands and a SessionStart drift-warning hook.",
   "owner": {
     "name": "Norman Yee"
   },
@@ -11,7 +12,8 @@
         "url": "https://github.com/funkadelic/claude-nomad.git",
         "path": ".claude-plugin/nomad-plugin"
       },
-      "description": "Claude Code companion for the claude-nomad sync CLI"
+      "description": "Claude Code companion for the claude-nomad sync CLI",
+      "keywords": ["claude-code", "sync", "dotfiles", "nomad"]
     }
   ]
 }
