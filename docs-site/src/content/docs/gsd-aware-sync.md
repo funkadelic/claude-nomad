@@ -79,10 +79,13 @@ Nomad treats a hook entry as gsd-owned when its command runs a script whose base
 - **Your own hooks still sync.** A hook entry you write yourself (whose script basename does not
   start with `gsd-`) is ordinary ahead-only state: run `nomad capture-settings` to promote it into
   `shared/settings.base.json`, and it then travels on every subsequent pull like any other setting.
+- **In `nomad diff` and `--dry-run`:** the preview applies the same filter to both sides before
+  comparing, so GSD's per-session hook self-heal never shows up as a phantom `hooks` removal. What
+  the preview shows is what a real pull would actually write.
 
 This is implemented in `src/hooks-filter.ts` (the `isGsdHookEntry` detector and the
-`stripGsdHookEntries` walker), wired into the pull-side settings write, the drift comparison, and
-the push-time base self-clean.
+`stripGsdHookEntries` walker), wired into the pull-side settings write, the diff and dry-run
+preview, the drift comparison, and the push-time base self-clean.
 
 ## gsd-prefixed skills are excluded
 

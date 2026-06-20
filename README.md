@@ -40,7 +40,8 @@ survives different file paths and your secrets never ride along.
 - **Every push is secret-scanned.** Only an explicit allow-list of paths ever leaves the machine,
   credentials never sync, and gitleaks scans the exact files about to be published. The push aborts
   on any hit, with an interactive menu to redact, allow, or drop the finding.
-- **Preview before you trust it.** `nomad diff` shows offline what a pull would change, and
+- **Preview before you trust it.** `nomad diff` shows offline what a pull would change (gsd-owned
+  hook churn is filtered the same as on pull, so the preview matches what a real pull writes), and
   `--dry-run` on pull and push prints the plan without writing anything.
 - **One command tells you what is wrong.** `nomad doctor` is a read-only health check: wedged sync
   repo, broken hook references, hooks that would crash on session start because of a missing
