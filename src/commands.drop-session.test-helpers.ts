@@ -12,9 +12,9 @@ import { vi, type MockInstance } from 'vitest';
 // the validation/idempotency suite and the match-collection/unstage suite.
 
 /** `vi.spyOn(process, 'exit')` return type, reused so tests skip the long generic. */
-export type ExitSpy = MockInstance<(code?: string | number | null) => never>;
+type ExitSpy = MockInstance<(code?: string | number | null) => never>;
 /** `vi.spyOn(console, 'error'|'log')` return type, reused across the spies. */
-export type LogSpy = MockInstance<(...args: unknown[]) => void>;
+type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
 /** Sandbox state returned by `makeDropSessionEnv` for each cmdDropSession test. */
 export type Env = {

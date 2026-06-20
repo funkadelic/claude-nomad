@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/spinner.worker.ts", "src/**/*.test.ts"],
+  "project": ["src/**/*.ts"],
+  "ignoreBinaries": ["gitleaks"],
+  "ignoreDependencies": ["@stryker-mutator/api"],
+  "rules": {
+    "duplicates": "off"
+  }
+}

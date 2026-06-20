@@ -17,7 +17,7 @@ import { dirname, join, resolve } from 'node:path';
  * @param src - Raw source text.
  * @returns Array of [start, end) character index pairs inside comments or literals.
  */
-export function suppressedRanges(src: string): [number, number][] {
+function suppressedRanges(src: string): [number, number][] {
   const ranges: [number, number][] = [];
   const re = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|'[^']*'|"[^"]*"|`[^`]*`/g;
   let m: RegExpExecArray | null;
@@ -28,7 +28,7 @@ export function suppressedRanges(src: string): [number, number][] {
 }
 
 /** Return true when `pos` falls inside any of the suppressed ranges. */
-export function inSuppressedRange(pos: number, ranges: [number, number][]): boolean {
+function inSuppressedRange(pos: number, ranges: [number, number][]): boolean {
   for (const [start, end] of ranges) {
     if (pos >= start && pos < end) return true;
   }
@@ -44,7 +44,7 @@ export function inSuppressedRange(pos: number, ranges: [number, number][]): bool
  * @param src - Raw source text (not pre-stripped).
  * @returns Array of relative specifier strings.
  */
-export function topRelativeSpecifiers(src: string): string[] {
+function topRelativeSpecifiers(src: string): string[] {
   const ranges = suppressedRanges(src);
   const specifiers: string[] = [];
   const reqRe = /\brequire\s*\(\s*(['"])(\.\.?\/[^'"]*)\1\s*\)/g;
@@ -68,7 +68,7 @@ export function topRelativeSpecifiers(src: string): string[] {
  * @param baseDir - Realpath'd directory of the script.
  * @returns True when the target is provably absent.
  */
-export function specifierIsMissing(specifier: string, baseDir: string): boolean {
+function specifierIsMissing(specifier: string, baseDir: string): boolean {
   const base = resolve(baseDir, specifier);
   if (existsSync(base)) return false;
   // Probe common extensions when specifier has no extension

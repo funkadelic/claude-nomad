@@ -14,7 +14,7 @@ import { vi, type MockInstance } from 'vitest';
 // subtree, a `.claude/` host root, and a default `path-map.json`.
 
 /** `vi.spyOn(console, 'error'|'log')` return type, reused across the spies. */
-export type LogSpy = MockInstance<(...args: unknown[]) => void>;
+type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
 /** Sandbox state returned by `makePushEnv` for each cmdPush pipeline test. */
 export type PushEnv = {
