@@ -38,7 +38,9 @@ and pull opted-in per-project extras. Errors out if scaffold missing.
 `nomad diff`
 
 Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local
-repo state.
+repo state. The `settings.json` diff filters gsd-owned hook entries from both sides before
+comparing, so GSD's per-session hook self-heal does not show up as a phantom `hooks` change; the
+preview reflects what a real pull would write.
 
 ## `push`
 

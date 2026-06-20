@@ -328,6 +328,9 @@ What nomad does for you:
   start with `gsd-`) travels through `nomad capture-settings` exactly like any other ahead key:
   run `nomad capture-settings` to promote it into the base, then it travels on every subsequent
   pull.
+- **In `nomad diff` and `--dry-run`:** the preview filters both sides before comparing, so GSD's
+  per-session self-heal never renders as a phantom `hooks` change. The preview matches what a real
+  pull writes.
 
 `nomad doctor` warns when `settings.json` no longer matches the base+host merge nomad would
 write, naming the missing or changed keys: the symptom of another tool rewriting the file out
