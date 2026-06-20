@@ -31,8 +31,8 @@ function scriptBasename(token: string): string {
  */
 function stripQuotes(token: string): string {
   if (token.length >= 2) {
-    const head = token[0];
-    const tail = token[token.length - 1];
+    const head = token.at(0);
+    const tail = token.at(-1);
     if ((head === '"' && tail === '"') || (head === "'" && tail === "'")) {
       return token.slice(1, -1);
     }
