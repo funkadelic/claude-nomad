@@ -12,7 +12,7 @@
         "url": "https://github.com/funkadelic/claude-nomad.git",
         "path": ".claude-plugin/nomad-plugin"
       },
-      "description": "Claude Code companion for the claude-nomad sync CLI",
+      "description": "Companion plugin for the claude-nomad CLI. Adds /nomad:pull, /nomad:push, /nomad:doctor, /nomad:diff, and /nomad:clean slash commands plus a session-start drift-warning hook, so you can sync ~/.claude/ across machines without leaving Claude Code. Requires the standalone claude-nomad npm CLI.",
       "keywords": ["claude-code", "sync", "dotfiles", "nomad"]
     }
   ]
