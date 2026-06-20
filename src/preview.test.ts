@@ -187,6 +187,73 @@ describe('previewSettings canonicalization', () => {
     );
   });
 
+  it('renders clean when the only delta is gsd-owned hook self-heal churn', async () => {
+    // base/merged carry no hooks; current has only a gsd-installed hook entry
+    // (re-injected by gsd every session). Both sides strip to the same shape,
+    // so the diff must be empty and no canonical-order note fires.
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          model: 'opus',
+          hooks: {
+            PostToolUse: [
+              {
+                matcher: 'Bash',
+                hooks: [
+                  { type: 'command', command: 'node "$HOME/.claude/hooks/gsd-context-monitor.js"' },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result.diff).toBe('');
+    expect(result.notes).not.toContain(
+      'settings.json will be rewritten in canonical key order; no value changes',
+    );
+  });
+
+  it('still shows a genuine non-gsd change while suppressing gsd hook churn', async () => {
+    // current differs from merged by a real value change (model) AND a gsd hook
+    // entry. Only the real change should render; the gsd churn must be invisible.
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          model: 'sonnet',
+          hooks: {
+            PostToolUse: [
+              {
+                matcher: 'Bash',
+                hooks: [
+                  { type: 'command', command: 'node "$HOME/.claude/hooks/gsd-context-monitor.js"' },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result.diff).not.toBe('');
+    expect(result.diff).toContain('sonnet');
+    expect(result.diff).toContain('opus');
+    expect(result.diff).not.toContain('gsd-context-monitor');
+  });
+
   it('does NOT add malformed-host note when host file is simply absent (L90: && existsSync guard)', async () => {
     // L90: `if (hostOverrides === null && existsSync(hostPath))`
     // When hostPath does not exist, readJsonOrNull returns null (existsSync false

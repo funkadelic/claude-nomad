@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
 import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
 import { addItem, renderTree, section } from './output-tree.ts';
 import { type RemapPullPreviewEvent, remapPull } from './remap.ts';
@@ -68,6 +69,11 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * When `diff` is `''` and `notes` is empty, the settings section is omitted
  * by the caller.
  *
+ * Both sides have gsd-owned hook entries stripped (via `stripGsdHookEntries`)
+ * before comparison so gsd's per-session hook self-heal churn never renders as a
+ * phantom hooks delta, matching what `regenerateSettings` writes and mirroring
+ * `classifySettingsDrift`. Genuine, non-gsd settings changes still surface.
+ *
  * Both sides are canonicalized via `sortKeysDeep` before diffing so a pure key
  * relocation collapses to an empty diff instead of a removed-then-readded
  * cascade; when that happens the `CANONICAL_ORDER_NOTE` is appended so the user
@@ -90,14 +96,19 @@ export function previewSettings(
   if (hostOverrides === null && existsSync(hostPath)) {
     notes.push(`malformed hosts/${HOST}.json; ignoring overrides`);
   }
-  const merged = deepMerge(base, hostOverrides ?? {});
+  const merged = stripGsdHookEntries(deepMerge(base, hostOverrides ?? {}));
   const current = readJsonOrNull(settingsPath);
   if (current === null && existsSync(settingsPath)) {
     return { diff: '', notes: [...notes, 'malformed; skipping diff'] };
   }
-  const rawEqual = JSON.stringify(current ?? {}, null, 2) === JSON.stringify(merged, null, 2);
+  // Strip gsd-owned hook entries from both sides so gsd's per-session self-heal
+  // churn never surfaces as a phantom hooks delta. regenerateSettings already
+  // strips them on write, so this also aligns the preview RHS with reality.
+  // Mirrors classifySettingsDrift; genuine non-gsd changes still survive.
+  const strippedCurrent = stripGsdHookEntries(current ?? {});
+  const rawEqual = JSON.stringify(strippedCurrent, null, 2) === JSON.stringify(merged, null, 2);
   const diff = diffJsonStrings(
-    JSON.stringify(sortKeysDeep(current ?? {}), null, 2),
+    JSON.stringify(sortKeysDeep(strippedCurrent), null, 2),
     JSON.stringify(sortKeysDeep(merged), null, 2),
   );
   if (diff === '' && !rawEqual) notes.push(CANONICAL_ORDER_NOTE);
