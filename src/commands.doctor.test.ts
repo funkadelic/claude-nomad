@@ -80,3 +80,53 @@ describe('cmdDoctor --check-shared dispatch wiring', () => {
     expect(out).toContain('Schema scan');
   });
 });
+
+describe('cmdDoctor compact default vs --verbose', () => {
+  // End-to-end lock on the render-time filter: the all-passing Repository
+  // section is hidden by default but present under verbose, while the Summary
+  // verdict always renders. Reuses the same zero-staged sandbox as above.
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'path-map.json'),
+      JSON.stringify({ projects: {} }) + '\n',
+    );
+    mockGitleaksPresent();
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('hides an all-passing section but keeps the Summary verdict by default', async () => {
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).not.toContain('Repository');
+    expect(out).toContain('Summary');
+  });
+
+  it('shows the full per-check tree under --verbose', async () => {
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('Repository');
+    expect(out).toContain('Summary');
+  });
+});

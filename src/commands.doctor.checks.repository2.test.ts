@@ -38,7 +38,7 @@ describe('cmdDoctor gitlink scan', () => {
 
   it('emits no gitlink FAIL when shared/ has no nested .git entries', async () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain(`${failGlyph} gitlink`);
     expect(out).toContain('never-sync items:');
@@ -51,7 +51,7 @@ describe('cmdDoctor gitlink scan', () => {
       'ref: refs/heads/main\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(failGlyph);
     expect(out).toContain('gitlink:');
@@ -68,7 +68,7 @@ describe('cmdDoctor gitlink scan', () => {
       'gitdir: ../.git/modules/sub\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(failGlyph);
     expect(out).toContain('gitlink:');
@@ -122,7 +122,7 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('has uncommitted changes');
     expect(out).toContain('never-sync items:');
@@ -131,7 +131,7 @@ describe('cmdDoctor rebase clean-tree WARN', () => {
   it('emits WARN line when REPO_HOME has uncommitted changes', async () => {
     writeFileSync(join(env.testHome, 'claude-nomad', 'dirty.txt'), 'not committed\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(warnGlyph);
     expect(out).toContain('~/claude-nomad/');

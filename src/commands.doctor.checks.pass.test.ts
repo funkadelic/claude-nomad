@@ -73,7 +73,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     const passCount = out.split(okGlyph).length - 1;
     // One per check: repo state, SHARED_LINKS (1 real symlink), settings
@@ -85,7 +85,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${okGlyph} settings.json schema: known keys only`);
   });
@@ -94,7 +94,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${okGlyph} path-encoding: no collisions`);
   });
@@ -103,7 +103,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // The Repository presence probe is silent on success; only the Dependency
     // Versions drift check may print a gitleaks row (it stays silent when the
@@ -119,7 +119,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${okGlyph} gitlink scan:`);
   });
@@ -128,7 +128,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // Positive: PASS-prefixed phrasing for the symlink success branch
     // (e.g., `${okGlyph} CLAUDE.md: symlink`).
@@ -145,7 +145,7 @@ describe('cmdDoctor explicit PASS tokens', () => {
     // Remove the symlink populateHealthy created so CLAUDE.md is missing.
     rmSync(join(env.testHome, '.claude', 'CLAUDE.md'));
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${warnGlyph} CLAUDE.md: missing`);
   });

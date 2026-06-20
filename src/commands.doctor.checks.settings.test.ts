@@ -30,7 +30,7 @@ describe('cmdDoctor settings.json schema sanity', () => {
   });
 
   afterEach(() => {
-    // Reset BEFORE spy restore so a leaked process.exitCode = 1 from cmdDoctor()
+    // Reset BEFORE spy restore so a leaked process.exitCode = 1 from cmdDoctor({ verbose: true })
     // does not bleed into later tests.
     process.exitCode = 0;
     vi.restoreAllMocks();
@@ -46,7 +46,7 @@ describe('cmdDoctor settings.json schema sanity', () => {
       JSON.stringify({ model: 'sonnet', hooks: {} }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain('settings.json schema: known keys only');
     expect(out).not.toContain(`${warnGlyph} settings.json has unknown keys`);
@@ -58,7 +58,7 @@ describe('cmdDoctor settings.json schema sanity', () => {
       JSON.stringify({ model: 'sonnet', newAnthropicFeature: true }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${warnGlyph} settings.json has unknown keys`);
     expect(out).toContain('newAnthropicFeature');
@@ -102,7 +102,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
       JSON.stringify({ model: 'opus' }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain('host overrides:');
     expect(out).toContain(join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'));
@@ -121,7 +121,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
       JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
       `${failGlyph} no hosts/nonexistent-host.json AND settings.json has unbased keys`,
@@ -143,7 +143,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
       JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
       `${failGlyph} no hosts/nonexistent-host.json AND settings.json has unbased keys`,
@@ -159,7 +159,7 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
       JSON.stringify({ model: 'opus' }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain('host overrides: none (base-only is fine, no settings drift)');
     // The gitleaks-presence diagnostic may log "FAIL gitleaks" on dev hosts

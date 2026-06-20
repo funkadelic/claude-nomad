@@ -103,7 +103,9 @@ describe('cmdDoctor spinner', () => {
     const factory = (_label: string): SpinnerHandle => ({ stop: vi.fn(), succeed: vi.fn() });
 
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor({ startSpinner: factory });
+    // verbose: render the full tree so the always-passing Repository section is
+    // present (the compact default would hide a section with no WARN/FAIL).
+    cmdDoctor({ startSpinner: factory, verbose: true });
 
     const out = joinedLog(env.logSpy);
     expect(out).toContain('Environment');

@@ -107,7 +107,7 @@ describe('cmdDoctor gitleaks presence', () => {
     });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // Silent on success: the Repository probe adds no row (the Dependency
     // Versions drift check owns the visible gitleaks line) and never warns
@@ -145,7 +145,7 @@ describe('cmdDoctor gitleaks presence', () => {
     });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(warnGlyph);
     expect(out).toContain('gitleaks');
@@ -176,7 +176,7 @@ describe('cmdDoctor gitleaks presence', () => {
     });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(failGlyph);
     expect(out).toContain('gitleaks');
@@ -216,7 +216,7 @@ describe('cmdDoctor remote URL', () => {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain('remote origin:');
     expect(out).toContain('git@example.com:foo/bar.git');
@@ -225,7 +225,7 @@ describe('cmdDoctor remote URL', () => {
 
   it('logs "remote origin: not configured" when no remote is set', async () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain('remote origin: not configured');
     expect(out).toContain('never-sync items:');
@@ -311,7 +311,7 @@ describe('reportRebaseState', () => {
     // doctor output surfaces the wedge FAIL.
     mkdirSync(join(env.testHome, 'claude-nomad', '.git', 'rebase-merge'));
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(failGlyph);
     expect(out).toMatch(/mid-rebase/);
@@ -556,7 +556,7 @@ describe('reportOrphanedAutostash WARN', () => {
     );
     addOrphanedAutostash(tmp);
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(warnGlyph);
     expect(out).toMatch(/autostash/);

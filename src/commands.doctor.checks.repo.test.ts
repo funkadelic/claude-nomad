@@ -43,7 +43,7 @@ describe('cmdDoctor repo-state header', () => {
     // Fresh sandbox: makeDoctorEnv with writeBase:false leaves no
     // settings.base.json. The empty branch should fire.
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} repo state: empty`);
     expect(out).toContain("run 'nomad init' to scaffold");
@@ -56,7 +56,7 @@ describe('cmdDoctor repo-state header', () => {
       JSON.stringify({}) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // base present, path-map.json missing -> partial with the second priority
     // suffix (settings.base.json missing is suffix #1; path-map.json missing
@@ -74,7 +74,7 @@ describe('cmdDoctor repo-state header', () => {
       JSON.stringify({ projects: { foo: { 'test-host': '/srv/foo' } } }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // base + populated path-map.projects, host file missing -> partial with
     // the hosts/<HOST>.json suffix (priority order #4).
@@ -91,7 +91,7 @@ describe('cmdDoctor repo-state header', () => {
       JSON.stringify({ projects: {} }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
       `${warnGlyph} repo state: partial - path-map.json.projects has no entries`,
@@ -112,7 +112,7 @@ describe('cmdDoctor repo-state header', () => {
       JSON.stringify({}) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${okGlyph} repo state: populated`);
   });
@@ -124,7 +124,7 @@ describe('cmdDoctor repo-state header', () => {
     // SHARED_LINKS loop, so its index must precede the first 'symlink' hit.
     writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# placeholder\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     const repoIdx = out.indexOf('repo state:');
     const symlinkIdx = out.indexOf('symlink');
@@ -164,7 +164,7 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     // so scripts and CI catch the regression.
     writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# regular file\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
       `${failGlyph} CLAUDE.md: NOT a symlink (blocks sync); run \`nomad adopt CLAUDE.md\` to fix`,
@@ -212,7 +212,7 @@ describe('cmdDoctor sharedDirs symlink row', () => {
     symlinkSync(join(sharedDir, 'gsd'), linkPath);
 
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain('gsd: symlink');
     expect(process.exitCode).toBe(0);
@@ -222,7 +222,7 @@ describe('cmdDoctor sharedDirs symlink row', () => {
     // No path-map.json written. cmdDoctor's tolerant read must fall back to an
     // empty map so the static SHARED_LINKS rows still render instead of throwing.
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // CLAUDE.md is in SHARED_LINKS; it should appear as an info/warn/ok row.
     // We only assert that no throw occurred and that output contains link-related rows.

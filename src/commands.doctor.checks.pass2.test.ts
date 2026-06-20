@@ -73,7 +73,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // Purely-info lines (host, mapped projects, never-sync items, remote
     // origin) wear the dim info marker, never a PASS glyph. The repo/claude
@@ -90,7 +90,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain('NOMAD_HOST: test-host');
     expect(out).not.toContain('(env unset, using hostname)');
@@ -109,7 +109,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     vi.resetModules();
     try {
       const { cmdDoctor } = await import('./commands.doctor.ts');
-      cmdDoctor();
+      cmdDoctor({ verbose: true });
       const out = joinedLog(env.logSpy);
       expect(out).toContain('(env unset, using hostname)');
       expect(out).toContain(`NOMAD_REPO: ${repoPath}`);
@@ -129,7 +129,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     rmSync(join(env.testHome, '.claude'), { recursive: true, force: true });
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${warnGlyph} repo:`);
     expect(out).toContain(`${warnGlyph} claude home:`);
@@ -146,7 +146,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     rmSync(join(env.testHome, '.claude'), { recursive: true, force: true });
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // The claude-home line carries the WARN glyph...
     expect(out).toContain(`${warnGlyph} claude home:`);
@@ -159,7 +159,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // Section headers print without prefix or indent.
     expect(out).toMatch(/^Environment$/m);
@@ -176,7 +176,7 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     populateHealthy();
     mockGitleaksPresent();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     // PASS does not mutate exitCode; only FAIL does. undefined and 0 both pass.
     expect(process.exitCode === 1).toBe(false);
   });

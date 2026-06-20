@@ -45,6 +45,7 @@ import { reportOptionalDeps } from './commands.doctor.checks.deps.ts';
 import { reportActionsDrift } from './commands.doctor.actions-drift.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
 import { buildVerdictSection } from './commands.doctor.verdict.ts';
+import { compactSections } from './commands.doctor.compact.ts';
 
 /**
  * Run every doctor reporter and assemble the final ordered section array
@@ -163,11 +164,19 @@ function gatherDoctorSections(opts: {
  * `opts.checkSchema` (the `--check-schema` sub-flag) appends a "Schema scan"
  * section that fetches the live settings schema and flags local settings.json
  * keys absent from it. Also OFF by default (it needs the network).
+ *
+ * `opts.verbose` (the `--verbose` / `--all` / `-v` flag) restores the full
+ * per-check tree. By default the report is collapsed via `compactSections` to
+ * the Nomad Version row, the Environment repo-state line, any section carrying a
+ * WARN/FAIL (OK/info rows stripped), and the Summary verdict. Filtering is
+ * purely presentational and runs after gathering, so the FAIL exit code set by
+ * reporters is unaffected in either mode.
  */
 export function cmdDoctor(
   opts: {
     checkShared?: boolean;
     checkSchema?: boolean;
+    verbose?: boolean;
     startSpinner?: (label: string) => SpinnerHandle;
   } = {},
 ): void {
@@ -185,5 +194,5 @@ export function cmdDoctor(
   } finally {
     sp.stop();
   }
-  renderDoctor(report);
+  renderDoctor(opts.verbose === true ? report : compactSections(report));
 }
