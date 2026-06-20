@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.3](https://github.com/funkadelic/claude-nomad/compare/v0.52.2...v0.52.3) (2026-06-20)
+
+
+### Fixed
+
+* **diff:** strip gsd hook entries from both sides of settings preview ([#323](https://github.com/funkadelic/claude-nomad/issues/323)) ([5d52583](https://github.com/funkadelic/claude-nomad/commit/5d52583b397b70e68ef4fde9d47af83830fe9c77))
+
 ## [0.52.2](https://github.com/funkadelic/claude-nomad/compare/v0.52.1...v0.52.2) (2026-06-19)
 
 
