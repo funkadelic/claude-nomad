@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.4](https://github.com/funkadelic/claude-nomad/compare/v0.52.3...v0.52.4) (2026-06-20)
+
+
+### Fixed
+
+* **hooks-filter:** detect gsd hook entries with quoted launcher paths ([#325](https://github.com/funkadelic/claude-nomad/issues/325)) ([71d79f4](https://github.com/funkadelic/claude-nomad/commit/71d79f4a1555a3bfcf2537d02cad2f52612cc8fc))
+
 ## [0.52.3](https://github.com/funkadelic/claude-nomad/compare/v0.52.2...v0.52.3) (2026-06-20)
 
 
