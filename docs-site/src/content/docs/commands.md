@@ -182,12 +182,15 @@ run `nomad pull` separately for that. See [Usage](/claude-nomad/usage/).
 
 ## `doctor`
 
-`nomad doctor [--resume-cmd <id>] [--check-shared] [--check-schema]`
+`nomad doctor [--resume-cmd <id>] [--check-shared] [--check-schema] [--verbose|--all|-v]`
 
 Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗`
 sets `process.exitCode = 1` (`⚠︎` does not). Output ends with a **Summary** section that repeats
 every warning and failure and closes with a one-line verdict (`✓ healthy`, or warning/failure
-counts), so the last line always answers "am I healthy?". Includes a release-version staleness
+counts), so the last line always answers "am I healthy?". By default the report is compact: only the
+version line, the Environment repo-state line, any section carrying a warning or failure (passing
+rows removed), and the Summary are shown. Add `--verbose` (alias `--all`, `-v`) to print the full
+per-check tree, including everything that passed. The exit code is identical in both modes. Includes a release-version staleness
 check (an info line says when the latest version could not be determined, so a skipped check is
 not mistaken for "current"), a Hook targets check that fails (`✗`, exit 1) when `settings.json`
 references a hook command whose script under `~/.claude/` is missing on this host, a wedged-repo
@@ -210,6 +213,7 @@ projects mapped for this host and any local project directories with no path-map
 | `--resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session. See [Usage](/claude-nomad/usage/).                                                                                         |
 | `--check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flows](/claude-nomad/recovery/). |
 | `--check-schema`    | Read-only: fetches the live Claude Code settings schema and lists any `~/.claude/settings.json` key absent from it. Non-fatal and offline-tolerant: skips with a `⚠︎` when neither curl nor wget is available or the schema is unreachable. |
+| `--verbose`, `--all`, `-v` | Print the full per-check tree, including passing checks. Without it, `doctor` shows only checks that need action plus the Summary verdict. `--check-shared` / `--check-schema` sections always render in full when their flag is set, in either mode. |
 
 ### Output details
 
