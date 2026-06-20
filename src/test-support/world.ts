@@ -133,7 +133,3 @@ export function runNomad(
     stderr: result.stderr,
   };
 }
-
-// Re-export gitInit so world.ts is the sole import needed for world setup in
-// tests that want to seed git repos directly (avoids a separate git.ts import).
-export { gitInit };
