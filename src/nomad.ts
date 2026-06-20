@@ -20,6 +20,7 @@ import { cmdCaptureSettings } from './commands.capture-settings.ts';
 import { cmdClean } from './commands.clean.ts';
 import { cmdEject } from './commands.eject.ts';
 import { cmdDoctor } from './commands.doctor.ts';
+import { parseDoctorArgs } from './nomad.dispatch.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
 import { cmdRedact } from './commands.redact.ts';
 import { cmdPull } from './commands.pull.ts';
@@ -184,31 +185,30 @@ try {
       });
       break;
     }
-    case 'doctor':
-      // Sub-flags: `--resume-cmd <id>` prints the resume command; bare
-      // `--check-shared` / `--check-schema` append the gitleaks preflight scan
-      // and the live settings-schema check; bare `doctor` runs the read-only
-      // health check. Any other shape is a usage error.
-      if (process.argv[3] === undefined) {
-        cmdDoctor();
-      } else if (process.argv[3] === '--check-shared' && process.argv.length === 4) {
-        cmdDoctor({ checkShared: true });
-      } else if (process.argv[3] === '--check-schema' && process.argv.length === 4) {
-        cmdDoctor({ checkSchema: true });
-      } else if (process.argv[3] === '--resume-cmd') {
-        const id = process.argv[4];
-        if (process.argv.length !== 5 || typeof id !== 'string' || id.length === 0) {
-          console.error('usage: nomad doctor --resume-cmd <session-id>');
-          process.exit(1);
-        }
-        resumeCmd(id);
-      } else {
+    case 'doctor': {
+      // `parseDoctorArgs` resolves the argv tail: `--resume-cmd <id>` prints the
+      // resume command (exclusive); `--check-shared` / `--check-schema` append
+      // the gitleaks preflight and live settings-schema scans; `--verbose` /
+      // `--all` / `-v` restore the full tree (bare `doctor` is compact). Any
+      // other shape is a usage error.
+      const parsed = parseDoctorArgs(process.argv.slice(3));
+      if (parsed.kind === 'error') {
         console.error(
-          'usage: nomad doctor [--check-shared | --check-schema | --resume-cmd <session-id>]',
+          'usage: nomad doctor [--check-shared] [--check-schema] [--verbose|--all|-v]' +
+            ' | --resume-cmd <session-id>',
         );
         process.exit(1);
+      } else if (parsed.kind === 'resume') {
+        resumeCmd(parsed.id);
+      } else {
+        cmdDoctor({
+          checkShared: parsed.checkShared,
+          checkSchema: parsed.checkSchema,
+          verbose: parsed.verbose,
+        });
       }
       break;
+    }
     case 'drop-session': {
       // Single positional argv; cmdDropSession revalidates the id at entry.
       // The argv regex mirrors that allowlist but rejects leading-dash ids so

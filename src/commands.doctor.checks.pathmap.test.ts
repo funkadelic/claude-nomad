@@ -45,7 +45,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     // The gitleaks-presence diagnostic may set exitCode=1 on dev hosts
     // without gitleaks; this test only asserts the path-encoding diagnostic
     // is silent and that no NEW exitCode-setting condition fires from THIS
@@ -64,7 +64,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
     mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-foo'), { recursive: true });
     mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-stray'), { recursive: true });
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain('Unmapped local projects (not synced): 1');
     expect(out).toContain('└ -srv-stray');
@@ -86,7 +86,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
     chmodSync(projectsDir, 0o000);
     try {
       const { cmdDoctor } = await import('./commands.doctor.ts');
-      cmdDoctor();
+      cmdDoctor({ verbose: true });
       const out = joinedLog(env.logSpy);
       expect(out).not.toContain('Unmapped local projects');
       // Output continued past the listing: the collision scan still ran.
@@ -105,7 +105,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
     mkdirSync(join(env.testHome, '.claude', 'projects', '-srv-foo'), { recursive: true });
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('Unmapped local projects');
   });
@@ -119,7 +119,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // Header drops the info glyph; child rows nest one tree level deeper with
     // their own connectors and no glyph. The parent stream continues (the
@@ -146,7 +146,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain(`${failGlyph} path-encoding collision`);
     expect(out).toContain(`${okGlyph} path-encoding: no collisions`);
@@ -165,7 +165,7 @@ describe('cmdDoctor path-encoding collision detection', () => {
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} path-encoding collision:`);
     expect(out).toContain('/foo/bar-baz');
@@ -205,7 +205,7 @@ describe('reportPathMap schema validation', () => {
       JSON.stringify({ projects: null }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
     expect(out).toContain('"projects" must be an object');
@@ -218,7 +218,7 @@ describe('reportPathMap schema validation', () => {
       JSON.stringify({ projects: [{ foo: '/bar' }] }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
     expect(out).toContain('"projects" must be an object');
@@ -231,7 +231,7 @@ describe('reportPathMap schema validation', () => {
       JSON.stringify({ projects: { myproj: null } }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
     expect(out).toContain('"myproj" hosts must be an object');
@@ -244,7 +244,7 @@ describe('reportPathMap schema validation', () => {
       JSON.stringify({ projects: { myproj: ['/srv/foo'] } }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
     expect(out).toContain('"myproj" hosts must be an object');
@@ -263,7 +263,7 @@ describe('reportPathMap schema validation', () => {
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // Two separate hosts each have "TBD" -- both are skipped; no collision reported.
     expect(out).not.toContain(`${failGlyph} path-encoding collision`);

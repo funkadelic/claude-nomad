@@ -53,7 +53,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
       JSON.stringify({ projects: {} }) + '\n',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
@@ -67,7 +67,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
   it('reports FAIL line and continues when path-map.json is malformed', async () => {
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{not valid');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
@@ -81,7 +81,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     rmSync(env.testHome, { recursive: true, force: true });
     env = makeDoctorEnv({ host: 'test-host', writeBase: false });
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} shared/settings.base.json missing`);
     expect(process.exitCode).toBe(1);
@@ -93,7 +93,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     // mid-stream, violating the tolerant-doctor contract.
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{}');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
     expect(out).toContain('never-sync items:');
@@ -106,7 +106,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     // a non-map shape and emit garbage rows.
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{"projects":[]}');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} path-map.json invalid schema`);
     expect(out).toContain('never-sync items:');
@@ -119,7 +119,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     // mid-output and break the tolerant-doctor contract.
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), '{"projects":{"foo":null}}');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
       `${failGlyph} path-map.json invalid schema: project "foo" hosts must be an object`,
@@ -135,7 +135,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
       '{"projects":{"foo":"bar"}}',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
       `${failGlyph} path-map.json invalid schema: project "foo" hosts must be an object`,
@@ -152,7 +152,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
       '{"projects":{"foo":{"test-host":123}}}',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(
       `${failGlyph} path-map.json invalid schema: project "foo" host "test-host" path must be a string`,
@@ -165,7 +165,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     // makeDoctorEnv does not write path-map.json by default; assert the
     // missing-file FAIL path so doctor matches cmdPush's hard-stop behavior.
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${failGlyph} path-map.json missing`);
     expect(out).toContain('never-sync items:');
@@ -181,7 +181,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
       '{ not valid',
     );
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
@@ -195,7 +195,7 @@ describe('cmdDoctor malformed JSON tolerance', () => {
     // deep-merge would be the first place the malformed JSON surfaced.
     writeFileSync(join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'), '{ not valid');
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    expect(() => cmdDoctor()).not.toThrow();
+    expect(() => cmdDoctor({ verbose: true })).not.toThrow();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');

@@ -126,7 +126,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${okGlyph} node: v22.22.1`);
     expect(out).not.toContain('satisfies');
@@ -139,7 +139,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${okGlyph} node: v24.0.0`);
     expect(process.exitCode === 1).toBe(false);
@@ -151,7 +151,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${warnGlyph} node: v22.16.0 (below required >=22.22.1`);
     expect(process.exitCode === 1).toBe(false);
@@ -163,7 +163,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
     expect(process.exitCode === 1).toBe(false);
@@ -175,7 +175,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
     expect(process.exitCode === 1).toBe(false);
@@ -191,7 +191,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
     expect(process.exitCode === 1).toBe(false);
@@ -206,7 +206,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toMatch(/node: v22\.22\.10/);
     expect(process.exitCode === 1).toBe(false);
@@ -222,7 +222,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
     expect(process.exitCode === 1).toBe(false);
@@ -237,7 +237,7 @@ describe('cmdDoctor node-engine check', () => {
     mockCurlReleases({ kind: 'json', version: '0.22.3' });
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor();
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
     expect(process.exitCode === 1).toBe(false);
