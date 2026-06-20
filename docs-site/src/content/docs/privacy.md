@@ -23,27 +23,32 @@ infrastructure you own and control. claude-nomad never copies your configuration
 
 ## Outbound network requests
 
-`nomad doctor` makes a small number of read-only outbound requests. Each is a plain `GET` that
-fetches public data and is bounded by a three-second ceiling. None of them send any information about
-you or your configuration:
+`nomad doctor` makes at most two read-only outbound requests. Each is a plain `GET` that fetches
+public data and is bounded by a three-second ceiling. Neither sends any information about you or your
+configuration:
 
-- **npm registry** (`registry.npmjs.org`): reads the latest published claude-nomad version so the
-  doctor can warn you when a newer release is available. The version comparison happens locally.
-- **JSON Schema Store** (`json.schemastore.org`): fetches the public Claude Code settings schema used
-  to validate your local `settings.json`. The validation happens locally.
-- **Your Git remote**: a reachability check against the private repository you configured. This is
-  your own infrastructure.
+- **npm registry** (`registry.npmjs.org`): on every run, reads the latest published claude-nomad
+  version so the doctor can warn you when a newer release is available. The version comparison
+  happens locally.
+- **JSON Schema Store** (`json.schemastore.org`): only when you pass `--check-schema`, fetches the
+  public Claude Code settings schema used to validate your local `settings.json`. The default
+  `nomad doctor`, and the plugin's session-start hook, never makes this request.
 
-Like any HTTP request, these reveal standard connection metadata (such as your IP address) to the
-endpoint you contact (npm, the schema store, or your own Git host). That is inherent to making a
-network request; it is not collected by claude-nomad or its author. You can run the tool fully
-offline, in which case these checks simply report as unavailable.
+The doctor also prints your configured Git remote, but that is a local read of `.git/config` (via
+`git remote get-url origin`), not a network request. Sync to that remote happens through `git` only
+when you explicitly run `nomad pull` or `nomad push`, against infrastructure you own and control.
+
+Like any HTTP request, the two requests above reveal standard connection metadata (such as your IP
+address) to the endpoint you contact (npm or the schema store). That is inherent to making a network
+request; it is not collected by claude-nomad or its author. You can run the tool fully offline, in
+which case these checks simply report as unavailable.
 
 ## The Claude Code plugin
 
 The companion plugin adds slash commands and a session-start hook that shell out to the local
-`nomad` CLI. The hook runs `nomad doctor`, so it performs the same outbound checks described above
-and nothing more. The plugin introduces no data collection or network activity of its own.
+`nomad` CLI. The hook runs the default `nomad doctor`, so its only outbound network request is the
+npm version check described above. The plugin introduces no data collection or network activity of
+its own.
 
 ## Changes
 
