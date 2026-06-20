@@ -109,6 +109,41 @@ describe('isGsdHookEntry', () => {
     expect(isGsdHookEntry('FOO=bar')).toBe(false);
     expect(isGsdHookEntry('FOO=bar BAZ=qux')).toBe(false);
   });
+
+  it('quoted absolute node launcher + quoted gsd script -> true', () => {
+    // The form gsd actually writes into settings.json: both the launcher and
+    // the script path are wrapped in literal double quotes. Without unquoting,
+    // the launcher basename reads as `node"` and evades launcher detection.
+    expect(
+      isGsdHookEntry(
+        '"/home/u/.nvm/versions/node/v24/bin/node" "/home/u/.claude/hooks/gsd-config-reload.js"',
+      ),
+    ).toBe(true);
+  });
+
+  it('quoted node launcher + quoted $HOME gsd script -> true', () => {
+    expect(
+      isGsdHookEntry(
+        '"/home/u/.nvm/versions/node/v24/bin/node" "$HOME/.claude/hooks/gsd-context-monitor.js"',
+      ),
+    ).toBe(true);
+  });
+
+  it('quoted launcher + quoted USER script -> false (no over-stripping)', () => {
+    // Unquoting must not cause a false positive: a user-authored script in the
+    // same quoted form stays user-owned.
+    expect(
+      isGsdHookEntry('"/home/u/.nvm/versions/node/v24/bin/node" "$HOME/.claude/hooks/my-hook.js"'),
+    ).toBe(false);
+  });
+
+  it('single-quoted launcher and gsd script -> true', () => {
+    expect(isGsdHookEntry("'/usr/bin/node' '/a/hooks/gsd-x.js'")).toBe(true);
+  });
+
+  it('launcher-less quoted gsd script -> true', () => {
+    expect(isGsdHookEntry('"/a/hooks/gsd-x.js"')).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
