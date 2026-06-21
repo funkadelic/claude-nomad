@@ -65,6 +65,7 @@ export default defineConfig({
         { label: 'FAQ', link: '/faq/' },
         { label: 'Contributing', link: '/contributing/' },
         { label: 'Security', link: '/security/' },
+        { label: 'Privacy', link: '/privacy/' },
         { label: 'Changelog', link: '/changelog/' },
       ],
     }),
