@@ -696,7 +696,12 @@ describe('cmdDoctor Settings section: drift row wiring', () => {
     vi.resetModules();
     const { cmdDoctor } = await import('./commands.doctor.ts');
     const { joinedLog } = await import('./commands.doctor.checks.test-helpers.ts');
-    cmdDoctor();
+    // verbose: compact mode strips passing rows, leaving only the always-kept
+    // Nomad Version row to carry the okGlyph assertion. That row is a PASS glyph
+    // only when the local version equals the latest published release; during a
+    // release's own npm publish it reads as "ahead of latest" (an info glyph), so
+    // assert okGlyph against the full verbose tree where the Settings PASS survives.
+    cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     // No drift row for hooks: the gsd-only divergence is filtered out.
     expect(out).not.toContain(warnGlyph + ' settings.json drift');
