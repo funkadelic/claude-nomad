@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.1](https://github.com/funkadelic/claude-nomad/compare/v0.53.0...v0.53.1) (2026-06-21)
+
+
+### Testing
+
+* **doctor:** assert okGlyph in verbose tree so release publish passes ([#334](https://github.com/funkadelic/claude-nomad/issues/334)) ([b587e99](https://github.com/funkadelic/claude-nomad/commit/b587e99bcadb4802a6cf9edcc9a139d84b479e86))
+
 ## [0.53.0](https://github.com/funkadelic/claude-nomad/compare/v0.52.4...v0.53.0) (2026-06-21)
 
 
