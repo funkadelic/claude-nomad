@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.53.0](https://github.com/funkadelic/claude-nomad/compare/v0.52.4...v0.53.0) (2026-06-21)
+
+
+### Added
+
+* **doctor:** compact default output with --verbose/--all/-v flag ([#327](https://github.com/funkadelic/claude-nomad/issues/327)) ([654dc91](https://github.com/funkadelic/claude-nomad/commit/654dc9174459efe0d89af2b92771bf68057e13a9))
+
+
+### Changed
+
+* **docs:** add docs-sync gate requiring docs updates with CLI changes ([#328](https://github.com/funkadelic/claude-nomad/issues/328)) ([da2ffe9](https://github.com/funkadelic/claude-nomad/commit/da2ffe9c53824a847bb12d25b7dc879695623c13))
+* drop dead exports flagged by fallow and knip; add knip config ([#330](https://github.com/funkadelic/claude-nomad/issues/330)) ([da8bab5](https://github.com/funkadelic/claude-nomad/commit/da8bab52bb9c5e457cda552b46a1dedabb00a805))
+
+
+### Documentation
+
+* **plugin:** add marketplace description and plugin keywords ([#331](https://github.com/funkadelic/claude-nomad/issues/331)) ([51ce1f8](https://github.com/funkadelic/claude-nomad/commit/51ce1f8604002dd15a9812d0411b5d0ac17e84eb))
+* **plugin:** sync plugin and marketplace descriptions ([#332](https://github.com/funkadelic/claude-nomad/issues/332)) ([33c58b2](https://github.com/funkadelic/claude-nomad/commit/33c58b21f0fcb68320cf9c051b67fde119c94b68))
+* **site:** add privacy page ([#333](https://github.com/funkadelic/claude-nomad/issues/333)) ([f8f17da](https://github.com/funkadelic/claude-nomad/commit/f8f17da5bcd06d25eb6a26f328133b7083371e99))
+
 ## [0.52.4](https://github.com/funkadelic/claude-nomad/compare/v0.52.3...v0.52.4) (2026-06-20)
 
 
