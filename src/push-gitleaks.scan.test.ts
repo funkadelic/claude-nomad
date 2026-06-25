@@ -627,7 +627,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
         }),
         readFileSync: vi.fn((p: unknown, enc?: unknown) => {
           if (String(p).endsWith('.gitleaks.overlay.toml')) {
-            return '[[allowlists]]\nregexes = ["MY_TOKEN"]\n';
+            return '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\n';
           }
           return actual.readFileSync(p as fsModule.PathOrFileDescriptor, enc as never);
         }),

@@ -66,6 +66,64 @@ export type TomlConfigResult =
  */
 const OVERLAY_EXTEND_RE = /^\s*(?:\[\s*extend\s*\]|extend\s*[.=])/m;
 
+/** Any TOML table or array-of-tables header at the start of a line. */
+const TABLE_HEADER_RE = /^\s*\[/;
+
+/** An allowlist table header: `[allowlist]` or `[[allowlists]]`. */
+const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*allowlists?\s*\]\]?/;
+
+/** A `paths = ...` key at the start of a line (inside an allowlist block). */
+const PATHS_KEY_RE = /^\s*paths\s*=/;
+
+/**
+ * A quoted catch-all pattern (`.*`, `.+`, `^.*$`, etc.) in any TOML quote
+ * style. Such a pattern in an overlay allowlist's `regexes` or `paths` would
+ * suppress every finding, defeating the path scoping.
+ */
+const CATCH_ALL_RE = /('''|"""|'|")\^?\(?\.[*+]\)?\$?\1/;
+
+/**
+ * Reject an overlay whose allowlist blocks are not path-scoped. The overlay is
+ * merged ON TOP of the bundled ruleset and propagates to every host through the
+ * synced repo, so an unscoped allowlist (a global `[allowlist]` with `regexes`
+ * but no `paths`, or a catch-all `.*`/`.+` pattern) would silently disable
+ * secret scanning fleet-wide, defeating the "never push secrets" promise. Every
+ * `[[allowlists]]` block must carry a `paths` entry (scoping it to specific
+ * files, matching the bundled-file invariant) and must not use a catch-all
+ * pattern. Throws `NomadFatal` so a dangerous overlay fails LOUD, mirroring the
+ * `[extend]` guard. The walk is line-based (no TOML parser dependency): it
+ * tracks whether the current table is an allowlist and whether it has seen a
+ * `paths` key before the next table header closes the block.
+ *
+ * @param overlayBody The already-read overlay file contents.
+ */
+function assertOverlayAllowlistsScoped(overlayBody: string): void {
+  let inAllowlist = false;
+  let hasPaths = false;
+  const closeBlock = (): void => {
+    if (inAllowlist && !hasPaths) {
+      throw new NomadFatal(
+        '.gitleaks.overlay.toml allowlist must be path-scoped: every [[allowlists]] block needs a `paths` entry so it cannot suppress findings repo-wide. Anchor `paths` to the files you intend to allow (e.g. shared/projects/<logical>/...jsonl).',
+      );
+    }
+  };
+  for (const line of overlayBody.split('\n')) {
+    if (TABLE_HEADER_RE.test(line)) {
+      closeBlock();
+      inAllowlist = OVERLAY_ALLOWLIST_HEADER_RE.test(line);
+      hasPaths = false;
+    } else if (inAllowlist) {
+      if (PATHS_KEY_RE.test(line)) hasPaths = true;
+      if (CATCH_ALL_RE.test(line)) {
+        throw new NomadFatal(
+          '.gitleaks.overlay.toml allowlist contains a catch-all pattern (.* or .+) that would suppress every finding. Replace it with a specific, anchored pattern.',
+        );
+      }
+    }
+  }
+  closeBlock();
+}
+
 /**
  * Read the overlay body and write the generated temp config that chains it onto
  * the bundled base. Separated from `resolveTomlConfig` so the I/O try/catch
@@ -123,6 +181,10 @@ function buildOverlayTempConfig(
  *   - Overlay present with its own `[extend]` block: throws `NomadFatal` (D-05)
  *     BEFORE generating the temp, so a dangerous/malformed overlay fails LOUD and
  *     aborts the push rather than silently weakening the scan.
+ *   - Overlay present with an unscoped allowlist (a block lacking `paths`, or a
+ *     catch-all `.*`/`.+` pattern): throws `NomadFatal` before generating the
+ *     temp. An unscoped allowlist would suppress findings repo-wide and, because
+ *     the overlay syncs across hosts, disable scanning fleet-wide.
  *   - Overlay present, bundled base resolvable: generates the temp config and
  *     returns `{ path: tempPath, tempPath }`.
  *   - D-04 "for ANY reason" generation failure: if reading the overlay or writing
@@ -169,6 +231,7 @@ export function resolveTomlConfig(): TomlConfigResult {
         '.gitleaks.overlay.toml must not contain an [extend] block; it is generated automatically. Remove the [extend] section and retry.',
       );
     }
+    assertOverlayAllowlistsScoped(overlayBody);
     const { configPath, tempPath } = buildOverlayTempConfig(overlayBody, bundled);
     return { path: configPath, tempPath };
   } catch (err) {
