@@ -106,7 +106,46 @@ export function* eachExtrasTarget(
  * @param dst - Destination path (host-side project dir); dst-only files
  *   survive unchanged after the overlay.
  */
+/**
+ * Pull-side hardening shared by every overlay/preserving copy. Recursively
+ * removes any dst entry that is a symlink and collides with a non-excluded
+ * `src` entry, so the follow-up `cpSync({ force: true, verbatimSymlinks: true })`
+ * creates a fresh node instead of writing THROUGH the pre-existing link to a
+ * target outside the project tree. Without it a poisoned repo can (1) ship a
+ * benignly-named symlink that `verbatimSymlinks` copies verbatim into dst, then
+ * (2) on a later pull replace that name with a regular file or directory whose
+ * content is written through the surviving dst link to an arbitrary path
+ * (`~/.ssh/authorized_keys`, `~/.bashrc`, a denylisted per-host file). Only
+ * symlinks are removed, so real dst-only files survive (overlay semantics);
+ * real dst directories are recursed into to catch nested links. `isExcluded`
+ * mirrors the caller's `cpSync` filter so the walk matches what will actually
+ * be written. A non-existent dst (fresh pull) is a no-op.
+ *
+ * @param src - Source directory (repo side on pull).
+ * @param dst - Destination directory (host side on pull).
+ * @param isExcluded - Returns `true` for a basename the copy filter skips.
+ */
+function stripCollidingDstSymlinks(
+  src: string,
+  dst: string,
+  isExcluded: (name: string) => boolean,
+): void {
+  if (!existsSync(dst)) return;
+  for (const name of readdirSync(src)) {
+    if (isExcluded(name)) continue;
+    const dstPath = join(dst, name);
+    const dstStat = lstatSync(dstPath, { throwIfNoEntry: false });
+    if (dstStat === undefined) continue;
+    if (dstStat.isSymbolicLink()) {
+      rmSync(dstPath, { recursive: true, force: true });
+    } else if (dstStat.isDirectory() && lstatSync(join(src, name)).isDirectory()) {
+      stripCollidingDstSymlinks(join(src, name), dstPath, isExcluded);
+    }
+  }
+}
+
 export function copyExtrasOverlay(src: string, dst: string): void {
+  stripCollidingDstSymlinks(src, dst, () => false);
   cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
 }
 
@@ -130,6 +169,7 @@ export function copyExtrasOverlay(src: string, dst: string): void {
  * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
  */
 export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Set<string>): void {
+  stripCollidingDstSymlinks(src, dst, (name) => blockSet.has(name));
   try {
     cpSync(src, dst, {
       recursive: true,
@@ -301,6 +341,7 @@ export function copyExtrasFilteredPreserving(
     if (dstStat.isDirectory()) prunePreservingDenied(src, dst, blockSet);
     else rmSync(dst, { recursive: true, force: true });
   }
+  stripCollidingDstSymlinks(src, dst, (name) => blockSet.has(name));
   cpSync(src, dst, {
     recursive: true,
     force: true,
@@ -369,6 +410,7 @@ export function copyExtrasFilteredPreservingBy(
     if (dstStat.isDirectory()) prunePreservingBy(src, dst, isPreserved);
     else rmSync(dst, { recursive: true, force: true });
   }
+  stripCollidingDstSymlinks(src, dst, isPreserved);
   cpSync(src, dst, {
     recursive: true,
     force: true,

@@ -700,6 +700,47 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
     expect(statSync(dstLink).isDirectory()).toBe(true);
     expect(existsSync(join(dstLink, 'settings.json'))).toBe(true);
   });
+
+  it('Test WR-symlink (write-through): does not write through a pre-existing dst symlink', async () => {
+    // The arbitrary-file-write class: a poisoned repo plants a benignly-named
+    // symlink (copied verbatim into dst on an earlier pull), then on a later
+    // pull ships a regular file of the same name. Without the symlink strip,
+    // cpSync(force) writes THROUGH the surviving dst link to its external
+    // target. The strip must remove the link first so the external file is
+    // untouched and dst holds a fresh regular file.
+    const external = mkdtempSync(join(tmpdir(), 'nomad-core-pres-ext-'));
+    tmpExternal = external;
+    writeFileSync(join(external, 'target.txt'), 'precious\n');
+    const nestedTarget = join(external, 'nested.txt');
+    writeFileSync(nestedTarget, 'also-precious\n');
+
+    // Top-level: dst has a symlink `innocent` -> external file; src ships a
+    // regular file of the same name.
+    symlinkSync(join(external, 'target.txt'), join(tmpDst, 'innocent'));
+    writeFileSync(join(tmpSrc, 'innocent'), 'attacker\n');
+    // Nested (recursion branch): both sides have a real `sub` dir; dst holds a
+    // symlink inside it, src a regular file.
+    mkdirSync(join(tmpDst, 'sub'), { recursive: true });
+    symlinkSync(nestedTarget, join(tmpDst, 'sub', 'deep'));
+    mkdirSync(join(tmpSrc, 'sub'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'sub', 'deep'), 'attacker-deep\n');
+    // isExcluded-continue branch: a deny-set name present in src.
+    writeFileSync(join(tmpSrc, 'settings.local.json'), 'x=1\n');
+    // dstStat-undefined-continue branch: a src-only name absent from dst.
+    writeFileSync(join(tmpSrc, 'fresh.json'), '{"a":1}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    // External targets are NOT overwritten through the links.
+    expect(readFileSync(join(external, 'target.txt'), 'utf8')).toBe('precious\n');
+    expect(readFileSync(nestedTarget, 'utf8')).toBe('also-precious\n');
+    // dst entries are fresh regular files with src content (not symlinks).
+    expect(lstatSync(join(tmpDst, 'innocent')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(tmpDst, 'innocent'), 'utf8')).toBe('attacker\n');
+    expect(lstatSync(join(tmpDst, 'sub', 'deep')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(tmpDst, 'sub', 'deep'), 'utf8')).toBe('attacker-deep\n');
+  });
 });
 
 // ---------------------------------------------------------------------------
