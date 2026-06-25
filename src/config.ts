@@ -198,7 +198,12 @@ export const ALWAYS_NEVER_SYNC = new Set([
 // ./config.never-sync.ts (a dependency-free leaf) so config.sharedDirs.guard.ts
 // can import it without importing config.ts (which would re-form a cycle);
 // re-exported here so existing `from './config.ts'` imports keep resolving.
-export { NEVER_SYNC, CLAUDE_EXTRA_NEVER_SYNC } from './config.never-sync.ts';
+export {
+  NEVER_SYNC,
+  CLAUDE_EXTRA_NEVER_SYNC,
+  isSecretFileName,
+  isDeniedName,
+} from './config.never-sync.ts';
 
 // Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in
 // this set trigger a `nomad doctor` WARN. Defined in ./settings-keys.ts so the

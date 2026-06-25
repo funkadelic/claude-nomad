@@ -5,6 +5,7 @@ import {
   ALWAYS_NEVER_SYNC,
   CLAUDE_EXTRA_NEVER_SYNC,
   HOST,
+  isDeniedName,
   repoHome,
   SUPPORTED_EXTRAS,
   type PathMap,
@@ -169,13 +170,13 @@ export function copyExtrasOverlay(src: string, dst: string): void {
  * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
  */
 export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Set<string>): void {
-  stripCollidingDstSymlinks(src, dst, (name) => blockSet.has(name));
+  stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
   try {
     cpSync(src, dst, {
       recursive: true,
       force: true,
       verbatimSymlinks: true,
-      filter: (srcEntry) => srcEntry === src || !blockSet.has(basename(srcEntry)),
+      filter: (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
     });
   } catch (err) {
     const e = err as NodeJS.ErrnoException;
@@ -261,7 +262,7 @@ export function copyExtrasFiltered(src: string, dst: string, blockSet: Set<strin
     recursive: true,
     force: true,
     verbatimSymlinks: true,
-    filter: (srcEntry) => srcEntry === src || !blockSet.has(basename(srcEntry)),
+    filter: (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
   });
 }
 
@@ -285,7 +286,7 @@ export function copyExtrasFiltered(src: string, dst: string, blockSet: Set<strin
  */
 function prunePreservingDenied(src: string, dst: string, blockSet: Set<string>): void {
   for (const name of readdirSync(dst)) {
-    if (blockSet.has(name)) continue;
+    if (isDeniedName(blockSet, name)) continue;
     const dstPath = join(dst, name);
     const srcStat = lstatSync(join(src, name), { throwIfNoEntry: false });
     if (srcStat === undefined) {
@@ -341,12 +342,12 @@ export function copyExtrasFilteredPreserving(
     if (dstStat.isDirectory()) prunePreservingDenied(src, dst, blockSet);
     else rmSync(dst, { recursive: true, force: true });
   }
-  stripCollidingDstSymlinks(src, dst, (name) => blockSet.has(name));
+  stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
   cpSync(src, dst, {
     recursive: true,
     force: true,
     verbatimSymlinks: true,
-    filter: (srcEntry) => srcEntry === src || !blockSet.has(basename(srcEntry)),
+    filter: (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
   });
 }
 

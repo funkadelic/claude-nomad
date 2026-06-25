@@ -372,6 +372,25 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
     expect(existsSync(join(tmpDst, 'hooks', 'foo.cjs'))).toBe(true);
   });
 
+  it('strips credential-pattern files and a case-folded denied name from the copy', async () => {
+    // gitleaks is otherwise the only content backstop for opt-in extras, so the
+    // name-based filter must also block credential filetypes the exact set does
+    // not enumerate (.env, *.pem), and a case-folded denied name (a macOS
+    // case-fold of settings.local.json) that Set.has would miss.
+    writeFileSync(join(tmpSrc, '.env'), 'TOKEN=secret\n');
+    writeFileSync(join(tmpSrc, 'deploy.pem'), '-----BEGIN KEY-----\n');
+    writeFileSync(join(tmpSrc, 'Settings.Local.JSON'), 'host=1\n');
+    writeFileSync(join(tmpSrc, 'keep.md'), '# notes\n');
+
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.planning'));
+
+    expect(existsSync(join(tmpDst, '.env'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'deploy.pem'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'Settings.Local.JSON'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'keep.md'))).toBe(true);
+  });
+
   it('allows a todos/ dir under the .planning denylist (NEVER_SYNC-but-not-ALWAYS_NEVER_SYNC)', async () => {
     // todos/ is in NEVER_SYNC but NOT in ALWAYS_NEVER_SYNC; under the .planning
     // (ALWAYS_NEVER_SYNC) denylist it must pass.

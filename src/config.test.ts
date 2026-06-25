@@ -314,3 +314,57 @@ describe('allSharedLinks', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('isSecretFileName', () => {
+  it.each([
+    '.env',
+    '.env.local',
+    '.env.production',
+    'server.pem',
+    'private.key',
+    'cert.p12',
+    'cert.pfx',
+    'id_rsa',
+    'id_ed25519',
+    '.netrc',
+    '.npmrc',
+    '.pgpass',
+    '.git-credentials',
+    'credentials',
+    'SERVER.PEM', // case-insensitive
+    '.ENV',
+  ])('flags credential-bearing name %s', async (name) => {
+    const { isSecretFileName } = await import('./config.ts');
+    expect(isSecretFileName(name)).toBe(true);
+  });
+
+  it.each(['settings.json', 'notes.md', 'credentials.json', 'environment.ts', 'key', 'README'])(
+    'does not flag non-credential name %s',
+    async (name) => {
+      const { isSecretFileName } = await import('./config.ts');
+      expect(isSecretFileName(name)).toBe(false);
+    },
+  );
+});
+
+describe('isDeniedName', () => {
+  it('matches an exact denylist entry', async () => {
+    const { isDeniedName, ALWAYS_NEVER_SYNC } = await import('./config.ts');
+    expect(isDeniedName(ALWAYS_NEVER_SYNC, 'settings.local.json')).toBe(true);
+  });
+
+  it('matches a denylist entry case-insensitively (macOS case-fold bypass)', async () => {
+    const { isDeniedName, ALWAYS_NEVER_SYNC } = await import('./config.ts');
+    expect(isDeniedName(ALWAYS_NEVER_SYNC, 'Settings.Local.JSON')).toBe(true);
+  });
+
+  it('matches a credential-file pattern not in the exact set', async () => {
+    const { isDeniedName, ALWAYS_NEVER_SYNC } = await import('./config.ts');
+    expect(isDeniedName(ALWAYS_NEVER_SYNC, 'deploy.pem')).toBe(true);
+  });
+
+  it('returns false for an ordinary config name', async () => {
+    const { isDeniedName, ALWAYS_NEVER_SYNC } = await import('./config.ts');
+    expect(isDeniedName(ALWAYS_NEVER_SYNC, 'settings.json')).toBe(false);
+  });
+});
