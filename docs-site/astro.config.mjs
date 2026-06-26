@@ -9,10 +9,9 @@ const OG_IMAGE = 'https://funkadelic.github.io/claude-nomad/og.png';
 export default defineConfig({
   site: 'https://funkadelic.github.io',
   base: '/claude-nomad', // NO trailing slash
-  // Astro 6 leaves markdown.gfm undefined (the .md processor defaults it on
-  // internally), but @astrojs/mdx only adds remark-gfm when the value is
-  // truthy, so .mdx pages lose GFM tables without this explicit opt-in.
-  markdown: { gfm: true },
+  // GFM (tables, etc.) is on by default in Astro 7's Markdown processor for
+  // both .md and .mdx, so no explicit opt-in is needed. The former
+  // `markdown.gfm` flag is deprecated in v7.
   integrations: [
     starlight({
       title: 'claude-nomad',
