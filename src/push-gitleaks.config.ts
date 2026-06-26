@@ -72,6 +72,17 @@ const TABLE_HEADER_RE = /^\s*\[/;
 /** An allowlist table header: `[allowlist]` or `[[allowlists]]`. */
 const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*allowlists?\s*\]\]?/;
 
+/**
+ * A dotted-key (`allowlist.regexes = ...`) or inline-table
+ * (`allowlist = { ... }`) allowlist definition. gitleaks' TOML parser honors
+ * these forms, but the line-based `paths` walk only recognizes the
+ * `[[allowlists]]` table header, so an unscoped allowlist written this way would
+ * slip past the scope check. Reject them outright (mirroring the `[extend]`
+ * guard's handling of the same TOML-equivalent forms) and require the table
+ * form, which the walk validates.
+ */
+const OVERLAY_INLINE_ALLOWLIST_RE = /^\s*allowlists?\s*[.=]/m;
+
 /** A `paths = ...` key at the start of a line (inside an allowlist block). */
 const PATHS_KEY_RE = /^\s*paths\s*=/;
 
@@ -90,14 +101,21 @@ const CATCH_ALL_RE = /('''|"""|'|")\^?\(?\.[*+]\)?\$?\1/;
  * secret scanning fleet-wide, defeating the "never push secrets" promise. Every
  * `[[allowlists]]` block must carry a `paths` entry (scoping it to specific
  * files, matching the bundled-file invariant) and must not use a catch-all
- * pattern. Throws `NomadFatal` so a dangerous overlay fails LOUD, mirroring the
- * `[extend]` guard. The walk is line-based (no TOML parser dependency): it
+ * pattern; the dotted-key and inline-table allowlist forms are rejected outright
+ * (they would bypass the line-based walk), forcing the table form. Throws
+ * `NomadFatal` so a dangerous overlay fails LOUD, mirroring the `[extend]`
+ * guard. The walk is line-based (no TOML parser dependency): it
  * tracks whether the current table is an allowlist and whether it has seen a
  * `paths` key before the next table header closes the block.
  *
  * @param overlayBody The already-read overlay file contents.
  */
 function assertOverlayAllowlistsScoped(overlayBody: string): void {
+  if (OVERLAY_INLINE_ALLOWLIST_RE.test(overlayBody)) {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml must declare allowlists as [[allowlists]] table blocks, not the dotted-key (allowlist.x = ...) or inline-table (allowlist = { ... }) form, which bypasses path-scope validation. Use a [[allowlists]] block with a `paths` entry.',
+    );
+  }
   let inAllowlist = false;
   let hasPaths = false;
   const closeBlock = (): void => {

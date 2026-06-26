@@ -179,6 +179,9 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     ['catch-all regex', "[[allowlists]]\nregexes = ['''.*''']\npaths = [\"a.txt\"]\n"],
     ['catch-all path', '[[allowlists]]\npaths = ["^.*$"]\n'],
     ['comment before unscoped block', '# my overlay\n[[allowlists]]\nregexes = ["X"]\n'],
+    ['dotted-key allowlist form', 'allowlist.regexes = ["X"]\n'],
+    ['inline-table allowlist form', 'allowlist = { regexes = ["X"] }\n'],
+    ['inline-table allowlists (plural) form', 'allowlists = [{ regexes = ["X"] }]\n'],
   ])(
     'rejects an unscoped overlay allowlist (%s) with NomadFatal and no temp write',
     async (_label, overlayBody) => {
