@@ -33,6 +33,30 @@ updates:
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
 
+  # npm (docs-site): the Starlight docs site is a standalone package with
+  # its own lockfile, not an npm workspace of the root, so the `/` entry
+  # above does not see it. Same grouping and prefixes; prod deps (astro,
+  # @astrojs/starlight) stay patch-only so a 6 -> 7 major migration remains
+  # a deliberate manual PR.
+  - package-ecosystem: npm
+    directory: /docs-site
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      prod-dependencies:
+        dependency-type: production
+        update-types: [patch]
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+
   # github-actions: third-party action major bumps land here. No
   # dev/prod distinction; everything is `deps`.
   - package-ecosystem: github-actions

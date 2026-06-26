@@ -9,7 +9,7 @@ import { FileTree } from '@astrojs/starlight/components';
 
 **claude-nomad** is a **tool**, not a config store. You install the CLI globally
 (`npm i -g claude-nomad`) and keep a separate **private** Git repo that holds only your config:
-`CLAUDE.md`, agents, skills, settings, session transcripts. No tool source code lives in that repo.
+`CLAUDE.md`, skills, settings, session transcripts. No tool source code lives in that repo.
 
 <FileTree>
 
@@ -105,8 +105,9 @@ Pointers and specifics:
   Because a `.claude/` directory mirrors the layout of `~/.claude/`, opting it in strips every
   ephemeral or host-local name on push: the whole `NEVER_SYNC` set plus session transcripts under
   `projects/` (`settings.local.json`, `projects/`, `shell-snapshots/`, `sessions/`, `statsig/`,
-  `telemetry/`, `todos/`, ...), leaving only your config (`settings.json`, `skills/`, `commands/`,
-  `rules/`). So syncing `.claude/` carries your project's Claude setup across machines without ever
+  `telemetry/`, `todos/`, ...), leaving your project config (`settings.json`, `skills/`,
+  `commands/`, `rules/`, `hooks/`, `agents/`). So syncing `.claude/` carries your project's Claude
+  setup across machines without ever
   leaking session transcripts or per-host secrets. The same boundary is enforced a second time at
   the push gate as a backstop.
 - **A pull keeps each machine's own per-host files.** Because those never-synced names are stripped
@@ -275,7 +276,8 @@ one-time move is deliberate.
 
 `settings.base.json` holds portable defaults (model, permissions, plugins).
 `hosts/<NOMAD_HOST>.json` holds machine-specific patches. They're deep-merged on every pull
-(scalars override, objects merge recursively, arrays replace). Keys that used to be
+(scalars override, objects merge recursively, arrays replace, and an explicit `null` overrides).
+Keys that used to be
 force-marked per-host because they embedded absolute paths (`statusLine.command`, `hooks`) can
 live in `settings.base.json` if you write the commands with `$HOME` (e.g.
 `"command": "node \"$HOME/.claude/my-statusline.cjs\""`); Claude Code runs them through a shell

@@ -141,8 +141,9 @@ or `<name>.local` on macOS. Pick a clean label per machine (e.g., `wsl-laptop`, 
 Edit `path-map.json` to add your logical projects (see [How it works](/claude-nomad/how-it-works/)), then:
 
 ```bash
-$ nomad doctor                # read-only state check; reports host, repo state, every check as
-                              # checkmark (pass) / cross (fail) / warning (warn)
+$ nomad doctor                # read-only state check; reports host, repo state, and any check
+                              # needing action (compact by default; -v shows all passing checks),
+                              # each marked checkmark (pass) / cross (fail) / warning (warn)
 $ nomad doctor --check-shared # read-only gitleaks preflight over the session transcripts a push
                               # would stage
 $ nomad diff                  # preview what nomad pull would change on this host; no lock,
