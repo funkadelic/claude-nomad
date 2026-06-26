@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.53.2](https://github.com/funkadelic/claude-nomad/compare/v0.53.1...v0.53.2) (2026-06-26)
+
+
+### Fixed
+
+* **security:** close pull-side path-write and push-side scan-bypass vectors ([#339](https://github.com/funkadelic/claude-nomad/issues/339)) ([99f0320](https://github.com/funkadelic/claude-nomad/commit/99f0320d1181333fc00ea983fda7e675377def47))
+
+
+### Dependencies
+
+* bump actions/checkout from 6.0.3 to 7.0.0 ([#336](https://github.com/funkadelic/claude-nomad/issues/336)) ([6df79cf](https://github.com/funkadelic/claude-nomad/commit/6df79cfcfe9bd5eaa72130d15fdcb074019822a8))
+* bump the dev-dependencies group with 3 updates ([#337](https://github.com/funkadelic/claude-nomad/issues/337)) ([dd5a8ea](https://github.com/funkadelic/claude-nomad/commit/dd5a8eaffe70fe96f9d6f0921eaead8c3caf323b))
+
 ## [0.53.1](https://github.com/funkadelic/claude-nomad/compare/v0.53.0...v0.53.1) (2026-06-21)
 
 
