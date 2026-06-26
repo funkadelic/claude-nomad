@@ -144,7 +144,7 @@ nomad init --repo my-config --snapshot
 
 `--snapshot` stages your current global config into `shared/` and writes `hosts/<host>.json` from
 your existing `~/.claude/settings.json`. It does not modify the originals. Review what landed under
-`shared/`, then publish:
+`shared/` and `hosts/<host>.json`, then publish:
 
 ```bash
 nomad push
