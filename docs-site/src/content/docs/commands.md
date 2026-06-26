@@ -10,8 +10,9 @@ full invocation, and lists any flags in its own table.
 
 `nomad init [--repo <name>] [--snapshot] [--keep-actions]`
 
-Create a private GitHub repo via `gh`, wire it as `origin`, disable Actions, scaffold `shared/`,
-`hosts/`, `path-map.json`, and push. Prompts for a repo name (default: `claude-nomad-config`). `gh`
+Create a private GitHub repo via `gh`, wire it as `origin`, disable Actions, and scaffold `shared/`,
+`hosts/`, `path-map.json`. Does not commit or push; run `nomad push` afterward to publish. Prompts
+for a repo name (default: `claude-nomad-config`). `gh`
 must be installed and authenticated; exits with FATAL otherwise. Refuses to clobber existing
 scaffold. See [Quickstart](/claude-nomad/quickstart/) for privacy details.
 

@@ -251,6 +251,17 @@ See [gsd-owned directories: hooks/agents not synced](#gsd-owned-directories-hook
 No. `nomad update` runs the npm self-update for you; it is a convenience wrapper, nothing more.
 Use whichever you prefer.
 
+## How do I stop using nomad without breaking my setup?
+
+Run `nomad eject`. It replaces every managed `~/.claude/` symlink with a real copy of its target, so
+your config keeps working after the sync repo is gone. It only touches nomad-managed symlinks: real
+files and directories are left alone, and it aborts safely (with a `nomad pull` hint) if it finds a
+dangling symlink rather than guessing. After it runs it prints a short manual-remainder checklist:
+uninstall the CLI, drop the `NOMAD_HOST` / `NOMAD_REPO` env vars and the alias, and optionally delete
+the sync repo. Preview first with `nomad eject --dry-run`. See the
+[offboard a machine](/claude-nomad/recipes/#stop-using-nomad-offboard-a-machine) recipe for the full
+sequence.
+
 ## I have local changes to push and remote changes to pull. What order do I run them in?
 
 **Push first, then pull.**

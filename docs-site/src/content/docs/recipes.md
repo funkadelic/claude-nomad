@@ -32,10 +32,11 @@ export NOMAD_HOST=macbook
 - [From scratch (single host)](#from-scratch-single-host)
 - [Cross-OS project remapping](#cross-os-project-remapping)
 - [Per-host settings overrides](#per-host-settings-overrides)
-- [Adopt an existing ~/.claude/](#adopt-an-existing-claude)
+- [Seed the repo from an existing ~/.claude/](#seed-the-repo-from-an-existing-claude)
 - [GSD integration](#gsd-integration)
 - [Per-project extras (.claude sidecar)](#per-project-extras-claude-sidecar)
 - [Third-party tool directory](#third-party-tool-directory)
+- [Stop using nomad (offboard a machine)](#stop-using-nomad-offboard-a-machine)
 
 ## From scratch (single host)
 
@@ -128,9 +129,11 @@ One caveat: arrays replace, they do not concatenate. If `hosts/macbook.json` set
 `permissions.allow`, that array would replace the base list entirely rather than extend it. A `null`
 in a host file is a valid override that unsets the base value. Never hand-edit
 `~/.claude/settings.json` on a synced host: it is overwritten on the next pull. Edit the base or the
-host file in the repo instead.
+host file in the repo instead. If you have already made local edits you want to keep, run
+`nomad capture-settings` to promote those keys into the shared base (or `--host` to write them to
+this machine's host file) before your next pull clobbers them.
 
-## Adopt an existing ~/.claude/
+## Seed the repo from an existing ~/.claude/
 
 If this machine already has a populated `~/.claude/` you want to use as the starting point, seed the
 repo from it instead of pushing an empty scaffold:
@@ -219,3 +222,36 @@ never-synced names, and must not collide with a reserved name. In particular `ho
 `skills` are reserved and cannot be re-added this way: `hooks` and `agents` are gsd-owned per host,
 and `skills` is handled by the filtered copy-sync. Invalid entries are dropped with a warning rather
 than aborting the run.
+
+## Stop using nomad (offboard a machine)
+
+When you are decommissioning a machine, or just want to stop syncing it, `nomad eject` leaves your
+`~/.claude/` fully working on its own. It walks every nomad-managed symlink and replaces it with a
+real copy of its target, so nothing breaks once the sync repo is deleted:
+
+```bash
+# Preview what would be materialized, without writing anything.
+nomad eject --dry-run
+
+# Replace every managed symlink with a real copy.
+nomad eject
+```
+
+Eject only touches symlinks nomad created: real files and directories are left untouched, and it
+aborts (pointing you at `nomad pull`) if it finds a dangling symlink rather than copying from an
+unknown target. When it finishes it prints a manual-remainder checklist for the steps it cannot do
+for you:
+
+```bash
+# 1. Remove the CLI.
+npm rm -g claude-nomad
+
+# 2. Drop the env vars and alias from your shell profile.
+#    (NOMAD_HOST, NOMAD_REPO, and the `nomad` alias.)
+
+# 3. Optional: delete the local clone of the sync repo once you no longer need it.
+rm -rf ~/claude-nomad
+```
+
+Your config, sessions, and settings stay exactly where they are; they are just plain files again
+instead of symlinks into the repo.

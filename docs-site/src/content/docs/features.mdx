@@ -24,9 +24,10 @@ and `claude --resume` picks it up as if it never left. See
 
 ## One shared setup, per-machine exceptions
 
-Your agents, skills, slash commands, rules, hooks, statusline, and global `CLAUDE.md` live once
-in the sync repo and are linked into `~/.claude/` on every host. Edit a skill anywhere and every
-machine gets it on the next pull.
+Your skills, slash commands, rules, statusline, and global `CLAUDE.md` live once in the sync repo.
+Slash commands, rules, statusline, and `CLAUDE.md` are symlinked into `~/.claude/`; skills are
+copy-synced (gsd-owned `gsd-*` skills excluded). Edit a skill anywhere and every machine gets it on
+the next pull. (`agents/` and `hooks/` are intentionally left to gsd; see GSD-aware sync.)
 
 Settings are smarter than a straight copy: every pull regenerates `~/.claude/settings.json` by
 merging a shared base file with a per-host override file. One machine can run a different model,
@@ -104,8 +105,8 @@ any shared config would be lost. See the
 
 `nomad init` creates the private GitHub repo, scaffolds it, and disables GitHub Actions on it so
 no CI ever runs against your conversation history; `--snapshot` seeds it from the machine you are
-on. `nomad adopt` brings an existing project under sync, and `nomad update` upgrades the CLI in
-place.
+on. `nomad adopt <name>` moves a pre-existing `~/.claude/<name>` shared dir into the repo and
+replaces it with a managed symlink, and `nomad update` upgrades the CLI in place.
 
 Leaving is just as transparent: everything **claude-nomad** manages in `~/.claude/` is plain
 files and symlinks, with no proprietary format to export from. Transcripts and `settings.json`
