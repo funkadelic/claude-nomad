@@ -3,6 +3,7 @@ import {
   CLAUDE_EXTRA_NEVER_SYNC,
   GSD_DROPPED_NAMES,
   GSD_PREFIX,
+  isDeniedName,
   NEVER_SYNC,
   PUSH_ALLOWED_STATIC,
   SUPPORTED_EXTRAS,
@@ -47,8 +48,11 @@ function blockSetFor(segments: string[]): Set<string> {
 
 /**
  * True when any path segment matches the hard-block denylist for that path (see
- * `blockSetFor`). Genuinely-sensitive host-local files stay blocked even when
- * nested inside a synced extras dir. Inside `shared/extras/<logical>/<dirname>/`
+ * `blockSetFor`), tested via `isDeniedName` so the match is case-insensitive
+ * (macOS case-fold) and also covers credential-file patterns (dotenv, private
+ * keys, npm/netrc auth) the exact sets do not enumerate. Genuinely-sensitive
+ * host-local files stay blocked even when nested inside a synced extras dir.
+ * Inside `shared/extras/<logical>/<dirname>/`
  * only the content segments (index 4+) are scanned: the `<logical>` and
  * `<dirname>` names are not denylist tokens, and a logical that happens to equal
  * a `NEVER_SYNC` token (e.g. a project named `sessions`) must not hard-block its
@@ -59,7 +63,7 @@ function isNeverSync(path: string): boolean {
   const blockSet = blockSetFor(segments);
   const scan = segments[0] === 'shared' && segments[1] === 'extras' ? segments.slice(4) : segments;
   for (const segment of scan) {
-    if (blockSet.has(segment)) return true;
+    if (isDeniedName(blockSet, segment)) return true;
   }
   return false;
 }

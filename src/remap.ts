@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSyn
 import { join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
+import { assertSafeLocalRoot } from './extras-sync.guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { die, item, log } from './utils.ts';
 import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
@@ -158,6 +159,12 @@ export function remapPull(
       unmapped++;
       continue;
     }
+    // Guard the host VALUE, not just the logical KEY: encodePath only rewrites
+    // separators, so a separator-free '..' or '.' survives and join() escapes
+    // the projects dir (a '..' resolves dst to ~/.claude itself, which copyDir
+    // then wipes and replaces). assertSafeLocalRoot rejects non-absolute and
+    // unnormalized values, matching the extras-pull defense.
+    assertSafeLocalRoot(localPath, logical);
     const src = join(repoProjects, logical);
     if (!existsSync(src)) continue;
     const dst = join(localProjects, encodePath(localPath));

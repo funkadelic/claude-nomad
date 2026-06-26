@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ALWAYS_NEVER_SYNC, claudeHome, GSD_PREFIX, repoHome } from './config.ts';
+import { ALWAYS_NEVER_SYNC, claudeHome, GSD_PREFIX, isDeniedName, repoHome } from './config.ts';
 import { copyExtrasFiltered, copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
 
@@ -29,13 +29,15 @@ export function isGsdOwned(name: string): boolean {
 
 /**
  * Skills-copy exclusion predicate composing the gsd-ownership filter with the
- * `ALWAYS_NEVER_SYNC` denylist. A basename is excluded from the push mirror and
+ * `ALWAYS_NEVER_SYNC` denylist via `isDeniedName` (so the match is
+ * case-insensitive and also covers credential-file patterns: dotenv, private
+ * keys, npm/netrc auth). A basename is excluded from the push mirror and
  * preserved on pull when it is either gsd-owned (the prefix) OR a hard-blocked
- * sensitive name (`settings.local.json`, `.credentials.json`, ...). The
- * `ALWAYS_NEVER_SYNC` check applies at every depth via the recursive `cpSync`
- * filter, so a stray host-config file nested inside a user skill cannot ride
- * into `shared/skills/` on push. Mirrors the extras path's `extrasDenySet`
- * boundary rather than inventing a new one (the `gitleaks` scan only catches
+ * sensitive name (`settings.local.json`, `.credentials.json`, `*.pem`, ...). The
+ * denylist check applies at every depth via the recursive `cpSync` filter, so a
+ * stray host-config file nested inside a user skill cannot ride into
+ * `shared/skills/` on push. Mirrors the extras path's `extrasDenySet` boundary
+ * rather than inventing a new one (the `gitleaks` scan only catches
  * credential-shaped content; non-secret names like `settings.local.json` need
  * this name-based filter).
  *
@@ -43,7 +45,7 @@ export function isGsdOwned(name: string): boolean {
  * @returns `true` if the entry must be excluded/preserved.
  */
 export function isSkillExcluded(name: string): boolean {
-  return isGsdOwned(name) || ALWAYS_NEVER_SYNC.has(name);
+  return isGsdOwned(name) || isDeniedName(ALWAYS_NEVER_SYNC, name);
 }
 
 /**

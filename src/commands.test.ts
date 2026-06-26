@@ -43,11 +43,14 @@ describe('enforceAllowList', () => {
   });
 
   it('rejects unknown path with FATAL message and throws NomadFatal', () => {
-    const status = z([' M random/secret.key']);
+    // A non-credential, non-allowed path surfaces as a plain allow-list
+    // violation (a credential-pattern name like *.key would instead hard-block
+    // as NEVER_SYNC; see the dedicated NEVER_SYNC test below).
+    const status = z([' M random/unknown.dat']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync random/secret.key, add to PUSH_ALLOWED in src/config.ts'),
+      expect.stringContaining('to sync random/unknown.dat, add to PUSH_ALLOWED in src/config.ts'),
     );
   });
 
@@ -110,14 +113,15 @@ describe('enforceAllowList', () => {
   });
 
   it('flags rename whose source half escapes the allow-list', () => {
-    // git mv random/secret.key shared/agents/secret.key would surface in -z
-    // porcelain as "R  shared/agents/secret.key\0random/secret.key\0". The new
-    // half is allowed (shared/agents/ prefix), but the OLD half is not, so
-    // enforceAllowList must reject.
-    const status = z(['R  shared/agents/secret.key', 'random/secret.key']);
+    // git mv random/escaped.dat shared/agents/escaped.dat would surface in -z
+    // porcelain as "R  shared/agents/escaped.dat\0random/escaped.dat\0". The OLD
+    // half is not allowed, so enforceAllowList must reject. (A non-credential
+    // name is used so the path surfaces as an allow-list violation rather than a
+    // NEVER_SYNC credential-pattern hard-block.)
+    const status = z(['R  shared/agents/escaped.dat', 'random/escaped.dat']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/secret.key'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/escaped.dat'));
   });
 
   it('flags rename detected in the Y column (working-tree rename, X is space)', () => {
@@ -154,19 +158,25 @@ describe('enforceAllowList', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  // hosts/ allow-list entry must NOT accept arbitrary filenames.
-  it('rejects hosts/secret.key (extension other than .json under hosts/)', () => {
+  // hosts/ allow-list entry must NOT accept arbitrary filenames. A credential
+  // extension (.key) and a dotenv name (.env.production) match the secret-file
+  // patterns, so they hard-block as NEVER_SYNC (stronger than a plain violation).
+  it('rejects hosts/secret.key as a credential file (NEVER_SYNC)', () => {
     const status = z(['?? hosts/secret.key']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/secret.key'));
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('hosts/secret.key is in NEVER_SYNC'),
+    );
   });
 
-  it('rejects hosts/.env.production (no .json extension)', () => {
+  it('rejects hosts/.env.production as a credential file (NEVER_SYNC)', () => {
     const status = z(['?? hosts/.env.production']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/.env.production'));
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('hosts/.env.production is in NEVER_SYNC'),
+    );
   });
 
   it('rejects hosts/sub/nested.json (nested depth beyond one level)', () => {

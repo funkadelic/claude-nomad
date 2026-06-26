@@ -36,7 +36,10 @@ documented here as accepted trade-offs rather than defended in code.
   therefore weaken or disable secret detection for every host that pulls or pushes. This is
   inherent to letting users curate their own allowlist (and layer extra entries via the overlay)
   and "Allow" individual findings; keep write access to the repo as tightly held as the secrets
-  the scan is meant to protect.
+  the scan is meant to protect. The overlay is the one part that is constrained: each of its
+  allowlist blocks must be path-scoped (a block with no `paths`, or a catch-all `.*`/`.+` pattern,
+  is rejected on push), so it can add narrow exceptions but cannot be used to silently turn
+  scanning off fleet-wide. `.gitleaks.toml` and `.gitleaksignore` remain fully trusted.
 
 - **`nomad update` runs `npm install` in the local checkout.** Updating executes the dependency
   tree's lifecycle scripts, so a compromised upstream repo (or a malicious dependency) can run
@@ -45,11 +48,15 @@ documented here as accepted trade-offs rather than defended in code.
 
 - **The sync repo is a trust boundary for pulling hosts.** Content pulled from the repo (session
   transcripts, settings overrides, symlinked shared directories) is applied to `~/.claude/` on
-  every host. Path-map keys and host paths are validated against traversal before any filesystem
-  write, and a strict subset of credential and host-config files (`.claude.json`,
-  `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`) is hard-blocked
-  from crossing the sync boundary even when nested inside an opted-in `shared/extras/` tree, so a
-  secret dropped under a synced `.planning/` directory cannot ride through. The `.claude/` extra (a
+  every host. Both the path-map keys and the per-host path values are validated against traversal
+  before any filesystem write, and a symlink committed into the repo cannot redirect a pull-side
+  copy to write outside the project tree. A subset of credential and host-config files
+  (`.claude.json`, `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`),
+  along with common credential filetypes matched by name (dotenv files, `*.pem`/`*.key` private
+  keys, `.netrc`/`.npmrc` auth), is hard-blocked from crossing the sync boundary even when nested
+  inside an opted-in `shared/extras/` tree; the name match is case-insensitive, so a case-folded
+  variant cannot slip past on macOS. A secret dropped under a synced `.planning/` directory cannot
+  ride through. The `.claude/` extra (a
   project's own `<repo>/.claude/` directory, not the global `~/.claude/`) is filtered more strictly
   still: it is checked against the full `NEVER_SYNC` set plus `projects/`, so opting it in strips
   session transcripts and every per-host state directory on push, leaving only config

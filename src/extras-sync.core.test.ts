@@ -372,6 +372,25 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
     expect(existsSync(join(tmpDst, 'hooks', 'foo.cjs'))).toBe(true);
   });
 
+  it('strips credential-pattern files and a case-folded denied name from the copy', async () => {
+    // gitleaks is otherwise the only content backstop for opt-in extras, so the
+    // name-based filter must also block credential filetypes the exact set does
+    // not enumerate (.env, *.pem), and a case-folded denied name (a macOS
+    // case-fold of settings.local.json) that Set.has would miss.
+    writeFileSync(join(tmpSrc, '.env'), 'TOKEN=secret\n');
+    writeFileSync(join(tmpSrc, 'deploy.pem'), '-----BEGIN KEY-----\n');
+    writeFileSync(join(tmpSrc, 'Settings.Local.JSON'), 'host=1\n');
+    writeFileSync(join(tmpSrc, 'keep.md'), '# notes\n');
+
+    const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.planning'));
+
+    expect(existsSync(join(tmpDst, '.env'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'deploy.pem'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'Settings.Local.JSON'))).toBe(false);
+    expect(existsSync(join(tmpDst, 'keep.md'))).toBe(true);
+  });
+
   it('allows a todos/ dir under the .planning denylist (NEVER_SYNC-but-not-ALWAYS_NEVER_SYNC)', async () => {
     // todos/ is in NEVER_SYNC but NOT in ALWAYS_NEVER_SYNC; under the .planning
     // (ALWAYS_NEVER_SYNC) denylist it must pass.
@@ -699,6 +718,47 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
     // dst link replaced by a real dir holding the mirrored config.
     expect(statSync(dstLink).isDirectory()).toBe(true);
     expect(existsSync(join(dstLink, 'settings.json'))).toBe(true);
+  });
+
+  it('Test WR-symlink (write-through): does not write through a pre-existing dst symlink', async () => {
+    // The arbitrary-file-write class: a poisoned repo plants a benignly-named
+    // symlink (copied verbatim into dst on an earlier pull), then on a later
+    // pull ships a regular file of the same name. Without the symlink strip,
+    // cpSync(force) writes THROUGH the surviving dst link to its external
+    // target. The strip must remove the link first so the external file is
+    // untouched and dst holds a fresh regular file.
+    const external = mkdtempSync(join(tmpdir(), 'nomad-core-pres-ext-'));
+    tmpExternal = external;
+    writeFileSync(join(external, 'target.txt'), 'precious\n');
+    const nestedTarget = join(external, 'nested.txt');
+    writeFileSync(nestedTarget, 'also-precious\n');
+
+    // Top-level: dst has a symlink `innocent` -> external file; src ships a
+    // regular file of the same name.
+    symlinkSync(join(external, 'target.txt'), join(tmpDst, 'innocent'));
+    writeFileSync(join(tmpSrc, 'innocent'), 'attacker\n');
+    // Nested (recursion branch): both sides have a real `sub` dir; dst holds a
+    // symlink inside it, src a regular file.
+    mkdirSync(join(tmpDst, 'sub'), { recursive: true });
+    symlinkSync(nestedTarget, join(tmpDst, 'sub', 'deep'));
+    mkdirSync(join(tmpSrc, 'sub'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'sub', 'deep'), 'attacker-deep\n');
+    // isExcluded-continue branch: a deny-set name present in src.
+    writeFileSync(join(tmpSrc, 'settings.local.json'), 'x=1\n');
+    // dstStat-undefined-continue branch: a src-only name absent from dst.
+    writeFileSync(join(tmpSrc, 'fresh.json'), '{"a":1}\n');
+
+    const { copyExtrasFilteredPreserving, extrasDenySet } = await import('./extras-sync.core.ts');
+    copyExtrasFilteredPreserving(tmpSrc, tmpDst, extrasDenySet('.claude'));
+
+    // External targets are NOT overwritten through the links.
+    expect(readFileSync(join(external, 'target.txt'), 'utf8')).toBe('precious\n');
+    expect(readFileSync(nestedTarget, 'utf8')).toBe('also-precious\n');
+    // dst entries are fresh regular files with src content (not symlinks).
+    expect(lstatSync(join(tmpDst, 'innocent')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(tmpDst, 'innocent'), 'utf8')).toBe('attacker\n');
+    expect(lstatSync(join(tmpDst, 'sub', 'deep')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(tmpDst, 'sub', 'deep'), 'utf8')).toBe('attacker-deep\n');
   });
 });
 

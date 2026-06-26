@@ -14,10 +14,14 @@ useDefault = true
 # context anywhere in the repo. Scoping to `shared/projects/<logical>/.../*.jsonl`
 # with `condition = "AND"` (matching every other block below) confines the
 # suppression to synced transcripts: a real secret in a source file still fires.
+# The Sonar-issue-key regex is length-bounded to the real key shape (`AY` + 17-22
+# base64url chars = 19-24 total, matching the sibling `key:`/`rule:` block) and
+# token-anchored with `\b` on both ends, so it cannot suppress a longer or
+# embedded `AY`-prefixed credential as a substring (an unbounded `{20,}` could).
 [[allowlists]]
 description = "claude-nomad: structurally-distinguishable tool-output noise in synced session transcripts"
 regexes = [
-    '''AY[A-Za-z0-9_-]{20,}''',
+    '''\bAY[A-Za-z0-9_-]{17,22}\b''',
     '''[\w./-]+\.[A-Za-z0-9]+:[\w-]+:\d+''',
     '''"id"\s*:\s*"[a-f0-9]{40,64}"''',
     '''key=[a-f0-9]{8,} [\w./-]+\.\w+:\d+''',

@@ -231,6 +231,54 @@ describe('remapPull (integration)', () => {
     expect(result.pushed).toEqual(['foo']);
     expect(existsSync(join(sharedProjects, 'foo', 's.jsonl'))).toBe(true);
   });
+
+  it('rejects a separator-free ".." host value before it can escape and wipe ~/.claude', async () => {
+    // A poisoned path-map host VALUE of ".." has no separator for encodePath to
+    // rewrite, so join(projects, "..") would resolve dst to ~/.claude and
+    // copyDir would wipe-and-replace it. The host-value guard must throw first.
+    mkdirSync(join(sharedProjects, 'evil'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'evil', 'payload.jsonl'), '{"evil":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { evil: { 'test-host': '..' } } }) + '\n',
+    );
+    // A sentinel under ~/.claude must still be present after the rejected pull.
+    const sentinel = join(testHome, '.claude', 'settings.json');
+    writeFileSync(sentinel, '{"keep":true}\n');
+
+    const { remapPull } = await import('./remap.ts');
+    expect(() => remapPull('20260516-000000')).toThrow(/localRoot/);
+    expect(existsSync(sentinel)).toBe(true);
+    expect(readFileSync(sentinel, 'utf8')).toBe('{"keep":true}\n');
+  });
+
+  it('rejects a "." host value before it can clobber ~/.claude/projects', async () => {
+    mkdirSync(join(sharedProjects, 'evil'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'evil', 'payload.jsonl'), '{"evil":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { evil: { 'test-host': '.' } } }) + '\n',
+    );
+    const survivor = join(claudeProjects, '-tmp-foo', 'mine.jsonl');
+    mkdirSync(join(claudeProjects, '-tmp-foo'), { recursive: true });
+    writeFileSync(survivor, '{"mine":1}\n');
+
+    const { remapPull } = await import('./remap.ts');
+    expect(() => remapPull('20260516-000000')).toThrow(/localRoot/);
+    expect(existsSync(survivor)).toBe(true);
+  });
+
+  it('rejects a relative (non-absolute) host value', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 's.jsonl'), '{"a":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': 'relative/path' } } }) + '\n',
+    );
+
+    const { remapPull } = await import('./remap.ts');
+    expect(() => remapPull('20260516-000000')).toThrow(/must be absolute/);
+  });
 });
 
 describe('remapPull dry-run and unmapped count', () => {

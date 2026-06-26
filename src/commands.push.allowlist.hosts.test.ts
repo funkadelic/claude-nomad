@@ -32,16 +32,30 @@ describe('enforceAllowList: hosts/ JSON-only guard (issue #138)', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects hosts/<name>.key (non-.json extension under hosts/)', async () => {
-    // A private key file with the `hosts/` prefix must be blocked. Without the
-    // `continue` after the regex, the `hosts/` prefix entry would fall through
-    // to the `endsWith('/') && startsWith` match and pass it, leaking a
-    // credential into the shared remote.
+  it('rejects hosts/<name>.key as a credential file (NEVER_SYNC)', async () => {
+    // A private key file with the `hosts/` prefix must be blocked. The
+    // credential-file pattern (`.key`) classifies it as NEVER_SYNC, a stronger
+    // hard-block than the plain allow-list violation, so it is rejected before
+    // the `hosts/` JSON-only guard is even reached.
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('?? hosts/dell-wsl.key\0', map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/dell-wsl.key'));
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('hosts/dell-wsl.key is in NEVER_SYNC'),
+    );
+  });
+
+  it('rejects hosts/<name>.txt (non-.json, non-credential extension under hosts/)', async () => {
+    // A non-credential, non-`.json` file under `hosts/` exercises the
+    // `isAllowed` hosts/ guard directly: the `^hosts\/[^/]+\.json$` special case
+    // does not match, the `continue` prevents the prefix fallthrough, and it
+    // surfaces as a plain allow-list violation (not NEVER_SYNC).
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('?? hosts/dell-wsl.txt\0', map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/dell-wsl.txt'));
   });
 
   it('rejects nested hosts/sub/x.json (multi-level path under hosts/)', async () => {
