@@ -81,7 +81,7 @@ const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*allowlists?\s*\]\]?/;
  * guard's handling of the same TOML-equivalent forms) and require the table
  * form, which the walk validates.
  */
-const OVERLAY_INLINE_ALLOWLIST_RE = /^\s*allowlists?\s*[.=]/m;
+const OVERLAY_INLINE_ALLOWLIST_RE = /^[ \t]*allowlists?[ \t]*[.=]/m;
 
 /** A `paths = ...` key at the start of a line (inside an allowlist block). */
 const PATHS_KEY_RE = /^\s*paths\s*=/;
