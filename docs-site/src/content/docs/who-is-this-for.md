@@ -13,7 +13,7 @@ You are setting up a new laptop, a fresh workstation, or a remote box, and you w
 Code environment to come with you instead of starting from scratch.
 
 What this means for you: open Claude Code on the new machine and, today, it is a blank slate. None
-of your custom agents, tuned settings, slash commands, or earlier conversations are there. With
+of your custom skills, tuned settings, slash commands, or earlier conversations are there. With
 claude-nomad you push from the old machine once, pull on the new one, and your whole setup lands,
 conversation history included. Because Claude Code stores each session under the project's file
 path, and that path is usually different on the new machine, claude-nomad rewrites those paths on
