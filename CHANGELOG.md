@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.3](https://github.com/funkadelic/claude-nomad/compare/v0.53.2...v0.53.3) (2026-06-26)
+
+
+### Changed
+
+* **docs-site:** upgrade to Astro 7 and Starlight 0.41 ([#340](https://github.com/funkadelic/claude-nomad/issues/340)) ([d0ab419](https://github.com/funkadelic/claude-nomad/commit/d0ab4196af16871c1c38f5ce27a5cc6c6f751576))
+
 ## [0.53.2](https://github.com/funkadelic/claude-nomad/compare/v0.53.1...v0.53.2) (2026-06-26)
 
 
