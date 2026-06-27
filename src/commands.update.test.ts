@@ -33,7 +33,7 @@ describe('cmdUpdate', () => {
     const logSpy = vi.spyOn(console, 'log');
     const { run, calls } = makeFakeRun('0.47.1\n');
 
-    cmdUpdate(run);
+    cmdUpdate('0.46.0', run);
 
     // Two subprocess calls: npm update then nomad --version
     expect(calls).toHaveLength(2);
@@ -42,8 +42,8 @@ describe('cmdUpdate', () => {
     expect(calls[1].bin).toBe('nomad');
     expect(calls[1].args).toEqual(['--version']);
 
-    // Status line before update
-    expect(logSpy.mock.calls[0][0]).toContain('Updating claude-nomad');
+    // Status line before update reports the current (old) version
+    expect(logSpy.mock.calls[0][0]).toContain('Updating claude-nomad v0.46.0');
     // Success line with trimmed semver prefixed with v
     expect(logSpy.mock.calls[1][0]).toContain('now at v0.47.1');
   });
@@ -52,7 +52,7 @@ describe('cmdUpdate', () => {
     const logSpy = vi.spyOn(console, 'log');
     const { run } = makeFakeRun(new Error('spawn failed'));
 
-    expect(() => cmdUpdate(run)).not.toThrow();
+    expect(() => cmdUpdate('0.46.0', run)).not.toThrow();
 
     const lines = logSpy.mock.calls.map((c) => c[0] as string);
     expect(lines.some((l) => l.includes('Updating claude-nomad'))).toBe(true);
@@ -66,8 +66,8 @@ describe('cmdUpdate', () => {
       throw err;
     };
 
-    expect(() => cmdUpdate(run)).toThrow(NomadFatal);
-    expect(() => cmdUpdate(run)).toThrow('npm not found on PATH');
+    expect(() => cmdUpdate('0.46.0', run)).toThrow(NomadFatal);
+    expect(() => cmdUpdate('0.46.0', run)).toThrow('npm not found on PATH');
   });
 
   it('throws NomadFatal on non-zero npm exit', () => {
@@ -75,8 +75,20 @@ describe('cmdUpdate', () => {
       throw new Error('npm exited with code 1');
     };
 
-    expect(() => cmdUpdate(run)).toThrow(NomadFatal);
-    expect(() => cmdUpdate(run)).toThrow('npm update -g claude-nomad failed');
+    expect(() => cmdUpdate('0.46.0', run)).toThrow(NomadFatal);
+    expect(() => cmdUpdate('0.46.0', run)).toThrow('npm update -g claude-nomad failed');
+  });
+
+  it('folds captured npm stderr into the failure message', () => {
+    const run = () => {
+      const err = new Error('npm exited with code 1') as NodeJS.ErrnoException & {
+        stderr?: string;
+      };
+      err.stderr = 'npm ERR! code EACCES\nnpm ERR! permission denied';
+      throw err;
+    };
+
+    expect(() => cmdUpdate('0.46.0', run)).toThrow('npm ERR! permission denied');
   });
 });
 

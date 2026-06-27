@@ -38,13 +38,13 @@ describe('nomad.ts update dispatcher', () => {
     process.argv = originalArgv;
   });
 
-  it('routes bare `nomad update` to cmdUpdate() with no args', async () => {
+  it('routes bare `nomad update` to cmdUpdate() with the current version', async () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update'];
     await import('./nomad.ts');
     expect(cmdUpdateMock).toHaveBeenCalledTimes(1);
-    expect(cmdUpdateMock).toHaveBeenCalledWith();
+    expect(cmdUpdateMock).toHaveBeenCalledWith(expect.any(String));
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
