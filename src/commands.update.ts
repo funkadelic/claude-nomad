@@ -56,6 +56,10 @@ export function cmdUpdate(currentVersion: string, run: SpawnSyncFn = execFileSyn
     run('npm', ['update', '-g', 'claude-nomad'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Now that output is captured rather than inherited, execFileSync buffers
+      // it; lift the default 1 MiB ceiling so a noisy-but-successful npm run
+      // (deprecation/funding spam) cannot throw ENOBUFS.
+      maxBuffer: 64 * 1024 * 1024,
     });
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer | string };
