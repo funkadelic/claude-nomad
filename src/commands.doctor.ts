@@ -13,6 +13,7 @@ import {
   reportHostOverrides,
 } from './commands.doctor.checks.settings.ts';
 import { reportNeverSync, reportPathMap } from './commands.doctor.checks.pathmap.ts';
+import { reportSkillsDivergence } from './commands.doctor.checks.skills.ts';
 import {
   reportGitleaksProbe,
   reportGitIdentity,
@@ -96,6 +97,9 @@ function gatherDoctorSections(opts: {
   const neverSync = section('Never-sync');
   reportNeverSync(neverSync);
 
+  const skills = section('Skills');
+  reportSkillsDivergence(skills);
+
   const repository = section('Repository');
   const gitleaksReady = reportGitleaksProbe(repository);
   reportGitlinks(repository);
@@ -136,6 +140,7 @@ function gatherDoctorSections(opts: {
     settings,
     pathMap,
     neverSync,
+    skills,
     repository,
     housekeeping,
     sharedScan,
