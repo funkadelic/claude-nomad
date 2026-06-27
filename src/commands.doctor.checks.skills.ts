@@ -26,16 +26,30 @@ function stripSideIndicator(line: string): string {
  * gsd-prefixed skill. Gsd-owned skills are excluded from copy-sync and
  * are expected to appear only locally, so they must be filtered out of
  * the divergence report. The diff lines carry full absolute paths (e.g.
- * `/home/user/.claude/skills/gsd-audit-fix/SKILL.md`), so the check
- * tests every path component rather than just the first.
+ * `/home/user/.claude/skills/gsd-audit-fix/SKILL.md`), so the known base
+ * path is stripped first; only the skill-name component (immediately under
+ * the skills directory) is tested. Checking every component would cause a
+ * false positive when HOME or NOMAD_REPO contains a `gsd-`-prefixed segment.
  *
  * @param line - A labelled diff line from `listDivergingFiles`.
- * @returns `true` if any path component starts with the gsd prefix.
+ * @param localBase - The absolute path of the local skills directory.
+ * @param sharedBase - The absolute path of the shared skills directory.
+ * @returns `true` if the skill-name component starts with the gsd prefix.
  */
-function isGsdDiffLine(line: string): boolean {
-  return stripSideIndicator(line)
-    .split('/')
-    .some((part) => part.startsWith(GSD_PREFIX));
+function isGsdDiffLine(line: string, localBase: string, sharedBase: string): boolean {
+  const bare = stripSideIndicator(line);
+  let relative: string;
+  if (bare.startsWith(localBase + '/')) {
+    relative = bare.slice(localBase.length + 1);
+  } else if (bare.startsWith(sharedBase + '/')) {
+    relative = bare.slice(sharedBase.length + 1);
+  } else {
+    /* c8 ignore start -- diff lines from listDivergingFiles always start with one of the two base dirs */
+    relative = bare;
+    /* c8 ignore stop */
+  }
+  // relative is now "skill-name/..." -- only the skill-name component matters.
+  return relative.split('/')[0].startsWith(GSD_PREFIX);
 }
 
 /**
@@ -63,7 +77,7 @@ export function reportSkillsDivergence(section: DoctorSection): void {
     return;
   }
   const diff = listDivergingFiles(localSkills, sharedSkills);
-  const relevant = diff.filter((line) => !isGsdDiffLine(line));
+  const relevant = diff.filter((line) => !isGsdDiffLine(line, localSkills, sharedSkills));
   if (relevant.length === 0) {
     addItem(section, `${green(okGlyph)} skills: in sync with shared/skills/`);
     return;

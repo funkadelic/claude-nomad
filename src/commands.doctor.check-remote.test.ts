@@ -75,7 +75,6 @@ function mockGit(scenario: Scenario): void {
 
 /** Run reportCheckRemote through a fresh module graph and return the section items joined. */
 async function runCheckRemote(): Promise<string> {
-  vi.resetModules();
   const { section } = await import('./commands.doctor.format.ts');
   const { reportCheckRemote } = await import('./commands.doctor.check-remote.ts');
   const sec = section('Remote check');
@@ -159,9 +158,36 @@ describe('nomad doctor --check-remote', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('references test-home path in the join call (env sanity check)', () => {
-    // Ensures makeDoctorEnv wired HOME correctly so repoHome() resolves to the sandbox.
-    expect(env.testHome).toBeTruthy();
-    expect(join(env.testHome, 'claude-nomad')).toContain('claude-nomad');
+  it('resolves repoHome to the sandbox claude-nomad directory', async () => {
+    // Verifies that reportCheckRemote passes the correct cwd to git, confirming
+    // that repoHome() resolves to the sandbox path wired by makeDoctorEnv.
+    let capturedCwd: string | undefined;
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (
+            bin: string,
+            args: readonly string[],
+            opts?: Parameters<typeof cpModule.execFileSync>[2],
+          ) => {
+            if (bin === 'git' && args[0] === 'ls-tree') {
+              capturedCwd = opts?.cwd as string | undefined;
+              const err = new Error('no ref') as NodeJS.ErrnoException & { status?: number };
+              err.status = 128;
+              throw err;
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { section } = await import('./commands.doctor.format.ts');
+    const { reportCheckRemote } = await import('./commands.doctor.check-remote.ts');
+    const sec = section('Remote check');
+    reportCheckRemote(sec);
+    expect(capturedCwd).toBe(join(env.testHome, 'claude-nomad'));
   });
 });

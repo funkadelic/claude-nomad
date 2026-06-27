@@ -58,9 +58,10 @@ function readRemotePathMap(sec: DoctorSection, repo: string): boolean {
  * subprocesses against the locally-cached `origin/main` remote-tracking ref:
  * first `git ls-tree --name-only origin/main` to verify `shared/` and
  * `path-map.json` exist at the root, then `git show origin/main:path-map.json`
- * to parse and validate the map shape. Network is only reached if
- * `origin/main` has never been fetched; the Node-level 3s timeout caps any
- * stall regardless. Every failure mode (git absent, ref uncached, timeout,
+ * to parse and validate the map shape. Both commands read the local object store
+ * only; if `origin/main` has not been fetched, git exits 128 immediately
+ * (caught by the try/catch). The Node-level 3s timeout guards against slow
+ * filesystems or unusual git hooks. Every failure mode (git absent, ref uncached, timeout,
  * missing shared/, missing or malformed path-map.json, invalid shape) produces
  * a `warnGlyph` WARN/SKIP row and returns without touching `process.exitCode`.
  * Remote structural problems are non-blocking nudges before a pull, not hard

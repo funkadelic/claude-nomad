@@ -144,6 +144,21 @@ describe('reportSkillsDivergence (real git)', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
+  it('filters out a gsd-prefixed skill that is repo-only and emits okGlyph', async () => {
+    mkdirSync(localSkills, { recursive: true });
+    mkdirSync(join(sharedSkills, 'gsd-repo-only'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'gsd-repo-only', 'SKILL.md'), '# gsd repo skill\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportSkillsDivergence } = await import('./commands.doctor.checks.skills.ts');
+    const sec = makeSection('Skills');
+    reportSkillsDivergence(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain(okGlyph);
+    expect(out).not.toContain(warnGlyph);
+    expect(out).not.toContain('gsd-repo-only');
+    expect(process.exitCode).not.toBe(1);
+  });
+
   it('warns only for non-gsd skills when both gsd and non-gsd are local-only', async () => {
     mkdirSync(join(localSkills, 'gsd-audit-fix'), { recursive: true });
     mkdirSync(join(localSkills, 'my-skill'), { recursive: true });
@@ -161,6 +176,39 @@ describe('reportSkillsDivergence (real git)', () => {
     expect(out).toContain('(local only)');
     expect(out).not.toContain('gsd-audit-fix');
     expect(process.exitCode).not.toBe(1);
+  });
+
+  it('does not filter a non-gsd skill when the base path contains a gsd- segment', async () => {
+    // Regression: old .some()-over-all-components logic would match 'gsd-home'
+    // in the path and silently drop a diverging non-gsd skill (false negative).
+    const gsdParent = join(tmpdir(), 'gsd-home');
+    mkdirSync(gsdParent, { recursive: true });
+    const gsdTestHome = mkdtempSync(join(gsdParent, 'nomad-skills-'));
+    const gsdSharedSkills = join(gsdTestHome, 'claude-nomad', 'shared', 'skills');
+    const gsdLocalSkills = join(gsdTestHome, '.claude', 'skills');
+    mkdirSync(join(gsdTestHome, 'claude-nomad'), { recursive: true });
+    mkdirSync(join(gsdTestHome, '.claude'), { recursive: true });
+    process.env.HOME = gsdTestHome;
+    delete process.env.NOMAD_REPO;
+    vi.resetModules();
+    try {
+      mkdirSync(join(gsdSharedSkills, 'real-skill'), { recursive: true });
+      mkdirSync(join(gsdLocalSkills, 'real-skill'), { recursive: true });
+      writeFileSync(join(gsdSharedSkills, 'real-skill', 'SKILL.md'), '# shared\n');
+      writeFileSync(join(gsdLocalSkills, 'real-skill', 'SKILL.md'), '# local edit\n');
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportSkillsDivergence } = await import('./commands.doctor.checks.skills.ts');
+      const sec = makeSection('Skills');
+      reportSkillsDivergence(sec);
+      const out = sec.items.join('\n');
+      // The divergence of 'real-skill' must NOT be hidden even though the path
+      // to the skills dir passes through the 'gsd-home' component.
+      expect(out).toContain(warnGlyph);
+      expect(out).toContain('real-skill');
+      expect(process.exitCode).not.toBe(1);
+    } finally {
+      rmSync(gsdTestHome, { recursive: true, force: true });
+    }
   });
 
   it('does not set process.exitCode when a non-gsd skill diverges', async () => {
@@ -208,6 +256,46 @@ describe('reportSkillsDivergence git not on PATH', () => {
     restoreEnv('NO_COLOR', originalNoColor);
     rmSync(testHome, { recursive: true, force: true });
     process.exitCode = 0;
+  });
+
+  it('does not crash and treats an unrecognized diff-line path as non-gsd', async () => {
+    // Exercises the defensive else in isGsdDiffLine: git returns a diff line
+    // whose path does not start with either base dir (unreachable via real git,
+    // but reachable if the path format ever changes unexpectedly).
+    mkdirSync(sharedSkills, { recursive: true });
+    mkdirSync(localSkills, { recursive: true });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (
+            bin: string,
+            args: readonly string[],
+            opts?: Parameters<typeof cpModule.execFileSync>[2],
+          ) => {
+            if (bin === 'git' && args[0] === 'diff') {
+              // Return a diff line with a path that starts with neither base dir.
+              const err = Object.assign(new Error('differ'), {
+                status: 1,
+                stdout: Buffer.from('M\t/unexpected/my-skill/FILE.md\n'),
+              });
+              throw err;
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportSkillsDivergence } = await import('./commands.doctor.checks.skills.ts');
+    const sec = makeSection('Skills');
+    reportSkillsDivergence(sec);
+    const out = sec.items.join('\n');
+    // Falls back gracefully: the unrecognized path is treated as non-gsd and emits a WARN.
+    expect(out).toContain(warnGlyph);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('treats git ENOENT as no divergence and emits okGlyph without throwing', async () => {

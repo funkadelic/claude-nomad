@@ -398,16 +398,12 @@ describe('reportPathMap current-host path missing on disk', () => {
       projects: { myproj: { 'test-host': '/nonexistent/path/xyz123' } },
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
-    const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor({ verbose: true });
-    // WARN-only: a missing local path is not a FAIL; exitCode must stay 0
-    // (excluding the gitleaks-probe exitCode which may be 1 on dev hosts).
-    // We assert the warn did fire and that it did NOT come from exitCode logic.
-    const out = joinedLog(env.logSpy);
-    expect(out).toContain('path-map: myproj local path missing');
-    // The path-map missing-path check alone must not have set exitCode.
-    // Filter: if exitCode is 1 it must be from gitleaks probe, not from this check.
-    // The cleanest assertion: no collision FAIL appeared (collision sets exitCode=1).
-    expect(out).not.toContain(`${failGlyph} path-encoding collision`);
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    const exitBefore = process.exitCode;
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).toContain('path-map: myproj local path missing');
+    expect(process.exitCode).toBe(exitBefore);
   });
 });
