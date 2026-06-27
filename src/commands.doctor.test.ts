@@ -80,6 +80,16 @@ describe('cmdDoctor --check-shared dispatch wiring', () => {
     const out = joinedLog(env.logSpy);
     expect(out).toContain('Schema scan');
   });
+
+  it('emits a Remote check section when cmdDoctor({ checkRemote: true })', async () => {
+    // No origin/main is cached in the sandbox, so reportCheckRemote degrades to
+    // a skip row before any network access; this still exercises the dispatch
+    // wiring (the section renders only when the flag is set).
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor({ checkRemote: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('Remote check');
+  });
 });
 
 describe('cmdDoctor compact default vs --verbose', () => {

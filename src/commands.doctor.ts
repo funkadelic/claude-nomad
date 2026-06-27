@@ -179,7 +179,7 @@ function gatherDoctorSections(opts: {
  * keys absent from it. Also OFF by default (it needs the network).
  *
  * `opts.checkRemote` (the `--check-remote` sub-flag) appends a "Remote check"
- * section that runs two bounded git subprocesses against the locally-cached
+ * section that runs up to two bounded git subprocesses against the locally-cached
  * `origin/main` remote-tracking ref: verifies `shared/` exists and
  * `path-map.json` parses to a valid shape. Also OFF by default (the default
  * run stays offline and lockless). All failure modes degrade to a WARN/SKIP;
