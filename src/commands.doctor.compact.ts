@@ -3,14 +3,21 @@ import { type DoctorSection } from './output-tree.ts';
 
 /**
  * Section headers kept in full in the compact view. `Nomad Version` and
- * `Summary` are always-useful orientation; `Shared scan` / `Schema scan` only
- * carry items when their `--check-shared` / `--check-schema` flag ran, and when
- * present they must render in full even on a clean pass (the user explicitly
- * asked for that scan). Sections that never received items are dropped by
- * `renderTree` regardless, so listing the scan sections here is harmless when
- * their flag was not set.
+ * `Summary` are always-useful orientation; `Shared scan` / `Schema scan` /
+ * `Remote check` only carry items when their `--check-shared` /
+ * `--check-schema` / `--check-remote` flag ran, and when present they must
+ * render in full even on a clean pass (the user explicitly asked for that
+ * scan). Sections that never received items are dropped by `renderTree`
+ * regardless, so listing the scan sections here is harmless when their flag
+ * was not set.
  */
-const ALWAYS_FULL = new Set(['Nomad Version', 'Summary', 'Shared scan', 'Schema scan']);
+const ALWAYS_FULL = new Set([
+  'Nomad Version',
+  'Summary',
+  'Shared scan',
+  'Schema scan',
+  'Remote check',
+]);
 
 /**
  * True when the rendered line carries a WARN or FAIL glyph. Substring test on

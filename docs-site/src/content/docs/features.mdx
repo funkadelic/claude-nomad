@@ -86,11 +86,14 @@ stuck mid-rebase, hook references pointing at scripts missing on this host, hook
 crash at session start because a Node script under a synced directory needs
 `--preserve-symlinks-main`, a `settings.json` that no longer matches the base+host merge nomad
 would write (settings drift, reported in both directions: keys missing locally point at
-`nomad pull`, local-only additions point at `nomad capture-settings`), version drift between your
-install and the latest release, gitleaks drift against CI, and a backup cache that needs
-pruning. Each failing line carries a fix hint, and extra flags go deeper:
-`--check-shared` secret-scans what a push would publish, `--check-schema` validates your settings
-against the live Claude Code schema. See [Commands](/claude-nomad/commands/) for every check.
+`nomad pull`, local-only additions point at `nomad capture-settings`), a missing git committer
+identity in the sync repo (a push fails at commit time without one), path-map entries whose local
+project folder no longer exists on this host, synced skills you have edited locally, version drift
+between your install and the latest release, gitleaks drift against CI, and a backup cache that
+needs pruning. Each failing line carries a fix hint, and extra flags go deeper: `--check-shared`
+secret-scans what a push would publish, `--check-schema` validates your settings against the live
+Claude Code schema, and `--check-remote` confirms the remote still has a valid `shared/` and
+`path-map.json` before you pull. See [Commands](/claude-nomad/commands/) for every check.
 
 ## Self-healing sync, with backups
 

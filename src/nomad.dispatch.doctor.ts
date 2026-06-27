@@ -5,16 +5,22 @@
  * - `error`: malformed argv; the caller prints usage and exits non-zero.
  */
 export type DoctorArgs =
-  | { kind: 'run'; checkShared: boolean; checkSchema: boolean; verbose: boolean }
+  | {
+      kind: 'run';
+      checkShared: boolean;
+      checkSchema: boolean;
+      checkRemote: boolean;
+      verbose: boolean;
+    }
   | { kind: 'resume'; id: string }
   | { kind: 'error' };
 
 /**
  * Parse the `doctor` argv tail into a {@link DoctorArgs}. `--resume-cmd <id>` is
  * exclusive (it takes exactly one non-empty id and combines with nothing else);
- * the scan flags `--check-shared` / `--check-schema` and the verbosity flags
- * `--verbose` / `--all` / `-v` compose freely. Any unrecognized token makes the
- * whole invocation an error rather than being silently ignored.
+ * the scan flags `--check-shared` / `--check-schema` / `--check-remote` and the
+ * verbosity flags `--verbose` / `--all` / `-v` compose freely. Any unrecognized
+ * token makes the whole invocation an error rather than being silently ignored.
  *
  * @param args - argv after the `doctor` subcommand (e.g. `process.argv.slice(3)`).
  * @returns the parsed shape; never throws.
@@ -30,12 +36,14 @@ export function parseDoctorArgs(args: string[]): DoctorArgs {
   }
   let checkShared = false;
   let checkSchema = false;
+  let checkRemote = false;
   let verbose = false;
   for (const arg of args) {
     if (arg === '--check-shared') checkShared = true;
     else if (arg === '--check-schema') checkSchema = true;
+    else if (arg === '--check-remote') checkRemote = true;
     else if (arg === '--verbose' || arg === '--all' || arg === '-v') verbose = true;
     else return { kind: 'error' };
   }
-  return { kind: 'run', checkShared, checkSchema, verbose };
+  return { kind: 'run', checkShared, checkSchema, checkRemote, verbose };
 }

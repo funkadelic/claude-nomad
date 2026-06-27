@@ -13,8 +13,10 @@ import {
   reportHostOverrides,
 } from './commands.doctor.checks.settings.ts';
 import { reportNeverSync, reportPathMap } from './commands.doctor.checks.pathmap.ts';
+import { reportSkillsDivergence } from './commands.doctor.checks.skills.ts';
 import {
   reportGitleaksProbe,
+  reportGitIdentity,
   reportGitlinks,
   reportOrphanedAutostash,
   reportRebaseClean,
@@ -22,6 +24,7 @@ import {
   reportRemote,
 } from './commands.doctor.checks.git-state.ts';
 import { reportBackupsCheck } from './commands.doctor.checks.backups.ts';
+import { reportCheckRemote } from './commands.doctor.check-remote.ts';
 import { reportCheckSchema } from './commands.doctor.check-schema.ts';
 import { reportCheckShared } from './commands.doctor.check-shared.ts';
 import { reportHookScopeCheck } from './commands.doctor.checks.hooks.scope.ts';
@@ -62,6 +65,7 @@ import { compactSections } from './commands.doctor.compact.ts';
 function gatherDoctorSections(opts: {
   checkShared?: boolean;
   checkSchema?: boolean;
+  checkRemote?: boolean;
 }): DoctorSection[] {
   const host = section('Environment');
   reportHostAndPaths(host);
@@ -95,10 +99,14 @@ function gatherDoctorSections(opts: {
   const neverSync = section('Never-sync');
   reportNeverSync(neverSync);
 
+  const skills = section('Skills');
+  reportSkillsDivergence(skills);
+
   const repository = section('Repository');
   const gitleaksReady = reportGitleaksProbe(repository);
   reportGitlinks(repository);
   reportRemote(repository);
+  reportGitIdentity(repository);
   reportRebaseClean(repository);
   reportRebaseState(repository);
   reportOrphanedAutostash(repository);
@@ -125,6 +133,9 @@ function gatherDoctorSections(opts: {
   const schemaScan = section('Schema scan');
   if (opts.checkSchema === true) reportCheckSchema(schemaScan);
 
+  const remoteCheck = section('Remote check');
+  if (opts.checkRemote === true) reportCheckRemote(remoteCheck);
+
   const body = [
     nomadVersion,
     depVersions,
@@ -134,10 +145,12 @@ function gatherDoctorSections(opts: {
     settings,
     pathMap,
     neverSync,
+    skills,
     repository,
     housekeeping,
     sharedScan,
     schemaScan,
+    remoteCheck,
   ];
   return [...body, buildVerdictSection(body)];
 }
@@ -165,6 +178,13 @@ function gatherDoctorSections(opts: {
  * section that fetches the live settings schema and flags local settings.json
  * keys absent from it. Also OFF by default (it needs the network).
  *
+ * `opts.checkRemote` (the `--check-remote` sub-flag) appends a "Remote check"
+ * section that runs up to two bounded git subprocesses against the locally-cached
+ * `origin/main` remote-tracking ref: verifies `shared/` exists and
+ * `path-map.json` parses to a valid shape. Also OFF by default (the default
+ * run stays offline and lockless). All failure modes degrade to a WARN/SKIP;
+ * `process.exitCode` is never set.
+ *
  * `opts.verbose` (the `--verbose` / `--all` / `-v` flag) restores the full
  * per-check tree. By default the report is collapsed via `compactSections` to
  * the Nomad Version row, the Environment repo-state line, any section carrying a
@@ -176,6 +196,7 @@ export function cmdDoctor(
   opts: {
     checkShared?: boolean;
     checkSchema?: boolean;
+    checkRemote?: boolean;
     verbose?: boolean;
     startSpinner?: (label: string) => SpinnerHandle;
   } = {},

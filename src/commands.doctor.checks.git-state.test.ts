@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, warnGlyph } from './color.ts';
+import { failGlyph, okGlyph, warnGlyph } from './color.ts';
 import {
   type Env,
   joinedLog,
@@ -561,6 +561,240 @@ describe('reportOrphanedAutostash WARN', () => {
     expect(out).toContain(warnGlyph);
     expect(out).toMatch(/autostash/);
     // exitCode must remain 0 (autostash is non-blocking).
+    expect(process.exitCode).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reportGitIdentity: WARN when committer identity is missing
+// ---------------------------------------------------------------------------
+
+describe('reportGitIdentity', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', setupGitRepo: true });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    vi.resetModules();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('emits a PASS row (okGlyph) when user.name and user.email are both set', async () => {
+    const repoDir = join(env.testHome, 'claude-nomad');
+    execFileSync('git', ['config', 'user.name', 'Test User'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const { reportGitIdentity } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportGitIdentity(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(okGlyph);
+    expect(out).toContain('git identity: user.name and user.email configured');
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a WARN row naming both fields when both user.name and user.email are missing', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (
+              bin === 'git' &&
+              args[0] === 'config' &&
+              (args[1] === 'user.name' || args[1] === 'user.email')
+            ) {
+              throw Object.assign(new Error('git config field not set'), { status: 1 });
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportGitIdentity } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportGitIdentity(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('user.name');
+    expect(out).toContain('user.email');
+    expect(out).toContain('git config user.name "..."');
+    expect(out).toContain('git config user.email "..."');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a WARN row naming user.name only when user.name is missing', async () => {
+    // Set user.email locally so actual git call for email succeeds via delegation.
+    const repoDir = join(env.testHome, 'claude-nomad');
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'git' && args[0] === 'config' && args[1] === 'user.name') {
+              throw Object.assign(new Error('git config field not set'), { status: 1 });
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportGitIdentity } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportGitIdentity(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('user.name');
+    expect(out).toContain('git config user.name "..."');
+    expect(out).not.toContain('git config user.email "..."');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a WARN row naming user.email only when user.email is missing', async () => {
+    // Set user.name locally so actual git call for name succeeds via delegation.
+    const repoDir = join(env.testHome, 'claude-nomad');
+    execFileSync('git', ['config', 'user.name', 'Test User'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'git' && args[0] === 'config' && args[1] === 'user.email') {
+              throw Object.assign(new Error('git config field not set'), { status: 1 });
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportGitIdentity } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportGitIdentity(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('user.email');
+    expect(out).toContain('git config user.email "..."');
+    expect(out).not.toContain('git config user.name "..."');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits nothing when git exits 128 (not a git repo; reportRepoState covers it)', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'git' && args[0] === 'config') {
+              throw Object.assign(new Error('git exited with code 128'), { status: 128 });
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportGitIdentity } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportGitIdentity(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    // Entire identity check suppressed; repo-broken state is surfaced by reportRepoState.
+    expect(out).not.toContain(warnGlyph);
+    expect(out).not.toMatch(/git identity/);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('treats an empty-string identity value as missing (emits WARN)', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'git' && args[0] === 'config') {
+              return Buffer.from('');
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportGitIdentity } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportGitIdentity(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('user.name');
+    expect(out).toContain('user.email');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('wires reportGitIdentity into cmdDoctor output (PASS row visible under --verbose)', async () => {
+    // Integration: prove reportGitIdentity is called in cmdDoctor when identity is set.
+    // Write path-map.json so reportPathMap does not set exitCode independently.
+    const repoDir = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repoDir, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    execFileSync('git', ['config', 'user.name', 'Test User'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('git identity: user.name and user.email configured');
+    expect(out).not.toMatch(/git identity:.*not set/);
     expect(process.exitCode).toBe(0);
   });
 });

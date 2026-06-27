@@ -187,14 +187,14 @@ try {
     }
     case 'doctor': {
       // `parseDoctorArgs` resolves the argv tail: `--resume-cmd <id>` prints the
-      // resume command (exclusive); `--check-shared` / `--check-schema` append
-      // the gitleaks preflight and live settings-schema scans; `--verbose` /
-      // `--all` / `-v` restore the full tree (bare `doctor` is compact). Any
-      // other shape is a usage error.
+      // resume command (exclusive); `--check-shared` / `--check-schema` /
+      // `--check-remote` append the gitleaks preflight, live settings-schema
+      // scan, and remote structural probe; `--verbose` / `--all` / `-v` restore
+      // the full tree (bare `doctor` is compact). Any other shape is a usage error.
       const parsed = parseDoctorArgs(process.argv.slice(3));
       if (parsed.kind === 'error') {
         console.error(
-          'usage: nomad doctor [--check-shared] [--check-schema] [--verbose|--all|-v]' +
+          'usage: nomad doctor [--check-shared] [--check-schema] [--check-remote] [--verbose|--all|-v]' +
             ' | --resume-cmd <session-id>',
         );
         process.exit(1);
@@ -204,6 +204,7 @@ try {
         cmdDoctor({
           checkShared: parsed.checkShared,
           checkSchema: parsed.checkSchema,
+          checkRemote: parsed.checkRemote,
           verbose: parsed.verbose,
         });
       }

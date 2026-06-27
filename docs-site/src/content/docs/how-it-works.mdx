@@ -96,6 +96,14 @@ Pointers and specifics:
   one of these names cannot be symlinked into the shared repo by mistake.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
+- **Synced skills** get the same divergence WARN as extras: if a file under `~/.claude/skills/`
+  differs from `shared/skills/`, `nomad doctor` lists it before a pull would overwrite the edit
+  without warning. `gsd-*` skills are excluded (they are not copy-synced).
+- **`nomad doctor` also checks two preflight conditions** on the sync repo itself: whether a git
+  committer identity (`user.name` and `user.email`) is configured (a WARN fires before a `nomad
+  push` would fail at commit time without one) and whether path-map entries for the current host
+  point at project folders that still exist on disk (a WARN per missing path; other hosts' entries
+  are not checked).
 - **Credentials stay blocked even inside synced extras.** A strict subset of the never-synced set
   (`.claude.json`, `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`)
   is hard-blocked even when nested inside an opted-in `.planning/` extras tree, so a secret file
