@@ -194,12 +194,18 @@ export function reportGitIdentity(section: DoctorSection): void {
   const missing: string[] = [];
   for (const field of ['user.name', 'user.email'] as const) {
     try {
-      execFileSync('git', ['config', field], {
+      const val = execFileSync('git', ['config', field], {
         cwd: repo,
         stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } catch {
-      missing.push(field);
+      })
+        .toString()
+        .trim();
+      if (!val) missing.push(field);
+    } catch (err) {
+      // git config exits 1 when the field is unset; other codes (128 = not a git
+      // repo, ENOENT = cwd missing) are surfaced by reportRepoState; swallow here.
+      if ((err as { status?: number }).status === 1) missing.push(field);
+      else return;
     }
   }
   if (missing.length > 0) {

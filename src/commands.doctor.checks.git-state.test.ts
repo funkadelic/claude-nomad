@@ -566,7 +566,7 @@ describe('reportOrphanedAutostash WARN', () => {
 });
 
 // ---------------------------------------------------------------------------
-// reportGitIdentity: WARN when committer identity is missing (Phase 57)
+// reportGitIdentity: WARN when committer identity is missing
 // ---------------------------------------------------------------------------
 
 describe('reportGitIdentity', () => {
@@ -588,6 +588,7 @@ describe('reportGitIdentity', () => {
     process.exitCode = 0;
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
+    vi.resetModules();
     restoreEnv('HOME', originalHome);
     restoreEnv('NOMAD_HOST', originalNomadHost);
     restoreEnv('NO_COLOR', originalNoColor);
@@ -628,7 +629,7 @@ describe('reportGitIdentity', () => {
               args[0] === 'config' &&
               (args[1] === 'user.name' || args[1] === 'user.email')
             ) {
-              throw new Error('exit 1');
+              throw Object.assign(new Error('git config field not set'), { status: 1 });
             }
             return actual.execFileSync(bin, args, opts);
           },
@@ -664,7 +665,7 @@ describe('reportGitIdentity', () => {
         execFileSync: vi.fn(
           (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
             if (bin === 'git' && args[0] === 'config' && args[1] === 'user.name') {
-              throw new Error('exit 1');
+              throw Object.assign(new Error('git config field not set'), { status: 1 });
             }
             return actual.execFileSync(bin, args, opts);
           },
@@ -699,7 +700,7 @@ describe('reportGitIdentity', () => {
         execFileSync: vi.fn(
           (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
             if (bin === 'git' && args[0] === 'config' && args[1] === 'user.email') {
-              throw new Error('exit 1');
+              throw Object.assign(new Error('git config field not set'), { status: 1 });
             }
             return actual.execFileSync(bin, args, opts);
           },
@@ -717,6 +718,62 @@ describe('reportGitIdentity', () => {
     expect(out).toContain('user.email');
     expect(out).toContain('git config user.email "..."');
     expect(out).not.toContain('git config user.name "..."');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits nothing when git exits 128 (not a git repo; reportRepoState covers it)', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'git' && args[0] === 'config') {
+              throw Object.assign(new Error('git exited with code 128'), { status: 128 });
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportGitIdentity } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportGitIdentity(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    // Entire identity check suppressed; repo-broken state is surfaced by reportRepoState.
+    expect(out).not.toContain(warnGlyph);
+    expect(out).not.toMatch(/git identity/);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('treats an empty-string identity value as missing (emits WARN)', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, args: readonly string[], opts?: Parameters<typeof execFileSync>[2]) => {
+            if (bin === 'git' && args[0] === 'config') {
+              return Buffer.from('');
+            }
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportGitIdentity } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportGitIdentity(sec);
+    renderDoctor([sec]);
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('user.name');
+    expect(out).toContain('user.email');
     expect(process.exitCode).toBe(0);
   });
 
