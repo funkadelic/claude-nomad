@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.54.0](https://github.com/funkadelic/claude-nomad/compare/v0.53.3...v0.54.0) (2026-06-27)
+
+
+### Added
+
+* **doctor:** add preflight hardening checks ([#344](https://github.com/funkadelic/claude-nomad/issues/344)) ([551ab16](https://github.com/funkadelic/claude-nomad/commit/551ab16a6c0c6bdf88a51c5dbf5a76f3cd4a7f22))
+
+
+### Fixed
+
+* **update:** silence npm output on successful self-update ([#342](https://github.com/funkadelic/claude-nomad/issues/342)) ([b7171b9](https://github.com/funkadelic/claude-nomad/commit/b7171b933c6bb9b4578b7e109bb334baa0f147b8))
+
 ## [0.53.3](https://github.com/funkadelic/claude-nomad/compare/v0.53.2...v0.53.3) (2026-06-26)
 
 
