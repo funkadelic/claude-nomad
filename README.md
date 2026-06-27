@@ -166,7 +166,10 @@ but requires nomad `>= 0.35.0` because it calls recent subcommands (`nomad diff`
 - `gh` ([GitHub CLI](https://cli.github.com/)), required by `nomad init`
 
 **Optional:** [curl](https://curl.se/) or [wget](https://www.gnu.org/software/wget/) for the
-version-staleness check and `nomad doctor --check-schema`. The CLI works without them.
+version-staleness check and `nomad doctor --check-schema`. The CLI works without them. The opt-in
+`nomad doctor --check-remote` flag reads the locally-cached `origin/main` remote-tracking ref (no
+curl or wget needed) and verifies that `shared/` and a valid `path-map.json` are present there; it
+skips with a `⚠︎` when the ref is unavailable, and is non-fatal in all cases.
 
 ## Learn more
 

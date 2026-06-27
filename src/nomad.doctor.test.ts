@@ -47,6 +47,7 @@ describe('nomad.ts doctor dispatcher', () => {
     expect(cmdDoctorMock).toHaveBeenCalledWith({
       checkShared: false,
       checkSchema: false,
+      checkRemote: false,
       verbose: false,
     });
     expect(exitSpy).not.toHaveBeenCalled();
@@ -61,6 +62,7 @@ describe('nomad.ts doctor dispatcher', () => {
     expect(cmdDoctorMock).toHaveBeenCalledWith({
       checkShared: true,
       checkSchema: false,
+      checkRemote: false,
       verbose: false,
     });
     expect(exitSpy).not.toHaveBeenCalled();
@@ -75,6 +77,7 @@ describe('nomad.ts doctor dispatcher', () => {
     expect(cmdDoctorMock).toHaveBeenCalledWith({
       checkShared: false,
       checkSchema: false,
+      checkRemote: false,
       verbose: true,
     });
     expect(exitSpy).not.toHaveBeenCalled();

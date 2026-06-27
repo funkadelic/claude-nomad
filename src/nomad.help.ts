@@ -84,6 +84,8 @@ export const DEFAULT_HELP = [
   cont('`nomad push` would stage (a temp copy, never the live dir).'),
   row('       --check-schema', 'Flag settings.json keys absent from the live published'),
   cont('Claude Code settings schema (needs network; degrades offline).'),
+  row('       --check-remote', 'Verify origin/main has shared/ and a valid path-map.json'),
+  cont('(reads locally-cached remote ref; skips with a warning if unavailable).'),
   row('       --resume-cmd <id>', 'Print `cd <abspath> && claude --resume <id>` for a session id'),
   cont('from ~/.claude/projects/.'),
   '',

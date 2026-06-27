@@ -183,7 +183,7 @@ run `nomad pull` separately for that. See [Usage](/claude-nomad/usage/).
 
 ## `doctor`
 
-`nomad doctor [--resume-cmd <id>] [--check-shared] [--check-schema] [--verbose|--all|-v]`
+`nomad doctor [--resume-cmd <id>] [--check-shared] [--check-schema] [--check-remote] [--verbose|--all|-v]`
 
 Read-only health check. Each line carries a status glyph (`✓` pass, `✗` fail, `⚠︎` warn); any `✗`
 sets `process.exitCode = 1` (`⚠︎` does not). Output ends with a **Summary** section that repeats
@@ -214,7 +214,8 @@ projects mapped for this host and any local project directories with no path-map
 | `--resume-cmd <id>` | Print a host-local `cd ... && claude --resume <id>` line for a session. See [Usage](/claude-nomad/usage/).                                                                                         |
 | `--check-shared`    | Read-only gitleaks preflight: stages the session transcripts a `push` would publish into a temp tree and scans them, failing (`✗`, exit 1) per affected session. Skips with a `⚠︎` when gitleaks is not on PATH. See [Recovery flows](/claude-nomad/recovery/). |
 | `--check-schema`    | Read-only: fetches the live Claude Code settings schema and lists any `~/.claude/settings.json` key absent from it. Non-fatal and offline-tolerant: skips with a `⚠︎` when neither curl nor wget is available or the schema is unreachable. |
-| `--verbose`, `--all`, `-v` | Print the full per-check tree, including passing checks. Without it, `doctor` shows only checks that need action plus the Summary verdict. `--check-shared` / `--check-schema` sections always render in full when their flag is set, in either mode. |
+| `--check-remote`    | Read-only: verifies `origin/main` has `shared/` and a valid `path-map.json`. Reads the locally-cached remote-tracking ref (no network required when the ref is already cached); skips with a `⚠︎` when the ref is unavailable or `git` is not on PATH. Non-fatal in all cases. |
+| `--verbose`, `--all`, `-v` | Print the full per-check tree, including passing checks. Without it, `doctor` shows only checks that need action plus the Summary verdict. `--check-shared` / `--check-schema` / `--check-remote` sections always render in full when their flag is set, in either mode. |
 
 ### Output details
 
