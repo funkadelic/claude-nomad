@@ -15,6 +15,7 @@ import {
 import { reportNeverSync, reportPathMap } from './commands.doctor.checks.pathmap.ts';
 import {
   reportGitleaksProbe,
+  reportGitIdentity,
   reportGitlinks,
   reportOrphanedAutostash,
   reportRebaseClean,
@@ -99,6 +100,7 @@ function gatherDoctorSections(opts: {
   const gitleaksReady = reportGitleaksProbe(repository);
   reportGitlinks(repository);
   reportRemote(repository);
+  reportGitIdentity(repository);
   reportRebaseClean(repository);
   reportRebaseState(repository);
   reportOrphanedAutostash(repository);

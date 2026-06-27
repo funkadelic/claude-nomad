@@ -179,3 +179,36 @@ export function reportOrphanedAutostash(sec: DoctorSection): void {
   }
   /* c8 ignore stop */
 }
+
+/**
+ * WARNs (non-blocking) when REPO_HOME has no resolvable committer identity for
+ * user.name or user.email. Resolves identity the same way git does at commit
+ * time: local repo config wins, else global, else unset. WARN not FAIL because
+ * a pull-only host does not need a committer identity; the WARN catches the
+ * fresh-clone case before nomad push hits a raw git error at commit time.
+ *
+ * Compact mode strips the PASS row automatically via the standard glyph test.
+ */
+export function reportGitIdentity(section: DoctorSection): void {
+  const repo = repoHome();
+  const missing: string[] = [];
+  for (const field of ['user.name', 'user.email'] as const) {
+    try {
+      execFileSync('git', ['config', field], {
+        cwd: repo,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch {
+      missing.push(field);
+    }
+  }
+  if (missing.length > 0) {
+    const hint = missing.map((f) => `git config ${f} "..."`).join(' / ');
+    addItem(
+      section,
+      `${yellow(warnGlyph)} git identity: ${missing.join(', ')} not set (run: ${hint})`,
+    );
+  } else {
+    addItem(section, `${green(okGlyph)} git identity: user.name and user.email configured`);
+  }
+}

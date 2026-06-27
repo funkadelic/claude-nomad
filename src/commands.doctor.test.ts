@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -84,7 +85,9 @@ describe('cmdDoctor --check-shared dispatch wiring', () => {
 describe('cmdDoctor compact default vs --verbose', () => {
   // End-to-end lock on the render-time filter: the all-passing Repository
   // section is hidden by default but present under verbose, while the Summary
-  // verdict always renders. Reuses the same zero-staged sandbox as above.
+  // verdict always renders. A git repo with local identity is required so
+  // reportGitIdentity emits a PASS row (stripped in compact) rather than a
+  // WARN row (kept in compact, which would make the section visible).
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNoColor: string | undefined;
@@ -96,11 +99,27 @@ describe('cmdDoctor compact default vs --verbose', () => {
     originalNoColor = process.env.NO_COLOR;
     process.env.NO_COLOR = '1';
     process.exitCode = 0;
-    env = makeDoctorEnv({ host: 'test-host' });
-    writeFileSync(
-      join(env.testHome, 'claude-nomad', 'path-map.json'),
-      JSON.stringify({ projects: {} }) + '\n',
-    );
+    env = makeDoctorEnv({ host: 'test-host', setupGitRepo: true });
+    const repoDir = join(env.testHome, 'claude-nomad');
+    // Set local git identity so reportGitIdentity emits a PASS row (stripped
+    // in compact mode), not a WARN row (which would keep the section visible).
+    execFileSync('git', ['config', 'user.name', 'Test User'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    // Write path-map.json before committing so the tree is clean and
+    // reportRebaseClean does not WARN (which would keep Repository visible).
+    writeFileSync(join(repoDir, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    // Commit all initial files so git status returns a clean tree.
+    execFileSync('git', ['add', '-A'], { cwd: repoDir, stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('git', ['commit', '-q', '-m', 'init'], {
+      cwd: repoDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     mockGitleaksPresent();
   });
 
