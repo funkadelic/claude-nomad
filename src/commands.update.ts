@@ -29,11 +29,14 @@ export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | 
  * Update the claude-nomad CLI to the latest published npm release by running
  * `npm update -g claude-nomad`.
  *
- * Prints a status line before the update begins. After a successful npm
+ * Prints a status line showing the current version before the update begins.
+ * The npm subprocess output is captured (not streamed) so a successful update
+ * stays quiet, leaving only the final version line. After a successful npm
  * update, reads the newly-installed version by spawning the fresh `nomad
- * --version` binary (not the stale in-process `pkg.version`, which reflects
+ * --version` binary (not the stale in-process `currentVersion`, which reflects
  * the OLD dist). Prints the version on success, or a graceful fallback line
- * if the version query fails.
+ * if the version query fails. On npm failure the captured stderr is folded
+ * into the error so the cause stays diagnosable despite the silenced output.
  *
  * Design decision D-01: self-update and data sync are separate concerns. This
  * command only updates the CLI binary; it does NOT run `nomad pull`, `nomad
@@ -42,19 +45,26 @@ export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | 
  *
  * Uses an argv-array (no shell) with an injectable `run` for test isolation.
  *
+ * @param currentVersion - The in-process package version (the OLD dist), shown
+ *   in the pre-update status line.
  * @param run - Subprocess runner; defaults to `execFileSync`. Inject a fake in
  *   tests to assert the exact args without touching the real npm registry.
  */
-export function cmdUpdate(run: SpawnSyncFn = execFileSync): void {
-  console.log('Updating claude-nomad CLI via npm...');
+export function cmdUpdate(currentVersion: string, run: SpawnSyncFn = execFileSync): void {
+  console.log(`Updating claude-nomad v${currentVersion}...`);
   try {
-    run('npm', ['update', '-g', 'claude-nomad'], { stdio: 'inherit' });
+    run('npm', ['update', '-g', 'claude-nomad'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   } catch (err) {
-    const e = err as NodeJS.ErrnoException;
+    const e = err as NodeJS.ErrnoException & { stderr?: Buffer | string };
     if (e.code === 'ENOENT') {
       throw new NomadFatal('npm not found on PATH; install Node.js/npm and retry.');
     }
-    throw new NomadFatal(`npm update -g claude-nomad failed: ${e.message}`);
+    const detail = String(e.stderr ?? '').trim();
+    const suffix = detail ? `\n${detail}` : '';
+    throw new NomadFatal(`npm update -g claude-nomad failed: ${e.message}${suffix}`);
   }
   const version = readInstalledVersion(run);
   if (version) {

@@ -138,7 +138,7 @@ try {
         console.error('usage: nomad update');
         process.exit(1);
       }
-      cmdUpdate();
+      cmdUpdate(pkg.version);
       break;
     }
     case 'adopt': {
