@@ -172,6 +172,19 @@ comparison normalizes node launcher paths first, so a hook that differs only by 
 versus an absolute `/.../bin/node` path (the host-specific churn an external installer writes) is
 not reported as drift.
 
+`nomad doctor` also surfaces three conditions that are easy to miss on a fresh clone or after a
+project moves. When the sync repo has no git committer identity configured (`user.name` or
+`user.email` unset or empty), it emits a WARN per missing field and prints the `git config` command
+to fix it. The check is WARN rather than FAIL because a pull-only host does not need an identity;
+the purpose is to catch the gap before a `nomad push` hits a raw git error at commit time. When a
+`path-map.json` entry for the current host points at a local directory that no longer exists on
+disk, it emits a WARN naming the project and the missing path. Entries for other hosts are not
+checked (those paths are legitimately absent on this machine), and `TBD` placeholders are skipped.
+Finally, `~/.claude/skills/` gets the same divergence check as per-project extras: if a synced
+skill file has been hand-edited after the last pull and differs from the shared copy, `nomad doctor`
+lists the differing files before a pull would silently overwrite them. `gsd-*` skills are excluded
+from this check, the same as they are excluded from the skills copy-sync.
+
 `nomad pull --dry-run` keeps its own readable preview format (a unified diff of the
 `settings.json` changes plus the transcripts a real pull would overwrite) rather than the grouped
 tree, so that preview stays easy to scan; only a real `nomad pull` prints the tree above.

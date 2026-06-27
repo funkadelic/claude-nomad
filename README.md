@@ -45,13 +45,15 @@ survives different file paths and your secrets never ride along.
   `--dry-run` on pull and push prints the plan without writing anything.
 - **One command tells you what is wrong.** `nomad doctor` is a read-only health check: wedged sync
   repo, broken hook references, hooks that would crash on session start because of a missing
-  `--preserve-symlinks-main` flag, version drift, oversized backup cache, and settings drift in both
-  directions: keys present in the repo merge but absent from your live `settings.json` (behind; the
-  next `nomad pull` will restore them, fix: `nomad pull`) and keys present locally but not yet in
-  the repo (ahead; local-only additions, fix: `nomad capture-settings`). Each issue includes a fix
-  hint. By default the report is compact: it shows only checks that need action plus a one-line
-  verdict. Add `--verbose` (or `--all` / `-v`) to see the full per-check tree, including everything
-  that passed.
+  `--preserve-symlinks-main` flag, version drift, oversized backup cache, missing git committer
+  identity in the sync repo (a push fails at commit time without one), path-map entries whose local
+  project folder no longer exists on this machine, synced skills with local edits that differ from
+  the shared copy, and settings drift in both directions: keys present in the repo merge but absent
+  from your live `settings.json` (behind; the next `nomad pull` will restore them, fix:
+  `nomad pull`) and keys present locally but not yet in the repo (ahead; local-only additions, fix:
+  `nomad capture-settings`). Each issue includes a fix hint. By default the report is compact: it
+  shows only checks that need action plus a one-line verdict. Add `--verbose` (or `--all` / `-v`) to
+  see the full per-check tree, including everything that passed.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
   recovers two kinds of stuck sync repo: a repo stuck mid-rebase or mid-merge (aborts the operation,
   parks stranded work on a branch, refuses if shared config is at risk), and a repo where the rebase
