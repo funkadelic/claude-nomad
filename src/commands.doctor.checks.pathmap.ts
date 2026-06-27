@@ -1,7 +1,18 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { blue, cyan, dim, failGlyph, green, infoGlyph, okGlyph, red } from './color.ts';
+import {
+  blue,
+  cyan,
+  dim,
+  failGlyph,
+  green,
+  infoGlyph,
+  okGlyph,
+  red,
+  warnGlyph,
+  yellow,
+} from './color.ts';
 import { claudeHome, HOST, NEVER_SYNC, repoHome, type PathMap } from './config.ts';
 import {
   addChildItem,
@@ -60,6 +71,26 @@ function reportUnmappedProjects(section: DoctorSection, map: PathMap): void {
   }
 }
 
+/**
+ * Emits a WARN row for each path-map entry where the current host's local path
+ * does not exist on disk. Skips entries for other hosts (legitimately absent on
+ * this machine), TBD placeholders, and empty strings. Does not set
+ * process.exitCode: a project may legitimately be cloned on only some hosts, so
+ * a missing path is a nudge before a remap fails, not a hard failure.
+ */
+function reportCurrentHostPathsMissing(section: DoctorSection, map: PathMap): void {
+  for (const [name, hosts] of Object.entries(map.projects)) {
+    const abspath = hosts[HOST];
+    if (!abspath || abspath === 'TBD') continue;
+    if (!existsSync(abspath)) {
+      addItem(
+        section,
+        `${yellow(warnGlyph)} path-map: ${name} local path missing on ${HOST}: ${blue(abspath)}`,
+      );
+    }
+  }
+}
+
 /** Scans every host of every project for encodePath collisions; emits failGlyph per collision (sets exitCode=1), okGlyph when clean. */
 function reportPathCollisions(section: DoctorSection, map: PathMap): void {
   const seen = new Map<string, string>();
@@ -105,6 +136,7 @@ export function reportPathMap(section: DoctorSection): void {
     return;
   }
   reportMappedProjects(section, map);
+  reportCurrentHostPathsMissing(section, map);
   reportUnmappedProjects(section, map);
   reportPathCollisions(section, map);
 }
