@@ -11,6 +11,7 @@ describe('parseDoctorArgs', () => {
       kind: 'run',
       checkShared: false,
       checkSchema: false,
+      checkRemote: false,
       verbose: false,
     });
   });
@@ -20,6 +21,7 @@ describe('parseDoctorArgs', () => {
       kind: 'run',
       checkShared: true,
       checkSchema: false,
+      checkRemote: false,
       verbose: false,
     });
   });
@@ -29,6 +31,7 @@ describe('parseDoctorArgs', () => {
       kind: 'run',
       checkShared: false,
       checkSchema: true,
+      checkRemote: false,
       verbose: false,
     });
   });
@@ -38,6 +41,7 @@ describe('parseDoctorArgs', () => {
       kind: 'run',
       checkShared: false,
       checkSchema: false,
+      checkRemote: false,
       verbose: true,
     });
   });
@@ -47,6 +51,37 @@ describe('parseDoctorArgs', () => {
       kind: 'run',
       checkShared: true,
       checkSchema: true,
+      checkRemote: false,
+      verbose: true,
+    });
+  });
+
+  it('sets checkRemote for --check-remote', () => {
+    expect(parseDoctorArgs(['--check-remote'])).toEqual({
+      kind: 'run',
+      checkShared: false,
+      checkSchema: false,
+      checkRemote: true,
+      verbose: false,
+    });
+  });
+
+  it('composes --check-remote with --check-shared', () => {
+    expect(parseDoctorArgs(['--check-remote', '--check-shared'])).toEqual({
+      kind: 'run',
+      checkShared: true,
+      checkSchema: false,
+      checkRemote: true,
+      verbose: false,
+    });
+  });
+
+  it('composes --check-remote with --verbose', () => {
+    expect(parseDoctorArgs(['--check-remote', '--verbose'])).toEqual({
+      kind: 'run',
+      checkShared: false,
+      checkSchema: false,
+      checkRemote: true,
       verbose: true,
     });
   });
