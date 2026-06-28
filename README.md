@@ -39,7 +39,9 @@ survives different file paths and your secrets never ride along.
   live settings syncs normally via `nomad capture-settings`.
 - **Every push is secret-scanned.** Only an explicit allow-list of paths ever leaves the machine,
   credentials never sync, and gitleaks scans the exact files about to be published. The push aborts
-  on any hit, with an interactive menu to redact, allow, or drop the finding.
+  on any hit, with an interactive menu to redact, allow, or drop the finding. Always publish through
+  `nomad push`: the sync repo is an ordinary Git repo, so a manual `git push` from it skips the scan
+  entirely and can leak a secret that `nomad push` would have caught.
 - **Preview before you trust it.** `nomad diff` shows offline what a pull would change (gsd-owned
   hook churn is filtered the same as on pull, so the preview matches what a real pull writes), and
   `--dry-run` on pull and push prints the plan without writing anything.
@@ -47,13 +49,16 @@ survives different file paths and your secrets never ride along.
   repo, broken hook references, hooks that would crash on session start because of a missing
   `--preserve-symlinks-main` flag, version drift, oversized backup cache, missing git committer
   identity in the sync repo (a push fails at commit time without one), path-map entries whose local
-  project folder no longer exists on this machine, synced skills with local edits that differ from
-  the shared copy, and settings drift in both directions: keys present in the repo merge but absent
-  from your live `settings.json` (behind; the next `nomad pull` will restore them, fix:
-  `nomad pull`) and keys present locally but not yet in the repo (ahead; local-only additions, fix:
-  `nomad capture-settings`). Each issue includes a fix hint. By default the report is compact: it
-  shows only checks that need action plus a one-line verdict. Add `--verbose` (or `--all` / `-v`) to
-  see the full per-check tree, including everything that passed.
+  project folder no longer exists on this machine, a multi-host repo where this machine's
+  hostname-derived key matches no `hosts/<HOST>.json` or path-map entry (a sign `NOMAD_HOST` is
+  unset here, so per-host settings and session sync will not line up with the other hosts), synced
+  skills with local edits that differ from the shared copy, and settings drift in both directions:
+  keys present in the repo merge but absent from your live `settings.json` (behind; the next
+  `nomad pull` will restore them, fix: `nomad pull`) and keys present locally but not yet in the
+  repo (ahead; local-only additions, fix: `nomad capture-settings`). Each issue includes a fix hint.
+  By default the report is compact: it shows only checks that need action plus a one-line verdict.
+  Add `--verbose` (or `--all` / `-v`) to see the full per-check tree, including everything that
+  passed.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
   recovers two kinds of stuck sync repo: a repo stuck mid-rebase or mid-merge (aborts the operation,
   parks stranded work on a branch, refuses if shared config is at risk), and a repo where the rebase
@@ -67,6 +72,16 @@ See the [full feature tour](https://funkadelic.github.io/claude-nomad/features/)
 opt-in per-project sync, transcript redaction, backup pruning, and more.
 
 ## Quickstart
+
+nomad works with two directories, and the difference is the one thing worth learning up front:
+
+- **`~/claude-nomad/`** is your private sync repo. This is the one you edit.
+- **`~/.claude/`** is Claude Code's live config. nomad regenerates it on every `pull`.
+
+Edit the repo, never the live config. In particular, never hand-edit `~/.claude/settings.json`: it
+is rebuilt from the repo on every pull and your changes are lost. Change `shared/settings.base.json`
+(or `hosts/<HOST>.json`) in the repo instead, or run `nomad capture-settings` to pull local changes
+back into the repo (see [Changing settings](#changing-settings)).
 
 **First host** (once, ever):
 
@@ -103,6 +118,45 @@ $ nomad doctor   # confirm setup
 $ nomad pull     # apply config to ~/.claude/
 $ nomad push     # publish local changes (sessions, settings)
 ```
+
+Pull before you push whenever both machines may have changed. Sync is last-write-wins, so pushing
+stale local state over newer remote state silently overwrites it. The
+[FAQ](https://funkadelic.github.io/claude-nomad/faq/) covers the full push/pull order when both
+sides have changed.
+
+### Make your sessions follow you
+
+Session history only syncs for projects you list in `path-map.json`, and a fresh `init` starts with
+none, so no sessions sync until you add a mapping. Each entry maps a logical project name to the
+absolute path it lives at on each host:
+
+```json
+{
+  "projects": {
+    "my-app": {
+      "laptop": "/Users/you/code/my-app",
+      "desktop": "/home/you/projects/my-app"
+    }
+  }
+}
+```
+
+The host keys (`laptop`, `desktop`) are the same labels you set in `NOMAD_HOST` on each machine.
+After editing `path-map.json`, `nomad push` publishes the matching sessions and `nomad pull` on
+another host copies them into place, rewriting the embedded file paths so `claude --resume` finds
+them at that host's path.
+
+### Changing settings
+
+There are two ways a settings change reaches the repo, and the right one depends on where you made
+it:
+
+- **You are deciding the change:** edit `shared/settings.base.json` (shared by every host) or
+  `hosts/<HOST>.json` (one machine only) in the repo, then `nomad push`.
+- **Something else already wrote it** (Claude Code or a tool added keys to your live
+  `~/.claude/settings.json`): run `nomad capture-settings` to promote those keys into the repo
+  before the next `nomad pull` overwrites them. Add `--host` to land machine-specific values (such
+  as absolute paths) in `hosts/<HOST>.json` instead of the shared base.
 
 During `nomad push` and `nomad pull`, long-running steps (rebase, secret scan, git push, session
 sync) show an animated progress indicator on an interactive terminal so the CLI does not look hung.

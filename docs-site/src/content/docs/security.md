@@ -81,3 +81,8 @@ docs rather than restated here:
 Secrets are scanned by gitleaks locally on push, and in CI on pull requests via
 `.github/workflows/gitleaks.yml`. The repo-root `.gitleaks.toml` allowlist and its rationale are
 described under [Recovery flows](/claude-nomad/recovery/).
+
+The local scan runs inside `nomad push`, not as a git hook, so always publish through `nomad push`.
+The sync repo is an ordinary Git repo: a manual `git push` from it bypasses the scan entirely and
+can leak a secret that `nomad push` would have caught (CI still scans pull requests, but a direct
+push to `main` skips that too).

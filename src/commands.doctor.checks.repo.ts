@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -23,6 +23,7 @@ import {
 } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
+import { readJson, validatePathMapShape } from './utils.json.ts';
 
 /**
  * Host- and repo-state reporters for `cmdDoctor`. Each helper appends one or
@@ -69,6 +70,82 @@ export function reportHostAndPaths(section: DoctorSection): void {
   addItem(
     section,
     `${existsSync(claude) ? green(okGlyph) : yellow(warnGlyph)} claude home: ${blue(claude)}`,
+  );
+}
+
+/**
+ * The set of host keys referenced across every project in `path-map.json`.
+ * Tolerant: a missing, unreadable, or malformed map yields an empty set rather
+ * than throwing, since the authoritative path-map diagnostics live in the Path
+ * map section. Module-private helper for `reportHostKeyAlignment`.
+ */
+function pathMapHostKeys(): Set<string> {
+  const mapPath = join(repoHome(), 'path-map.json');
+  if (!existsSync(mapPath)) return new Set();
+  let raw: unknown;
+  try {
+    raw = readJson<unknown>(mapPath);
+  } catch {
+    return new Set();
+  }
+  if (validatePathMapShape(raw) !== null) return new Set();
+  const keys = new Set<string>();
+  for (const hosts of Object.values((raw as PathMap).projects)) {
+    for (const key of Object.keys(hosts)) keys.add(key);
+  }
+  return keys;
+}
+
+/**
+ * The set of host labels that have a `hosts/<label>.json` override file.
+ * Tolerant: an absent or unreadable `hosts/` directory yields an empty set.
+ * Module-private helper for `reportHostKeyAlignment`.
+ */
+function hostOverrideLabels(): Set<string> {
+  let entries: string[];
+  try {
+    entries = readdirSync(join(repoHome(), 'hosts'));
+  } catch {
+    return new Set();
+  }
+  const labels = new Set<string>();
+  for (const entry of entries) {
+    if (entry.endsWith('.json')) labels.add(entry.slice(0, -'.json'.length));
+  }
+  return labels;
+}
+
+/**
+ * WARN when `NOMAD_HOST` is unset and the hostname-derived HOST key is not
+ * recognized in a repo that is demonstrably multi-host. HOST is the join key
+ * that selects the per-host settings override and keys every path-map session
+ * mapping. The warning fires only when ALL of:
+ *   - `NOMAD_HOST` is unset (so the key came from `os.hostname()`, not a label
+ *     the user chose),
+ *   - this host has neither a `hosts/<HOST>.json` override nor any path-map
+ *     entry (presence of the key, not a truthy value: an empty or `TBD`
+ *     placeholder still counts as recognized),
+ *   - and the repo configures at least one OTHER host (an override file or a
+ *     path-map entry under a different label).
+ * The last condition is the narrowing: a single-host or fresh repo stays silent,
+ * so the warning surfaces only a genuine cross-host misalignment (a second host
+ * that forgot to `export NOMAD_HOST`, whose hostname key lines up with nothing
+ * the other hosts use). Informational only: never sets `process.exitCode`.
+ */
+export function reportHostKeyAlignment(section: DoctorSection): void {
+  if (process.env.NOMAD_HOST) return;
+  const overrideLabels = hostOverrideLabels();
+  const mapKeys = pathMapHostKeys();
+  // Recognized here means this host has a per-host override or a path-map entry.
+  if (overrideLabels.has(HOST) || mapKeys.has(HOST)) return;
+  // Neither set contains HOST at this point, so any remaining entry is another
+  // host. Stay silent on a single-host or fresh repo; only nag when the repo
+  // already configures some other host, which makes this host's unrecognized
+  // key a real misalignment.
+  if (overrideLabels.size === 0 && mapKeys.size === 0) return;
+  addItem(
+    section,
+    `${yellow(warnGlyph)} NOMAD_HOST unset: this repo configures other hosts, but the hostname key ${cyan(HOST)} matches no hosts/${HOST}.json or path-map entry; set NOMAD_HOST to the label this host should use so per-host settings and session sync line up`,
   );
 }
 

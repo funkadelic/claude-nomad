@@ -149,7 +149,8 @@ export const DEFAULT_HELP = [
   '',
   row('  --version', 'Print the installed CLI version as bare semver to stdout; exits 0.'),
   '',
-  'Run `nomad doctor` to validate your setup. Edit shared/ or hosts/<HOST>.json',
+  'You edit the sync repo (~/claude-nomad/); nomad regenerates ~/.claude/ on every',
+  'pull. Run `nomad doctor` to validate your setup. Edit shared/ or hosts/<HOST>.json',
   'in the repo, never ~/.claude/settings.json directly (it is regenerated on',
   'every pull).',
 ].join('\n');
