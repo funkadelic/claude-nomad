@@ -141,6 +141,17 @@ describe('cmdInit empty-scaffold mode', () => {
     cmdInit({ run: makeOriginExistsRun(), repoName: 'my-custom-repo' });
     expect(joinedLog(env.logSpy)).toMatch(/init complete$/);
   });
+
+  it('isAlreadyInitialized is false on a fresh repo and true once scaffolded', async () => {
+    // The dispatcher gates the snapshot prompt on this so a re-init aborts
+    // before any prompt. A bare shared/ dir is enough to read as initialized,
+    // matching the refuse-to-clobber preflight it wraps.
+    const repo = join(env.testHome, 'claude-nomad');
+    const { isAlreadyInitialized } = await import('./init.ts');
+    expect(isAlreadyInitialized(repo)).toBe(false);
+    mkdirSync(join(repo, 'shared'), { recursive: true });
+    expect(isAlreadyInitialized(repo)).toBe(true);
+  });
 });
 
 describe('classifyRepoState classifier', () => {

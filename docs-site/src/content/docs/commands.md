@@ -14,12 +14,15 @@ Create a private GitHub repo via `gh`, wire it as `origin`, disable Actions, and
 `hosts/`, `path-map.json`. Does not commit or push; run `nomad push` afterward to publish. Prompts
 for a repo name (default: `claude-nomad-config`). `gh`
 must be installed and authenticated; exits with FATAL otherwise. Refuses to clobber existing
-scaffold. See [Quickstart](/claude-nomad/quickstart/) for privacy details.
+scaffold. Without `--snapshot`, an interactive `init` that finds an existing `~/.claude/` (a
+`settings.json` or any non-empty shared source) offers to seed the repo from it; declining keeps the
+empty scaffold, and a non-interactive shell skips the prompt and prints a `--snapshot` tip. See
+[Quickstart](/claude-nomad/quickstart/) for privacy details.
 
 | Flag             | Description                                                                                                                                                                            |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--repo <name>`  | Non-interactive: use `<name>` as the private repo name without prompting. Useful in scripts.                                                                                          |
-| `--snapshot`     | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified. Same auto-disable behavior.   |
+| `--snapshot`     | Overlay current host's `~/.claude/` into `shared/` and write `~/.claude/settings.json` verbatim into `hosts/<NOMAD_HOST>.json`. Originals not modified. Same auto-disable behavior. An interactive `init` offers this automatically when it detects existing config. |
 | `--keep-actions` | Skip the Actions-disable step. Combinable with `--snapshot` and `--repo`. Use when an org policy already governs Actions, or you intentionally want CI on the private repo.           |
 
 ## `pull`

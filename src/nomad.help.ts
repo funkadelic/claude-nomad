@@ -70,7 +70,8 @@ export const DEFAULT_HELP = [
     '  init',
     'Create a private GitHub repo via gh (if none exists), scaffold shared/, hosts/, path-map.',
   ),
-  row('       --snapshot', 'Overlay the current ~/.claude/ into shared/ as the initial seed.'),
+  row('       --snapshot', 'Seed shared/ from the current ~/.claude/. Without this flag, init'),
+  cont('offers the same seed interactively when it detects existing config.'),
   row('       --keep-actions', 'Skip auto-disabling GitHub Actions on the private repo.'),
   row(
     '       --repo <name>',
