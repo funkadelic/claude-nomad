@@ -205,10 +205,12 @@ or `git stash drop` runbook. Other `⚠︎`-only checks: gitleaks version drift;
 repo, re-enabled Actions; optional-dependency presence (`gh` and the curl-or-wget HTTP fetcher);
 a backups-cache size/count nudge toward `nomad clean --backups`; an ESM/CommonJS hook-scope
 mismatch; a Node-engine floor check; a hook command that runs a Node script under a synced
-(symlinked) directory without `--preserve-symlinks-main`; and, when `NOMAD_HOST` is unset, a
-hostname-derived host key that matches neither a `hosts/<NOMAD_HOST>.json` override nor a path-map
-entry (the silent-misalignment nudge: per-host settings and session sync key off this label, so set
-`NOMAD_HOST` to a stable value when the warning fires). The Path map section lists both the
+(symlinked) directory without `--preserve-symlinks-main`; and, when `NOMAD_HOST` is unset on a repo
+that already configures other hosts, a hostname-derived host key that matches neither a
+`hosts/<NOMAD_HOST>.json` override nor a path-map entry (the silent-misalignment nudge: per-host
+settings and session sync key off this label, so set `NOMAD_HOST` to the label this host should use
+when the warning fires; a single-host or fresh repo stays silent). The Path map section lists both
+the
 projects mapped for this host and any local project directories with no path-map entry (what
 `nomad push` counts as "unmapped"; they are left alone in both directions).
 

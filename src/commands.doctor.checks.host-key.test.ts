@@ -11,11 +11,12 @@ import { HOST } from './config.ts';
 import { restoreEnv } from './commands.doctor.checks.test-helpers.ts';
 
 /**
- * `reportHostKeyAlignment` WARNs only when NOMAD_HOST is unset AND the
- * hostname-derived HOST key matches neither a `hosts/<HOST>.json` override nor a
- * `path-map.json` entry. Every other state stays silent. The frozen HOST
- * constant is used to key the fixture files so the assertions hold regardless of
- * the runner's actual hostname.
+ * `reportHostKeyAlignment` WARNs only when NOMAD_HOST is unset, the
+ * hostname-derived HOST key is recognized by neither a `hosts/<HOST>.json`
+ * override nor a `path-map.json` entry, AND the repo already configures some
+ * other host (the multi-host-evidence narrowing). Single-host and fresh repos
+ * stay silent. The frozen HOST constant keys the fixtures so the assertions hold
+ * regardless of the runner's actual hostname.
  */
 describe('reportHostKeyAlignment', () => {
   let origHome: string | undefined;
@@ -90,8 +91,32 @@ describe('reportHostKeyAlignment', () => {
     expect(s.items).toHaveLength(0);
   });
 
-  it('WARNs when unset with no host file and no path-map', () => {
+  it('stays silent on a single-host/fresh repo with no other-host evidence', () => {
     delete process.env.NOMAD_HOST;
+    const s = section('Environment');
+    reportHostKeyAlignment(s);
+    expect(s.items).toHaveLength(0);
+  });
+
+  it('stays silent on a malformed path-map with no other-host evidence', () => {
+    delete process.env.NOMAD_HOST;
+    writePathMap('{ not valid json');
+    const s = section('Environment');
+    reportHostKeyAlignment(s);
+    expect(s.items).toHaveLength(0);
+  });
+
+  it('stays silent on an invalid-shape path-map with no other-host evidence', () => {
+    delete process.env.NOMAD_HOST;
+    writePathMap(JSON.stringify({ projects: [] }));
+    const s = section('Environment');
+    reportHostKeyAlignment(s);
+    expect(s.items).toHaveLength(0);
+  });
+
+  it('WARNs when path-map.json maps only another host', () => {
+    delete process.env.NOMAD_HOST;
+    writePathMap(JSON.stringify({ projects: { app: { 'other-host': '/abs/app' } } }));
     const s = section('Environment');
     reportHostKeyAlignment(s);
     expect(s.items).toHaveLength(1);
@@ -100,26 +125,20 @@ describe('reportHostKeyAlignment', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('WARNs when path-map.json is malformed JSON', () => {
+  it('WARNs when another host has an override file', () => {
     delete process.env.NOMAD_HOST;
-    writePathMap('{ not valid json');
+    writeFileSync(join(repo(), 'hosts', 'other-host.json'), '{}');
+    // A non-.json sibling (the scaffold leaves a .gitkeep) must be ignored.
+    writeFileSync(join(repo(), 'hosts', '.gitkeep'), '');
     const s = section('Environment');
     reportHostKeyAlignment(s);
     expect(s.items).toHaveLength(1);
     expect(s.items[0]).toContain('NOMAD_HOST unset');
   });
 
-  it('WARNs when path-map.json has an invalid shape', () => {
+  it('WARNs from path-map evidence even when the hosts/ dir is absent', () => {
     delete process.env.NOMAD_HOST;
-    writePathMap(JSON.stringify({ projects: [] }));
-    const s = section('Environment');
-    reportHostKeyAlignment(s);
-    expect(s.items).toHaveLength(1);
-    expect(s.items[0]).toContain('NOMAD_HOST unset');
-  });
-
-  it('WARNs when path-map.json maps only other hosts', () => {
-    delete process.env.NOMAD_HOST;
+    rmSync(join(repo(), 'hosts'), { recursive: true, force: true });
     writePathMap(JSON.stringify({ projects: { app: { 'other-host': '/abs/app' } } }));
     const s = section('Environment');
     reportHostKeyAlignment(s);
