@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.55.0](https://github.com/funkadelic/claude-nomad/compare/v0.54.0...v0.55.0) (2026-06-28)
+
+
+### Added
+
+* **doctor:** warn on misaligned host key when NOMAD_HOST is unset ([#356](https://github.com/funkadelic/claude-nomad/issues/356)) ([a13e833](https://github.com/funkadelic/claude-nomad/commit/a13e833a09636f98f1e9c51e9c41f01a4323dea2))
+* **init:** offer to snapshot an existing ~/.claude on init ([#357](https://github.com/funkadelic/claude-nomad/issues/357)) ([92e90b1](https://github.com/funkadelic/claude-nomad/commit/92e90b1977fff51d565fa5d11b3c640790ee1b57))
+
+
+### Fixed
+
+* make sync warning messages user-friendly ([#345](https://github.com/funkadelic/claude-nomad/issues/345)) ([002f57d](https://github.com/funkadelic/claude-nomad/commit/002f57de240dfb1349742fa4c2b4ac5e51b5f7ba))
+
+
+### Documentation
+
+* clarify onboarding (two-dir model, session sync, push order) ([#355](https://github.com/funkadelic/claude-nomad/issues/355)) ([396fbb8](https://github.com/funkadelic/claude-nomad/commit/396fbb875b4331800ee74834944da17decbcad92))
+
 ## [0.54.0](https://github.com/funkadelic/claude-nomad/compare/v0.53.3...v0.54.0) (2026-06-27)
 
 
