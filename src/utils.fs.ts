@@ -40,6 +40,9 @@ export function writeJsonAtomic(path: string, data: unknown): void {
   const dirFd = openSync(dirname(path), 'r');
   try {
     fsyncSync(dirFd);
+  } catch (e: unknown) {
+    // Windows does not support fsync on directory file descriptors.
+    if ((e as NodeJS.ErrnoException).code !== 'EPERM') throw e;
   } finally {
     closeSync(dirFd);
   }
