@@ -314,7 +314,85 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     expect(() => divergenceCheckExtras('20260516-000000')).not.toThrow();
     // No warn should be emitted because the local side was absent (early continue).
     const combined = warnLines.join('');
-    expect(combined).not.toContain('diverges from origin');
+    expect(combined).not.toContain('differs from the synced copy');
+  });
+
+  /**
+   * Spy on stderr, run `divergenceCheckExtras`, and return the captured output.
+   * Shared by the warn-line grammar cases below.
+   */
+  async function runDivergence(): Promise<string> {
+    const warnLines: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      warnLines.push(args.map(String).join(' '));
+    });
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260516-000000');
+    return warnLines.join('\n');
+  }
+
+  /** Write a path-map.json mapping `testproj` to `projectRoot` with the given extras. */
+  function writePathMap(projectRoot: string, extras: string[]): void {
+    writeFileSync(
+      join(testRepo, 'path-map.json'),
+      JSON.stringify({
+        projects: { testproj: { 'test-host': projectRoot } },
+        extras: { testproj: extras },
+      }) + '\n',
+    );
+  }
+
+  it('warns "folder" with plural grammar for a multi-file directory divergence', async () => {
+    const projectRoot = join(testHome, 'proj-folder-plural');
+    const localPlanning = join(projectRoot, '.planning');
+    mkdirSync(localPlanning, { recursive: true });
+    writeFileSync(join(localPlanning, 'a.md'), 'local-a\n');
+    writeFileSync(join(localPlanning, 'b.md'), 'local-b\n');
+    const repoExtras = join(testRepo, 'shared', 'extras', 'testproj', '.planning');
+    mkdirSync(repoExtras, { recursive: true });
+    writeFileSync(join(repoExtras, 'a.md'), 'repo-a\n');
+    writeFileSync(join(repoExtras, 'b.md'), 'repo-b\n');
+    writePathMap(projectRoot, ['.planning']);
+
+    const combined = await runDivergence();
+    expect(combined).toContain(
+      'local folder .planning/ in repo testproj differs from the synced copy in 2 files;',
+    );
+    expect(combined).toContain('overwrite them with the synced version');
+    expect(combined).toContain('your current files are backed up to');
+  });
+
+  it('warns "folder" with singular grammar for a single-file directory divergence', async () => {
+    const projectRoot = join(testHome, 'proj-folder-single');
+    const localPlanning = join(projectRoot, '.planning');
+    mkdirSync(localPlanning, { recursive: true });
+    writeFileSync(join(localPlanning, 'a.md'), 'local-a\n');
+    const repoExtras = join(testRepo, 'shared', 'extras', 'testproj', '.planning');
+    mkdirSync(repoExtras, { recursive: true });
+    writeFileSync(join(repoExtras, 'a.md'), 'repo-a\n');
+    writePathMap(projectRoot, ['.planning']);
+
+    const combined = await runDivergence();
+    expect(combined).toContain(
+      'local folder .planning/ in repo testproj differs from the synced copy in 1 file;',
+    );
+    expect(combined).toContain('overwrite it with the synced version');
+    expect(combined).toContain('your current file is backed up to');
+  });
+
+  it('warns "file" for a single-file extra (CLAUDE.md) divergence', async () => {
+    const projectRoot = join(testHome, 'proj-file');
+    mkdirSync(projectRoot, { recursive: true });
+    writeFileSync(join(projectRoot, 'CLAUDE.md'), 'local\n');
+    const repoExtras = join(testRepo, 'shared', 'extras', 'testproj');
+    mkdirSync(repoExtras, { recursive: true });
+    writeFileSync(join(repoExtras, 'CLAUDE.md'), 'repo\n');
+    writePathMap(projectRoot, ['CLAUDE.md']);
+
+    const combined = await runDivergence();
+    expect(combined).toContain(
+      'local file CLAUDE.md in repo testproj differs from the synced copy in 1 file;',
+    );
   });
 });
 

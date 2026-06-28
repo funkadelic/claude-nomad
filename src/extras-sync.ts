@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { backupBase, repoHome } from './config.ts';
@@ -14,6 +14,27 @@ export { copyExtras } from './extras-sync.core.ts';
 // The two public remap ops live in the sibling module to hold the soft
 // line-cap; re-exported here so `./extras-sync.ts` stays the public surface.
 export { remapExtrasPull, remapExtrasPush } from './extras-sync.remap.ts';
+
+/**
+ * Build the user-facing WARN line for one diverging extra. Phrases the entry
+ * as a "folder"/"file" with grammar that agrees with the diverging-file count
+ * (singular vs plural), and names the backup path the next pull step writes to.
+ */
+function divergenceWarnLine(o: {
+  dirname: string;
+  logical: string;
+  isDir: boolean;
+  count: number;
+  projectBackupRoot: string;
+}): string {
+  const kind = o.isDir ? 'folder' : 'file';
+  const name = o.isDir ? `${o.dirname}/` : o.dirname;
+  const one = o.count === 1;
+  const fileCount = one ? '1 file' : `${o.count} files`;
+  const them = one ? 'it' : 'them';
+  const yours = one ? 'your current file is' : 'your current files are';
+  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step will overwrite ${them} with the synced version (${yours} backed up to ${o.projectBackupRoot}/)`;
+}
 
 /**
  * Read-only pre-pull check: compare local `<localRoot>/<dirname>/` against
@@ -42,7 +63,13 @@ export function divergenceCheckExtras(ts: string): void {
     if (diff.length === 0) continue;
     const projectBackupRoot = join(backupRoot, encodePath(localRoot));
     warn(
-      `local ${dirname} for ${logical} diverges from origin in ${diff.length} file(s); next remapExtrasPull will merge changes (.planning overlays, .claude/.CLAUDE.md mirror; backups at ${projectBackupRoot}/)`,
+      divergenceWarnLine({
+        dirname,
+        logical,
+        isDir: statSync(local).isDirectory(),
+        count: diff.length,
+        projectBackupRoot,
+      }),
     );
     for (const f of diff) warn(`  ${f}`);
   }

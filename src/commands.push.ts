@@ -4,6 +4,7 @@ import { join, relative } from 'node:path';
 import { backupBase, claudeHome, HOST, type PathMap, repoHome } from './config.ts';
 import {
   classifySettingsDrift,
+  describeSettings,
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
 import { enforceAllowList, isGsdDropped, parsePorcelainZ } from './commands.push.allowlist.ts';
@@ -85,10 +86,10 @@ export function reportSettingsAheadDrift(repo: string): void {
     const { ahead } = classifySettingsDrift(merged, settings);
     const { promotable } = partitionByCaptureExclusion(ahead);
     if (promotable.length === 0) return;
-    const keys = JSON.stringify(promotable);
+    const { phrase, pronoun, verb } = describeSettings(promotable);
     warn(
-      `settings.json has local-only keys ${keys} not in the repo. ` +
-        `Run 'nomad capture-settings' to promote them (or 'nomad capture-settings --host' for host-specific values).`,
+      `your settings.json has ${phrase} that ${verb} not yet in the repo; ` +
+        `run 'nomad capture-settings' to save ${pronoun} (or 'nomad capture-settings --host' for host-specific values).`,
     );
   } catch {
     // Malformed JSON or unreadable file: skip silently (best-effort).
