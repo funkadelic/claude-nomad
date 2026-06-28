@@ -55,6 +55,21 @@ function preflightConflict(repoHome: string): string | null {
 }
 
 /**
+ * True when REPO_HOME already holds an init scaffold (any artifact `cmdInit`
+ * would refuse to clobber). Exposed so the dispatcher can skip the
+ * snapshot prompt on a re-init: without this gate, re-running `nomad init` on a
+ * configured host would ask about seeding `~/.claude/` (or print the tip) and
+ * only then abort, so the question would be moot. Wraps `preflightConflict` to
+ * keep the clobber set a single source of truth.
+ *
+ * @param repoHome - Absolute path to the sync repo root.
+ * @returns True when an existing scaffold is present.
+ */
+export function isAlreadyInitialized(repoHome: string): boolean {
+  return preflightConflict(repoHome) !== null;
+}
+
+/**
  * Scaffold REPO_HOME with the minimal layout `cmdDoctor` expects: `shared/`
  * with `CLAUDE.md`, four `<name>/.gitkeep` markers, and an empty
  * `settings.base.json`; `hosts/.gitkeep`; root `path-map.json` =

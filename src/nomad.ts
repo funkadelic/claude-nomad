@@ -26,9 +26,9 @@ import { cmdRedact } from './commands.redact.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
 import { cmdUpdate } from './commands.update.ts';
-import { claudeHome, home } from './config.ts';
+import { claudeHome, home, repoHome } from './config.ts';
 import { cmdDiff } from './diff.ts';
-import { cmdInit } from './init.ts';
+import { cmdInit, isAlreadyInitialized } from './init.ts';
 import { resolveSnapshotChoice } from './init.prompt.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
 import { parseCaptureSettingsArgs } from './nomad.dispatch.capture-settings.ts';
@@ -116,8 +116,12 @@ try {
         process.exit(1);
       }
       // Without --snapshot, offer to seed the repo from an existing ~/.claude/
-      // (interactive only); a fresh host with no config is never prompted.
-      const snapshot = await resolveSnapshotChoice(initArgs.snapshot, claudeHome());
+      // (interactive only); a fresh host with no config is never prompted. Skip
+      // the prompt entirely on an already-initialized repo so cmdInit's
+      // preflight aborts first, with no moot question or tip.
+      const snapshot = isAlreadyInitialized(repoHome())
+        ? initArgs.snapshot
+        : await resolveSnapshotChoice(initArgs.snapshot, claudeHome());
       cmdInit({
         snapshot,
         keepActions: initArgs.keepActions,
