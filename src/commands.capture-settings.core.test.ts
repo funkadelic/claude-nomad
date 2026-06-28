@@ -5,6 +5,7 @@ import {
   buildCaptureSubset,
   CAPTURE_EXCLUDED_KEYS,
   classifySettingsDrift,
+  describeSettings,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
@@ -606,5 +607,23 @@ describe('capture ordering and round-trip for personal hooks', () => {
     const hooks = captured.hooks as Record<string, unknown[]>;
     const preToolMatchers = hooks.PreToolUse as { hooks: unknown[] }[];
     expect(preToolMatchers[0].hooks[0]).toMatchObject({ command: userEntry.command });
+  });
+});
+
+describe('describeSettings', () => {
+  it('uses singular noun, "it", and "is" for one key', () => {
+    expect(describeSettings(['permissions'])).toEqual({
+      phrase: '1 setting (permissions)',
+      pronoun: 'it',
+      verb: 'is',
+    });
+  });
+
+  it('uses plural noun, "them", and "are" for multiple keys', () => {
+    expect(describeSettings(['theme', 'model'])).toEqual({
+      phrase: '2 settings (theme, model)',
+      pronoun: 'them',
+      verb: 'are',
+    });
   });
 });

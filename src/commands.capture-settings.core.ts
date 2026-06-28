@@ -218,6 +218,30 @@ export function partitionByCaptureExclusion(keys: string[]): {
   return { promotable, excluded };
 }
 
+/**
+ * Render a settings-key list for a user-facing drift message in plain language:
+ * a count, the noun pluralized to match, and the names in parentheses (no JSON
+ * brackets or quotes). Example: `2 settings (theme, model)` or `1 setting
+ * (permissions)`. The companion `it`/`them` pronoun and `is`/`are` verb are
+ * returned so the caller's surrounding sentence agrees in number without its own
+ * branching.
+ *
+ * @param keys - The drifting setting keys (non-empty when used in a message).
+ * @returns `{ phrase, pronoun, verb }` for splicing into a drift warning.
+ */
+export function describeSettings(keys: string[]): {
+  phrase: string;
+  pronoun: string;
+  verb: string;
+} {
+  const one = keys.length === 1;
+  return {
+    phrase: `${keys.length} ${one ? 'setting' : 'settings'} (${keys.join(', ')})`,
+    pronoun: one ? 'it' : 'them',
+    verb: one ? 'is' : 'are',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Node-path normalizer
 // ---------------------------------------------------------------------------

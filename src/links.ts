@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import {
   classifySettingsDrift,
+  describeSettings,
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
@@ -192,16 +193,18 @@ export function regenerateSettings(
       const existing = readJson<Record<string, unknown>>(settingsPath);
       const drift = classifySettingsDrift(merged, existing);
       if (drift.behind.length > 0) {
+        const { phrase, pronoun } = describeSettings(drift.behind);
         warn(
-          `existing settings.json is missing merged keys ${JSON.stringify(drift.behind)}. ` +
-            `Run 'nomad pull' to restore them.`,
+          `your settings.json is missing ${phrase} that the synced copy has; ` +
+            `run 'nomad pull' to restore ${pronoun}.`,
         );
       }
       const { promotable } = partitionByCaptureExclusion(drift.ahead);
       if (promotable.length > 0) {
+        const { phrase, pronoun, verb } = describeSettings(promotable);
         warn(
-          `existing settings.json has local-only keys ${JSON.stringify(promotable)}. ` +
-            `Run 'nomad capture-settings' to promote them into the repo before they are overwritten.`,
+          `your settings.json has ${phrase} that ${verb} not yet synced; ` +
+            `run 'nomad capture-settings' to save ${pronoun} to the repo before the next pull overwrites ${pronoun}.`,
         );
       }
     } catch {
