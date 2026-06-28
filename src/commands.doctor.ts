@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   reportDroppedNamesMigration,
   reportHostAndPaths,
+  reportHostKeyAlignment,
   reportRepoState,
   reportSharedLinks,
 } from './commands.doctor.checks.repo.ts';
@@ -69,6 +70,7 @@ function gatherDoctorSections(opts: {
 }): DoctorSection[] {
   const host = section('Environment');
   reportHostAndPaths(host);
+  reportHostKeyAlignment(host);
   reportRepoState(host);
 
   const links = section('Shared links');

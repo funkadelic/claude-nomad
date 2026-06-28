@@ -47,10 +47,12 @@ survives different file paths and your secrets never ride along.
   repo, broken hook references, hooks that would crash on session start because of a missing
   `--preserve-symlinks-main` flag, version drift, oversized backup cache, missing git committer
   identity in the sync repo (a push fails at commit time without one), path-map entries whose local
-  project folder no longer exists on this machine, synced skills with local edits that differ from
-  the shared copy, and settings drift in both directions: keys present in the repo merge but absent
-  from your live `settings.json` (behind; the next `nomad pull` will restore them, fix:
-  `nomad pull`) and keys present locally but not yet in the repo (ahead; local-only additions, fix:
+  project folder no longer exists on this machine, a hostname-derived host key that matches no
+  `hosts/<HOST>.json` or path-map entry (a sign `NOMAD_HOST` is unset on this machine, so per-host
+  settings and session sync will not line up), synced skills with local edits that differ from the
+  shared copy, and settings drift in both directions: keys present in the repo merge but absent from
+  your live `settings.json` (behind; the next `nomad pull` will restore them, fix: `nomad pull`) and
+  keys present locally but not yet in the repo (ahead; local-only additions, fix:
   `nomad capture-settings`). Each issue includes a fix hint. By default the report is compact: it
   shows only checks that need action plus a one-line verdict. Add `--verbose` (or `--all` / `-v`) to
   see the full per-check tree, including everything that passed.

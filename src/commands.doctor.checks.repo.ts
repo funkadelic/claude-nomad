@@ -23,6 +23,7 @@ import {
 } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
+import { readJson, validatePathMapShape } from './utils.json.ts';
 
 /**
  * Host- and repo-state reporters for `cmdDoctor`. Each helper appends one or
@@ -69,6 +70,47 @@ export function reportHostAndPaths(section: DoctorSection): void {
   addItem(
     section,
     `${existsSync(claude) ? green(okGlyph) : yellow(warnGlyph)} claude home: ${blue(claude)}`,
+  );
+}
+
+/**
+ * True when `path-map.json` maps at least one project for the current HOST.
+ * Tolerant by design: a missing, unreadable, or malformed map counts as "no
+ * entry" and never throws, because the authoritative path-map diagnostics live
+ * in the Path map section. Module-private helper for `reportHostKeyAlignment`.
+ */
+function hostHasPathMapEntry(): boolean {
+  const mapPath = join(repoHome(), 'path-map.json');
+  if (!existsSync(mapPath)) return false;
+  let raw: unknown;
+  try {
+    raw = readJson<unknown>(mapPath);
+  } catch {
+    return false;
+  }
+  if (validatePathMapShape(raw) !== null) return false;
+  const map = raw as PathMap;
+  return Object.values(map.projects).some((hosts) => Boolean(hosts[HOST]));
+}
+
+/**
+ * WARN when `NOMAD_HOST` is unset and the hostname-derived HOST key matches
+ * nothing in the repo: no `hosts/<HOST>.json` override and no `path-map.json`
+ * entry for this host. HOST is the join key that selects the per-host settings
+ * override and keys every path-map session mapping, so a hostname-derived key
+ * that lines up with neither is the silent-misalignment footgun (a second host
+ * that forgot to `export NOMAD_HOST` syncs nothing host-specific and remaps no
+ * sessions, with no error). When `NOMAD_HOST` is set the user has chosen a
+ * stable label deliberately, so this stays silent. Informational only: never
+ * sets `process.exitCode`.
+ */
+export function reportHostKeyAlignment(section: DoctorSection): void {
+  if (process.env.NOMAD_HOST) return;
+  if (existsSync(join(repoHome(), 'hosts', `${HOST}.json`))) return;
+  if (hostHasPathMapEntry()) return;
+  addItem(
+    section,
+    `${yellow(warnGlyph)} NOMAD_HOST unset: hostname key ${cyan(HOST)} matches no hosts/${HOST}.json or path-map entry; set NOMAD_HOST to a stable label so per-host settings and session sync line up across machines`,
   );
 }
 
