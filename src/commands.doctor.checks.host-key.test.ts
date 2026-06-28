@@ -82,6 +82,14 @@ describe('reportHostKeyAlignment', () => {
     expect(s.items).toHaveLength(0);
   });
 
+  it('stays silent when the host key is present even with an empty path', () => {
+    delete process.env.NOMAD_HOST;
+    writePathMap(JSON.stringify({ projects: { app: { [HOST]: '' } } }));
+    const s = section('Environment');
+    reportHostKeyAlignment(s);
+    expect(s.items).toHaveLength(0);
+  });
+
   it('WARNs when unset with no host file and no path-map', () => {
     delete process.env.NOMAD_HOST;
     const s = section('Environment');

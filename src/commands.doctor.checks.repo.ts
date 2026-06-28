@@ -90,7 +90,13 @@ function hostHasPathMapEntry(): boolean {
   }
   if (validatePathMapShape(raw) !== null) return false;
   const map = raw as PathMap;
-  return Object.values(map.projects).some((hosts) => Boolean(hosts[HOST]));
+  // Test for the HOST key's presence, not its value's truthiness:
+  // validatePathMapShape accepts any string path (including "" or a "TBD"
+  // placeholder), so an entry the user wrote for this host still counts as the
+  // host key being recognized, which is what suppresses the alignment warning.
+  return Object.values(map.projects).some((hosts) =>
+    Object.prototype.hasOwnProperty.call(hosts, HOST),
+  );
 }
 
 /**
