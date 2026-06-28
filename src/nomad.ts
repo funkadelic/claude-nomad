@@ -26,9 +26,10 @@ import { cmdRedact } from './commands.redact.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
 import { cmdUpdate } from './commands.update.ts';
-import { home } from './config.ts';
+import { claudeHome, home } from './config.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit } from './init.ts';
+import { resolveSnapshotChoice } from './init.prompt.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
 import { parseCaptureSettingsArgs } from './nomad.dispatch.capture-settings.ts';
 import { parseEjectArgs } from './nomad.dispatch.eject.ts';
@@ -114,8 +115,11 @@ try {
         console.error('usage: nomad init [--snapshot] [--keep-actions] [--repo <name>]');
         process.exit(1);
       }
+      // Without --snapshot, offer to seed the repo from an existing ~/.claude/
+      // (interactive only); a fresh host with no config is never prompted.
+      const snapshot = await resolveSnapshotChoice(initArgs.snapshot, claudeHome());
       cmdInit({
-        snapshot: initArgs.snapshot,
+        snapshot,
         keepActions: initArgs.keepActions,
         repoName: initArgs.repoName,
       });

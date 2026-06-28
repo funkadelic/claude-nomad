@@ -74,9 +74,11 @@ opt-in per-project sync, transcript redaction, backup pruning, and more.
 # 1. Install the CLI.
 $ npm i -g claude-nomad
 
-# 2. Create your private sync repo and scaffold it.
+# 2. Create your private sync repo and scaffold it. If you already have a
+#    ~/.claude/ worth keeping, init offers to seed the repo from it.
 $ nomad init                   # prompts for a repo name (default: claude-nomad-config)
-$ nomad init --repo my-config  # non-interactive
+$ nomad init --repo my-config  # set the repo name without the prompt
+$ nomad init --snapshot        # seed from existing ~/.claude/ without being asked
 
 # 3. Add a stable host label to ~/.zshrc or ~/.bashrc, then reload.
 export NOMAD_HOST=<your-host-label>
