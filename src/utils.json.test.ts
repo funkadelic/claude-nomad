@@ -162,6 +162,15 @@ describe('encodePath', () => {
     expect(encodePath(longPath)).toBe(encodePath(longPath));
     expect(encodePath(longPath).slice(201)).not.toBe(encodePath(twin).slice(201));
   });
+
+  it('normalizes a negative rolling hash via Math.abs before base-36 encoding', () => {
+    // This fixture's twe() hash is negative (-723934086). Pinning its suffix
+    // guards the `Math.abs(int32)` step: a refactor to unsigned/signed base-36
+    // formatting would change this exact value while leaving positive-hash
+    // fixtures untouched.
+    const longPath = '/Users/norm/' + 'segment/'.repeat(30) + 'end0';
+    expect(encodePath(longPath).slice(201)).toBe('bz0f46');
+  });
 });
 
 describe('readPathMap error labels', () => {
