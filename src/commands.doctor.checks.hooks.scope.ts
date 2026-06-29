@@ -120,12 +120,12 @@ function classifySource(src: string): ModuleType | 'unknown' {
   const code = stripCommentsAndStrings(src);
   const cjs =
     /\brequire\s*\(/.test(code) || /\bmodule\.exports\b/.test(code) || /\bexports\.\w/.test(code);
-  // Leading whitespace uses `[^\S\r\n]` (not `\s`) so `^...` under /m cannot span
-  // newlines and backtrack across the file from every line start (super-linear).
+  // Leading whitespace uses `[ \t]` (not `\s` and not the negated `[^\S\r\n]`) so
+  // `^...` under /m cannot span newlines and backtrack across the file from every
+  // line start (super-linear). A positive class also stays clear of the analyzer
+  // heuristic that flags negated-class stars before a literal.
   const esm =
-    /^[^\S\r\n]*import\s/m.test(code) ||
-    /^[^\S\r\n]*export\s/m.test(code) ||
-    /\bimport\.meta\b/.test(code);
+    /^[ \t]*import\s/m.test(code) || /^[ \t]*export\s/m.test(code) || /\bimport\.meta\b/.test(code);
   if (cjs && !esm) return 'cjs';
   if (esm && !cjs) return 'esm';
   if (cjs && esm) return 'cjs';

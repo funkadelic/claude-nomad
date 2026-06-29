@@ -67,6 +67,8 @@ describe('cmdCaptureSettings', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    // restoreAllMocks does not clear vi.doMock module mocks; unmock explicitly.
+    vi.doUnmock('./utils.lockfile.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -447,9 +449,5 @@ describe('cmdCaptureSettings', () => {
     await cmdCaptureSettings({ host: false, dryRun: false });
 
     expect(readFileSync(env.basePath, 'utf8')).toBe(originalContent);
-  });
-
-  afterEach(() => {
-    vi.doUnmock('./utils.lockfile.ts');
   });
 });
