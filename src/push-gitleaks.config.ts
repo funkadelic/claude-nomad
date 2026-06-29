@@ -52,8 +52,7 @@ export function resolveTomlPath(repo: string = repoHome()): string | null {
  *     `finally` once gitleaks has run.
  */
 export type TomlConfigResult =
-  | { path: string | null; tempPath: null }
-  | { path: string; tempPath: string };
+  { path: string | null; tempPath: null } | { path: string; tempPath: string };
 
 /**
  * Regex matching an `[extend]` definition at the start of a line (D-05). Covers

@@ -13,13 +13,7 @@ import { makeDoctorEnv, restoreEnv, type Env } from './commands.doctor.checks.te
 // afterEach per project convention.
 
 type Scenario =
-  | 'ok'
-  | 'no-ref'
-  | 'no-shared'
-  | 'no-pathmap'
-  | 'show-throws'
-  | 'bad-json'
-  | 'bad-shape';
+  'ok' | 'no-ref' | 'no-shared' | 'no-pathmap' | 'show-throws' | 'bad-json' | 'bad-shape';
 
 /** Build the ls-tree stdout Buffer for the given scenario. */
 function lsTreeBuffer(scenario: Scenario): Buffer {
