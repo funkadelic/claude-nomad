@@ -178,6 +178,6 @@ describe('cmdDoctor PASS-token info lines and section headers', () => {
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor({ verbose: true });
     // PASS does not mutate exitCode; only FAIL does. undefined and 0 both pass.
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 });

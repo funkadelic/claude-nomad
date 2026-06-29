@@ -43,7 +43,7 @@ describe('cmdDropSession (match collection + unstage)', () => {
     // The file may or may not remain on disk; for newly-staged the working
     // tree is left alone by `git rm --cached`. We don't assert either way.
     // Make sure no exit-1 path fired (idempotent successful drop is exit 0).
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('removes a tracked-in-HEAD session and resets the working tree to HEAD', async () => {

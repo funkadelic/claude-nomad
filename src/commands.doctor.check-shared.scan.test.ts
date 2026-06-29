@@ -132,7 +132,7 @@ describe('reportCheckShared (mocked scan failures)', () => {
     reportCheckShared(section);
 
     const failRows = section.items.filter((r) => r.includes(failGlyph));
-    expect(failRows.length).toBe(1);
+    expect(failRows).toHaveLength(1);
     expect(failRows[0]).toMatch(/scan failed: .*disk error/);
     expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);
     expect(process.exitCode).toBe(1);

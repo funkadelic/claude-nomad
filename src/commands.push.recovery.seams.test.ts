@@ -64,8 +64,8 @@ describe('maskSecret', () => {
     expect(short.slice(-12)).toBe('************');
     expect(long.slice(-12)).toBe('************');
     // Output lengths differ only by the lead, not by secret length.
-    expect(short.length).toBe(1 + 12);
-    expect(long.length).toBe(4 + 12);
+    expect(short).toHaveLength(1 + 12);
+    expect(long).toHaveLength(4 + 12);
   });
 });
 

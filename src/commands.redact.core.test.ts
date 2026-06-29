@@ -120,7 +120,7 @@ describe('appendGitleaksIgnore', () => {
 
     const content = readFileSync(join(env.repoHome, '.gitleaksignore'), 'utf8');
     const lines = content.split('\n').filter((l) => l.length > 0);
-    expect(lines.filter((l) => l === 'a:b:1').length).toBe(1);
+    expect(lines.filter((l) => l === 'a:b:1')).toHaveLength(1);
   });
 
   it('appending a distinct fingerprint after an existing one preserves both with no duplicates', async () => {
@@ -132,7 +132,7 @@ describe('appendGitleaksIgnore', () => {
     const lines = content.split('\n').filter((l) => l.length > 0);
     expect(lines).toContain('a:b:1');
     expect(lines).toContain('c:d:2');
-    expect(lines.length).toBe(2);
+    expect(lines).toHaveLength(2);
   });
 
   it('is a no-op when the file already contains the fingerprint', async () => {

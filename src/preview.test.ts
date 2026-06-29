@@ -113,7 +113,7 @@ describe('diffJsonStrings', () => {
     expect(out).toContain('+  "b": 2,');
 
     const closingBraceLines = outputLines.filter((l) => l === ' }');
-    expect(closingBraceLines.length).toBe(1);
+    expect(closingBraceLines).toHaveLength(1);
 
     expect(out).not.toContain('-}');
   });
@@ -610,7 +610,7 @@ describe('computePreview orchestration', () => {
     // The plain Summary row no longer carries a 'summary:' prefix; on the
     // empty-path-map clean fixture (default verb pull) the row is exactly 'clean'.
     const summaryLines = logs.filter((l) => l.includes('clean'));
-    expect(summaryLines.length).toBe(1);
+    expect(summaryLines).toHaveLength(1);
   });
 
   it('settings section raw diff block has native +/- prefixes with no tree connectors in diff lines', async () => {

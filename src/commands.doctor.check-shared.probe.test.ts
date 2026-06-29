@@ -68,7 +68,7 @@ describe('reportCheckShared (probe ladder + malformed map)', () => {
     reportCheckShared(section);
 
     const warnRows = section.items.filter((r) => r.includes(warnGlyph));
-    expect(warnRows.length).toBe(1);
+    expect(warnRows).toHaveLength(1);
     expect(warnRows[0]).toMatch(/skip/i);
     expect(section.items.some((r) => r.includes(failGlyph))).toBe(false);
     expect(section.items.some((r) => r.includes(okGlyph))).toBe(false);

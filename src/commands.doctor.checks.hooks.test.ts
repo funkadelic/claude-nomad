@@ -165,7 +165,7 @@ describe('reportHooksTargetCheck', () => {
     });
     const { items } = await runCheck();
     const failLines = items.filter((l) => l.includes(failGlyph));
-    expect(failLines.length).toBe(2);
+    expect(failLines).toHaveLength(2);
     expect(failLines.some((l) => l.includes('EventA'))).toBe(true);
     expect(failLines.some((l) => l.includes('EventB'))).toBe(true);
     expect(process.exitCode).toBe(1);

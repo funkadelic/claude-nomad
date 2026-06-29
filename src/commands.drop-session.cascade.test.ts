@@ -45,7 +45,7 @@ describe('cmdDropSession (subagent directory cascade)', () => {
     const cached = diffCached(env);
     expect(cached).not.toContain('shared/projects/foo/sid-A.jsonl');
     expect(cached).not.toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('cascades a tracked-in-HEAD subagent file and resets the working tree (Test B)', async () => {
@@ -82,7 +82,7 @@ describe('cmdDropSession (subagent directory cascade)', () => {
     expect(() => cmdDropSession('sid-A')).not.toThrow();
 
     expect(diffCached(env)).not.toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
     expect(errOutput(env)).not.toMatch(/✗/);
   });
 

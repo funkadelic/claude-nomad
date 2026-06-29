@@ -45,7 +45,7 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     writeFileSync(join(nestedGit, 'HEAD'), 'ref: refs/heads/main');
     const hits = findGitlinks(testDir);
     expect(hits).toContain(nestedGit);
-    expect(hits.length).toBe(1);
+    expect(hits).toHaveLength(1);
   });
 
   it('finds a .git file (submodule gitlink pointer)', async () => {
@@ -56,7 +56,7 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     writeFileSync(gitlinkFile, 'gitdir: ../.git/modules/sub');
     const hits = findGitlinks(testDir);
     expect(hits).toContain(gitlinkFile);
-    expect(hits.length).toBe(1);
+    expect(hits).toHaveLength(1);
   });
 
   it('returns empty for a self-referential symlink cycle (load-bearing: recursive readdirSync follows cycles)', async () => {
@@ -74,7 +74,7 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     mkdirSync(join(testDir, 'b', 'nested'), { recursive: true });
     writeFileSync(join(testDir, 'b', 'nested', '.git'), 'gitdir: ../../.git/modules/b');
     const hits = findGitlinks(testDir);
-    expect(hits.length).toBe(2);
+    expect(hits).toHaveLength(2);
     expect(hits).toContain(join(testDir, 'a', '.git'));
     expect(hits).toContain(join(testDir, 'b', 'nested', '.git'));
   });
@@ -95,7 +95,7 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     expect(() => findGitlinks(testDir)).not.toThrow();
     const hits = findGitlinks(testDir);
     expect(hits).toContain(join(subDir, '.git'));
-    expect(hits.length).toBe(1);
+    expect(hits).toHaveLength(1);
   });
 
   it('silently skips a subdirectory whose readdirSync throws EACCES', async () => {
@@ -393,7 +393,7 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     expect(() => rebaseBeforePush('/repo')).toThrow(/rebase failed/);
     // process.stderr.write must NOT have been called at all (no stderr to forward).
     const stderrCallsAfter = stderrSpy.mock.calls.slice(stderrCallCountBefore);
-    expect(stderrCallsAfter.length).toBe(0);
+    expect(stderrCallsAfter).toHaveLength(0);
   });
 
   // rebaseBeforePush

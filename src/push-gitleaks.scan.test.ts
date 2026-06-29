@@ -206,7 +206,7 @@ describe('scanFile (mocked child_process)', () => {
     // guard is false and stderr must NOT be forwarded.
     const findings = scanFile('/some/file.jsonl', true);
     expect(findings).not.toBeNull();
-    expect(findings!.length).toBe(1);
+    expect(findings!).toHaveLength(1);
     const leaked = stderrSpy.mock.calls.some(
       (c: unknown[]) => Buffer.isBuffer(c[0]) && c[0].toString().includes('finding-diagnostic'),
     );
@@ -398,7 +398,7 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
     const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
     const result = scanStagedTree(testHome);
     expect(result).not.toBeNull();
-    expect(result!.length).toBe(1);
+    expect(result!).toHaveLength(1);
   });
 
   it('does NOT forward streams when crashing with default forwardStreams (omitted arg)', async () => {
@@ -498,7 +498,7 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
     // forwardStreams=true, but report parses -> streams must NOT be written.
     const result = scanStagedTree(testHome, true);
     expect(result).not.toBeNull();
-    expect(result!.length).toBe(1);
+    expect(result!).toHaveLength(1);
     const leaked = stderrSpy.mock.calls.some(
       (c: unknown[]) =>
         Buffer.isBuffer(c[0]) && c[0].toString().includes('staged-finding-stderr-must-not-appear'),

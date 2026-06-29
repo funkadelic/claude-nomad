@@ -130,7 +130,7 @@ describe('cmdDoctor node-engine check', () => {
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${okGlyph} node: v22.22.1`);
     expect(out).not.toContain('satisfies');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits PASS when current node is above the engines minimum', async () => {
@@ -142,7 +142,7 @@ describe('cmdDoctor node-engine check', () => {
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${okGlyph} node: v24.0.0`);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits WARN (no exitCode change) when current node is below the engines minimum', async () => {
@@ -154,7 +154,7 @@ describe('cmdDoctor node-engine check', () => {
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${warnGlyph} node: v22.16.0 (below required >=22.22.1`);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits NO node line when engines field is missing', async () => {
@@ -166,7 +166,7 @@ describe('cmdDoctor node-engine check', () => {
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits NO node line when engines.node uses unsupported range syntax', async () => {
@@ -178,7 +178,7 @@ describe('cmdDoctor node-engine check', () => {
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits NO node line when process.version is non-strict (e.g. prerelease build)', async () => {
@@ -194,7 +194,7 @@ describe('cmdDoctor node-engine check', () => {
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits PASS when process.version has a multi-digit patch number', async () => {
@@ -209,7 +209,7 @@ describe('cmdDoctor node-engine check', () => {
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).toMatch(/node: v22\.22\.10/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits NO node line when process.version has extra components (four-part)', async () => {
@@ -225,7 +225,7 @@ describe('cmdDoctor node-engine check', () => {
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits NO node line when engines.node is an empty string', async () => {
@@ -240,6 +240,6 @@ describe('cmdDoctor node-engine check', () => {
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/node: v/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 });

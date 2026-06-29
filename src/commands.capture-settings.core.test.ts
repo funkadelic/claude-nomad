@@ -222,7 +222,7 @@ describe('normalizeNodePathsDeep', () => {
   });
 
   it('passes null through unchanged', () => {
-    expect(normalizeNodePathsDeep(null)).toBe(null);
+    expect(normalizeNodePathsDeep(null)).toBeNull();
   });
 
   it('passes numbers through unchanged', () => {
