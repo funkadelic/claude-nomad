@@ -238,6 +238,26 @@ describe('scanFile (mocked child_process)', () => {
     expect(forwarded).toBe(true);
   });
 
+  it('passes GITLEAKS_SCAN_TIMEOUT_MS as timeout on the gitleaks execFileSync call', async () => {
+    let capturedOpts: { timeout?: number } | undefined;
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (_bin: string, _args?: readonly string[], opts?: { timeout?: number }) => {
+            capturedOpts = opts;
+            return Buffer.from('');
+          },
+        ),
+      };
+    });
+    const { scanFile } = await import('./push-gitleaks.scan.ts');
+    const { GITLEAKS_SCAN_TIMEOUT_MS } = await import('./config.ts');
+    scanFile('/some/file.jsonl');
+    expect(capturedOpts?.timeout).toBe(GITLEAKS_SCAN_TIMEOUT_MS);
+  });
+
   it('forwards stdout on the crash path when only stdout is set', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
@@ -399,6 +419,67 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
     const result = scanStagedTree(testHome);
     expect(result).not.toBeNull();
     expect(result!).toHaveLength(1);
+  });
+
+  it('passes GITLEAKS_SCAN_TIMEOUT_MS on the gitleaks call but not on git init/add calls', async () => {
+    const capturedCalls: { bin: string; timeout?: number }[] = [];
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, _args?: readonly string[], opts?: { timeout?: number }) => {
+            capturedCalls.push({ bin, timeout: opts?.timeout });
+            return Buffer.from('');
+          },
+        ),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    const { GITLEAKS_SCAN_TIMEOUT_MS } = await import('./config.ts');
+    scanStagedTree(testHome);
+    const gitCalls = capturedCalls.filter((c) => c.bin === 'git');
+    const gitleaksCalls = capturedCalls.filter((c) => c.bin === 'gitleaks');
+    expect(gitleaksCalls).toHaveLength(1);
+    expect(gitleaksCalls[0].timeout).toBe(GITLEAKS_SCAN_TIMEOUT_MS);
+    for (const call of gitCalls) {
+      expect(call.timeout).toBeUndefined();
+    }
+  });
+
+  it('returns null on a gitleaks timeout (hard scan failure, not a soft skip)', async () => {
+    // A timeout makes execFileSync throw ETIMEDOUT and leaves no parseable
+    // report, so the scan must report failure (null) the same as any other
+    // gitleaks execution error, never a clean (empty-findings) result.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string) => {
+          if (bin === 'gitleaks') {
+            const err = new Error('spawn gitleaks ETIMEDOUT') as NodeJS.ErrnoException & {
+              killed?: boolean;
+              signal?: string;
+            };
+            err.code = 'ETIMEDOUT';
+            err.killed = true;
+            err.signal = 'SIGTERM';
+            throw err;
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(scanStagedTree(testHome)).toBeNull();
   });
 
   it('does NOT forward streams when crashing with default forwardStreams (omitted arg)', async () => {

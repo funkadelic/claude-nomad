@@ -17,6 +17,7 @@ import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { GITLEAKS_SCAN_TIMEOUT_MS } from './config.ts';
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
 import { nowTimestamp } from './utils.fs.ts';
 
@@ -111,10 +112,11 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   ];
   if (toml !== null) args.push('--config', toml);
   const opts: ExecFileSyncOptions = { cwd: repoDir, stdio: ['ignore', 'pipe', 'pipe'] };
+  const gitleaksOpts: ExecFileSyncOptions = { ...opts, timeout: GITLEAKS_SCAN_TIMEOUT_MS };
   try {
     execFileSync('git', ['init', '-q'], opts);
     execFileSync('git', ['add', '-A'], opts);
-    execFileSync('gitleaks', args, opts);
+    execFileSync('gitleaks', args, gitleaksOpts);
     return [];
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
@@ -182,7 +184,10 @@ export function scanFile(filePath: string, forwardStreams = false): Finding[] | 
     `--report-path=${reportPath}`,
   ];
   if (toml !== null) args.push('--config', toml);
-  const opts: ExecFileSyncOptions = { stdio: ['ignore', 'pipe', 'pipe'] };
+  const opts: ExecFileSyncOptions = {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: GITLEAKS_SCAN_TIMEOUT_MS,
+  };
   try {
     execFileSync('gitleaks', args, opts);
     return [];

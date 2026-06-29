@@ -198,7 +198,7 @@ function runDryRunPreview(st: PushState, map: PathMap | null, repo: string): voi
     renderNoScanTree(st, { noMapHint: true });
     return;
   }
-  const verdict = previewPushLeaks(map);
+  const verdict = withSpinner('Scanning for secrets', () => previewPushLeaks(map));
   renderPushTree(st, verdict);
   if (verdict.recovery !== null) fail(verdict.recovery);
 }

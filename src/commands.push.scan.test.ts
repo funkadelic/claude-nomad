@@ -16,6 +16,7 @@ import type * as pushChecksModule from './push-checks.ts';
 import type * as pushPreviewModule from './push-preview.ts';
 import type * as leakVerdictModule from './push-leak-verdict.ts';
 import type * as pushGlobalConfigModule from './push-global-config.ts';
+import type * as spinnerModule from './spinner.ts';
 import type * as utilsModule from './utils.ts';
 
 // Coverage for cmdPush's gitleaks-scan stage: a detection on the staged tree
@@ -112,6 +113,8 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       /* should not be invoked for add/commit/push */
     });
     const remapPushMock = vi.fn(() => ({ unmapped: 2, collisions: 0, pushed: [], wouldPush: [] }));
+    // withSpinner spy that still invokes its callback so the pipeline runs normally.
+    const withSpinnerSpy = vi.fn(<T>(_label: string, fn: () => T) => fn());
     vi.doMock('./push-checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
       return {
@@ -130,6 +133,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     vi.doMock('./push-preview.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushPreviewModule>();
       return { ...actual, previewPushLeaks: previewPushLeaksMock };
+    });
+    vi.doMock('./spinner.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof spinnerModule>();
+      return { ...actual, withSpinner: withSpinnerSpy };
     });
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
@@ -159,8 +166,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(remapPushMock).toHaveBeenCalledWith(expect.any(String), { dryRun: true });
     // scanPushVerdict (the real-push scan) must NOT run on the dry-run path.
     expect(scanPushVerdictMock).not.toHaveBeenCalled();
-    // previewPushLeaks MUST be called.
+    // previewPushLeaks MUST be called (via the spinner wrapper).
     expect(previewPushLeaksMock).toHaveBeenCalledOnce();
+    // withSpinner MUST be called with the scan label on the dry-run path.
+    expect(withSpinnerSpy).toHaveBeenCalledWith('Scanning for secrets', expect.any(Function));
     // git add / commit / push skipped.
     expect(gitOrFatalMock).not.toHaveBeenCalled();
     const out = logOutput(env);
@@ -173,6 +182,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toContain('Summary');
     expect(out).toContain('2 unmapped on push, 0 collisions (run nomad doctor to list)');
     expect(out).not.toContain('push complete');
+    vi.doUnmock('./spinner.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./push-leak-verdict.ts');
     vi.doUnmock('./push-global-config.ts');
