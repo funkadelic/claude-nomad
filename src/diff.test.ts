@@ -196,7 +196,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     expect(thrown).toBe(sentinel);
     expect(thrown).not.toBeInstanceOf(NomadFatal);
     // The catch arm should not have set the FATAL exitCode for non-NomadFatal.
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
     vi.doUnmock('./preview.ts');
   });
 
@@ -248,7 +248,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     const summaryLines = logOutput()
       .split('\n')
       .filter((l) => l.includes('clean'));
-    expect(summaryLines.length).toBe(1);
+    expect(summaryLines).toHaveLength(1);
   });
 
   it('emits the summary line as the LAST non-blank log line of cmdDiff', async () => {

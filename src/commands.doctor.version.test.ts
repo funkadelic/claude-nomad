@@ -67,7 +67,7 @@ describe('cmdDoctor version check', () => {
     expect(out).toContain(`${okGlyph} claude-nomad: 0.11.2 (latest)`);
     // The version check NEVER mutates exitCode; verify alongside the PASS
     // assertion so a future regression cannot silently flip the contract.
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits WARN version line when local < latest (Test B)', async () => {
@@ -81,7 +81,7 @@ describe('cmdDoctor version check', () => {
     // The hint must point at the upgrade path; substring is load-bearing
     // because users grep for it in CI logs.
     expect(out).toContain('nomad update');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits informational ahead-of-latest line with no PASS/WARN prefix when local > latest (Test C)', async () => {
@@ -98,7 +98,7 @@ describe('cmdDoctor version check', () => {
     expect(out).not.toContain(`${okGlyph} claude-nomad: 0.12.0 (ahead`);
     expect(out).not.toContain(`${warnGlyph} claude-nomad: 0.12.0 (ahead`);
     expect(out).not.toContain(`${failGlyph} claude-nomad: 0.12.0 (ahead`);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits the skip line when curl is offline / throws (Test D)', async () => {
@@ -114,7 +114,7 @@ describe('cmdDoctor version check', () => {
       'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
     );
     expect(out).not.toContain('ahead of latest release');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits the skip line when curl returns malformed JSON (Test F)', async () => {
@@ -130,7 +130,7 @@ describe('cmdDoctor version check', () => {
       'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
     );
     expect(out).not.toContain('ahead of latest release');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits the skip line when npm registry responds with no version field (Test F2)', async () => {
@@ -147,7 +147,7 @@ describe('cmdDoctor version check', () => {
       'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
     );
     expect(out).not.toContain('ahead of latest release');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits the skip line when npm registry returns a pre-release version (Test F3)', async () => {
@@ -164,7 +164,7 @@ describe('cmdDoctor version check', () => {
       'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
     );
     expect(out).not.toContain('ahead of latest release');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits NO version line when package.json version is the empty string (Test H)', async () => {
@@ -180,7 +180,7 @@ describe('cmdDoctor version check', () => {
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('claude-nomad:');
     expect(out).not.toMatch(/claude-nomad: \d/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits NO version line when package.json is missing / throws (Test I)', async () => {
@@ -194,6 +194,6 @@ describe('cmdDoctor version check', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).not.toMatch(/claude-nomad: \d/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 });

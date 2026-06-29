@@ -80,7 +80,7 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
 
     // Second invocation must NOT throw and must NOT set exitCode=1.
     expect(() => mod.cmdDropSession('sid-A')).not.toThrow();
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
     // And no `✗` fail glyph was emitted on the second call.
     expect(errOutput(env)).not.toMatch(/✗/);
   });
@@ -111,7 +111,7 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
     expect(diffCached(env)).not.toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
 
     expect(() => mod.cmdDropSession('sid-A')).not.toThrow();
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
     expect(errOutput(env)).not.toMatch(/✗/);
   });
 
@@ -127,7 +127,7 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
     expect(diffCached(env)).not.toContain('shared/projects/foo/sid-A/subagents/agent-1.jsonl');
 
     expect(() => mod.cmdDropSession('sid-A')).not.toThrow();
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
     expect(errOutput(env)).not.toMatch(/✗/);
   });
 
@@ -350,6 +350,6 @@ describe('cmdDropSession (scrub-remediation hint)', () => {
     expect(logged).toContain('local source still contains the secret');
     expect(logged).toContain('nomad redact sid-A');
     expect(logged).toContain('scrub ~/.claude/projects/<encoded>/sid-A.jsonl manually');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 });

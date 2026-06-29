@@ -57,7 +57,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary, clean + skip)', (
     reportCheckShared(section);
 
     const okRows = section.items.filter((r) => r.includes(okGlyph));
-    expect(okRows.length).toBe(1);
+    expect(okRows).toHaveLength(1);
     expect(okRows[0]).toMatch(/\d+/);
     expect(section.items.some((r) => r.includes(failGlyph))).toBe(false);
     expect(process.exitCode).toBe(0);
@@ -106,7 +106,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary, clean + skip)', (
     reportCheckShared(section);
 
     const okRows = section.items.filter((r) => r.includes(okGlyph));
-    expect(okRows.length).toBe(1);
+    expect(okRows).toHaveLength(1);
     expect(section.items.some((r) => r.includes(failGlyph))).toBe(false);
     expect(process.exitCode).toBe(0);
   });

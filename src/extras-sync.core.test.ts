@@ -104,7 +104,7 @@ describe('loadValidatedExtras early-exit guards (L36/L37/L43)', () => {
     // when missingMsg is not provided. Verify no log fires on undefined msg.
     const { loadValidatedExtras } = await import('./extras-sync.core.ts');
     loadValidatedExtras({ missingMsg: undefined });
-    expect((env.logSpy.mock.calls as unknown[]).length).toBe(0);
+    expect(env.logSpy.mock.calls as unknown[]).toHaveLength(0);
   });
 
   it('returns null when requireRepoExtras is true and shared/extras/ is absent (kills L36 BooleanLiteral/LogicalOperator)', async () => {

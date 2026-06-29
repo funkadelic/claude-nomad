@@ -66,7 +66,7 @@ describe('cmdAllow', () => {
     const lines = content.split('\n').filter((l) => l.length > 0);
     expect(lines).toContain('a:b:1');
     expect(lines).toContain('c:d:2');
-    expect(lines.length).toBe(2);
+    expect(lines).toHaveLength(2);
   });
 
   it('is idempotent: calling twice with the same fingerprint leaves one line', async () => {
@@ -78,7 +78,7 @@ describe('cmdAllow', () => {
 
     const content = readFileSync(ignPath, 'utf8');
     const lines = content.split('\n').filter((l) => l.length > 0);
-    expect(lines.filter((l) => l === 'a:b:1').length).toBe(1);
+    expect(lines.filter((l) => l === 'a:b:1')).toHaveLength(1);
   });
 
   it('exits non-zero and writes nothing for an invalid fingerprint', async () => {

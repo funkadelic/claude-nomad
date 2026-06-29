@@ -67,7 +67,7 @@ describe('cmdDoctor version check (tag edge cases)', () => {
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('claude-nomad:');
     expect(out).not.toMatch(/claude-nomad: \d/);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('correctly reports drift when npm version is bare semver (Test M)', async () => {
@@ -80,7 +80,7 @@ describe('cmdDoctor version check (tag edge cases)', () => {
     cmdDoctor();
     const out = joinedLog(env.logSpy);
     expect(out).toContain(`${warnGlyph} claude-nomad: 0.11.2 -> 0.11.3`);
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits the skip line when npm version field is not strict semver (Test N)', async () => {
@@ -97,7 +97,7 @@ describe('cmdDoctor version check (tag edge cases)', () => {
       'claude-nomad: 0.11.2 (version check skipped: could not determine latest version)',
     );
     expect(out).not.toContain('ahead of latest release');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('emits NO version line when local version has no semver prefix (Test O)', async () => {
@@ -112,7 +112,7 @@ describe('cmdDoctor version check (tag edge cases)', () => {
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('claude-nomad:');
     expect(out).not.toContain('ahead of latest release');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('does not falsely PASS when local has trailing junk after a semver prefix (Test P)', async () => {
@@ -128,6 +128,6 @@ describe('cmdDoctor version check (tag edge cases)', () => {
     const out = joinedLog(env.logSpy);
     expect(out).not.toContain('claude-nomad:');
     expect(out).not.toContain('ahead of latest release');
-    expect(process.exitCode === 1).toBe(false);
+    expect(process.exitCode).not.toBe(1);
   });
 });

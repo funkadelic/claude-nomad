@@ -582,7 +582,7 @@ describe('partitionFindings (pure)', () => {
     ];
     const { bySession, other } = partitionFindings(findings);
     expect(bySession.size).toBe(1);
-    expect(other.length).toBe(1);
+    expect(other).toHaveLength(1);
     expect(other[0]?.File).toBe('shared/CLAUDE.md');
   });
 
@@ -601,7 +601,7 @@ describe('partitionFindings (pure)', () => {
     ];
     const { bySession, other } = partitionFindings(findings);
     expect(bySession.size).toBe(0);
-    expect(other.length).toBe(1);
+    expect(other).toHaveLength(1);
   });
 });
 
@@ -969,7 +969,7 @@ describe('buildSessionAwareFatal (pure)', () => {
     // Three identical duplicates of f, plus one session finding.
     const { bySession, other } = partitionFindings([f, f, f, session]);
     // After dedup, there must be exactly one other entry.
-    expect(other.length).toBe(1);
+    expect(other).toHaveLength(1);
     const msg = buildSessionAwareFatal(bySession, other);
     // The `Also found:` block appears exactly once.
     const alsoCount = (msg.match(/Also found:/g) ?? []).length;
@@ -1061,7 +1061,7 @@ describe('buildSessionAwareFatal (pure)', () => {
       },
     ];
     const { bySession, other } = partitionFindings(findings);
-    expect(other.length).toBe(0);
+    expect(other).toHaveLength(0);
     const msg = buildSessionAwareFatal(bySession, other);
     // With zero non-session findings, the "Also found:" header must be absent.
     expect(msg).not.toContain('Also found:');
@@ -1123,7 +1123,7 @@ describe('SESSION_PATH and SUBAGENT_SESSION_PATH regex hardening (security routi
     const { bySession, other } = partitionFindings(findings);
     // The path has a non-empty prefix before "shared/"; must NOT match SESSION_PATH.
     expect(bySession.size).toBe(0);
-    expect(other.length).toBe(1);
+    expect(other).toHaveLength(1);
     expect(other[0]?.File).toBe('foo/shared/projects/my-proj/sid-A.jsonl');
   });
 
@@ -1145,7 +1145,7 @@ describe('SESSION_PATH and SUBAGENT_SESSION_PATH regex hardening (security routi
     ];
     const { bySession, other } = partitionFindings(findings);
     expect(bySession.size).toBe(0);
-    expect(other.length).toBe(1);
+    expect(other).toHaveLength(1);
   });
 
   it('SUBAGENT_SESSION_PATH: path with non-POSIX prefix does NOT yield a session drop-session hint', async () => {

@@ -427,7 +427,7 @@ describe('remapPull onPreview structured sink', () => {
       dryRun: true,
       onPreview: (e) => events.push(e),
     });
-    expect(events.length).toBe(1);
+    expect(events).toHaveLength(1);
     const ev = events[0];
     expect(ev.kind).toBe('overwrite');
     if (ev.kind !== 'overwrite') throw new Error('expected overwrite event');
@@ -445,7 +445,7 @@ describe('remapPull onPreview structured sink', () => {
     });
     const { remapPull } = await import('./remap.ts');
     remapPull('ts3', { dryRun: true, onPreview: (e) => events.push(e) });
-    expect(events.length).toBe(1);
+    expect(events).toHaveLength(1);
     const ev = events[0];
     expect(ev.kind).toBe('note');
     if (ev.kind !== 'note') throw new Error('expected note event');
@@ -939,7 +939,7 @@ describe('remapPush source-side filter', () => {
     const skipLines = logSpy.mock.calls
       .map((c) => String(c[0]))
       .filter((line) => line.includes('skip') && line.includes('extension not in allowlist'));
-    expect(skipLines.length).toBe(2);
+    expect(skipLines).toHaveLength(2);
     expect(skipLines.some((l) => l.includes('sid-A.bak'))).toBe(true);
     expect(skipLines.some((l) => l.includes('tmp.txt'))).toBe(true);
   });
@@ -975,7 +975,7 @@ describe('remapPush source-side filter', () => {
     const skipLines = logSpy.mock.calls
       .map((c) => String(c[0]))
       .filter((line) => line.includes('extension not in allowlist'));
-    expect(skipLines.length).toBe(0);
+    expect(skipLines).toHaveLength(0);
   });
 
   it('does not log a spurious skip line for the cpSync source-root case', async () => {
@@ -1006,7 +1006,7 @@ describe('remapPush source-side filter', () => {
     const badSkip = logSpy.mock.calls
       .map((c) => String(c[0]))
       .filter((line) => line.includes('ℹ︎ skip : extension not in allowlist'));
-    expect(badSkip.length).toBe(0);
+    expect(badSkip).toHaveLength(0);
 
     // Dst dir exists and is non-empty (the copy completed).
     expect(existsSync(join(sharedProjects, 'foo'))).toBe(true);

@@ -319,7 +319,7 @@ describe('formatFingerprint (pure)', () => {
     const { formatFingerprint } = await import('./commands.redact.core.ts');
     const result = formatFingerprint('file:rule\n:42');
     expect(result).toBe('file:rule:42\n');
-    expect(result.split('\n').length).toBe(2); // one content line + trailing empty
+    expect(result.split('\n')).toHaveLength(2); // one content line + trailing empty
   });
 
   it('strips embedded \\r from the fingerprint', async () => {
