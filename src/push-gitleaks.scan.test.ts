@@ -451,6 +451,37 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
     }
   });
 
+  it('returns null on a gitleaks timeout (hard scan failure, not a soft skip)', async () => {
+    // A timeout makes execFileSync throw ETIMEDOUT and leaves no parseable
+    // report, so the scan must report failure (null) the same as any other
+    // gitleaks execution error, never a clean (empty-findings) result.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn().mockReturnValue(false) };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string) => {
+          if (bin === 'gitleaks') {
+            const err = new Error('spawn gitleaks ETIMEDOUT') as NodeJS.ErrnoException & {
+              killed?: boolean;
+              signal?: string;
+            };
+            err.code = 'ETIMEDOUT';
+            err.killed = true;
+            err.signal = 'SIGTERM';
+            throw err;
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./push-gitleaks.scan.ts');
+    expect(scanStagedTree(testHome)).toBeNull();
+  });
+
   it('does NOT forward streams when crashing with default forwardStreams (omitted arg)', async () => {
     // Kills the BooleanLiteral mutation on line 99: `forwardStreams = false` -> `true`.
     // If the default were true, an unexpected crash (status 2, no report) would
