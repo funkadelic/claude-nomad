@@ -89,6 +89,18 @@ export const NPM_REGISTRY_LATEST_URL = 'https://registry.npmjs.org/claude-nomad/
 export const GITLEAKS_PINNED_VERSION = '8.30.1';
 
 /**
+ * Maximum wall-clock time (milliseconds) allowed for a single gitleaks
+ * invocation. Bounds the `execFileSync` calls in both `scanStagedTree` and
+ * `scanFile` so a stalled scan aborts with SIGTERM instead of hanging the
+ * process indefinitely. Five minutes is a conservative ceiling: a normally
+ * fast scan finishes in under 10 seconds; the ceiling is generous enough to
+ * accommodate very large mapped session trees without false timeouts.
+ *
+ * Single source of truth for both scan sites; change it here to affect both.
+ */
+export const GITLEAKS_SCAN_TIMEOUT_MS = 300_000;
+
+/**
  * Resolved host identity used to pick `hosts/<HOST>.json` and key entries in
  * `path-map.json`. Reads `NOMAD_HOST` first, falls back to `hostname()`, then
  * lowercases. A set-but-empty `NOMAD_HOST` (e.g. `export NOMAD_HOST=` in a
