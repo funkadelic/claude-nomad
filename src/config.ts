@@ -92,13 +92,15 @@ export const GITLEAKS_PINNED_VERSION = '8.30.1';
  * Maximum wall-clock time (milliseconds) allowed for a single gitleaks
  * invocation. Bounds the `execFileSync` calls in both `scanStagedTree` and
  * `scanFile` so a stalled scan aborts with SIGTERM instead of hanging the
- * process indefinitely. Five minutes is a conservative ceiling: a normally
- * fast scan finishes in under 10 seconds; the ceiling is generous enough to
- * accommodate very large mapped session trees without false timeouts.
+ * process indefinitely. Large mapped session trees can take several minutes to
+ * scan (a real ~420MB tree measured at roughly 5 minutes), so the ceiling
+ * exists to catch a pathological hang or stall rather than to cap a
+ * legitimately-slow scan. Fifteen minutes leaves headroom above observed
+ * real-world scan times while still bounding a true hang.
  *
  * Single source of truth for both scan sites; change it here to affect both.
  */
-export const GITLEAKS_SCAN_TIMEOUT_MS = 300_000;
+export const GITLEAKS_SCAN_TIMEOUT_MS = 900_000;
 
 /**
  * Resolved host identity used to pick `hosts/<HOST>.json` and key entries in
