@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.55.1](https://github.com/funkadelic/claude-nomad/compare/v0.55.0...v0.55.1) (2026-06-29)
+
+
+### Fixed
+
+* **config:** raise gitleaks scan timeout from 5 min to 15 min ([#367](https://github.com/funkadelic/claude-nomad/issues/367)) ([30e7344](https://github.com/funkadelic/claude-nomad/commit/30e73443be6d58330716418dced44aa6cf772623))
+* **doctor:** de-backtrack super-linear regexes and group test hook ([#363](https://github.com/funkadelic/claude-nomad/issues/363)) ([4fdbdaa](https://github.com/funkadelic/claude-nomad/commit/4fdbdaa595d3e62cf87cab8e147da130c574f272))
+* **push:** bound gitleaks scans and show dry-run leak-scan spinner ([#365](https://github.com/funkadelic/claude-nomad/issues/365)) ([a04d06a](https://github.com/funkadelic/claude-nomad/commit/a04d06a9624f9fa60d68cc01c69009fb0908e05f))
+* **remap:** match Claude Code's transcript-dir path encoder ([#360](https://github.com/funkadelic/claude-nomad/issues/360)) ([77a4835](https://github.com/funkadelic/claude-nomad/commit/77a4835629a04fbf045930b1938b2404f0b00922))
+
+
+### Documentation
+
+* correct path-encoding rule and note Windows-style paths ([#362](https://github.com/funkadelic/claude-nomad/issues/362)) ([970aae4](https://github.com/funkadelic/claude-nomad/commit/970aae42ebba734a878f9712ac304f0c393b9398))
+
+
+### Testing
+
+* use specific assertions for length and exit-code checks ([#364](https://github.com/funkadelic/claude-nomad/issues/364)) ([95549d4](https://github.com/funkadelic/claude-nomad/commit/95549d4694e5f0dc09ac1aa13d4240e01cb264f9))
+
+
+### Dependencies
+
+* **deps-dev:** bump the dev-dependencies group with 6 updates ([#366](https://github.com/funkadelic/claude-nomad/issues/366)) ([70d1057](https://github.com/funkadelic/claude-nomad/commit/70d10578eb8d58010b160b88a6d61eaa9e8405a0))
+
 ## [0.55.0](https://github.com/funkadelic/claude-nomad/compare/v0.54.0...v0.55.0) (2026-06-28)
 
 
