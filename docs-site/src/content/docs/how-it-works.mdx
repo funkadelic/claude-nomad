@@ -167,9 +167,14 @@ so they need no manual install.
 
 ## Path remapping
 
-The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-path>/` where the
-encoded path is the absolute path with `/` replaced by `-`. So the same logical project ends up in
-different directories on each host.
+The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-path>/`, where the
+encoded path is the absolute project path with every character that isn't a letter or digit replaced
+by `-` (and very long paths shortened with a short hash on the end). So the same logical project ends
+up in different directories on each host.
+
+The same rule is what makes the directory name come out right on Windows-style paths too:
+`C:\Users\you\code` becomes `C--Users-you-code`, with the drive-letter colon and backslashes
+collapsing to `-` exactly as Claude Code does it.
 
 `path-map.json` defines logical names and where the repo lives on each host. The optional `extras`
 block opts a project into syncing whitelisted directories (or a single root file) at its root:
