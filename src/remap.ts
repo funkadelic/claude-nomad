@@ -86,8 +86,7 @@ export function copyDirJsonlOnly(src: string, dst: string): void {
  * message (e.g. the degenerate early return when there is nothing to remap).
  */
 export type RemapPullPreviewEvent =
-  | { kind: 'overwrite'; dst: string; src: string }
-  | { kind: 'note'; text: string };
+  { kind: 'overwrite'; dst: string; src: string } | { kind: 'note'; text: string };
 
 /**
  * Deliver a dry-run preview event to `onPreview` when present (the glyph-free

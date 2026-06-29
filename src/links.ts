@@ -14,8 +14,7 @@ import { deepMerge, readJson } from './utils.json.ts';
 
 /** Event emitted by `applySharedLinks` when `onPreview` is provided. */
 export type LinkPreviewEvent =
-  | { kind: 'create'; from: string; to: string }
-  | { kind: 'auto-move'; from: string; to: string };
+  { kind: 'create'; from: string; to: string } | { kind: 'auto-move'; from: string; to: string };
 
 type LinkOpts = { dryRun?: boolean; onPreview?: (e: LinkPreviewEvent) => void };
 
