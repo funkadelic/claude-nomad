@@ -32,6 +32,9 @@ function expandHome(token: string): string {
     .replace(/^~/, h);
 }
 
+/** Boundary shell punctuation stripped from the end of a command token. */
+const TRAILING_SHELL_PUNCT = new Set(["'", '"', '`', ';', ')', '|', '&', '>']);
+
 /**
  * Strip shell quoting and trailing control punctuation from a raw command
  * token so a real path is not mistaken for a missing one. Without this, a
@@ -45,7 +48,14 @@ function expandHome(token: string): string {
  * @returns The token with boundary shell punctuation removed.
  */
 function stripShellPunctuation(token: string): string {
-  return token.replace(/^['"]+/, '').replace(/['"`;)|&>]+$/, '');
+  const stripped = token.replace(/^['"]+/, '');
+  // Trim the trailing run imperatively rather than with `/[...]+$/`: the
+  // end-anchored class-star retries from every interior position, so a long run
+  // of these chars before a non-match is quadratic (super-linear). A right-to-
+  // left scan is linear.
+  let end = stripped.length;
+  while (end > 0 && TRAILING_SHELL_PUNCT.has(stripped[end - 1])) end--;
+  return stripped.slice(0, end);
 }
 
 /**

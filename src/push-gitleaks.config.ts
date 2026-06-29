@@ -64,7 +64,7 @@ export type TomlConfigResult =
  * parser and would build the depth-3 chain that silently drops the default
  * ruleset, so all three must fail LOUD.
  */
-const OVERLAY_EXTEND_RE = /^\s*(?:\[\s*extend\s*\]|extend\s*[.=])/m;
+const OVERLAY_EXTEND_RE = /^[ \t]*(?:\[[ \t]*extend[ \t]*\]|extend[ \t]*[.=])/m;
 
 /** Any TOML table or array-of-tables header at the start of a line. */
 const TABLE_HEADER_RE = /^\s*\[/;
