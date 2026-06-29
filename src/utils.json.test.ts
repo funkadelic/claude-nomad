@@ -128,6 +128,49 @@ describe('encodePath', () => {
   it('produces different keys for same logical project on different hosts', () => {
     expect(encodePath('/Users/norm/code/foo')).not.toBe(encodePath('/home/norm/code/foo'));
   });
+
+  it('collapses every non-alphanumeric char (dots, underscores, spaces), not just slashes', () => {
+    // Diverges from the old slash-only encoder, which left `.`/`_`/space intact
+    // and so never matched the directory Claude Code actually writes.
+    expect(encodePath('/U/a.b_c d')).toBe('-U-a-b-c-d');
+  });
+
+  it('preserves dashes (they map to themselves under the alphanumeric rule)', () => {
+    expect(encodePath('/a-b')).toBe('-a-b');
+  });
+
+  it('encodes a Windows drive-letter + backslash path', () => {
+    // The CLI runs the same `[^a-zA-Z0-9] -> '-'` rule, so `:` and `\` both
+    // become dashes. The old slash-only encoder left this string unchanged.
+    expect(encodePath('C:\\Users\\norm\\foo')).toBe('C--Users-norm-foo');
+  });
+
+  it('truncates over-200-char encodings and appends a base-36 hash of the original path', () => {
+    const longPath = '/Users/norm/' + 'segment/'.repeat(30) + 'end';
+    const result = encodePath(longPath);
+    // 200-char prefix + '-' separator + 5-char base-36 hash = 206.
+    expect(result).toHaveLength(206);
+    expect(result.slice(0, 200)).toBe(longPath.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 200));
+    expect(result[200]).toBe('-');
+    // Pin the exact suffix so the hash algorithm (twe: h*31 + c | 0) cannot drift.
+    expect(result.slice(201)).toBe('dwj2i');
+  });
+
+  it('produces a deterministic, input-sensitive truncation suffix', () => {
+    const longPath = '/Users/norm/' + 'segment/'.repeat(30) + 'end';
+    const twin = longPath.slice(0, -1) + 'X';
+    expect(encodePath(longPath)).toBe(encodePath(longPath));
+    expect(encodePath(longPath).slice(201)).not.toBe(encodePath(twin).slice(201));
+  });
+
+  it('normalizes a negative rolling hash via Math.abs before base-36 encoding', () => {
+    // This fixture's twe() hash is negative (-723934086). Pinning its suffix
+    // guards the `Math.abs(int32)` step: a refactor to unsigned/signed base-36
+    // formatting would change this exact value while leaving positive-hash
+    // fixtures untouched.
+    const longPath = '/Users/norm/' + 'segment/'.repeat(30) + 'end0';
+    expect(encodePath(longPath).slice(201)).toBe('bz0f46');
+  });
 });
 
 describe('readPathMap error labels', () => {

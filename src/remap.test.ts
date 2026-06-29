@@ -233,9 +233,10 @@ describe('remapPull (integration)', () => {
   });
 
   it('rejects a separator-free ".." host value before it can escape and wipe ~/.claude', async () => {
-    // A poisoned path-map host VALUE of ".." has no separator for encodePath to
-    // rewrite, so join(projects, "..") would resolve dst to ~/.claude and
-    // copyDir would wipe-and-replace it. The host-value guard must throw first.
+    // A poisoned path-map host VALUE of ".." must be rejected by the host-value
+    // guard BEFORE any path is built: join(projects, "..") would otherwise
+    // resolve dst to ~/.claude and copyDir would wipe-and-replace it. The guard
+    // is the load-bearing defense here, independent of how encodePath rewrites.
     mkdirSync(join(sharedProjects, 'evil'), { recursive: true });
     writeFileSync(join(sharedProjects, 'evil', 'payload.jsonl'), '{"evil":1}\n');
     writeFileSync(

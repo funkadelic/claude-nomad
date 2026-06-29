@@ -119,5 +119,35 @@ export function sortKeysDeep(value: unknown): unknown {
   return value;
 }
 
-/** Claude Code encodes absolute project paths by replacing `/` with `-`. */
-export const encodePath = (absPath: string): string => absPath.replaceAll('/', '-');
+/**
+ * Max encoded length before Claude Code truncates and appends a hash. Mirrors
+ * the CLI's `Db` constant (verified against build 2.1.195). Keep in sync.
+ */
+const ENCODE_MAX = 200;
+
+/**
+ * Java-style 32-bit string hash (`twe` in the CLI): `h = h * 31 + charCode`,
+ * forced to int32 on every step via `| 0`. The `| 0` wraparound is
+ * load-bearing for byte-fidelity with the CLI; do not "simplify" it away.
+ * Used only for the truncation suffix of over-long encoded paths.
+ */
+const hashPath = (s: string): number => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return h;
+};
+
+/**
+ * Encode an absolute project path to its `~/.claude/projects/<encoded>/`
+ * directory name, byte-faithful to Claude Code's `Db` encoder: every
+ * non-alphanumeric char becomes `-`, and encodings over `ENCODE_MAX` chars are
+ * truncated and suffixed with a base-36 hash of the ORIGINAL path (not the
+ * dashed form). This is how the same logical project maps to a different
+ * directory key on every host (and the only encoder that matches the CLI on
+ * Windows, where paths carry `\` and a drive-letter `:`).
+ */
+export const encodePath = (absPath: string): string => {
+  const enc = absPath.replace(/[^a-zA-Z0-9]/g, '-');
+  if (enc.length <= ENCODE_MAX) return enc;
+  return `${enc.slice(0, ENCODE_MAX)}-${Math.abs(hashPath(absPath)).toString(36)}`;
+};
