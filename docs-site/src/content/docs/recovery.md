@@ -148,6 +148,13 @@ Session <sid-aaaa>:
 After recovery, re-run nomad push.
 ```
 
+When a leak appears only in non-session paths (a subagent transcript under
+`shared/projects/<logical>/<id>/subagents/`, or an opted-in extra such as `.planning` or
+`CLAUDE.md`), the row reads `✗ gitleaks detected secrets in N location(s)` instead, and the recovery
+block lists each location with its own hint: a `nomad drop-session <id>` / `nomad redact <id>` line
+for a subagent transcript (the session id is recovered from the path), or a manual-review line for
+an extra you must edit at its source.
+
 Two branches from here:
 
 1. **Real secret.** Rotate the credential at its provider first (revoke in dashboard, issue

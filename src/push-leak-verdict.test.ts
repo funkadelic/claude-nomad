@@ -27,10 +27,13 @@ function sessionFinding(sid: string): scanModule.Finding {
 /**
  * Build a minimal `Finding` for a non-session file so `partitionFindings`
  * routes it into the `other` bucket (exercising the fallback count path).
+ * Takes a fingerprint so callers can build distinct findings that survive the
+ * dedupe in `partitionFindings`.
  *
+ * @param fp - The synthetic fingerprint (distinct values avoid dedupe collapse).
  * @returns A `Finding` whose `File` does NOT match the session-path pattern.
  */
-function otherFinding(): scanModule.Finding {
+function otherFinding(fp = 'fp-other'): scanModule.Finding {
   return {
     RuleID: 'generic-api-key',
     File: 'shared/other/file.txt',
@@ -38,7 +41,7 @@ function otherFinding(): scanModule.Finding {
     StartColumn: 1,
     EndColumn: 10,
     Match: 'secret',
-    Fingerprint: 'fp-other',
+    Fingerprint: fp,
   };
 }
 
@@ -72,10 +75,11 @@ describe('push-leak-verdict: pure row + verdict builders', () => {
     expect(row).toContain('gitleaks detected secrets in 2 session transcript(s)');
   });
 
-  it('leakVerdictRow falls back to the raw finding count when no session path matches', async () => {
+  it('leakVerdictRow counts distinct non-session locations and says "location(s)"', async () => {
     const { leakVerdictRow } = await import('./push-leak-verdict.ts');
-    const row = leakVerdictRow([otherFinding(), otherFinding(), otherFinding()]);
-    expect(row).toContain('gitleaks detected secrets in 3 session transcript(s)');
+    const row = leakVerdictRow([otherFinding('a'), otherFinding('b'), otherFinding('c')]);
+    expect(row).toContain('gitleaks detected secrets in 3 location(s)');
+    expect(row).not.toContain('session transcript');
   });
 
   it('leakVerdictRow dedupes duplicate findings before counting sessions (count consistency)', async () => {

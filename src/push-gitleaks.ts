@@ -177,16 +177,43 @@ export function otherFindingHint(f: Finding): string {
 }
 
 /**
- * Build the FATAL message body. Returns the legacy fallback string when
- * `bySession` is empty (no session matches); otherwise composes the
- * multi-section message: `gitleaks detected secrets in N session
+ * Render the `other`-bucket body rows: one `formatOtherFinding` locator line
+ * plus its `otherFindingHint` recovery line per finding. Shared by both
+ * branches of `buildSessionAwareFatal` (under an `Also found:` header when
+ * sessions are also present, or as the primary finding list when they are
+ * not). Pure.
+ *
+ * @param other - Non-session findings.
+ * @returns The rendered row lines (two per finding).
+ */
+function renderOtherFindings(other: Finding[]): string[] {
+  const lines: string[] = [];
+  for (const f of other) {
+    lines.push(formatOtherFinding(f), otherFindingHint(f));
+  }
+  return lines;
+}
+
+/**
+ * Build the FATAL message body. Returns the legacy fallback string ONLY when
+ * both buckets are empty (no findings at all, a defensive case); otherwise
+ * composes the multi-section message.
+ *
+ * When `bySession` is non-empty: a `gitleaks detected secrets in N session
  * transcript(s).` header, one block per affected session with a
  * `Recover with: nomad drop-session <id>` line, an optional `Also found:`
  * block for non-session paths, and a trailing `After recovery, re-run
  * nomad push.` line. The header carries a single clarifying note that the
  * drop also clears any sibling subagent transcript directory for the
  * session, since those nested paths route to the `other` bucket and are
- * not listed per-session. Pure.
+ * not listed per-session.
+ *
+ * When `bySession` is empty but `other` is not (e.g. a leak only in a
+ * subagent transcript, which matches the deeper subagent path and so never
+ * reaches `bySession`): a `gitleaks detected secrets in N location(s):`
+ * header followed by the same per-finding locator + recovery-hint lines, so
+ * the subagent `nomad drop-session`/`nomad redact` hints are surfaced rather
+ * than discarded behind the legacy fallback. Pure.
  *
  * @param bySession - Map of session id to per-RuleID counts (from `partitionFindings`).
  * @param other - Non-session findings for the `Also found:` block.
@@ -196,21 +223,30 @@ export function buildSessionAwareFatal(
   bySession: Map<string, Map<string, number>>,
   other: Finding[],
 ): string {
-  if (bySession.size === 0) return LEGACY_FATAL;
+  if (bySession.size === 0 && other.length === 0) return LEGACY_FATAL;
   const lines: string[] = [];
-  lines.push(
-    `gitleaks detected secrets in ${bySession.size} session transcript(s).`,
-    "nomad drop-session also clears each session's sibling subagent transcript directory.",
-  );
-  for (const [sid, counts] of bySession) {
-    const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
-    lines.push('', `Session ${sid}:`, `  ${summary}`, `  Recover with: nomad drop-session ${sid}`);
-  }
-  if (other.length > 0) {
-    lines.push('', 'Also found:');
-    for (const f of other) {
-      lines.push(formatOtherFinding(f), otherFindingHint(f));
+  if (bySession.size > 0) {
+    lines.push(
+      `gitleaks detected secrets in ${bySession.size} session transcript(s).`,
+      "nomad drop-session also clears each session's sibling subagent transcript directory.",
+    );
+    for (const [sid, counts] of bySession) {
+      const summary = [...counts.entries()].map(([rule, n]) => `${rule} (${n})`).join(', ');
+      lines.push(
+        '',
+        `Session ${sid}:`,
+        `  ${summary}`,
+        `  Recover with: nomad drop-session ${sid}`,
+      );
     }
+    if (other.length > 0) {
+      lines.push('', 'Also found:', ...renderOtherFindings(other));
+    }
+  } else {
+    lines.push(
+      `gitleaks detected secrets in ${other.length} location(s):`,
+      ...renderOtherFindings(other),
+    );
   }
   lines.push('', 'After recovery, re-run nomad push.');
   return lines.join('\n');

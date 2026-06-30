@@ -46,17 +46,23 @@ export const noLeaksRow = (): string => `${green(okGlyph)} no leaks`;
 export const failRow = (text: string): string => `${red(failGlyph)} ${text}`;
 
 /**
- * Build the one-line ✗ Leak scan verdict row for a non-empty findings set,
- * naming the affected session count. Falls back to the raw finding count when
- * no finding matches the session-path pattern. Pure.
+ * Build the one-line ✗ Leak scan verdict row for a non-empty findings set.
+ * Names the affected session count when any finding matches the session-path
+ * pattern; otherwise (findings only in non-session paths, e.g. subagent
+ * transcripts or extras) names the distinct non-session location count and
+ * says "location(s)" rather than mislabeling them as "session transcript(s)".
+ * The non-session count is the deduped `other` length so it matches the
+ * location list rendered in the recovery body. Pure.
  *
  * @param findings - The non-empty findings array.
  * @returns The rendered ✗ verdict row.
  */
 export function leakVerdictRow(findings: Finding[]): string {
-  const { bySession } = partitionFindings(findings);
-  const n = bySession.size > 0 ? bySession.size : findings.length;
-  return failRow(`gitleaks detected secrets in ${n} session transcript(s)`);
+  const { bySession, other } = partitionFindings(findings);
+  if (bySession.size > 0) {
+    return failRow(`gitleaks detected secrets in ${bySession.size} session transcript(s)`);
+  }
+  return failRow(`gitleaks detected secrets in ${other.length} location(s)`);
 }
 
 /**

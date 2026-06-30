@@ -840,7 +840,11 @@ describe('buildSessionAwareFatal (pure)', () => {
     expect(msg).toContain('unstage manually');
   });
 
-  it('non-session-only findings return the exact legacy fallback string', async () => {
+  it('non-session-only findings render the location list, not the legacy fallback', async () => {
+    // When every finding is in the non-session `other` bucket (e.g. a subagent
+    // transcript or a shared CLAUDE.md), the builder must list the locations
+    // with their recovery hints under a "location(s)" header, NOT collapse to
+    // the dead-end legacy "git diff --cached" one-liner that names no file.
     const { partitionFindings, buildSessionAwareFatal } =
       (await import('./push-gitleaks.ts')) as PushGitleaksModule;
     const findings: Finding[] = [
@@ -855,6 +859,47 @@ describe('buildSessionAwareFatal (pure)', () => {
       },
     ];
     const { bySession, other } = partitionFindings(findings);
+    const msg = buildSessionAwareFatal(bySession, other);
+    expect(msg).toContain('gitleaks detected secrets in 1 location(s):');
+    expect(msg).toContain('shared/CLAUDE.md:1');
+    expect(msg).toContain('git diff --cached');
+    expect(msg).toContain('After recovery, re-run nomad push.');
+    expect(msg).not.toBe(
+      'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry',
+    );
+  });
+
+  it('all-subagent findings surface the drop-session/redact hint under a location header', async () => {
+    // The real-world regression: a leak only in a subagent transcript matches
+    // the deeper subagent path, never reaches `bySession`, and must still get a
+    // named `nomad drop-session`/`nomad redact` recovery hint.
+    const { partitionFindings, buildSessionAwareFatal } =
+      (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const findings: Finding[] = [
+      {
+        RuleID: 'stripe-access-token',
+        File: 'shared/projects/proj-x/sid-A/subagents/agent.jsonl',
+        StartLine: 50,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'REDACTED',
+        Fingerprint: 'fp1',
+      },
+    ];
+    const { bySession, other } = partitionFindings(findings);
+    expect(bySession.size).toBe(0);
+    const msg = buildSessionAwareFatal(bySession, other);
+    expect(msg).toContain('gitleaks detected secrets in 1 location(s):');
+    expect(msg).toContain('shared/projects/proj-x/sid-A/subagents/agent.jsonl:50');
+    expect(msg).toContain('nomad drop-session sid-A');
+    expect(msg).toContain('nomad redact sid-A');
+  });
+
+  it('buildSessionAwareFatal returns the legacy fallback only when both buckets are empty', async () => {
+    // Defensive: a non-leak call (no findings at all) keeps the legacy string.
+    const { partitionFindings, buildSessionAwareFatal } =
+      (await import('./push-gitleaks.ts')) as PushGitleaksModule;
+    const { bySession, other } = partitionFindings([]);
     const msg = buildSessionAwareFatal(bySession, other);
     expect(msg).toBe(
       'gitleaks detected secrets; review staged changes with git diff --cached and unstage offending files before retry',
