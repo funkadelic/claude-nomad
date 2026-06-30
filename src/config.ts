@@ -62,6 +62,25 @@ export function backupBase(): string {
 }
 
 /**
+ * Per-host manifest path: `~/.cache/claude-nomad/push-manifest-<HOST>.json`.
+ * Records the file metadata observed during the last successful push on this
+ * host so `nomad push` can skip unchanged files. Never synced to the repo.
+ *
+ * Resolved on each call (same call-time HOME convention as `backupBase()` and
+ * `home()`) so a mid-process HOME override is reflected immediately. This is
+ * load-bearing for Stryker's worker-thread test runner, which swaps
+ * `process.env.HOME` in a worker isolate where `os.homedir()` stays blind to
+ * the change.
+ *
+ * `HOST` is embedded in the filename to prevent cross-contamination between
+ * different hosts sharing the same filesystem (e.g. a multi-host CI setup
+ * using `NOMAD_HOST` overrides).
+ */
+export function manifestPath(): string {
+  return join(home(), '.cache', 'claude-nomad', `push-manifest-${HOST}.json`);
+}
+
+/**
  * The official Claude Code settings JSON schema. Source of truth for
  * `SCHEMA_KEYS` (kept current by `scripts/sync-settings-keys.ts`) and the
  * on-demand `nomad doctor --check-schema` reporter, which fetches it live to

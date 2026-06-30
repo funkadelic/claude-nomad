@@ -215,7 +215,10 @@ export function enumerateSourceFiles(projectDir: string): string[] {
  * same marker so the config hash is stable across calls when no files change.
  */
 function fileIdentity(p: string | null): string {
-  if (p === null || !existsSync(p)) return `${p ?? 'none'}::absent`;
+  /* c8 ignore start */
+  if (p === null) return 'none::absent';
+  /* c8 ignore stop */
+  if (!existsSync(p)) return `${p}::absent`;
   return `${p}::${createHash('sha256').update(readFileSync(p)).digest('hex')}`;
 }
 

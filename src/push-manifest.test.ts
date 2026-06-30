@@ -208,6 +208,13 @@ describe('enumerateSourceFiles', () => {
       expect(f.startsWith('/')).toBe(true);
     }
   });
+
+  it('enumerates files nested two levels deep (subdir inside subdir)', () => {
+    mkdirSync(join(testDir, 'subagents', 'nested'), { recursive: true });
+    writeFileSync(join(testDir, 'subagents', 'nested', 'deep.jsonl'), '{}');
+    const files = enumerateSourceFiles(testDir);
+    expect(files).toContain(join(testDir, 'subagents', 'nested', 'deep.jsonl'));
+  });
 });
 
 describe('computeConfigHash', () => {
@@ -286,9 +293,33 @@ describe('readManifest and writeManifest', () => {
     expect(readManifest(p)).toBeNull();
   });
 
-  it('returns null for valid JSON with wrong schema shape', () => {
+  it('returns null when JSON is null (raw === null branch in shape guard)', () => {
+    const p = join(testDir, 'null.json');
+    writeFileSync(p, 'null');
+    expect(readManifest(p)).toBeNull();
+  });
+
+  it('returns null when JSON is a non-object (typeof raw !== object branch)', () => {
+    const p = join(testDir, 'number.json');
+    writeFileSync(p, '42');
+    expect(readManifest(p)).toBeNull();
+  });
+
+  it('returns null for valid JSON with wrong schema shape (schema != 1)', () => {
     const p = join(testDir, 'wrong-shape.json');
-    writeFileSync(p, JSON.stringify({ schema: 2, files: {} }));
+    writeFileSync(
+      p,
+      JSON.stringify({ schema: 2, scannerVersion: 'v1', configHash: 'c', files: {} }),
+    );
+    expect(readManifest(p)).toBeNull();
+  });
+
+  it('returns null when files field is an array (wrong shape)', () => {
+    const p = join(testDir, 'array-files.json');
+    writeFileSync(
+      p,
+      JSON.stringify({ schema: 1, scannerVersion: 'v1', configHash: 'c', files: [] }),
+    );
     expect(readManifest(p)).toBeNull();
   });
 
