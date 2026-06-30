@@ -1,232 +1,24 @@
 import { existsSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 
-import { backupBase, claudeHome, HOST, manifestPath, type PathMap, repoHome } from './config.ts';
-import {
-  computeConfigHash,
-  type Manifest,
-  type ManifestDiff,
-  readManifest,
-  writeManifest,
-} from './push-manifest.ts';
+import { backupBase, HOST, manifestPath, repoHome } from './config.ts';
+import { computeConfigHash, readManifest } from './push-manifest.ts';
 import { loadSelectionForPush } from './commands.push.selection.ts';
-import {
-  classifySettingsDrift,
-  describeSettings,
-  partitionByCaptureExclusion,
-} from './commands.capture-settings.core.ts';
-import { enforceAllowList, isGsdDropped, parsePorcelainZ } from './commands.push.allowlist.ts';
-import { resolveLeakFindings } from './commands.push.recovery.ts';
-import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
+import { enforceAllowList } from './commands.push.allowlist.ts';
+import { type PushState, renderNoScanTree } from './commands.push.sections.ts';
+import { reportSettingsAheadDrift, stripGsdHooksFromBase } from './commands.push.settings.ts';
+import { guardGitlinks, guardResolutionModeConflicts } from './commands.push.guards.ts';
+import { commitAndPush, runDryRunPreview } from './commands.push.steps.ts';
 import { remapExtrasPush } from './extras-sync.ts';
-import { baseHasGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import { syncSkillsPush } from './skills-sync.ts';
-import { collectGlobalConfigChanges } from './push-global-config.ts';
-import { scanPushVerdict } from './push-leak-verdict.ts';
-import { findGitlinks, probeGitleaks, rebaseBeforePush } from './push-checks.ts';
-import { previewPushLeaks } from './push-preview.ts';
+import { probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { remapPush } from './remap.ts';
 import { withSpinner } from './spinner.ts';
-import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, warn } from './utils.ts';
-import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from './utils.fs.ts';
-import { deepMerge, readJson } from './utils.json.ts';
+import { die, fail, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
+import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
-/**
- * Idempotent gsd-hook strip for the push write-path. Reads
- * `shared/settings.base.json`, applies `stripGsdHookEntries`, and on a real
- * change backs up via `backupRepoWrite` then writes atomically via
- * `writeJsonAtomic`. If the stripped result deep-equals the original (no gsd
- * entries present) the function returns without writing (no backup, no mtime
- * change). Best-effort: a missing or unparseable base is silently skipped.
- *
- * Must only be called on the REAL-push path (!dryRun). The function is
- * push-only by design: pull stays non-destructive per Phase 50 precedent.
- *
- * @param repo - Resolved repo root path for this invocation.
- * @param backup - Resolved backup root path for this invocation.
- */
-function stripGsdHooksFromBase(repo: string, backup: string): void {
-  const basePath = join(repo, 'shared', 'settings.base.json');
-  if (!existsSync(basePath)) return;
-  let base: Record<string, unknown>;
-  try {
-    base = readJson<Record<string, unknown>>(basePath);
-  } catch {
-    return; // unparseable: skip silently (best-effort)
-  }
-  // Use the single shared predicate so an empty hooks: {} scaffold is NOT treated
-  // as dirty (no gsd entries present means nothing to strip).
-  if (!baseHasGsdHookEntries(base)) return;
-  const stripped = stripGsdHookEntries(base);
-  const ts = freshBackupTs(backup);
-  backupRepoWrite(basePath, ts, repo);
-  writeJsonAtomic(basePath, stripped);
-}
-
-/**
- * Read-only ahead-drift check for the push flow. Loads the repo's base +
- * host settings, computes the expected merge, and compares it against the live
- * `~/.claude/settings.json`. When the live file has keys not present in the
- * merge (the host is AHEAD), emits one `warn` line naming the local-only keys
- * and pointing at `nomad capture-settings`.
- *
- * Only keys capture would actually promote are reported: credential- and
- * secret-bearing keys (`CAPTURE_EXCLUDED_KEYS`) are filtered out, so the warning
- * neither advises an action that would no-op nor names a secret-bearing key.
- *
- * Best-effort and tolerant: any missing file or parse error is a silent skip.
- * Never mutates anything; never sets `process.exitCode`.
- *
- * @param repo - Resolved repo root path for this invocation.
- */
-export function reportSettingsAheadDrift(repo: string): void {
-  const basePath = join(repo, 'shared', 'settings.base.json');
-  if (!existsSync(basePath)) return;
-  const settingsPath = join(claudeHome(), 'settings.json');
-  if (!existsSync(settingsPath)) return;
-  try {
-    const base = readJson<Record<string, unknown>>(basePath);
-    const hostPath = join(repo, 'hosts', `${HOST}.json`);
-    const overrides = existsSync(hostPath) ? readJson<Record<string, unknown>>(hostPath) : {};
-    const merged = deepMerge(base, overrides);
-    const settings = readJson<Record<string, unknown>>(settingsPath);
-    const { ahead } = classifySettingsDrift(merged, settings);
-    const { promotable } = partitionByCaptureExclusion(ahead);
-    if (promotable.length === 0) return;
-    const { phrase, pronoun, verb } = describeSettings(promotable);
-    warn(
-      `your settings.json has ${phrase} that ${verb} not yet in the repo; ` +
-        `run 'nomad capture-settings' to save ${pronoun} (or 'nomad capture-settings --host' for host-specific values).`,
-    );
-  } catch {
-    // Malformed JSON or unreadable file: skip silently (best-effort).
-  }
-}
-
-/**
- * Walk `shared/` for nested `.git` entries copied in from a host's encoded
- * session dir. A gitlink would otherwise push as a submodule via the
- * `shared/projects/<logical>/` prefix. Emits a per-hit FATAL line on stderr and
- * throws a summarizing `NomadFatal` (caught by `cmdPush` so the lock releases).
- * Runs AFTER `remapPush` so it inspects the post-copy tree.
- *
- * @param repo Resolved repo root path for this invocation.
- */
-function guardGitlinks(repo: string): void {
-  const gitlinks = findGitlinks(join(repo, 'shared'));
-  if (gitlinks.length === 0) return;
-  for (const p of gitlinks) {
-    const rel = relative(repo, p);
-    fail(`gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`);
-  }
-  const noun = gitlinks.length === 1 ? 'entry' : 'entries';
-  throw new NomadFatal(
-    `gitlink trap: ${gitlinks.length} nested .git ${noun} in shared/; remove before retry`,
-  );
-}
-
-/**
- * Staged-tree leak gate + commit/push. Stages with `git add -A`, scans, and
- * on a leak renders the ✗ tree row then delegates to `resolveLeakFindings`
- * (TTY interactive menu or non-TTY FATAL throw). On a clean
- * scan commits, pushes, and renders the `✓ no leaks` row.
- *
- * @param st - Push state for the tree render.
- * @param ts - Backup timestamp passed to the recovery flow.
- * @param map - Parsed path-map for session path resolution.
- * @param redactAll - When true, redact all findings non-interactively.
- * @param allowAll - When true, allow all findings non-interactively.
- * @param allowRule - When set, allow only findings matching this rule id.
- * @param repo - Resolved repo root path for this invocation.
- * @param newManifest - The manifest to persist after a successful push.
- */
-async function commitAndPush(
-  st: PushState,
-  ts: string,
-  map: PathMap,
-  resolution: { redactAll: boolean; allowAll: boolean; allowRule: string | undefined },
-  repo: string,
-  newManifest: Manifest,
-): Promise<void> {
-  gitOrFatal(['add', '-A'], 'git add', repo);
-  // Unstage gsd-dropped paths immediately after staging: gsd reinstalls these
-  // per-host automatically, so they must never enter the shared commit. Uses the
-  // same isGsdDropped predicate that enforceAllowList uses to skip them, keeping
-  // the gate and the commit suppression in sync via a single source of truth.
-  const staged = parsePorcelainZ(gitStatusPorcelainZ(repo));
-  const toDrop = staged.filter((p) => isGsdDropped(p));
-  if (toDrop.length > 0) {
-    gitOrFatal(['restore', '--staged', '--', ...toDrop], 'git restore --staged', repo);
-  }
-  // If the gsd payload was the only staged change, the index is now empty and a
-  // commit would fail with "nothing to commit". This is the pure issue #294 case
-  // (a host whose sole pending change is gsd's per-host reinstall): render the
-  // no-scan tree and return a clean no-op push instead of dying. toDrop is a
-  // subset of staged, so equal lengths means every staged path was dropped.
-  if (staged.length === toDrop.length) {
-    log('nothing to commit');
-    renderNoScanTree(st);
-    return;
-  }
-  // Collect staged shared-config changes AFTER git add -A so the index reflects
-  // the full staged tree. Assigned onto st so renderPushTree sees the section.
-  st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: true });
-  let verdict = withSpinner('Scanning for secrets', () => scanPushVerdict(repo));
-  if (verdict.leak) {
-    renderPushTree(st, verdict);
-    verdict = await resolveLeakFindings(verdict, ts, map, resolution);
-  }
-  gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', repo);
-  withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', repo));
-  // Persist the manifest only after the push succeeds so a failed or aborted
-  // push never marks unscanned files as scanned. The push has already landed
-  // remotely, so a manifest-write failure is best-effort: warn but do not fail
-  // the command (the worst case is one redundant full rescan next push).
-  try {
-    writeManifest(manifestPath(), newManifest);
-  } catch (err) {
-    warn(`could not write push manifest (next push will full-rescan): ${String(err)}`);
-  }
-  renderPushTree(st, verdict);
-}
-
-/**
- * Render the dry-run leak-scan tree. With `map === null` (a dry-run with no
- * `path-map.json`) there is nothing to stage, so it renders the no-scan tree
- * with the `noMapHint` row and returns. Otherwise it runs `previewPushLeaks`
- * (which stages its OWN temp
- * tree from the map, independent of `REPO_HOME` status, and sets
- * `process.exitCode = 1` on findings), renders the push tree with the verdict
- * row in the Leak scan section, and prints the recovery body BELOW the tree via
- * `fail` (stderr) when one is present.
- *
- * Extracted from `cmdPush` so the command body and this helper each stay under
- * the sonarjs cognitive-complexity threshold.
- *
- * @param st - The collected push state for the tree render.
- * @param map - The parsed path-map, or `null` when a dry-run has no map.
- * @param repo - Resolved repo root path for collecting global-config changes.
- * @param selection - Manifest-driven selection; passed to previewPushLeaks so the
- *   dry-run scan covers only the same delta a real push would scan. `undefined`
- *   on a full rescan, so the preview stages the whole tree.
- */
-function runDryRunPreview(
-  st: PushState,
-  map: PathMap | null,
-  repo: string,
-  selection: ManifestDiff | undefined,
-): void {
-  // Dry-run stages nothing, so diff against HEAD to capture working-tree changes.
-  st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: false });
-  if (map === null) {
-    renderNoScanTree(st, { noMapHint: true });
-    return;
-  }
-  const verdict = withSpinner('Scanning for secrets', () => previewPushLeaks(map, { selection }));
-  renderPushTree(st, verdict);
-  if (verdict.recovery !== null) fail(verdict.recovery);
-}
+export { reportSettingsAheadDrift } from './commands.push.settings.ts';
 
 /**
  * `nomad push` command. Acquires the lock, runs the four pre-push safety
@@ -293,40 +85,6 @@ function runDryRunPreview(
  * pre-existing violation surfaces; an empty status has nothing to classify.
  * Mirrors `cmdPull`'s `dryRun` contract.
  */
-/**
- * Defense-in-depth guard for push resolution-mode mutual exclusivity.
- * The argv parser already enforces these, but `cmdPush` re-checks as a
- * second gate (mirroring `cmdClean`'s `--older-than`/`--keep` precedent).
- * Calls `die()` on any conflicting combination: two resolution modes together,
- * or any resolution mode (including `--redact-all`) combined with `--dry-run`
- * (a dry-run resolves nothing).
- *
- * @param dryRun True when `--dry-run` was passed.
- * @param redactAll True when `--redact-all` was passed.
- * @param allowAll True when `--allow-all` was passed.
- * @param allowRule Rule id from `--allow <rule>`, or undefined.
- */
-function guardResolutionModeConflicts(
-  dryRun: boolean,
-  redactAll: boolean,
-  allowAll: boolean,
-  allowRule: string | undefined,
-): void {
-  const hasAllow = allowAll || allowRule !== undefined;
-  const wantsResolution = redactAll || hasAllow;
-  if (redactAll && hasAllow) {
-    die('--redact-all, --allow-all, and --allow are mutually exclusive resolution modes');
-  }
-  if (allowAll && allowRule !== undefined) {
-    die('--redact-all, --allow-all, and --allow are mutually exclusive resolution modes');
-  }
-  if (dryRun && wantsResolution) {
-    die(
-      '--redact-all, --allow-all, and --allow cannot be combined with --dry-run (dry-run resolves nothing)',
-    );
-  }
-}
-
 export async function cmdPush(
   opts: {
     dryRun?: boolean;
