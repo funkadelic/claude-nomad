@@ -5,6 +5,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,6 +13,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ManifestDiff } from './push-manifest.ts';
 import type { RemapPullPreviewEvent } from './remap.ts';
 
 describe('remapPull (integration)', () => {
@@ -1204,5 +1206,301 @@ describe('remapPull skips when repo source is missing for a mapped logical', () 
 
     expect(result.unmapped).toBe(0);
     expect(existsSync(join(claudeProjects, '-srv-ghost'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// remapPush selective copy: per-file atomic copy driven by ManifestDiff.
+// ---------------------------------------------------------------------------
+
+describe('remapPush selective', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-selective-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('preserves inode and mtime of an unchanged file not in selection.changed', async () => {
+    // Unchanged files must not be opened or written during a selective push,
+    // so their destination inode and mtime stay identical after the call.
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(localDir, { recursive: true });
+    writeFileSync(join(localDir, 'unchanged.jsonl'), '{"unchanged":true}\n');
+    writeFileSync(join(localDir, 'changed.jsonl'), '{"v":2}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    // Pre-populate the repo side with the unchanged file.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'unchanged.jsonl'), '{"unchanged":true}\n');
+
+    const beforeStat = statSync(join(sharedProjects, 'foo', 'unchanged.jsonl'));
+
+    const selection: ManifestDiff = {
+      changed: new Set([join(localDir, 'changed.jsonl')]),
+      deleted: [],
+    };
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260630-000000', { selection });
+
+    expect(result.pushed).toEqual(['foo']);
+
+    // Unchanged file: inode and mtime must be bit-for-bit identical.
+    const afterStat = statSync(join(sharedProjects, 'foo', 'unchanged.jsonl'));
+    expect(afterStat.ino).toBe(beforeStat.ino);
+    expect(afterStat.mtimeMs).toBe(beforeStat.mtimeMs);
+
+    // Changed file: must now exist in the repo with the new content.
+    expect(existsSync(join(sharedProjects, 'foo', 'changed.jsonl'))).toBe(true);
+    expect(readFileSync(join(sharedProjects, 'foo', 'changed.jsonl'), 'utf8')).toBe('{"v":2}\n');
+  });
+
+  it('atomically replaces a changed file and leaves no .tmp sibling', async () => {
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(localDir, { recursive: true });
+    writeFileSync(join(localDir, 'session.jsonl'), '{"role":"assistant"}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    // Repo side has the old content.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'session.jsonl'), '{"role":"user"}\n');
+
+    const srcPath = join(localDir, 'session.jsonl');
+    const selection: ManifestDiff = { changed: new Set([srcPath]), deleted: [] };
+
+    const { remapPush } = await import('./remap.ts');
+    remapPush('20260630-000000', { selection });
+
+    expect(readFileSync(join(sharedProjects, 'foo', 'session.jsonl'), 'utf8')).toBe(
+      '{"role":"assistant"}\n',
+    );
+    // No .tmp sibling should remain after the rename swap.
+    const fooFiles = readdirSync(join(sharedProjects, 'foo'));
+    expect(fooFiles.filter((f) => f.includes('.tmp'))).toHaveLength(0);
+  });
+
+  it('removes a deleted-source file from the repo tree', async () => {
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(localDir, { recursive: true });
+    // Only 'remaining.jsonl' exists in source now; 'gone.jsonl' was deleted.
+    writeFileSync(join(localDir, 'remaining.jsonl'), '{"keep":true}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    // Repo side still has the old file.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'gone.jsonl'), '{"old":true}\n');
+    writeFileSync(join(sharedProjects, 'foo', 'remaining.jsonl'), '{"keep":true}\n');
+
+    // The source path that was recorded in the old manifest but is now gone.
+    const deletedSrc = join(localDir, 'gone.jsonl');
+    const selection: ManifestDiff = { changed: new Set(), deleted: [deletedSrc] };
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260630-000000', { selection });
+
+    expect(result.pushed).toEqual(['foo']);
+    expect(existsSync(join(sharedProjects, 'foo', 'gone.jsonl'))).toBe(false);
+    expect(existsSync(join(sharedProjects, 'foo', 'remaining.jsonl'))).toBe(true);
+  });
+
+  it('copies a changed nested file under a subdirectory (memory/notes.md)', async () => {
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(join(localDir, 'memory'), { recursive: true });
+    writeFileSync(join(localDir, 'memory', 'notes.md'), '# updated notes\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    mkdirSync(join(sharedProjects, 'foo', 'memory'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'memory', 'notes.md'), '# old notes\n');
+
+    const srcPath = join(localDir, 'memory', 'notes.md');
+    const selection: ManifestDiff = { changed: new Set([srcPath]), deleted: [] };
+
+    const { remapPush } = await import('./remap.ts');
+    remapPush('20260630-000000', { selection });
+
+    expect(readFileSync(join(sharedProjects, 'foo', 'memory', 'notes.md'), 'utf8')).toBe(
+      '# updated notes\n',
+    );
+  });
+
+  it('cold-start (no selection) copies the full set and removes stale files', async () => {
+    // Regression guard: without a selection, remapPush falls back to
+    // copyDirJsonlOnly (atomicMirror), which produces the same result as before.
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(localDir, { recursive: true });
+    writeFileSync(join(localDir, 'newer.jsonl'), '{"new":true}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    // Repo side has a stale file.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'older.jsonl'), '{"old":true}\n');
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260630-000000');
+
+    expect(result.pushed).toEqual(['foo']);
+    expect(existsSync(join(sharedProjects, 'foo', 'newer.jsonl'))).toBe(true);
+    // atomicMirror wipes the dest dir, so the stale file is gone.
+    expect(existsSync(join(sharedProjects, 'foo', 'older.jsonl'))).toBe(false);
+  });
+
+  it('skips logicals with no delta files (nothing to push, no backup created)', async () => {
+    // A logical present in the reverse map but with no files in the selection
+    // must be skipped entirely: no backup, not in pushed.
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(localDir, { recursive: true });
+    writeFileSync(join(localDir, 'session.jsonl'), '{"x":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'session.jsonl'), '{"x":1}\n');
+
+    // Selection with paths for a DIFFERENT project (none under localDir).
+    const otherPath = join(claudeProjects, '-tmp-other', 'session.jsonl');
+    const selection: ManifestDiff = { changed: new Set([otherPath]), deleted: [] };
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260630-000000', { selection });
+
+    // Nothing was pushed for foo (it had no delta).
+    expect(result.pushed).toEqual([]);
+    // No backup directory created (backupRepoWrite not called).
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260630-000000');
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it("multi-project selection: files for other projects skipped during each dir's copy", async () => {
+    // When the selection spans two projects, applySelective must only copy
+    // files whose prefix matches the current localDir, skipping the other
+    // project's files. This covers the `continue` branches inside applySelective.
+    const localDirFoo = join(claudeProjects, '-tmp-foo');
+    const localDirBar = join(claudeProjects, '-tmp-bar');
+    mkdirSync(localDirFoo, { recursive: true });
+    mkdirSync(localDirBar, { recursive: true });
+    writeFileSync(join(localDirFoo, 'foo.jsonl'), '{"foo":1}\n');
+    writeFileSync(join(localDirBar, 'bar.jsonl'), '{"bar":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          foo: { 'test-host': '/tmp/foo' },
+          bar: { 'test-host': '/tmp/bar' },
+        },
+      }) + '\n',
+    );
+    // Repo side: bar has a stale file that should be removed (via deleted).
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    mkdirSync(join(sharedProjects, 'bar'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'bar', 'old.jsonl'), '{"old":1}\n');
+
+    // Selection spans both: foo has a changed file; bar has a deleted file.
+    const selection: ManifestDiff = {
+      changed: new Set([join(localDirFoo, 'foo.jsonl')]),
+      deleted: [join(localDirBar, 'old.jsonl')],
+    };
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260630-000000', { selection });
+
+    expect(result.pushed.sort()).toEqual(['bar', 'foo']);
+    // foo's changed file copied; bar's changed file (from selection) was for bar, not foo.
+    expect(readFileSync(join(sharedProjects, 'foo', 'foo.jsonl'), 'utf8')).toBe('{"foo":1}\n');
+    // bar's deleted file removed.
+    expect(existsSync(join(sharedProjects, 'bar', 'old.jsonl'))).toBe(false);
+    // bar.jsonl not in foo's shared dir.
+    expect(existsSync(join(sharedProjects, 'foo', 'bar.jsonl'))).toBe(false);
+  });
+
+  it('ignores a deleted path whose repo-side copy is already absent', async () => {
+    // If a source file is in selection.deleted but the repo-side copy does not
+    // exist (already removed or never synced), rmSync must be skipped gracefully.
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(localDir, { recursive: true });
+    writeFileSync(join(localDir, 'session.jsonl'), '{"x":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    // Repo side does NOT have 'ghost.jsonl'.
+    const ghostSrc = join(localDir, 'ghost.jsonl');
+    const selection: ManifestDiff = { changed: new Set(), deleted: [ghostSrc] };
+
+    const { remapPush } = await import('./remap.ts');
+    // Must not throw even though the repo-side copy is absent.
+    const result = remapPush('20260630-000000', { selection });
+    // foo had delta (the deleted ghost path), so it is recorded as pushed.
+    expect(result.pushed).toEqual(['foo']);
+    // The repo side was already clean: no error and no stray files created.
+    expect(readdirSync(join(sharedProjects, 'foo'))).toHaveLength(0);
+  });
+
+  it('selective dryRun includes logicals with delta in wouldPush, excludes unchanged', async () => {
+    const localDirFoo = join(claudeProjects, '-tmp-foo');
+    const localDirBar = join(claudeProjects, '-tmp-bar');
+    mkdirSync(localDirFoo, { recursive: true });
+    mkdirSync(localDirBar, { recursive: true });
+    writeFileSync(join(localDirFoo, 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(join(localDirBar, 'b.jsonl'), '{"b":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          foo: { 'test-host': '/tmp/foo' },
+          bar: { 'test-host': '/tmp/bar' },
+        },
+      }) + '\n',
+    );
+
+    // Only foo has a changed file; bar has no delta.
+    const selection: ManifestDiff = {
+      changed: new Set([join(localDirFoo, 'a.jsonl')]),
+      deleted: [],
+    };
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260630-000000', { dryRun: true, selection });
+
+    expect(result.wouldPush).toEqual(['foo']);
+    expect(result.pushed).toEqual([]);
+    // No files written.
+    expect(existsSync(join(sharedProjects, 'foo', 'a.jsonl'))).toBe(false);
+    expect(existsSync(join(sharedProjects, 'bar', 'b.jsonl'))).toBe(false);
   });
 });
