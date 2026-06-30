@@ -150,9 +150,7 @@ async function commitAndPush(
   st: PushState,
   ts: string,
   map: PathMap,
-  redactAll: boolean,
-  allowAll: boolean,
-  allowRule: string | undefined,
+  resolution: { redactAll: boolean; allowAll: boolean; allowRule: string | undefined },
   repo: string,
   newManifest: Manifest,
 ): Promise<void> {
@@ -182,12 +180,12 @@ async function commitAndPush(
   let verdict = withSpinner('Scanning for secrets', () => scanPushVerdict(repo));
   if (verdict.leak) {
     renderPushTree(st, verdict);
-    verdict = await resolveLeakFindings(verdict, ts, map, { redactAll, allowAll, allowRule });
+    verdict = await resolveLeakFindings(verdict, ts, map, resolution);
   }
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', repo);
   withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', repo));
   // Persist the manifest only after the push succeeds so a failed or aborted
-  // push never marks unscanned files as scanned (D-05).
+  // push never marks unscanned files as scanned.
   writeManifest(manifestPath(), newManifest);
   renderPushTree(st, verdict);
 }
@@ -543,9 +541,9 @@ export async function cmdPush(
     if (status) enforceAllowList(status, map);
     // dryRun skips git add / commit / push: run the read-only leak preview,
     // which prints any recovery below the rendered tree. The manifest is never
-    // written on a dry-run (D-07).
+    // written on a dry-run.
     if (dryRun) return runDryRunPreview(st, map, repo, selection);
-    await commitAndPush(st, ts, map, redactAll, allowAll, allowRule, repo, newManifest);
+    await commitAndPush(st, ts, map, { redactAll, allowAll, allowRule }, repo, newManifest);
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);
