@@ -23,7 +23,7 @@ describe('manifestPath', () => {
     const p = manifestPath();
     expect(p).toContain('.cache');
     expect(p).toContain('claude-nomad');
-    expect(p).toMatch(new RegExp(`push-manifest-${HOST}\\.json$`));
+    expect(p.endsWith(`push-manifest-${encodeURIComponent(HOST)}.json`)).toBe(true);
   });
 
   it('reflects a mid-process HOME swap without resetModules', () => {
@@ -39,6 +39,6 @@ describe('manifestPath', () => {
   it('embeds HOST in the filename so different hosts do not share a manifest', () => {
     const p = manifestPath();
     const filename = p.split('/').pop() ?? '';
-    expect(filename).toBe(`push-manifest-${HOST}.json`);
+    expect(filename).toBe(`push-manifest-${encodeURIComponent(HOST)}.json`);
   });
 });

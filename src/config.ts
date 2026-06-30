@@ -77,7 +77,9 @@ export function backupBase(): string {
  * using `NOMAD_HOST` overrides).
  */
 export function manifestPath(): string {
-  return join(home(), '.cache', 'claude-nomad', `push-manifest-${HOST}.json`);
+  // Encode HOST so a value containing a path separator (a custom NOMAD_HOST)
+  // cannot escape the single-filename slot and redirect the manifest write.
+  return join(home(), '.cache', 'claude-nomad', `push-manifest-${encodeURIComponent(HOST)}.json`);
 }
 
 /**
