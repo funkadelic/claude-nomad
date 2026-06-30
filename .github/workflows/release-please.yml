@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+  # Manual trigger so the release PR can be reopened when a push event is
+  # missed (e.g. a transient 502 during a merge creates the commit on main
+  # but never fires the push webhook). Recover with: gh workflow run release-please.yml
+  workflow_dispatch:
 
 # Downgraded from `contents: write` / `pull-requests: write` because the
 # release PR is now authored by the GitHub App via actions/create-github-app-token.
@@ -17,7 +21,10 @@ concurrency:
 
 jobs:
   release-please:
-    if: ${{ !github.event.repository.private }}
+    # Restrict to the default branch so a manual workflow_dispatch cannot run
+    # release-please against an arbitrary ref. The push trigger is already
+    # branch-scoped to main, so this is a no-op there and a guard for dispatch.
+    if: ${{ !github.event.repository.private && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Generate App token
