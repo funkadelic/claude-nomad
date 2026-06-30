@@ -1551,6 +1551,19 @@ describe('cmdPush: manifest write-on-success', () => {
     expect(writeManifestMock).toHaveBeenCalledOnce();
   });
 
+  it('does not fail the command when the manifest write throws after push', async () => {
+    // The push has already landed remotely, so a manifest-write error is
+    // best-effort: cmdPush must resolve (not throw) rather than turn a
+    // successful push into a failed command.
+    const writeManifestMock = vi.fn(() => {
+      throw new Error('disk full');
+    });
+    mockWetPipelineWithManifest(writeManifestMock, 'M  shared/CLAUDE.md\0');
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+    expect(writeManifestMock).toHaveBeenCalledOnce();
+  });
+
   it('does NOT write the manifest on dry-run', async () => {
     const writeManifestMock = vi.fn();
     mockWetPipelineWithManifest(writeManifestMock, '');
@@ -1697,6 +1710,7 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
     configHashImpl?: () => string,
   ): Promise<{
     capturedChangedPaths: Set<string>;
+    capturedSelection: { changed: Set<string>; deleted: string[] } | undefined;
     writeManifestMock: ReturnType<typeof vi.fn>;
   }> {
     const writeManifestMock = vi.fn();
@@ -1720,6 +1734,7 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
       };
     });
     let capturedChangedPaths = new Set<string>();
+    let capturedSelection: { changed: Set<string>; deleted: string[] } | undefined;
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(
@@ -1727,6 +1742,7 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
           _ts: string,
           opts: { dryRun?: boolean; selection?: { changed: Set<string>; deleted: string[] } },
         ) => {
+          capturedSelection = opts.selection;
           capturedChangedPaths = opts.selection?.changed ?? new Set<string>();
           return { unmapped: 0, collisions: 0, pushed: [], wouldPush: [] };
         },
@@ -1769,18 +1785,21 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
 
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush();
-    return { capturedChangedPaths, writeManifestMock };
+    return { capturedChangedPaths, capturedSelection, writeManifestMock };
   }
 
-  it('cold start: null manifest causes all source files to be in selection.changed', async () => {
-    const sessionFile = setupProject();
-    const { capturedChangedPaths, writeManifestMock } = await runAndCaptureSelection(() => null);
-    expect(capturedChangedPaths.has(sessionFile)).toBe(true);
+  it('cold start: null manifest passes no selection so remapPush full-mirrors', async () => {
+    // A cold start is a full rescan, which must pass NO selection so remapPush
+    // falls back to copyDirJsonlOnly (full mirror, including stale-file cleanup)
+    // rather than the selective copy.
+    setupProject();
+    const { capturedSelection, writeManifestMock } = await runAndCaptureSelection(() => null);
+    expect(capturedSelection).toBeUndefined();
     // Manifest written on success after cold start.
     expect(writeManifestMock).toHaveBeenCalledOnce();
   });
 
-  it('scannerVersion change forces full rescan (all files in selection.changed)', async () => {
+  it('scannerVersion change forces full rescan (no selection passed)', async () => {
     const sessionFile = setupProject();
     const { statSync: realStatSync } = await import('node:fs');
     const st = realStatSync(sessionFile);
@@ -1791,14 +1810,14 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
       configHash: 'same-hash',
       files: { [sessionFile]: { size: st.size, mtime: st.mtimeMs, hash: 'oldhash' } },
     };
-    const { capturedChangedPaths } = await runAndCaptureSelection(
+    const { capturedSelection } = await runAndCaptureSelection(
       () => oldManifest,
       () => 'same-hash', // no config change, only scanner version differs
     );
-    expect(capturedChangedPaths.has(sessionFile)).toBe(true);
+    expect(capturedSelection).toBeUndefined();
   });
 
-  it('configHash change forces full rescan (all files in selection.changed)', async () => {
+  it('configHash change forces full rescan (no selection passed)', async () => {
     const sessionFile = setupProject();
     const { statSync: realStatSync } = await import('node:fs');
     const st = realStatSync(sessionFile);
@@ -1808,11 +1827,11 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
       configHash: 'old-config-hash',
       files: { [sessionFile]: { size: st.size, mtime: st.mtimeMs, hash: 'oldhash' } },
     };
-    const { capturedChangedPaths } = await runAndCaptureSelection(
+    const { capturedSelection } = await runAndCaptureSelection(
       () => oldManifest,
       () => 'new-config-hash', // config changed
     );
-    expect(capturedChangedPaths.has(sessionFile)).toBe(true);
+    expect(capturedSelection).toBeUndefined();
   });
 
   it('project with no host entry in path-map is skipped (continue branch)', async () => {

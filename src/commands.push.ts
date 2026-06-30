@@ -185,8 +185,14 @@ async function commitAndPush(
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', repo);
   withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', repo));
   // Persist the manifest only after the push succeeds so a failed or aborted
-  // push never marks unscanned files as scanned.
-  writeManifest(manifestPath(), newManifest);
+  // push never marks unscanned files as scanned. The push has already landed
+  // remotely, so a manifest-write failure is best-effort: warn but do not fail
+  // the command (the worst case is one redundant full rescan next push).
+  try {
+    writeManifest(manifestPath(), newManifest);
+  } catch (err) {
+    warn(`could not write push manifest (next push will full-rescan): ${String(err)}`);
+  }
   renderPushTree(st, verdict);
 }
 
@@ -207,13 +213,14 @@ async function commitAndPush(
  * @param map - The parsed path-map, or `null` when a dry-run has no map.
  * @param repo - Resolved repo root path for collecting global-config changes.
  * @param selection - Manifest-driven selection; passed to previewPushLeaks so the
- *   dry-run scan covers only the same delta a real push would scan.
+ *   dry-run scan covers only the same delta a real push would scan. `undefined`
+ *   on a full rescan, so the preview stages the whole tree.
  */
 function runDryRunPreview(
   st: PushState,
   map: PathMap | null,
   repo: string,
-  selection: ManifestDiff,
+  selection: ManifestDiff | undefined,
 ): void {
   // Dry-run stages nothing, so diff against HEAD to capture working-tree changes.
   st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: false });
@@ -279,7 +286,7 @@ export function computePushSelection(
   scannerVersion: string,
   configHash: string,
   fullScan: boolean,
-): { selection: ManifestDiff; newManifest: Manifest } {
+): { selection: ManifestDiff | undefined; newManifest: Manifest } {
   const current = buildCurrentMap(map);
   const fullRescan = shouldFullRescan(old, scannerVersion, configHash, fullScan);
   const hashCache = new Map<string, string>();
@@ -290,21 +297,30 @@ export function computePushSelection(
     hashCache.set(p, h);
     return h;
   };
-  const selection: ManifestDiff = fullRescan
+  // `delta` drives manifest hashing for both paths: on a full rescan every file
+  // is (re)hashed, on an incremental push only the changed set is.
+  const delta: ManifestDiff = fullRescan
     ? { changed: new Set(Object.keys(current)), deleted: [] }
     : diffManifest(old, current, cachedHash);
   const files: Record<string, ManifestEntry> = {};
   for (const [key, meta] of Object.entries(current)) {
-    const hash = selection.changed.has(key) ? cachedHash(key) : old!.files[key].hash;
+    const hash = delta.changed.has(key) ? cachedHash(key) : old!.files[key].hash;
     files[key] = { size: meta.size, mtime: meta.mtime, hash };
   }
-  return { selection, newManifest: buildManifest(files, scannerVersion, configHash) };
+  // A full rescan returns NO selection so remapPush and the dry-run preview fall
+  // back to the full-directory mirror, which also prunes repo-side files no
+  // longer in the source. A populated full-rescan selection (deleted: []) would
+  // skip that cleanup and leave stale transcripts behind.
+  return {
+    selection: fullRescan ? undefined : delta,
+    newManifest: buildManifest(files, scannerVersion, configHash),
+  };
 }
 
 /**
  * Load the path-map and compute the push selection in one step. Tries to read
  * `path-map.json` at `mapPath`; an absent file yields `map = null` and an
- * empty selection (cold start on the source-file set). A malformed JSON file
+ * undefined selection (cold start triggers a full rescan). A malformed JSON file
  * throws `NomadFatal` (caught by `cmdPush`'s try/finally so the lock releases).
  *
  * Extracted from `cmdPush` so the map-load ternary does not push `cmdPush`
@@ -323,7 +339,7 @@ function loadSelectionForPush(
   scannerVersion: string,
   configHash: string,
   fullScan: boolean,
-): { map: PathMap | null; selection: ManifestDiff; newManifest: Manifest } {
+): { map: PathMap | null; selection: ManifestDiff | undefined; newManifest: Manifest } {
   const map: PathMap | null = existsSync(mapPath) ? readPathMap(mapPath) : null;
   const { selection, newManifest } = computePushSelection(
     map,
