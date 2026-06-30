@@ -859,6 +859,99 @@ describe('previewPushLeaks: gitleaksignore staging parity', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Selective staging (ManifestDiff.changed) -- mocked gitleaks.
+// ---------------------------------------------------------------------------
+
+describe('previewPushLeaks: selective staging via selection.changed', () => {
+  let env: PreviewEnv;
+
+  beforeEach(() => {
+    env = makePreviEnv();
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    teardownPreviewEnv(env);
+  });
+
+  it('stages only the changed file and passes to gitleaks when selection matches the project dir', async () => {
+    // Plant a session dir with two files; only one is in selection.changed.
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    const encoded = localPath.replace(/\//g, '-');
+    const projectsDir = join(env.claudeHome, 'projects', encoded);
+    mkdirSync(projectsDir, { recursive: true });
+    writeFileSync(join(projectsDir, 'session-a.jsonl'), '{"role":"user"}\n');
+    writeFileSync(join(projectsDir, 'session-b.jsonl'), '{"role":"assistant"}\n');
+    writeFileSync(
+      join(env.repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { [logical]: { 'test-host': localPath } } }) + '\n',
+    );
+
+    // Also plant a path that does NOT belong to this project to exercise the
+    // filter false branch inside stageSessionDir.
+    const otherPath = join(env.testHome, 'other-project', 'unrelated.jsonl');
+    const changedSet = new Set([join(projectsDir, 'session-a.jsonl'), otherPath]);
+
+    let stagedFiles: string[] = [];
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+          // Capture what is actually staged in the temp tree.
+          const sharesProjectsDir = join(dir, 'shared', 'projects', logical);
+          if (existsSync(sharesProjectsDir)) {
+            stagedFiles = readdirSync(sharesProjectsDir);
+          }
+          return [];
+        }),
+      };
+    });
+
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    const verdict = previewPushLeaks(map, { selection: { changed: changedSet, deleted: [] } });
+
+    // Only session-a.jsonl was in selection.changed for this dir; session-b is absent.
+    expect(stagedFiles).toEqual(['session-a.jsonl']);
+    expect(verdict.leak).toBe(false);
+  });
+
+  it('returns nothing-to-scan when selection.changed has no files for the mapped dir', async () => {
+    // The dir is in the reverse map, but selection.changed points elsewhere.
+    // stageSessionDir must return false -> staged=0 -> nothing-to-scan verdict.
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user"}\n');
+
+    // Changed set has a file under a completely different root.
+    const unrelatedPath = join(env.testHome, 'other-root', 'session.jsonl');
+    const changedSet = new Set([unrelatedPath]);
+
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    const verdict = previewPushLeaks(map, { selection: { changed: changedSet, deleted: [] } });
+
+    // Nothing staged for this dir -> scanStagedTree not called.
+    expect(scanMock).not.toHaveBeenCalled();
+    expect(verdict.leak).toBe(false);
+    expect(verdict.verdictRow).toMatch(/nothing to scan/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Real-gitleaks integration tests (skipped when gitleaks is not on PATH).
 // ---------------------------------------------------------------------------
 
@@ -938,5 +1031,82 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
     expect(verdict.leak).toBe(false);
     expect(verdict.recovery).toBeNull();
     expect(verdict.verdictRow).toMatch(/no leaks/);
+  });
+
+  it('delta scan finds the same secret as full scan for a nested memory/notes.md file', async () => {
+    // Prove that scanning only selection.changed produces identical findings to
+    // a full scan when the changed file is a nested .md containing a secret.
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    const encoded = localPath.replace(/\//g, '-');
+    const projectsDir = join(env.claudeHome, 'projects', encoded);
+    mkdirSync(join(projectsDir, 'memory'), { recursive: true });
+    const fakePat = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');
+    const notesPath = join(projectsDir, 'memory', 'notes.md');
+    writeFileSync(notesPath, `# notes\ntoken=${fakePat}\n`);
+    writeFileSync(
+      join(env.repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { [logical]: { 'test-host': localPath } } }) + '\n',
+    );
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+
+    vi.resetModules();
+    const { previewPushLeaks: plFull } = await import('./push-preview.ts');
+    const fullVerdict = plFull(map);
+    process.exitCode = env.originalExitCode;
+
+    vi.resetModules();
+    const { previewPushLeaks: plDelta } = await import('./push-preview.ts');
+    const deltaVerdict = plDelta(map, {
+      selection: { changed: new Set([notesPath]), deleted: [] },
+    });
+
+    // Both must find a leak.
+    expect(fullVerdict.leak).toBe(true);
+    expect(deltaVerdict.leak).toBe(true);
+    // Fingerprints must be identical: the delta scan is not a subset.
+    const fullFPs = fullVerdict.findings.map((f) => f.Fingerprint).sort();
+    const deltaFPs = deltaVerdict.findings.map((f) => f.Fingerprint).sort();
+    expect(deltaFPs).toEqual(fullFPs);
+  });
+
+  it('.gitleaksignore suppresses a finding in delta scan (fingerprint honored)', async () => {
+    // Write a secret into memory/notes.md, run a full scan to capture the
+    // fingerprint, write it to .gitleaksignore, then verify the delta scan
+    // returns clean.
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    const encoded = localPath.replace(/\//g, '-');
+    const projectsDir = join(env.claudeHome, 'projects', encoded);
+    mkdirSync(join(projectsDir, 'memory'), { recursive: true });
+    const fakePat = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');
+    const notesPath = join(projectsDir, 'memory', 'notes.md');
+    writeFileSync(notesPath, `# notes\ntoken=${fakePat}\n`);
+    writeFileSync(
+      join(env.repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { [logical]: { 'test-host': localPath } } }) + '\n',
+    );
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+
+    // Full scan: collect fingerprints.
+    vi.resetModules();
+    const { previewPushLeaks: plFull } = await import('./push-preview.ts');
+    const fullVerdict = plFull(map);
+    process.exitCode = env.originalExitCode;
+    expect(fullVerdict.findings.length).toBeGreaterThan(0);
+
+    // Write all fingerprints to .gitleaksignore so the delta scan suppresses them.
+    const ignoreContent = fullVerdict.findings.map((f) => f.Fingerprint).join('\n') + '\n';
+    writeFileSync(join(env.repoUnderHome, '.gitleaksignore'), ignoreContent);
+
+    vi.resetModules();
+    const { previewPushLeaks: plDelta } = await import('./push-preview.ts');
+    const deltaVerdict = plDelta(map, {
+      selection: { changed: new Set([notesPath]), deleted: [] },
+    });
+
+    // The .gitleaksignore must suppress all findings in the delta scan.
+    expect(deltaVerdict.leak).toBe(false);
+    expect(deltaVerdict.findings).toHaveLength(0);
   });
 });
