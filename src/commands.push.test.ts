@@ -1864,6 +1864,39 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
     // The file hash computed during diffManifest matches the real file.
     expect(currentHash).toHaveLength(64); // SHA-256 hex, sanity check.
   });
+
+  it('incremental path: unchanged file reuses its old manifest hash without re-hashing', async () => {
+    // Covers the false branch of the selection.changed ternary in
+    // computePushSelection: a file present in the prior manifest whose size and
+    // mtime are unchanged is excluded from selection.changed, and its hash is
+    // reused from the old manifest verbatim rather than recomputed.
+    const sessionFile = setupProject();
+    const { statSync: realStatSync } = await import('node:fs');
+    const st = realStatSync(sessionFile);
+    const reusedHash = 'reused-old-manifest-hash-sentinel';
+    const oldManifest = {
+      schema: 1 as const,
+      scannerVersion: 'v8.30.1', // matches probe mock => no version-triggered rescan
+      configHash: 'same-hash', // matches computeConfigHash mock => no config rescan
+      files: {
+        // size AND mtime match the on-disk file, so isChanged returns false
+        // without hashing and the file stays out of selection.changed.
+        [sessionFile]: { size: st.size, mtime: st.mtimeMs, hash: reusedHash },
+      },
+    };
+    const { capturedChangedPaths, writeManifestMock } = await runAndCaptureSelection(
+      () => oldManifest,
+      () => 'same-hash',
+    );
+    // Unchanged file is not re-scanned.
+    expect(capturedChangedPaths.has(sessionFile)).toBe(false);
+    // The new manifest reuses the old hash verbatim, proving the false ternary
+    // branch ran and the file was not re-hashed.
+    const writtenManifest = writeManifestMock.mock.calls[0][1] as {
+      files: Record<string, { hash: string }>;
+    };
+    expect(writtenManifest.files[sessionFile].hash).toBe(reusedHash);
+  });
 });
 
 // ---------------------------------------------------------------------------
