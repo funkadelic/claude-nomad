@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.56.0](https://github.com/funkadelic/claude-nomad/compare/v0.55.1...v0.56.0) (2026-06-30)
+
+
+### Added
+
+* **push:** incremental leak scan (scan only new or changed transcripts) ([#368](https://github.com/funkadelic/claude-nomad/issues/368)) ([02c771a](https://github.com/funkadelic/claude-nomad/commit/02c771a680642ca3248a2f0d8e4196f6421dd967))
+
+
+### Changed
+
+* **push:** extract manifest selection into its own module ([#370](https://github.com/funkadelic/claude-nomad/issues/370)) ([a6960dc](https://github.com/funkadelic/claude-nomad/commit/a6960dcf1d9489791a6810d083021e74a48eec79))
+* **push:** split commands.push.ts settings, guards, and steps into modules ([#371](https://github.com/funkadelic/claude-nomad/issues/371)) ([2b5a0a9](https://github.com/funkadelic/claude-nomad/commit/2b5a0a9f53d7af460bd74166018f3011f7b67392))
+
+
+### Testing
+
+* raise vitest timeouts and cap worker oversubscription to reduce flake ([#372](https://github.com/funkadelic/claude-nomad/issues/372)) ([51083d7](https://github.com/funkadelic/claude-nomad/commit/51083d73c3e581a61a17b0eea6f00f22eb2c176b))
+
 ## [0.55.1](https://github.com/funkadelic/claude-nomad/compare/v0.55.0...v0.55.1) (2026-06-29)
 
 
