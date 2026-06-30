@@ -48,14 +48,18 @@ preview reflects what a real pull would write.
 
 ## `push`
 
-`nomad push [--dry-run] [--redact-all] [--allow <rule>] [--allow-all]`
+`nomad push [--dry-run] [--full-scan] [--redact-all] [--allow <rule>] [--allow-all]`
 
 Export local sessions and opted-in per-project extras to logical names, commit
-(`chore: sync from <NOMAD_HOST>`), push.
+(`chore: sync from <NOMAD_HOST>`), push. Steady-state pushes scan only the
+transcripts that changed since the last successful push (incremental); a cold
+start, a gitleaks version change, a gitleaks config change, or `--full-scan`
+forces a full rescan of all transcripts.
 
 | Flag               | Description                                                                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--dry-run`        | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions and extras this host would stage. Exits 1 if a leak is found. Nothing is written.    |
+| `--full-scan`      | Ignore the per-host push manifest and rescan all transcripts, then rewrite the manifest on success. Use after a gitleaks upgrade, after editing a gitleaks config file, or when in doubt. Composes freely with `--dry-run` and all resolution modes. |
 | `--redact-all`     | Redact all findings non-interactively (backup written first) without a TTY. Does not auto-Allow findings. After redaction re-stages and re-scans; aborts with the session-aware FATAL if any finding survives. Mutually exclusive with `--allow*`; cannot combine with `--dry-run`. See [Recovery flows](/claude-nomad/recovery/). |
 | `--allow <rule>`   | Append the fingerprint of every finding whose gitleaks rule id matches `<rule>` to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow-all`; cannot combine with `--dry-run`. See [Recovery flows](/claude-nomad/recovery/). |
 | `--allow-all`      | Append the fingerprint of every current finding to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow`; cannot combine with `--dry-run`. See [Recovery flows](/claude-nomad/recovery/). |

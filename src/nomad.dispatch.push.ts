@@ -10,6 +10,8 @@ export type PushArgs = {
   allowAll: boolean;
   /** Rule id from `--allow <rule>`, or undefined. */
   allowRule: string | undefined;
+  /** True when `--full-scan` was present. */
+  fullScan: boolean;
 };
 
 /** Internal state threaded through the parsePushArgs loop. */
@@ -18,6 +20,7 @@ type PushParseState = {
   redactAll: boolean;
   allowAll: boolean;
   allowRule: string | undefined;
+  fullScan: boolean;
 };
 
 /**
@@ -66,14 +69,16 @@ function applyPushToken(argv: string[], i: number, st: PushParseState): TokenRes
       return applyBool(st.allowAll, () => (st.allowAll = true));
     case '--allow':
       return applyAllow(argv, i, st);
+    case '--full-scan':
+      return applyBool(st.fullScan, () => (st.fullScan = true));
     default:
       return REJECT;
   }
 }
 
 /**
- * Argv parser for `nomad push [--dry-run] [--redact-all] [--allow <rule>]
- * [--allow-all]`.
+ * Argv parser for `nomad push [--dry-run] [--full-scan] [--redact-all]
+ * [--allow <rule>] [--allow-all]`.
  *
  * `--redact-all`, `--allow-all`, and `--allow <rule>` are mutually exclusive
  * resolution modes. Combining any two of them is a parse error. Combining ANY
@@ -92,6 +97,7 @@ export function parsePushArgs(argv: string[]): PushArgs | null {
     redactAll: false,
     allowAll: false,
     allowRule: undefined,
+    fullScan: false,
   };
   let i = 3;
   while (i < argv.length) {
@@ -112,5 +118,6 @@ export function parsePushArgs(argv: string[]): PushArgs | null {
     redactAll: st.redactAll,
     allowAll: st.allowAll,
     allowRule: st.allowRule,
+    fullScan: st.fullScan,
   };
 }
