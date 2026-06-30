@@ -1484,6 +1484,7 @@ describe('cmdPush: manifest write-on-success', () => {
   function mockWetPipelineWithManifest(
     writeManifestMock: ReturnType<typeof vi.fn>,
     statusLine: string,
+    order?: string[],
   ): void {
     vi.doMock('./push-manifest.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushManifestModule>();
@@ -1531,7 +1532,11 @@ describe('cmdPush: manifest write-on-success', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => Buffer.from('')),
+        execFileSync: vi.fn((_file: string, args: readonly string[] = []) => {
+          // Record the `git push` so a test can assert manifest-write ordering.
+          if (order && args[0] === 'push') order.push('push');
+          return Buffer.from('');
+        }),
       };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -1554,14 +1559,20 @@ describe('cmdPush: manifest write-on-success', () => {
   it('does not fail the command when the manifest write throws after push', async () => {
     // The push has already landed remotely, so a manifest-write error is
     // best-effort: cmdPush must resolve (not throw) rather than turn a
-    // successful push into a failed command.
+    // successful push into a failed command. The ordering assertion proves the
+    // write runs AFTER the push (the whole point of best-effort here): if the
+    // write moved before the push, this would still swallow the error but break
+    // the contract.
+    const order: string[] = [];
     const writeManifestMock = vi.fn(() => {
+      order.push('writeManifest');
       throw new Error('disk full');
     });
-    mockWetPipelineWithManifest(writeManifestMock, 'M  shared/CLAUDE.md\0');
+    mockWetPipelineWithManifest(writeManifestMock, 'M  shared/CLAUDE.md\0', order);
     const { cmdPush } = await import('./commands.push.ts');
     await expect(cmdPush()).resolves.toBeUndefined();
     expect(writeManifestMock).toHaveBeenCalledOnce();
+    expect(order).toEqual(['push', 'writeManifest']);
   });
 
   it('does NOT write the manifest on dry-run', async () => {
