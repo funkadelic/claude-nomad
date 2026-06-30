@@ -1,9 +1,10 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { assertSafeLocalRoot } from './extras-sync.guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
+import { type ManifestDiff } from './push-manifest.ts';
 import { die, item, log } from './utils.ts';
 import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
 import { encodePath, readPathMap } from './utils.json.ts';
@@ -48,6 +49,68 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
  */
 function copyDir(src: string, dst: string): void {
   atomicMirror(src, dst, { recursive: true, force: true });
+}
+
+/**
+ * Per-file atomic copy. Creates the destination parent directory, copies `src`
+ * to a sibling temp file (`<dst>.tmp.<pid>`), then renames over `dst`. The
+ * rename is atomic on the same filesystem (no EXDEV), so an interrupt leaves
+ * either the old file or the new file intact, never a partial write. Unchanged
+ * siblings are untouched, keeping their inode and mtime for git's stat-cache.
+ *
+ * @param src - Absolute source file path.
+ * @param dst - Absolute destination file path.
+ */
+export function copyFileAtomic(src: string, dst: string): void {
+  mkdirSync(dirname(dst), { recursive: true });
+  const tmp = `${dst}.tmp.${process.pid}`;
+  cpSync(src, tmp, { force: true, preserveTimestamps: true });
+  renameSync(tmp, dst);
+}
+
+/**
+ * Return `true` when `sel` contains any changed or deleted files whose
+ * absolute source path starts with `localDir + sep`. Used to skip a project
+ * dir that has no delta entries, avoiding a spurious `backupRepoWrite` call
+ * for fully unchanged projects.
+ */
+function hasDeltaForDir(sel: ManifestDiff, localDir: string): boolean {
+  const prefix = `${localDir}${sep}`;
+  for (const p of sel.changed) if (p.startsWith(prefix)) return true;
+  for (const p of sel.deleted) if (p.startsWith(prefix)) return true;
+  return false;
+}
+
+/**
+ * Return `true` when a selective push has a `selection` that contains no
+ * changed or deleted files for `localDir`, meaning the dir can be skipped.
+ * Extracted to keep `remapPush` under the cognitive-complexity gate.
+ */
+function skipForSelection(sel: ManifestDiff | undefined, localDir: string): boolean {
+  return sel !== undefined && !hasDeltaForDir(sel, localDir);
+}
+
+/**
+ * Apply a manifest delta to a single project dir pair. Copies each changed
+ * file into `repoDst` via `copyFileAtomic`; removes repo-side copies of
+ * deleted source files. Skips files outside `localDir`. Unchanged files are
+ * never opened, so their destination inode and mtime are preserved.
+ *
+ * @param sel - Manifest diff from `diffManifest`.
+ * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
+ * @param repoDst - Absolute path of `shared/projects/<logical>/`.
+ */
+function applySelective(sel: ManifestDiff, localDir: string, repoDst: string): void {
+  const prefix = `${localDir}${sep}`;
+  for (const src of sel.changed) {
+    if (!src.startsWith(prefix)) continue;
+    copyFileAtomic(src, join(repoDst, relative(localDir, src)));
+  }
+  for (const src of sel.deleted) {
+    if (!src.startsWith(prefix)) continue;
+    const dst = join(repoDst, relative(localDir, src));
+    if (existsSync(dst)) rmSync(dst);
+  }
 }
 
 /**
@@ -247,6 +310,14 @@ function buildReverseMap(map: PathMap): Map<string, string> {
  * calling `backupRepoWrite` + `copyDir`. Collision detection runs identically
  * in both modes.
  *
+ * `opts.selection` (optional): a `ManifestDiff` from `diffManifest`. When
+ * provided, only files in `selection.changed` are copied and only files in
+ * `selection.deleted` are removed from the repo; unchanged files are left
+ * untouched so their destination inode and mtime remain valid for git's
+ * stat-cache. When absent (cold start or full rescan), the entire project dir
+ * is mirrored via `copyDirJsonlOnly`, preserving today's behavior including
+ * stale-file cleanup.
+ *
  * Returns `pushed` (logical names actually copied, wet mode) and `wouldPush`
  * (logical names under `dryRun`) alongside the counts so cmdPush can render a
  * grouped tree. This function no longer logs per-project `pushed X -> Y` /
@@ -256,10 +327,11 @@ function buildReverseMap(map: PathMap): Map<string, string> {
  *
  * @param ts - backup timestamp namespace.
  * @param opts.dryRun - when `true`, collect `wouldPush` without mutating.
+ * @param opts.selection - manifest delta; when absent the full dir is mirrored.
  */
 export function remapPush(
   ts: string,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; selection?: ManifestDiff } = {},
 ): { unmapped: number; collisions: number; pushed: string[]; wouldPush: string[] } {
   const dryRun = opts.dryRun === true;
   let unmapped = 0;
@@ -293,17 +365,23 @@ export function remapPush(
       unmapped++;
       continue;
     }
+    const localDir = join(localProjects, dir);
     const repoDst = join(repoProjects, logical);
+    // With a selection, skip logicals that have no changed or deleted files.
+    if (skipForSelection(opts.selection, localDir)) continue;
     if (dryRun) {
       wouldPush.push(logical);
       continue;
     }
-    // Snapshot repo-side destination before copyDir clobbers it. Git
-    // history exists only AFTER the commit step, so a corrupt or
-    // path-encoding-collided local dir would otherwise have no rollback
-    // path. Symmetric with remapPull's backupBeforeWrite on the local dst.
+    // Snapshot repo-side destination before any mutation. Git history exists
+    // only AFTER the commit step, so a corrupt local dir would have no rollback
+    // path without this. Symmetric with remapPull's backupBeforeWrite.
     backupRepoWrite(repoDst, ts, repo);
-    copyDirJsonlOnly(join(localProjects, dir), repoDst);
+    if (opts.selection) {
+      applySelective(opts.selection, localDir, repoDst);
+    } else {
+      copyDirJsonlOnly(localDir, repoDst);
+    }
     pushed.push(logical);
   }
   return { unmapped, collisions: 0, pushed, wouldPush };

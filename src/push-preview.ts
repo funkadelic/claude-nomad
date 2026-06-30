@@ -18,13 +18,14 @@
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 import { dim, infoGlyph } from './color.ts';
 import { claudeHome, repoHome, HOST, SUPPORTED_EXTRAS, type PathMap } from './config.ts';
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { copyExtras } from './extras-sync.ts';
-import { copyDirJsonlOnly } from './remap.ts';
+import { type ManifestDiff } from './push-manifest.ts';
+import { copyDirJsonlOnly, copyFileAtomic } from './remap.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './push-leak-verdict.ts';
 import { scanStagedTree } from './push-gitleaks.ts';
 import { nowTimestamp } from './utils.fs.ts';
@@ -34,16 +35,51 @@ import { encodePath } from './utils.json.ts';
 const NOTHING_TO_SCAN_ROW = `${dim(infoGlyph)} nothing to scan, no leaks`;
 
 /**
+ * Copy one project directory into the staging tree. When `changed` is defined,
+ * only the files present in that set and rooted under `localDir` are copied via
+ * `copyFileAtomic`; dirs with no matching files return `false` (skipped). When
+ * `changed` is `undefined` (cold start), falls back to `copyDirJsonlOnly`
+ * (full mirror). Returns `true` when at least one file was staged.
+ *
+ * @param localDir - Absolute path to `~/.claude/projects/<encoded>/`.
+ * @param dstDir - Absolute path to `<tmpRoot>/shared/projects/<logical>/`.
+ * @param changed - Selected changed source paths, or `undefined` for full copy.
+ * @returns `true` when files were staged, `false` when the dir was skipped.
+ */
+function stageSessionDir(
+  localDir: string,
+  dstDir: string,
+  changed: Set<string> | undefined,
+): boolean {
+  if (changed !== undefined) {
+    const prefix = `${localDir}${sep}`;
+    const matching = [...changed].filter((p) => p.startsWith(prefix));
+    if (matching.length === 0) return false;
+    for (const src of matching) {
+      copyFileAtomic(src, join(dstDir, relative(localDir, src)));
+    }
+    return true;
+  }
+  copyDirJsonlOnly(localDir, dstDir);
+  return true;
+}
+
+/**
  * Stage local session transcripts for HOST into `<tmpRoot>/shared/projects/<logical>/`
  * using the same depth-0 `*.jsonl` filter as a real push. Builds the
  * encoded-dir-to-logical reverse map from `map.projects` (skipping TBD or
  * missing entries), then copies each matching `~/.claude/projects/<dir>/`.
  *
+ * When `changed` is provided only source files in that set are staged (one
+ * `copyFileAtomic` per file); dirs with no matching files are skipped entirely
+ * so their inode and mtime in the repo tree are not disturbed.
+ *
  * @param tmpRoot - Root of the throwaway staging tree.
  * @param map - Parsed `path-map.json`.
+ * @param changed - Optional set of changed source paths from `ManifestDiff`.
  * @returns Number of session directories staged.
  */
-function stageSessions(tmpRoot: string, map: PathMap): number {
+function stageSessions(tmpRoot: string, map: PathMap, changed?: Set<string>): number {
   if (typeof map.projects !== 'object' || map.projects === null) return 0;
 
   const reverse = new Map<string, string>();
@@ -61,8 +97,9 @@ function stageSessions(tmpRoot: string, map: PathMap): number {
   for (const dir of readdirSync(localProjects)) {
     const logical = reverse.get(dir);
     if (!logical) continue;
-    copyDirJsonlOnly(join(localProjects, dir), join(tmpRoot, 'shared', 'projects', logical));
-    staged++;
+    const localDir = join(localProjects, dir);
+    const dstDir = join(tmpRoot, 'shared', 'projects', logical);
+    if (stageSessionDir(localDir, dstDir, changed)) staged++;
   }
   return staged;
 }
@@ -138,16 +175,23 @@ function stageExtras(tmpRoot: string, map: PathMap): number {
  * `NomadFatal` to `cmdPush`, and the `finally` still removes the temp tree.
  *
  * @param map - Parsed `path-map.json` (already in scope from `cmdPush`).
+ * @param opts - Optional `selection` from `ManifestDiff`; when provided only
+ *   the changed files are staged (delta scan), omitting files unchanged since
+ *   the last push. Omit or pass `{}` for a full scan (cold start or
+ *   `--full-scan`).
  * @returns The structured verdict for the Leak scan section.
  */
-export function previewPushLeaks(map: PathMap): LeakVerdict {
+export function previewPushLeaks(
+  map: PathMap,
+  opts: { selection?: ManifestDiff } = {},
+): LeakVerdict {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   const stamp = `${nowTimestamp()}-${process.pid}-${randomBytes(4).toString('hex')}`;
   const tmpRoot = join(cacheDir, `push-preview-tree-${stamp}`);
 
   try {
-    const sessionCount = stageSessions(tmpRoot, map);
+    const sessionCount = stageSessions(tmpRoot, map, opts.selection?.changed);
     const extrasCount = stageExtras(tmpRoot, map);
     if (sessionCount + extrasCount === 0) {
       return { leak: false, verdictRow: NOTHING_TO_SCAN_ROW, recovery: null, findings: [] };

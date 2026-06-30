@@ -17,6 +17,7 @@ describe('parsePushArgs - boolean flags', () => {
       redactAll: false,
       allowAll: false,
       allowRule: undefined,
+      fullScan: false,
     });
   });
 
@@ -28,6 +29,7 @@ describe('parsePushArgs - boolean flags', () => {
       redactAll: false,
       allowAll: false,
       allowRule: undefined,
+      fullScan: false,
     });
   });
 
@@ -39,6 +41,7 @@ describe('parsePushArgs - boolean flags', () => {
       redactAll: true,
       allowAll: false,
       allowRule: undefined,
+      fullScan: false,
     });
   });
 
@@ -50,7 +53,37 @@ describe('parsePushArgs - boolean flags', () => {
       redactAll: false,
       allowAll: true,
       allowRule: undefined,
+      fullScan: false,
     });
+  });
+
+  it('--full-scan parses to fullScan=true', async () => {
+    const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
+    const result = parsePushArgs(['node', 'nomad.ts', 'push', '--full-scan']);
+    expect(result).toEqual({
+      dryRun: false,
+      redactAll: false,
+      allowAll: false,
+      allowRule: undefined,
+      fullScan: true,
+    });
+  });
+
+  it('--full-scan --dry-run both parse (composes freely with dry-run)', async () => {
+    const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
+    const result = parsePushArgs(['node', 'nomad.ts', 'push', '--full-scan', '--dry-run']);
+    expect(result).toEqual({
+      dryRun: true,
+      redactAll: false,
+      allowAll: false,
+      allowRule: undefined,
+      fullScan: true,
+    });
+  });
+
+  it('duplicate --full-scan returns null', async () => {
+    const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
+    expect(parsePushArgs(['node', 'nomad.ts', 'push', '--full-scan', '--full-scan'])).toBeNull();
   });
 
   it('--dry-run --redact-all returns null (a dry-run resolves nothing)', async () => {
@@ -87,6 +120,7 @@ describe('parsePushArgs - --allow <rule> value flag', () => {
       redactAll: false,
       allowAll: false,
       allowRule: 'github-pat',
+      fullScan: false,
     });
   });
 
@@ -118,6 +152,7 @@ describe('parsePushArgs - --allow <rule> value flag', () => {
       redactAll: false,
       allowAll: false,
       allowRule: 'generic_api-key',
+      fullScan: false,
     });
   });
 
@@ -163,5 +198,31 @@ describe('parsePushArgs - mutual exclusivity', () => {
     expect(
       parsePushArgs(['node', 'nomad.ts', 'push', '--allow', 'github-pat', '--dry-run']),
     ).toBeNull();
+  });
+
+  it('--full-scan + --redact-all parses (--full-scan is not a resolution mode)', async () => {
+    // --full-scan must NOT enter the resolution-mode mutual-exclusion check.
+    // It should compose freely with all resolution modes.
+    const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
+    const result = parsePushArgs(['node', 'nomad.ts', 'push', '--full-scan', '--redact-all']);
+    expect(result).toEqual({
+      dryRun: false,
+      redactAll: true,
+      allowAll: false,
+      allowRule: undefined,
+      fullScan: true,
+    });
+  });
+
+  it('--full-scan + --allow-all parses (--full-scan is not a resolution mode)', async () => {
+    const { parsePushArgs } = await import('./nomad.dispatch.push.ts');
+    const result = parsePushArgs(['node', 'nomad.ts', 'push', '--full-scan', '--allow-all']);
+    expect(result).toEqual({
+      dryRun: false,
+      redactAll: false,
+      allowAll: true,
+      allowRule: undefined,
+      fullScan: true,
+    });
   });
 });

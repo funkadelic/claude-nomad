@@ -93,7 +93,7 @@ try {
       const pushArgs = parsePushArgs(process.argv);
       if (pushArgs === null) {
         console.error(
-          'usage: nomad push [--dry-run] [--redact-all] [--allow <rule>] [--allow-all]',
+          'usage: nomad push [--dry-run] [--full-scan] [--redact-all] [--allow <rule>] [--allow-all]',
         );
         process.exit(1);
       }
@@ -102,6 +102,7 @@ try {
         redactAll: pushArgs.redactAll,
         allowAll: pushArgs.allowAll,
         allowRule: pushArgs.allowRule,
+        fullScan: pushArgs.fullScan,
       });
       break;
     }
