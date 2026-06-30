@@ -21,7 +21,10 @@ concurrency:
 
 jobs:
   release-please:
-    if: ${{ !github.event.repository.private }}
+    # Restrict to the default branch so a manual workflow_dispatch cannot run
+    # release-please against an arbitrary ref. The push trigger is already
+    # branch-scoped to main, so this is a no-op there and a guard for dispatch.
+    if: ${{ !github.event.repository.private && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Generate App token
