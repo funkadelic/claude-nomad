@@ -4,6 +4,18 @@ export default defineConfig({
   test: {
     setupFiles: ['./vitest.setup.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '.stryker-tmp/**'],
+    // The default 5s timeout is too tight for the suites that spawn a fresh
+    // Node subprocess (color probes, the find-zero-kill driver) or run real git
+    // (the round-trip integration test): Node cold-start plus type-stripping can
+    // take several seconds each, and they tip over 5s under thread-pool
+    // contention. 20s gives real headroom; pure-logic tests finish in ms either
+    // way, so the higher ceiling never slows the steady-state run.
+    testTimeout: 20000,
+    hookTimeout: 20000,
+    // Cap worker oversubscription so the subprocess-heavy tests get scheduled
+    // CPU instead of starving and timing out (also avoids the pool's own
+    // "Timeout waiting for worker to respond" flake under load).
+    maxWorkers: '50%',
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
