@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.56.1](https://github.com/funkadelic/claude-nomad/compare/v0.56.0...v0.56.1) (2026-06-30)
+
+
+### Fixed
+
+* **push:** surface recovery hints for subagent-only leak findings ([#373](https://github.com/funkadelic/claude-nomad/issues/373)) ([07d74f8](https://github.com/funkadelic/claude-nomad/commit/07d74f8f1a595767ad651f9e7b3517dcc2e2012a))
+
+
+### Changed
+
+* **release-please:** add workflow_dispatch for manual trigger ([#374](https://github.com/funkadelic/claude-nomad/issues/374)) ([e4436d7](https://github.com/funkadelic/claude-nomad/commit/e4436d7fc9b8700a088b10e94d424726b1e1b77c))
+
 ## [0.56.0](https://github.com/funkadelic/claude-nomad/compare/v0.55.1...v0.56.0) (2026-06-30)
 
 
