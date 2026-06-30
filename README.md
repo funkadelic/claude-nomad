@@ -42,8 +42,8 @@ survives different file paths and your secrets never ride along.
   on any hit, with an interactive menu to redact, allow, or drop the finding. Always publish through
   `nomad push`: the sync repo is an ordinary Git repo, so a manual `git push` from it skips the scan
   entirely and can leak a secret that `nomad push` would have caught. Steady-state pushes scan only
-  the transcripts that changed since the last push (incremental); a cold start, a gitleaks version
-  change, a config file change, or `--full-scan` forces a full rescan.
+  the transcripts that changed since the last successful push (incremental); a cold start, a
+  gitleaks version change, a config file change, or `--full-scan` forces a full rescan.
 - **Preview before you trust it.** `nomad diff` shows offline what a pull would change (gsd-owned
   hook churn is filtered the same as on pull, so the preview matches what a real pull writes), and
   `--dry-run` on pull and push prints the plan without writing anything.
