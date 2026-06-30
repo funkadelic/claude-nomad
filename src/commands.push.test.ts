@@ -15,6 +15,7 @@ import type * as pushChecksModule from './push-checks.ts';
 import type * as pushAllowlistModule from './commands.push.allowlist.ts';
 import type * as pushGlobalConfigModule from './push-global-config.ts';
 import type * as leakVerdictModule from './push-leak-verdict.ts';
+import type * as pushManifestModule from './push-manifest.ts';
 import type * as utilsModule from './utils.ts';
 
 // ---------------------------------------------------------------------------
@@ -1447,5 +1448,502 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
     // gsd hook entry must still be present (no strip on dry-run).
     const hooks = result.hooks as Record<string, unknown[]>;
     expect(hooks).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdPush: manifest write-on-success lifecycle
+// ---------------------------------------------------------------------------
+// Verifies that writeManifest is called only after a successful git push, and
+// never on dry-run or on the nothing-to-commit early return.
+
+describe('cmdPush: manifest write-on-success', () => {
+  let env: PushEnv;
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+    vi.doUnmock('./push-manifest.ts');
+    vi.doUnmock('./push-leak-verdict.ts');
+    vi.doUnmock('./skills-sync.ts');
+    vi.doUnmock('./push-global-config.ts');
+    vi.doUnmock('node:child_process');
+    vi.doUnmock('./push-preview.ts');
+  });
+
+  /**
+   * Wire a minimal WET-push pipeline with a mocked writeManifest and a clean
+   * scan, returning the captured writeManifest mock for assertion.
+   *
+   * @param writeManifestMock - The vi.fn() to spy on writeManifest.
+   * @param statusLine - The git status to simulate (non-empty = has staged files).
+   */
+  function mockWetPipelineWithManifest(
+    writeManifestMock: ReturnType<typeof vi.fn>,
+    statusLine: string,
+  ): void {
+    vi.doMock('./push-manifest.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushManifestModule>();
+      return {
+        ...actual,
+        readManifest: vi.fn(() => null),
+        writeManifest: writeManifestMock,
+        computeConfigHash: vi.fn(() => 'testhash'),
+      };
+    });
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPush: vi.fn(),
+      copySkillsPull: vi.fn(),
+    }));
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => statusLine),
+      };
+    });
+  }
+
+  it('writes the manifest after a successful push', async () => {
+    const writeManifestMock = vi.fn();
+    mockWetPipelineWithManifest(writeManifestMock, 'M  shared/CLAUDE.md\0');
+    const { cmdPush } = await import('./commands.push.ts');
+    await cmdPush();
+    expect(writeManifestMock).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT write the manifest on dry-run', async () => {
+    const writeManifestMock = vi.fn();
+    mockWetPipelineWithManifest(writeManifestMock, '');
+    vi.doMock('./push-preview.ts', () => ({
+      previewPushLeaks: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+    }));
+    const { cmdPush } = await import('./commands.push.ts');
+    await cmdPush({ dryRun: true });
+    expect(writeManifestMock).not.toHaveBeenCalled();
+  });
+
+  it('does NOT write the manifest on the nothing-to-commit early return', async () => {
+    const writeManifestMock = vi.fn();
+    // Empty status on a real push triggers the nothing-to-commit early return.
+    mockWetPipelineWithManifest(writeManifestMock, '');
+    const { cmdPush } = await import('./commands.push.ts');
+    await cmdPush();
+    expect(writeManifestMock).not.toHaveBeenCalled();
+  });
+
+  it('does NOT write the manifest when the gsd payload is the only staged change', async () => {
+    // The gsd-drop path (staged.length === toDrop.length) short-circuits inside
+    // commitAndPush before git commit/push, so writeManifest must not run.
+    const writeManifestMock = vi.fn();
+    const gsdHook = 'shared/hooks/gsd-prompt-guard.js';
+    vi.doMock('./push-manifest.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushManifestModule>();
+      return {
+        ...actual,
+        readManifest: vi.fn(() => null),
+        writeManifest: writeManifestMock,
+        computeConfigHash: vi.fn(() => 'testhash'),
+      };
+    });
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        // Both calls return only gsd-dropped paths.
+        gitStatusPorcelainZ: vi.fn(() => `A  ${gsdHook}\0`),
+      };
+    });
+    const { cmdPush } = await import('./commands.push.ts');
+    await cmdPush();
+    expect(writeManifestMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdPush: cold start and full-rescan triggers
+// ---------------------------------------------------------------------------
+// Verifies that a null prior manifest (cold start) causes all current source
+// files to be included in the selection, and that scanner-version and
+// config-hash changes each force a full rescan.
+
+describe('cmdPush: cold start and full-rescan triggers', () => {
+  let env: PushEnv;
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+    vi.doUnmock('./push-manifest.ts');
+    vi.doUnmock('./push-leak-verdict.ts');
+    vi.doUnmock('./skills-sync.ts');
+    vi.doUnmock('./push-global-config.ts');
+    vi.doUnmock('node:child_process');
+  });
+
+  /**
+   * Set up a project directory with one session file under the test HOME,
+   * write a path-map.json pointing at it, and return the absolute path of the
+   * session file so tests can assert on selection membership.
+   *
+   * @returns Absolute path to the created session `.jsonl` file.
+   */
+  function setupProject(): string {
+    // path-map maps logical project path -> host path. The session transcripts
+    // live at ~/.claude/projects/<encodePath(logicalPath)>/, mirroring how
+    // remapPush computes localDir from the path-map host value.
+    const logicalPath = '/Users/test/project';
+    const encodedDir = logicalPath.replace(/\//g, '-'); // encodePath semantics
+    const projectDir = join(env.testHome, '.claude', 'projects', encodedDir);
+    mkdirSync(projectDir, { recursive: true });
+    const sessionFile = join(projectDir, 'session-1.jsonl');
+    writeFileSync(sessionFile, '{"t":1}\n');
+    writeFileSync(
+      join(env.repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { 'test-project': { 'test-host': logicalPath } },
+      }) + '\n',
+    );
+    return sessionFile;
+  }
+
+  /**
+   * Wire the pipeline with a controlled manifest (readManifest mock), capture
+   * the selection passed to remapPush, and return both.
+   *
+   * @param readManifestImpl - Function to use as the readManifest mock.
+   * @param configHashImpl - Optional function to use as computeConfigHash mock.
+   * @returns Tuple of [capturedSelection, writeManifestMock].
+   */
+  async function runAndCaptureSelection(
+    readManifestImpl: () => unknown,
+    configHashImpl?: () => string,
+  ): Promise<{
+    capturedChangedPaths: Set<string>;
+    writeManifestMock: ReturnType<typeof vi.fn>;
+  }> {
+    const writeManifestMock = vi.fn();
+    vi.doMock('./push-manifest.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushManifestModule>();
+      return {
+        ...actual,
+        readManifest: vi.fn(readManifestImpl),
+        writeManifest: writeManifestMock,
+        computeConfigHash:
+          configHashImpl !== undefined ? vi.fn(configHashImpl) : actual.computeConfigHash,
+      };
+    });
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.30.1'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    let capturedChangedPaths = new Set<string>();
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(
+        (
+          _ts: string,
+          opts: { dryRun?: boolean; selection?: { changed: Set<string>; deleted: string[] } },
+        ) => {
+          capturedChangedPaths = opts.selection?.changed ?? new Set<string>();
+          return { unmapped: 0, collisions: 0, pushed: [], wouldPush: [] };
+        },
+      ),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPush: vi.fn(),
+      copySkillsPull: vi.fn(),
+    }));
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0'),
+      };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await cmdPush();
+    return { capturedChangedPaths, writeManifestMock };
+  }
+
+  it('cold start: null manifest causes all source files to be in selection.changed', async () => {
+    const sessionFile = setupProject();
+    const { capturedChangedPaths, writeManifestMock } = await runAndCaptureSelection(() => null);
+    expect(capturedChangedPaths.has(sessionFile)).toBe(true);
+    // Manifest written on success after cold start.
+    expect(writeManifestMock).toHaveBeenCalledOnce();
+  });
+
+  it('scannerVersion change forces full rescan (all files in selection.changed)', async () => {
+    const sessionFile = setupProject();
+    const { statSync: realStatSync } = await import('node:fs');
+    const st = realStatSync(sessionFile);
+    const oldManifest = {
+      schema: 1 as const,
+      // Prior push used v8.0.0; current probe returns v8.30.1 => version mismatch
+      scannerVersion: 'v8.0.0',
+      configHash: 'same-hash',
+      files: { [sessionFile]: { size: st.size, mtime: st.mtimeMs, hash: 'oldhash' } },
+    };
+    const { capturedChangedPaths } = await runAndCaptureSelection(
+      () => oldManifest,
+      () => 'same-hash', // no config change, only scanner version differs
+    );
+    expect(capturedChangedPaths.has(sessionFile)).toBe(true);
+  });
+
+  it('configHash change forces full rescan (all files in selection.changed)', async () => {
+    const sessionFile = setupProject();
+    const { statSync: realStatSync } = await import('node:fs');
+    const st = realStatSync(sessionFile);
+    const oldManifest = {
+      schema: 1 as const,
+      scannerVersion: 'v8.30.1', // same scanner version as current probe
+      configHash: 'old-config-hash',
+      files: { [sessionFile]: { size: st.size, mtime: st.mtimeMs, hash: 'oldhash' } },
+    };
+    const { capturedChangedPaths } = await runAndCaptureSelection(
+      () => oldManifest,
+      () => 'new-config-hash', // config changed
+    );
+    expect(capturedChangedPaths.has(sessionFile)).toBe(true);
+  });
+
+  it('project with no host entry in path-map is skipped (continue branch)', async () => {
+    // Write a path-map that has no 'test-host' key so buildCurrentMap's
+    // `!localDir` branch (continue) is executed and selection.changed is empty.
+    writeFileSync(
+      join(env.repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { 'remote-project': { 'other-host': '/remote/path' } },
+      }) + '\n',
+    );
+    const { capturedChangedPaths, writeManifestMock } = await runAndCaptureSelection(() => null);
+    // No files found for this host, so changed set must be empty.
+    expect(capturedChangedPaths.size).toBe(0);
+    // Manifest still written (empty manifest on a clean cold start is valid).
+    expect(writeManifestMock).toHaveBeenCalledOnce();
+  });
+
+  it('incremental path: cachedHash returns memoised hit on second call', async () => {
+    // Covers the `if (hit !== undefined) return hit` branch in cachedHash.
+    // Setup: old manifest with matching scanner+config but a wrong mtime so
+    // diffManifest must compute the hash; the manifest-building loop then calls
+    // cachedHash a second time for the same file, hitting the cache.
+    const sessionFile = setupProject();
+    const { statSync: realStatSync } = await import('node:fs');
+    const { hashFile: realHashFile } = await import('./push-manifest.ts');
+    const st = realStatSync(sessionFile);
+    const currentHash = realHashFile(sessionFile);
+    const oldManifest = {
+      schema: 1 as const,
+      scannerVersion: 'v8.30.1', // matches probe mock
+      configHash: 'same-hash', // matches computeConfigHash mock
+      files: {
+        [sessionFile]: {
+          size: st.size,
+          // mtime 1ms earlier forces isChanged to fall through to hash tiebreak.
+          mtime: st.mtimeMs - 1,
+          // Different hash means the file goes into selection.changed.
+          hash: 'stale-hash-before-push',
+        },
+      },
+    };
+    const { capturedChangedPaths } = await runAndCaptureSelection(
+      () => oldManifest,
+      () => 'same-hash',
+    );
+    // File must be in selection.changed because hash differs from old manifest.
+    expect(capturedChangedPaths.has(sessionFile)).toBe(true);
+    // The file hash computed during diffManifest matches the real file.
+    expect(currentHash).toHaveLength(64); // SHA-256 hex, sanity check.
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdPush: dry-run with absent path-map covers the map=null+dryRun branch
+// ---------------------------------------------------------------------------
+
+describe('cmdPush: dry-run absent path-map', () => {
+  let env: PushEnv;
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+    vi.doUnmock('./push-manifest.ts');
+    vi.doUnmock('./push-checks.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('./skills-sync.ts');
+    vi.doUnmock('./push-global-config.ts');
+    vi.doUnmock('node:child_process');
+    vi.doUnmock('./utils.ts');
+  });
+
+  it('dry-run with no path-map renders no-scan tree without writing manifest', async () => {
+    // Remove the path-map.json that makePushEnv writes so map=null is
+    // guaranteed, covering the `if (dryRun) return runDryRunPreview(st, null,
+    // repo, selection)` branch (line 529).
+    const { rmSync: realRmSync } = await import('node:fs');
+    realRmSync(join(env.repoUnderHome, 'path-map.json'), { force: true });
+
+    const writeManifestMock = vi.fn();
+    vi.doMock('./push-manifest.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushManifestModule>();
+      return {
+        ...actual,
+        readManifest: vi.fn(() => null),
+        writeManifest: writeManifestMock,
+        computeConfigHash: vi.fn(() => 'testhash'),
+      };
+    });
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPush: vi.fn(),
+      copySkillsPull: vi.fn(),
+    }));
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitStatusPorcelainZ: vi.fn(() => ''),
+      };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    // Must not throw: dry-run with no map renders a no-scan tree and returns.
+    await expect(cmdPush({ dryRun: true })).resolves.toBeUndefined();
+    // No manifest write on dry-run regardless of map state.
+    expect(writeManifestMock).not.toHaveBeenCalled();
   });
 });

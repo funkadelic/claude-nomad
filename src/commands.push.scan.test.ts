@@ -163,7 +163,12 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
     expect(existsSync(env.lockPath)).toBe(false);
     // remapPush received { dryRun: true } so no host-encoded copies landed.
-    expect(remapPushMock).toHaveBeenCalledWith(expect.any(String), { dryRun: true });
+    // The selection field is also present (manifest delta); use objectContaining
+    // to avoid coupling the assertion to the exact selection shape.
+    expect(remapPushMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ dryRun: true }),
+    );
     // scanPushVerdict (the real-push scan) must NOT run on the dry-run path.
     expect(scanPushVerdictMock).not.toHaveBeenCalled();
     // previewPushLeaks MUST be called (via the spinner wrapper).

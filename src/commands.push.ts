@@ -1,7 +1,20 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { backupBase, claudeHome, HOST, type PathMap, repoHome } from './config.ts';
+import { backupBase, claudeHome, HOST, manifestPath, type PathMap, repoHome } from './config.ts';
+import {
+  buildManifest,
+  computeConfigHash,
+  diffManifest,
+  enumerateSourceFiles,
+  hashFile,
+  type Manifest,
+  type ManifestDiff,
+  type ManifestEntry,
+  readManifest,
+  shouldFullRescan,
+  writeManifest,
+} from './push-manifest.ts';
 import {
   classifySettingsDrift,
   describeSettings,
@@ -21,7 +34,7 @@ import { remapPush } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { die, fail, gitOrFatal, gitStatusPorcelainZ, log, NomadFatal, warn } from './utils.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from './utils.fs.ts';
-import { deepMerge, readJson, readPathMap } from './utils.json.ts';
+import { deepMerge, encodePath, readJson, readPathMap } from './utils.json.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
 /**
@@ -131,6 +144,7 @@ function guardGitlinks(repo: string): void {
  * @param allowAll - When true, allow all findings non-interactively.
  * @param allowRule - When set, allow only findings matching this rule id.
  * @param repo - Resolved repo root path for this invocation.
+ * @param newManifest - The manifest to persist after a successful push.
  */
 async function commitAndPush(
   st: PushState,
@@ -140,6 +154,7 @@ async function commitAndPush(
   allowAll: boolean,
   allowRule: string | undefined,
   repo: string,
+  newManifest: Manifest,
 ): Promise<void> {
   gitOrFatal(['add', '-A'], 'git add', repo);
   // Unstage gsd-dropped paths immediately after staging: gsd reinstalls these
@@ -171,6 +186,9 @@ async function commitAndPush(
   }
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', repo);
   withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', repo));
+  // Persist the manifest only after the push succeeds so a failed or aborted
+  // push never marks unscanned files as scanned (D-05).
+  writeManifest(manifestPath(), newManifest);
   renderPushTree(st, verdict);
 }
 
@@ -190,17 +208,133 @@ async function commitAndPush(
  * @param st - The collected push state for the tree render.
  * @param map - The parsed path-map, or `null` when a dry-run has no map.
  * @param repo - Resolved repo root path for collecting global-config changes.
+ * @param selection - Manifest-driven selection; passed to previewPushLeaks so the
+ *   dry-run scan covers only the same delta a real push would scan.
  */
-function runDryRunPreview(st: PushState, map: PathMap | null, repo: string): void {
+function runDryRunPreview(
+  st: PushState,
+  map: PathMap | null,
+  repo: string,
+  selection: ManifestDiff,
+): void {
   // Dry-run stages nothing, so diff against HEAD to capture working-tree changes.
   st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: false });
   if (map === null) {
     renderNoScanTree(st, { noMapHint: true });
     return;
   }
-  const verdict = withSpinner('Scanning for secrets', () => previewPushLeaks(map));
+  const verdict = withSpinner('Scanning for secrets', () => previewPushLeaks(map, { selection }));
   renderPushTree(st, verdict);
   if (verdict.recovery !== null) fail(verdict.recovery);
+}
+
+/**
+ * Enumerate all source files across every project in the path-map that has a
+ * local directory for this host. Returns a map from absolute source path to
+ * current `{size, mtime}` metadata, matching the predicate used by
+ * `copyDirJsonlOnly`. An absent or inaccessible project directory is silently
+ * skipped.
+ *
+ * @param map - Parsed path-map, or `null` when `path-map.json` is absent.
+ * @returns Map from absolute path to `{size, mtime}`.
+ */
+function buildCurrentMap(map: PathMap | null): Record<string, { size: number; mtime: number }> {
+  const current: Record<string, { size: number; mtime: number }> = {};
+  if (map === null) return current;
+  const claude = claudeHome();
+  for (const [, hostMap] of Object.entries(map.projects)) {
+    const localPath = hostMap[HOST];
+    if (!localPath) continue;
+    // Session transcripts live at ~/.claude/projects/<encodePath(localPath)>/,
+    // not at localPath itself. Mirror the same join that remapPush uses.
+    const localDir = join(claude, 'projects', encodePath(localPath));
+    if (!existsSync(localDir)) continue;
+    for (const f of enumerateSourceFiles(localDir)) {
+      const st = statSync(f);
+      current[f] = { size: st.size, mtime: st.mtimeMs };
+    }
+  }
+  return current;
+}
+
+/**
+ * Compute the manifest-driven selection for the current push. Enumerates all
+ * source files reachable from the path-map, determines whether a full rescan
+ * is needed (cold start, scanner version change, config change, or
+ * `--full-scan`), and returns the selection (changed and deleted file sets)
+ * plus the new manifest ready to persist after a successful push.
+ *
+ * Changed files are hashed via a shared cache so the hash thunk called inside
+ * `diffManifest` and the entry written into the manifest are computed at most
+ * once per file. Unchanged files reuse the prior entry hash.
+ *
+ * @param map - Parsed path-map, or `null` when `path-map.json` is absent.
+ * @param old - Previous manifest, or `null` on cold start.
+ * @param scannerVersion - Current scanner version from `probeGitleaks()`.
+ * @param configHash - Current config identity from `computeConfigHash()`.
+ * @param fullScan - `true` when `--full-scan` was passed.
+ * @returns `{ selection, newManifest }` ready for remapPush and writeManifest.
+ */
+export function computePushSelection(
+  map: PathMap | null,
+  old: Manifest | null,
+  scannerVersion: string,
+  configHash: string,
+  fullScan: boolean,
+): { selection: ManifestDiff; newManifest: Manifest } {
+  const current = buildCurrentMap(map);
+  const fullRescan = shouldFullRescan(old, scannerVersion, configHash, fullScan);
+  const hashCache = new Map<string, string>();
+  const cachedHash = (p: string): string => {
+    const hit = hashCache.get(p);
+    if (hit !== undefined) return hit;
+    const h = hashFile(p);
+    hashCache.set(p, h);
+    return h;
+  };
+  const selection: ManifestDiff = fullRescan
+    ? { changed: new Set(Object.keys(current)), deleted: [] }
+    : diffManifest(old, current, cachedHash);
+  const files: Record<string, ManifestEntry> = {};
+  for (const [key, meta] of Object.entries(current)) {
+    const hash = selection.changed.has(key) ? cachedHash(key) : old!.files[key].hash;
+    files[key] = { size: meta.size, mtime: meta.mtime, hash };
+  }
+  return { selection, newManifest: buildManifest(files, scannerVersion, configHash) };
+}
+
+/**
+ * Load the path-map and compute the push selection in one step. Tries to read
+ * `path-map.json` at `mapPath`; an absent file yields `map = null` and an
+ * empty selection (cold start on the source-file set). A malformed JSON file
+ * throws `NomadFatal` (caught by `cmdPush`'s try/finally so the lock releases).
+ *
+ * Extracted from `cmdPush` so the map-load ternary does not push `cmdPush`
+ * over the cognitive-complexity-15 gate.
+ *
+ * @param mapPath - Absolute path to `path-map.json`.
+ * @param old - Previous manifest, or `null` on cold start.
+ * @param scannerVersion - Current scanner version from `probeGitleaks()`.
+ * @param configHash - Current config identity from `computeConfigHash()`.
+ * @param fullScan - `true` when `--full-scan` was passed.
+ * @returns `{ map, selection, newManifest }` ready for remapPush and writeManifest.
+ */
+function loadSelectionForPush(
+  mapPath: string,
+  old: Manifest | null,
+  scannerVersion: string,
+  configHash: string,
+  fullScan: boolean,
+): { map: PathMap | null; selection: ManifestDiff; newManifest: Manifest } {
+  const map: PathMap | null = existsSync(mapPath) ? readPathMap(mapPath) : null;
+  const { selection, newManifest } = computePushSelection(
+    map,
+    old,
+    scannerVersion,
+    configHash,
+    fullScan,
+  );
+  return { map, selection, newManifest };
 }
 
 /**
@@ -308,12 +442,15 @@ export async function cmdPush(
     redactAll?: boolean;
     allowAll?: boolean;
     allowRule?: string;
+    /** When `true`, ignore the per-host manifest and rescan all mapped transcripts. */
+    fullScan?: boolean;
   } = {},
 ): Promise<void> {
   const dryRun = opts.dryRun === true;
   const redactAll = opts.redactAll === true;
   const allowAll = opts.allowAll === true;
   const allowRule = opts.allowRule;
+  const fullScan = opts.fullScan === true;
   guardResolutionModeConflicts(dryRun, redactAll, allowAll, allowRule);
   // Resolve roots once per command invocation (TOCTOU mitigation).
   const repo = repoHome();
@@ -327,7 +464,22 @@ export async function cmdPush(
     // Best-effort: a missing or malformed settings.json is silently skipped.
     reportSettingsAheadDrift(repo);
     // Probe at top of flow: fail fast if gitleaks is missing, before any mutation.
-    probeGitleaks();
+    // Capture the version string for the manifest's scanner-version trigger.
+    const scannerVersion = probeGitleaks();
+    // Compute the config identity hash and read the prior manifest. A missing or
+    // malformed manifest is treated as a cold start (full rescan). Load the
+    // path-map now so the same instance drives both selection and allow-list
+    // enforcement; a missing map sets map=null (handled below).
+    const configHash = computeConfigHash();
+    const old = readManifest(manifestPath());
+    const mapPath = join(repo, 'path-map.json');
+    const { map, selection, newManifest } = loadSelectionForPush(
+      mapPath,
+      old,
+      scannerVersion,
+      configHash,
+      fullScan,
+    );
     // Rebase BEFORE any local mutation: surfaces remote conflicts against the
     // user's committed state, not against in-flight remapPush copies. Runs
     // under dryRun too so the network round-trip mirrors a real push.
@@ -337,8 +489,10 @@ export async function cmdPush(
     // remapPush runs BEFORE the empty-status check: it produces the diffs status
     // observes, so swapping the order would short-circuit before anything is staged.
     // Wrapped in a spinner: the recursive cpSync session copy is the longest
-    // blocking step in a push and otherwise shows no progress.
-    const remap = withSpinner('Syncing sessions', () => remapPush(ts, { dryRun }));
+    // blocking step in a push and otherwise shows no progress. The selection
+    // drives which files are copied; unchanged files are left at their existing
+    // inode so git's stat-cache stays valid.
+    const remap = withSpinner('Syncing sessions', () => remapPush(ts, { dryRun, selection }));
     // remapExtrasPush lands between remapPush and findGitlinks so the
     // produced `shared/extras/<logical>/<dirname>/` paths are visible to
     // both the gitlink walk and the downstream allow-list classification.
@@ -378,22 +532,20 @@ export async function cmdPush(
       renderNoScanTree(st);
       return;
     }
-    const mapPath = join(repo, 'path-map.json');
     // A dry-run with no map cannot enforce nor scan: render the no-scan tree and
     // return without dying. A real push with a non-empty status still dies.
-    if (!existsSync(mapPath)) {
-      if (dryRun) return runDryRunPreview(st, null, repo);
-      die('path-map.json missing, cannot enforce push allow-list');
+    if (map === null) {
+      if (dryRun) return runDryRunPreview(st, null, repo, selection);
+      return die('path-map.json missing, cannot enforce push allow-list');
     }
-    // readPathMap routes parse failures through NomadFatal so finally releases the lock.
-    const map = readPathMap(mapPath);
     // Classify only a non-empty status; an empty status (dry-run on a clean
     // repo) has nothing to gate.
     if (status) enforceAllowList(status, map);
     // dryRun skips git add / commit / push: run the read-only leak preview,
-    // which prints any recovery below the rendered tree.
-    if (dryRun) return runDryRunPreview(st, map, repo);
-    await commitAndPush(st, ts, map, redactAll, allowAll, allowRule, repo);
+    // which prints any recovery below the rendered tree. The manifest is never
+    // written on a dry-run (D-07).
+    if (dryRun) return runDryRunPreview(st, map, repo, selection);
+    await commitAndPush(st, ts, map, redactAll, allowAll, allowRule, repo, newManifest);
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);
