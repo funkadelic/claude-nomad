@@ -56,6 +56,7 @@ describe('nomad.ts push dispatcher', () => {
       redactAll: false,
       allowAll: false,
       allowRule: undefined,
+      fullScan: false,
     });
     expect(exitSpy).not.toHaveBeenCalled();
   });
@@ -71,6 +72,7 @@ describe('nomad.ts push dispatcher', () => {
       redactAll: false,
       allowAll: false,
       allowRule: undefined,
+      fullScan: false,
     });
     expect(exitSpy).not.toHaveBeenCalled();
   });
