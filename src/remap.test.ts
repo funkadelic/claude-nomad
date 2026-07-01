@@ -1590,3 +1590,149 @@ describe('remapPush selective', () => {
     expect(existsSync(join(sharedProjects, 'bar', 'b.jsonl'))).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// scanLocalOnly: read-only count of local-only leaf files across mapped
+// projects (D-06 honest-count input for the wet pull summary and preview).
+// ---------------------------------------------------------------------------
+
+describe('scanLocalOnly', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let sharedProjects: string;
+  let claudeProjects: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-remap-scan-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedProjects = join(repoUnderHome, 'shared', 'projects');
+    claudeProjects = join(testHome, '.claude', 'projects');
+    mkdirSync(sharedProjects, { recursive: true });
+    mkdirSync(claudeProjects, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('counts 3 local-only leaf files (top-level, subagents/, memory/) absent from the repo', async () => {
+    // Repo has only shared.jsonl; the local encoded dir adds a top-level
+    // transcript plus a wholly local-only subagents/ file and memory/ file.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'shared.jsonl'), '{"repo":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const encodedDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(join(encodedDir, 'subagents'), { recursive: true });
+    mkdirSync(join(encodedDir, 'memory'), { recursive: true });
+    writeFileSync(join(encodedDir, 'shared.jsonl'), '{"repo":1}\n');
+    writeFileSync(join(encodedDir, 'local.jsonl'), '{"local":1}\n');
+    writeFileSync(join(encodedDir, 'subagents', 'agent-1.jsonl'), '{"a":1}\n');
+    writeFileSync(join(encodedDir, 'memory', 'notes.md'), '# notes\n');
+
+    const { scanLocalOnly } = await import('./remap.ts');
+    expect(scanLocalOnly()).toBe(3);
+  });
+
+  it('returns 0 when the local dir exactly mirrors the repo (including a subdir)', async () => {
+    mkdirSync(join(sharedProjects, 'foo', 'sub'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(join(sharedProjects, 'foo', 'sub', 'b.jsonl'), '{"b":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const encodedDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(join(encodedDir, 'sub'), { recursive: true });
+    writeFileSync(join(encodedDir, 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(join(encodedDir, 'sub', 'b.jsonl'), '{"b":1}\n');
+
+    const { scanLocalOnly } = await import('./remap.ts');
+    expect(scanLocalOnly()).toBe(0);
+  });
+
+  it('contributes 0 for TBD and empty-string host mappings', async () => {
+    // Both a 'TBD' and an empty-string host value are skipped like remapPull.
+    // Even though a local encoded dir exists, an unmapped host contributes 0.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: {
+          foo: { 'test-host': 'TBD' },
+          bar: { 'test-host': '' },
+        },
+      }) + '\n',
+    );
+    mkdirSync(join(claudeProjects, '-tmp-foo'), { recursive: true });
+    writeFileSync(join(claudeProjects, '-tmp-foo', 'orphan.jsonl'), '{"x":1}\n');
+
+    const { scanLocalOnly } = await import('./remap.ts');
+    expect(scanLocalOnly()).toBe(0);
+  });
+
+  it('skips a mapped project whose local encoded dir does not exist', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    // No ~/.claude/projects/-tmp-foo dir created.
+
+    const { scanLocalOnly } = await import('./remap.ts');
+    expect(scanLocalOnly()).toBe(0);
+  });
+
+  it('returns 0 when path-map.json is absent', async () => {
+    const { scanLocalOnly } = await import('./remap.ts');
+    expect(scanLocalOnly()).toBe(0);
+  });
+
+  it('returns 0 when the repo projects dir is absent', async () => {
+    rmSync(sharedProjects, { recursive: true, force: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const { scanLocalOnly } = await import('./remap.ts');
+    expect(scanLocalOnly()).toBe(0);
+  });
+
+  it('performs no filesystem mutation (trees byte-identical before and after)', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'shared.jsonl'), '{"repo":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const encodedDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedDir, { recursive: true });
+    writeFileSync(join(encodedDir, 'shared.jsonl'), '{"repo":1}\n');
+    writeFileSync(join(encodedDir, 'local.jsonl'), '{"local":1}\n');
+
+    const before = readdirSync(encodedDir).sort();
+    const { scanLocalOnly } = await import('./remap.ts');
+    expect(scanLocalOnly()).toBe(1);
+    const after = readdirSync(encodedDir).sort();
+
+    expect(after).toEqual(before);
+    // The local-only file is untouched (not deleted, content intact).
+    expect(readFileSync(join(encodedDir, 'local.jsonl'), 'utf8')).toBe('{"local":1}\n');
+  });
+});

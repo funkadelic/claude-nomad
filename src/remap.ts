@@ -1,4 +1,13 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
@@ -268,6 +277,75 @@ export function remapPull(
     pulled.push(logical);
   }
   return { unmapped, pulled, wouldPull };
+}
+
+/**
+ * Recursively count leaf files under `dst` whose path relative to `dst` is
+ * absent from `src` (local-only entries not in the repo). Read-only: no
+ * filesystem mutation. A dst subdirectory is always recursed into, so a wholly
+ * local-only `subagents/` or `memory/` tree contributes each of its leaf files
+ * individually. Uses `lstatSync` (no symlink follow) so a dst symlink counts as
+ * one leaf and is never followed into an external tree; presence in `src` is
+ * probed with `existsSync` on the mirrored path.
+ *
+ * @param src - Repo-side dir for the same logical project (may not exist).
+ * @param dst - Host-side encoded dir to walk (assumed to exist).
+ * @returns Count of local-only leaf files under `dst`.
+ */
+function countLocalOnly(src: string, dst: string): number {
+  let count = 0;
+  for (const name of readdirSync(dst)) {
+    const dstPath = join(dst, name);
+    const srcPath = join(src, name);
+    if (lstatSync(dstPath).isDirectory()) {
+      count += countLocalOnly(srcPath, dstPath);
+    } else if (!existsSync(srcPath)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Read-only counter of local-only session leaf files across all mapped
+ * projects: leaf files present under a mapped project's local encoded dir but
+ * absent from the repo's `shared/projects/<logical>/`, summed across projects.
+ * This is the D-06 honest-count input for the wet pull summary and the offline
+ * preview: with retain-merge (`overlaySessionDir`) these entries are RETAINED,
+ * so the count reframes a misleading `clean` into "N local-only present (push
+ * to reconcile)".
+ *
+ * Reuses `remapPull`'s iteration skeleton (path-map read, `assertSafeLogical`
+ * per key, skip missing / `'TBD'` host paths, `assertSafeLocalRoot`,
+ * `encodePath` dst resolution) so it walks identical, equally-guarded paths.
+ * Performs NO filesystem mutation (no `cpSync` / `rmSync` / `mkdirSync`).
+ * Returns 0 when `path-map.json` or the repo projects dir is absent, and skips a
+ * mapped project whose local encoded dir does not yet exist. Retain-merge never
+ * changes the local-only set, so the pre-copy and post-copy counts are equal;
+ * both the wet path and the dry-run preview can call it against current state.
+ *
+ * @returns Total count of local-only leaf files across mapped projects.
+ */
+export function scanLocalOnly(): number {
+  const repo = repoHome();
+  const claude = claudeHome();
+  const mapPath = join(repo, 'path-map.json');
+  const repoProjects = join(repo, 'shared', 'projects');
+  if (!existsSync(mapPath) || !existsSync(repoProjects)) return 0;
+
+  const map = readPathMap(mapPath);
+  const localProjects = join(claude, 'projects');
+  let count = 0;
+  for (const [logical, hosts] of Object.entries(map.projects)) {
+    assertSafeLogical(logical);
+    const localPath = hosts[HOST];
+    if (!localPath || localPath === 'TBD') continue;
+    assertSafeLocalRoot(localPath, logical);
+    const dst = join(localProjects, encodePath(localPath));
+    if (!existsSync(dst)) continue;
+    count += countLocalOnly(join(repoProjects, logical), dst);
+  }
+  return count;
 }
 
 /**
