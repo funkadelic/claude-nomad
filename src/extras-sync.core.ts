@@ -1,5 +1,5 @@
 import { cpSync, existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 
 import {
   ALWAYS_NEVER_SYNC,
@@ -200,6 +200,68 @@ export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Se
     ) {
       throw new NomadFatal(
         `copyExtrasOverlayFiltered: type collision copying ${JSON.stringify(src)} -> ` +
+          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
+          `changed upstream; run nomad pull --force-remote to recover`,
+      );
+    }
+    throw err; // other I/O error; propagate as-is
+    /* c8 ignore stop */
+  }
+}
+
+/**
+ * Divergence-skip preserving overlay copy for the `.planning` pull. Behaves
+ * exactly like `copyExtrasOverlayFiltered` (filtered overlay, no `rmSync`, so
+ * dst-only files survive) with ONE added guard: any entry whose path relative to
+ * `src` is in `divergedSet` is SKIPPED, so a repo-tracked file the host has
+ * locally edited (content hash differs) is NOT overwritten. The local edit wins
+ * on conflict and the user pushes to reconcile (D-03, D-04). `divergedSet` holds
+ * the both-sides-modified (status `M`) relative paths from
+ * `listDivergingModified(dstLocal, srcRepo)`; because the skip is keyed on the
+ * local-vs-repo content divergence (never on repo-supplied metadata), a crafted
+ * repo file cannot force an overwrite of a diverged local file. The
+ * `srcEntry === src` root-keep, the deny-set filter, `stripCollidingDstSymlinks`
+ * hardening, `verbatimSymlinks: true`, and the EINVAL/ENOTEMPTY/ERR_FS_CP_*
+ * type-collision try/catch are all preserved unchanged from
+ * `copyExtrasOverlayFiltered`. `divergedSet` only ever holds file paths (M
+ * entries), so directories are never skipped and the walk always descends. No
+ * mtime comparison anywhere (D-04: git checkout rewrites mtimes).
+ *
+ * @param src - Source directory to copy from (repo side on pull).
+ * @param dst - Destination path; dst-only and diverged files survive unchanged.
+ * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
+ * @param divergedSet - Relative paths to skip (keep the local copy on conflict).
+ */
+export function copyExtrasOverlaySkipDiverged(
+  src: string,
+  dst: string,
+  blockSet: Set<string>,
+  divergedSet: Set<string>,
+): void {
+  stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
+  try {
+    cpSync(src, dst, {
+      recursive: true,
+      force: true,
+      verbatimSymlinks: true,
+      filter: (srcEntry) =>
+        srcEntry === src ||
+        (!isDeniedName(blockSet, basename(srcEntry)) && !divergedSet.has(relative(src, srcEntry))),
+    });
+  } catch (err) {
+    // Same file/dir type-collision handling as copyExtrasOverlayFiltered: a
+    // path that changed type upstream throws EINVAL/ENOTEMPTY or an ERR_FS_CP_*
+    // code; convert any of them to NomadFatal for an actionable message.
+    /* c8 ignore start -- collision codes are platform/Node-version-specific */
+    const e = err as NodeJS.ErrnoException;
+    if (
+      e.code === 'EINVAL' ||
+      e.code === 'ENOTEMPTY' ||
+      e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
+      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
+    ) {
+      throw new NomadFatal(
+        `copyExtrasOverlaySkipDiverged: type collision copying ${JSON.stringify(src)} -> ` +
           `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
           `changed upstream; run nomad pull --force-remote to recover`,
       );
