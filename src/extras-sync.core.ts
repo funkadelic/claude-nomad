@@ -122,11 +122,16 @@ export function* eachExtrasTarget(
  * mirrors the caller's `cpSync` filter so the walk matches what will actually
  * be written. A non-existent dst (fresh pull) is a no-op.
  *
+ * Exported so `remap.ts` can reuse it for the pull-side session overlay
+ * (`overlaySessionDir`): the session retain-merge needs the same
+ * symlink-poisoning guard before its `cpSync`, and this is the single source of
+ * truth for that guard (never lifted or duplicated).
+ *
  * @param src - Source directory (repo side on pull).
  * @param dst - Destination directory (host side on pull).
  * @param isExcluded - Returns `true` for a basename the copy filter skips.
  */
-function stripCollidingDstSymlinks(
+export function stripCollidingDstSymlinks(
   src: string,
   dst: string,
   isExcluded: (name: string) => boolean,

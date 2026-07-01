@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSyn
 import { dirname, join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
+import { stripCollidingDstSymlinks } from './extras-sync.core.ts';
 import { assertSafeLocalRoot } from './extras-sync.guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { type ManifestDiff } from './push-manifest.ts';
@@ -41,14 +42,31 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
 }
 
 /**
- * Recursive mirror copy. `cpSync(force:true)` overwrites matching files but
- * does not delete dst-only entries, so the copy goes through `atomicMirror`
- * (copy to a temp sibling, then rename-swap) to make `dst` reflect `src`
- * exactly rather than accumulating stale files, without the interrupt window
- * of a wipe-then-copy.
+ * Pull-only retain-merge overlay for a session dir. Unlike the push-side
+ * mirror copy (which mirror-replaces `dst`, evicting local-only entries via
+ * `atomicMirror`'s `rmSync(dst)`), this ADDS and OVERWRITES repo-tracked files
+ * while NEVER
+ * deleting a local-only entry: session transcripts, sibling `subagents/` dirs,
+ * and `memory/` files that were never pushed survive the pull. It is the
+ * `copyExtrasFilteredPreserving` (Phase 49) precedent MINUS the prune pass
+ * (retention means never delete local-only), so there is no `rmSync(dst)` and
+ * no `prunePreservingDenied` call.
+ *
+ * `stripCollidingDstSymlinks(src, dst, () => false)` runs BEFORE the copy so a
+ * benignly-named dst symlink colliding with a repo `src` entry is removed rather
+ * than written THROUGH to an external target (`~/.ssh`, `~/.bashrc`); the
+ * `() => false` excludes nothing (sessions have no deny-set). `verbatimSymlinks:
+ * true` is load-bearing so relative symlink targets are not rewritten across
+ * hosts (Pitfall 1, nodejs/node issue 41693). Pull-only: `remapPush` keeps the
+ * exact-mirror `copyDirJsonlOnly` path unchanged.
+ *
+ * @param src - Repo-side `shared/projects/<logical>/` dir to overlay from.
+ * @param dst - Host-side `~/.claude/projects/<encoded>/` dir; local-only
+ *   entries survive unchanged after the overlay.
  */
-function copyDir(src: string, dst: string): void {
-  atomicMirror(src, dst, { recursive: true, force: true });
+export function overlaySessionDir(src: string, dst: string): void {
+  stripCollidingDstSymlinks(src, dst, () => false);
+  cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
 }
 
 /**
@@ -114,16 +132,17 @@ function applySelective(sel: ManifestDiff, localDir: string, repoDst: string): v
 }
 
 /**
- * Push-side mirror copy: identical to copyDir except a depth-0 extension
- * filter restricts to *.jsonl files only. Subdirectory contents (subagents,
+ * Push-side mirror copy: an `atomicMirror` with a depth-0 extension filter
+ * restricting to *.jsonl files only. Subdirectory contents (subagents,
  * memory, tool-results, etc.) copy recursively with no further filtering.
  * Stray .bak / .tmp / .swp / editor backups at the source root are skipped
  * and produce one dim, indented `skip <rel>: extension not in allowlist`
  * list line each. The filter must allow the source root explicitly (Pitfall 1:
  * cpSync invokes the filter on src === src first, and a false return
  * there would abort the whole copy). Used by remapPush only; remapPull
- * keeps the unfiltered copyDir because the repo side is already curated
- * by the push gate. Uses the same atomic temp-then-rename swap as copyDir;
+ * uses `overlaySessionDir` (retain-merge) because the repo side is already
+ * curated by the push gate and local-only entries must survive. Uses the same
+ * atomic temp-then-rename swap as the other push-side copies;
  * the filter keys off `relative(src, ...)` so it is unaffected by the staging
  * destination.
  */
@@ -223,8 +242,8 @@ export function remapPull(
     }
     // Guard the host VALUE, not just the logical KEY: encodePath only rewrites
     // separators, so a separator-free '..' or '.' survives and join() escapes
-    // the projects dir (a '..' resolves dst to ~/.claude itself, which copyDir
-    // then wipes and replaces). assertSafeLocalRoot rejects non-absolute and
+    // the projects dir (a '..' resolves dst to ~/.claude itself, which the
+    // overlay would then write into). assertSafeLocalRoot rejects non-absolute and
     // unnormalized values, matching the extras-pull defense.
     assertSafeLocalRoot(localPath, logical);
     const src = join(repoProjects, logical);
@@ -239,9 +258,13 @@ export function remapPull(
       );
       continue;
     }
-    // Snapshot prior encoded-path-dir state BEFORE copyDir overwrites it.
+    // Snapshot prior encoded-path-dir state BEFORE the overlay overwrites any
+    // repo-tracked file (D-05 defense-in-depth; retain-merge means local-only
+    // entries survive, so this backup is a safety net, not the primary guard).
     backupBeforeWrite(dst, ts);
-    copyDir(src, dst);
+    // Retain-merge overlay (never mirror-replace): local-only transcripts,
+    // subagents/ dirs, and memory/ files absent from the repo survive the pull.
+    overlaySessionDir(src, dst);
     pulled.push(logical);
   }
   return { unmapped, pulled, wouldPull };
@@ -307,8 +330,8 @@ function buildReverseMap(map: PathMap): Map<string, string> {
  * runs during the reverse-map build, so it fires under `dryRun` too.
  *
  * `opts.dryRun` (default `false`): when `true`, collect `wouldPush` without
- * calling `backupRepoWrite` + `copyDir`. Collision detection runs identically
- * in both modes.
+ * calling `backupRepoWrite` + `copyDirJsonlOnly`. Collision detection runs
+ * identically in both modes.
  *
  * `opts.selection` (optional): a `ManifestDiff` from `diffManifest`. When
  * provided, only files in `selection.changed` are copied and only files in

@@ -1,11 +1,13 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -76,10 +78,15 @@ describe('remapPull (integration)', () => {
 
     expect(existsSync(join(encodedDir, 'new-session.jsonl'))).toBe(true);
     expect(readFileSync(join(encodedDir, 'new-session.jsonl'), 'utf8')).toBe('{"new":true}\n');
-    expect(existsSync(join(encodedDir, 'old-session.jsonl'))).toBe(false);
+    // Retain-merge: a local-only transcript absent from the repo SURVIVES the
+    // pull (it is backed up above as defense-in-depth, not evicted).
+    expect(existsSync(join(encodedDir, 'old-session.jsonl'))).toBe(true);
+    expect(readFileSync(join(encodedDir, 'old-session.jsonl'), 'utf8')).toBe('{"old":true}\n');
   });
 
-  it('mirrors src into dst (destination-only files are deleted, not merged)', async () => {
+  it('overlays src onto dst additively (local-only files are retained, not deleted)', async () => {
+    // Retain-merge (D-01): the pull ADDS c.jsonl and OVERWRITES a.jsonl with the
+    // repo content, but the local-only b.jsonl (absent from the repo) survives.
     mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
     writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
     writeFileSync(join(sharedProjects, 'foo', 'c.jsonl'), '{"c":1}\n');
@@ -96,9 +103,81 @@ describe('remapPull (integration)', () => {
     remapPull('20260516-000000');
 
     const finalFiles = readdirSync(encodedDir).sort();
-    expect(finalFiles).toEqual(['a.jsonl', 'c.jsonl']);
+    expect(finalFiles).toEqual(['a.jsonl', 'b.jsonl', 'c.jsonl']);
+    // a.jsonl overwritten with the repo copy; c.jsonl added; b.jsonl retained.
     expect(readFileSync(join(encodedDir, 'a.jsonl'), 'utf8')).toBe('{"a":1}\n');
+    expect(readFileSync(join(encodedDir, 'b.jsonl'), 'utf8')).toBe('{"b":1}\n');
     expect(readFileSync(join(encodedDir, 'c.jsonl'), 'utf8')).toBe('{"c":1}\n');
+  });
+
+  it('retains local-only subagents/ and memory/ entries absent from the repo (incident class)', async () => {
+    // The 2026-06-30 incident: a pull-before-push evicted local-only session
+    // transcripts, sibling subagents/ dirs, and memory/ files. Retain-merge
+    // must keep every local-only entry alive while still overwriting the
+    // repo-tracked file and writing the pre-copy backup snapshot.
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'shared.jsonl'), '{"repo":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const encodedDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(join(encodedDir, 'subagents'), { recursive: true });
+    mkdirSync(join(encodedDir, 'memory'), { recursive: true });
+    writeFileSync(join(encodedDir, 'local-only.jsonl'), '{"local":1}\n');
+    writeFileSync(join(encodedDir, 'subagents', 'agent-1.jsonl'), '{"a":1}\n');
+    writeFileSync(join(encodedDir, 'memory', 'notes.md'), '# notes\n');
+    writeFileSync(join(encodedDir, 'shared.jsonl'), '{"old":1}\n');
+
+    const { remapPull } = await import('./remap.ts');
+    remapPull('20260516-000000');
+
+    // All three local-only entries survive.
+    expect(existsSync(join(encodedDir, 'local-only.jsonl'))).toBe(true);
+    expect(existsSync(join(encodedDir, 'subagents', 'agent-1.jsonl'))).toBe(true);
+    expect(existsSync(join(encodedDir, 'memory', 'notes.md'))).toBe(true);
+    // The repo-tracked file is overwritten with the repo copy.
+    expect(readFileSync(join(encodedDir, 'shared.jsonl'), 'utf8')).toBe('{"repo":1}\n');
+    // The pre-copy backup snapshot still exists.
+    const backupDir = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      '20260516-000000',
+      'projects',
+      '-tmp-foo',
+    );
+    expect(existsSync(join(backupDir, 'local-only.jsonl'))).toBe(true);
+    expect(existsSync(join(backupDir, 'memory', 'notes.md'))).toBe(true);
+  });
+
+  it('strips a colliding dst symlink before the overlay (no write-through)', async () => {
+    // Poisoned-repo escape: dst holds a benignly-named symlink to an external
+    // file; the repo ships a regular file of the same name. The overlay must
+    // remove the dst symlink BEFORE cpSync so the external target is untouched
+    // and dst holds a fresh regular file with the repo content.
+    const external = mkdtempSync(join(tmpdir(), 'nomad-remap-ext-'));
+    writeFileSync(join(external, 'target.txt'), 'precious\n');
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 'innocent'), 'repo-content\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const encodedDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedDir, { recursive: true });
+    symlinkSync(join(external, 'target.txt'), join(encodedDir, 'innocent'));
+
+    const { remapPull } = await import('./remap.ts');
+    remapPull('20260516-000000');
+
+    // External target NOT overwritten through the link.
+    expect(readFileSync(join(external, 'target.txt'), 'utf8')).toBe('precious\n');
+    // dst entry is a fresh regular file with the repo content, not a symlink.
+    expect(lstatSync(join(encodedDir, 'innocent')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(encodedDir, 'innocent'), 'utf8')).toBe('repo-content\n');
+    rmSync(external, { recursive: true, force: true });
   });
 
   it('copies 3-level-nested files recursively under <encoded>/', async () => {
@@ -193,14 +272,19 @@ describe('remapPull (integration)', () => {
     expect(existsSync(join(claudeProjects, '-tmp-foo.nomad-tmp'))).toBe(false);
   });
 
-  it('clears a stray staging dir left by a prior interrupted copy', async () => {
+  it('overlays into the real dir and leaves a stray sibling staging dir untouched', async () => {
+    // The pull side now uses overlaySessionDir (a direct cpSync overlay), not
+    // the staging-and-rename atomicMirror, so it neither creates nor removes a
+    // `<encoded>.nomad-tmp` sibling. A stray left by a pre-upgrade interrupted
+    // pull is left alone (harmless: remapPush's readdir skips `.nomad-tmp`
+    // entries, and the sibling never leaks into the overlaid session dir).
     mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
     writeFileSync(join(sharedProjects, 'foo', 's.jsonl'), '{"new":1}\n');
     writeFileSync(
       join(repoUnderHome, 'path-map.json'),
       JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
     );
-    // Simulate a copy interrupted before its rename swap: a populated sibling.
+    // A populated sibling from a prior interrupted copy.
     const stray = join(claudeProjects, '-tmp-foo.nomad-tmp');
     mkdirSync(stray, { recursive: true });
     writeFileSync(join(stray, 'garbage.jsonl'), '{"stale":1}\n');
@@ -208,9 +292,11 @@ describe('remapPull (integration)', () => {
     const { remapPull } = await import('./remap.ts');
     remapPull('20260516-000000');
 
-    expect(existsSync(stray)).toBe(false);
+    // The real dir got the overlay; the sibling's content did not leak into it.
     expect(readFileSync(join(claudeProjects, '-tmp-foo', 's.jsonl'), 'utf8')).toBe('{"new":1}\n');
     expect(existsSync(join(claudeProjects, '-tmp-foo', 'garbage.jsonl'))).toBe(false);
+    // The stray sibling is untouched by the pull overlay.
+    expect(existsSync(join(stray, 'garbage.jsonl'))).toBe(true);
   });
 
   it('remapPush ignores a stray .nomad-tmp staging dir (not pushed, not counted unmapped)', async () => {
