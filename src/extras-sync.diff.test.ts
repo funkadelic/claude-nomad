@@ -4,7 +4,53 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { listDivergingFiles } from './extras-sync.diff.ts';
+import { listDivergingFiles, listDivergingModified } from './extras-sync.diff.ts';
+
+describe('listDivergingModified relative M-path output (git --name-status)', () => {
+  let localDir: string;
+  let repoDir: string;
+
+  beforeEach(() => {
+    localDir = mkdtempSync(join(tmpdir(), 'nomad-moddiff-local-'));
+    repoDir = mkdtempSync(join(tmpdir(), 'nomad-moddiff-repo-'));
+  });
+
+  afterEach(() => {
+    rmSync(localDir, { recursive: true, force: true });
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('returns a both-sides content divergence as a relative path with no suffix', () => {
+    writeFileSync(join(localDir, 'X.md'), 'local contents\n');
+    writeFileSync(join(repoDir, 'X.md'), 'repo contents\n');
+    expect(listDivergingModified(localDir, repoDir)).toEqual(['X.md']);
+  });
+
+  it('preserves the nested relative path for a modified file in a subdirectory', () => {
+    mkdirSync(join(localDir, 'sub'), { recursive: true });
+    mkdirSync(join(repoDir, 'sub'), { recursive: true });
+    writeFileSync(join(localDir, 'sub', 'Y.md'), 'local Y\n');
+    writeFileSync(join(repoDir, 'sub', 'Y.md'), 'repo Y\n');
+    expect(listDivergingModified(localDir, repoDir)).toEqual([join('sub', 'Y.md')]);
+  });
+
+  it('excludes local-only (D) and repo-only (A) files; keeps only the M path', () => {
+    writeFileSync(join(localDir, 'both.md'), 'local\n');
+    writeFileSync(join(repoDir, 'both.md'), 'repo\n');
+    writeFileSync(join(localDir, 'localonly.md'), 'only local\n');
+    writeFileSync(join(repoDir, 'repoonly.md'), 'only repo\n');
+    const result = listDivergingModified(localDir, repoDir);
+    expect(result).toEqual(['both.md']);
+    expect(result.some((p) => p.includes('localonly'))).toBe(false);
+    expect(result.some((p) => p.includes('repoonly'))).toBe(false);
+  });
+
+  it('returns [] for identical directories', () => {
+    writeFileSync(join(localDir, 'same.md'), 'identical\n');
+    writeFileSync(join(repoDir, 'same.md'), 'identical\n');
+    expect(listDivergingModified(localDir, repoDir)).toEqual([]);
+  });
+});
 
 describe('listDivergingFiles real-path output (git --name-status)', () => {
   let localDir: string;
