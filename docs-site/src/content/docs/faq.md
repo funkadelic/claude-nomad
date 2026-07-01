@@ -285,17 +285,19 @@ Why this order works:
    the base and host files, refreshes the symlinks, and copies down anything other hosts pushed
    that you did not have yet.
 
-The reverse order is the lossy one. Pulling first overwrites your diverging local files with the
-repo versions; that is exactly what the warning below is telling you:
+Pulling first is no longer lossy, but it leaves more to clean up. A pull keeps your diverging local
+files instead of overwriting them (your local edit wins on conflict, and unpushed session
+transcripts are retained), so nothing is thrown away. What you get instead is a divergence warning
+that keeps firing until you push to reconcile:
 
 ```text
-⚠︎ local .planning for claude-nomad diverges from origin in 3 file(s); next remapExtrasPull will overwrite them
+local folder .planning/ in repo claude-nomad differs from the synced copy in 3 files; the next pull step will keep your local copy (push to reconcile; your current files are backed up to ~/.cache/claude-nomad/backup/<timestamp>/extras/<encoded-project-path>/)
 ```
 
-If you pull anyway, your overwritten files are recoverable from
-`~/.cache/claude-nomad/backup/<timestamp>/`, but pushing first means you never need them. The
-divergence warning prints the exact backup path it wrote; otherwise, find the newest backup and
-copy the file back. Inside the backup, extras live under `extras/<encoded-project-path>/` (the
+Pushing first skips that back-and-forth: your local changes land in the repo, the divergence
+clears, and the next pull is a clean fast-forward. Every pull still snapshots what it touches into
+`~/.cache/claude-nomad/backup/<timestamp>/` as a safety net, so you can always recover an older copy
+if you want one. Inside the backup, extras live under `extras/<encoded-project-path>/` (the
 project's absolute path with slashes turned into dashes):
 
 ```bash
@@ -303,8 +305,6 @@ $ ls -t ~/.cache/claude-nomad/backup/ | head -1    # newest backup, named <times
 $ cp ~/.cache/claude-nomad/backup/<timestamp>/extras/-home-you-code-myproject/.planning/ROADMAP.md \
      ~/code/myproject/.planning/ROADMAP.md
 ```
-
-Then push so the repo gets your restored copy and the warning stops firing.
 
 One nuance: because push is last-write-wins, if the *same file* genuinely changed on two hosts,
 the host that pushes last clobbers the other's version in the sync repo (the older copy survives
