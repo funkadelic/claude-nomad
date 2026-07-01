@@ -299,12 +299,17 @@ export function copyExtras(src: string, dst: string): void {
  */
 export function copyExtrasFileSkipDiverged(src: string, dst: string): void {
   if (existsSync(dst)) {
+    let dstBuf: Buffer;
     try {
-      if (!readFileSync(src).equals(readFileSync(dst))) return; // diverged; keep local
+      dstBuf = readFileSync(dst);
     } catch {
-      /* c8 ignore next -- rare type-change guard (e.g. dst became a directory) */
-      return; // ambiguous read; keep local rather than clobber
+      /* c8 ignore next -- rare dst type-change/unreadable guard (e.g. dst became a directory) */
+      return; // dst unreadable or wrong type; keep local rather than clobber
     }
+    // src is guaranteed present and a file by the caller (runExtrasOp checks
+    // existsSync(src)); a read failure here is a genuine repo defect and is
+    // allowed to surface rather than be masked as a spurious keep-local.
+    if (!readFileSync(src).equals(dstBuf)) return; // diverged; keep local
   }
   copyExtras(src, dst);
 }
