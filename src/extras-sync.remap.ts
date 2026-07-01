@@ -195,14 +195,15 @@ function localDivergesFromPreDelete(
   repo: string,
 ): boolean {
   if (!existsSync(target)) return false; // local file gone; nothing to keep
-  let preBlob: Buffer;
   try {
-    preBlob = gitCaptureBuffer(['show', `${pre}:${repoRel}`], repo);
+    const preBlob = gitCaptureBuffer(['show', `${pre}:${repoRel}`], repo);
+    return !readFileSync(target).equals(preBlob);
   } catch {
-    /* c8 ignore next -- a D-set path always exists at pre; guard is defensive */
-    return true; // ambiguous read; treat as diverged so we never delete
+    // Ambiguous read: the local path changed type (EISDIR) or is unreadable, or
+    // the pre blob is missing. Treat as diverged so a delete never proceeds on
+    // uncertainty; the keep-local plus reconcile-on-push semantics hold.
+    return true;
   }
-  return !readFileSync(target).equals(preBlob);
 }
 
 /**

@@ -606,6 +606,40 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     expect(output).toContain('keeping locally-edited');
   });
 
+  it('keeps an upstream-deleted path whose local copy is unreadable (type changed to a dir)', async () => {
+    // Fail-safe: the local read throws (the path became a directory), so the
+    // ambiguous compare is treated as diverged and the delete is skipped rather
+    // than aborting the pull. The local content is kept.
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'DELETE-ME.md'), 'pre-sync content\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'add planning files'], repoDir);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    git(['rm', '-q', join('shared', 'extras', 'foo', '.planning', 'DELETE-ME.md')], repoDir);
+    git(['commit', '-q', '-m', 'delete DELETE-ME.md'], repoDir);
+    const post = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    // Locally, DELETE-ME.md is a directory, so reading it as a file throws.
+    mkdirSync(join(projectRoot, '.planning', 'DELETE-ME.md'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'DELETE-ME.md', 'nested.md'), 'local work\n');
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull('20260611-keep-unreadable', { prePostHeads: { pre, post } });
+
+    // The local directory (and its content) survives the delete pass.
+    expect(existsSync(join(projectRoot, '.planning', 'DELETE-ME.md', 'nested.md'))).toBe(true);
+  });
+
   it('TDD-3: first-ever pull (no prePostHeads) overlays only and deletes nothing', async () => {
     // Without prePostHeads the delete pass is skipped entirely.
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
