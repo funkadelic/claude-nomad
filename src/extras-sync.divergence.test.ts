@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -78,6 +78,53 @@ describe('divergenceCheckExtras (integration)', () => {
     divergenceCheckExtras('20260522-test');
 
     expect(captured.read()).not.toContain('⚠︎');
+  });
+
+  it('WARN reads keep-local / push-to-reconcile and no longer says overwrite', async () => {
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'STATE.md'), 'local state\n');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'STATE.md'), 'repo state\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260522-test');
+
+    const output = captured.read();
+    expect(output).toContain('keep your local copy (push to reconcile;');
+    expect(output).not.toContain('overwrite');
+  });
+
+  it('remapExtrasPull keeps a diverged local file and copies in a repo-only file', async () => {
+    // The Gap B behavior: a repo-tracked .planning file the host has locally
+    // edited (content differs) is preserved, while a repo-only file is added.
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'STATE.md'), 'local edit\n');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'STATE.md'), 'repo version\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'NEW.md'), 'repo new\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.remap.ts');
+    remapExtrasPull('20260522-retain');
+
+    // Diverged local file wins (kept), repo-only file is copied in.
+    expect(readFileSync(join(projectRoot, '.planning', 'STATE.md'), 'utf8')).toBe('local edit\n');
+    expect(existsSync(join(projectRoot, '.planning', 'NEW.md'))).toBe(true);
+    expect(readFileSync(join(projectRoot, '.planning', 'NEW.md'), 'utf8')).toBe('repo new\n');
   });
 
   it('WARN names the diverging file plus a count summary line', async () => {

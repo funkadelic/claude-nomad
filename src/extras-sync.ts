@@ -19,6 +19,9 @@ export { remapExtrasPull, remapExtrasPush } from './extras-sync.remap.ts';
  * Build the user-facing WARN line for one diverging extra. Phrases the entry
  * as a "folder"/"file" with grammar that agrees with the diverging-file count
  * (singular vs plural), and names the backup path the next pull step writes to.
+ * The wording reflects the divergence-is-conflict guard: the pull KEEPS the
+ * local copy on divergence rather than overwriting it, so the user pushes to
+ * reconcile. The backup snapshot is still taken (defense-in-depth).
  */
 function divergenceWarnLine(o: {
   dirname: string;
@@ -31,9 +34,8 @@ function divergenceWarnLine(o: {
   const name = o.isDir ? `${o.dirname}/` : o.dirname;
   const one = o.count === 1;
   const fileCount = one ? '1 file' : `${o.count} files`;
-  const them = one ? 'it' : 'them';
   const yours = one ? 'your current file is' : 'your current files are';
-  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step will overwrite ${them} with the synced version (${yours} backed up to ${o.projectBackupRoot}/)`;
+  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step will keep your local copy (push to reconcile; ${yours} backed up to ${o.projectBackupRoot}/)`;
 }
 
 /**

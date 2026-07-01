@@ -7,12 +7,14 @@ import {
   copyExtrasFiltered,
   copyExtrasFilteredPreserving,
   copyExtrasOverlayFiltered,
+  copyExtrasOverlaySkipDiverged,
   eachExtrasTarget,
   extrasDenySet,
   loadValidatedExtras,
   type ExtrasCounts,
   type ValidatedExtras,
 } from './extras-sync.core.ts';
+import { listDivergingModified } from './extras-sync.diff.ts';
 import { planningDeleteTargets } from './extras-sync.planning-diff.ts';
 import { backupExtrasWrite, backupRepoWrite } from './utils.fs.ts';
 import { gitCaptureRaw, NomadFatal } from './utils.ts';
@@ -45,8 +47,9 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  *   `copyExtrasFilteredPreserving` (preserves host-local deny-set files already
  *   on disk at any depth, e.g. `settings.local.json`, while still recursively
  *   mirror-pruning synced files absent from src), routes `.planning` through
- *   `copyExtrasOverlayFiltered` (additive/overwrite so local-only files
- *   survive; the git-diff delete pass in `remapExtrasPull` propagates upstream
+ *   `copyExtrasOverlaySkipDiverged` (additive/overwrite so local-only files
+ *   survive, but a file whose local copy diverges from the repo copy is kept
+ *   local; the git-diff delete pass in `remapExtrasPull` propagates upstream
  *   deletions separately), and uses the exact-mirror `copyExtras` for every
  *   other extra. Filtering `.planning` on both sides is defense-in-depth:
  *   push prevents ALWAYS_NEVER_SYNC files from entering the repo working tree
@@ -307,11 +310,12 @@ export function remapExtrasPush(
  * produce a clean no-op.
  *
  * `.planning` extras use an overlay-then-delete-propagation model:
- * `copyExtrasOverlayFiltered` (no upfront rmSync; deny-set filtered) keeps
- * local-only files alive, and the optional `prePostHeads` pair drives a
- * targeted delete pass based on `git diff --name-status -z <pre> <post>`.
- * Without `prePostHeads` (fresh clone / unborn HEAD), only the overlay runs
- * and nothing is deleted.
+ * `copyExtrasOverlaySkipDiverged` (no upfront rmSync; deny-set filtered) keeps
+ * local-only files alive and skips any file whose local copy diverges from the
+ * repo copy (content hash differs) so a local hand-edit wins on conflict, and
+ * the optional `prePostHeads` pair drives a targeted delete pass based on
+ * `git diff --name-status -z <pre> <post>`. Without `prePostHeads` (fresh clone
+ * / unborn HEAD), only the overlay runs and nothing is deleted.
  *
  * @param ts - backup timestamp namespace.
  * @param opts.dryRun - when `true`, collect `wouldPull` without mutating; no
@@ -346,16 +350,22 @@ export function remapExtrasPull(
     // Pull routing per extra type:
     //   `.claude`: copyExtrasFilteredPreserving preserves host-local deny-set
     //     files (e.g. settings.local.json) while mirror-pruning synced entries.
-    //   `.planning`: copyExtrasOverlayFiltered (no rmSync; deny-set filtered)
-    //     keeps local-only files; the delete pass below propagates upstream
-    //     removals via the git-diff D set. The filter is defense-in-depth
-    //     against a repo poisoned out-of-band.
+    //   `.planning`: copyExtrasOverlaySkipDiverged (no rmSync; deny-set filtered)
+    //     keeps local-only files AND skips any file whose local copy diverges
+    //     from the repo copy (content hash differs), so a local hand-edit wins
+    //     on conflict (D-03/D-04); the delete pass below still propagates
+    //     upstream removals via the git-diff D set. The filter is defense-in-
+    //     depth against a repo poisoned out-of-band.
     //   All others: copyExtras (exact mirror; rarely carry host-local files).
     (src, dst, dirname) => {
       if (dirname === '.claude')
         return copyExtrasFilteredPreserving(src, dst, extrasDenySet(dirname));
-      if (dirname === '.planning')
-        return copyExtrasOverlayFiltered(src, dst, extrasDenySet(dirname));
+      if (dirname === '.planning') {
+        // divergedSet is the both-sides-modified set (local dst vs repo src);
+        // those files are preserved local rather than overwritten.
+        const divergedSet = new Set(listDivergingModified(dst, src));
+        return copyExtrasOverlaySkipDiverged(src, dst, extrasDenySet(dirname), divergedSet);
+      }
       return copyExtras(src, dst);
     },
   );

@@ -358,7 +358,8 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     expect(combined).toContain(
       'local folder .planning/ in repo testproj differs from the synced copy in 2 files;',
     );
-    expect(combined).toContain('overwrite them with the synced version');
+    expect(combined).toContain('keep your local copy (push to reconcile;');
+    expect(combined).not.toContain('overwrite');
     expect(combined).toContain('your current files are backed up to');
   });
 
@@ -376,7 +377,8 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     expect(combined).toContain(
       'local folder .planning/ in repo testproj differs from the synced copy in 1 file;',
     );
-    expect(combined).toContain('overwrite it with the synced version');
+    expect(combined).toContain('keep your local copy (push to reconcile;');
+    expect(combined).not.toContain('overwrite');
     expect(combined).toContain('your current file is backed up to');
   });
 
