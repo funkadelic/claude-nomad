@@ -11,7 +11,7 @@ import {
 import { dirname, join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
-import { stripCollidingDstSymlinks } from './extras-sync.core.ts';
+import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras-sync.core.ts';
 import { assertSafeLocalRoot } from './extras-sync.guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { type ManifestDiff } from './push-manifest.ts';
@@ -69,13 +69,19 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
  * hosts (Pitfall 1, nodejs/node issue 41693). Pull-only: `remapPush` keeps the
  * exact-mirror `copyDirJsonlOnly` path unchanged.
  *
+ * The copy runs through `cpSyncGuarded` so an upstream file/directory type flip
+ * in a session tree (e.g. a `subagents/` dir replaced by a regular `subagents`
+ * file) surfaces as an actionable `NomadFatal` pointing at
+ * `nomad pull --force-remote`, matching the `.planning` extras overlays rather
+ * than crashing `cmdPull` with a raw fs error.
+ *
  * @param src - Repo-side `shared/projects/<logical>/` dir to overlay from.
  * @param dst - Host-side `~/.claude/projects/<encoded>/` dir; local-only
  *   entries survive unchanged after the overlay.
  */
 export function overlaySessionDir(src: string, dst: string): void {
   stripCollidingDstSymlinks(src, dst, () => false);
-  cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+  cpSyncGuarded(src, dst, undefined, 'overlaySessionDir');
 }
 
 /**

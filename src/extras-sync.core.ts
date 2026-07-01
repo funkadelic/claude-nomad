@@ -156,6 +156,55 @@ export function copyExtrasOverlay(src: string, dst: string): void {
 }
 
 /**
+ * Recursive overlay `cpSync` (`recursive`, `force`, `verbatimSymlinks`) with a
+ * shared file/directory type-collision guard. When a path changes type upstream
+ * (a directory `foo/` becomes a file `foo`, or a `.jsonl` becomes a directory),
+ * `cpSync` throws `EINVAL` / `ENOTEMPTY` or one of the documented `ERR_FS_CP_*`
+ * codes; this converts any of them into a `NomadFatal` that names the colliding
+ * path and points at `nomad pull --force-remote`, so callers surface an
+ * actionable message instead of a raw stack trace. Any other I/O error
+ * propagates unchanged. The single source of truth for that guard, shared by the
+ * `.planning` extras overlays and the pull-side session overlay so they cannot
+ * drift.
+ *
+ * @param src - Source directory to copy from.
+ * @param dst - Destination path.
+ * @param filter - Optional `cpSync` entry filter; `undefined` copies everything.
+ * @param label - Function name to prefix the collision message with.
+ */
+export function cpSyncGuarded(
+  src: string,
+  dst: string,
+  filter: ((srcEntry: string) => boolean) | undefined,
+  label: string,
+): void {
+  try {
+    cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true, filter });
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    // cpSync tried to overwrite a non-empty directory with a file (or vice
+    // versa) -- a file/dir type change upstream. The code varies by platform
+    // and Node version: EINVAL/ENOTEMPTY on current runtimes, the ERR_FS_CP_*
+    // family in Node's documented error set. Convert any of them to NomadFatal.
+    /* c8 ignore start -- collision codes are platform/Node-version-specific */
+    if (
+      e.code === 'EINVAL' ||
+      e.code === 'ENOTEMPTY' ||
+      e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
+      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
+    ) {
+      throw new NomadFatal(
+        `${label}: type collision copying ${JSON.stringify(src)} -> ` +
+          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
+          `changed upstream; run nomad pull --force-remote to recover`,
+      );
+    }
+    throw err; // other I/O error; propagate as-is
+    /* c8 ignore stop */
+  }
+}
+
+/**
  * Filtered overlay copy for `.planning`: like `copyExtrasOverlay` but skips
  * any non-root entry whose basename is in `blockSet`. Applied on both the
  * push side (prevents ALWAYS_NEVER_SYNC files from entering the repo working
@@ -176,37 +225,12 @@ export function copyExtrasOverlay(src: string, dst: string): void {
  */
 export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Set<string>): void {
   stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
-  try {
-    cpSync(src, dst, {
-      recursive: true,
-      force: true,
-      verbatimSymlinks: true,
-      filter: (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
-    });
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException;
-    // cpSync tried to overwrite a non-empty directory with a file (or vice
-    // versa) -- a file/dir type change upstream. The code varies by platform
-    // and Node version: EINVAL/ENOTEMPTY on current runtimes, the
-    // ERR_FS_CP_* family in Node's documented error set. Convert any of them
-    // to NomadFatal so the user gets an actionable message instead of a raw
-    // stack trace.
-    /* c8 ignore start -- collision codes are platform/Node-version-specific */
-    if (
-      e.code === 'EINVAL' ||
-      e.code === 'ENOTEMPTY' ||
-      e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
-      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
-    ) {
-      throw new NomadFatal(
-        `copyExtrasOverlayFiltered: type collision copying ${JSON.stringify(src)} -> ` +
-          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
-          `changed upstream; run nomad pull --force-remote to recover`,
-      );
-    }
-    throw err; // other I/O error; propagate as-is
-    /* c8 ignore stop */
-  }
+  cpSyncGuarded(
+    src,
+    dst,
+    (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
+    'copyExtrasOverlayFiltered',
+  );
 }
 
 /**
@@ -239,36 +263,14 @@ export function copyExtrasOverlaySkipDiverged(
   divergedSet: Set<string>,
 ): void {
   stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
-  try {
-    cpSync(src, dst, {
-      recursive: true,
-      force: true,
-      verbatimSymlinks: true,
-      filter: (srcEntry) =>
-        srcEntry === src ||
-        (!isDeniedName(blockSet, basename(srcEntry)) && !divergedSet.has(relative(src, srcEntry))),
-    });
-  } catch (err) {
-    // Same file/dir type-collision handling as copyExtrasOverlayFiltered: a
-    // path that changed type upstream throws EINVAL/ENOTEMPTY or an ERR_FS_CP_*
-    // code; convert any of them to NomadFatal for an actionable message.
-    /* c8 ignore start -- collision codes are platform/Node-version-specific */
-    const e = err as NodeJS.ErrnoException;
-    if (
-      e.code === 'EINVAL' ||
-      e.code === 'ENOTEMPTY' ||
-      e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
-      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
-    ) {
-      throw new NomadFatal(
-        `copyExtrasOverlaySkipDiverged: type collision copying ${JSON.stringify(src)} -> ` +
-          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
-          `changed upstream; run nomad pull --force-remote to recover`,
-      );
-    }
-    throw err; // other I/O error; propagate as-is
-    /* c8 ignore stop */
-  }
+  cpSyncGuarded(
+    src,
+    dst,
+    (srcEntry) =>
+      srcEntry === src ||
+      (!isDeniedName(blockSet, basename(srcEntry)) && !divergedSet.has(relative(src, srcEntry))),
+    'copyExtrasOverlaySkipDiverged',
+  );
 }
 
 /**
