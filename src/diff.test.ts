@@ -266,6 +266,92 @@ describe('cmdDiff (offline, lockless preview)', () => {
     expect(lastLine).toContain('clean');
   });
 
+  it('surfaces the retained local-only count as a non-clean Summary (parity with pull --dry-run)', async () => {
+    // Mapped project foo -> projectRoot with an unpushed local-only session leaf
+    // under the host encoded dir. cmdDiff routes through the same computePreview
+    // as pull --dry-run, so the honest local-only count must appear here too.
+    const projectRoot = join(testHome, 'fake-project');
+    const encodedLocal = join(claudeDir, 'projects', projectRoot.replace(/\//g, '-'));
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedDir, 'projects', 'foo'), { recursive: true });
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'local-only.jsonl'), '{"local":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
+    );
+
+    const { cmdDiff } = await import('./diff.ts');
+    cmdDiff();
+
+    expect(logOutput()).toContain('1 local-only present, not in repo (push to reconcile)');
+    expect(logOutput()).toContain('1 local-only present');
+    expect(
+      logOutput()
+        .split('\n')
+        .filter((l) => l.includes('clean')),
+    ).toHaveLength(0);
+  });
+
+  it('fires the Gap B divergence WARN like pull --dry-run and stays offline/lockless', async () => {
+    // Diverged repo-tracked .planning file plus an unpushed local-only session,
+    // exactly the 2026-06-30 signal-failure class. cmdDiff must surface BOTH the
+    // keep-local divergence WARN (matching pull --dry-run, which fires
+    // divergenceCheckExtras) and the local-only count, while creating no backup
+    // dir and never invoking git pull.
+    const projectRoot = join(testHome, 'fake-project');
+    const encodedLocal = join(claudeDir, 'projects', projectRoot.replace(/\//g, '-'));
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    // Session side: repo-tracked foo/ plus a local-only leaf.
+    mkdirSync(join(sharedDir, 'projects', 'foo'), { recursive: true });
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'local-only.jsonl'), '{"local":1}\n');
+    // Extras side: a diverged .planning/STATE.md (local content != repo content).
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'STATE.md'), 'local state\n');
+    mkdirSync(join(sharedDir, 'extras', 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedDir, 'extras', 'foo', '.planning', 'STATE.md'), 'repo state\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    // Spy execFileSync but call through to real git so divergence detection
+    // works; this lets us assert git pull is never invoked.
+    const execCalls: unknown[][] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: (...args: unknown[]) => {
+          execCalls.push(args);
+          return (actual.execFileSync as (...a: unknown[]) => Buffer)(...args);
+        },
+      };
+    });
+
+    const { cmdDiff } = await import('./diff.ts');
+    cmdDiff();
+
+    // Gap B divergence WARN (keep-local / push-to-reconcile phrasing).
+    const stderr = errOutput();
+    expect(stderr).toContain('keep your local copy (push to reconcile');
+    expect(stderr).not.toContain('overwrite');
+    // Local-only count also surfaces (session parity).
+    expect(logOutput()).toContain('1 local-only present, not in repo (push to reconcile)');
+    // Offline/lockless: no lockfile, no backup dir, no git pull.
+    expect(existsSync(lockPath)).toBe(false);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+    const ranGitPull = execCalls.some(
+      (call) => call[0] === 'git' && Array.isArray(call[1]) && call[1].includes('pull'),
+    );
+    expect(ranGitPull).toBe(false);
+    vi.doUnmock('node:child_process');
+  });
+
   it('no ℹ︎ glyph appears in cmdDiff tree sections when repo is fully scaffolded', async () => {
     // A fully-scaffolded sandbox: settings.base.json, shared/projects/ dir,
     // and path-map.json so remapPull enters the project loop rather than the

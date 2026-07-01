@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { backupBase, repoHome, type PathMap } from './config.ts';
+import { divergenceCheckExtras } from './extras-sync.ts';
 import { computePreview } from './preview.ts';
 import { die, fail, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
@@ -41,6 +42,14 @@ export function cmdDiff(): void {
     // path-map.json is absent from a partially-scaffolded repo).
     const mapPath = join(repo, 'path-map.json');
     const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
+    // Read-only pre-preview divergence WARN, mirroring cmdPull (which fires it
+    // before computePreview in both wet and dry). This closes the D-07 gap:
+    // diff previously never surfaced the Gap B divergence, so it disagreed with
+    // pull --dry-run. divergenceCheckExtras uses git diff --no-index (local, no
+    // network) and writes nothing, so cmdDiff's offline/lockless/no-backup-dir
+    // contract holds. A malformed path-map raises NomadFatal into the catch
+    // below (fail + exitCode 1), matching computePreview's tolerance boundary.
+    divergenceCheckExtras(ts);
     // computePreview renders the full tree including the Summary row; no
     // separate emitSummary call needed (it would print a duplicate).
     computePreview(ts, map, 'diff');
