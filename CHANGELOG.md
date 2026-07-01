@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.56.2](https://github.com/funkadelic/claude-nomad/compare/v0.56.1...v0.56.2) (2026-07-01)
+
+
+### Fixed
+
+* **pull:** retain unpushed local work and surface it in the preview ([#376](https://github.com/funkadelic/claude-nomad/issues/376)) ([3f70019](https://github.com/funkadelic/claude-nomad/commit/3f70019c89ccd77726e6330d9623e106bb9ff69c))
+
+  What this means: `nomad pull` no longer discards work you have not pushed
+  yet. Chat sessions, subagent history, and memory files that exist only on
+  this machine now survive a pull, and a synced file you have edited locally
+  (a project's `.planning` notes or its `CLAUDE.md`) is kept instead of being
+  overwritten when it differs from the incoming copy, with a note to push and
+  reconcile. `nomad diff` and `pull --dry-run` now show the count of retained
+  local-only items and the keep-local warning, where before they reported
+  `clean` / `0 collisions`.
+
 ## [0.56.1](https://github.com/funkadelic/claude-nomad/compare/v0.56.0...v0.56.1) (2026-06-30)
 
 
