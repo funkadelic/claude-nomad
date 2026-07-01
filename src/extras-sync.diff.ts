@@ -83,7 +83,9 @@ function parseModifiedPaths(stdout: string, a: string): string[] {
  * (ENOENT) and other git failures each surface a WARN instead of collapsing to a
  * silent empty list, so the operator can tell "no diff" (silent) apart from a
  * skipped check (the loud-doctor contract). Argv-array `execFileSync` (no shell)
- * so paths cannot inject.
+ * so paths cannot inject. `--no-renames` keeps every record on the expected
+ * `status<TAB>path` 2-field shape, so a rename is reported as a plain add/delete
+ * pair rather than an `R<score><TAB>old<TAB>new` record the parser would mangle.
  *
  * @param a - First path to compare (the local side, named in WARN messages).
  * @param b - Second path to compare (the repo side).
@@ -92,9 +94,13 @@ function parseModifiedPaths(stdout: string, a: string): string[] {
  */
 function runNameStatusDiff(a: string, b: string, parse: (stdout: string) => string[]): string[] {
   try {
-    const stdout = execFileSync('git', ['diff', '--no-index', '--name-status', a, b], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).toString();
+    const stdout = execFileSync(
+      'git',
+      ['diff', '--no-index', '--no-renames', '--name-status', a, b],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    ).toString();
     return parse(stdout);
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { status?: number; stdout?: Buffer };
