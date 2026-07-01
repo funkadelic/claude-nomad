@@ -1062,4 +1062,111 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
       remapExtrasPull('20260611-diff-fail', { prePostHeads: { pre: badPre, post } }),
     ).toThrow(NomadFatal);
   });
+
+  /**
+   * Seed the pre/post repo states for a delete-vs-edit preview: DELETE-ME.md is
+   * committed (pre), then removed upstream (post); PLAN.md stays as an anchor so
+   * the repo `.planning` dir survives. Writes the path-map with the given extras.
+   *
+   * @param localDeleteMe - Local content for DELETE-ME.md, or null to omit it.
+   * @param extras - The extras array for logical `foo`.
+   * @returns The pre and post HEAD SHAs.
+   */
+  const seedDeleteVsEdit = (
+    localDeleteMe: string | null,
+    extras: string[] = ['.planning'],
+  ): { pre: string; post: string } => {
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'DELETE-ME.md'), 'pre-sync content\n');
+    writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# rules\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'add planning files'], repoDir);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
+    git(['rm', '-q', join('shared', 'extras', 'foo', '.planning', 'DELETE-ME.md')], repoDir);
+    git(['commit', '-q', '-m', 'delete DELETE-ME.md'], repoDir);
+    const post = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(projectRoot, 'CLAUDE.md'), '# rules\n');
+    if (localDeleteMe !== null) {
+      writeFileSync(join(projectRoot, '.planning', 'DELETE-ME.md'), localDeleteMe);
+    }
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: extras },
+      }) + '\n',
+    );
+    return { pre, post };
+  };
+
+  it('divergenceCheckExtras with prePostHeads previews a delete-vs-edit keep-local WARN', async () => {
+    const { pre, post } = seedDeleteVsEdit('my local edits\n');
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260611-preview-keep', { pre, post });
+
+    const output = writes.join('\n');
+    expect(output).toContain('keeping locally-edited');
+    expect(output).toContain('DELETE-ME.md');
+    // Read-only: the local file is untouched by the preview.
+    expect(readFileSync(join(projectRoot, '.planning', 'DELETE-ME.md'), 'utf8')).toBe(
+      'my local edits\n',
+    );
+  });
+
+  it('divergenceCheckExtras preview stays silent when the upstream-deleted file is unmodified', async () => {
+    // Local bytes equal the pre-rebase blob, so it is not a conflict: the real
+    // pull would delete it, and the preview must not claim a keep-local.
+    const { pre, post } = seedDeleteVsEdit('pre-sync content\n');
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260611-preview-nokeep', { pre, post });
+
+    expect(writes.join('\n')).not.toContain('keeping locally-edited');
+  });
+
+  it('divergenceCheckExtras preview skips non-.planning extras targets', async () => {
+    // CLAUDE.md leads the extras array so the preview loop hits (and skips) a
+    // non-.planning target before reaching the .planning delete detection.
+    const { pre, post } = seedDeleteVsEdit('my local edits\n', ['CLAUDE.md', '.planning']);
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260611-preview-skip', { pre, post });
+
+    // The .planning delete-vs-edit WARN still fires despite the leading CLAUDE.md.
+    expect(writes.join('\n')).toContain('keeping locally-edited');
+  });
+
+  it('divergenceCheckExtras preview is tolerant of a git failure (no WARN, no throw)', async () => {
+    // A nonexistent pre SHA makes the preview diff fail; the tolerant catch
+    // yields no delete-vs-edit WARN and never throws out of a read-only preview.
+    const { post } = seedDeleteVsEdit('my local edits\n');
+    const badPre = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    expect(() =>
+      divergenceCheckExtras('20260611-preview-tolerant', { pre: badPre, post }),
+    ).not.toThrow();
+    expect(writes.join('\n')).not.toContain('keeping locally-edited');
+  });
 });

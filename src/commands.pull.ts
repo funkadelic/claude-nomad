@@ -272,8 +272,11 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
     // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
     // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
     // mutation (so local state is intact for byte-level comparison). The
-    // function itself silently skips when no `extras` key is declared.
-    divergenceCheckExtras(ts);
+    // function itself silently skips when no `extras` key is declared. Only the
+    // dry-run gets prePostHeads for the delete-vs-edit keep-local preview; the
+    // wet pull emits that WARN from remapExtrasPull, so passing heads here too
+    // would double it.
+    divergenceCheckExtras(ts, dryRun ? prePostHeads : undefined);
     if (dryRun) {
       // computePreview renders the full tree including the Summary row with
       // verb='pull'; no separate emitSummary call (it would duplicate the row).

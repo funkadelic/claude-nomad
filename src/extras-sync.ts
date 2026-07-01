@@ -14,6 +14,7 @@ export { copyExtras } from './extras-sync.core.ts';
 // The two public remap ops live in the sibling module to hold the soft
 // line-cap; re-exported here so `./extras-sync.ts` stays the public surface.
 export { remapExtrasPull, remapExtrasPush } from './extras-sync.remap.ts';
+import { keptDeletePreview, keptDeleteWarnLine } from './extras-sync.remap.ts';
 
 /**
  * Build the user-facing WARN line for one diverging extra. Phrases the entry
@@ -49,8 +50,19 @@ function divergenceWarnLine(o: {
  * `backupExtrasWrite`, so same-relative-path projects do not collide). Silent
  * skip on missing path-map, no `extras` key, missing/`'TBD'` host path,
  * non-whitelisted dirname, or either side absent.
+ *
+ * When `prePostHeads` is supplied (the `pull --dry-run` path, which has rebased
+ * and captured the pre/post HEADs), the check also previews delete-vs-edit
+ * keep-local cases: a `.planning` file deleted upstream but edited locally is
+ * kept by the real pull, so the same WARN is surfaced here. Offline `nomad diff`
+ * omits `prePostHeads` (it cannot foresee an upstream deletion without a fetch),
+ * and the WET pull emits that WARN from `remapExtrasPull` itself, so passing the
+ * heads only for `--dry-run` avoids a double WARN.
  */
-export function divergenceCheckExtras(ts: string): void {
+export function divergenceCheckExtras(
+  ts: string,
+  prePostHeads?: { pre: string; post: string },
+): void {
   const v = loadValidatedExtras({});
   if (v === null) return;
 
@@ -78,5 +90,12 @@ export function divergenceCheckExtras(ts: string): void {
       }),
     );
     for (const f of modified) warn(`  ${f}`);
+  }
+
+  // Delete-vs-edit keep-local preview (dry-run only; see the JSDoc note above).
+  if (prePostHeads !== undefined) {
+    for (const { logical, relToLocal } of keptDeletePreview(v, prePostHeads, repo)) {
+      warn(keptDeleteWarnLine(logical, relToLocal));
+    }
   }
 }

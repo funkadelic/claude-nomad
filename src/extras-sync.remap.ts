@@ -207,6 +207,100 @@ function localDivergesFromPreDelete(
 }
 
 /**
+ * Build the git argv for the upstream-deletion diff of one logical's `.planning`
+ * subtree. Shared by the wet delete pass and the read-only preview so both read
+ * the exact same pre/post name-status set.
+ *
+ * @param pre - Pre-rebase HEAD SHA.
+ * @param post - Post-rebase HEAD SHA.
+ * @param logical - The path-map logical project name.
+ * @returns The `git diff --name-status -z` argv scoped to the target subtree.
+ */
+function planningDiffArgs(pre: string, post: string, logical: string): string[] {
+  return ['diff', '--name-status', '-z', pre, post, '--', `shared/extras/${logical}/.planning/`];
+}
+
+/** One upstream-deleted `.planning` file: host path, host-relative, and repo-relative forms. */
+type DeletePair = { target: string; relToLocal: string; repoRel: string };
+
+/**
+ * Map the raw `git diff --name-status -z` output of one `.planning` target to
+ * the host paths a pull would delete, each paired with its host-relative and
+ * repo-relative (forward-slash, for `git show`) forms. Shared by the wet delete
+ * pass and the preview so the two never drift on path derivation.
+ *
+ * @param t - The extras target (logical + host localRoot).
+ * @param raw - Raw `git diff --name-status -z` stdout for this target.
+ * @returns One `DeletePair` per upstream-deleted file under the target.
+ */
+function deletePairsFor(t: ExtrasTarget, raw: string): DeletePair[] {
+  return planningDeleteTargets({ raw, logical: t.logical, localRoot: t.localRoot }).map(
+    (target) => {
+      const relToLocal = target.slice(t.localRoot.length + sep.length);
+      return {
+        target,
+        relToLocal,
+        repoRel: `shared/extras/${t.logical}/${relToLocal.split(sep).join('/')}`,
+      };
+    },
+  );
+}
+
+/**
+ * The user-facing WARN naming a `.planning` file kept on a delete-vs-edit
+ * conflict (deleted upstream but edited locally). Shared so the wet pull and the
+ * `pull --dry-run` preview emit identical wording for the same file.
+ *
+ * @param logical - The path-map logical project name.
+ * @param relToLocal - The file path relative to the host project root.
+ * @returns The keep-local WARN line.
+ */
+export function keptDeleteWarnLine(logical: string, relToLocal: string): string {
+  return (
+    `keeping locally-edited ${relToLocal} in ${logical}: deleted upstream but ` +
+    `changed locally (push to reconcile; your copy is backed up)`
+  );
+}
+
+/**
+ * Read-only preview companion to `propagatePlanningDeletes`: return the
+ * host-relative paths of `.planning` files a pull would KEEP rather than delete
+ * because the host edited them locally after the last sync (a delete-vs-edit
+ * conflict). Mirrors the wet skip decision without mutating, so `pull --dry-run`
+ * reports the same retained-local behavior the wet pull applies. Tolerant: a git
+ * failure yields an empty list so a preview never throws. `nomad diff` is offline
+ * and supplies no pre/post heads, so it cannot foresee an upstream deletion and
+ * never calls this.
+ *
+ * @param v - Validated path-map plus its extras block.
+ * @param prePostHeads - Pre/post-rebase HEAD SHAs.
+ * @param repo - Absolute path to REPO_HOME.
+ * @returns One `{ logical, relToLocal }` per file kept on a delete-vs-edit conflict.
+ */
+export function keptDeletePreview(
+  v: ValidatedExtras,
+  prePostHeads: { pre: string; post: string },
+  repo: string,
+): { logical: string; relToLocal: string }[] {
+  const kept: { logical: string; relToLocal: string }[] = [];
+  for (const t of eachExtrasTarget(v, { unmapped: 0, skipped: 0 })) {
+    if (t.dirname !== '.planning') continue;
+    let raw: string;
+    try {
+      raw = gitCaptureRaw(planningDiffArgs(prePostHeads.pre, prePostHeads.post, t.logical), repo);
+    } catch {
+      continue; // tolerant preview: a git failure surfaces nothing rather than throwing
+    }
+    for (const { target, relToLocal, repoRel } of deletePairsFor(t, raw)) {
+      if (localDivergesFromPreDelete(target, prePostHeads.pre, repoRel, repo)) {
+        kept.push({ logical: t.logical, relToLocal });
+      }
+    }
+  }
+  return kept;
+}
+
+/**
  * Propagate upstream `.planning` deletions from the git diff D set into the
  * host-side project tree. For each `.planning` extras target in `v`, runs
  * `git diff --name-status -z <pre> <post>` to find files deleted upstream
@@ -236,18 +330,7 @@ function propagatePlanningDeletes(
     if (t.dirname !== '.planning') continue;
     let raw: string;
     try {
-      raw = gitCaptureRaw(
-        [
-          'diff',
-          '--name-status',
-          '-z',
-          prePostHeads.pre,
-          prePostHeads.post,
-          '--',
-          `shared/extras/${t.logical}/.planning/`,
-        ],
-        repo,
-      );
+      raw = gitCaptureRaw(planningDiffArgs(prePostHeads.pre, prePostHeads.post, t.logical), repo);
     } catch (err) {
       const e = err as Error & { stderr?: Buffer };
       /* c8 ignore start -- stderr is always piped to a Buffer here; guard is defensive */
@@ -258,8 +341,8 @@ function propagatePlanningDeletes(
           `run nomad pull --force-remote to recover`,
       );
     }
-    const targets = planningDeleteTargets({ raw, logical: t.logical, localRoot: t.localRoot });
-    if (targets.length === 0) continue;
+    const pairs = deletePairsFor(t, raw);
+    if (pairs.length === 0) continue;
 
     // Snapshot the host-side .planning tree before any delete so locally-
     // diverged edits can be recovered. cpSync force:false makes this
@@ -267,17 +350,12 @@ function propagatePlanningDeletes(
     backupExtrasWrite(join(t.localRoot, t.dirname), ts, t.localRoot);
 
     const planningRoot = join(t.localRoot, '.planning');
-    for (const target of targets) {
-      const relToLocal = target.slice(t.localRoot.length + sep.length);
+    for (const { target, relToLocal, repoRel } of pairs) {
       // Delete-vs-edit conflict: keep a file the host edited locally since the
-      // last sync, matching the modify-path guard. Compare against the pre-rebase
-      // repo blob (forward-slash repo-relative path for git show).
-      const repoRel = `shared/extras/${t.logical}/${relToLocal.split(sep).join('/')}`;
+      // last sync, matching the modify-path guard. The dry-run preview emits the
+      // same WARN via keptDeletePreview; the wet pull emits it here.
       if (localDivergesFromPreDelete(target, prePostHeads.pre, repoRel, repo)) {
-        warn(
-          `keeping locally-edited ${relToLocal} in ${t.logical}: deleted upstream but ` +
-            `changed locally (push to reconcile; your copy is backed up)`,
-        );
+        warn(keptDeleteWarnLine(t.logical, relToLocal));
         continue;
       }
       deletePlanningTarget(target, planningRoot, join(repoExtras, t.logical, relToLocal));
