@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 
 import {
@@ -283,6 +283,30 @@ export function copyExtrasOverlaySkipDiverged(
 export function copyExtras(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+}
+
+/**
+ * Overwrite-unless-diverged copy for a single-file extra (e.g. `CLAUDE.md`) on
+ * pull. If `dst` already exists and its bytes differ from `src`, the local file
+ * is kept (the host's edit wins on conflict, symmetric with the `.planning`
+ * `copyExtrasOverlaySkipDiverged` guard) and nothing is overwritten; otherwise
+ * `src` is copied over `dst` (a fresh file, or an identical one). An unreadable
+ * or type-changed `dst` is treated as diverged so a local file is never
+ * clobbered. Content comparison only, never mtime.
+ *
+ * @param src - Source file (repo side on pull); the caller guarantees it exists.
+ * @param dst - Destination file; kept as-is when it exists and diverges.
+ */
+export function copyExtrasFileSkipDiverged(src: string, dst: string): void {
+  if (existsSync(dst)) {
+    try {
+      if (!readFileSync(src).equals(readFileSync(dst))) return; // diverged; keep local
+    } catch {
+      /* c8 ignore next -- rare type-change guard (e.g. dst became a directory) */
+      return; // ambiguous read; keep local rather than clobber
+    }
+  }
+  copyExtras(src, dst);
 }
 
 /**

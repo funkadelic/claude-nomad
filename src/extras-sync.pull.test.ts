@@ -386,7 +386,7 @@ describe('remapExtrasPull (integration)', () => {
     });
   });
 
-  it('backs up a prior <localRoot>/CLAUDE.md before overwriting it on pull', async () => {
+  it('keeps a locally-edited <localRoot>/CLAUDE.md on pull and still backs it up', async () => {
     writeFileSync(join(projectRoot, 'CLAUDE.md'), '# original rules\n');
     mkdirSync(join(sharedExtras, 'foo'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# replacement rules\n');
@@ -414,7 +414,30 @@ describe('remapExtrasPull (integration)', () => {
     expect(existsSync(backupOld)).toBe(true);
     expect(readFileSync(backupOld, 'utf8')).toBe('# original rules\n');
 
-    expect(readFileSync(join(projectRoot, 'CLAUDE.md'), 'utf8')).toBe('# replacement rules\n');
+    // The local edit diverges from the repo copy, so it wins on conflict: the
+    // pull keeps the local file rather than clobbering it with the repo version.
+    expect(readFileSync(join(projectRoot, 'CLAUDE.md'), 'utf8')).toBe('# original rules\n');
+  });
+
+  it('overwrites a byte-equal <localRoot>/CLAUDE.md on pull (no divergence)', async () => {
+    // When the local file already matches the repo copy there is no conflict, so
+    // the copy proceeds (a harmless identical write) and the file is recorded.
+    writeFileSync(join(projectRoot, 'CLAUDE.md'), '# same rules\n');
+    mkdirSync(join(sharedExtras, 'foo'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', 'CLAUDE.md'), '# same rules\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['CLAUDE.md'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const result = remapExtrasPull('20260522-120009');
+
+    expect(readFileSync(join(projectRoot, 'CLAUDE.md'), 'utf8')).toBe('# same rules\n');
+    expect(result.pulled).toEqual(['foo/CLAUDE.md']);
   });
 });
 

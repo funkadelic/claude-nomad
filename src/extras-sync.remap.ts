@@ -3,7 +3,7 @@ import { dirname, join, sep } from 'node:path';
 
 import { repoHome } from './config.ts';
 import {
-  copyExtras,
+  copyExtrasFileSkipDiverged,
   copyExtrasFiltered,
   copyExtrasFilteredPreserving,
   copyExtrasOverlayFiltered,
@@ -50,8 +50,10 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  *   `copyExtrasOverlaySkipDiverged` (additive/overwrite so local-only files
  *   survive, but a file whose local copy diverges from the repo copy is kept
  *   local; the git-diff delete pass in `remapExtrasPull` propagates upstream
- *   deletions separately), and uses the exact-mirror `copyExtras` for every
- *   other extra. Filtering `.planning` on both sides is defense-in-depth:
+ *   deletions separately), and routes every other extra (a single root-level
+ *   file, e.g. `CLAUDE.md`) through `copyExtrasFileSkipDiverged` so a
+ *   locally-edited file is kept rather than clobbered. Filtering `.planning` on
+ *   both sides is defense-in-depth:
  *   push prevents ALWAYS_NEVER_SYNC files from entering the repo working tree
  *   before the allow-list gate; pull guards against a repo poisoned out-of-band.
  * @returns the counts plus the done/would detail lists.
@@ -479,7 +481,7 @@ export function remapExtrasPull(
       src: join(repo, 'shared', 'extras', logical, dirname),
       dst: join(localRoot, dirname),
     }),
-    // Snapshot the host-side dst BEFORE copyExtras clobbers it. Anchor on
+    // Snapshot the host-side dst BEFORE the copy step touches it. Anchor on
     // localRoot so the backup tree mirrors the project layout.
     (dst, localRoot) => backupExtrasWrite(dst, ts, localRoot),
     // Pull routing per extra type:
@@ -491,7 +493,10 @@ export function remapExtrasPull(
     //     on conflict; the delete pass below still propagates
     //     upstream removals via the git-diff D set. The filter is defense-in-
     //     depth against a repo poisoned out-of-band.
-    //   All others: copyExtras (exact mirror; rarely carry host-local files).
+    //   All others (a single root-level file, e.g. CLAUDE.md):
+    //     copyExtrasFileSkipDiverged keeps a locally-edited file rather than
+    //     clobbering it, so the divergence WARN's keep-local promise holds for
+    //     every extra, not just `.planning`.
     (src, dst, dirname) => {
       if (dirname === '.claude')
         return copyExtrasFilteredPreserving(src, dst, extrasDenySet(dirname));
@@ -501,7 +506,7 @@ export function remapExtrasPull(
         const divergedSet = new Set(listDivergingModified(dst, src));
         return copyExtrasOverlaySkipDiverged(src, dst, extrasDenySet(dirname), divergedSet);
       }
-      return copyExtras(src, dst);
+      return copyExtrasFileSkipDiverged(src, dst);
     },
   );
 
