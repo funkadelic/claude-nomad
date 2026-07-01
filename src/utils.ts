@@ -123,6 +123,24 @@ export function gitCaptureRaw(args: readonly string[], cwd?: string): string {
 }
 
 /**
+ * Shell-free git stdout capture returning the raw `Buffer` (no `.toString()`),
+ * so binary-safe byte comparison is possible. Used by the `.planning`
+ * delete-propagation divergence check to compare a host file against its
+ * pre-rebase repo blob (`git show <sha>:<path>`) without a lossy UTF-8 decode.
+ *
+ * @param args - Git arguments (excludes the 'git' binary name itself).
+ * @param cwd - Working directory for the git invocation; defaults to the process cwd.
+ * @returns The raw stdout as a `Buffer`.
+ */
+export function gitCaptureBuffer(args: readonly string[], cwd?: string): Buffer {
+  return execFileSync('git', args as string[], {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+/**
  * Run `git <args>` in `cwd`, forwarding stderr and converting non-zero exits
  * to `NomadFatal`. Without this wrap, an ExecException would bubble past the
  * cmdPull/cmdPush NomadFatal-only catch blocks and surface as a stack trace;

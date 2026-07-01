@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 import { repoHome } from './config.ts';
@@ -17,7 +17,7 @@ import {
 import { listDivergingModified } from './extras-sync.diff.ts';
 import { planningDeleteTargets } from './extras-sync.planning-diff.ts';
 import { backupExtrasWrite, backupRepoWrite } from './utils.fs.ts';
-import { gitCaptureRaw, NomadFatal } from './utils.ts';
+import { gitCaptureBuffer, gitCaptureRaw, NomadFatal, warn } from './utils.ts';
 
 /** Detail lists returned by an extras op: items copied (wet) and would-copy (dry). */
 type ExtrasDetail = ExtrasCounts & { done: string[]; would: string[] };
@@ -171,11 +171,53 @@ function deletePlanningTarget(target: string, planningRoot: string, repoCounterp
 }
 
 /**
+ * Return `true` when the host file at `target` has been locally edited since
+ * the last sync, i.e. its bytes differ from the pre-rebase repo blob at
+ * `repoRel` (`git show <pre>:<repoRel>`). A `true` result means a delete-vs-edit
+ * conflict: the file was removed upstream but changed locally, so the delete is
+ * skipped and the local copy kept (symmetric with the modify-path conflict
+ * guard). Fails safe: a missing local file returns `false` (nothing to keep, let
+ * the delete no-op), while a `git show` read error returns `true` so an
+ * ambiguous read never deletes local content. Compares bytes (never mtime,
+ * which git checkout rewrites).
+ *
+ * @param target - Host-side absolute path slated for deletion.
+ * @param pre - Pre-rebase repo HEAD SHA (the last-synced state).
+ * @param repoRel - Repo-relative path of the file at `pre`
+ *   (`shared/extras/<logical>/<rel>`, forward slashes).
+ * @param repo - Absolute path to REPO_HOME.
+ * @returns `true` if the local file diverges from the pre blob (keep it).
+ */
+function localDivergesFromPreDelete(
+  target: string,
+  pre: string,
+  repoRel: string,
+  repo: string,
+): boolean {
+  if (!existsSync(target)) return false; // local file gone; nothing to keep
+  let preBlob: Buffer;
+  try {
+    preBlob = gitCaptureBuffer(['show', `${pre}:${repoRel}`], repo);
+  } catch {
+    /* c8 ignore next -- a D-set path always exists at pre; guard is defensive */
+    return true; // ambiguous read; treat as diverged so we never delete
+  }
+  return !readFileSync(target).equals(preBlob);
+}
+
+/**
  * Propagate upstream `.planning` deletions from the git diff D set into the
  * host-side project tree. For each `.planning` extras target in `v`, runs
  * `git diff --name-status -z <pre> <post>` to find files deleted upstream
  * and removes them from `localRoot`. A backup snapshot is taken before the
  * first deletion so locally-diverged edits can be recovered.
+ *
+ * A delete is SKIPPED (the local copy kept, with a WARN) when the host file was
+ * edited locally since the last sync (`localDivergesFromPreDelete`): a
+ * delete-vs-edit conflict resolves in favour of the local edit, symmetric with
+ * the modify-path guard (`copyExtrasOverlaySkipDiverged`). The user reconciles
+ * by pushing. Unmodified files (local bytes equal the pre-rebase repo blob) are
+ * deleted as before.
  *
  * @param v - Validated path-map plus its extras block.
  * @param ts - Backup timestamp namespace.
@@ -226,6 +268,17 @@ function propagatePlanningDeletes(
     const planningRoot = join(t.localRoot, '.planning');
     for (const target of targets) {
       const relToLocal = target.slice(t.localRoot.length + sep.length);
+      // Delete-vs-edit conflict: keep a file the host edited locally since the
+      // last sync, matching the modify-path guard. Compare against the pre-rebase
+      // repo blob (forward-slash repo-relative path for git show).
+      const repoRel = `shared/extras/${t.logical}/${relToLocal.split(sep).join('/')}`;
+      if (localDivergesFromPreDelete(target, prePostHeads.pre, repoRel, repo)) {
+        warn(
+          `keeping locally-edited ${relToLocal} in ${t.logical}: deleted upstream but ` +
+            `changed locally (push to reconcile; your copy is backed up)`,
+        );
+        continue;
+      }
       deletePlanningTarget(target, planningRoot, join(repoExtras, t.logical, relToLocal));
     }
   }
@@ -314,8 +367,11 @@ export function remapExtrasPush(
  * local-only files alive and skips any file whose local copy diverges from the
  * repo copy (content hash differs) so a local hand-edit wins on conflict, and
  * the optional `prePostHeads` pair drives a targeted delete pass based on
- * `git diff --name-status -z <pre> <post>`. Without `prePostHeads` (fresh clone
- * / unborn HEAD), only the overlay runs and nothing is deleted.
+ * `git diff --name-status -z <pre> <post>`. The delete pass is symmetric with
+ * the modify path: a file deleted upstream but edited locally since the last
+ * sync is KEPT (a delete-vs-edit conflict the user pushes to reconcile), not
+ * removed. Without `prePostHeads` (fresh clone / unborn HEAD), only the overlay
+ * runs and nothing is deleted.
  *
  * @param ts - backup timestamp namespace.
  * @param opts.dryRun - when `true`, collect `wouldPull` without mutating; no

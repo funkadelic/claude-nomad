@@ -560,6 +560,52 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
   });
 
+  it('keeps a locally-edited .planning file that was deleted upstream and WARNs', async () => {
+    // Delete-vs-edit conflict: the file was removed upstream but the host edited
+    // it locally since the last sync, so the delete is skipped and the local
+    // copy is kept (symmetric with the modify-path guard).
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'DELETE-ME.md'), 'pre-sync content\n');
+    git(['add', '.'], repoDir);
+    git(['commit', '-q', '-m', 'add planning files'], repoDir);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    git(['rm', '-q', join('shared', 'extras', 'foo', '.planning', 'DELETE-ME.md')], repoDir);
+    git(['commit', '-q', '-m', 'delete DELETE-ME.md'], repoDir);
+    const post = gitOut(['rev-parse', 'HEAD'], repoDir);
+
+    // Local copy diverges from the pre-rebase repo blob (locally edited).
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
+    writeFileSync(join(projectRoot, '.planning', 'DELETE-ME.md'), 'my local edits\n');
+    writeFileSync(
+      join(repoDir, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+
+    const { remapExtrasPull } = await import('./extras-sync.ts');
+    remapExtrasPull('20260611-keep-edit', { prePostHeads: { pre, post } });
+
+    // The locally-edited file survives with its local content.
+    expect(existsSync(join(projectRoot, '.planning', 'DELETE-ME.md'))).toBe(true);
+    expect(readFileSync(join(projectRoot, '.planning', 'DELETE-ME.md'), 'utf8')).toBe(
+      'my local edits\n',
+    );
+    // A WARN was emitted naming the kept file.
+    const output = writes.join('\n');
+    expect(output).toContain('DELETE-ME.md');
+    expect(output).toContain('keeping locally-edited');
+  });
+
   it('TDD-3: first-ever pull (no prePostHeads) overlays only and deletes nothing', async () => {
     // Without prePostHeads the delete pass is skipped entirely.
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
@@ -706,9 +752,10 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     git(['commit', '-q', '-m', 'remove .planning dir'], repoDir);
     const post = gitOut(['rev-parse', 'HEAD'], repoDir);
 
-    // Seed local .planning with the file (present before pull, diverged).
+    // Seed local .planning with the file, byte-equal to the pre-rebase repo
+    // copy so the delete-vs-edit guard treats it as unmodified and deletes it.
     mkdirSync(join(projectRoot, '.planning'), { recursive: true });
-    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# local edit\n');
+    writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), '# plan\n');
     writeFileSync(
       join(repoDir, 'path-map.json'),
       JSON.stringify({
