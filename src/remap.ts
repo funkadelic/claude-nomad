@@ -305,7 +305,9 @@ function countLocalOnly(src: string, dst: string): number {
     const srcPath = join(src, name);
     if (lstatSync(dstPath).isDirectory()) {
       count += countLocalOnly(srcPath, dstPath);
-    } else if (!existsSync(srcPath)) {
+    } else if (lstatSync(srcPath, { throwIfNoEntry: false }) === undefined) {
+      // lstat (no symlink follow) so a broken repo-side symlink of the same
+      // name still counts as present, not as a spurious local-only leaf.
       count++;
     }
   }
