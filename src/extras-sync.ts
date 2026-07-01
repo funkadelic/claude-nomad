@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { backupBase, repoHome } from './config.ts';
-import { listDivergingFiles } from './extras-sync.diff.ts';
+import { listDivergingModified } from './extras-sync.diff.ts';
 import { eachExtrasTarget, loadValidatedExtras, type ExtrasCounts } from './extras-sync.core.ts';
 import { warn } from './utils.ts';
 import { encodePath } from './utils.json.ts';
@@ -61,18 +61,22 @@ export function divergenceCheckExtras(ts: string): void {
     const local = join(localRoot, dirname);
     const repoEntry = join(repo, 'shared', 'extras', logical, dirname);
     if (!existsSync(local) || !existsSync(repoEntry)) continue;
-    const diff = listDivergingFiles(local, repoEntry);
-    if (diff.length === 0) continue;
+    // Only both-sides-modified (M) files are kept-local-on-conflict by the pull.
+    // Repo-only (A) files are added by the pull and local-only (D) files survive
+    // regardless, so neither is a conflict; counting them would over-state the
+    // keep-local reassurance (D-06 honest-count goal).
+    const modified = listDivergingModified(local, repoEntry);
+    if (modified.length === 0) continue;
     const projectBackupRoot = join(backupRoot, encodePath(localRoot));
     warn(
       divergenceWarnLine({
         dirname,
         logical,
         isDir: statSync(local).isDirectory(),
-        count: diff.length,
+        count: modified.length,
         projectBackupRoot,
       }),
     );
-    for (const f of diff) warn(`  ${f}`);
+    for (const f of modified) warn(`  ${f}`);
   }
 }

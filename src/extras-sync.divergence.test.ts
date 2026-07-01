@@ -273,6 +273,57 @@ describe('divergenceCheckExtras (integration)', () => {
     expect(captured.read()).not.toContain('⚠︎');
   });
 
+  it('no keep-local WARN when divergence is only repo-only and local-only files', async () => {
+    // A repo-only (A) file is added by the pull and a local-only (D) file
+    // survives regardless; neither is a keep-local conflict, so no WARN fires.
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'LOCALONLY.md'), 'local only\n');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'REPOONLY.md'), 'repo only\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260522-test');
+
+    expect(captured.read()).not.toContain('⚠︎');
+  });
+
+  it('counts only both-sides-modified files, excluding repo-only and local-only', async () => {
+    // A both-sides-modified (M) file is the only conflict; a repo-only (A) and a
+    // local-only (D) file are present too but must not inflate the count or be
+    // listed as kept-local.
+    mkdirSync(join(projectRoot, '.planning'), { recursive: true });
+    writeFileSync(join(projectRoot, '.planning', 'SHARED.md'), 'local edit\n');
+    writeFileSync(join(projectRoot, '.planning', 'LOCALONLY.md'), 'local only\n');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'SHARED.md'), 'repo edit\n');
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'REPOONLY.md'), 'repo only\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    const captured = captureStderr();
+
+    const { divergenceCheckExtras } = await import('./extras-sync.ts');
+    divergenceCheckExtras('20260522-test');
+
+    const output = captured.read();
+    expect(output).toMatch(/1 file/);
+    expect(output).toContain('SHARED.md');
+    expect(output).not.toContain('REPOONLY.md');
+    expect(output).not.toContain('LOCALONLY.md');
+  });
+
   it('silently skips when host path is TBD', async () => {
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), 'repo\n');
