@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.2](https://github.com/funkadelic/claude-nomad/compare/v0.56.1...v0.56.2) (2026-07-01)
+
+
+### Fixed
+
+* **pull:** retain unpushed local work and surface it in the preview ([#376](https://github.com/funkadelic/claude-nomad/issues/376)) ([3f70019](https://github.com/funkadelic/claude-nomad/commit/3f70019c89ccd77726e6330d9623e106bb9ff69c))
+
 ## [0.56.1](https://github.com/funkadelic/claude-nomad/compare/v0.56.0...v0.56.1) (2026-06-30)
 
 
