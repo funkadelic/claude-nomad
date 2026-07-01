@@ -30,11 +30,14 @@ empty scaffold, and a non-interactive shell skips the prompt and prints a `--sna
 `nomad pull [--dry-run] [--force-remote]`
 
 `git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths,
-and pull opted-in per-project extras. Errors out if scaffold missing.
+and pull opted-in per-project extras. Errors out if scaffold missing. Non-destructive: unpushed
+local-only session transcripts are retained, and a repo-tracked extras file you have edited locally
+is kept (not overwritten) when it diverges from the incoming copy, with a warning to push and
+reconcile.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites), no writes.                                                                            |
+| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, a count of retained local-only sessions, and any extras-divergence warning), no writes.                                                                            |
 | `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
 
 ## `diff`

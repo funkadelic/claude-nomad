@@ -204,6 +204,38 @@ describe('summaryText', () => {
       clean: false,
     });
   });
+
+  // local-only: the fifth positional argument carries the count of
+  // session files retained on the host but absent from the repo. Pull/diff
+  // report it as a non-clean WARN; push always passes 0 (phrasing unchanged).
+  it('pull with only local-only present is non-clean and names the count + reconcile hint', () => {
+    expect(summaryText('pull', 0, 0, 0, 2)).toEqual({
+      text: 'summary: 0 unmapped on pull (run nomad doctor to list), 2 local-only present (push to reconcile)',
+      clean: false,
+    });
+  });
+
+  it('pull clean stays clean when local-only is zero', () => {
+    expect(summaryText('pull', 0, 0, 0, 0)).toEqual({ text: 'summary: clean', clean: true });
+  });
+
+  it('pull folds local-only alongside unmapped and extras-skipped', () => {
+    expect(summaryText('pull', 1, 0, 2, 3)).toEqual({
+      text: 'summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor to list), 3 local-only present (push to reconcile)',
+      clean: false,
+    });
+  });
+
+  it('diff surfaces local-only the same way as pull', () => {
+    expect(summaryText('diff', 0, 0, 0, 4)).toEqual({
+      text: 'summary: 0 unmapped on diff (run nomad doctor to list), 4 local-only present (push to reconcile)',
+      clean: false,
+    });
+  });
+
+  it('push ignores local-only and stays clean (push always passes 0)', () => {
+    expect(summaryText('push', 0, 0, 0, 0)).toEqual({ text: 'summary: clean', clean: true });
+  });
 });
 
 describe('summaryRow', () => {
@@ -223,5 +255,16 @@ describe('summaryRow', () => {
     expect(summaryRow('push', 1, 2, 3)).toBe(
       '1 unmapped on push, 2 collisions, 3 extras skipped (run nomad doctor to list)',
     );
+  });
+
+  it('renders a pull local-only outcome as non-clean plain text', () => {
+    const row = summaryRow('pull', 0, 0, 0, 2);
+    expect(row).not.toBe('clean');
+    expect(row).toContain('2 local-only present');
+    expect(row).toContain('push to reconcile');
+  });
+
+  it('renders push unchanged when local-only defaults to 0', () => {
+    expect(summaryRow('push', 0, 0, 0)).toBe('clean');
   });
 });

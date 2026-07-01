@@ -30,14 +30,17 @@ When a project opts its `.planning/` directory into extras sync (via the `extras
 On push, nomad copies your local `.planning/` to `shared/extras/<logical>/.planning/` in the
 sync repo (filtered by `ALWAYS_NEVER_SYNC` so credentials never ride through, but `todos/` and
 `plans/` content passes). On pull, nomad overlays the repo copy onto your local tree: files are
-added and updated, but nothing is blindly deleted. Genuine upstream deletions still propagate:
-nomad diffs the repo's pre- and post-rebase HEADs and removes locally only the files the rebase
-actually deleted. That delete pass is skipped on `--dry-run` and on a fresh clone where there is
-no pre-rebase HEAD to diff against.
+added and updated, but nothing is blindly deleted, and a file you have edited locally is never
+overwritten. When your local copy of a repo-tracked file has diverged from the incoming one, nomad
+keeps your local edit and warns you to push to reconcile (your edit is the last write, so it wins).
+Genuine upstream deletions still propagate: nomad diffs the repo's pre- and post-rebase HEADs and
+removes locally only the files the rebase actually deleted, but it keeps a file you edited locally
+even when the other host deleted it (again warning you to push). The delete pass is skipped on
+`--dry-run` and on a fresh clone where there is no pre-rebase HEAD to diff against.
 
 The practical effect: a live working tree of unpushed plans survives a pull from another host. A
-`.planning/` file that only the other host has pushed is added to your tree. Files you have locally
-but have not yet pushed stay untouched.
+`.planning/` file that only the other host has pushed is added to your tree. Files you have edited
+locally or have not yet pushed stay untouched.
 
 This behavior is implemented in `src/extras-sync.ts`. It applies to any project that lists
 `.planning` in its `extras` array; it is not conditional on GSD being installed.

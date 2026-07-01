@@ -1,5 +1,5 @@
-import { cpSync, existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { cpSync, existsSync, lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { basename, join, relative } from 'node:path';
 
 import {
   ALWAYS_NEVER_SYNC,
@@ -122,11 +122,16 @@ export function* eachExtrasTarget(
  * mirrors the caller's `cpSync` filter so the walk matches what will actually
  * be written. A non-existent dst (fresh pull) is a no-op.
  *
+ * Exported so `remap.ts` can reuse it for the pull-side session overlay
+ * (`overlaySessionDir`): the session retain-merge needs the same
+ * symlink-poisoning guard before its `cpSync`, and this is the single source of
+ * truth for that guard (never lifted or duplicated).
+ *
  * @param src - Source directory (repo side on pull).
  * @param dst - Destination directory (host side on pull).
  * @param isExcluded - Returns `true` for a basename the copy filter skips.
  */
-function stripCollidingDstSymlinks(
+export function stripCollidingDstSymlinks(
   src: string,
   dst: string,
   isExcluded: (name: string) => boolean,
@@ -151,6 +156,55 @@ export function copyExtrasOverlay(src: string, dst: string): void {
 }
 
 /**
+ * Recursive overlay `cpSync` (`recursive`, `force`, `verbatimSymlinks`) with a
+ * shared file/directory type-collision guard. When a path changes type upstream
+ * (a directory `foo/` becomes a file `foo`, or a `.jsonl` becomes a directory),
+ * `cpSync` throws `EINVAL` / `ENOTEMPTY` or one of the documented `ERR_FS_CP_*`
+ * codes; this converts any of them into a `NomadFatal` that names the colliding
+ * path and points at `nomad pull --force-remote`, so callers surface an
+ * actionable message instead of a raw stack trace. Any other I/O error
+ * propagates unchanged. The single source of truth for that guard, shared by the
+ * `.planning` extras overlays and the pull-side session overlay so they cannot
+ * drift.
+ *
+ * @param src - Source directory to copy from.
+ * @param dst - Destination path.
+ * @param filter - Optional `cpSync` entry filter; `undefined` copies everything.
+ * @param label - Function name to prefix the collision message with.
+ */
+export function cpSyncGuarded(
+  src: string,
+  dst: string,
+  filter: ((srcEntry: string) => boolean) | undefined,
+  label: string,
+): void {
+  try {
+    cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true, filter });
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    // cpSync tried to overwrite a non-empty directory with a file (or vice
+    // versa) -- a file/dir type change upstream. The code varies by platform
+    // and Node version: EINVAL/ENOTEMPTY on current runtimes, the ERR_FS_CP_*
+    // family in Node's documented error set. Convert any of them to NomadFatal.
+    /* c8 ignore start -- collision codes are platform/Node-version-specific */
+    if (
+      e.code === 'EINVAL' ||
+      e.code === 'ENOTEMPTY' ||
+      e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
+      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
+    ) {
+      throw new NomadFatal(
+        `${label}: type collision copying ${JSON.stringify(src)} -> ` +
+          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
+          `changed upstream; run nomad pull --force-remote to recover`,
+      );
+    }
+    throw err; // other I/O error; propagate as-is
+    /* c8 ignore stop */
+  }
+}
+
+/**
  * Filtered overlay copy for `.planning`: like `copyExtrasOverlay` but skips
  * any non-root entry whose basename is in `blockSet`. Applied on both the
  * push side (prevents ALWAYS_NEVER_SYNC files from entering the repo working
@@ -171,37 +225,52 @@ export function copyExtrasOverlay(src: string, dst: string): void {
  */
 export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Set<string>): void {
   stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
-  try {
-    cpSync(src, dst, {
-      recursive: true,
-      force: true,
-      verbatimSymlinks: true,
-      filter: (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
-    });
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException;
-    // cpSync tried to overwrite a non-empty directory with a file (or vice
-    // versa) -- a file/dir type change upstream. The code varies by platform
-    // and Node version: EINVAL/ENOTEMPTY on current runtimes, the
-    // ERR_FS_CP_* family in Node's documented error set. Convert any of them
-    // to NomadFatal so the user gets an actionable message instead of a raw
-    // stack trace.
-    /* c8 ignore start -- collision codes are platform/Node-version-specific */
-    if (
-      e.code === 'EINVAL' ||
-      e.code === 'ENOTEMPTY' ||
-      e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
-      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
-    ) {
-      throw new NomadFatal(
-        `copyExtrasOverlayFiltered: type collision copying ${JSON.stringify(src)} -> ` +
-          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
-          `changed upstream; run nomad pull --force-remote to recover`,
-      );
-    }
-    throw err; // other I/O error; propagate as-is
-    /* c8 ignore stop */
-  }
+  cpSyncGuarded(
+    src,
+    dst,
+    (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
+    'copyExtrasOverlayFiltered',
+  );
+}
+
+/**
+ * Divergence-skip preserving overlay copy for the `.planning` pull. Behaves
+ * exactly like `copyExtrasOverlayFiltered` (filtered overlay, no `rmSync`, so
+ * dst-only files survive) with ONE added guard: any entry whose path relative to
+ * `src` is in `divergedSet` is SKIPPED, so a repo-tracked file the host has
+ * locally edited (content hash differs) is NOT overwritten. The local edit wins
+ * on conflict and the user pushes to reconcile. `divergedSet` holds
+ * the both-sides-modified (status `M`) relative paths from
+ * `listDivergingModified(dstLocal, srcRepo)`; because the skip is keyed on the
+ * local-vs-repo content divergence (never on repo-supplied metadata), a crafted
+ * repo file cannot force an overwrite of a diverged local file. The
+ * `srcEntry === src` root-keep, the deny-set filter, `stripCollidingDstSymlinks`
+ * hardening, `verbatimSymlinks: true`, and the EINVAL/ENOTEMPTY/ERR_FS_CP_*
+ * type-collision try/catch are all preserved unchanged from
+ * `copyExtrasOverlayFiltered`. `divergedSet` only ever holds file paths (M
+ * entries), so directories are never skipped and the walk always descends. No
+ * mtime comparison anywhere (git checkout rewrites mtimes).
+ *
+ * @param src - Source directory to copy from (repo side on pull).
+ * @param dst - Destination path; dst-only and diverged files survive unchanged.
+ * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
+ * @param divergedSet - Relative paths to skip (keep the local copy on conflict).
+ */
+export function copyExtrasOverlaySkipDiverged(
+  src: string,
+  dst: string,
+  blockSet: Set<string>,
+  divergedSet: Set<string>,
+): void {
+  stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
+  cpSyncGuarded(
+    src,
+    dst,
+    (srcEntry) =>
+      srcEntry === src ||
+      (!isDeniedName(blockSet, basename(srcEntry)) && !divergedSet.has(relative(src, srcEntry))),
+    'copyExtrasOverlaySkipDiverged',
+  );
 }
 
 /**
@@ -214,6 +283,35 @@ export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Se
 export function copyExtras(src: string, dst: string): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, { recursive: true, force: true, verbatimSymlinks: true });
+}
+
+/**
+ * Overwrite-unless-diverged copy for a single-file extra (e.g. `CLAUDE.md`) on
+ * pull. If `dst` already exists and its bytes differ from `src`, the local file
+ * is kept (the host's edit wins on conflict, symmetric with the `.planning`
+ * `copyExtrasOverlaySkipDiverged` guard) and nothing is overwritten; otherwise
+ * `src` is copied over `dst` (a fresh file, or an identical one). An unreadable
+ * or type-changed `dst` is treated as diverged so a local file is never
+ * clobbered. Content comparison only, never mtime.
+ *
+ * @param src - Source file (repo side on pull); the caller guarantees it exists.
+ * @param dst - Destination file; kept as-is when it exists and diverges.
+ */
+export function copyExtrasFileSkipDiverged(src: string, dst: string): void {
+  if (existsSync(dst)) {
+    let dstBuf: Buffer;
+    try {
+      dstBuf = readFileSync(dst);
+    } catch {
+      /* c8 ignore next -- rare dst type-change/unreadable guard (e.g. dst became a directory) */
+      return; // dst unreadable or wrong type; keep local rather than clobber
+    }
+    // src is guaranteed present and a file by the caller (runExtrasOp checks
+    // existsSync(src)); a read failure here is a genuine repo defect and is
+    // allowed to surface rather than be masked as a spurious keep-local.
+    if (!readFileSync(src).equals(dstBuf)) return; // diverged; keep local
+  }
+  copyExtras(src, dst);
 }
 
 /**

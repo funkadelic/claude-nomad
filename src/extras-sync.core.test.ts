@@ -905,3 +905,116 @@ describe('copyExtrasOverlayFiltered filtered overlay copy', () => {
     expect(() => copyExtrasOverlayFiltered(tmpSrc, tmpDst, new Set())).toThrow(NomadFatal);
   });
 });
+
+// copyExtrasOverlaySkipDiverged: divergence-skip overlay copy for .planning pull
+// ---------------------------------------------------------------------------
+
+describe('copyExtrasOverlaySkipDiverged divergence-skip overlay copy', () => {
+  let tmpSrc: string;
+  let tmpDst: string;
+
+  beforeEach(() => {
+    tmpSrc = mkdtempSync(join(tmpdir(), 'nomad-core-skipdiv-src-'));
+    tmpDst = mkdtempSync(join(tmpdir(), 'nomad-core-skipdiv-dst-'));
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmpSrc, { recursive: true, force: true });
+    rmSync(tmpDst, { recursive: true, force: true });
+  });
+
+  it('skips a diverged file (in divergedSet): dst keeps its local content', async () => {
+    // The defining property: a file present on both sides whose relative path is
+    // in divergedSet is NOT overwritten; the local bytes survive.
+    writeFileSync(join(tmpDst, 'STATE.md'), 'local edit\n');
+    writeFileSync(join(tmpSrc, 'STATE.md'), 'repo version\n');
+
+    const { copyExtrasOverlaySkipDiverged } = await import('./extras-sync.core.ts');
+    copyExtrasOverlaySkipDiverged(tmpSrc, tmpDst, new Set(), new Set(['STATE.md']));
+
+    expect(readFileSync(join(tmpDst, 'STATE.md'), 'utf8')).toBe('local edit\n');
+  });
+
+  it('overwrites a both-sides file that is NOT in divergedSet with the src content', async () => {
+    writeFileSync(join(tmpDst, 'ROADMAP.md'), 'old\n');
+    writeFileSync(join(tmpSrc, 'ROADMAP.md'), 'new\n');
+
+    const { copyExtrasOverlaySkipDiverged } = await import('./extras-sync.core.ts');
+    copyExtrasOverlaySkipDiverged(tmpSrc, tmpDst, new Set(), new Set());
+
+    expect(readFileSync(join(tmpDst, 'ROADMAP.md'), 'utf8')).toBe('new\n');
+  });
+
+  it('creates a repo-only file (overlay semantics) even while skipping a diverged sibling', async () => {
+    // Skip must be per-file: a diverged file is kept, but a repo-only file is
+    // still created, and a nested diverged path resolves relative to src.
+    mkdirSync(join(tmpDst, 'sub'), { recursive: true });
+    mkdirSync(join(tmpSrc, 'sub'), { recursive: true });
+    writeFileSync(join(tmpDst, 'sub', 'Y.md'), 'local Y\n');
+    writeFileSync(join(tmpSrc, 'sub', 'Y.md'), 'repo Y\n');
+    writeFileSync(join(tmpSrc, 'NEW.md'), 'brand new\n');
+
+    const { copyExtrasOverlaySkipDiverged } = await import('./extras-sync.core.ts');
+    copyExtrasOverlaySkipDiverged(tmpSrc, tmpDst, new Set(), new Set([join('sub', 'Y.md')]));
+
+    expect(readFileSync(join(tmpDst, 'sub', 'Y.md'), 'utf8')).toBe('local Y\n');
+    expect(existsSync(join(tmpDst, 'NEW.md'))).toBe(true);
+    expect(readFileSync(join(tmpDst, 'NEW.md'), 'utf8')).toBe('brand new\n');
+  });
+
+  it('leaves a dst-only file untouched (overlay: no rmSync before copy)', async () => {
+    writeFileSync(join(tmpDst, 'local-only.md'), 'local only\n');
+    writeFileSync(join(tmpSrc, 'PLAN.md'), '# plan\n');
+
+    const { copyExtrasOverlaySkipDiverged } = await import('./extras-sync.core.ts');
+    copyExtrasOverlaySkipDiverged(tmpSrc, tmpDst, new Set(), new Set());
+
+    expect(existsSync(join(tmpDst, 'local-only.md'))).toBe(true);
+    expect(existsSync(join(tmpDst, 'PLAN.md'))).toBe(true);
+  });
+
+  it('excludes a blocked basename from the copy (deny-set filter preserved)', async () => {
+    writeFileSync(join(tmpSrc, 'PLAN.md'), '# plan\n');
+    writeFileSync(join(tmpSrc, '.credentials.json'), '{"secret":"drop"}\n');
+
+    const { copyExtrasOverlaySkipDiverged } = await import('./extras-sync.core.ts');
+    copyExtrasOverlaySkipDiverged(tmpSrc, tmpDst, new Set(['.credentials.json']), new Set());
+
+    expect(existsSync(join(tmpDst, 'PLAN.md'))).toBe(true);
+    expect(existsSync(join(tmpDst, '.credentials.json'))).toBe(false);
+  });
+
+  it('strips a colliding dst symlink before the overlay (no write-through)', async () => {
+    // A benignly-named dst symlink must be removed before cpSync so a poisoned
+    // repo cannot write THROUGH it to an external target.
+    const external = mkdtempSync(join(tmpdir(), 'nomad-core-skipdiv-ext-'));
+    writeFileSync(join(external, 'sink.md'), 'external\n');
+    symlinkSync(external, join(tmpDst, 'evil'));
+    mkdirSync(join(tmpSrc, 'evil'), { recursive: true });
+    writeFileSync(join(tmpSrc, 'evil', 'note.md'), 'repo note\n');
+
+    const { copyExtrasOverlaySkipDiverged } = await import('./extras-sync.core.ts');
+    copyExtrasOverlaySkipDiverged(tmpSrc, tmpDst, new Set(), new Set());
+
+    // dst/evil is now a real directory holding the repo file, and the external
+    // target was NOT written through.
+    expect(lstatSync(join(tmpDst, 'evil')).isDirectory()).toBe(true);
+    expect(existsSync(join(tmpDst, 'evil', 'note.md'))).toBe(true);
+    expect(existsSync(join(external, 'note.md'))).toBe(false);
+    rmSync(external, { recursive: true, force: true });
+  });
+
+  it('crafted repo file cannot bypass the guard: divergedSet skip is not overridable', async () => {
+    // Even if the repo file is crafted to differ, its presence in
+    // divergedSet forces a skip; the local file is preserved.
+    writeFileSync(join(tmpDst, 'STATE.md'), 'trusted local\n');
+    writeFileSync(join(tmpSrc, 'STATE.md'), 'attacker-controlled repo bytes\n');
+
+    const { copyExtrasOverlaySkipDiverged } = await import('./extras-sync.core.ts');
+    copyExtrasOverlaySkipDiverged(tmpSrc, tmpDst, new Set(), new Set(['STATE.md']));
+
+    expect(readFileSync(join(tmpDst, 'STATE.md'), 'utf8')).toBe('trusted local\n');
+  });
+});

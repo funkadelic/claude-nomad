@@ -1,21 +1,23 @@
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 import { repoHome } from './config.ts';
 import {
-  copyExtras,
+  copyExtrasFileSkipDiverged,
   copyExtrasFiltered,
   copyExtrasFilteredPreserving,
   copyExtrasOverlayFiltered,
+  copyExtrasOverlaySkipDiverged,
   eachExtrasTarget,
   extrasDenySet,
   loadValidatedExtras,
   type ExtrasCounts,
   type ValidatedExtras,
 } from './extras-sync.core.ts';
+import { listDivergingModified } from './extras-sync.diff.ts';
 import { planningDeleteTargets } from './extras-sync.planning-diff.ts';
 import { backupExtrasWrite, backupRepoWrite } from './utils.fs.ts';
-import { gitCaptureRaw, NomadFatal } from './utils.ts';
+import { gitCaptureBuffer, gitCaptureRaw, NomadFatal, warn } from './utils.ts';
 
 /** Detail lists returned by an extras op: items copied (wet) and would-copy (dry). */
 type ExtrasDetail = ExtrasCounts & { done: string[]; would: string[] };
@@ -45,10 +47,13 @@ type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
  *   `copyExtrasFilteredPreserving` (preserves host-local deny-set files already
  *   on disk at any depth, e.g. `settings.local.json`, while still recursively
  *   mirror-pruning synced files absent from src), routes `.planning` through
- *   `copyExtrasOverlayFiltered` (additive/overwrite so local-only files
- *   survive; the git-diff delete pass in `remapExtrasPull` propagates upstream
- *   deletions separately), and uses the exact-mirror `copyExtras` for every
- *   other extra. Filtering `.planning` on both sides is defense-in-depth:
+ *   `copyExtrasOverlaySkipDiverged` (additive/overwrite so local-only files
+ *   survive, but a file whose local copy diverges from the repo copy is kept
+ *   local; the git-diff delete pass in `remapExtrasPull` propagates upstream
+ *   deletions separately), and routes every other extra (a single root-level
+ *   file, e.g. `CLAUDE.md`) through `copyExtrasFileSkipDiverged` so a
+ *   locally-edited file is kept rather than clobbered. Filtering `.planning` on
+ *   both sides is defense-in-depth:
  *   push prevents ALWAYS_NEVER_SYNC files from entering the repo working tree
  *   before the allow-list gate; pull guards against a repo poisoned out-of-band.
  * @returns the counts plus the done/would detail lists.
@@ -168,11 +173,148 @@ function deletePlanningTarget(target: string, planningRoot: string, repoCounterp
 }
 
 /**
+ * Return `true` when the host file at `target` has been locally edited since
+ * the last sync, i.e. its bytes differ from the pre-rebase repo blob at
+ * `repoRel` (`git show <pre>:<repoRel>`). A `true` result means a delete-vs-edit
+ * conflict: the file was removed upstream but changed locally, so the delete is
+ * skipped and the local copy kept (symmetric with the modify-path conflict
+ * guard). Fails safe: a missing local file returns `false` (nothing to keep, let
+ * the delete no-op), while a `git show` read error returns `true` so an
+ * ambiguous read never deletes local content. Compares bytes (never mtime,
+ * which git checkout rewrites).
+ *
+ * @param target - Host-side absolute path slated for deletion.
+ * @param pre - Pre-rebase repo HEAD SHA (the last-synced state).
+ * @param repoRel - Repo-relative path of the file at `pre`
+ *   (`shared/extras/<logical>/<rel>`, forward slashes).
+ * @param repo - Absolute path to REPO_HOME.
+ * @returns `true` if the local file diverges from the pre blob (keep it).
+ */
+function localDivergesFromPreDelete(
+  target: string,
+  pre: string,
+  repoRel: string,
+  repo: string,
+): boolean {
+  if (!existsSync(target)) return false; // local file gone; nothing to keep
+  try {
+    const preBlob = gitCaptureBuffer(['show', `${pre}:${repoRel}`], repo);
+    return !readFileSync(target).equals(preBlob);
+  } catch {
+    // Ambiguous read: the local path changed type (EISDIR) or is unreadable, or
+    // the pre blob is missing. Treat as diverged so a delete never proceeds on
+    // uncertainty; the keep-local plus reconcile-on-push semantics hold.
+    return true;
+  }
+}
+
+/**
+ * Build the git argv for the upstream-deletion diff of one logical's `.planning`
+ * subtree. Shared by the wet delete pass and the read-only preview so both read
+ * the exact same pre/post name-status set.
+ *
+ * @param pre - Pre-rebase HEAD SHA.
+ * @param post - Post-rebase HEAD SHA.
+ * @param logical - The path-map logical project name.
+ * @returns The `git diff --name-status -z` argv scoped to the target subtree.
+ */
+function planningDiffArgs(pre: string, post: string, logical: string): string[] {
+  return ['diff', '--name-status', '-z', pre, post, '--', `shared/extras/${logical}/.planning/`];
+}
+
+/** One upstream-deleted `.planning` file: host path, host-relative, and repo-relative forms. */
+type DeletePair = { target: string; relToLocal: string; repoRel: string };
+
+/**
+ * Map the raw `git diff --name-status -z` output of one `.planning` target to
+ * the host paths a pull would delete, each paired with its host-relative and
+ * repo-relative (forward-slash, for `git show`) forms. Shared by the wet delete
+ * pass and the preview so the two never drift on path derivation.
+ *
+ * @param t - The extras target (logical + host localRoot).
+ * @param raw - Raw `git diff --name-status -z` stdout for this target.
+ * @returns One `DeletePair` per upstream-deleted file under the target.
+ */
+function deletePairsFor(t: ExtrasTarget, raw: string): DeletePair[] {
+  return planningDeleteTargets({ raw, logical: t.logical, localRoot: t.localRoot }).map(
+    (target) => {
+      const relToLocal = target.slice(t.localRoot.length + sep.length);
+      return {
+        target,
+        relToLocal,
+        repoRel: `shared/extras/${t.logical}/${relToLocal.split(sep).join('/')}`,
+      };
+    },
+  );
+}
+
+/**
+ * The user-facing WARN naming a `.planning` file kept on a delete-vs-edit
+ * conflict (deleted upstream but edited locally). Shared so the wet pull and the
+ * `pull --dry-run` preview emit identical wording for the same file.
+ *
+ * @param logical - The path-map logical project name.
+ * @param relToLocal - The file path relative to the host project root.
+ * @returns The keep-local WARN line.
+ */
+export function keptDeleteWarnLine(logical: string, relToLocal: string): string {
+  return (
+    `keeping locally-edited ${relToLocal} in ${logical}: deleted upstream but ` +
+    `changed locally (push to reconcile; your copy is backed up)`
+  );
+}
+
+/**
+ * Read-only preview companion to `propagatePlanningDeletes`: return the
+ * host-relative paths of `.planning` files a pull would KEEP rather than delete
+ * because the host edited them locally after the last sync (a delete-vs-edit
+ * conflict). Mirrors the wet skip decision without mutating, so `pull --dry-run`
+ * reports the same retained-local behavior the wet pull applies. Tolerant: a git
+ * failure yields an empty list so a preview never throws. `nomad diff` is offline
+ * and supplies no pre/post heads, so it cannot foresee an upstream deletion and
+ * never calls this.
+ *
+ * @param v - Validated path-map plus its extras block.
+ * @param prePostHeads - Pre/post-rebase HEAD SHAs.
+ * @param repo - Absolute path to REPO_HOME.
+ * @returns One `{ logical, relToLocal }` per file kept on a delete-vs-edit conflict.
+ */
+export function keptDeletePreview(
+  v: ValidatedExtras,
+  prePostHeads: { pre: string; post: string },
+  repo: string,
+): { logical: string; relToLocal: string }[] {
+  const kept: { logical: string; relToLocal: string }[] = [];
+  for (const t of eachExtrasTarget(v, { unmapped: 0, skipped: 0 })) {
+    if (t.dirname !== '.planning') continue;
+    let raw: string;
+    try {
+      raw = gitCaptureRaw(planningDiffArgs(prePostHeads.pre, prePostHeads.post, t.logical), repo);
+    } catch {
+      continue; // tolerant preview: a git failure surfaces nothing rather than throwing
+    }
+    for (const { target, relToLocal, repoRel } of deletePairsFor(t, raw)) {
+      if (localDivergesFromPreDelete(target, prePostHeads.pre, repoRel, repo)) {
+        kept.push({ logical: t.logical, relToLocal });
+      }
+    }
+  }
+  return kept;
+}
+
+/**
  * Propagate upstream `.planning` deletions from the git diff D set into the
  * host-side project tree. For each `.planning` extras target in `v`, runs
  * `git diff --name-status -z <pre> <post>` to find files deleted upstream
  * and removes them from `localRoot`. A backup snapshot is taken before the
  * first deletion so locally-diverged edits can be recovered.
+ *
+ * A delete is SKIPPED (the local copy kept, with a WARN) when the host file was
+ * edited locally since the last sync (`localDivergesFromPreDelete`): a
+ * delete-vs-edit conflict resolves in favour of the local edit, symmetric with
+ * the modify-path guard (`copyExtrasOverlaySkipDiverged`). The user reconciles
+ * by pushing. Unmodified files (local bytes equal the pre-rebase repo blob) are
+ * deleted as before.
  *
  * @param v - Validated path-map plus its extras block.
  * @param ts - Backup timestamp namespace.
@@ -190,18 +332,7 @@ function propagatePlanningDeletes(
     if (t.dirname !== '.planning') continue;
     let raw: string;
     try {
-      raw = gitCaptureRaw(
-        [
-          'diff',
-          '--name-status',
-          '-z',
-          prePostHeads.pre,
-          prePostHeads.post,
-          '--',
-          `shared/extras/${t.logical}/.planning/`,
-        ],
-        repo,
-      );
+      raw = gitCaptureRaw(planningDiffArgs(prePostHeads.pre, prePostHeads.post, t.logical), repo);
     } catch (err) {
       const e = err as Error & { stderr?: Buffer };
       /* c8 ignore start -- stderr is always piped to a Buffer here; guard is defensive */
@@ -212,8 +343,8 @@ function propagatePlanningDeletes(
           `run nomad pull --force-remote to recover`,
       );
     }
-    const targets = planningDeleteTargets({ raw, logical: t.logical, localRoot: t.localRoot });
-    if (targets.length === 0) continue;
+    const pairs = deletePairsFor(t, raw);
+    if (pairs.length === 0) continue;
 
     // Snapshot the host-side .planning tree before any delete so locally-
     // diverged edits can be recovered. cpSync force:false makes this
@@ -221,8 +352,14 @@ function propagatePlanningDeletes(
     backupExtrasWrite(join(t.localRoot, t.dirname), ts, t.localRoot);
 
     const planningRoot = join(t.localRoot, '.planning');
-    for (const target of targets) {
-      const relToLocal = target.slice(t.localRoot.length + sep.length);
+    for (const { target, relToLocal, repoRel } of pairs) {
+      // Delete-vs-edit conflict: keep a file the host edited locally since the
+      // last sync, matching the modify-path guard. The dry-run preview emits the
+      // same WARN via keptDeletePreview; the wet pull emits it here.
+      if (localDivergesFromPreDelete(target, prePostHeads.pre, repoRel, repo)) {
+        warn(keptDeleteWarnLine(t.logical, relToLocal));
+        continue;
+      }
       deletePlanningTarget(target, planningRoot, join(repoExtras, t.logical, relToLocal));
     }
   }
@@ -307,11 +444,15 @@ export function remapExtrasPush(
  * produce a clean no-op.
  *
  * `.planning` extras use an overlay-then-delete-propagation model:
- * `copyExtrasOverlayFiltered` (no upfront rmSync; deny-set filtered) keeps
- * local-only files alive, and the optional `prePostHeads` pair drives a
- * targeted delete pass based on `git diff --name-status -z <pre> <post>`.
- * Without `prePostHeads` (fresh clone / unborn HEAD), only the overlay runs
- * and nothing is deleted.
+ * `copyExtrasOverlaySkipDiverged` (no upfront rmSync; deny-set filtered) keeps
+ * local-only files alive and skips any file whose local copy diverges from the
+ * repo copy (content hash differs) so a local hand-edit wins on conflict, and
+ * the optional `prePostHeads` pair drives a targeted delete pass based on
+ * `git diff --name-status -z <pre> <post>`. The delete pass is symmetric with
+ * the modify path: a file deleted upstream but edited locally since the last
+ * sync is KEPT (a delete-vs-edit conflict the user pushes to reconcile), not
+ * removed. Without `prePostHeads` (fresh clone / unborn HEAD), only the overlay
+ * runs and nothing is deleted.
  *
  * @param ts - backup timestamp namespace.
  * @param opts.dryRun - when `true`, collect `wouldPull` without mutating; no
@@ -340,23 +481,32 @@ export function remapExtrasPull(
       src: join(repo, 'shared', 'extras', logical, dirname),
       dst: join(localRoot, dirname),
     }),
-    // Snapshot the host-side dst BEFORE copyExtras clobbers it. Anchor on
+    // Snapshot the host-side dst BEFORE the copy step touches it. Anchor on
     // localRoot so the backup tree mirrors the project layout.
     (dst, localRoot) => backupExtrasWrite(dst, ts, localRoot),
     // Pull routing per extra type:
     //   `.claude`: copyExtrasFilteredPreserving preserves host-local deny-set
     //     files (e.g. settings.local.json) while mirror-pruning synced entries.
-    //   `.planning`: copyExtrasOverlayFiltered (no rmSync; deny-set filtered)
-    //     keeps local-only files; the delete pass below propagates upstream
-    //     removals via the git-diff D set. The filter is defense-in-depth
-    //     against a repo poisoned out-of-band.
-    //   All others: copyExtras (exact mirror; rarely carry host-local files).
+    //   `.planning`: copyExtrasOverlaySkipDiverged (no rmSync; deny-set filtered)
+    //     keeps local-only files AND skips any file whose local copy diverges
+    //     from the repo copy (content hash differs), so a local hand-edit wins
+    //     on conflict; the delete pass below still propagates
+    //     upstream removals via the git-diff D set. The filter is defense-in-
+    //     depth against a repo poisoned out-of-band.
+    //   All others (a single root-level file, e.g. CLAUDE.md):
+    //     copyExtrasFileSkipDiverged keeps a locally-edited file rather than
+    //     clobbering it, so the divergence WARN's keep-local promise holds for
+    //     every extra, not just `.planning`.
     (src, dst, dirname) => {
       if (dirname === '.claude')
         return copyExtrasFilteredPreserving(src, dst, extrasDenySet(dirname));
-      if (dirname === '.planning')
-        return copyExtrasOverlayFiltered(src, dst, extrasDenySet(dirname));
-      return copyExtras(src, dst);
+      if (dirname === '.planning') {
+        // divergedSet is the both-sides-modified set (local dst vs repo src);
+        // those files are preserved local rather than overwritten.
+        const divergedSet = new Set(listDivergingModified(dst, src));
+        return copyExtrasOverlaySkipDiverged(src, dst, extrasDenySet(dirname), divergedSet);
+      }
+      return copyExtrasFileSkipDiverged(src, dst);
     },
   );
 

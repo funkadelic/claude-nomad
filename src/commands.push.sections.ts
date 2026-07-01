@@ -12,7 +12,7 @@
  * skip count never prints a header.
  */
 
-import { dim, green, infoGlyph, okGlyph } from './color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import type { remapExtrasPush } from './extras-sync.ts';
 import { type DoctorSection, addItem, renderTree, section } from './output-tree.ts';
 import type { LeakVerdict } from './push-leak-verdict.ts';
@@ -56,18 +56,32 @@ export function buildSettingsSection(label: string): DoctorSection {
 /**
  * Build the Sessions section: one ✓ row per synced logical name plus, when
  * `unmapped > 0`, a single collapsed `${unmapped} not in path-map` count row.
- * Verb-agnostic: pass `remapResult.pushed` (or `wouldPush`, or the pull-side
- * `pulled`/`wouldPull`) as `items`.
+ * When `localOnly > 0` (pull only), a `⚠︎` WARN row follows the skip row
+ * reporting retained-but-unpushed local-only session files. Push callers pass
+ * the default `localOnly = 0`, so push output is byte-identical. Verb-agnostic:
+ * pass `remapResult.pushed` (or `wouldPush`, or the pull-side `pulled`/
+ * `wouldPull`) as `items`.
  *
  * @param items - The logical names synced this run.
  * @param unmapped - Count of path-map entries skipped for this host.
+ * @param localOnly - Count of retained local-only session files (pull only).
  * @returns A `Sessions` `DoctorSection` (possibly empty).
  */
-export function buildSessionsSection(items: string[], unmapped: number): DoctorSection {
+export function buildSessionsSection(
+  items: string[],
+  unmapped: number,
+  localOnly = 0,
+): DoctorSection {
   const s = section('Sessions');
   for (const logical of items) addItem(s, `${green(okGlyph)} ${logical}`);
   const skip = collapsedSkipRow(unmapped, 'not in path-map (run nomad doctor to list)');
   if (skip !== null) addItem(s, skip);
+  if (localOnly > 0) {
+    addItem(
+      s,
+      `${yellow(warnGlyph)} ${localOnly} local-only present, not in repo (push to reconcile)`,
+    );
+  }
   return s;
 }
 

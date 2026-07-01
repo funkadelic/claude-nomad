@@ -12,7 +12,7 @@ import { applySharedLinks, regenerateSettings } from './links.ts';
 import { syncSkillsPull } from './skills-sync.ts';
 import { renderTree, section, addItem } from './output-tree.ts';
 import { computePreview } from './preview.ts';
-import { remapPull } from './remap.ts';
+import { remapPull, scanLocalOnly } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
 import {
@@ -94,6 +94,10 @@ function applyWetPull(
   syncSkillsPull(ts);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
   const extrasResult = remapExtrasPull(ts, { prePostHeads });
+  // Read-only count of local-only session files retained by the overlay.
+  // Retain-merge never changes the local-only set, so scanning after the copy
+  // yields the same count as before it.
+  const localOnly = scanLocalOnly();
   // Combine session-unmapped and extras-unmapped into one user-visible count;
   // from the operator's perspective both mean "couldn't sync this for the
   // host". extras-skipped (non-whitelisted dirname) stays separate because it
@@ -101,11 +105,17 @@ function applyWetPull(
   const summary = section('Summary');
   addItem(
     summary,
-    summaryRow('pull', remapResult.unmapped + extrasResult.unmapped, 0, extrasResult.skipped),
+    summaryRow(
+      'pull',
+      remapResult.unmapped + extrasResult.unmapped,
+      0,
+      extrasResult.skipped,
+      localOnly,
+    ),
   );
   renderTree([
     buildSettingsSection(label),
-    buildSessionsSection(remapResult.pulled, remapResult.unmapped),
+    buildSessionsSection(remapResult.pulled, remapResult.unmapped, localOnly),
     buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
     summary,
   ]);
@@ -262,8 +272,11 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
     // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
     // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
     // mutation (so local state is intact for byte-level comparison). The
-    // function itself silently skips when no `extras` key is declared.
-    divergenceCheckExtras(ts);
+    // function itself silently skips when no `extras` key is declared. Only the
+    // dry-run gets prePostHeads for the delete-vs-edit keep-local preview; the
+    // wet pull emits that WARN from remapExtrasPull, so passing heads here too
+    // would double it.
+    divergenceCheckExtras(ts, dryRun ? prePostHeads : undefined);
     if (dryRun) {
       // computePreview renders the full tree including the Summary row with
       // verb='pull'; no separate emitSummary call (it would duplicate the row).

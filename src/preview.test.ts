@@ -371,6 +371,100 @@ describe('computePreview orchestration', () => {
     expect(joined).toContain('Summary');
   });
 
+  it('surfaces the retained local-only count as a plain Sessions row and a non-clean Summary', async () => {
+    // Mapped project foo -> /tmp/foo. Repo has s1.jsonl; the host encoded dir
+    // has both s1.jsonl (mirrored) and local-only.jsonl (unpushed). scanLocalOnly
+    // must count the one local-only leaf and computePreview must surface it.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 's1.jsonl'), '{"s":1}\n');
+    const encodedLocal = join(claudeDir, 'projects', '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 's1.jsonl'), '{"s":1}\n');
+    writeFileSync(join(encodedLocal, 'local-only.jsonl'), '{"local":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    const result = computePreview('20260516-000000', { projects: {} });
+
+    const joined = logs.join('\n');
+    // Sessions row names the retained local-only count and the reconcile hint.
+    expect(joined).toContain('1 local-only present, not in repo (push to reconcile)');
+    // The row is emitted as its own plain-text tree line (no color glyph); the
+    // broad glyph-free assertions in the sibling tests cover the surface.
+    const localOnlyLine = logs.find((l) => l.includes('local-only present'));
+    expect(localOnlyLine).toBeDefined();
+    // Summary is no longer 'clean' over an unpushed tree; it names the count.
+    expect(joined).toContain('1 local-only present');
+    const summaryLines = logs.filter((l) => l.includes('clean'));
+    expect(summaryLines).toHaveLength(0);
+    // Return shape exposes the honest count for direct assertion.
+    expect(result.localOnly).toBe(1);
+  });
+
+  it('emits no local-only row and keeps a clean Summary when nothing is local-only', async () => {
+    // Mapped project foo -> /tmp/foo, but the host encoded dir mirrors the repo
+    // exactly (no unpushed leaf). scanLocalOnly returns 0; Summary stays 'clean'.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 's1.jsonl'), '{"s":1}\n');
+    const encodedLocal = join(claudeDir, 'projects', '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 's1.jsonl'), '{"s":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    const result = computePreview('20260516-000000', { projects: {} });
+
+    const joined = logs.join('\n');
+    expect(joined).not.toContain('local-only present');
+    expect(joined).toContain('clean');
+    expect(result.localOnly).toBe(0);
+  });
+
+  it('does not mutate the filesystem while surfacing a local-only count', async () => {
+    // Seed a local-only leaf, snapshot before/after, assert no write and no
+    // backup root creation (read-only scan contract).
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 's1.jsonl'), '{"s":1}\n');
+    const encodedLocal = join(claudeDir, 'projects', '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 'local-only.jsonl'), '{"local":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const beforeClaude = snapshotTree(claudeDir);
+    const cacheRoot = join(testHome, '.cache', 'claude-nomad');
+    const backupRoot = join(cacheRoot, 'backup');
+    const backupExistedBefore = existsSync(backupRoot);
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} });
+
+    expect(snapshotTree(claudeDir)).toEqual(beforeClaude);
+    expect(existsSync(backupRoot)).toBe(backupExistedBefore);
+    expect(existsSync(join(cacheRoot, 'backup', '20260516-000000'))).toBe(false);
+  });
+
   it('renders the nothing-to-remap note as a glyph-free Sessions row (no path-map.json)', async () => {
     // No path-map.json on disk -> remapPull early-returns; the note must show
     // up as a Sessions tree row, not a bare ℹ︎ line floating above the tree.
@@ -501,7 +595,7 @@ describe('computePreview orchestration', () => {
     const joined = logs.join('\n');
     expect(joined).toContain('settings.json');
     expect(joined).toContain('section skipped (base or current missing)');
-    expect(result).toEqual({ unmapped: 0, collisions: 0 });
+    expect(result).toEqual({ unmapped: 0, collisions: 0, localOnly: 0 });
   });
 
   it('settings.json section shows malformed-host note without throwing', async () => {

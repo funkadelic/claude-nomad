@@ -6,7 +6,7 @@ import { diffLinesToUnified } from './diff-lines.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
 import { addItem, renderTree, section } from './output-tree.ts';
-import { type RemapPullPreviewEvent, remapPull } from './remap.ts';
+import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from './remap.ts';
 import { summaryRow } from './summary.ts';
 import { deepMerge, readJson, sortKeysDeep } from './utils.json.ts';
 
@@ -172,12 +172,21 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *     ...
  *   Sessions
  *     overwrite  <dst> (from <src>)
+ *     <N> local-only present, not in repo (push to reconcile)   <- when N > 0
  *     ...
  *   Summary
- *     <summaryRow(verb, unmapped)>
+ *     <summaryRow(verb, unmapped, 0, 0, localOnly)>
  *
- * Returns `{ unmapped, collisions }` aggregated from remapPull.
- * `collisions` is always 0 in this slice.
+ * Returns `{ unmapped, collisions, localOnly }` aggregated from remapPull and
+ * `scanLocalOnly`. `collisions` is always 0 in this slice.
+ *
+ * The local-only row surfaces retained-but-unpushed session leaf files:
+ * with retain-merge (`overlaySessionDir`) these entries survive a pull, so the
+ * preview reframes a misleading `clean` into an honest count. The scan is
+ * read-only (no `cpSync`/`rmSync`/`mkdirSync`), so the dry-run/diff zero-mutation
+ * contract holds; the row is plain text (no glyph) to keep the diff tree
+ * glyph-free. Both `pull --dry-run` and `nomad diff` route through this single
+ * function, so the count is identical on both surfaces.
  *
  * Tolerant by design: missing `shared/settings.base.json` and malformed
  * `~/.claude/settings.json` both produce a note in the settings section and
@@ -194,7 +203,7 @@ export function computePreview(
   ts: string,
   map: PathMap,
   verb: PreviewVerb = 'pull',
-): { unmapped: number; collisions: number } {
+): { unmapped: number; collisions: number; localOnly: number } {
   const repo = repoHome();
   const claude = claudeHome();
   console.log(`would pull on host=${HOST} (dry-run; no mutation)`);
@@ -221,12 +230,19 @@ export function computePreview(
     dryRun: true,
     onPreview: (e) => addItem(sessions, formatSessionRow(e)),
   });
+  // Honest local-only count: read-only scan of retained-but-unpushed
+  // session leaf files. Rendered as a plain-text (glyph-free) Sessions row only
+  // when non-zero, so a clean tree still reads 'clean'.
+  const localOnly = scanLocalOnly();
+  if (localOnly > 0) {
+    addItem(sessions, `${localOnly} local-only present, not in repo (push to reconcile)`);
+  }
 
   // Summary section.
   const summary = section('Summary');
-  addItem(summary, summaryRow(verb, remapResult.unmapped));
+  addItem(summary, summaryRow(verb, remapResult.unmapped, 0, 0, localOnly));
 
   renderTree([links, settingsSection, sessions, summary]);
 
-  return { unmapped: remapResult.unmapped, collisions: 0 };
+  return { unmapped: remapResult.unmapped, collisions: 0, localOnly };
 }
