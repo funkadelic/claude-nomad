@@ -43,8 +43,8 @@ export function cmdDiff(): void {
     const mapPath = join(repo, 'path-map.json');
     const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
     // Read-only pre-preview divergence WARN, mirroring cmdPull (which fires it
-    // before computePreview in both wet and dry). This closes the D-07 gap:
-    // diff previously never surfaced the Gap B divergence, so it disagreed with
+    // before computePreview in both wet and dry). This closes the honest-preview
+    // gap: diff previously never surfaced the Gap B divergence, so it disagreed with
     // pull --dry-run. divergenceCheckExtras uses git diff --no-index (local, no
     // network) and writes nothing, so cmdDiff's offline/lockless/no-backup-dir
     // contract holds. A malformed path-map raises NomadFatal into the catch

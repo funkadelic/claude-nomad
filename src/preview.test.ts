@@ -371,7 +371,7 @@ describe('computePreview orchestration', () => {
     expect(joined).toContain('Summary');
   });
 
-  it('surfaces the retained local-only count as a plain Sessions row and a non-clean Summary (D-06)', async () => {
+  it('surfaces the retained local-only count as a plain Sessions row and a non-clean Summary', async () => {
     // Mapped project foo -> /tmp/foo. Repo has s1.jsonl; the host encoded dir
     // has both s1.jsonl (mirrored) and local-only.jsonl (unpushed). scanLocalOnly
     // must count the one local-only leaf and computePreview must surface it.
@@ -440,7 +440,7 @@ describe('computePreview orchestration', () => {
 
   it('does not mutate the filesystem while surfacing a local-only count', async () => {
     // Seed a local-only leaf, snapshot before/after, assert no write and no
-    // backup root creation (read-only scan contract, T-58-07).
+    // backup root creation (read-only scan contract).
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
     writeFileSync(join(sharedProjects, 'foo', 's1.jsonl'), '{"s":1}\n');

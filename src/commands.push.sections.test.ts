@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { buildSessionsSection } from './commands.push.sections.ts';
 
 /**
- * Unit tests for `buildSessionsSection`'s additive `localOnly` parameter
- * (D-06). The pull side passes the retained-but-unpushed local-only count so a
+ * Unit tests for `buildSessionsSection`'s additive `localOnly` parameter.
+ * The pull side passes the retained-but-unpushed local-only count so a
  * `⚠︎` WARN row surfaces after the "not in path-map" skip row; every push
  * caller keeps the default `localOnly = 0`, so push output stays byte-identical.
  * Color is disabled under vitest, so the WARN glyph renders as the bare `⚠︎`.

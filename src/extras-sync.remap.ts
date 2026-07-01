@@ -409,7 +409,7 @@ export function remapExtrasPull(
     //   `.planning`: copyExtrasOverlaySkipDiverged (no rmSync; deny-set filtered)
     //     keeps local-only files AND skips any file whose local copy diverges
     //     from the repo copy (content hash differs), so a local hand-edit wins
-    //     on conflict (D-03/D-04); the delete pass below still propagates
+    //     on conflict; the delete pass below still propagates
     //     upstream removals via the git-diff D set. The filter is defense-in-
     //     depth against a repo poisoned out-of-band.
     //   All others: copyExtras (exact mirror; rarely carry host-local files).

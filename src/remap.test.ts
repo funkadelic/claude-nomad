@@ -85,7 +85,7 @@ describe('remapPull (integration)', () => {
   });
 
   it('overlays src onto dst additively (local-only files are retained, not deleted)', async () => {
-    // Retain-merge (D-01): the pull ADDS c.jsonl and OVERWRITES a.jsonl with the
+    // Retain-merge: the pull ADDS c.jsonl and OVERWRITES a.jsonl with the
     // repo content, but the local-only b.jsonl (absent from the repo) survives.
     mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
     writeFileSync(join(sharedProjects, 'foo', 'a.jsonl'), '{"a":1}\n');
@@ -1593,7 +1593,7 @@ describe('remapPush selective', () => {
 
 // ---------------------------------------------------------------------------
 // scanLocalOnly: read-only count of local-only leaf files across mapped
-// projects (D-06 honest-count input for the wet pull summary and preview).
+// projects (honest-count input for the wet pull summary and preview).
 // ---------------------------------------------------------------------------
 
 describe('scanLocalOnly', () => {

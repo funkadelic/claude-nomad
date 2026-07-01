@@ -274,7 +274,7 @@ export function remapPull(
       continue;
     }
     // Snapshot prior encoded-path-dir state BEFORE the overlay overwrites any
-    // repo-tracked file (D-05 defense-in-depth; retain-merge means local-only
+    // repo-tracked file (defense-in-depth; retain-merge means local-only
     // entries survive, so this backup is a safety net, not the primary guard).
     backupBeforeWrite(dst, ts);
     // Retain-merge overlay (never mirror-replace): local-only transcripts,
@@ -316,7 +316,7 @@ function countLocalOnly(src: string, dst: string): number {
  * Read-only counter of local-only session leaf files across all mapped
  * projects: leaf files present under a mapped project's local encoded dir but
  * absent from the repo's `shared/projects/<logical>/`, summed across projects.
- * This is the D-06 honest-count input for the wet pull summary and the offline
+ * This is the honest-count input for the wet pull summary and the offline
  * preview: with retain-merge (`overlaySessionDir`) these entries are RETAINED,
  * so the count reframes a misleading `clean` into "N local-only present (push
  * to reconcile)".

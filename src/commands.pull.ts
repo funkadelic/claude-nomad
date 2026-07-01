@@ -94,7 +94,7 @@ function applyWetPull(
   syncSkillsPull(ts);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
   const extrasResult = remapExtrasPull(ts, { prePostHeads });
-  // Read-only count of local-only session files retained by the overlay (D-06).
+  // Read-only count of local-only session files retained by the overlay.
   // Retain-merge never changes the local-only set, so scanning after the copy
   // yields the same count as before it.
   const localOnly = scanLocalOnly();

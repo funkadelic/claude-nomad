@@ -239,7 +239,7 @@ export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Se
  * dst-only files survive) with ONE added guard: any entry whose path relative to
  * `src` is in `divergedSet` is SKIPPED, so a repo-tracked file the host has
  * locally edited (content hash differs) is NOT overwritten. The local edit wins
- * on conflict and the user pushes to reconcile (D-03, D-04). `divergedSet` holds
+ * on conflict and the user pushes to reconcile. `divergedSet` holds
  * the both-sides-modified (status `M`) relative paths from
  * `listDivergingModified(dstLocal, srcRepo)`; because the skip is keyed on the
  * local-vs-repo content divergence (never on repo-supplied metadata), a crafted
@@ -249,7 +249,7 @@ export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Se
  * type-collision try/catch are all preserved unchanged from
  * `copyExtrasOverlayFiltered`. `divergedSet` only ever holds file paths (M
  * entries), so directories are never skipped and the walk always descends. No
- * mtime comparison anywhere (D-04: git checkout rewrites mtimes).
+ * mtime comparison anywhere (git checkout rewrites mtimes).
  *
  * @param src - Source directory to copy from (repo side on pull).
  * @param dst - Destination path; dst-only and diverged files survive unchanged.

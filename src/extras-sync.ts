@@ -64,7 +64,7 @@ export function divergenceCheckExtras(ts: string): void {
     // Only both-sides-modified (M) files are kept-local-on-conflict by the pull.
     // Repo-only (A) files are added by the pull and local-only (D) files survive
     // regardless, so neither is a conflict; counting them would over-state the
-    // keep-local reassurance (D-06 honest-count goal).
+    // keep-local reassurance (the honest-count goal).
     const modified = listDivergingModified(local, repoEntry);
     if (modified.length === 0) continue;
     const projectBackupRoot = join(backupRoot, encodePath(localRoot));

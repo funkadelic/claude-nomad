@@ -986,7 +986,7 @@ describe('copyExtrasOverlaySkipDiverged divergence-skip overlay copy', () => {
     expect(existsSync(join(tmpDst, '.credentials.json'))).toBe(false);
   });
 
-  it('strips a colliding dst symlink before the overlay (no write-through, T-58-05)', async () => {
+  it('strips a colliding dst symlink before the overlay (no write-through)', async () => {
     // A benignly-named dst symlink must be removed before cpSync so a poisoned
     // repo cannot write THROUGH it to an external target.
     const external = mkdtempSync(join(tmpdir(), 'nomad-core-skipdiv-ext-'));
@@ -1007,7 +1007,7 @@ describe('copyExtrasOverlaySkipDiverged divergence-skip overlay copy', () => {
   });
 
   it('crafted repo file cannot bypass the guard: divergedSet skip is not overridable', async () => {
-    // T-58-04: even if the repo file is crafted to differ, its presence in
+    // Even if the repo file is crafted to differ, its presence in
     // divergedSet forces a skip; the local file is preserved.
     writeFileSync(join(tmpDst, 'STATE.md'), 'trusted local\n');
     writeFileSync(join(tmpSrc, 'STATE.md'), 'attacker-controlled repo bytes\n');

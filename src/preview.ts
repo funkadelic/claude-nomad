@@ -180,13 +180,13 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  * Returns `{ unmapped, collisions, localOnly }` aggregated from remapPull and
  * `scanLocalOnly`. `collisions` is always 0 in this slice.
  *
- * The local-only row surfaces retained-but-unpushed session leaf files (D-06):
+ * The local-only row surfaces retained-but-unpushed session leaf files:
  * with retain-merge (`overlaySessionDir`) these entries survive a pull, so the
  * preview reframes a misleading `clean` into an honest count. The scan is
  * read-only (no `cpSync`/`rmSync`/`mkdirSync`), so the dry-run/diff zero-mutation
  * contract holds; the row is plain text (no glyph) to keep the diff tree
  * glyph-free. Both `pull --dry-run` and `nomad diff` route through this single
- * function, so the count is identical on both surfaces (D-07).
+ * function, so the count is identical on both surfaces.
  *
  * Tolerant by design: missing `shared/settings.base.json` and malformed
  * `~/.claude/settings.json` both produce a note in the settings section and
@@ -230,7 +230,7 @@ export function computePreview(
     dryRun: true,
     onPreview: (e) => addItem(sessions, formatSessionRow(e)),
   });
-  // Honest local-only count (D-06): read-only scan of retained-but-unpushed
+  // Honest local-only count: read-only scan of retained-but-unpushed
   // session leaf files. Rendered as a plain-text (glyph-free) Sessions row only
   // when non-zero, so a clean tree still reads 'clean'.
   const localOnly = scanLocalOnly();

@@ -205,7 +205,7 @@ describe('summaryText', () => {
     });
   });
 
-  // local-only (D-06): the fifth positional argument carries the count of
+  // local-only: the fifth positional argument carries the count of
   // session files retained on the host but absent from the repo. Pull/diff
   // report it as a non-clean WARN; push always passes 0 (phrasing unchanged).
   it('pull with only local-only present is non-clean and names the count + reconcile hint', () => {
@@ -257,7 +257,7 @@ describe('summaryRow', () => {
     );
   });
 
-  it('renders a pull local-only outcome as non-clean plain text (D-06)', () => {
+  it('renders a pull local-only outcome as non-clean plain text', () => {
     const row = summaryRow('pull', 0, 0, 0, 2);
     expect(row).not.toBe('clean');
     expect(row).toContain('2 local-only present');
