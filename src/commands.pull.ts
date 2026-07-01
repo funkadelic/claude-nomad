@@ -12,7 +12,7 @@ import { applySharedLinks, regenerateSettings } from './links.ts';
 import { syncSkillsPull } from './skills-sync.ts';
 import { renderTree, section, addItem } from './output-tree.ts';
 import { computePreview } from './preview.ts';
-import { remapPull } from './remap.ts';
+import { remapPull, scanLocalOnly } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
 import {
@@ -94,6 +94,10 @@ function applyWetPull(
   syncSkillsPull(ts);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
   const extrasResult = remapExtrasPull(ts, { prePostHeads });
+  // Read-only count of local-only session files retained by the overlay (D-06).
+  // Retain-merge never changes the local-only set, so scanning after the copy
+  // yields the same count as before it.
+  const localOnly = scanLocalOnly();
   // Combine session-unmapped and extras-unmapped into one user-visible count;
   // from the operator's perspective both mean "couldn't sync this for the
   // host". extras-skipped (non-whitelisted dirname) stays separate because it
@@ -101,11 +105,17 @@ function applyWetPull(
   const summary = section('Summary');
   addItem(
     summary,
-    summaryRow('pull', remapResult.unmapped + extrasResult.unmapped, 0, extrasResult.skipped),
+    summaryRow(
+      'pull',
+      remapResult.unmapped + extrasResult.unmapped,
+      0,
+      extrasResult.skipped,
+      localOnly,
+    ),
   );
   renderTree([
     buildSettingsSection(label),
-    buildSessionsSection(remapResult.pulled, remapResult.unmapped),
+    buildSessionsSection(remapResult.pulled, remapResult.unmapped, localOnly),
     buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
     summary,
   ]);

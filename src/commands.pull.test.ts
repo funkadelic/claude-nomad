@@ -193,6 +193,7 @@ describe('cmdPull: extras integration', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: remapPullMock,
       remapPush: vi.fn(),
     }));
@@ -243,6 +244,7 @@ describe('cmdPull: extras integration', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -289,6 +291,7 @@ describe('cmdPull: extras integration', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -332,6 +335,7 @@ describe('cmdPull: extras integration', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -367,6 +371,7 @@ describe('cmdPull: extras integration', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -406,6 +411,7 @@ describe('cmdPull: extras integration', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 1, pulled: ['proj-a'], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -456,6 +462,7 @@ describe('cmdPull: extras integration', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 2, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -492,6 +499,7 @@ describe('cmdPull: extras integration', () => {
       regenerateSettings: vi.fn(() => ({ label: 'test-host.json' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -651,6 +659,7 @@ describe('cmdPull wedge preflight', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -799,6 +808,7 @@ describe('cmdPull forceRemote routing', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -861,6 +871,7 @@ describe('cmdPull forceRemote routing', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -989,6 +1000,7 @@ describe('handleWedge unmerged-index dispatch', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -1027,6 +1039,7 @@ describe('handleWedge unmerged-index dispatch', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -1055,6 +1068,7 @@ describe('handleWedge unmerged-index dispatch', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -1211,6 +1225,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -1240,6 +1255,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -1283,6 +1299,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -1335,6 +1352,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));
@@ -1388,6 +1406,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
     vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
       remapPush: vi.fn(),
     }));

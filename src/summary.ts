@@ -18,14 +18,17 @@ type SummaryVerb = 'pull' | 'push' | 'diff';
  *
  * `collisions` is meaningful only for `'push'`; for `'pull'` / `'diff'` it is
  * ignored and defaults to 0. `extrasSkipped` counts dirnames that the
- * per-project whitelist (`SUPPORTED_EXTRAS`) declined to sync. This function is
- * the SINGLE source of truth for the phrasing, so `emitSummary` (standalone
- * line) and `summaryRow` (tree row) cannot drift apart.
+ * per-project whitelist (`SUPPORTED_EXTRAS`) declined to sync. `localOnly`
+ * counts session leaf files retained on the host but absent from the repo
+ * (pull/diff only; push always passes 0). This function is the SINGLE source of
+ * truth for the phrasing, so `emitSummary` (standalone line) and `summaryRow`
+ * (tree row) cannot drift apart.
  *
  * @param verb - the originating command.
  * @param unmapped - count of path-map entries skipped for this host.
  * @param collisions - push-only collision count (ignored for pull/diff).
  * @param extrasSkipped - count of extras dirnames the whitelist declined.
+ * @param localOnly - count of retained local-only session files (pull/diff).
  * @returns `{ text, clean }` where `clean` is true on the no-warning outcome.
  */
 export function summaryText(
@@ -33,6 +36,7 @@ export function summaryText(
   unmapped: number,
   collisions = 0,
   extrasSkipped = 0,
+  localOnly = 0,
 ): { text: string; clean: boolean } {
   const extras = extrasSkipped > 0 ? `, ${extrasSkipped} extras skipped` : '';
   if (verb === 'push') {
@@ -42,11 +46,13 @@ export function summaryText(
     const base = `summary: ${unmapped} unmapped on push, ${collisions} collisions`;
     return { text: `${base}${extras} (run nomad doctor to list)`, clean: false };
   }
-  if (unmapped === 0 && extrasSkipped === 0) {
+  if (unmapped === 0 && extrasSkipped === 0 && localOnly === 0) {
     return { text: 'summary: clean', clean: true };
   }
+  const localOnlyPhrase =
+    localOnly > 0 ? `, ${localOnly} local-only present (push to reconcile)` : '';
   return {
-    text: `summary: ${unmapped} unmapped on ${verb}${extras} (run nomad doctor to list)`,
+    text: `summary: ${unmapped} unmapped on ${verb}${extras} (run nomad doctor to list)${localOnlyPhrase}`,
     clean: false,
   };
 }
@@ -64,6 +70,7 @@ export function summaryText(
  * @param unmapped - count of path-map entries skipped for this host.
  * @param collisions - push-only collision count (ignored for pull/diff).
  * @param extrasSkipped - count of extras dirnames the whitelist declined.
+ * @param localOnly - count of retained local-only session files (pull/diff).
  * @returns the plain row string for the Summary section.
  */
 export function summaryRow(
@@ -71,8 +78,9 @@ export function summaryRow(
   unmapped: number,
   collisions = 0,
   extrasSkipped = 0,
+  localOnly = 0,
 ): string {
-  const { text } = summaryText(verb, unmapped, collisions, extrasSkipped);
+  const { text } = summaryText(verb, unmapped, collisions, extrasSkipped, localOnly);
   return text.replace(/^summary: /, '');
 }
 
@@ -84,17 +92,24 @@ export function summaryRow(
  * `⚠︎` glyph, stderr). The status glyph carries the success/warn semantics;
  * users see e.g. `✓ summary: clean` or `⚠︎ summary: 3 unmapped on pull (...)`.
  * Clean still goes to stdout so it survives backgrounded shell-rc invocations
- * like `nomad pull 2>/dev/null &`. The fourth positional parameter defaults to
- * 0 so legacy three-arg call sites continue to work unchanged (D-03 additive
- * contract). `cmdDiff` still calls this for its standalone summary line.
+ * like `nomad pull 2>/dev/null &`. The trailing positional parameters default
+ * to 0 so legacy call sites continue to work unchanged (additive contract).
+ * `cmdDiff` still calls this for its standalone summary line.
+ *
+ * @param verb - the originating command.
+ * @param unmapped - count of path-map entries skipped for this host.
+ * @param collisions - push-only collision count (ignored for pull/diff).
+ * @param extrasSkipped - count of extras dirnames the whitelist declined.
+ * @param localOnly - count of retained local-only session files (pull/diff).
  */
 export function emitSummary(
   verb: SummaryVerb,
   unmapped: number,
   collisions = 0,
   extrasSkipped = 0,
+  localOnly = 0,
 ): void {
-  const { text, clean } = summaryText(verb, unmapped, collisions, extrasSkipped);
+  const { text, clean } = summaryText(verb, unmapped, collisions, extrasSkipped, localOnly);
   if (clean) {
     ok(text);
     return;
