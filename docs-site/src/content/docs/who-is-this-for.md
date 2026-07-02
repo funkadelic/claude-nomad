@@ -27,15 +27,16 @@ the old machine is changed or deleted by the migration itself.
 You regularly work across two or more machines (say a desktop and a laptop, or a work and a home
 box) and you want them to stay the same over time, not just once.
 
-What this means for you: run `nomad push` when you finish on one machine and `nomad pull` when you
-sit down at the next. Your shared skills, commands, rules, and settings stay identical everywhere,
+What this means for you: run `nomad sync` when you sit down at a machine. It pulls in what your
+other machines pushed, then publishes your local changes, in one step and in the right order.
+Your shared skills, commands, rules, and settings stay identical everywhere,
 and a conversation you started on one machine is waiting for you on the other. Per-machine
 differences are respected: things like model choice, MCP server URLs, and environment variables
 are merged on top of your shared defaults rather than overwriting them, so each machine keeps its
 local quirks while sharing everything else.
 
-This is the ongoing case. The two commands become part of your routine, the same way you might
-`git pull` at the start of a session and `git push` at the end.
+This is the ongoing case. One command becomes part of your routine, the same way `git pull` and
+`git push` bookend a coding session, except nomad folds both halves into `nomad sync`.
 
 ## What it is not
 

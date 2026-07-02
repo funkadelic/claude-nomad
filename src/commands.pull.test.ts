@@ -1428,3 +1428,121 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(opts?.prePostHeads).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// runPullCore: lock-free, return-shape contract (new seam for a future
+// composing command; see the PLAN's must-haves).
+// ---------------------------------------------------------------------------
+
+/**
+ * Tests for `runPullCore`'s discriminated return value. `runPullCore` never
+ * calls the lockfile primitives itself, so these tests call it directly
+ * (without going through `cmdPull`'s acquire/release) and assert no lockfile
+ * is ever written, plus that the `dry`/`wet` tags carry the documented shape.
+ */
+describe('runPullCore: return shape and lock-free contract', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let lockPath: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-runpullcore-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    lockPath = join(testHome, '.cache', 'claude-nomad', 'nomad.lock');
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+    vi.resetModules();
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, classifyWedge: vi.fn(() => null) };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn(), gitCaptureRaw: vi.fn(() => '') };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 2),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(() => 3),
+    }));
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('./preview.ts');
+    process.exitCode = 0;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('returns { tag: "wet", sections, localOnly, divergedKeptLocal } without acquiring the lock', async () => {
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore();
+    expect(result.tag).toBe('wet');
+    if (result.tag !== 'wet') throw new Error('unreachable');
+    expect(Array.isArray(result.sections)).toBe(true);
+    expect(result.sections.length).toBeGreaterThan(0);
+    // localOnly comes straight from the mocked scanLocalOnly() return value.
+    expect(result.localOnly).toBe(2);
+    // divergedKeptLocal comes straight from the mocked divergenceCheckExtras()
+    // return value (the both-sides-modified count).
+    expect(result.divergedKeptLocal).toBe(3);
+    // runPullCore never calls acquireLock: no lockfile is written.
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('returns { tag: "dry" } on --dry-run and renders its own preview inline', async () => {
+    vi.doMock('./preview.ts', () => ({
+      computePreview: vi.fn(() => ({ unmapped: 0 })),
+    }));
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore({ dryRun: true });
+    expect(result).toEqual({ tag: 'dry' });
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('dies fatally when the backup root cannot be created (fail-fast before any mutation)', async () => {
+    // Plant a regular FILE where the backup root directory should live, so
+    // mkdirSync(join(backup, ts), { recursive: true }) throws ENOTDIR. The
+    // wet path must convert that into a fatal die() BEFORE any mutation.
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(join(testHome, '.cache', 'claude-nomad', 'backup'), 'not a dir\n');
+    const { runPullCore } = await import('./commands.pull.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => runPullCore()).toThrow(NomadFatal);
+    expect(() => runPullCore()).toThrow(/could not create backup dir/);
+    // Fatal fired before acquireLock could ever be reached (core is lock-free).
+    expect(existsSync(lockPath)).toBe(false);
+  });
+});

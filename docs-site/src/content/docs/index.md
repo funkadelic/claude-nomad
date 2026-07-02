@@ -18,8 +18,9 @@ hero:
 
 Open Claude Code on a second machine and it is a blank slate: none of your custom skills, slash
 commands, tuned settings, or past conversations. **claude-nomad** keeps all of it in sync through
-a private Git repo you control. `nomad push` on one machine, `nomad pull` on the next, and
-everything is there, conversations included.
+a private Git repo you control. Run `nomad sync` on any machine and everything is there,
+conversations included; it pulls in your latest config first, then publishes your local changes,
+so you never have to remember which one to run first.
 
 - **Resume your Claude Code sessions on any machine.** Start a conversation on your desktop and
   pick it up on your laptop. **claude-nomad** remaps the file paths Claude Code embeds in every

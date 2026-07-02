@@ -67,6 +67,41 @@ forces a full rescan of all transcripts.
 | `--allow <rule>`   | Append the fingerprint of every finding whose gitleaks rule id matches `<rule>` to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow-all`; cannot combine with `--dry-run`. See [Recovery flows](/claude-nomad/recovery/). |
 | `--allow-all`      | Append the fingerprint of every current finding to `.gitleaksignore`, re-stage, and re-scan. Proceeds only when no finding survives. Never skips scanning. No TTY required. Mutually exclusive with `--redact-all` and `--allow`; cannot combine with `--dry-run`. See [Recovery flows](/claude-nomad/recovery/). |
 
+## `sync`
+
+`nomad sync [--dry-run]`
+
+The recommended everyday command: pulls first, then pushes, under a single lock, so you never
+have to reason about which one to run first. The pull half is the same retain-merge overlay
+`nomad pull` runs (local-only work is kept, a diverged extras file is kept local with a warning),
+so it is always safe to run first; the push half then reconciles everything local, including any
+local-only sessions and diverged extras files the pull half just retained, to the remote.
+
+A pull-half failure (for example a wedged repo) stops the run immediately; no push is attempted.
+Run `nomad pull --force-remote` to recover, then re-run `nomad sync` (`sync` itself has no
+`--force-remote` flag; that recovery stays on the low-level `pull` command). A push-half failure
+after a successful pull reports `pull: applied, push: failed (<reason>)` and exits non-zero; there
+is no rollback, since the pull half already retained everything and made local state strictly
+better than before. A run where neither half changed anything prints a single compact
+`already in sync` line. A run where the pull half retained diverged extras or local-only sessions
+and the push half then reconciled them still exits 0, with a summary line naming how many items
+were reconciled (this is treated as resolved work, not a standing problem). If `nomad push`'s
+secret scan finds something mid-sync, the same interactive Redact/Allow/Drop/Skip menu you would
+see from a plain `nomad push` opens; recovery behaves identically either way.
+
+`--dry-run` previews both halves without writing anything: the pull preview renders first, then a
+one-line note that the push preview below is computed against pre-pull state (a real sync runs the
+push half after the pull half has already applied, so its staging set can differ slightly), then
+the push preview.
+
+`nomad push` and `nomad pull` remain available as lower-level commands for cases `sync` does not
+cover, such as `--force-remote` wedge recovery or the non-interactive leak-resolution flags
+(`--redact-all`, `--allow`, `--allow-all`, `--full-scan`).
+
+| Flag        | Description                                                                     |
+| ----------- | -------------------------------------------------------------------------------- |
+| `--dry-run` | Stack the pull preview then the push preview; acquires the lock, writes nothing. |
+
 ## `drop-session`
 
 `nomad drop-session <id>`

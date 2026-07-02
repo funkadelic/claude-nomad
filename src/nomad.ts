@@ -25,6 +25,7 @@ import { cmdDropSession } from './commands.drop-session.ts';
 import { cmdRedact } from './commands.redact.ts';
 import { cmdPull } from './commands.pull.ts';
 import { cmdPush } from './commands.push.ts';
+import { cmdSync } from './commands.sync.ts';
 import { cmdUpdate } from './commands.update.ts';
 import { claudeHome, home, repoHome } from './config.ts';
 import { cmdDiff } from './diff.ts';
@@ -37,6 +38,7 @@ import { parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
 import { parseAllowArgs } from './nomad.dispatch.allow.ts';
 import { parsePullArgs } from './nomad.dispatch.pull.ts';
 import { parsePushArgs } from './nomad.dispatch.push.ts';
+import { parseSyncArgs } from './nomad.dispatch.sync.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
 import { fail, NomadFatal } from './utils.ts';
@@ -104,6 +106,17 @@ try {
         allowRule: pushArgs.allowRule,
         fullScan: pushArgs.fullScan,
       });
+      break;
+    }
+    case 'sync': {
+      // parseSyncArgs accepts only --dry-run; rejects duplicates, unknown
+      // tokens, and extra positional arguments.
+      const syncArgs = parseSyncArgs(process.argv);
+      if (syncArgs === null) {
+        console.error('usage: nomad sync [--dry-run]');
+        process.exit(1);
+      }
+      await cmdSync({ dryRun: syncArgs.dryRun });
       break;
     }
     case 'init': {

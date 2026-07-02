@@ -2010,3 +2010,175 @@ describe('cmdPush: dry-run absent path-map', () => {
     expect(writeManifestMock).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// runPushCore: lock-free, return-tag contract (new seam for a future
+// composing command; see the PLAN's must-haves).
+// ---------------------------------------------------------------------------
+
+/**
+ * Tests for `runPushCore`'s discriminated return tag. `runPushCore` never
+ * calls the lockfile primitives itself, so these tests call it directly
+ * (without going through `cmdPush`'s acquire/release) and assert no lockfile
+ * is ever written, plus that each early-return path carries the documented
+ * tag.
+ */
+describe('runPushCore: return-tag contract and lock-free behavior', () => {
+  let env: PushEnv;
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+    vi.doUnmock('./push-manifest.ts');
+    vi.doUnmock('./push-leak-verdict.ts');
+    vi.doUnmock('./skills-sync.ts');
+    vi.doUnmock('./push-global-config.ts');
+    vi.doUnmock('node:child_process');
+  });
+
+  it('returns { tag: "nothing" } on the real-push empty-status early return, without acquiring the lock', async () => {
+    mockPipelineBase({ statusLine: '' });
+    vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
+    const { runPushCore } = await import('./commands.push.ts');
+    const result = await runPushCore();
+    expect(result).toEqual({ tag: 'nothing' });
+    expect(existsSync(env.lockPath)).toBe(false);
+  });
+
+  it('returns { tag: "dry" } on a dry-run preview, without acquiring the lock', async () => {
+    mockPipelineBase({ statusLine: '' });
+    vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
+    const { runPushCore } = await import('./commands.push.ts');
+    const result = await runPushCore({ dryRun: true });
+    expect(result).toEqual({ tag: 'dry' });
+    expect(existsSync(env.lockPath)).toBe(false);
+  });
+
+  it('returns { tag: "pushed" } after a completed commitAndPush, without acquiring the lock', async () => {
+    vi.doMock('./push-manifest.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushManifestModule>();
+      return {
+        ...actual,
+        readManifest: vi.fn(() => null),
+        writeManifest: vi.fn(),
+        computeConfigHash: vi.fn(() => 'testhash'),
+      };
+    });
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPush: vi.fn(),
+      copySkillsPull: vi.fn(),
+    }));
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0') };
+    });
+    const { runPushCore } = await import('./commands.push.ts');
+    const result = await runPushCore();
+    expect(result).toEqual({ tag: 'pushed' });
+    expect(existsSync(env.lockPath)).toBe(false);
+  });
+
+  it('returns { tag: "nothing" } when the gsd payload is the only staged change (no-op inside commitAndPush)', async () => {
+    // The staged-tree scan inside commitAndPush drops every staged path
+    // (all gsd-owned), so its no-op early return fires after rendering
+    // "nothing to commit". The returned tag must say so: a composing caller
+    // would otherwise report a push that never happened.
+    const gsdHook = 'shared/hooks/gsd-prompt-guard.js';
+    vi.doMock('./push-manifest.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushManifestModule>();
+      return {
+        ...actual,
+        readManifest: vi.fn(() => null),
+        writeManifest: vi.fn(),
+        computeConfigHash: vi.fn(() => 'testhash'),
+      };
+    });
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPush: vi.fn(),
+      copySkillsPull: vi.fn(),
+    }));
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof leakVerdictModule>();
+      return {
+        ...actual,
+        scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from('')),
+      };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => `A  ${gsdHook}\0`) };
+    });
+    const { runPushCore } = await import('./commands.push.ts');
+    const result = await runPushCore();
+    expect(result).toEqual({ tag: 'nothing' });
+    expect(existsSync(env.lockPath)).toBe(false);
+  });
+});

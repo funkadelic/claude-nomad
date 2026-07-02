@@ -6,7 +6,9 @@ description:
 ---
 
 claude-nomad ships an optional Claude Code plugin. It puts the everyday nomad commands one slash
-away inside a Claude Code session, and warns you at session start when your synced setup has drifted.
+away inside a Claude Code session, and warns you at session start when your synced setup has
+drifted. `/nomad:sync` and `/nomad:push` run in preview mode; a real sync or push needs a
+terminal (see below).
 The plugin is a thin convenience layer: it shells out to the `nomad` binary and adds no sync logic of
 its own.
 
@@ -21,8 +23,9 @@ npm i -g claude-nomad
 **Minimum CLI version: `>= 0.35.0`.** The plugin versions independently from the CLI (no lockstep
 coupling), but it calls recent subcommands (`nomad diff`, `nomad clean --backups`) and relies on
 the doctor glyph output format that the session-start hook greps. A CLI older than 0.35.0 makes
-some commands error or produce no output. Run `npm i -g claude-nomad` to update to the latest
-version if needed.
+some commands error or produce no output. `/nomad:sync` additionally needs a CLI that ships the
+`sync` subcommand (`>= 0.57.0`); on an older CLI that one command errors while the rest keep
+working. Run `npm i -g claude-nomad` to update to the latest version if needed.
 
 If `nomad` is not installed, the slash commands fail with a `command not found` error from the shell,
 and the session-start check stays silent. So you can enable the plugin everywhere without it
@@ -52,18 +55,20 @@ Each command runs the matching CLI subcommand and prints its output back into th
 
 | Command         | Runs                      | Notes                                                              |
 | --------------- | ------------------------- | ----------------------------------------------------------------- |
+| `/nomad:sync`   | `nomad sync --dry-run`    | Preview only: the pull preview, then the push preview (see below). |
 | `/nomad:pull`   | `nomad pull`              | Accepts `--dry-run` to preview without applying.                  |
 | `/nomad:diff`   | `nomad diff`              | Offline, read-only preview of what a pull would change.           |
 | `/nomad:push`   | `nomad push --dry-run`    | Preview only. A real push must run in a terminal (see below).     |
 | `/nomad:doctor` | `nomad doctor`            | Read-only health check: symlinks, settings drift, path-map, more. |
 | `/nomad:clean`  | `nomad clean --backups`   | Prunes the backup cache. Pass `--keep <N>` to trim recent ones.   |
 
-### Why push is preview-only
+### Why push and sync are preview-only
 
 A real `nomad push` runs a secret-scanning pipeline and, on a hit, an interactive recovery menu to
 redact, allow, or drop the finding. That menu needs a real terminal, which the plugin's I/O context
-cannot provide. So `/nomad:push` is limited to `--dry-run`. To push for real, open a terminal and run
-`nomad push` directly.
+cannot provide. `nomad sync` runs that same push pipeline as its second half. So `/nomad:push` and
+`/nomad:sync` are limited to `--dry-run`. To push or sync for real, open a terminal and run
+`nomad push` or `nomad sync` directly.
 
 ## Session-start drift check
 

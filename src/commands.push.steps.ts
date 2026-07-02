@@ -21,6 +21,9 @@ import { fail, gitOrFatal, gitStatusPorcelainZ, log, warn } from './utils.ts';
  * @param resolution - Non-interactive resolution modes (redactAll/allowAll/allowRule).
  * @param repo - Resolved repo root path for this invocation.
  * @param newManifest - The manifest to persist after a successful push.
+ * @returns `'pushed'` after a completed commit/push, `'nothing'` when the gsd
+ *   payload was the only staged change and the no-op early return fired (so a
+ *   composing caller never reports a push that did not happen).
  */
 export async function commitAndPush(
   st: PushState,
@@ -29,7 +32,7 @@ export async function commitAndPush(
   resolution: { redactAll: boolean; allowAll: boolean; allowRule: string | undefined },
   repo: string,
   newManifest: Manifest,
-): Promise<void> {
+): Promise<'pushed' | 'nothing'> {
   gitOrFatal(['add', '-A'], 'git add', repo);
   // Unstage gsd-dropped paths immediately after staging: gsd reinstalls these
   // per-host automatically, so they must never enter the shared commit. Uses the
@@ -48,7 +51,7 @@ export async function commitAndPush(
   if (staged.length === toDrop.length) {
     log('nothing to commit');
     renderNoScanTree(st);
-    return;
+    return 'nothing';
   }
   // Collect staged shared-config changes AFTER git add -A so the index reflects
   // the full staged tree. Assigned onto st so renderPushTree sees the section.
@@ -70,6 +73,7 @@ export async function commitAndPush(
     warn(`could not write push manifest (next push will full-rescan): ${String(err)}`);
   }
   renderPushTree(st, verdict);
+  return 'pushed';
 }
 
 /**

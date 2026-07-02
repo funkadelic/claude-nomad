@@ -10,7 +10,7 @@ import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { syncSkillsPull } from './skills-sync.ts';
-import { renderTree, section, addItem } from './output-tree.ts';
+import { renderTree, section, addItem, type DoctorSection } from './output-tree.ts';
 import { computePreview } from './preview.ts';
 import { remapPull, scanLocalOnly } from './remap.ts';
 import { withSpinner } from './spinner.ts';
@@ -69,26 +69,35 @@ function capturePrePostHeads(
 }
 
 /**
- * Run the WET (non-dry-run) pull side effects in order and render the
- * doctor-style grouped tree once at the end: a `pull on host=... (backup=<ts>)`
- * header followed by `Settings` / `Sessions` / `Extras` / `Summary` sections.
- * `applySharedLinks` stays silent (no Links group by design);
- * `regenerateSettings` returns its override-source label so the Settings row
- * surfaces what was written without logging inline. Sessions/Extras reuse the
- * verb-agnostic builders shared with `cmdPush`, fed the pull-side `pulled`
- * detail arrays. The combined session + extras unmapped count and the
- * extras-skipped count drive the Summary row exactly as `emitSummary` did.
+ * Run the WET (non-dry-run) pull side effects in order and build (but do NOT
+ * render) the doctor-style grouped tree sections: `Settings` / `Sessions` /
+ * `Extras` / `Summary`, matching the `pull on host=... (backup=<ts>)` header
+ * printed separately by the caller. `applySharedLinks` stays silent (no Links
+ * group by design); `regenerateSettings` returns its override-source label so
+ * the Settings row surfaces what was written without logging inline.
+ * Sessions/Extras reuse the verb-agnostic builders shared with `cmdPush`, fed
+ * the pull-side `pulled` detail arrays. The combined session + extras
+ * unmapped count and the extras-skipped count drive the Summary row exactly
+ * as `emitSummary` did.
+ *
+ * Returning the sections instead of rendering them lets the caller decide
+ * whether to render at all (a composing caller, e.g. a future `nomad sync`,
+ * may fold them into a larger compact/full output decision); the standalone
+ * `cmdPull` wrapper renders them immediately via `renderTree` so its own
+ * output is unchanged.
  *
  * @param ts - backup timestamp namespace shared by every WET side effect.
  * @param prePostHeads - pre/post-rebase HEADs captured by `cmdPull`; threads
  *   into `remapExtrasPull` to drive upstream-deletion propagation for .planning
  *   extras. `undefined` when the pre-rebase capture failed (fresh clone).
+ * @returns The ordered `Settings`/`Sessions`/`Extras`/`Summary` sections plus
+ *   `localOnly`, the read-only count of retained local-only session files.
  */
-function applyWetPull(
+function buildWetPullSections(
   ts: string,
   map: PathMap,
   prePostHeads?: { pre: string; post: string },
-): void {
+): { sections: DoctorSection[]; localOnly: number } {
   applySharedLinks(ts, map);
   const { label } = regenerateSettings(ts);
   syncSkillsPull(ts);
@@ -113,12 +122,15 @@ function applyWetPull(
       localOnly,
     ),
   );
-  renderTree([
-    buildSettingsSection(label),
-    buildSessionsSection(remapResult.pulled, remapResult.unmapped, localOnly),
-    buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
-    summary,
-  ]);
+  return {
+    sections: [
+      buildSettingsSection(label),
+      buildSessionsSection(remapResult.pulled, remapResult.unmapped, localOnly),
+      buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
+      summary,
+    ],
+    localOnly,
+  };
 }
 
 /**
@@ -161,9 +173,23 @@ function handleWedge(repo: string, forceRemote: boolean): void {
 }
 
 /**
- * `nomad pull` command. Acquires the push/pull lock, takes a backup
- * timestamp, runs `git pull --rebase --autostash` in `REPO_HOME`, then
- * applies the side-effecting sync steps in order:
+ * Discriminated result returned by `runPullCore`. The `dry` tag carries
+ * nothing extra (the dry-run branch renders its own preview tree inline via
+ * `computePreview`, matching standalone `cmdPull --dry-run` output). The
+ * `wet` tag carries the built (not-yet-rendered) grouped-tree sections plus
+ * the two summary counts a composing caller needs without re-deriving them:
+ * `localOnly` (retained-but-unpushed local-only session files) and
+ * `divergedKeptLocal` (both-sides-modified extras files the pull kept local
+ * on conflict).
+ */
+export type PullCoreResult =
+  | { tag: 'dry' }
+  | { tag: 'wet'; sections: DoctorSection[]; localOnly: number; divergedKeptLocal: number };
+
+/**
+ * Lock-free core of `nomad pull`: takes a backup timestamp, runs
+ * `git pull --rebase --autostash` in `REPO_HOME`, then applies the
+ * side-effecting sync steps in order:
  *   1. `divergenceCheckExtras` (read-only WARN naming local files that
  *      diverge from origin; fires in BOTH wet and dry modes per D-08)
  *   2. `applySharedLinks` (symlink shared/* into ~/.claude/)
@@ -172,28 +198,34 @@ function handleWedge(repo: string, forceRemote: boolean): void {
  *   5. `remapExtrasPull` (copy `shared/extras/<logical>/<dirname>/` back
  *      into each project's localRoot; SKIPPED under dryRun)
  *
- * WET output is a doctor-style grouped tree (`applyWetPull`): a `pull on
- * host=... (backup=<ts>)` header, then `Settings` / `Sessions` / `Extras` /
- * `Summary` sections rendered with `├`/`└` connectors. The Settings row shows
- * `✓ settings.json (base + <label>)`; pulled sessions and extras list as `✓`
- * rows; the per-project "not in path-map" skips collapse to one `ℹ︎` count
- * row. There is no Links group (`applySharedLinks` stays silent by design).
+ * Assumes the caller already holds the process-wide lock: this function never
+ * acquires or releases the lock itself, so it can run standalone (wrapped
+ * by `cmdPull`) or as one half of a composing command (e.g. a future
+ * `nomad sync`) that holds the lock across both the pull and push halves.
+ * It also never catches a fatal error internally; any thrown fault propagates
+ * to the caller, whose `try`/`finally` is responsible for releasing the lock.
  *
- * The WET-path Summary row (including the warn glyph case) renders to STDOUT as
- * part of the grouped tree via `renderTree`, not to stderr via `warn` as in the
- * pre-tree behavior. The dry-run path still routes its summary through
- * `emitSummary` (stderr). This wet-stdout/dry-stderr stream split is
- * intentional (the dry-run output is left byte-identical) and not a regression.
+ * WET output is built (not rendered) as a doctor-style grouped tree
+ * (`buildWetPullSections`): `Settings` / `Sessions` / `Extras` / `Summary`
+ * sections meant to render with tree connector glyphs under a
+ * `pull on host=... (backup=<ts>)` header. The Settings row names the
+ * regenerated settings.json plus its override-source label; pulled sessions
+ * and extras list one row each; the per-project "not in path-map" skips
+ * collapse to a single count row. There is no Links group (`applySharedLinks`
+ * stays silent by design). The standalone `cmdPull` wrapper renders these
+ * sections immediately via `renderTree` so its own output is unchanged from
+ * before this refactor.
  *
- * `opts.dryRun` (default `false`): when `true`, the lock IS still acquired
- * and `git pull --rebase` still runs (so concurrent invocations cannot race
- * and the user sees the same network round-trip as a real pull).
- * `divergenceCheckExtras` still fires (read-only by design). Then
- * `computePreview` runs in place of the four mutating steps and renders the
- * full glyph-free tree (Symlinks / settings.json / Sessions / Summary) via
- * `renderTree`. The per-run backup directory under
- * `~/.cache/claude-nomad/backup/<ts>/` is intentionally NOT created (no
- * backups are written under dryRun and an empty dir would pollute the cache).
+ * `opts.dryRun` (default `false`): when `true`, `git pull --rebase` still
+ * runs (so concurrent invocations cannot race and the user sees the same
+ * network round-trip as a real pull). `divergenceCheckExtras` still fires
+ * (read-only by design). Then `computePreview` runs in place of the four
+ * mutating steps and renders the full preview tree via `renderTree` directly
+ * (the dry-run path is not deferred to the caller; only the wet path returns
+ * sections for caller-controlled rendering). The per-run backup directory
+ * under `~/.cache/claude-nomad/backup/<ts>/` is intentionally NOT created
+ * (no backups are written under dryRun and an empty dir would pollute the
+ * cache).
  *
  * `opts.forceRemote` (default `false`): when `true` and the repo is wedged
  * mid-rebase or mid-merge, routes to `recoverForceRemote` instead of dying.
@@ -203,16 +235,108 @@ function handleWedge(repo: string, forceRemote: boolean): void {
  * `nomad/stranded-<ts>` and resets hard to `origin/main`, then falls through
  * to the normal pull. Cannot combine with `--dry-run`.
  *
- * Any `NomadFatal` thrown along the way is caught here so the `finally` block
- * releases the lock before exit (a raw `process.exit()` would skip `finally`
- * and leak the lock, see `NomadFatal` JSDoc). Non-fatal errors rethrow.
+ * @param opts.dryRun - Preview mode; see above.
+ * @param opts.forceRemote - Wedge recovery mode; see above.
+ * @returns A `PullCoreResult` tagged `dry` or `wet` (see `PullCoreResult`).
  */
-export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}): void {
+export function runPullCore(
+  opts: { dryRun?: boolean; forceRemote?: boolean } = {},
+): PullCoreResult {
   const dryRun = opts.dryRun === true;
   const forceRemote = opts.forceRemote === true;
-  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  // Resolve roots once per function entry (mirrors the convention used by
+  // every other command/extras/remap module in this codebase).
   const repo = repoHome();
   const backup = backupBase();
+  // Collision-resistant ts: nowTimestamp() is second-resolution, so two
+  // pulls in the same wall-clock second would share `ts` and the second's
+  // backupBeforeWrite calls (cpSync force:false) would silently no-op.
+  const ts = freshBackupTs(backup);
+  // Preflight: handle repo stuck mid-rebase or mid-merge. With
+  // --force-remote, handleWedge delegates to recoverForceRemote (aborts,
+  // safety-diffs, parks stranded commits, resets to origin/main). Without
+  // it, handleWedge dies fatally (via die()), which propagates to the
+  // caller's catch/finally. No backup dir or git pull runs before this check.
+  handleWedge(repo, forceRemote);
+  if (!dryRun) {
+    // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
+    // (out of disk, permission denied), die() throws fatally, which
+    // propagates to the caller's catch/finally. Skipped under dryRun: no
+    // backups are written, and an empty backup-root dir would pollute the
+    // cache.
+    const backupRoot = join(backup, ts);
+    try {
+      mkdirSync(backupRoot, { recursive: true });
+    } catch (err) {
+      die(`could not create backup dir: ${(err as Error).message}`);
+    }
+  }
+  // WET header becomes the tree header (no `pulling` prefix). The dry-run
+  // header phrasing is LEFT byte-identical so the readable diff path does
+  // not regress.
+  log(
+    dryRun
+      ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
+      : `pull on host=${HOST} (backup=${ts})`,
+  );
+  // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
+  // --autostash between them. capturePrePostHeads handles the unborn-HEAD
+  // case (fresh clone, no commits) by returning undefined; when undefined
+  // the delete pass in remapExtrasPull is skipped (overlay only, safe).
+  // When pre === post (already up to date) the diff is empty and nothing
+  // is deleted (benign no-op).
+  const prePostHeads = capturePrePostHeads(repo, () => {
+    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', repo);
+  });
+  // Read path-map.json for sharedDirs/symlink threading. Falls back to a
+  // no-sharedDirs map when the file is absent (fresh-clone before init).
+  // A parse failure dies fatally, which propagates to the caller's
+  // catch/finally.
+  const mapPath = join(repo, 'path-map.json');
+  const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
+  // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
+  // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
+  // mutation (so local state is intact for byte-level comparison). The
+  // function itself silently skips when no `extras` key is declared. Only the
+  // dry-run gets prePostHeads for the delete-vs-edit keep-local preview; the
+  // wet pull emits that WARN from remapExtrasPull, so passing heads here too
+  // would double it. The return value is the both-sides-modified count,
+  // carried into the wet result below for a composing caller's summary.
+  const divergedKeptLocal = divergenceCheckExtras(ts, dryRun ? prePostHeads : undefined);
+  if (dryRun) {
+    // computePreview renders the full tree including the Summary row with
+    // verb='pull'; no separate emitSummary call (it would duplicate the row).
+    // dryRun deliberately omits remapExtrasPull to preserve the
+    // zero-mutation contract; users still see the divergence WARN above.
+    computePreview(ts, map, 'pull');
+    log('dry-run complete; no mutation');
+    return { tag: 'dry' };
+  }
+  const { sections, localOnly } = buildWetPullSections(ts, map, prePostHeads);
+  return { tag: 'wet', sections, localOnly, divergedKeptLocal };
+}
+
+/**
+ * `nomad pull` command. Acquires the push/pull lock, delegates the entire
+ * pull side effect chain to `runPullCore`, renders the wet result's sections
+ * (the dry-run path already rendered its own preview tree inside
+ * `runPullCore`), and releases the lock. Output and exit codes are unchanged
+ * from before the `runPullCore` extraction.
+ *
+ * The WET-path Summary row (including the warn glyph case) renders to STDOUT as
+ * part of the grouped tree via `renderTree`, not to stderr via `warn` as in the
+ * pre-tree behavior. The dry-run path still routes its summary through
+ * `emitSummary` (stderr). This wet-stdout/dry-stderr stream split is
+ * intentional (the dry-run output is left byte-identical) and not a regression.
+ *
+ * Any `NomadFatal` thrown by `runPullCore` is caught here so the `finally`
+ * block releases the lock before exit (a raw `process.exit()` would skip
+ * `finally` and leak the lock, see `NomadFatal` JSDoc). Non-fatal errors
+ * rethrow.
+ */
+export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}): void {
+  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  const repo = repoHome();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
   // Fire the init-hint FATAL BEFORE acquireLock so an
   // unscaffolded repo never creates a lock file. Keyed off the same signal
@@ -224,69 +348,8 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
   const handle = acquireLock('pull');
   if (handle === null) process.exit(0);
   try {
-    // Collision-resistant ts: nowTimestamp() is second-resolution, so two
-    // pulls in the same wall-clock second would share `ts` and the second's
-    // backupBeforeWrite calls (cpSync force:false) would silently no-op.
-    const ts = freshBackupTs(backup);
-    // Preflight: handle repo stuck mid-rebase or mid-merge. With
-    // --force-remote, handleWedge delegates to recoverForceRemote (aborts,
-    // safety-diffs, parks stranded commits, resets to origin/main). Without
-    // it, handleWedge throws NomadFatal (via die()). Either way, the finally
-    // block releases the lock. No backup dir or git pull runs before this check.
-    handleWedge(repo, forceRemote);
-    if (!dryRun) {
-      // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
-      // (out of disk, permission denied), die() throws (NomadFatal) and the
-      // outer catch logs + sets exitCode, then finally releases the lock.
-      // Skipped under dryRun: no backups are written, and an empty
-      // backup-root dir would pollute the cache.
-      const backupRoot = join(backup, ts);
-      try {
-        mkdirSync(backupRoot, { recursive: true });
-      } catch (err) {
-        die(`could not create backup dir: ${(err as Error).message}`);
-      }
-    }
-    // WET header becomes the tree header (no `pulling`/`ℹ︎` prefix). The
-    // dry-run header phrasing is LEFT byte-identical so the readable diff path
-    // does not regress.
-    log(
-      dryRun
-        ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
-        : `pull on host=${HOST} (backup=${ts})`,
-    );
-    // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
-    // --autostash between them. capturePrePostHeads handles the unborn-HEAD
-    // case (fresh clone, no commits) by returning undefined; when undefined
-    // the delete pass in remapExtrasPull is skipped (overlay only, safe).
-    // When pre === post (already up to date) the diff is empty and nothing
-    // is deleted (benign no-op).
-    const prePostHeads = capturePrePostHeads(repo, () => {
-      gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', repo);
-    });
-    // Read path-map.json for sharedDirs/symlink threading. Falls back to a
-    // no-sharedDirs map when the file is absent (fresh-clone before init).
-    // A parse failure routes through NomadFatal -> catch -> lock release.
-    const mapPath = join(repo, 'path-map.json');
-    const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
-    // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
-    // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
-    // mutation (so local state is intact for byte-level comparison). The
-    // function itself silently skips when no `extras` key is declared. Only the
-    // dry-run gets prePostHeads for the delete-vs-edit keep-local preview; the
-    // wet pull emits that WARN from remapExtrasPull, so passing heads here too
-    // would double it.
-    divergenceCheckExtras(ts, dryRun ? prePostHeads : undefined);
-    if (dryRun) {
-      // computePreview renders the full tree including the Summary row with
-      // verb='pull'; no separate emitSummary call (it would duplicate the row).
-      // dryRun deliberately omits remapExtrasPull to preserve the
-      // zero-mutation contract; users still see the divergence WARN above.
-      computePreview(ts, map, 'pull');
-      log('dry-run complete; no mutation');
-    } else {
-      applyWetPull(ts, map, prePostHeads);
-    }
+    const result = runPullCore(opts);
+    if (result.tag === 'wet') renderTree(result.sections);
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the
     // lock. Throwing through process.exit() would skip finally.

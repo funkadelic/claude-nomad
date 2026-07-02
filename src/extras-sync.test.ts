@@ -279,7 +279,7 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     expect(existsSync(join(testRepo, 'path-map.json'))).toBe(false);
 
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    expect(() => divergenceCheckExtras('20260516-000000')).not.toThrow();
+    expect(divergenceCheckExtras('20260516-000000')).toBe(0);
   });
 
   it('does NOT warn when only the local side is absent (L40: || not && guard)', async () => {
@@ -318,17 +318,18 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
   });
 
   /**
-   * Spy on stderr, run `divergenceCheckExtras`, and return the captured output.
-   * Shared by the warn-line grammar cases below.
+   * Spy on stderr, run `divergenceCheckExtras`, and return both the captured
+   * output and the returned both-sides-modified count. Shared by the warn-line
+   * grammar cases below.
    */
-  async function runDivergence(): Promise<string> {
+  async function runDivergence(): Promise<{ text: string; count: number }> {
     const warnLines: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       warnLines.push(args.map(String).join(' '));
     });
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
-    divergenceCheckExtras('20260516-000000');
-    return warnLines.join('\n');
+    const count = divergenceCheckExtras('20260516-000000');
+    return { text: warnLines.join('\n'), count };
   }
 
   /** Write a path-map.json mapping `testproj` to `projectRoot` with the given extras. */
@@ -354,13 +355,16 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     writeFileSync(join(repoExtras, 'b.md'), 'repo-b\n');
     writePathMap(projectRoot, ['.planning']);
 
-    const combined = await runDivergence();
+    const { text: combined, count } = await runDivergence();
     expect(combined).toContain(
       'local folder .planning/ in repo testproj differs from the synced copy in 2 files;',
     );
     expect(combined).toContain('keep your local copy (push to reconcile;');
     expect(combined).not.toContain('overwrite');
     expect(combined).toContain('your current files are backed up to');
+    // Return-value contract: the both-sides-modified count matches the WARN's
+    // file count (2), so a composing caller can report it without re-scanning.
+    expect(count).toBe(2);
   });
 
   it('warns "folder" with singular grammar for a single-file directory divergence', async () => {
@@ -373,13 +377,14 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     writeFileSync(join(repoExtras, 'a.md'), 'repo-a\n');
     writePathMap(projectRoot, ['.planning']);
 
-    const combined = await runDivergence();
+    const { text: combined, count } = await runDivergence();
     expect(combined).toContain(
       'local folder .planning/ in repo testproj differs from the synced copy in 1 file;',
     );
     expect(combined).toContain('keep your local copy (push to reconcile;');
     expect(combined).not.toContain('overwrite');
     expect(combined).toContain('your current file is backed up to');
+    expect(count).toBe(1);
   });
 
   it('warns "file" for a single-file extra (CLAUDE.md) divergence', async () => {
@@ -391,10 +396,11 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     writeFileSync(join(repoExtras, 'CLAUDE.md'), 'repo\n');
     writePathMap(projectRoot, ['CLAUDE.md']);
 
-    const combined = await runDivergence();
+    const { text: combined, count } = await runDivergence();
     expect(combined).toContain(
       'local file CLAUDE.md in repo testproj differs from the synced copy in 1 file;',
     );
+    expect(count).toBe(1);
   });
 });
 
