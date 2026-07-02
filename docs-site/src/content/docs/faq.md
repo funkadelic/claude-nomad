@@ -264,7 +264,21 @@ sequence.
 
 ## I have local changes to push and remote changes to pull. What order do I run them in?
 
-**Push first, then pull.**
+**Run `nomad sync` and let it handle the order for you.**
+
+```bash
+$ nomad sync   # pull first (keeps your local work), then push everything back up
+```
+
+Under the hood, `sync` runs the pull half first and the push half second, under one lock. Pulling
+first is safe because a pull keeps rather than overwrites your work: unpushed session transcripts
+are retained, and a file that changed on both sides stays local with a warning. The push half then
+reconciles everything you have, including whatever the pull half just kept, back to the sync repo.
+If the pull half fails, `sync` stops before pushing; if the push half fails after a successful
+pull, it says so (`pull: applied, push: failed`) and nothing you had is lost. See the
+[command reference](/claude-nomad/commands/#sync) for the full behavior.
+
+If you drive the lower-level commands yourself instead, **push first, then pull**:
 
 ```bash
 $ nomad diff   # optional: preview what a pull would apply, without locking anything
@@ -272,7 +286,7 @@ $ nomad push   # your local changes win and land in the sync repo
 $ nomad pull   # apply the merged repo state back to ~/.claude/
 ```
 
-Why this order works:
+Why this manual order works:
 
 1. **`nomad push` already does the pull's git half for you.** Before touching anything, push
    rebases your sync repo on the remote, so commits from other hosts are integrated first. Then

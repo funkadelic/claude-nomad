@@ -67,8 +67,9 @@ The scaffold writes a minimal `path-map.json`:
 An empty `projects` map is fine. Your global config (`shared/CLAUDE.md`, `commands/`, `rules/`,
 `skills/`, and the generated `settings.json`) syncs without any project entries. You only add
 entries to `projects` when you want session transcripts to follow you across machines, which is the
-next recipe. The everyday loop on any host is `nomad doctor` to check state, `nomad pull` to apply
-the repo to `~/.claude/`, and `nomad push` to publish local changes.
+next recipe. The everyday loop on any host is `nomad doctor` to check state, then `nomad sync` to
+apply the repo to `~/.claude/` and publish local changes in one step (`nomad pull` and `nomad push`
+remain available as the lower-level halves).
 
 ## Cross-OS project remapping
 

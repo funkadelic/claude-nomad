@@ -50,9 +50,12 @@ Then the everyday loop on any host:
 
 ```bash
 $ nomad doctor   # confirm setup
-$ nomad pull     # apply config to ~/.claude/
-$ nomad push     # publish local changes (sessions, settings)
+$ nomad sync     # pull config, then publish local changes, in one step
 ```
+
+`nomad sync` always pulls first and then pushes, so there is no ordering to remember. The
+lower-level `nomad pull` and `nomad push` remain available when you need their extra flags; see
+the [command reference](/claude-nomad/commands/#sync).
 
 ## Each additional host
 
