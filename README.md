@@ -222,10 +222,10 @@ first (minimum version `>= 0.35.0`), then add the plugin.
 /plugin install nomad@claude-nomad
 ```
 
-It adds `/nomad:pull`, `/nomad:diff`, `/nomad:push` (preview only), `/nomad:doctor`, and
-`/nomad:clean`, plus a session-start drift check. The plugin versions independently from the CLI,
-but requires nomad `>= 0.35.0` because it calls recent subcommands (`nomad diff`,
-`nomad clean --backups`) and reads the doctor command's status output. See the
+It adds `/nomad:sync` (preview only), `/nomad:pull`, `/nomad:diff`, `/nomad:push` (preview only),
+`/nomad:doctor`, and `/nomad:clean`, plus a session-start drift check. The plugin versions
+independently from the CLI, but requires nomad `>= 0.35.0` because it calls recent subcommands
+(`nomad diff`, `nomad clean --backups`) and reads the doctor command's status output. See the
 [plugin guide](https://funkadelic.github.io/claude-nomad/plugin/) for details.
 
 ## Requirements

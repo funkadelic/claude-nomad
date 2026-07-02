@@ -1,7 +1,7 @@
 {
   "name": "nomad",
-  "description": "Companion plugin for the claude-nomad CLI. Adds /nomad:pull, /nomad:push, /nomad:doctor, /nomad:diff, and /nomad:clean slash commands plus a session-start drift-warning hook, so you can sync ~/.claude/ across machines without leaving Claude Code. Requires the standalone claude-nomad npm CLI.",
-  "version": "1.0.0",
+  "description": "Companion plugin for the claude-nomad CLI. Adds /nomad:sync, /nomad:pull, /nomad:push, /nomad:doctor, /nomad:diff, and /nomad:clean slash commands plus a session-start drift-warning hook, so you can sync ~/.claude/ across machines without leaving Claude Code. Requires the standalone claude-nomad npm CLI.",
+  "version": "1.1.0",
   "author": {
     "name": "Norman Yee"
   },

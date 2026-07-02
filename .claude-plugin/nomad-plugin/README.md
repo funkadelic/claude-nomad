@@ -1,9 +1,9 @@
 # claude-nomad Plugin
 
 Companion Claude Code plugin for the standalone
-[claude-nomad](https://github.com/funkadelic/claude-nomad) sync CLI. Adds `/nomad:pull`,
-`/nomad:push`, `/nomad:doctor`, `/nomad:clean`, and `/nomad:diff` slash commands plus a
-`SessionStart` drift-warning hook to any Claude Code session.
+[claude-nomad](https://github.com/funkadelic/claude-nomad) sync CLI. Adds `/nomad:sync`,
+`/nomad:pull`, `/nomad:push`, `/nomad:doctor`, `/nomad:clean`, and `/nomad:diff` slash commands plus
+a `SessionStart` drift-warning hook to any Claude Code session.
 
 ## Table of contents
 
@@ -24,7 +24,9 @@ npm i -g claude-nomad
 **Minimum version: `>= 0.35.0`.** The plugin versions independently from the CLI (no lockstep
 coupling), but it calls recent subcommands (`nomad diff`, `nomad clean --backups`) and relies on the
 doctor glyph output format that the session-start hook greps. A CLI older than 0.35.0 makes some
-commands error or produce no output. Run `npm i -g claude-nomad` to update to the latest version.
+commands error or produce no output. `/nomad:sync` additionally needs a CLI that ships the `sync`
+subcommand (`>= 0.57.0`); on an older CLI that one command errors while the rest keep working. Run
+`npm i -g claude-nomad` to update to the latest version.
 
 If `nomad` is not on your PATH, the slash commands fail with a shell `command not found` error (they
 shell out to `nomad` directly). The SessionStart hook, by contrast, detects the missing binary and
@@ -57,6 +59,13 @@ claude --plugin-dir ./.claude-plugin/nomad-plugin/
 ```
 
 ## Commands
+
+### `/nomad:sync`
+
+Previews a full sync: the pull preview first, then the push preview, without changing anything. Runs
+`nomad sync --dry-run`. Like `/nomad:push`, it is preview-only: a real sync runs the push half's
+secret-scanning pipeline, whose interactive recovery menu needs a real terminal. To sync for real,
+open a terminal and run `nomad sync`.
 
 ### `/nomad:pull`
 
