@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightLinksValidator from 'starlight-links-validator';
+import starlightLlmsTxt from 'starlight-llms-txt';
 
 // Absolute URL of the social-card image (served from public/og.png under base).
 const OG_IMAGE = 'https://funkadelic.github.io/claude-nomad/og.png';
@@ -29,7 +30,7 @@ export default defineConfig({
       editLink: {
         baseUrl: 'https://github.com/funkadelic/claude-nomad/edit/main/docs-site/',
       },
-      plugins: [starlightLinksValidator()],
+      plugins: [starlightLinksValidator(), starlightLlmsTxt()],
       head: [
         { tag: 'meta', attrs: { property: 'og:image', content: OG_IMAGE } },
         { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
