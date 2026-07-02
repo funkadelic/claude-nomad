@@ -271,8 +271,9 @@ $ nomad sync   # pull first (keeps your local work), then push everything back u
 ```
 
 Under the hood, `sync` runs the pull half first and the push half second, under one lock. Pulling
-first is safe because a pull keeps rather than overwrites your work: unpushed session transcripts
-are retained, and a file that changed on both sides stays local with a warning. The push half then
+first is safe because a pull keeps rather than deletes your work: unpushed session transcripts are
+retained, and a project file synced as an extra (like `.planning/`) that changed on both sides is
+kept local with a warning (anything else a pull overwrites is backed up first). The push half then
 reconciles everything you have, including whatever the pull half just kept, back to the sync repo.
 If the pull half fails, `sync` stops before pushing; if the push half fails after a successful
 pull, it says so (`pull: applied, push: failed`) and nothing you had is lost. See the

@@ -223,8 +223,18 @@ export async function runPushCore(
     runDryRunPreview(st, map, repo, selection);
     return { tag: 'dry' };
   }
-  await commitAndPush(st, ts, map, { redactAll, allowAll, allowRule }, repo, newManifest);
-  return { tag: 'pushed' };
+  // commitAndPush reports whether it actually committed and pushed: the
+  // gsd-only staged payload short-circuits inside it as a no-op, and a
+  // composing caller (nomad sync) must not label that run 'pushed'.
+  const outcome = await commitAndPush(
+    st,
+    ts,
+    map,
+    { redactAll, allowAll, allowRule },
+    repo,
+    newManifest,
+  );
+  return outcome === 'nothing' ? { tag: 'nothing' } : { tag: 'pushed' };
 }
 
 /**
