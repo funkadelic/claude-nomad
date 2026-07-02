@@ -18,8 +18,8 @@ Mac, `/home/you/project` on Linux), so a transcript copied verbatim is invisible
 
 **claude-nomad** fixes this with path remapping: a small `path-map.json` file in your sync repo
 records where each project lives on each machine, and every pull rewrites the transcripts for the
-host you are on. Start a conversation on your desktop, `nomad push`, `nomad pull` on your laptop,
-and `claude --resume` picks it up as if it never left. See
+host you are on. Start a conversation on your desktop, run `nomad sync` on each machine, and
+`claude --resume` on your laptop picks it up as if it never left. See
 [How it works](/claude-nomad/how-it-works/) for the mechanics.
 
 ## One shared setup, per-machine exceptions

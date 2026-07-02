@@ -5,8 +5,10 @@ description:
   Claude Code.
 ---
 
-claude-nomad ships an optional Claude Code plugin. It puts the everyday nomad commands one slash
-away inside a Claude Code session, and warns you at session start when your synced setup has drifted.
+claude-nomad ships an optional Claude Code plugin. It puts the core nomad commands (pull, push,
+diff, doctor, clean) one slash away inside a Claude Code session, and warns you at session start
+when your synced setup has drifted. The unified `nomad sync` command is not wrapped yet; run it
+from a terminal.
 The plugin is a thin convenience layer: it shells out to the `nomad` binary and adds no sync logic of
 its own.
 
