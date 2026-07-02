@@ -5,4 +5,4 @@ description:
 disable-model-invocation: true
 ---
 
-!`nomad sync --dry-run $ARGUMENTS`
+!`nomad sync --dry-run`
