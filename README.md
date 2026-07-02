@@ -13,8 +13,9 @@
 
 Open Claude Code on a second machine and it is a blank slate: none of your custom skills, slash
 commands, tuned settings, or past conversations. **claude-nomad** keeps all of it in sync through a
-private Git repo you control. `nomad push` on one machine, `nomad pull` on the next, and everything
-is there, conversations included.
+private Git repo you control. Run `nomad sync` on any machine and everything is there, conversations
+included; it pulls in your latest config first, then publishes your local changes, so you never have
+to remember which one to run first.
 
 Not dotfiles, not rsync. **claude-nomad** understands Claude Code's state, so your session history
 survives different file paths and your secrets never ride along.
@@ -117,14 +118,18 @@ Everyday loop on any host:
 
 ```bash
 $ nomad doctor   # confirm setup
-$ nomad pull     # apply config to ~/.claude/
-$ nomad push     # publish local changes (sessions, settings)
+$ nomad sync     # pull config, then publish local changes, in one step
 ```
 
-Pull before you push whenever both machines may have changed. Sync is last-write-wins, so pushing
-stale local state over newer remote state silently overwrites it. The
-[FAQ](https://funkadelic.github.io/claude-nomad/faq/) covers the full push/pull order when both
-sides have changed.
+`nomad sync` is the command to reach for day to day: it always pulls first (so you never overwrite
+newer remote state with something stale) and then pushes, under one lock, so there is no ordering to
+remember. `nomad pull` and `nomad push` are still available as lower-level commands for cases `sync`
+does not cover: recovering a wedged repo with `nomad pull --force-remote`, or resolving a detected
+secret without the interactive menu via `nomad push --redact-all` / `--allow` / `--allow-all` (see
+[Changing settings](#changing-settings) and
+[Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/)). The
+[FAQ](https://funkadelic.github.io/claude-nomad/faq/) covers what `sync` does under the hood and the
+push/pull order it enforces.
 
 ### Make your sessions follow you
 
