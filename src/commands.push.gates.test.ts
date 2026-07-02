@@ -58,7 +58,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    // cmdPush is async: runPushCore's fatal-path rejection only reaches
+    // cmdPush's catch after a microtask tick, so the assertions below need
+    // the promise to have settled (await, not a synchronous throw check).
+    await expect(cmdPush()).resolves.toBeUndefined();
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
     expect(existsSync(env.lockPath)).toBe(false);
     // The early-return path fired, proving probe/rebase/gitlinks all ran
@@ -93,7 +96,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       }),
     }));
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    // cmdPush is async: runPushCore's fatal-path rejection only reaches
+    // cmdPush's catch after a microtask tick, so the assertions below need
+    // the promise to have settled (await, not a synchronous throw check).
+    await expect(cmdPush()).resolves.toBeUndefined();
     expect(process.exitCode).toBe(1);
     expect(existsSync(env.lockPath)).toBe(false);
     const out = errOutput(env);
@@ -127,7 +133,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       }),
     }));
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    // cmdPush is async: runPushCore's fatal-path rejection only reaches
+    // cmdPush's catch after a microtask tick, so the assertions below need
+    // the promise to have settled (await, not a synchronous throw check).
+    await expect(cmdPush()).resolves.toBeUndefined();
     expect(process.exitCode).toBe(1);
     expect(existsSync(env.lockPath)).toBe(false);
     const out = errOutput(env);
@@ -154,7 +163,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       }),
     }));
     const { cmdPush } = await import('./commands.push.ts');
-    expect(() => cmdPush()).not.toThrow();
+    // cmdPush is async: runPushCore's fatal-path rejection only reaches
+    // cmdPush's catch after a microtask tick, so the assertions below need
+    // the promise to have settled (await, not a synchronous throw check).
+    await expect(cmdPush()).resolves.toBeUndefined();
     expect(process.exitCode).toBe(1);
     expect(existsSync(env.lockPath)).toBe(false);
     const out = errOutput(env);

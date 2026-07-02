@@ -233,7 +233,7 @@ describe('divergenceCheckExtras (integration)', () => {
     expect(captured.read()).not.toContain('⚠︎');
   });
 
-  it('returns void and does not throw even when divergence is detected', async () => {
+  it('does not throw and returns the both-sides-modified count when divergence is detected', async () => {
     mkdirSync(join(projectRoot, '.planning'), { recursive: true });
     writeFileSync(join(projectRoot, '.planning', 'PLAN.md'), 'local\n');
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
@@ -250,7 +250,9 @@ describe('divergenceCheckExtras (integration)', () => {
     const { divergenceCheckExtras } = await import('./extras-sync.ts');
     const result = divergenceCheckExtras('20260522-test');
 
-    expect(result).toBeUndefined();
+    // One both-sides-modified file (PLAN.md) diverges, so the return value
+    // carries that count instead of the pre-refactor `undefined`.
+    expect(result).toBe(1);
   });
 
   it('silently skips non-whitelisted dir names (SUPPORTED_EXTRAS guard)', async () => {

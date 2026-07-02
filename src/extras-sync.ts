@@ -58,17 +58,30 @@ function divergenceWarnLine(o: {
  * omits `prePostHeads` (it cannot foresee an upstream deletion without a fetch),
  * and the WET pull emits that WARN from `remapExtrasPull` itself, so passing the
  * heads only for `--dry-run` avoids a double WARN.
+ *
+ * @param ts - Backup timestamp namespace used to phrase the per-project backup
+ *   path in the WARN line.
+ * @param prePostHeads - Pre/post-rebase HEADs from the `--dry-run` path;
+ *   `undefined` for the WET pull and offline `nomad diff`.
+ * @returns The total count of both-sides-modified (M) files across every
+ *   diverging extra (the WARN count). Existing callers that only need the
+ *   side-effecting WARN output may ignore the return value.
  */
 export function divergenceCheckExtras(
   ts: string,
   prePostHeads?: { pre: string; post: string },
-): void {
+): number {
   const v = loadValidatedExtras({});
-  if (v === null) return;
+  if (v === null) return 0;
 
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
   const backupRoot = join(backupBase(), ts, 'extras');
   const repo = repoHome();
+  // Total both-sides-modified (M) file count across every diverging extra,
+  // returned to the caller so a composing command (e.g. a future `nomad
+  // sync`) can report how many diverged files the pull kept local without
+  // re-deriving the count itself.
+  let divergedCount = 0;
   for (const { logical, localRoot, dirname } of eachExtrasTarget(v, counts)) {
     const local = join(localRoot, dirname);
     const repoEntry = join(repo, 'shared', 'extras', logical, dirname);
@@ -79,6 +92,7 @@ export function divergenceCheckExtras(
     // keep-local reassurance (the honest-count goal).
     const modified = listDivergingModified(local, repoEntry);
     if (modified.length === 0) continue;
+    divergedCount += modified.length;
     const projectBackupRoot = join(backupRoot, encodePath(localRoot));
     warn(
       divergenceWarnLine({
@@ -98,4 +112,5 @@ export function divergenceCheckExtras(
       warn(keptDeleteWarnLine(logical, relToLocal));
     }
   }
+  return divergedCount;
 }
