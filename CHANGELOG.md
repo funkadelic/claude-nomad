@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.57.0](https://github.com/funkadelic/claude-nomad/compare/v0.56.2...v0.57.0) (2026-07-02)
+
+
+### Added
+
+* **docs-site:** add starlight-llms-txt plugin ([#378](https://github.com/funkadelic/claude-nomad/issues/378)) ([0604327](https://github.com/funkadelic/claude-nomad/commit/0604327ffa69abbee0b70183a49416ec14a3306c))
+
 ## [0.56.2](https://github.com/funkadelic/claude-nomad/compare/v0.56.1...v0.56.2) (2026-07-01)
 
 
