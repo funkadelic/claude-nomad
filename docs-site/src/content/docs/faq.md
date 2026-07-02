@@ -233,7 +233,7 @@ symlinked path so relative lookups resolve back under `~/.claude/`:
 ```
 
 Make that edit in `shared/settings.base.json` in your sync repo, not in `~/.claude/settings.json`
-(see the first question for why), then push and pull as usual.
+(see the first question for why), then `nomad sync` as usual.
 
 Any tool that stores hook scripts in a `sharedDirs`-symlinked directory and references other
 `~/.claude/` paths relative to its own file location can hit this, often right after the tool
