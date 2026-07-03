@@ -166,7 +166,7 @@ try {
     case 'adopt': {
       // Required positional <name>; optional --dry-run. Any other shape
       // (missing name, leading-dash name, two positionals, unknown flag)
-      // is a usage error. Single <name> per invocation (D-04).
+      // is a usage error. Only one <name> is accepted per invocation.
       const name = process.argv[3];
       const sub = process.argv[4];
       if (
