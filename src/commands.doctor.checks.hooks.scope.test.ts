@@ -188,7 +188,7 @@ describe('reportHookScopeCheck', () => {
   });
 
   it('does not let a // inside a double-quoted string swallow a later export', async () => {
-    // WR-01 regression: comment-stripping must not run ahead of string-stripping,
+    // Regression guard: comment-stripping must not run ahead of string-stripping,
     // or the // inside "http://x" eats the rest of the line and hides the export.
     buildHookTree(env.testHome, {
       hooksType: 'commonjs',

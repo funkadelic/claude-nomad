@@ -283,8 +283,8 @@ export function reportSharedLinks(section: DoctorSection, map: PathMap): void {
  * directory, or is any non-symlink path (migration already done or never applied).
  *
  * The probe intentionally does NOT key off repoHasSharedSource: the repo trees
- * for hooks/agents are left in place as inert history (D-4 part 4), so
- * repoHasSharedSource stays true. Reusing classifySymlinkTarget would render a
+ * for hooks/agents are left in place as inert history, so repoHasSharedSource
+ * stays true. Reusing classifySymlinkTarget would render a
  * healthy "ok <name>: symlink" line instead of migration guidance.
  */
 export function reportDroppedNamesMigration(section: DoctorSection): void {
