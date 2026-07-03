@@ -7,7 +7,8 @@
  *
  * Non-TTY contexts (CI, piped input) keep the existing `buildSessionAwareFatal`
  * abort unchanged: the function throws a `NomadFatal` carrying the existing
- * recovery body verbatim (D-01: zero CI behavior change).
+ * recovery body verbatim, so CI (which always runs non-TTY) sees no behavior
+ * change from this recovery menu.
  *
  * `--redact-all` bypasses the prompt and redacts every real finding in batch
  * without requiring a TTY.
@@ -194,10 +195,11 @@ function makeRealPrompt(): PromptFn {
  * Resolve the gitleaks findings from `verdict` interactively (TTY path) or
  * via `--redact-all` (non-interactive batch path). On a non-TTY context with
  * no `--redact-all` flag, throws `NomadFatal` carrying the existing recovery
- * body verbatim (D-01: zero CI behavior change).
+ * body verbatim, so CI (which always runs non-TTY) sees no behavior change
+ * from this recovery menu.
  *
- * TTY flow (D-02, D-03): prompts once per finding with R/A/D/S (default Skip
- * on empty input), collects all actions, dispatches them, then re-stages via
+ * The TTY flow prompts once per finding with R/A/D/S (default Skip on empty
+ * input), collects all actions, dispatches them, then re-stages via
  * `git add -A` and re-scans. If the re-scan still has findings the menu loops
  * on the new set. If any finding remains Skipped after triage, throws the
  * session-aware FATAL so the push aborts with the same non-zero exit.
@@ -226,7 +228,9 @@ export async function resolveLeakFindings(
   } = deps;
 
   const scanVerdict = deps.scanVerdict ?? (await import('./push-leak-verdict.ts')).scanPushVerdict;
-  // Resolve root once per invocation (T-45-02 TOCTOU mitigation).
+  // Resolve roots once per command invocation to avoid a time-of-check/
+  // time-of-use race: resolving twice could observe a different filesystem
+  // state between the check and the use.
   const repo = repoHome();
 
   let current = verdict;

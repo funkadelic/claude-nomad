@@ -102,7 +102,7 @@ describe('parseAction (pure seam)', () => {
     vi.resetModules();
   });
 
-  it('empty string -> skip (D-02 default)', async () => {
+  it('empty string -> skip (the safe default)', async () => {
     const { parseAction } = await import('./commands.push.recovery.actions.ts');
     expect(parseAction('')).toBe('skip');
   });
@@ -142,7 +142,7 @@ describe('parseAction (pure seam)', () => {
 // resolveLeakFindings: non-TTY path
 // ---------------------------------------------------------------------------
 
-describe('resolveLeakFindings - non-TTY path (D-01)', () => {
+describe('resolveLeakFindings - non-TTY path', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -201,7 +201,7 @@ function makeFinding(
   };
 }
 
-describe('resolveLeakFindings - TTY all-Skip -> NomadFatal (D-03)', () => {
+describe('resolveLeakFindings - TTY all-Skip -> NomadFatal', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -221,7 +221,8 @@ describe('resolveLeakFindings - TTY all-Skip -> NomadFatal (D-03)', () => {
       findings: [finding],
     };
     const map: PathMap = { projects: {} };
-    // Empty input -> skip (D-02 default), all-skip -> FATAL (D-03).
+    // Empty input -> skip (the safe default); if every finding ends up
+    // skipped, the push aborts with a FATAL.
     await expect(
       resolveLeakFindings(verdict, 'ts-001', map, {
         isTTYCheck: () => true,

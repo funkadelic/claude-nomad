@@ -140,7 +140,9 @@ export function applyRedact(
     return false;
   };
 
-  // Resolve roots once per invocation (T-45-02 TOCTOU mitigation).
+  // Resolve roots once per command invocation to avoid a time-of-check/
+  // time-of-use race: resolving twice could observe a different filesystem
+  // state between the check and the use.
   const claude = claudeHome();
   const repo = repoHome();
 

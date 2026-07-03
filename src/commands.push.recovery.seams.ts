@@ -69,7 +69,8 @@ export function sessionIdFromFinding(f: Finding): string | null {
 
 /**
  * Parse a raw prompt answer into a `FindingAction`. Returns `'skip'` for
- * empty, blank, or unrecognized input (D-02 default).
+ * empty, blank, or unrecognized input, the safe default that leaves a
+ * finding unresolved rather than silently choosing an action for the user.
  *
  * @param raw The untrimmed string returned by the prompt.
  * @returns The corresponding action, defaulting to `'skip'`.

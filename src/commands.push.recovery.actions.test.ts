@@ -238,7 +238,7 @@ describe('resolveLeakFindings - allowAll non-interactive path', () => {
     ).rejects.toThrow(NomadFatal);
   });
 
-  it('restores a pre-existing .gitleaksignore when the re-scan still leaks (WR-03)', async () => {
+  it('restores a pre-existing .gitleaksignore when the re-scan still leaks', async () => {
     // Real allowAllFindings (no mock) so the fingerprint is actually written,
     // then the surviving-leak abort must roll the file back to its prior state.
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -276,7 +276,7 @@ describe('resolveLeakFindings - allowAll non-interactive path', () => {
     expect(readFileSync(ignPath, 'utf8')).toBe(original);
   });
 
-  it('leaves no .gitleaksignore behind when the re-scan still leaks and none existed (WR-03)', async () => {
+  it('leaves no .gitleaksignore behind when the re-scan still leaks and none existed', async () => {
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
@@ -444,10 +444,11 @@ describe('resolveLeakFindings - allowRule non-interactive path', () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolveLeakFindings: D-01 preserved - non-TTY + no resolution flag
+// resolveLeakFindings: non-TTY + no resolution flag keeps the existing
+// recovery body unchanged
 // ---------------------------------------------------------------------------
 
-describe('resolveLeakFindings - D-01 preserved (non-TTY, no allow/redact flags)', () => {
+describe('resolveLeakFindings - unchanged recovery body (non-TTY, no allow/redact flags)', () => {
   beforeEach(() => {
     vi.resetModules();
   });
