@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.57.0](https://github.com/funkadelic/claude-nomad/compare/v0.56.2...v0.57.0) (2026-07-03)
+
+
+### Added
+
+* **docs-site:** add starlight-llms-txt plugin ([#378](https://github.com/funkadelic/claude-nomad/issues/378)) ([0604327](https://github.com/funkadelic/claude-nomad/commit/0604327ffa69abbee0b70183a49416ec14a3306c))
+* **sync:** add unified nomad sync command ([#380](https://github.com/funkadelic/claude-nomad/issues/380)) ([e60a05e](https://github.com/funkadelic/claude-nomad/commit/e60a05e62179751652d70e54ba3deb8b6b7c4859))
+
+
+### Fixed
+
+* **plugin:** tolerate a user-supplied --dry-run in push and sync wrappers ([#381](https://github.com/funkadelic/claude-nomad/issues/381)) ([7ce0a99](https://github.com/funkadelic/claude-nomad/commit/7ce0a99ae53cd8737b5e03bb0f5f730447b1108d))
+
+
+### Changed
+
+* remove vestigial private-repo guards from workflows ([#383](https://github.com/funkadelic/claude-nomad/issues/383)) ([31e52b8](https://github.com/funkadelic/claude-nomad/commit/31e52b834ca55204dac29fcec6ceee35605f818b))
+* scrub internal planning IDs from source and test comments ([#382](https://github.com/funkadelic/claude-nomad/issues/382)) ([b024b7b](https://github.com/funkadelic/claude-nomad/commit/b024b7b1b877af347db7ca1754751ede73b5879f))
+
 ## [0.56.2](https://github.com/funkadelic/claude-nomad/compare/v0.56.1...v0.56.2) (2026-07-01)
 
 
