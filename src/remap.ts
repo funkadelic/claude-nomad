@@ -56,17 +56,17 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
  * `atomicMirror`'s `rmSync(dst)`), this ADDS and OVERWRITES repo-tracked files
  * while NEVER
  * deleting a local-only entry: session transcripts, sibling `subagents/` dirs,
- * and `memory/` files that were never pushed survive the pull. It is the
- * `copyExtrasFilteredPreserving` (Phase 49) precedent MINUS the prune pass
- * (retention means never delete local-only), so there is no `rmSync(dst)` and
- * no `prunePreservingDenied` call.
+ * and `memory/` files that were never pushed survive the pull. It follows the
+ * same copy-plus-path-translate approach as `copyExtrasFilteredPreserving`
+ * MINUS the prune pass (retention means never delete local-only), so there is
+ * no `rmSync(dst)` and no `prunePreservingDenied` call.
  *
  * `stripCollidingDstSymlinks(src, dst, () => false)` runs BEFORE the copy so a
  * benignly-named dst symlink colliding with a repo `src` entry is removed rather
  * than written THROUGH to an external target (`~/.ssh`, `~/.bashrc`); the
  * `() => false` excludes nothing (sessions have no deny-set). `verbatimSymlinks:
  * true` is load-bearing so relative symlink targets are not rewritten across
- * hosts (Pitfall 1, nodejs/node issue 41693). Pull-only: `remapPush` keeps the
+ * hosts (see nodejs/node issue 41693). Pull-only: `remapPush` keeps the
  * exact-mirror `copyDirJsonlOnly` path unchanged.
  *
  * The copy runs through `cpSyncGuarded` so an upstream file/directory type flip
@@ -152,9 +152,9 @@ function applySelective(sel: ManifestDiff, localDir: string, repoDst: string): v
  * memory, tool-results, etc.) copy recursively with no further filtering.
  * Stray .bak / .tmp / .swp / editor backups at the source root are skipped
  * and produce one dim, indented `skip <rel>: extension not in allowlist`
- * list line each. The filter must allow the source root explicitly (Pitfall 1:
- * cpSync invokes the filter on src === src first, and a false return
- * there would abort the whole copy). Used by remapPush only; remapPull
+ * list line each. The filter must allow the source root explicitly: cpSync
+ * invokes the filter on src === src first, and a false return
+ * there would abort the whole copy. Used by remapPush only; remapPull
  * uses `overlaySessionDir` (retain-merge) because the repo side is already
  * curated by the push gate and local-only entries must survive. Uses the same
  * atomic temp-then-rename swap as the other push-side copies;

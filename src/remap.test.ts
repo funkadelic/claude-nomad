@@ -1067,7 +1067,7 @@ describe('remapPush source-side filter', () => {
   });
 
   it('does not log a spurious skip line for the cpSync source-root case', async () => {
-    // Pitfall 1: cpSync invokes the filter on srcPath === src first.
+    // cpSync invokes the filter on srcPath === src first.
     // The callback must return true unconditionally for that case (relative
     // path is the empty string). A naive implementation that splits the
     // empty rel into [''] and applies the depth-0 jsonl-only check would
