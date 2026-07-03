@@ -79,7 +79,8 @@ describe('parsePlanningDiff', () => {
 
   it('passes paths with spaces verbatim (NUL-delimited, no escaping)', async () => {
     // NUL-delimited parsing means spaces and non-ASCII bytes pass through
-    // without any octal unescaping (Phase 41 CR-01 lesson).
+    // without any octal unescaping (git's quoted-path form would otherwise
+    // require it).
     const { parsePlanningDiff } = await import('./extras-sync.planning-diff.ts');
     const pathWithSpace = 'shared/extras/foo/.planning/my plan.md';
     const raw = 'M\0' + pathWithSpace + '\0';
@@ -149,7 +150,7 @@ describe('planningDeleteTargets', () => {
     );
   });
 
-  it('FATALs on a crafted path that collapses exactly to the .planning root (CR-01 regression)', async () => {
+  it('FATALs on a crafted path that collapses exactly to the .planning root', async () => {
     // D\0shared/extras/my-proj/.planning/x/..\0 normalizes to localRoot/.planning
     // (exactly the planning root), which is never a valid git D target. Must throw
     // NomadFatal rather than returning the root and allowing recursive wipe.

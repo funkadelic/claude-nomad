@@ -131,7 +131,7 @@ describe('remapExtrasPush (integration)', () => {
     expect(existsSync(join(cacheBase, '20260522-110003'))).toBe(false);
   });
 
-  it('absence of extras key is a clean no-op (D-03 additive contract)', async () => {
+  it('absence of extras key is a clean no-op (opt-in extras are additive)', async () => {
     writeFileSync(
       mapPath,
       JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
@@ -304,7 +304,7 @@ describe('remapExtrasPush (integration)', () => {
 
     // settings.local.json (ALWAYS_NEVER_SYNC) must NOT be staged.
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'settings.local.json'))).toBe(false);
-    // NEVER_SYNC-only ephemeral state must NOT be staged (the CR-01 fix).
+    // NEVER_SYNC-only ephemeral state must NOT be staged.
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'shell-snapshots'))).toBe(false);
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'sessions'))).toBe(false);
     // projects/ (transcripts) must NOT be staged: in CLAUDE_EXTRA_NEVER_SYNC.
@@ -323,7 +323,7 @@ describe('remapExtrasPush (integration)', () => {
     });
   });
 
-  it('.planning push: ALWAYS_NEVER_SYNC files are NOT copied into the repo working tree (WR-02 regression)', async () => {
+  it('.planning push excludes ALWAYS_NEVER_SYNC files from the repo working tree', async () => {
     // A secret file with an ALWAYS_NEVER_SYNC basename in .planning must never
     // reach the repo working tree on push, even before the allow-list gate.
     // The filtered overlay strips it at the copy layer so no residue accumulates.
