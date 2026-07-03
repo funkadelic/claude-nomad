@@ -141,9 +141,10 @@ function buildWetPullSections(
  *   `recoverForceRemote` (abort + safety-diff + park + reset --hard).
  *   Without `--force-remote`, dies with an actionable message.
  * - `'unmerged-index'`: under `--force-remote`, delegates to
- *   `recoverUnmergedIndex` (reset --mixed HEAD + autostash surface only,
- *   per D-3 -- NOT recoverForceRemote). Without `--force-remote`, dies with
- *   the D-2 runbook (non-destructive).
+ *   `recoverUnmergedIndex` (reset --mixed HEAD + autostash surface only;
+ *   deliberately not recoverForceRemote, which is scoped to rebase/merge
+ *   wedges). Without `--force-remote`, dies with the non-destructive
+ *   manual-recovery runbook.
  * - `null`: no-op (clean repo).
  *
  * Called inside the `cmdPull` try block so any `NomadFatal` thrown propagates
@@ -191,7 +192,7 @@ export type PullCoreResult =
  * `git pull --rebase --autostash` in `REPO_HOME`, then applies the
  * side-effecting sync steps in order:
  *   1. `divergenceCheckExtras` (read-only WARN naming local files that
- *      diverge from origin; fires in BOTH wet and dry modes per D-08)
+ *      diverge from origin; fires in BOTH wet and dry modes)
  *   2. `applySharedLinks` (symlink shared/* into ~/.claude/)
  *   3. `regenerateSettings` (deep-merge base + host-override into settings.json)
  *   4. `remapPull` (copy repo-side session transcripts into host-encoded dirs)
@@ -294,7 +295,7 @@ export function runPullCore(
   // catch/finally.
   const mapPath = join(repo, 'path-map.json');
   const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
-  // Read-only pre-pull check: fires in BOTH wet and dry modes (D-08).
+  // Read-only pre-pull check: fires in BOTH wet and dry modes.
   // Runs AFTER the rebase (so origin content is fetched) and BEFORE any
   // mutation (so local state is intact for byte-level comparison). The
   // function itself silently skips when no `extras` key is declared. Only the
@@ -335,7 +336,9 @@ export function runPullCore(
  * rethrow.
  */
 export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}): void {
-  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  // Resolve roots once per command invocation to avoid a time-of-check/
+  // time-of-use race: resolving twice could observe a different filesystem
+  // state between the check and the use.
   const repo = repoHome();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
   // Fire the init-hint FATAL BEFORE acquireLock so an

@@ -80,7 +80,7 @@ export function unmergedIndexPresent(repo: string): boolean {
  * Classify the current wedge state, extending `detectWedge` with the
  * unmerged-index-no-active-rebase case.
  *
- * Precedence (D-1 from Phase 51 locked decisions):
+ * Precedence (marker states always take priority over the index-only check):
  * 1. If `detectWedge` returns a non-null marker state (`'rebase'` or
  *    `'merge'`), return it verbatim. An active rebase/merge that also has
  *    unmerged index entries is still a marker state.
@@ -146,7 +146,7 @@ export function wedgeMarkerRunbookText(state: 'mid-rebase' | 'mid-merge'): strin
  * Scan `git stash list` for an entry matching git's autostash subject format.
  * Returns `true` when such an entry is present.
  *
- * This is a pure presence detector per Phase 51 D-4: it NEVER pops, drops,
+ * This is a pure presence detector: it NEVER pops, drops,
  * or otherwise mutates the stash. Git writes dropped autostash entries as
  * `stash@{N}: On <branch>: autostash` (or `stash@{N}: autostash` on a
  * detached HEAD). The match anchors on the trailing `: autostash` field to
