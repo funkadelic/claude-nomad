@@ -34,8 +34,8 @@ function isAllowed(path: string, allowed: readonly string[]): boolean {
 /**
  * Choose the hard-block denylist for a staged path's segments. Outside the
  * extras tree the full `NEVER_SYNC` set applies. Inside `shared/extras/` the
- * narrow `ALWAYS_NEVER_SYNC` subset applies (Pitfall 6) so `.planning/todos/`
- * and similar legitimate GSD content passes, EXCEPT for the `.claude` extra:
+ * narrow `ALWAYS_NEVER_SYNC` subset applies, so legitimate GSD content such
+ * as `.planning/todos/` passes, EXCEPT for the `.claude` extra:
  * its subtree mirrors `~/.claude/` semantics, so its ephemeral segment names
  * (`projects`, `shell-snapshots`, `sessions`, `todos`, ...) get the full
  * `NEVER_SYNC` boundary. Mirrors `extrasDenySet` in `extras-sync.core.ts` so
@@ -153,10 +153,12 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
  * `PUSH_ALLOWED_STATIC` with one `shared/projects/<logical>/` prefix per entry
  * in `path-map.json` AND, per (logical, whitelisted name) pair in
  * `map.extras ?? {}`, an exact `shared/extras/<logical>/<name>` entry plus a
- * `shared/extras/<logical>/<name>/` prefix entry (Pitfall 4 closed:
- * data-driven, no hand-rolled bypass). The exact entry permits the declared
- * name when it is a single root file (e.g. `CLAUDE.md`); the prefix entry
- * permits the declared name's subtree when it is a directory. Neither widens
+ * `shared/extras/<logical>/<name>/` prefix entry. This entry generation is
+ * data-driven, not a hand-rolled bypass, closing the allow-list-widening gap
+ * a crafted `shared/extras/` path could otherwise exploit. The exact entry
+ * permits the declared name when it is a single root file (e.g. `CLAUDE.md`);
+ * the prefix entry permits the declared name's subtree when it is a
+ * directory. Neither widens
  * to a logical-only prefix, so an arbitrary sibling file under the same
  * logical stays rejected. The name filter (`SUPPORTED_EXTRAS`) is the same one
  * `remapExtrasPush` honors, so manually staged content under a non-whitelisted

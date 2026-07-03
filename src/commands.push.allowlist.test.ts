@@ -446,17 +446,18 @@ describe('commitAndPush gsd-dropped unstage (issue #294 commit-suppression)', ()
   it('isGsdDropped returns false for shared/hooks/user-hook.sh (non-gsd gate boundary)', async () => {
     const { isGsdDropped } = await import('./commands.push.allowlist.ts');
     // This boundary ensures the commit-suppression step does not swallow files
-    // that enforceAllowList is supposed to reject (Pitfall 4 guard preserved).
+    // that enforceAllowList is supposed to reject (the gsd-drop skip must not
+    // widen into a general allow-list bypass).
     expect(isGsdDropped('shared/hooks/user-hook.sh')).toBe(false);
     expect(isGsdDropped('shared/agents/my-agent.md')).toBe(false);
   });
 });
 
-// Regression for D-04: .gitleaksignore must be allowed by enforceAllowList so
+// Regression: .gitleaksignore must be allowed by enforceAllowList so
 // the nomad push Allow action can write and stage the file without tripping the
 // push gate. The entry must be an exact match (not a prefix) so siblings like
 // .gitleaksignore.bak remain rejected.
-describe('enforceAllowList .gitleaksignore allow-list entry (D-04)', () => {
+describe('enforceAllowList .gitleaksignore allow-list entry', () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {

@@ -21,7 +21,8 @@ import { deepMerge, readJson } from './utils.json.ts';
  * change). Best-effort: a missing or unparseable base is silently skipped.
  *
  * Must only be called on the REAL-push path (!dryRun). The function is
- * push-only by design: pull stays non-destructive per Phase 50 precedent.
+ * push-only by design: pull is a read-side operation and stays
+ * non-destructive, so this strip has no pull-side counterpart.
  *
  * @param repo - Resolved repo root path for this invocation.
  * @param backup - Resolved backup root path for this invocation.
