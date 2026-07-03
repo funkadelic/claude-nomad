@@ -15,7 +15,7 @@ export const DEFAULT_REPO_NAME = 'claude-nomad-config';
  * Validate a user-supplied GitHub repository name. Accepts only characters
  * that GitHub allows: alphanumerics, hyphens, underscores, and dots, up to
  * 100 characters. This blocks argument-injection or path-escape attempts when
- * the name flows into subprocess argv (T-32-06).
+ * the name flows into subprocess argv.
  */
 function isValidRepoName(name: string): boolean {
   return /^[A-Za-z0-9._-]{1,100}$/.test(name);
@@ -31,14 +31,15 @@ const GH_NETWORK_TIMEOUT_MS = 30_000;
 
 /**
  * Ensure REPO_HOME has a GitHub `origin` remote. When one already exists the
- * function is a no-op (D-09 idempotency). When none exists, a new private
+ * function is a no-op (idempotent). When none exists, a new private
  * repository named `repoName` is created via `gh repo create`, the owner is
  * resolved from `gh api user`, and `git remote add origin` is wired into
  * REPO_HOME. All subprocess calls use the argv-array form via the injectable
- * `run` runner; no shell strings are used (T-32-06).
+ * `run` runner; no shell strings are used, avoiding shell-string injection
+ * when building the gh onboarding commands.
  *
  * `gh` is a hard prerequisite on this path: missing or unauthenticated `gh`
- * results in a `NomadFatal` (D-08), not a soft tip.
+ * results in a `NomadFatal`, not a soft tip.
  *
  * @param repoName - The GitHub repository name to create (validated by
  *   `isValidRepoName` before any subprocess call).
@@ -53,7 +54,7 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
 
   const repo = repoHome();
 
-  // Fast idempotency path: if origin is already wired, nothing to do (D-09).
+  // Fast idempotency path: if origin is already wired, nothing to do.
   try {
     readOriginRemote(repo, run);
     return;
@@ -61,7 +62,7 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
     // No origin configured; fall through to the create flow.
   }
 
-  // gh is a hard prerequisite when no origin is present (D-08).
+  // gh is a hard prerequisite when no origin is present.
   const ghStatus = ghAuthStatus(run);
   if (ghStatus === 'gh-not-installed') {
     die('gh CLI is required for nomad init. Install: https://cli.github.com');
@@ -88,8 +89,8 @@ export function ensureOriginRepo(repoName: string, run: SpawnSyncFn = execFileSy
 
   // Create the private repo on GitHub. When the repo already exists on the
   // account, gh exits non-zero; treat that as a no-op and fall through to wire
-  // origin rather than failing (D-09 idempotency: a prior run may have created
-  // the repo but died before `git remote add`). Any other failure is fatal.
+  // origin rather than failing (a prior run may have created the repo but
+  // died before `git remote add`). Any other failure is fatal.
   try {
     run('gh', ['repo', 'create', repoName, '--private'], {
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -136,7 +136,7 @@ describe('cmdInit empty-scaffold mode', () => {
 
   it('passes repoName through to ensureOriginRepo (no-op when origin exists)', async () => {
     // When origin already exists, the custom repoName is accepted but ignored by
-    // ensureOriginRepo (D-09 idempotency). Scaffold still completes normally.
+    // ensureOriginRepo (idempotent). Scaffold still completes normally.
     const { cmdInit } = await import('./init.ts');
     cmdInit({ run: makeOriginExistsRun(), repoName: 'my-custom-repo' });
     expect(joinedLog(env.logSpy)).toMatch(/init complete$/);
