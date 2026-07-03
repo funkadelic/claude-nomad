@@ -385,7 +385,7 @@ describe('syncSkillsPush', () => {
   });
 
   it('does not throw or wipe shared/skills when ~/.claude/skills is still a symlink', async () => {
-    // Pre-phase-50 live-symlink state: a host upgraded but not yet pulled has
+    // Symlink-era state: a host upgraded but not yet pulled still has
     // ~/.claude/skills pointing into shared/skills. Pushing through it must not
     // rmSync the symlink's own target and crash.
     mkdirSync(sharedSkills, { recursive: true });

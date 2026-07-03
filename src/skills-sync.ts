@@ -164,9 +164,9 @@ export function syncSkillsPull(ts: string): void {
  * removed automatically on the first `syncSkillsPush` call. No separate prune
  * step is needed; this is the one-time stale-gsd-* cleanup mechanism.
  *
- * Symlink guard: on a host upgraded post-phase-50 that has not yet pulled,
- * `~/.claude/skills` is still a live symlink into `shared/skills` (the
- * pre-phase-50 state). Pushing through it would `rmSync` the copy target out
+ * Symlink guard: on a host upgraded to copy-synced skills that has not yet
+ * pulled, `~/.claude/skills` is still a live symlink into `shared/skills`
+ * (the symlink-era state). Pushing through it would `rmSync` the copy target out
  * from under the `cpSync` source, wiping `shared/skills` and crashing with
  * `ENOENT`. When `localSkills` is a symlink we skip the mirror entirely: the
  * next `nomad pull` migrates the link to a real dir (see `syncSkillsPull`),
@@ -176,7 +176,7 @@ export function syncSkillsPush(): void {
   const localSkills = join(claudeHome(), 'skills');
   const stat = lstatSync(localSkills, { throwIfNoEntry: false });
   if (stat === undefined) return; // absent: nothing to push
-  if (stat.isSymbolicLink()) return; // pre-phase-50 live symlink; defer to next pull
+  if (stat.isSymbolicLink()) return; // symlink-era live link; defer to next pull
   const sharedSkills = join(repoHome(), 'shared', 'skills');
   copySkillsPush(localSkills, sharedSkills);
 }

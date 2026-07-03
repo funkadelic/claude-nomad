@@ -165,7 +165,7 @@ export const GSD_PREFIX = 'gsd-';
 /**
  * Names previously in `SHARED_LINKS` that gsd (`@opengsd/gsd-core`) now owns
  * per-host (see the `SHARED_LINKS` comment for why they were dropped). A
- * leftover symlink at `~/.claude/<name>` is a pre-phase-50 migration artefact
+ * leftover symlink at `~/.claude/<name>` is a symlink-era migration artefact
  * the doctor probe flags. Co-located with `SHARED_LINKS` and `GSD_PREFIX` so the
  * gsd-ownership model lives in one module; consumed by
  * `reportDroppedNamesMigration` in `commands.doctor.checks.repo.ts`.
