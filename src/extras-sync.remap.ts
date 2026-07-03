@@ -129,7 +129,7 @@ function tryRealpath(dir: string): string | undefined {
 /**
  * Return `true` if `parentReal` is the same directory as `rootReal` or a
  * strict subdirectory of it (the parent lives inside the planning root). Used
- * to guard `rmSync` against deletion through an intermediate symlink (WR-03).
+ * to guard `rmSync` against deletion through an intermediate symlink.
  *
  * @param parentReal - Resolved real path of the file's parent directory.
  * @param rootReal - Resolved real path of `localRoot/.planning`.
@@ -147,15 +147,16 @@ function isInsidePlanningRoot(parentReal: string, rootReal: string): boolean {
  * @param planningRoot - Absolute path of `localRoot/.planning`; ancestor
  *   pruning stops here.
  * @param repoCounterpart - Repo-side counterpart of `target`; if it still
- *   exists the delete is skipped (WR-04: case-only rename on macOS).
+ *   exists the delete is skipped (a case-only rename on macOS resolves the
+ *   old name to the new file).
  */
 function deletePlanningTarget(target: string, planningRoot: string, repoCounterpart: string): void {
-  // WR-04: skip if the post-rebase repo still has this path (a case-only
+  // Skip if the post-rebase repo still has this path (a case-only
   // rename on a case-insensitive filesystem resolves old name to the new
   // file, so deleting would undo what the overlay just wrote).
   if (existsSync(repoCounterpart)) return;
 
-  // WR-03: verify the parent's real path is inside the planning root,
+  // Verify the parent's real path is inside the planning root,
   // guarding against deletion through an intermediate symlink.
   const parentReal = tryRealpath(dirname(target));
   if (parentReal === undefined) return; // parent gone; target already missing
@@ -418,7 +419,7 @@ export function remapExtrasPush(
     //     Repo-only files survive; local edits propagate (overlay overwrites).
     //     The filter prevents ALWAYS_NEVER_SYNC files from landing in the repo
     //     working tree before the allow-list gate fires, eliminating the
-    //     "residue wedges repeat push" regression (WR-02). The allow-list gate
+    //     "residue wedges repeat push" regression. The allow-list gate
     //     (enforceAllowList / blockSetFor in commands.push.allowlist.ts)
     //     remains the hard security boundary.
     //   All others: copyExtrasFiltered with per-extra denylist.

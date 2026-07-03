@@ -121,7 +121,7 @@ describe('copySkillsPush', () => {
     expect(readdirSync(dst)).toEqual([]);
   });
 
-  it('excludes a NEVER_SYNC file nested inside a user skill (WR-02)', () => {
+  it('excludes a NEVER_SYNC file nested inside a user skill', () => {
     mkdirSync(join(src, 'graphify'), { recursive: true });
     writeFileSync(join(src, 'graphify', 'SKILL.md'), '# graphify\n');
     // A stray host-config file nested under a user skill must not ride into dst.
@@ -166,7 +166,7 @@ describe('copySkillsPull', () => {
     expect(existsSync(join(dst, 'graphify'))).toBe(true);
   });
 
-  it('preserves a local gsd-* entry that is ABSENT from src (the load-bearing D-2 case)', () => {
+  it('preserves a local gsd-* entry that is ABSENT from src (the load-bearing case)', () => {
     // This is the critical case: a gsd-* skill present in dst but NOT in src.
     // A src-scanned blockSet would not contain it and would delete it.
     // The predicate-driven variant must preserve it regardless of src content.
@@ -212,7 +212,7 @@ describe('copySkillsPull', () => {
     expect(readdirSync(dst).sort()).toEqual(['graphify']);
   });
 
-  it('does not overlay a NEVER_SYNC file nested in src into dst (WR-02)', () => {
+  it('does not overlay a NEVER_SYNC file nested in src into dst', () => {
     // A poisoned repo carrying a host-config file under a user skill must not
     // restore it onto the host on pull.
     mkdirSync(join(src, 'graphify'), { recursive: true });
@@ -387,7 +387,7 @@ describe('syncSkillsPush', () => {
   it('does not throw or wipe shared/skills when ~/.claude/skills is still a symlink', async () => {
     // Pre-phase-50 live-symlink state: a host upgraded but not yet pulled has
     // ~/.claude/skills pointing into shared/skills. Pushing through it must not
-    // rmSync the symlink's own target and crash (CR-01 regression).
+    // rmSync the symlink's own target and crash.
     mkdirSync(sharedSkills, { recursive: true });
     mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
     writeFileSync(join(sharedSkills, 'graphify', 'SKILL.md'), '# graphify\n');

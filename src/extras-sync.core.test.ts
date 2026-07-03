@@ -621,7 +621,7 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
     expect(readFileSync(join(tmpDst, 'settings.local.json'), 'utf8')).toBe('local=1\n');
   });
 
-  it('Test WR-01 (recursive prune): a nested non-deny file absent from src is removed', async () => {
+  it('recursive prune: a nested non-deny file absent from src is removed', async () => {
     // The prune mirrors at depth, not just the top level: a synced file removed
     // from the repo under a shared subdir must be pruned from dst.
     mkdirSync(join(tmpDst, 'hooks'), { recursive: true });
@@ -636,7 +636,7 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
     expect(existsSync(join(tmpDst, 'hooks', 'new.cjs'))).toBe(true);
   });
 
-  it('Test WR-02 (type change): a dst directory is replaced by a same-named src file', async () => {
+  it('type change: a dst directory is replaced by a same-named src file', async () => {
     // dst has a non-empty dir, src has a regular file at the same name. The prune
     // removes the dst dir on the type mismatch so cpSync can write the file
     // (cpSync cannot overwrite a non-empty dir with a file).
@@ -653,7 +653,7 @@ describe('copyExtrasFilteredPreserving pull-only preserving copy', () => {
     expect(readFileSync(join(tmpDst, 'foo'), 'utf8')).toBe('file-content\n');
   });
 
-  it('Test WR-02 (type change, reverse): a dst file is replaced by a same-named src directory', async () => {
+  it('type change, reverse: a dst file is replaced by a same-named src directory', async () => {
     // Mirror of the above: dst is a file, src is a directory at the same name.
     writeFileSync(join(tmpDst, 'bar'), 'old-file\n');
     mkdirSync(join(tmpSrc, 'bar'), { recursive: true });
@@ -849,7 +849,7 @@ describe('copyExtrasOverlay non-pruning overlay copy', () => {
   });
 });
 
-// copyExtrasOverlayFiltered: filtered overlay copy for .planning (WR-02 fix)
+// copyExtrasOverlayFiltered: filtered overlay copy for .planning
 // ---------------------------------------------------------------------------
 
 describe('copyExtrasOverlayFiltered filtered overlay copy', () => {
@@ -892,7 +892,7 @@ describe('copyExtrasOverlayFiltered filtered overlay copy', () => {
     expect(existsSync(join(tmpDst, 'PLAN.md'))).toBe(true);
   });
 
-  it('throws NomadFatal on EINVAL (file/directory type collision) instead of raw cpSync error (WR-01)', async () => {
+  it('throws NomadFatal on an EINVAL type collision instead of a raw cpSync error', async () => {
     // Simulate a type collision: dst has a non-empty directory at 'foo' but src
     // has a file named 'foo'. cpSync throws EINVAL; the wrapper converts it to
     // NomadFatal so cmdPull surfaces an actionable message.

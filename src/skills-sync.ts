@@ -54,7 +54,7 @@ export function isSkillExcluded(name: string): boolean {
  * `dst` (stale repo entries deposited during the symlink era) are removed as
  * part of the push-side rm-then-copy so the repo reflects only user skills.
  * Passes `verbatimSymlinks: true` to keep relative symlink targets unrewritten
- * across hosts (Pitfall 1, nodejs/node issue 41693).
+ * across hosts (see nodejs/node issue 41693).
  *
  * Uses `copyExtrasFiltered` with a src-scanned blockSet: the push side is a
  * true mirror of the non-gsd content, so a src-derived set is safe here (no
@@ -65,7 +65,7 @@ export function isSkillExcluded(name: string): boolean {
  * The blockSet unions the gsd-owned top-level names with the whole
  * `ALWAYS_NEVER_SYNC` denylist. `copyExtrasFiltered`'s `cpSync` filter tests
  * every entry's basename at every depth, so seeding the set with the denylist
- * names blocks a host-config file nested inside a user skill (WR-02), not just
+ * names blocks a host-config file nested inside a user skill, not just
  * a top-level one.
  *
  * Precondition: `src` MUST be a real directory, not a symlink. `readdirSync`
@@ -98,18 +98,18 @@ export function copySkillsPush(src: string, dst: string): void {
  * entries present in src are also excluded from the cpSync copy, so a stale
  * `shared/skills/gsd-*` entry cannot overwrite or create a local gsd skill.
  * Passes `verbatimSymlinks: true` to keep relative symlink targets unrewritten
- * across hosts (Pitfall 1, nodejs/node issue 41693).
+ * across hosts (see nodejs/node issue 41693).
  *
  * Routes through `copyExtrasFilteredPreservingBy` (the predicate-driven
  * preserving-copy variant in `extras-sync.core.ts`). The FORBIDDEN alternative
  * -- building a blockSet by scanning src for gsd-* names and passing it to
  * `copyExtrasFilteredPreserving` -- is unsafe: a local gsd-* skill in dst but
  * absent from src would not be in that set and would be rmSync-deleted (a
- * Phase-49-class mirror-delete violating D-2).
+ * dst-only entry must be preserved regardless of what is currently in src).
  *
  * The preserve/exclude predicate is `isSkillExcluded` (gsd-ownership composed
  * with `ALWAYS_NEVER_SYNC`), mirroring the push-side boundary so a poisoned repo
- * cannot overlay a sensitive host-config name into `~/.claude/skills/` (WR-02).
+ * cannot overlay a sensitive host-config name into `~/.claude/skills/`.
  *
  * @param src - Source skills directory (`shared/skills/` on pull).
  * @param dst - Destination skills directory (`~/.claude/skills/` on pull).
