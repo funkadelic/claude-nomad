@@ -160,7 +160,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     teardownAdoptEnv(env);
   });
 
-  // V-04: invalid name is rejected before any mutation
+  // An invalid name is rejected before any mutation
   it('rejects an invalid name (path separator) before any mutation', async () => {
     const { cmdAdopt } = await import('./commands.adopt.ts');
     const namePath = join(env.claudeHome, '../evil');
@@ -172,7 +172,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(existsSync(namePath)).toBe(false);
   });
 
-  // V-03 / D-03: unconfigured name -- not in SHARED_LINKS and not in sharedDirs
+  // Unconfigured name -- not in SHARED_LINKS and not in sharedDirs
   it('rejects a valid name that is not a configured shared target', async () => {
     // "get-shit-done" passes isValidSharedDir but is not in SHARED_LINKS or sharedDirs
     const { cmdAdopt } = await import('./commands.adopt.ts');
@@ -242,7 +242,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(diffCached(env)).toBe('');
   });
 
-  // V-06: already a symlink -> no-op with "already adopted" message
+  // Already a symlink -> no-op with "already adopted" message
   it('is a no-op when ~/.claude/<name> is already a symlink', async () => {
     addSharedDir(env, 'my-dir');
     const linkPath = join(env.claudeHome, 'my-dir');
@@ -260,7 +260,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
   });
 
-  // V-05: absent from CLAUDE_HOME -> no-op, exit 0 (nothing to adopt is not an error)
+  // Absent from CLAUDE_HOME -> no-op, exit 0 (nothing to adopt is not an error)
   it('is a no-op when ~/.claude/<name> does not exist', async () => {
     // Use "commands" (SHARED_LINKS member) but don't create it under claudeHome
     const { cmdAdopt } = await import('./commands.adopt.ts');
@@ -271,7 +271,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(errOutput(env)).toBe('');
   });
 
-  // V-07: shared/<name> already exists -> clobber refusal, non-zero exit
+  // shared/<name> already exists -> clobber refusal, non-zero exit
   it('refuses when shared/<name> already exists (would clobber)', async () => {
     addSharedDir(env, 'my-dir');
     mkdirSync(join(env.claudeHome, 'my-dir'), { recursive: true });
@@ -284,7 +284,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(diffCached(env)).toBe('');
   });
 
-  // V-07 (dangling target): a broken symlink at shared/<name> must still be
+  // Dangling target: a broken symlink at shared/<name> must still be
   // refused. existsSync follows links and reports false for a dangling link,
   // so the clobber guard uses an lstat-based check; otherwise cpSync would
   // throw an opaque non-NomadFatal error on the dangling destination.
@@ -334,7 +334,7 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     teardownAdoptEnv(env);
   });
 
-  // V-01: happy path moves content, creates symlink, stages, prints hint
+  // Happy path moves content, creates symlink, stages, prints hint
   it('happy path: moves dir, creates symlink at source, stages shared/<name>', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
@@ -364,7 +364,7 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     expect(out).toContain('my-tools');
   });
 
-  // V-01 (exact literal): ADOPT_PUSH_HINT exported and printed verbatim
+  // Exact literal: ADOPT_PUSH_HINT exported and printed verbatim
   it('prints the exact ADOPT_PUSH_HINT literal', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
@@ -378,7 +378,7 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     expect(out).toContain(mod.ADOPT_PUSH_HINT);
   });
 
-  // V-07 / ordering: copy completes before source removal -- verified by observing
+  // Ordering: copy completes before source removal -- verified by observing
   // that shared/<name> is fully populated and the source is removed in the final state
   it('ordering: shared copy is fully populated before source is removed', async () => {
     // We verify the copy-before-remove ordering invariant by:
@@ -411,7 +411,7 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     expect(readFileSync(join(sharedTarget, 'root.txt'), 'utf8')).toBe('root\n');
   });
 
-  // V-08: dry-run is a true no-op
+  // Dry-run is a true no-op
   it('dry-run: zero fs writes, zero git mutations, prints would-do lines', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
@@ -438,7 +438,7 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     expect(out).toContain('would stage');
   });
 
-  // V-09 / D-03: path-map.json is not written during adopt
+  // path-map.json is not written during adopt
   it('does not create or modify path-map.json during adopt', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
@@ -455,7 +455,7 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     expect(mapAfter).toBe(mapBefore);
   });
 
-  // V-08 (content integrity): nested files survive the move byte-for-byte
+  // Content integrity: nested files survive the move byte-for-byte
   it('content integrity: nested files survive the move byte-for-byte', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
