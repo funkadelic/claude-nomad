@@ -18,8 +18,8 @@ import {
 
 /**
  * Scan cleanup + partition-gating cases driven by a mocked `node:child_process`
- * (no real gitleaks needed): the finally-block temp cleanup on the failure path
- * (D-04), the empty-findings clean row, and the mixed session/`other` findings
+ * (no real gitleaks needed): the finally-block temp cleanup on the failure path,
+ * the empty-findings clean row, and the mixed session/`other` findings
  * report. Every `vi.doMock` here is paired with a `vi.doUnmock` in `afterEach`
  * because `vi.restoreAllMocks` does NOT clear `vi.doMock` module mocks (they
  * would otherwise leak across files).
@@ -38,7 +38,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     restoreEnv(snapshot, testHome);
   });
 
-  it('removes the temp report and temp tree in finally on the failure path (D-04)', async () => {
+  it('removes the temp report and temp tree in finally on the failure path', async () => {
     const env = makeEnv();
     testHome = env.testHome;
     writeFileSync(

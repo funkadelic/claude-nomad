@@ -6,8 +6,8 @@ import { GITLEAKS_PINNED_VERSION } from './config.ts';
 import { reportGitleaksVersionCheck } from './commands.doctor.gitleaks-version.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
 
-// WARN / OK / silent matrix for the gitleaks version-drift reporter (D-02,
-// D-03, D-04). The reporter is driven directly with an injected `run` that
+// WARN / OK / silent matrix for the gitleaks version-drift reporter. The
+// reporter is driven directly with an injected `run` that
 // returns crafted Buffers (no real spawn, no vi.doMock), mirroring the
 // gh-actions.test.ts style. Assertions are on section.items length and
 // substring (the `->` arrow and the status glyphs). process.exitCode is

@@ -13,7 +13,7 @@ import {
 } from './commands.doctor.checks.test-helpers.ts';
 
 describe('cmdDoctor --check-shared dispatch wiring', () => {
-  // Dispatch-level wiring only: plain doctor must NOT scan (D-05), the flag
+  // Dispatch-level wiring only: plain doctor must NOT scan, the flag
   // must append a "Shared scan" section. The deep check-shared behavior lives
   // in commands.doctor.check-shared.test.ts (plan 01) under a real-binary
   // gate; here we drive a zero-staged path-map so the reporter short-circuits

@@ -10,9 +10,11 @@ import { claudeHome, home } from './config.ts';
  * every `{ type: "command", command }` entry in the `hooks` block, and FAILs
  * with `process.exitCode = 1` for each command token that confidently resolves
  * to a path under `~/.claude` but is missing on disk. Commands with no
- * resolvable `~/.claude` path (bare binaries, unresolved env vars) are silently
- * skipped per D-09: the check only surfaces the issue-#170 case of synced hook
- * config pointing at unsynced local scripts.
+ * resolvable `~/.claude` path (bare binaries, unresolved env vars) are
+ * silently skipped, since a script referencing a path outside the managed
+ * config is a supported configuration rather than an error: the check only
+ * surfaces the issue-#170 case of synced hook config pointing at unsynced
+ * local scripts.
  */
 
 /**
@@ -40,7 +42,7 @@ const TRAILING_SHELL_PUNCT = new Set(["'", '"', '`', ';', ')', '|', '&', '>']);
  * token so a real path is not mistaken for a missing one. Without this, a
  * quoted compound command like `bash -c 'a.sh; ~/.claude/hooks/run.sh'` yields
  * the token `~/.claude/hooks/run.sh'` (trailing quote), and `existsSync` would
- * FAIL on a script that is actually present (a D-09 false-FAIL). Removes
+ * FAIL on a script that is actually present (a false-FAIL). Removes
  * leading quotes and any trailing run of `'"`;)|&>` characters. A genuine path
  * never carries these on its boundary, so stripping them is safe.
  *
@@ -66,8 +68,8 @@ function stripShellPunctuation(token: string): string {
  * stripped of shell quoting and home-expanded before comparison, so the
  * literal `~`, `$HOME`, and `${HOME}` forms collapse to one check. Tokens that
  * do not resolve under `~/.claude` (bare binaries, flags, unresolved env vars)
- * are skipped per D-09, so the check only ever FAILs on a real `~/.claude`
- * target.
+ * are silently skipped as a supported configuration, so the check only ever
+ * FAILs on a real `~/.claude` target.
  *
  * @param command - The raw `command` string from a hook entry.
  * @returns Iterable of absolute resolved paths under `~/.claude`.
@@ -91,7 +93,7 @@ type FlatEntry = { type: unknown; command?: unknown };
 /**
  * Yield command strings from a flat-format entry list (each element is
  * directly `{ type: "command", command: string }`). Skips non-object and
- * non-command entries silently (T-25-07 defence).
+ * non-command entries silently (a defensive guard against malformed input).
  *
  * @param entries - Array of flat hook entries to walk.
  */
@@ -107,7 +109,7 @@ function* commandsFromFlat(entries: unknown[]): Iterable<string> {
  * Yield every `{ type: "command"; command: string }` entry from a single
  * hook group, which may be a flat array entry or a grouped object with a
  * nested `hooks` array. Non-object / non-command entries are silently skipped
- * (D-09 / T-25-07 defence: malformed input degrades to skips, never throws).
+ * (malformed input degrades to skips, never throws).
  *
  * @param group - One element of a hooks event array.
  * @returns Iterable of command strings from command-type entries.
@@ -156,7 +158,9 @@ function checkEventGroups(section: DoctorSection, event: string, groups: unknown
  * Append the Hook-targets check result to the supplied section. Reads
  * `~/.claude/settings.json`, walks every command entry in the `hooks` block,
  * and emits a `✗` FAIL for each `~/.claude` target that is absent on disk.
- * Commands with no resolvable local path are silently skipped (D-09).
+ * Commands with no resolvable local path are silently skipped, since a
+ * script referencing a path outside the managed config is a supported
+ * configuration rather than an error.
  * Emits a `✓` OK line when all resolvable targets exist (or none were found).
  * Emits a `ℹ︎` info skip when `settings.json` is absent.
  *

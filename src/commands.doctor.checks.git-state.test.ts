@@ -389,7 +389,7 @@ describe('reportRebaseClean', () => {
 });
 
 // ---------------------------------------------------------------------------
-// reportRebaseState: unmerged-index extension (Phase 51 D-5)
+// reportRebaseState: unmerged-index coverage
 // ---------------------------------------------------------------------------
 
 describe('reportRebaseState unmerged-index FAIL', () => {
@@ -466,7 +466,7 @@ describe('reportRebaseState unmerged-index FAIL', () => {
 });
 
 // ---------------------------------------------------------------------------
-// reportOrphanedAutostash: new WARN reporter (Phase 51 D-5)
+// reportOrphanedAutostash: WARN reporter
 // ---------------------------------------------------------------------------
 
 describe('reportOrphanedAutostash WARN', () => {
@@ -505,7 +505,7 @@ describe('reportOrphanedAutostash WARN', () => {
     const { section, renderDoctor } = await import('./commands.doctor.format.ts');
     const sec = section('Repository');
     reportOrphanedAutostash(sec);
-    // WARN must NOT set exitCode (non-blocking per D-5).
+    // WARN must NOT set exitCode (non-blocking).
     expect(process.exitCode).toBe(0);
     renderDoctor([sec]);
     const out = joinedLog(env.logSpy);

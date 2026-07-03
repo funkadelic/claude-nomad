@@ -118,7 +118,7 @@ export function reportGitleaksVersionCheck(
   // future edit ever malforms the constant.
   /* c8 ignore next */
   if (pin === null) return;
-  // Compare major.minor ONLY (D-02). Inline numeric compare on the captured
+  // Compare major.minor ONLY. Inline numeric compare on the captured
   // segments; do NOT feed a two-segment string to compareSemver (its
   // triple-segment contract returns an undecidable 0).
   const sameMajorMinor = local[0] === pin[0] && local[1] === pin[1];
