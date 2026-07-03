@@ -156,7 +156,7 @@ export function probeGitleaks(): string {
  * - `'rebase'` / `'merge'`: names the in-progress state and points at
  *   `nomad pull --force-remote` (mirrors the pull-side `handleWedge` wording).
  *
- * Push has no `--force-remote` of its own (D-6); recovery lives on the pull
+ * Push has no `--force-remote` of its own; recovery lives on the pull
  * side only.
  */
 function wedgePreflight(wedge: NonNullable<ReturnType<typeof classifyWedge>>): string {
@@ -175,7 +175,7 @@ function wedgePreflight(wedge: NonNullable<ReturnType<typeof classifyWedge>>): s
  * Before the rebase, runs a wedge preflight via `classifyWedge`: if the repo
  * is already wedged (unmerged index, mid-rebase, or mid-merge), throws
  * NomadFatal with a runbook BEFORE any git mutation. Push has no
- * `--force-remote`; auto-recovery is always `nomad pull --force-remote` (D-6).
+ * `--force-remote`; auto-recovery is always `nomad pull --force-remote`.
  *
  * On failure, forwards git's stderr so the user sees the actual reason
  * (conflict, no-upstream, unreachable remote, auth failure, etc.), then

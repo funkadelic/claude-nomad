@@ -43,7 +43,7 @@ export function resolveTomlPath(repo: string = repoHome()): string | null {
  * Result of `resolveTomlConfig`. A discriminated union (TYPE, not enum or
  * class, to satisfy `erasableSyntaxOnly`):
  *   - `tempPath: null`  -> no temp config was generated (no overlay, S-01
- *     precedence, bundled-base absent, or the D-04 generation-failure fallback);
+ *     precedence, bundled-base absent, or a generation-failure fallback);
  *     `path` is whatever `resolveTomlPath` would return (possibly `null`).
  *   - `tempPath: string` -> an overlay was merged into a generated temp config;
  *     `tempPath` is the private temp DIRECTORY holding it, `path` is the config
@@ -55,7 +55,8 @@ export type TomlConfigResult =
   { path: string | null; tempPath: null } | { path: string; tempPath: string };
 
 /**
- * Regex matching an `[extend]` definition at the start of a line (D-05). Covers
+ * Regex matching an `[extend]` definition at the start of a line, used to
+ * reject an overlay that declares its own `[extend]` block. Covers
  * every TOML-equivalent form so the guard cannot be bypassed by whitespace or
  * key syntax: the table header `[extend]` with optional inner whitespace
  * (`[ extend ]`), the dotted-key form (`extend.path = ...`), and the inline-table
@@ -144,18 +145,18 @@ function assertOverlayAllowlistsScoped(overlayBody: string): void {
 /**
  * Read the overlay body and write the generated temp config that chains it onto
  * the bundled base. Separated from `resolveTomlConfig` so the I/O try/catch
- * (D-04 fallback) is a tight seam and the caller stays under the
- * cognitive-complexity gate. The `[extend]` guard is intentionally NOT here: it
- * runs in `resolveTomlConfig` BEFORE this call so its `NomadFatal` (D-05) is
- * never swallowed by the D-04 fallback catch.
+ * (the generation-failure fallback) is a tight seam and the caller stays under
+ * the cognitive-complexity gate. The `[extend]` guard is intentionally NOT
+ * here: it runs in `resolveTomlConfig` BEFORE this call so its `NomadFatal` is
+ * never swallowed by the generation-failure fallback catch.
  *
  * The temp body is `[extend]\npath = <bundled abs path JSON>\n\n<overlay body>`,
  * written as `config.toml` inside a private directory created atomically with
  * `mkdtempSync` (mode 0o700) under `tmpdir()` with a `nomad-gitleaks-cfg-` prefix
  * (CWE-377: the private dir plus the `wx` exclusive-create flag defeat a
  * symlink-redirect in the world-writable temp dir). The config file is written
- * mode 0o600. The `[extend] path` is the ABSOLUTE bundled path (D-02, Pitfall 1)
- * because the scan CWD is uncontrolled at the `scanFile` and `probeGitleaks` sites.
+ * mode 0o600. The `[extend] path` is the ABSOLUTE bundled path because the
+ * scan CWD is uncontrolled at the `scanFile` and `probeGitleaks` sites.
  *
  * @param overlayBody The already-read overlay body (read once by the caller so a
  *   single buffer is both guarded and spliced, closing the guard/build TOCTOU).
@@ -192,10 +193,10 @@ function buildOverlayTempConfig(
  *     `warn`, `tempPath: null`. A full repo toml signals manual control and may
  *     itself `[extend]`, so interposing the overlay would risk the depth-3 silent
  *     drop; the repo toml wins outright to keep the chain at the safe depth-2 max.
- *   - Overlay present, no full repo toml, bundled base absent: D-04 fallback,
+ *   - Overlay present, no full repo toml, bundled base absent: falls back to
  *     `{ path: null, tempPath: null }` so gitleaks still runs with its default
  *     ruleset (never no-scan, never skipped).
- *   - Overlay present with its own `[extend]` block: throws `NomadFatal` (D-05)
+ *   - Overlay present with its own `[extend]` block: throws `NomadFatal`
  *     BEFORE generating the temp, so a dangerous/malformed overlay fails LOUD and
  *     aborts the push rather than silently weakening the scan.
  *   - Overlay present with an unscoped allowlist (a block lacking `paths`, or a
@@ -204,11 +205,11 @@ function buildOverlayTempConfig(
  *     the overlay syncs across hosts, disable scanning fleet-wide.
  *   - Overlay present, bundled base resolvable: generates the temp config and
  *     returns `{ path: tempPath, tempPath }`.
- *   - D-04 "for ANY reason" generation failure: if reading the overlay or writing
+ *   - Generation failure for any reason: if reading the overlay or writing
  *     the temp throws (ENOSPC, EACCES, EROFS, missing tmpdir, unreadable overlay,
  *     etc.), `warn` once and fall back to the BUNDLED base path so the scan STILL
  *     runs with the full bundled allowlist. Never returns `path: null` here, never
- *     throws, never skips. The `[extend]` `NomadFatal` (D-05) is thrown outside the
+ *     throws, never skips. The `[extend]` `NomadFatal` is thrown outside the
  *     fallback try, so it is never swallowed by this catch.
  *
  * @returns A `TomlConfigResult`; the caller passes `path` to `--config` (omitting
@@ -231,14 +232,14 @@ export function resolveTomlConfig(): TomlConfigResult {
     );
     return { path: bundled, tempPath: null };
   }
-  // D-04: no bundled base to chain onto; run with the default ruleset, never skip.
+  // No bundled base to chain onto; run with the default ruleset, never skip.
   if (bundled === null) {
     return { path: null, tempPath: null };
   }
-  // D-04: any overlay-read or temp-generation I/O failure falls back to the
+  // Any overlay-read or temp-generation I/O failure falls back to the
   // bundled base so the scan still runs with the full bundled allowlist (never
   // null, never thrown). The overlay is read ONCE here and the same buffer is
-  // both guarded and spliced, closing the guard-vs-build TOCTOU. The D-05
+  // both guarded and spliced, closing the guard-vs-build TOCTOU. The
   // [extend] NomadFatal is re-thrown from the catch so it is never swallowed by
   // this fallback.
   try {

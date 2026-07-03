@@ -85,8 +85,8 @@ function readGitleaksReport(reportPath: string): Finding[] | null {
  * file and any generated overlay temp-config are removed in a `finally` on every path. ENOENT (gitleaks or git
  * absent) is re-thrown, not swallowed, so each caller keeps its own
  * missing-binary handling (push -> install-hint FATAL; doctor -> scan-failed
- * FAIL row). All calls use `execFileSync` argv-array form (no shell), the
- * codebase PUSH-04 invariant.
+ * FAIL row). All calls use `execFileSync` argv-array form (no shell), matching
+ * the no-shell invariant applied consistently across the codebase.
  *
  * `forwardStreams` (default `false`): when `true`, the gitleaks redacted
  * stderr/stdout captured on a non-zero exit is written to the process streams
