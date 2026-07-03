@@ -11,8 +11,8 @@ agreement on triage or fix timelines.
 ## Reporting a vulnerability
 
 Report suspected vulnerabilities privately through GitHub's "Report a vulnerability" form. The link
-below always targets the public upstream repository, even if you are reading this file inside your
-own private mirror, so a report reaches the maintainer rather than your clone:
+below always targets the public upstream repository, so your report reaches the maintainer even when
+you are reading this file from a fork or a local checkout:
 
 <https://github.com/funkadelic/claude-nomad/security/advisories/new>
 
