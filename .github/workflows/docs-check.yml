@@ -16,11 +16,8 @@ concurrency:
 
 jobs:
   docs-sync:
-    # Skip on private mirrors (matching the other PR workflows) and bypass
-    # entirely when the PR carries the `docs-not-needed` label.
-    if: >-
-      ${{ !github.event.repository.private &&
-      !contains(github.event.pull_request.labels.*.name, 'docs-not-needed') }}
+    # Bypass entirely when the PR carries the `docs-not-needed` label.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'docs-not-needed') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
