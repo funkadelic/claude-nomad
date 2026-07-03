@@ -30,7 +30,7 @@ jobs:
     # test asserts `nomad --version` matches the tag's bare semver. A manually
     # cut prerelease (e.g. v0.16.3-rc.1) would publish a tag whose suffix is
     # not reflected in package.json, breaking the smoke test by design.
-    if: ${{ !github.event.repository.private && !github.event.release.prerelease }}
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # id-token: write enables OIDC trusted publishing (npm validates the GitHub
@@ -81,7 +81,7 @@ jobs:
     needs: publish
     # Mirror the publish gate: prereleases are out of contract, so no install
     # attempt should fire against them.
-    if: ${{ !github.event.repository.private && !github.event.release.prerelease }}
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     # Must exceed the install step's retry budget (~8m of backoff sleeps, see
     # below) plus node setup and the per-attempt npm overhead, otherwise the

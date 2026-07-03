@@ -2,8 +2,7 @@ name: Settings schema drift
 
 # Weekly check that src/settings-keys.ts SCHEMA_KEYS still matches the official
 # Claude Code settings JSON schema. On drift, regenerate the file and open (or
-# update) a PR. APP_ONLY_KEYS stays hand-maintained. Gated to the public repo so
-# private mirrors never run it (they receive updates via `nomad update`).
+# update) a PR. APP_ONLY_KEYS stays hand-maintained.
 
 # Downgraded from contents/pull-requests write because the drift PR is now
 # authored by the funkadelic-release-bot GitHub App via
@@ -24,7 +23,6 @@ concurrency:
 
 jobs:
   drift:
-    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
