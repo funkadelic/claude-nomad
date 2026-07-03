@@ -267,7 +267,7 @@ describe('cmdPull: extras integration', () => {
     );
   });
 
-  it('dry-run skips remapExtrasPull but still runs divergenceCheckExtras (D-08 read-only contract)', async () => {
+  it('dry-run skips remapExtrasPull but still runs divergenceCheckExtras (read-only contract)', async () => {
     // Per the plan: dryRun preserves the zero-mutation contract by skipping
     // remapExtrasPull entirely, but divergenceCheckExtras still fires
     // because it is read-only and the user wants to see the same
@@ -315,7 +315,7 @@ describe('cmdPull: extras integration', () => {
   });
 
   it('legacy path-map.json without extras key: divergenceCheckExtras and remapExtrasPull are still invoked (they no-op internally)', async () => {
-    // D-03 additive contract: the call sites in cmdPull always fire; the
+    // Additive contract: the call sites in cmdPull always fire; the
     // extras-sync functions themselves return early when no extras key is
     // present (covered by extras-sync.test.ts). cmdPull does not branch
     // on the presence of the extras key.
@@ -954,14 +954,14 @@ describe('handleWedge unmerged-index dispatch', () => {
     cmdPull({ forceRemote: false });
     expect(process.exitCode).toBe(1);
     const combined = errorLines.join('\n');
-    // Runbook must name the manual recovery steps (D-2).
+    // Runbook must name the manual recovery steps.
     expect(combined).toMatch(/git reset --mixed HEAD/);
     expect(combined).toMatch(/git stash list/);
     expect(combined).toMatch(/nomad pull --force-remote/);
     expect(combined).toMatch(/FAQ/);
   });
 
-  it('default path does NOT call recoverUnmergedIndex (non-destructive per D-2)', async () => {
+  it('default path does NOT call recoverUnmergedIndex (non-destructive default)', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
       return { ...actual, classifyWedge: vi.fn(() => 'unmerged-index') };

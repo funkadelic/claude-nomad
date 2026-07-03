@@ -82,7 +82,8 @@ function makeCommit(repo: string, file: string, content: string, message: string
 
 /**
  * Build a repo that has unmerged stage-2/3 index entries but NO active
- * rebase/merge marker (the exact torn-down-rebase dead end from Phase 51).
+ * rebase/merge marker (the exact torn-down-rebase dead end this module is
+ * built to detect).
  *
  * Approach: start a conflicting merge (which sets MERGE_HEAD), then remove
  * the MERGE_HEAD/MERGE_MODE/MERGE_MSG marker files. The index retains the
@@ -232,7 +233,7 @@ describe('orphanedAutostashPresent', () => {
 });
 
 // ---------------------------------------------------------------------------
-// unmergedIndexPresent / orphanedAutostashPresent - non-git dir resilience (WR-02)
+// unmergedIndexPresent / orphanedAutostashPresent - non-git dir resilience
 // ---------------------------------------------------------------------------
 
 describe('unmergedIndexPresent - non-git dir returns false', () => {
