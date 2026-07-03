@@ -68,10 +68,11 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
     expect(existsSync(env.lockPath)).toBe(false);
   });
 
-  it('is idempotent: a second invocation on the same id is a no-op exit 0 (Pitfall 7)', async () => {
-    // SPEC acceptance (c) + Pitfall 7 guard. After the first drop the file is
-    // not in the index at all; the second drop must skip silently rather than
-    // call `git rm --cached` on an untracked path (which would fail).
+  it('is idempotent: a second invocation on the same id is a no-op exit 0', async () => {
+    // SPEC acceptance (c) plus the not-in-index idempotency guard. After the
+    // first drop the file is not in the index at all; the second drop must
+    // skip silently rather than call `git rm --cached` on an untracked path
+    // (which would fail).
     stageSession(env, 'foo', 'sid-A', '{"role":"user","content":"hi"}\n');
 
     const mod = await import('./commands.drop-session.ts');
@@ -132,7 +133,7 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
   });
 
   it('exits 0 on lock contention and emits `another nomad drop-session running, skipping`', async () => {
-    // Pitfall 6 + matches the cmdPull/cmdPush lock-contention pattern. Hold
+    // Matches the cmdPull/cmdPush lock-contention pattern. Hold
     // the lock manually (with this process's pid so the stale-pid recovery
     // path treats it as live), then invoke cmdDropSession. acquireLock
     // returns null inside the command, which triggers process.exit(0).

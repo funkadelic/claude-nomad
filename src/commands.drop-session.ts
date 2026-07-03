@@ -43,7 +43,9 @@ export function cmdDropSession(id: string): void {
     fail(`invalid session id: ${id}`);
     process.exit(1);
   }
-  // Resolve root once per command invocation (T-45-02 TOCTOU mitigation).
+  // Resolve root once per command invocation to avoid a time-of-check/
+  // time-of-use race: resolving twice could observe a different filesystem
+  // state between the check and the use.
   const repo = repoHome();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
 
@@ -118,19 +120,20 @@ function collectMatches(repoProjects: string, id: string, repo: string): string[
 
 /**
  * Unstage one repo-relative path via the tracked-vs-newly-staged primitive.
- * Skips paths absent from the index (Pitfall 7 idempotency guard), then
+ * Skips paths already absent from the index (idempotent re-run guard), then
  * classifies via `isTrackedInHead` and unstages with `git restore
  * --staged --worktree` (tracked-in-HEAD) or `git rm --cached -f`
- * (newly-staged). Git calls keep `execFileSync` argv-array form (PUSH-04).
+ * (newly-staged). Git calls keep `execFileSync` argv-array form to avoid
+ * shell interpretation of the path.
  *
  * @param rel Repo-relative path to unstage.
  * @throws NomadFatal when the underlying git invocation fails.
  */
 function unstageOne(rel: string, repo: string): void {
-  // Pitfall 7: skip files that are not in the index at all (the
-  // load-bearing guard for the idempotent second-run case, where the
-  // first drop already removed the entry from the index but left the
-  // working tree file in place).
+  // Skip files that are not in the index at all (the load-bearing guard
+  // for the idempotent second-run case, where the first drop already
+  // removed the entry from the index but left the working tree file in
+  // place).
   if (!isInIndex(rel, repo)) {
     item(`dropped ${rel} (already absent from index)`);
     return;
