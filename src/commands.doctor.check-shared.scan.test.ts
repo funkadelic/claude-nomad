@@ -18,7 +18,7 @@ import {
 
 /**
  * Scan-FAILURE cases driven by a mocked `node:child_process` (no real gitleaks
- * needed): the unparseable-report FAIL (D-10), a non-ENOENT throw out of
+ * needed): the unparseable-report FAIL, a non-ENOENT throw out of
  * `scanStagedTree`, and the no-stream-leak guarantee on a protect --staged
  * failure. The cleanup + partition-gating cases live in `.scan2.test.ts`. Every
  * `vi.doMock` here is paired with a `vi.doUnmock` in `afterEach` because
@@ -41,7 +41,7 @@ describe('reportCheckShared (mocked scan failures)', () => {
     restoreEnv(snapshot, testHome);
   });
 
-  it('emits a scan-failed fail row, exits 1, and writes no session row when the report is unparseable (D-10)', async () => {
+  it('emits a scan-failed fail row, exits 1, and writes no session row when the report is unparseable', async () => {
     const env = makeEnv();
     testHome = env.testHome;
     writeFileSync(

@@ -1585,8 +1585,8 @@ describe.skipIf(!hasGitleaks)('allowlist regression fixture', () => {
   it('allowlists the documented test-fixture github-pat literal inside shared/projects session paths', async () => {
     // The literal `ghp_<test-fixture-pat>` (see `.gitleaks.toml`
     // path-scoped `[[allowlists]]` block) accumulates in Claude Code
-    // session transcripts whenever a conversation touches the
-    // gitleaks Pitfall 4 docs or the allowlist config itself. Live
+    // session transcripts whenever a conversation touches gitleaks
+    // troubleshooting content or the allowlist config itself. Live
     // sessions cannot be safely sed-scrubbed (sed -i renames out from
     // under the open file descriptor), so the allowlist swallows the
     // documented literal under `shared/projects/<logical>/.../*.jsonl`

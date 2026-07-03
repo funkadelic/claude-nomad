@@ -158,7 +158,7 @@ describe('divergenceCheckExtras git-diff failure modes (listDivergingFiles)', ()
   });
 
   it('listDivergingFiles WARNs (not silently empty) when git is not on PATH (ENOENT)', async () => {
-    // Defeats D-08 if a missing git binary collapses to "no diff".
+    // A missing git binary must not silently collapse to "no diff".
     const sharedExtras = join(repoUnderHome, 'shared', 'extras');
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.planning', 'STATE.md'), '# shared\n');
@@ -186,8 +186,8 @@ describe('divergenceCheckExtras git-diff failure modes (listDivergingFiles)', ()
 
   it('listDivergingFiles WARNs (not silently empty) on unexpected git failures', async () => {
     // Symmetric to ENOENT: a git failure that is neither status === 1 (real
-    // diff) nor ENOENT must still WARN so D-08's loud-doctor contract holds
-    // (e.g. status 128 from a corrupted repo state).
+    // diff) nor ENOENT must still WARN rather than silently reporting no
+    // divergence (e.g. status 128 from a corrupted repo state).
     const sharedExtras = join(repoUnderHome, 'shared', 'extras');
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.planning', 'STATE.md'), '# shared\n');

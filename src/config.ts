@@ -147,8 +147,9 @@ export const HOST = (process.env.NOMAD_HOST || hostname()).toLowerCase();
  * `skills` is also absent: it is copy-synced (filtered, gsd-* prefix excluded)
  * rather than symlinked. The copy model keeps the one-symlink-per-shared-dir
  * invariant intact for doctor/eject/adopt, while `syncSkillsPull`/
- * `syncSkillsPush` in `skills-sync.ts` handle the overlay and mirror. See D-2
- * in the phase-50 context for the rationale.
+ * `syncSkillsPush` in `skills-sync.ts` handle the overlay and mirror. Copy
+ * (not symlink) sync lets the gsd-owned prefix filter apply per-file at
+ * write time instead of being all-or-nothing on a single symlink target.
  */
 export const SHARED_LINKS = ['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs'] as const;
 
@@ -164,7 +165,7 @@ export const GSD_PREFIX = 'gsd-';
 /**
  * Names previously in `SHARED_LINKS` that gsd (`@opengsd/gsd-core`) now owns
  * per-host (see the `SHARED_LINKS` comment for why they were dropped). A
- * leftover symlink at `~/.claude/<name>` is a pre-phase-50 migration artefact
+ * leftover symlink at `~/.claude/<name>` is a symlink-era migration artefact
  * the doctor probe flags. Co-located with `SHARED_LINKS` and `GSD_PREFIX` so the
  * gsd-ownership model lives in one module; consumed by
  * `reportDroppedNamesMigration` in `commands.doctor.checks.repo.ts`.
@@ -218,7 +219,7 @@ export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md', '.claude'] as const;
  * Credential and host-config file names blocked even under `shared/extras/`,
  * where the broader `NEVER_SYNC` segment scan is narrowed to avoid
  * false-blocking ephemeral dir names (`todos`, `plans`, etc.) inside synced
- * `.planning/` trees (Pitfall 6). Strict subset of `NEVER_SYNC`; doctor
+ * `.planning/` trees. Strict subset of `NEVER_SYNC`; doctor
  * display and sharedDirs guard use the full set.
  */
 export const ALWAYS_NEVER_SYNC = new Set([
@@ -264,7 +265,7 @@ export { KNOWN_SETTINGS_KEYS } from './settings-keys.ts';
  *
  * `shared/hooks/` and `shared/agents/` are intentionally absent: gsd owns
  * those dirs per-host and an out-of-band gsd write to those repo trees must
- * not be pushable (Pitfall 4). `shared/skills/` remains allowed because
+ * not be pushable. `shared/skills/` remains allowed because
  * user-authored skills live there.
  */
 export const PUSH_ALLOWED_STATIC = [
@@ -277,7 +278,7 @@ export const PUSH_ALLOWED_STATIC = [
   'shared/.gitignore',
   'hosts/',
   'path-map.json',
-  '.gitleaksignore', // written by nomad push Allow action (D-04)
+  '.gitleaksignore', // written by nomad push Allow action
   '.gitleaks.overlay.toml', // user-owned gitleaks allowlist overlay layered on the bundled base
 ] as const;
 

@@ -18,7 +18,7 @@ import {
 
 /**
  * gitleaks probe-readiness ladder + the malformed-path-map degradation (no real
- * gitleaks needed): D-09 ENOENT WARN-skip, EACCES FAIL, and a malformed
+ * gitleaks needed): the ENOENT WARN-skip, the EACCES FAIL, and a malformed
  * `path-map.json` FAIL-without-throw. The clean-zero staging guards live in the
  * `.staging.test.ts` sibling. Every `vi.doMock` here is paired with a
  * `vi.doUnmock` in `afterEach` because `vi.restoreAllMocks` does NOT clear
@@ -39,7 +39,7 @@ describe('reportCheckShared (probe ladder + malformed map)', () => {
     restoreEnv(snapshot, testHome);
   });
 
-  it('emits exactly one warn row and leaves exitCode 0 when the gitleaks probe throws ENOENT (D-09)', async () => {
+  it('emits exactly one warn row and leaves exitCode 0 when the gitleaks probe throws ENOENT', async () => {
     const env = makeEnv();
     testHome = env.testHome;
     // A planted secret + valid map would normally fail; the missing-binary

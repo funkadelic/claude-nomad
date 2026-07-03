@@ -58,7 +58,7 @@ describe('copyExtras (file-local helper)', () => {
     expect(readFileSync(join(dst, 'nested', 'deep.txt'), 'utf8')).toBe('deep-bytes');
   });
 
-  it('preserves relative symlink targets verbatim (verbatimSymlinks: true; Pitfall 1)', async () => {
+  it('preserves relative symlink targets verbatim (verbatimSymlinks: true)', async () => {
     writeFileSync(join(src, 'target.md'), 'real content\n');
     symlinkSync('target.md', join(src, 'link.md'));
 
@@ -66,7 +66,7 @@ describe('copyExtras (file-local helper)', () => {
     copyExtras(src, dst);
 
     // The symlink target must be the original relative string, not rewritten
-    // to an absolute path into the source tree (Pitfall 1 mitigation).
+    // to an absolute path into the source tree.
     expect(readlinkSync(join(dst, 'link.md'))).toBe('target.md');
   });
 

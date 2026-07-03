@@ -37,7 +37,9 @@ import { repoHome } from './config.ts';
 export function dropSessionFromStaged(sid: string, map: PathMap): boolean {
   const logicals = Object.keys(map.projects);
   if (logicals.length === 0) return false;
-  // Resolve root once per invocation (T-45-02 TOCTOU mitigation).
+  // Resolve the repo root once at entry so the checks and the mutation
+  // below observe the same filesystem state: resolving twice could see a
+  // different state between the check and the use.
   const repo = repoHome();
   for (const logical of logicals) {
     const jsonl = join(repo, 'shared', 'projects', logical, `${sid}.jsonl`);

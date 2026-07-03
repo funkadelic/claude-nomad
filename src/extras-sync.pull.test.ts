@@ -192,7 +192,7 @@ describe('remapExtrasPull (integration)', () => {
     expect(existsSync(join(cacheBase, '20260522-120003'))).toBe(false);
   });
 
-  it('absence of extras key is a clean no-op (D-03 additive contract)', async () => {
+  it('absence of extras key is a clean no-op (opt-in extras are additive)', async () => {
     writeFileSync(
       mapPath,
       JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
@@ -241,7 +241,7 @@ describe('remapExtrasPull (integration)', () => {
     expect(readFileSync(join(projectRoot, '.planning', 'new.md'), 'utf8')).toBe('new\n');
   });
 
-  it('preserves relative symlink targets verbatim across the pull (Pitfall 1 regression)', async () => {
+  it('preserves relative symlink targets verbatim across the pull', async () => {
     mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.planning', 'PLAN.md'), 'real content\n');
     symlinkSync('PLAN.md', join(sharedExtras, 'foo', '.planning', 'PLAN-link.md'));
@@ -789,7 +789,7 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
   });
 
-  it('CR-02 regression: backup exists before delete even when overlay src is absent (whole .planning removed upstream)', async () => {
+  it('backup exists before delete even when overlay src is absent', async () => {
     // Commit a .planning file plus an anchor file in shared/extras/ root (so
     // git rm of .planning does not make shared/extras/ itself disappear). Then
     // remove the entire .planning dir from the repo. The src for the .planning
@@ -876,7 +876,7 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     expect(existsSync(join(projectRoot, '.planning', 'sub', 'FILE-B.md'))).toBe(true);
   });
 
-  it('WR-04: delete is skipped when the repo counterpart still exists (case-rename simulation)', async () => {
+  it('delete is skipped when the repo counterpart still exists (case rename)', async () => {
     // Simulate a case-only rename on a case-insensitive filesystem: git diff
     // shows the old lowercase name as D, but the file on disk in shared/extras/
     // still exists (the new cased name resolves to it). The local file must NOT
@@ -995,7 +995,7 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     expect(existsSync(join(projectRoot, '.planning'))).toBe(false);
   });
 
-  it('WR-03: delete is skipped when an intermediate symlink would escape the planning root (line 159 branch)', async () => {
+  it('delete is skipped when an intermediate symlink would escape the planning root', async () => {
     // Seed a symlink inside .planning/ that points to a directory outside the
     // project root. A D record targeting a file "inside" that symlinked dir
     // must not delete the outside file -- the symlink-escape guard fires.

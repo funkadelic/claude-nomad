@@ -38,7 +38,7 @@ export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | 
  * if the version query fails. On npm failure the captured stderr is folded
  * into the error so the cause stays diagnosable despite the silenced output.
  *
- * Design decision D-01: self-update and data sync are separate concerns. This
+ * Self-update and data sync are separate concerns. This
  * command only updates the CLI binary; it does NOT run `nomad pull`, `nomad
  * doctor`, or any git operation. Use `nomad pull` after updating if you want
  * to sync config state.

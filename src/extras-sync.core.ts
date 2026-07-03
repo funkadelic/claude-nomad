@@ -100,8 +100,9 @@ export function* eachExtrasTarget(
  * (plan 02), NOT by this function. Contrast with `copyExtras` (true mirror
  * via `rmSync` before copy) and `copyExtrasFilteredPreserving` (prune-but-
  * preserve-deny-set variant). Passes `verbatimSymlinks: true` to keep
- * relative symlink targets unrewritten across hosts (Pitfall 1; nodejs/node
- * issue 41693).
+ * relative symlink targets unrewritten across hosts (a symlink target must
+ * survive as the original relative string, not get rewritten to an absolute
+ * path into the source tree; see nodejs/node issue 41693).
  *
  * @param src - Source directory to copy from (repo side on pull).
  * @param dst - Destination path (host-side project dir); dst-only files
@@ -276,8 +277,8 @@ export function copyExtrasOverlaySkipDiverged(
 /**
  * Recursive mirror copy: `rmSync` then `cpSync` so dst-only entries are
  * removed (true mirror, not just overwrite). Passes `verbatimSymlinks: true`
- * to keep relative symlink targets unrewritten across hosts (Pitfall 1;
- * nodejs/node issue 41693). Exported so the test file can call it directly;
+ * to keep relative symlink targets unrewritten across hosts (see nodejs/node
+ * issue 41693). Exported so the test file can call it directly;
  * `remapExtrasPush` and `remapExtrasPull` are the primary public API.
  */
 export function copyExtras(src: string, dst: string): void {
@@ -322,7 +323,7 @@ export function copyExtrasFileSkipDiverged(src: string, dst: string): void {
  * `CLAUDE_EXTRA_NEVER_SYNC` (the full `NEVER_SYNC` set plus `projects`).
  * Content-style extras (`.planning`) keep the narrow `ALWAYS_NEVER_SYNC` subset
  * so legitimate names like `todos`/`plans` inside a synced `.planning/` tree are
- * not false-blocked (Pitfall 6). Mirrored by `blockSetFor` in
+ * not false-blocked by the broader `.claude` denylist. Mirrored by `blockSetFor` in
  * `commands.push.allowlist.ts` so the copy filter and the push gate agree.
  *
  * @param dirname - The extra's whitelisted name (e.g. `.claude`, `.planning`).
@@ -341,7 +342,8 @@ export function extrasDenySet(dirname: string): Set<string> {
  * `extrasDenySet(dirname)`. The unfiltered `copyExtras` is intentionally left
  * unchanged so callers wanting an exact byte-mirror keep it.
  *
- * Limitation: with `verbatimSymlinks: true` (load-bearing for Pitfall 1), a
+ * Limitation: with `verbatimSymlinks: true` (load-bearing so relative symlink
+ * targets are not rewritten across hosts), a
  * symlink is copied as a link without dereferencing, so the filter sees the
  * link's own basename, not its target. A benignly-named symlink pointing at a
  * denied file is copied verbatim (its target path, not its content); the push
@@ -417,7 +419,7 @@ function prunePreservingDenied(src: string, dst: string, blockSet: Set<string>):
  * semantics, so the recursive prune never `readdirSync`-follows a symlink and
  * deletes content outside the project tree. Passes `verbatimSymlinks: true` so
  * relative symlink targets are not
- * rewritten across hosts (Pitfall 1, nodejs/node issue 41693). The
+ * rewritten across hosts (see nodejs/node issue 41693). The
  * root-src-entry-kept semantics (`srcEntry === src`) match `copyExtrasFiltered`
  * exactly. `copyExtras` and `copyExtrasFiltered` are intentionally left
  * unchanged so the push path stays an exact byte-mirror.
@@ -491,8 +493,8 @@ function prunePreservingBy(src: string, dst: string, isPreserved: (name: string)
  * which `isPreserved(basename(entry))` is true (defense-in-depth: repo-side
  * preserved-category entries are not overlaid). A not-yet-existing dst is
  * handled cleanly. A dst that exists but is not a real directory is removed
- * wholesale before the copy. Passes `verbatimSymlinks: true` (Pitfall 1,
- * nodejs/node issue 41693).
+ * wholesale before the copy. Passes `verbatimSymlinks: true` (see nodejs/node
+ * issue 41693).
  *
  * @param src - Source directory to copy from (repo side on pull).
  * @param dst - Destination path (host-side dir on pull).

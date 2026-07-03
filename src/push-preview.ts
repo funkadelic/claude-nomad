@@ -149,7 +149,7 @@ function stageExtras(tmpRoot: string, map: PathMap): number {
  *
  * Scope gap (intentional): user skills under `shared/skills/` are NOT staged
  * into this preview tree, so a secret in a user skill file is not surfaced by
- * `nomad push --dry-run` (WR-01). A real push DOES scan skills: `syncSkillsPush`
+ * `nomad push --dry-run`. A real push DOES scan skills: `syncSkillsPush`
  * copies them and the post-`git add -A` `scanPushVerdict` covers the full staged
  * tree, so the gate is not bypassed, only the preview fidelity is reduced. The
  * dry-run deliberately mutates nothing (no `shared/skills/` write), which is why

@@ -65,8 +65,8 @@ export function isTrackedInHead(rel: string, repo: string): boolean {
 
 /**
  * Is `rel` present in the index at all? Wraps `git ls-files -- <rel>` and
- * checks for non-empty stdout. Required for the Pitfall 7 idempotency
- * guard: a second invocation on the same id finds the file on disk (per
+ * checks for non-empty stdout. Required for the idempotency guard: a
+ * second invocation on the same id finds the file on disk (per
  * `existsSync`) but absent from the index, and must NOT call `git rm
  * --cached` on it (which would fail with exit 128).
  *

@@ -166,7 +166,7 @@ describe('ensureOriginRepo', () => {
     const repoCreate = calls.find((c) => c.bin === 'gh' && c.argv.includes('create'));
     expect(repoCreate?.argv).toContain('--private');
     expect(repoCreate?.argv).toContain('my-config');
-    // REPO_HOME is git-init'd before the remote is added (CR-01): without this
+    // REPO_HOME is git-init'd before the remote is added: without this
     // `git remote add` would fail on a brand-new directory.
     const initIdx = calls.findIndex((c) => c.bin === 'git' && c.argv[0] === 'init');
     const addIdx = calls.findIndex((c) => c.bin === 'git' && c.argv[1] === 'add');
@@ -294,7 +294,7 @@ describe('ensureOriginRepo', () => {
   });
 
   // -------------------------------------------------------------------------
-  // gh repo create "already exists": idempotent, still wires origin (D-09)
+  // gh repo create "already exists": idempotent, still wires origin
   // -------------------------------------------------------------------------
 
   it('reuses an existing repo and still wires origin when gh repo create reports it exists', async () => {
@@ -343,7 +343,7 @@ describe('ensureOriginRepo', () => {
   });
 
   // -------------------------------------------------------------------------
-  // git init subprocess failure: NomadFatal (CR-01)
+  // git init subprocess failure: NomadFatal
   // -------------------------------------------------------------------------
 
   it('throws NomadFatal when git init fails', async () => {
@@ -359,7 +359,7 @@ describe('ensureOriginRepo', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Empty / null gh login: NomadFatal, no remote wired (CR-02)
+  // Empty / null gh login: NomadFatal, no remote wired
   // -------------------------------------------------------------------------
 
   it('throws NomadFatal and skips git remote add when gh login is empty', async () => {

@@ -5,13 +5,13 @@ import { section } from './commands.doctor.format.ts';
 import { reportActionsDrift } from './commands.doctor.actions-drift.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
 
-// Gate-matrix unit tests for the Actions-drift reporter (D-06, D-07, D-08,
-// D-09, D-11). The reporter is driven directly with an injected `run` that
+// Gate-matrix unit tests for the Actions-drift reporter. The reporter is
+// driven directly with an injected `run` that
 // dispatches on (bin, args) to simulate git/gh subprocess outcomes (no real
 // spawn, no cmdInit, no HOME/env setup, no vi.doMock): pure section-in/items-out.
 // Assertions are on section.items length and substring (the warnGlyph and the
 // `gh api -X PUT` remediation hint). process.exitCode is captured and restored
-// so every case can assert it stays unset (D-11).
+// so every case can assert it stays unset.
 
 /** Opts shared by the git and gh dispatch helpers below. */
 type GhRunOpts = {
@@ -67,7 +67,8 @@ function dispatchGh(opts: GhRunOpts, argv: string[]): Buffer {
  * Build a SpawnSyncFn mock that dispatches on (bin, args) to simulate the
  * git/gh subprocess outcomes the Actions-drift gate chain walks. Lifted and
  * trimmed from `init.test.ts`: the `disable`/PUT branch is dropped because the
- * doctor reporter never calls `disableActions` (D-06 reuse, D-08 read-only).
+ * doctor reporter reuses the gate chain but never calls `disableActions`
+ * (the doctor check is read-only).
  *
  * @param opts - Per-gate outcome knobs:
  *   `remote` is the origin URL the git probe returns (omit, or set
@@ -110,7 +111,7 @@ describe('Actions drift check', () => {
     );
     expect(s.items).toHaveLength(1);
     expect(s.items[0]).toContain(warnGlyph);
-    // Remediation hint (D-07): the exact gh api PUT shape plus owner/repo.
+    // Remediation hint: the exact gh api PUT shape plus owner/repo.
     expect(s.items[0]).toContain('gh api -X PUT');
     expect(s.items[0]).toContain('repos/octo/config/actions/permissions');
     expect(s.items[0]).toContain('enabled=false');

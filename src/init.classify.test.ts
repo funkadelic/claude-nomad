@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * fresh module cache, and a bare `claude-nomad/` directory skeleton. The
  * pattern mirrors the `classifyRepoState classifier` describe in init.test.ts
  * but these tests exercise finer-grained boundary and reasonForPartial paths
- * to kill the logic survivors from the Phase 46 Stryker sweep.
+ * to kill the logic survivors found by a mutation testing sweep.
  */
 function makeClassifyEnv(): {
   testHome: string;

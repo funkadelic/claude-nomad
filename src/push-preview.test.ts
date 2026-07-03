@@ -176,7 +176,7 @@ describe('previewPushLeaks: nothing staged (no mapped sessions, no extras)', () 
   });
 
   it('returns a nothing-to-scan verdict (no scan, no throw) when map.projects is a non-object but extras is present', async () => {
-    // Covers the WR-01 guard in stageExtras: a malformed map with an `extras`
+    // Covers the guard in stageExtras: a malformed map with an `extras`
     // block but a non-object `projects` must NOT throw on the
     // `map.projects[logical]` read; it stages nothing and returns clean.
     const scanMock = vi.fn(() => [] as scanModule.Finding[]);

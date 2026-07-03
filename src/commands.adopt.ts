@@ -48,7 +48,7 @@ function readMapIfPresent(repoHome: string): PathMap {
  * Return true when `name` is an already-configured shared target: either a
  * static `SHARED_LINKS` member or a `sharedDirs` entry declared in
  * `path-map.json`. This is a read-only membership check; adopt never writes
- * `path-map.json` (D-03).
+ * `path-map.json`.
  *
  * @param name Candidate name.
  * @param map Parsed path-map (sharedDirs membership source).
@@ -64,7 +64,7 @@ function isConfiguredTarget(name: string, map: PathMap): boolean {
  * Return true when `name` is safe to adopt. Static `SHARED_LINKS` members
  * are pre-approved and bypass `isValidSharedDir` (which rejects RESERVED_SHARED,
  * overlapping with SHARED_LINKS). Candidate `sharedDirs` names must pass
- * `isValidSharedDir` to prevent path injection (D-00a).
+ * `isValidSharedDir` to prevent path injection.
  *
  * @param name Candidate name from the CLI argument.
  * @returns True when the name is safe for adopt processing.
@@ -92,18 +92,18 @@ function performAdoptMove(
 ): void {
   const ts = freshBackupTs(backup);
 
-  // D-00c: backup before any mutation
+  // Back up before any mutation
   backupBeforeWrite(linkPath, ts);
 
-  // D-00e, V-07: copy fully into shared/ BEFORE removing the source so a
+  // Copy fully into shared/ BEFORE removing the source so a
   // mid-move crash cannot lose user content
   cpSync(linkPath, sharedTarget, { recursive: true, force: true, preserveTimestamps: true });
   rmSync(linkPath, { recursive: true, force: true });
 
-  // D-01: recreate the symlink immediately on this host
+  // Recreate the symlink immediately on this host
   ensureSymlink(linkPath, sharedTarget);
 
-  // D-02: targeted stage of shared/<name> only; never git add -A
+  // Targeted stage of shared/<name> only; never git add -A
   const rel = join('shared', name);
   gitOrFatal(['add', '--', rel], `git add shared/${name}`, repo);
 
@@ -116,14 +116,14 @@ function performAdoptMove(
  * Validates `name`, enforces the precondition matrix, then performs:
  * backup -> copy-into-shared -> remove-source -> recreate-symlink ->
  * targeted `git add` -> print follow-up hint. Stops there: no auto-commit,
- * no push pipeline (D-02).
+ * no push pipeline.
  *
  * Accepts only already-configured names: a static SHARED_LINKS member or a
  * `sharedDirs` entry already declared in `path-map.json`. adopt is a mover,
- * not a config editor; it never writes `path-map.json` (D-03).
+ * not a config editor; it never writes `path-map.json`.
  *
  * `--dry-run` reports the planned actions and performs zero filesystem or
- * git changes (D-00d, V-08).
+ * git changes.
  *
  * @param name The `~/.claude/<name>` directory to adopt.
  * @param opts.dryRun When true, log planned actions and return without mutation.
@@ -131,7 +131,7 @@ function performAdoptMove(
 export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const dryRun = opts.dryRun === true;
 
-  // D-00a: validate name format (rejects path separators, NEVER_SYNC, and arbitrary
+  // Validate name format (rejects path separators, NEVER_SYNC, and arbitrary
   // names that are not in SHARED_LINKS; SHARED_LINKS statics bypass isValidSharedDir
   // because RESERVED_SHARED overlaps with SHARED_LINKS by design)
   if (!isValidAdoptName(name)) {
@@ -139,12 +139,14 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     process.exit(1);
   }
 
-  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  // Resolve roots once per command invocation to avoid a time-of-check/time-of-use
+  // race: resolving twice could observe a different filesystem state between the
+  // check and the use.
   const repo = repoHome();
   const claude = claudeHome();
   const backup = backupBase();
 
-  // D-03: confirm name is an already-configured shared target
+  // Confirm name is an already-configured shared target
   const map = readMapIfPresent(repo);
   if (!isConfiguredTarget(name, map)) {
     fail(
@@ -157,7 +159,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const linkPath = join(claude, name);
   const sharedTarget = join(repo, 'shared', name);
 
-  // D-00b precondition checks -- in order: absent, already symlink, would clobber
+  // Precondition checks -- in order: absent, already symlink, would clobber
   if (!existsSync(linkPath)) {
     log(`${name}: nothing to adopt (not present in ~/.claude/)`);
     return;
@@ -171,7 +173,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     process.exit(1);
   }
 
-  // D-00d: dry-run preview -- branch before any mutation
+  // Dry-run preview -- branch before any mutation
   if (dryRun) {
     const ts = freshBackupTs(backup);
     log(`would backup: ${linkPath} -> backup/${ts}/${name}`);

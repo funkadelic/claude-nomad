@@ -73,8 +73,9 @@ function processRecord(fields: string[], i: number, changed: string[], deleted: 
  *   `changed`
  *
  * NUL-delimited parsing means spaces and non-ASCII bytes pass through
- * verbatim with no octal unescaping needed (Phase 41 CR-01 lesson: the
- * quoted-path form is the bug, not the fix).
+ * verbatim with no octal unescaping needed: git's default quoted-path output
+ * is what would require unescaping, and parsing the NUL-delimited form
+ * avoids that entirely.
  *
  * @param raw - The raw, untrimmed stdout from `git diff --name-status -z`.
  * @returns Object with `changed` and `deleted` arrays of repo-relative paths.

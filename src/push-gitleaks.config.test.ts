@@ -10,8 +10,8 @@ import type * as fsModule from 'node:fs';
  * Unit coverage for `resolveTomlConfig`: the overlay base+overlay merge that
  * layers `REPO_HOME/.gitleaks.overlay.toml` on the package-bundled
  * `.gitleaks.toml`. Covers all six branches: no overlay (delegates), S-01
- * precedence (full repo toml wins + warn), bundled-absent fallback, the D-05
- * `[extend]` NomadFatal, successful temp generation, and the D-04
+ * precedence (full repo toml wins + warn), bundled-absent fallback, the
+ * `[extend]` NomadFatal, successful temp generation, and the
  * temp-write-failure fallback. Uses a real tmpdir HOME so REPO_HOME resolves to
  * a writable path, and `vi.doMock('node:fs')` for the branches that need
  * synthesized existsSync / writeFileSync outcomes.
@@ -117,9 +117,9 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     ['dotted key', 'extend.path = "/evil"\n[[allowlists]]\nregexes = ["X"]\n'],
     ['inline table', 'extend = { path = "/evil" }\n'],
   ])(
-    'CR-01: rejects a TOML-equivalent [extend] bypass (%s) with NomadFatal and no temp write',
+    'rejects a TOML-equivalent [extend] bypass (%s) with NomadFatal and no temp write',
     async (_label, overlayBody) => {
-      // The D-05 guard must catch every TOML form that loads the `extend` table,
+      // The [extend] guard must catch every TOML form that loads the `extend` table,
       // not just the exact `[extend]` literal, or the depth-3 silent-drop reopens.
       const writeSpy = vi.fn();
       vi.doMock('node:fs', async (importOriginal) => {
@@ -143,7 +143,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     },
   );
 
-  it('CR-01: does NOT false-positive on keys merely starting with "extend"', async () => {
+  it('does NOT false-positive on keys merely starting with "extend"', async () => {
     // A clean overlay whose allowlist describes "extended" coverage must still
     // generate a temp config (the guard targets the `extend` table, not the word).
     vi.doMock('node:fs', async (importOriginal) => {
@@ -211,7 +211,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     },
   );
 
-  it('throws NomadFatal and writes no temp when the overlay contains its own [extend] (D-05)', async () => {
+  it('throws NomadFatal and writes no temp when the overlay contains its own [extend]', async () => {
     const writeSpy = vi.fn();
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
@@ -256,7 +256,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('takes precedence'));
   });
 
-  it('D-04: overlay present but bundled base absent -> path null, tempPath null, no throw', async () => {
+  it('overlay present but bundled base absent -> path null, tempPath null, no throw', async () => {
     // Overlay present, but neither repo toml nor bundled copy resolvable.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
@@ -271,7 +271,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     expect(result.tempPath).toBeNull();
   });
 
-  it('D-04: temp-config writeFileSync failure falls back to the bundled base (warn, not thrown)', async () => {
+  it('temp-config writeFileSync failure falls back to the bundled base (warn, not thrown)', async () => {
     // Overlay present, bundled resolvable, a clean (no-[extend]) overlay body, but
     // writeFileSync throws (simulated ENOSPC). Must warn, return the BUNDLED path
     // (not null), tempPath null, and NOT throw NomadFatal.
@@ -306,9 +306,9 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     );
   });
 
-  it('companion: the [extend] NomadFatal (D-05) is NOT suppressed by the D-04 write fallback', async () => {
+  it('companion: the [extend] NomadFatal is NOT suppressed by the write fallback', async () => {
     // Same routing as the write-failure case, but the overlay has its own
-    // [extend]. The D-05 guard must fire BEFORE the try/catch, so NomadFatal is
+    // [extend]. The [extend] guard must fire BEFORE the try/catch, so NomadFatal is
     // thrown even though a writeFileSync failure would otherwise be swallowed.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();

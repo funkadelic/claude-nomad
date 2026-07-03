@@ -140,7 +140,9 @@ export function applyRedact(
     return false;
   };
 
-  // Resolve roots once per invocation (T-45-02 TOCTOU mitigation).
+  // Resolve both roots once at entry so the checks and the mutation
+  // below observe the same filesystem state: resolving twice could see a
+  // different state between the check and the use.
   const claude = claudeHome();
   const repo = repoHome();
 

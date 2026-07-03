@@ -388,7 +388,7 @@ describe('cmdEject', () => {
     expect(errMessage(42)).toBe('42');
   });
 
-  it('previewMaterialize unresolvable: missing linkPath degrades to a re-classify hint (WR-03 TOCTOU)', () => {
+  it('previewMaterialize TOCTOU: missing linkPath degrades to a re-classify hint', () => {
     const { repoHome } = makeTempRoots();
     const sharedRoot = join(repoHome, 'shared');
     // linkPath does not exist -> realpathSync throws -> degraded message.

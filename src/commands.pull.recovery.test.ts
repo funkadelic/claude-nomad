@@ -780,8 +780,8 @@ import { recoverUnmergedIndex } from './commands.pull.recovery.ts';
  * rebase/merge marker, mirroring the buildUnmergedIndexNoMarker helper in
  * commands.pull.wedge.test.ts but scoped to this recovery test file.
  *
- * Optionally adds an orphaned autostash stash entry (simulating the Phase 51
- * trigger where git --autostash drops to the stash list during a torn-down
+ * Optionally adds an orphaned autostash stash entry (simulating the trigger
+ * where git --autostash drops to the stash list during a torn-down
  * rebase).
  */
 function buildUnmergedIndexFixture(

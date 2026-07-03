@@ -77,11 +77,11 @@ export function isAlreadyInitialized(repoHome: string): boolean {
  * on a fresh target).
  *
  * When no `origin` remote exists in REPO_HOME, a private GitHub repository is
- * created via `gh` and wired as `origin` before scaffolding (D-06/D-07). The
+ * created via `gh` and wired as `origin` before scaffolding. The
  * repo name defaults to {@link DEFAULT_REPO_NAME} but can be overridden with
  * `opts.repoName`. `gh` is a hard prerequisite on this path and its absence or
- * unauthenticated state results in a NomadFatal (D-08). When `origin` already
- * exists the step is a no-op (D-09 idempotency).
+ * unauthenticated state results in a NomadFatal. When `origin` already
+ * exists the step is a no-op (idempotent).
  *
  * When `opts.snapshot` is true, the user's current `~/.claude/` SHARED_LINKS
  * are overlaid onto `shared/` and `~/.claude/settings.json` (if present) is
@@ -112,7 +112,7 @@ export function cmdInit(
     die(`already initialized; refusing to clobber ${conflict}`);
   }
 
-  // Wire the backing GitHub repo. Idempotent when origin already exists (D-09).
+  // Wire the backing GitHub repo. Idempotent when origin already exists.
   ensureOriginRepo(opts.repoName ?? DEFAULT_REPO_NAME, opts.run);
 
   // Create the directory structure first so the subsequent file writes have
