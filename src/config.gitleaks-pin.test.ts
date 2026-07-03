@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { GITLEAKS_PINNED_VERSION } from './config.ts';
 
-// Drift-gate (D-05): a pure file-read comparison asserting GITLEAKS_PINNED_VERSION
+// Drift gate: a pure file-read comparison asserting GITLEAKS_PINNED_VERSION
 // stays in lockstep with the GITLEAKS_VERSION env pinned in both CI workflow
 // YAMLs. No mocks, no module-resetting, no YAML parser (none is in the tree).
 // A bump that touches the workflows but misses the constant (or vice versa)

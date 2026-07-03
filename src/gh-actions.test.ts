@@ -34,7 +34,7 @@ describe('parseGitHubRemote', () => {
     });
   });
 
-  it('parses HTTPS URL with trailing slash (WR-02 regression)', () => {
+  it('parses HTTPS URL with trailing slash (regression)', () => {
     expect(parseGitHubRemote('https://github.com/owner/repo/')).toEqual({
       owner: 'owner',
       repo: 'repo',

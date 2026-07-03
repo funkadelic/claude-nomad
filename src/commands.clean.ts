@@ -8,7 +8,7 @@ import { fail, item, log } from './utils.ts';
  * Shape of a `<ts>` backup directory name as produced by `freshBackupTs`:
  * `YYYYMMDD-HHMMSS` with an optional `-N` collision suffix. The prune logic
  * pins to this so only directories created by the backup machinery are ever
- * considered for deletion (D-05 safety: no stray files, no `version-check.json`).
+ * considered for deletion: no stray files, no `version-check.json`.
  */
 const TS_SHAPE = /^\d{8}-\d{6}(-\d+)?$/;
 
@@ -92,7 +92,7 @@ export function prunableByCount(dirs: BackupDir[], keep: number): string[] {
 }
 
 /**
- * Delete a single backup dir under `backupBase`, enforcing the D-05 triple
+ * Delete a single backup dir under `backupBase`, enforcing a triple
  * guard. Refuses any name that fails the `<ts>` shape, then `lstatSync`s the
  * entry (NOT `statSync`, which would follow a symlink) and refuses when it is
  * missing, not a directory, or itself a symlink. Only a real `<ts>` directory
@@ -135,7 +135,7 @@ function resolveTargets(
  * not both be set, and an unparseable `olderThan` is rejected; either error
  * prints a FATAL line and exits 1. With neither flag the 14-day age default
  * applies. On `dryRun` the target names are listed and nothing is deleted; on
- * a live run each target passes through the `safeDelete` D-05 guard and a
+ * a live run each target passes through the `safeDelete` safety guard and a
  * `removed N backup(s)` summary is logged.
  *
  * @param opts - Parsed CLI options.
