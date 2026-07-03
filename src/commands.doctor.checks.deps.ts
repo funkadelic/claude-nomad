@@ -16,7 +16,7 @@ import type { SpawnSyncFn } from './gh-actions.ts';
  * at least one of curl or wget is present, and WARNs only when both are absent.
  *
  * This reporter MUST NOT set `process.exitCode`: absent optional deps are
- * informational only (D-02). All probes always run unconditionally.
+ * informational only. All probes always run unconditionally.
  */
 
 /**
@@ -66,7 +66,7 @@ type DepProbeResult = { status: 'present'; version: string | null } | { status: 
  * Probe a binary by running `bin --version` and parsing the first output line.
  * Returns a DepProbeResult: present (with optional version token) or
  * not-installed (ENOENT). Non-ENOENT errors are treated as present with no
- * version (D-03: "never FAIL on unexpected --version output").
+ * version: this probe never FAILs on unexpected --version output.
  *
  * @param bin - The binary name to probe (e.g. `gh` or `curl`).
  * @param run - Injectable subprocess runner; defaults to `execFileSync`.
@@ -119,7 +119,7 @@ function reportFetcherRow(section: DoctorSection, run: SpawnSyncFn): void {
  * Emit presence rows for the optional `gh` CLI and the HTTP fetcher (curl or
  * wget) into the given doctor section. Each row shows the dependency's install
  * status and version (if parseable). Absent dependencies emit a WARN naming
- * the features they enable. Never sets `process.exitCode` (D-02): both deps
+ * the features they enable. Never sets `process.exitCode`: both deps
  * are optional.
  *
  * @param section - The Dependency Versions section to append rows to.

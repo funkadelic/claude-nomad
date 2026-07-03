@@ -82,7 +82,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary, clean + skip)', (
     expect(process.exitCode).toBe(0);
   });
 
-  it('renders an ok row and exits 0 when the only flagged content matches the .gitleaks.toml allowlist (D-10)', async () => {
+  it('renders an ok row and exits 0 when the only flagged content matches the .gitleaks.toml allowlist', async () => {
     const env = makeEnv();
     testHome = env.testHome;
     // Plant a documented test-fixture github-pat literal that the repo-root

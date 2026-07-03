@@ -12,7 +12,8 @@
  *
  * This file owns probe-readiness, temp-tree staging, and orchestration; the
  * findings classification + guidance composer live in the `.scan.ts` sibling.
- * All external calls use `execFileSync` argv-array form (PUSH-04).
+ * All external calls use `execFileSync` argv-array form so no argument is
+ * ever interpreted by a shell.
  */
 
 import { randomBytes } from 'node:crypto';
@@ -125,7 +126,7 @@ function ensureGitleaksReady(section: DoctorSection, gitleaksReady?: boolean): b
 /**
  * Run the `--check-shared` preflight and append its rows to `section`.
  *
- * Thin orchestrator (D-01..D-10): `ensureGitleaksReady` gates entry (a missing
+ * Thin orchestrator: `ensureGitleaksReady` gates entry (a missing
  * binary WARN-skips, a probe failure FAILs); `buildScanTree` stages a temp copy
  * of this-host mapped session dirs (a malformed `path-map.json` -> FAIL row,
  * no crash); `scanAndReport` runs the shared `scanStagedTree` (the same

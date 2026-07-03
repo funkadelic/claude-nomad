@@ -115,12 +115,12 @@ export function reportRebaseClean(section: DoctorSection): void {
 }
 
 /**
- * FAILs (sets `process.exitCode = 1`) when `REPO_HOME` is wedged. Extends the
- * Phase 41 mid-rebase/mid-merge FAIL to cover the `'unmerged-index'` state
- * (torn-down rebase that left stage-2/3 entries in the index with no active
- * rebase/merge marker). All three wedge states hard-block every
- * `nomad pull`/`nomad push`; all three point at `nomad pull --force-remote`
- * for auto-recovery. On a clean repo, emits nothing (D-5).
+ * FAILs (sets `process.exitCode = 1`) when `REPO_HOME` is wedged. Covers the
+ * mid-rebase/mid-merge states plus the `'unmerged-index'` state (torn-down
+ * rebase that left stage-2/3 entries in the index with no active rebase/merge
+ * marker). All three wedge states hard-block every `nomad pull`/`nomad push`;
+ * all three point at `nomad pull --force-remote` for auto-recovery. On a
+ * clean repo, emits nothing.
  *
  * Uses `classifyWedge` (not `detectWedge`) so the unmerged-index state is
  * detected via the git exec probe, not just marker files.
@@ -157,7 +157,7 @@ export function reportRebaseState(section: DoctorSection): void {
  * WARNs (non-blocking) when `REPO_HOME`'s stash list contains an orphaned
  * autostash entry. An orphaned autostash is non-blocking lost-work cruft
  * (the stash entry preserves the user's work; no git operation is blocked by
- * its presence). Does NOT set `process.exitCode` (per D-5).
+ * its presence). Does NOT set `process.exitCode`.
  *
  * Mirrors `reportRebaseClean`'s WARN pattern. Runs separately from
  * `reportRebaseState` so both can fire in the same doctor run independently.
