@@ -246,7 +246,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
   });
 
   it('Test 8c: dry-run on a CLEAN repo (empty status) with a planted leak runs the preview, renders ✗, and sets exitCode 1', async () => {
-    // WR-03: the empty-status early return is now real-push-only, so a dry-run
+    // The empty-status early return is real-push-only, so a dry-run
     // on a clean repo (gitStatusPorcelainZ -> '') still reaches the leak
     // preview. previewPushLeaks is mocked to a leak verdict AND sets
     // process.exitCode=1 inside the mock so the assertion mirrors production
@@ -305,8 +305,8 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
   });
 
   it('Test 8d: dry-run on a CLEAN repo with a clean mapped session shows the ✓ no-leaks verdict and leaves exitCode unset', async () => {
-    // WR-03 clean variant: empty status, previewPushLeaks returns the clean
-    // verdict. No recovery, no exitCode bump.
+    // Clean variant of the empty-status-still-scans behavior: empty status,
+    // previewPushLeaks returns the clean verdict. No recovery, no exitCode bump.
     const previewPushLeaksMock = vi.fn(() => ({
       leak: false,
       verdictRow: '✓ no leaks',
@@ -354,9 +354,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
   });
 
   it('Test 8e: dry-run with NO path-map on a clean repo renders the no-scan tree, does not die, and never calls previewPushLeaks', async () => {
-    // WR-03 no-map variant: a dry-run with an empty status and no path-map.json
-    // must render the no-scan tree and return WITHOUT dying (a real push with a
-    // non-empty status still dies on the missing map; covered elsewhere).
+    // No-map variant of the empty-status-still-scans behavior: a dry-run
+    // with an empty status and no path-map.json must render the no-scan
+    // tree and return WITHOUT dying (a real push with a non-empty status
+    // still dies on the missing map; covered elsewhere).
     const previewPushLeaksMock = vi.fn(() => ({
       leak: false,
       verdictRow: '✓ no leaks',

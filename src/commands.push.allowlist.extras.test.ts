@@ -7,8 +7,8 @@ import type { PathMap } from './config.ts';
 // declared logical, mirroring the existing `shared/projects/<logical>/`
 // pattern. A staged path under a declared logical passes; one under an
 // unmapped logical (no `extras` entry for that name) fails with the existing
-// `to sync ... add to PUSH_ALLOWED` FATAL. Data-driven by construction so
-// Pitfall 4 (allow-list bypass via crafted `shared/extras/` path) is closed.
+// `to sync ... add to PUSH_ALLOWED` FATAL. Data-driven by construction, so an
+// allow-list bypass via a crafted `shared/extras/` path is closed.
 describe('enforceAllowList: extras prefix', () => {
   let errorSpy: MockInstance<(...args: unknown[]) => void>;
 
@@ -47,8 +47,8 @@ describe('enforceAllowList: extras prefix', () => {
   it('legacy path-map.json without extras key produces no extras allow-list entries', async () => {
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
-    // Absence of the `extras` key (D-03 additive contract) means no
-    // `shared/extras/` prefixes are generated; any such path is rejected.
+    // Absence of the `extras` key is an additive, opt-in contract: it means
+    // no `shared/extras/` prefixes are generated; any such path is rejected.
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('A  shared/extras/foo/.planning/PLAN.md\0', map)).toThrow(
       NomadFatal,
@@ -127,7 +127,7 @@ describe('enforceAllowList: extras prefix', () => {
 // the sync. The early-return narrows scope to non-extras paths only; the
 // regression guard below proves the original surface still blocks.
 describe('isNeverSync: extras scope', () => {
-  it('returns false for shared/extras/<logical>/.planning/todos/... paths (Pitfall 6 fix)', async () => {
+  it('returns false for shared/extras/<logical>/.planning/todos/... paths', async () => {
     // Re-import via a small wrapper because isNeverSync is not exported.
     // The acceptance signal is end-to-end via enforceAllowList: a path that
     // would otherwise hit the `todos` segment hard-block must pass when it
@@ -139,7 +139,7 @@ describe('isNeverSync: extras scope', () => {
     ).not.toThrow();
   });
 
-  it('returns false for shared/extras/<logical>/.planning/plans/... paths (Pitfall 6 regression)', async () => {
+  it('returns false for shared/extras/<logical>/.planning/plans/... paths', async () => {
     // `plans` is in NEVER_SYNC but is legitimate GSD content inside .planning/;
     // it must remain allowed under shared/extras/ after narrowing the exemption.
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');

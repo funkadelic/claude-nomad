@@ -103,7 +103,9 @@ export function cmdRedact(
     fail(`invalid session id: ${id}`);
     process.exit(1);
   }
-  // Resolve roots once per command invocation (T-45-02 TOCTOU mitigation).
+  // Resolve roots once per command invocation to avoid a time-of-check/
+  // time-of-use race: resolving twice could observe a different filesystem
+  // state between the check and the use.
   const repo = repoHome();
   const backup = backupBase();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);

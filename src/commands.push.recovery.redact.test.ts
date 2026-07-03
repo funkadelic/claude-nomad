@@ -605,7 +605,7 @@ describe('applyRedact: no subagents dir - works as before (main only)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// applyRedact: secret in tool-results/*.txt is redacted (CR-01 regression)
+// applyRedact: secret in tool-results/*.txt is redacted (regression coverage)
 // ---------------------------------------------------------------------------
 
 describe('applyRedact: secret in tool-results/*.txt is staged as scrubbed', () => {
