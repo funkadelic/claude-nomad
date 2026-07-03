@@ -580,9 +580,9 @@ function makePushTestCommit(repo: string, file: string, content: string, message
 
 /**
  * Build a repo with unmerged stage-2/3 index entries but NO active
- * rebase/merge marker (the torn-down-rebase dead end: an in-progress
- * rebase or merge is torn down after leaving unmerged index entries but
- * before the marker files that would otherwise flag it as in-progress).
+ * rebase/merge marker (the torn-down-rebase dead end: a conflicted merge
+ * is started, then its marker files are deleted while the unmerged index
+ * entries stay behind, so nothing flags the repo as in-progress).
  */
 function buildPushUnmergedIndex(dir: string): void {
   initPushTestRepo(dir);

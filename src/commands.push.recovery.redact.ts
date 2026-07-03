@@ -140,9 +140,9 @@ export function applyRedact(
     return false;
   };
 
-  // Resolve roots once per command invocation to avoid a time-of-check/
-  // time-of-use race: resolving twice could observe a different filesystem
-  // state between the check and the use.
+  // Resolve both roots once at entry so the checks and the mutation
+  // below observe the same filesystem state: resolving twice could see a
+  // different state between the check and the use.
   const claude = claudeHome();
   const repo = repoHome();
 
