@@ -40,6 +40,11 @@ export function writeJsonAtomic(path: string, data: unknown): void {
   const dirFd = openSync(dirname(path), 'r');
   try {
     fsyncSync(dirFd);
+  } catch (e: unknown) {
+    // Windows cannot fsync a directory handle and always throws EPERM, so
+    // skip the durability step there; on every other platform EPERM is a
+    // real error and still throws.
+    if (process.platform !== 'win32' || (e as NodeJS.ErrnoException).code !== 'EPERM') throw e;
   } finally {
     closeSync(dirFd);
   }
