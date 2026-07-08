@@ -36,6 +36,12 @@ jobs:
             deps
             deps-dev
           requireScope: false
+          # The default header pattern types the type as \w*, which cannot
+          # match the hyphen in `deps-dev` (Dependabot titles grouped dev
+          # bumps with the bare prefix). Same pattern with the type class
+          # widened to [\w-]*.
+          headerPattern: '^([\w-]*)(?:\(([\w$.\-*\s]*)\))?: (.*)$'
+          headerPatternCorrespondence: 'type, scope, subject'
           subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |
             The subject "{subject}" must start with a lowercase letter.
