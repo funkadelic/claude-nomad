@@ -141,7 +141,6 @@ export const SCHEMA_KEYS = [
 ];
 
 export const APP_ONLY_KEYS = [
-  'agentPushNotifEnabled',
   'agents',
   'apiKeyHelperTimeoutMs',
   'awsLoginRefresh',
@@ -149,7 +148,6 @@ export const APP_ONLY_KEYS = [
   'awsRetryMode',
   'disableNonEssentialModelCalls',
   'enabledExperimentalFeatures',
-  'inputNeededNotifEnabled',
   'installMethod',
   'pluginGroups',
   'pluginRepositoryEnabled',
@@ -158,7 +156,6 @@ export const APP_ONLY_KEYS = [
   'skipAutoPermissionPrompt',
   'statsig',
   'subagents',
-  'theme',
 ];
 
 /** Union of schema-documented and app-only settings keys; unknown top-level keys trigger a doctor WARN. */
