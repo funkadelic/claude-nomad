@@ -62,6 +62,11 @@
       "prettier --write"
     ]
   },
+  "overrides": {
+    "@conventional-changelog/git-client": {
+      "conventional-commits-parser": "^7.0.0"
+    }
+  },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
     "@commitlint/config-conventional": "^21.0.1",
