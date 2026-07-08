@@ -58,7 +58,9 @@ updates:
       prefix-development: deps-dev
 
   # github-actions: third-party action major bumps land here. No
-  # dev/prod distinction; everything is `deps`.
+  # dev/prod distinction; everything is `deps`. codeql-action's init and
+  # analyze sub-actions must run the same version (analysis fails on a
+  # config version mismatch), so they are grouped into a single PR.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -67,5 +69,9 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     open-pull-requests-limit: 3
+    groups:
+      codeql-action:
+        patterns:
+          - github/codeql-action*
     commit-message:
       prefix: deps
