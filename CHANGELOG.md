@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.57.1](https://github.com/funkadelic/claude-nomad/compare/v0.57.0...v0.57.1) (2026-07-08)
+
+
+### Fixed
+
+* catch EPERM on directory fsync for Windows compatibility ([#359](https://github.com/funkadelic/claude-nomad/issues/359)) ([d4266b2](https://github.com/funkadelic/claude-nomad/commit/d4266b2ca60a2fc2747628340726d40c774b5bfe))
+
+
+### Changed
+
+* accept hyphenated commit types in PR title gate ([#393](https://github.com/funkadelic/claude-nomad/issues/393)) ([3be650c](https://github.com/funkadelic/claude-nomad/commit/3be650cb5fffb2b70d058e78672a5e9d9568f310))
+* **doctor:** sync settings schema keys ([#389](https://github.com/funkadelic/claude-nomad/issues/389)) ([c0b91c0](https://github.com/funkadelic/claude-nomad/commit/c0b91c0d3e958c79dc0f445bd0c48e43c6c38d5f))
+* group codeql-action bumps into a single dependabot PR ([#391](https://github.com/funkadelic/claude-nomad/issues/391)) ([520e8be](https://github.com/funkadelic/claude-nomad/commit/520e8beec96a6e38b1d3bf887f430d7bb5a294e5))
+
+
+### Dependencies
+
+* bump github/codeql-action from 4.36.2 to 4.36.3 ([#384](https://github.com/funkadelic/claude-nomad/issues/384)) ([f3e630c](https://github.com/funkadelic/claude-nomad/commit/f3e630c11cd6fca5bac5d17f7bc96fa4c56b7dac))
+* bump starlight-links-validator ([#387](https://github.com/funkadelic/claude-nomad/issues/387)) ([aee5c0f](https://github.com/funkadelic/claude-nomad/commit/aee5c0fcdfeae0e44940c862a3201c22bc73943d))
+* bump the dev-dependencies group across 1 directory with 3 updates ([#392](https://github.com/funkadelic/claude-nomad/issues/392)) ([f2c1107](https://github.com/funkadelic/claude-nomad/commit/f2c1107a179fc3b1d7d9f89675bf01281d085739))
+* bump the prod-dependencies group in /docs-site with 3 updates ([#388](https://github.com/funkadelic/claude-nomad/issues/388)) ([5af66a7](https://github.com/funkadelic/claude-nomad/commit/5af66a7e725ef3dd936cb446280a7dab6c4fd3cb))
+* **deps-dev:** bump the dev-dependencies group with 5 updates ([#386](https://github.com/funkadelic/claude-nomad/issues/386)) ([f9b9382](https://github.com/funkadelic/claude-nomad/commit/f9b9382e808a592d235e068a91678e84dd2d518a))
+
 ## [0.57.0](https://github.com/funkadelic/claude-nomad/compare/v0.56.2...v0.57.0) (2026-07-03)
 
 
