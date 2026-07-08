@@ -10,6 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -127,6 +128,86 @@ describe('writeJsonAtomic', () => {
     expect(existsSync(target)).toBe(false);
     writeJsonAtomic(target, { fresh: 1 });
     expect(statSync(target).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe('writeJsonAtomic directory-fsync EPERM handling (mocked node:fs)', () => {
+  let originalHome: string | undefined;
+  let testHome: string;
+  const realPlatform = process.platform;
+
+  /**
+   * Mocks node:fs so fsyncSync throws errno `code` for the read-only
+   * directory fd only; the temp-file fsync and all other fs calls pass
+   * through to the real implementations.
+   */
+  const mockDirFsyncFailure = (code: string): void => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      let dirFd = -1;
+      return {
+        ...actual,
+        openSync: vi.fn((...args: Parameters<typeof actual.openSync>) => {
+          const fd = actual.openSync(...args);
+          if (args[1] === 'r') dirFd = fd;
+          return fd;
+        }),
+        fsyncSync: vi.fn((fd: number) => {
+          if (fd === dirFd) {
+            const err = new Error(`${code}: fsync failed`) as NodeJS.ErrnoException;
+            err.code = code;
+            throw err;
+          }
+          actual.fsyncSync(fd);
+        }),
+      };
+    });
+  };
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value });
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
+    process.env.HOME = testHome;
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    vi.doUnmock('node:fs');
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('swallows EPERM from the directory fsync on win32 and completes the write', async () => {
+    mockDirFsyncFailure('EPERM');
+    setPlatform('win32');
+    const mocked = await import('./utils.fs.ts');
+    const target = join(testHome, 'settings.json');
+    expect(() => mocked.writeJsonAtomic(target, { a: 1 })).not.toThrow();
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ a: 1 });
+  });
+
+  it('rethrows a non-EPERM directory-fsync error on win32', async () => {
+    mockDirFsyncFailure('EIO');
+    setPlatform('win32');
+    const mocked = await import('./utils.fs.ts');
+    const target = join(testHome, 'settings.json');
+    expect(() => mocked.writeJsonAtomic(target, { a: 1 })).toThrow(/EIO/);
+  });
+
+  it('rethrows EPERM from the directory fsync on non-Windows platforms', async () => {
+    mockDirFsyncFailure('EPERM');
+    expect(process.platform).not.toBe('win32');
+    const mocked = await import('./utils.fs.ts');
+    const target = join(testHome, 'settings.json');
+    expect(() => mocked.writeJsonAtomic(target, { a: 1 })).toThrow(/EPERM/);
   });
 });
 
