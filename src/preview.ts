@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
+import { remapExtrasPull } from './extras-sync.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
 import { addItem, renderTree, section } from './output-tree.ts';
@@ -174,11 +175,24 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *     overwrite  <dst> (from <src>)
  *     <N> local-only present, not in repo (push to reconcile)   <- when N > 0
  *     ...
+ *   Extras                <- omitted when path-map has no extras key
+ *     <logical>/<dirname>
+ *     ...
  *   Summary
- *     <summaryRow(verb, unmapped, 0, 0, localOnly)>
+ *     <summaryRow(verb, unmapped, 0, extrasSkipped, localOnly)>
  *
  * Returns `{ unmapped, collisions, localOnly }` aggregated from remapPull and
  * `scanLocalOnly`. `collisions` is always 0 in this slice.
+ *
+ * The Extras section is fed by `remapExtrasPull(ts, { dryRun: true })`'s
+ * `wouldPull` detail: under dryRun `runExtrasOp` only collects `would` items
+ * (no backup, no copy) and the `.planning` upstream-delete pass is skipped,
+ * which is the zero-mutation source for this row. Each row is the raw
+ * `<logical>/<dirname>` string with no glyph, keeping it consistent with the
+ * rest of this glyph-free tree (contrast the wet `buildExtrasSection`, which
+ * prefixes a doctor ok-glyph). An extra whose local project copy does not
+ * exist yet still appears here: `wouldPull` keys off the repo `src` existing,
+ * not the local `dst`.
  *
  * The local-only row surfaces retained-but-unpushed session leaf files:
  * with retain-merge (`overlaySessionDir`) these entries survive a pull, so the
@@ -238,11 +252,30 @@ export function computePreview(
     addItem(sessions, `${localOnly} local-only present, not in repo (push to reconcile)`);
   }
 
+  // Extras section: one glyph-free row per <logical>/<dirname> a wet pull
+  // would copy, sourced from remapExtrasPull's dry-run detail (no backup, no
+  // copy, delete pass skipped -- the zero-mutation source for this preview).
+  // Only called when both path-map.json and shared/extras/ exist on disk:
+  // remapExtrasPull's loadValidatedExtras logs an info line via the shared
+  // missingMsg whenever either is absent (mirroring the wet pull path), which
+  // would leak onto this otherwise glyph-free surface and violate the
+  // "no extras key (or no shared/extras/ dir) preserves current output"
+  // contract. An empty `extras` key still resolves silently to zero items.
+  const extras = section('Extras');
+  let extrasSkipped = 0;
+  if (existsSync(join(repo, 'path-map.json')) && existsSync(join(repo, 'shared', 'extras'))) {
+    const extrasResult = remapExtrasPull(ts, { dryRun: true });
+    for (const entry of extrasResult.wouldPull) {
+      addItem(extras, entry);
+    }
+    extrasSkipped = extrasResult.skipped;
+  }
+
   // Summary section.
   const summary = section('Summary');
-  addItem(summary, summaryRow(verb, remapResult.unmapped, 0, 0, localOnly));
+  addItem(summary, summaryRow(verb, remapResult.unmapped, 0, extrasSkipped, localOnly));
 
-  renderTree([links, settingsSection, sessions, summary]);
+  renderTree([links, settingsSection, sessions, extras, summary]);
 
   return { unmapped: remapResult.unmapped, collisions: 0, localOnly };
 }

@@ -707,6 +707,160 @@ describe('computePreview orchestration', () => {
     expect(summaryLines).toHaveLength(1);
   });
 
+  it('renders an Extras section listing planned <logical>/<dirname> copies (verb=pull)', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
+    mkdirSync(repoExtrasFoo, { recursive: true });
+    writeFileSync(join(repoExtrasFoo, 'PROJECT.md'), '# project\n');
+    const localFoo = join(testHome, 'projects', 'foo');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('Extras');
+    expect(joined).toContain('foo/.planning');
+  });
+
+  it('renders the same Extras section for verb=diff', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
+    mkdirSync(repoExtrasFoo, { recursive: true });
+    writeFileSync(join(repoExtrasFoo, 'PROJECT.md'), '# project\n');
+    const localFoo = join(testHome, 'projects', 'foo');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'diff');
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('Extras');
+    expect(joined).toContain('foo/.planning');
+  });
+
+  it('still shows an extra in the Extras section when the local project has no copy yet', async () => {
+    // The host project directory for foo is never created; the dry-run source
+    // keys off the repo src existing, not the local dst.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
+    mkdirSync(repoExtrasFoo, { recursive: true });
+    writeFileSync(join(repoExtrasFoo, 'PROJECT.md'), '# project\n');
+    const localFoo = join(testHome, 'never-created', 'foo');
+    expect(existsSync(localFoo)).toBe(false);
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(logs.join('\n')).toContain('foo/.planning');
+    expect(existsSync(localFoo)).toBe(false);
+  });
+
+  it('omits the Extras header when path-map has no extras key', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    const joined = logs.join('\n');
+    expect(joined).not.toMatch(/^Extras$/m);
+  });
+
+  it('threads the real extras-skipped count into the Summary row', async () => {
+    // 'not-whitelisted' is not in SUPPORTED_EXTRAS, so eachExtrasTarget counts
+    // it as skipped rather than yielding a target.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedDir, 'extras'), { recursive: true });
+    const localFoo = join(testHome, 'projects', 'foo');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['not-whitelisted'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(logs.join('\n')).toContain('extras skipped');
+  });
+
+  it('computePreview mutates no file under CLAUDE_HOME, backup base, or the project dir with extras configured', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
+    mkdirSync(repoExtrasFoo, { recursive: true });
+    writeFileSync(join(repoExtrasFoo, 'PROJECT.md'), '# project\n');
+    const localFoo = join(testHome, 'projects', 'foo');
+    mkdirSync(localFoo, { recursive: true });
+    writeFileSync(join(localFoo, 'existing.md'), '# existing\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const beforeClaude = snapshotTree(claudeDir);
+    const beforeProject = snapshotTree(localFoo);
+    const cacheRoot = join(testHome, '.cache', 'claude-nomad');
+    const beforeCache = snapshotTree(cacheRoot);
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(snapshotTree(claudeDir)).toEqual(beforeClaude);
+    expect(snapshotTree(localFoo)).toEqual(beforeProject);
+    expect(snapshotTree(cacheRoot)).toEqual(beforeCache);
+    expect(existsSync(join(localFoo, '.planning'))).toBe(false);
+  });
+
   it('settings section raw diff block has native +/- prefixes with no tree connectors in diff lines', async () => {
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     writeFileSync(
