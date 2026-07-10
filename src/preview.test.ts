@@ -274,6 +274,7 @@ describe('previewSettings canonicalization', () => {
 describe('computePreview orchestration', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
   let originalNoColor: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
@@ -285,7 +286,12 @@ describe('computePreview orchestration', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
     originalNoColor = process.env.NO_COLOR;
+    // A developer-exported NOMAD_REPO would win over the fixture repo under
+    // the temp HOME (repoHome resolves it first), pointing every repoHome()
+    // call at the real checkout; clear it so the fixtures are authoritative.
+    delete process.env.NOMAD_REPO;
     process.env.NO_COLOR = '1';
     testHome = mkdtempSync(join(tmpdir(), 'nomad-preview-test-'));
     process.env.HOME = testHome;
@@ -308,6 +314,8 @@ describe('computePreview orchestration', () => {
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
     else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
     else delete process.env.NO_COLOR;
     rmSync(testHome, { recursive: true, force: true });

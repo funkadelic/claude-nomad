@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 describe('preview extras parity (dry-run vs wet)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
   let originalNoColor: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
@@ -29,7 +30,13 @@ describe('preview extras parity (dry-run vs wet)', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
     originalNoColor = process.env.NO_COLOR;
+    // A developer-exported NOMAD_REPO would win over the fixture repo under
+    // the temp HOME (repoHome resolves it first), and the wet remapExtrasPull
+    // call here would then read the real path-map; clear it so the fixtures
+    // are authoritative and no real state is ever touched.
+    delete process.env.NOMAD_REPO;
     process.env.NO_COLOR = '1';
     testHome = mkdtempSync(join(tmpdir(), 'nomad-preview-extras-parity-'));
     process.env.HOME = testHome;
@@ -83,6 +90,8 @@ describe('preview extras parity (dry-run vs wet)', () => {
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
     else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
     else delete process.env.NO_COLOR;
     rmSync(testHome, { recursive: true, force: true });
