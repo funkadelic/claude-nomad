@@ -179,10 +179,16 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *     <logical>/<dirname>
  *     ...
  *   Summary
- *     <summaryRow(verb, unmapped, 0, extrasSkipped, localOnly)>
+ *     <summaryRow(verb, unmapped + extrasUnmapped, 0, extrasSkipped, localOnly)>
+ *
+ * The Summary row combines the session-unmapped and extras-unmapped counts,
+ * matching the wet pull's Summary for the same starting state.
  *
  * Returns `{ unmapped, collisions, localOnly }` aggregated from remapPull and
- * `scanLocalOnly`. `collisions` is always 0 in this slice.
+ * `scanLocalOnly`. `collisions` is always 0 in this slice. The returned
+ * `unmapped` field is session-only (it excludes the extras-unmapped count
+ * that the rendered Summary row folds in); callers currently discard it, and
+ * keeping it session-only preserves the pre-extras return contract.
  *
  * The Extras section is fed by `remapExtrasPull(ts, { dryRun: true })`'s
  * `wouldPull` detail: under dryRun `runExtrasOp` only collects `would` items
@@ -263,17 +269,25 @@ export function computePreview(
   // contract. An empty `extras` key still resolves silently to zero items.
   const extras = section('Extras');
   let extrasSkipped = 0;
+  let extrasUnmapped = 0;
   if (existsSync(join(repo, 'path-map.json')) && existsSync(join(repo, 'shared', 'extras'))) {
     const extrasResult = remapExtrasPull(ts, { dryRun: true });
     for (const entry of extrasResult.wouldPull) {
       addItem(extras, entry);
     }
     extrasSkipped = extrasResult.skipped;
+    extrasUnmapped = extrasResult.unmapped;
   }
 
-  // Summary section.
+  // Summary section. Combine session-unmapped and extras-unmapped into one
+  // user-visible count, mirroring the wet pull's buildWetPullSections: from
+  // the operator's perspective both mean "couldn't sync this for the host",
+  // so the preview Summary reads identically to what the wet run will say.
   const summary = section('Summary');
-  addItem(summary, summaryRow(verb, remapResult.unmapped, 0, extrasSkipped, localOnly));
+  addItem(
+    summary,
+    summaryRow(verb, remapResult.unmapped + extrasUnmapped, 0, extrasSkipped, localOnly),
+  );
 
   renderTree([links, settingsSection, sessions, extras, summary]);
 

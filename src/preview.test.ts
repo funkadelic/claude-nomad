@@ -831,6 +831,34 @@ describe('computePreview orchestration', () => {
     expect(logs.join('\n')).toContain('extras skipped');
   });
 
+  it('combines session-unmapped and extras-unmapped in the Summary row like the wet pull', async () => {
+    // foo is keyed to another host: remapPull counts it session-unmapped (1)
+    // and remapExtrasPull counts its extras entry unmapped (1). The wet pull
+    // Summary reads '2 unmapped on pull' for this state; the preview must
+    // match instead of under-reporting with the session count alone.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedDir, 'extras'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { otherhost: '/x' } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    const result = computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(logs.join('\n')).toContain('2 unmapped on pull');
+    // The returned unmapped field stays session-only by contract.
+    expect(result.unmapped).toBe(1);
+  });
+
   it('computePreview mutates no file under CLAUDE_HOME, backup base, or the project dir with extras configured', async () => {
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
