@@ -949,6 +949,52 @@ describe('previewPushLeaks: selective staging via selection.changed', () => {
     expect(verdict.leak).toBe(false);
     expect(verdict.verdictRow).toMatch(/nothing to scan/i);
   });
+
+  it('stages a nested subdirectory file at the correct native-joined destination', async () => {
+    // win32 path-audit regression: stageSessionDir
+    // builds the destination as join(dstDir, relative(localDir, src)). This
+    // is a pure local-fs destination (not a repo-tracked/git-facing string --
+    // git itself computes the real repo-relative path when staging), so it
+    // must NOT be forward-slash-normalized; join() already produces the
+    // correct native separator on every platform, including a real win32
+    // host (verified by the windows-latest CI leg, not locally reproducible
+    // on this test host). A nested (multi-segment) relative path exercises
+    // the case that would break if this site were manually string-built
+    // instead of routed through join()/relative().
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    const encoded = localPath.replace(/\//g, '-');
+    const projectsDir = join(env.claudeHome, 'projects', encoded);
+    const nestedDir = join(projectsDir, 'subdir');
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(join(nestedDir, 'nested.jsonl'), '{"role":"user"}\n');
+    writeFileSync(
+      join(env.repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { [logical]: { 'test-host': localPath } } }) + '\n',
+    );
+
+    const changedSet = new Set([join(nestedDir, 'nested.jsonl')]);
+
+    let stagedNestedFileExists = false;
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+          const expected = join(dir, 'shared', 'projects', logical, 'subdir', 'nested.jsonl');
+          stagedNestedFileExists = existsSync(expected);
+          return [];
+        }),
+      };
+    });
+
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    const verdict = previewPushLeaks(map, { selection: { changed: changedSet, deleted: [] } });
+
+    expect(stagedNestedFileExists).toBe(true);
+    expect(verdict.leak).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
