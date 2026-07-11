@@ -15,7 +15,7 @@ import {
   describeSettings,
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
-import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
+import { copyExtrasFiltered, copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
@@ -231,6 +231,49 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
       continue;
     }
     ensureSymlink(linkPath, target);
+  }
+}
+
+/**
+ * Win32 push-mirror for `allSharedLinks(map)` names: copies each real local
+ * copy at `~/.claude/<name>` back into `shared/<name>` (repo side), so an
+ * edit made through the win32 copy model (`applySharedLinksWin32`) reaches
+ * the repo at the next push. This is the write half of the copy-sync model;
+ * `copySharedLinkPull` is the read half.
+ *
+ * Mirrors `syncSkillsPush`'s pattern exactly: skip a name absent from
+ * `~/.claude/` (nothing to mirror), skip a name that is still a live symlink
+ * (a symlink-era leftover, or a host sharing `~/.claude` with a
+ * symlink-capable OS; mirroring through it would rm the copy target from
+ * under the `cpSync` source and crash), otherwise mirror via
+ * `copyExtrasFiltered` with a blockSet seeded from `ALWAYS_NEVER_SYNC` (the
+ * same deny-set boundary `copySharedLinkPull` uses on the pull side), so a
+ * host-local sensitive name cannot ride from `~/.claude/` into the repo.
+ *
+ * On darwin/linux this is a no-op: the symlink means an edit at
+ * `~/.claude/<name>` already lands in `shared/<name>` directly, so push has
+ * nothing to mirror. The platform gate lives inside the function (an early
+ * return) so callers can invoke it unconditionally with no branch of their
+ * own, matching `applySharedLinks`'s win32-gating convention.
+ *
+ * `map` is nullable to match `loadSelectionForPush`'s return shape (a missing
+ * `path-map.json` yields `map: null`); a null map skips the mirror entirely
+ * rather than crashing on `allSharedLinks(null)`. The caller's own
+ * `path-map.json missing` fatal fires later in the real-push pipeline.
+ *
+ * @param map - Parsed `path-map.json`, or `null` when the file is absent.
+ */
+export function syncSharedLinksPush(map: PathMap | null): void {
+  if (process.platform !== 'win32') return;
+  if (map === null) return;
+  const claude = claudeHome();
+  const repo = repoHome();
+  for (const name of allSharedLinks(map)) {
+    const localPath = join(claude, name);
+    const stat = lstatSync(localPath, { throwIfNoEntry: false });
+    if (stat === undefined) continue; // absent: nothing to mirror
+    if (stat.isSymbolicLink()) continue; // symlink-era live link; defer to next pull
+    copyExtrasFiltered(localPath, join(repo, 'shared', name), ALWAYS_NEVER_SYNC);
   }
 }
 
