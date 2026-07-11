@@ -528,3 +528,101 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     expect(errOutput(env)).toBe('');
   });
 });
+
+// ---------------------------------------------------------------------------
+// win32 copy-back branch (no unprivileged symlink support)
+// ---------------------------------------------------------------------------
+
+describe('cmdAdopt win32 copy-back branch', () => {
+  let env: Env;
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    teardownAdoptEnv(env);
+  });
+
+  it('win32: leaves ~/.claude/<name> as a real copy (not a symlink) and stages shared/<name>', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    // shared/<name> contains the original files
+    expect(existsSync(join(sharedTarget, 'tool.sh'))).toBe(true);
+    expect(readFileSync(join(sharedTarget, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+
+    // linkPath is a real copy, NOT a symlink
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+
+    // staged
+    expect(diffCached(env)).toContain('shared/my-tools');
+  });
+
+  it('win32: does not call ensureSymlink (no symlink created at any point)', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    // The precondition matrix's "already a symlink" branch never applied
+    // (source was real), and the win32 branch never created one either.
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+  });
+
+  it('win32 dry-run: reports a copy-back plan (not a symlink relink) and mutates nothing', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools', { dryRun: true })).not.toThrow();
+
+    const out = logOutput(env);
+    expect(out).toContain('would copy back');
+    expect(out).not.toContain('would relink');
+
+    // Zero mutation
+    expect(existsSync(linkPath)).toBe(true);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(env.repoHome, 'shared', 'my-tools'))).toBe(false);
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('non-win32: dry-run still reports a symlink relink plan (posix wording unchanged)', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+
+    // No setPlatform call: exercises whatever this dev/CI host actually is
+    // (posix), proving the win32 wording above is genuinely gated.
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools', { dryRun: true })).not.toThrow();
+
+    const out = logOutput(env);
+    expect(out).toContain('would relink');
+    expect(out).not.toContain('would copy back');
+  });
+});
