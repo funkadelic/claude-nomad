@@ -15,7 +15,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { runPullCore, type PullCoreResult } from './commands.pull.ts';
+import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './commands.pull.ts';
 import { runPushCore, type PushCoreResult } from './commands.push.ts';
 import { backupBase, repoHome, type PathMap } from './config.ts';
 import { computePreview } from './preview.ts';
@@ -39,7 +39,7 @@ type PushOutcome = { ok: true; result: PushCoreResult } | { ok: false; message: 
 /**
  * True when the sections a wet pull built carry no synced-item rows: every
  * section is either `Settings` (always one row, the regenerated
- * settings.json), `Summary` (always one row), or has zero items. Used to
+ * settings.json), `Pull summary` (always one row), or has zero items. Used to
  * decide whether the pull half actually moved anything.
  *
  * @param sections - The grouped-tree sections returned by a wet pull.
@@ -47,7 +47,7 @@ type PushOutcome = { ok: true; result: PushCoreResult } | { ok: false; message: 
  */
 function pullHasNoSyncedItems(sections: DoctorSection[]): boolean {
   return sections.every(
-    (s) => s.header === 'Settings' || s.header === 'Summary' || s.items.length === 0,
+    (s) => s.header === 'Settings' || s.header === PULL_SUMMARY_HEADER || s.items.length === 0,
   );
 }
 
@@ -70,16 +70,16 @@ function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
 }
 
 /**
- * Read the pull half's own Summary row text so the two-phase status line
+ * Read the pull half's own Pull summary row text so the two-phase status line
  * below reuses its exact phrasing instead of recomputing it. Falls back to
- * `'applied'` in the defensive case where the pull sections carry no Summary
- * row (never happens in practice; the wet pull path always appends one).
+ * `'applied'` in the defensive case where the pull sections carry no Pull
+ * summary row (never happens in practice; the wet pull path always appends one).
  *
  * @param pull - The wet pull result.
- * @returns The pull half's Summary row text, or `'applied'` as a fallback.
+ * @returns The pull half's Pull summary row text, or `'applied'` as a fallback.
  */
 function pullPhrase(pull: WetPull): string {
-  const summary = pull.sections.find((s) => s.header === 'Summary');
+  const summary = pull.sections.find((s) => s.header === PULL_SUMMARY_HEADER);
   return summary?.items[0] ?? 'applied';
 }
 
@@ -104,17 +104,17 @@ function reconciledNotes(pull: WetPull): string[] {
 }
 
 /**
- * Build the two-phase status Summary section rendered after the pull tree. On
- * a failed push half this collapses to the single status line naming which
- * half failed; on a successful run it lists a `pull:` row, a `push:` row, and
- * any reconciled-work notes.
+ * Build the two-phase status Sync summary section rendered after the pull
+ * tree. On a failed push half this collapses to the single status line naming
+ * which half failed; on a successful run it lists a `pull:` row, a `push:`
+ * row, and any reconciled-work notes.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
- * @returns The `Summary` section for the two-phase status.
+ * @returns The `Sync summary` section for the two-phase status.
  */
 function buildSyncSummarySection(pull: WetPull, pushOutcome: PushOutcome): DoctorSection {
-  const s = section('Summary');
+  const s = section('Sync summary');
   if (!pushOutcome.ok) {
     addItem(s, `pull: applied, push: failed (${pushOutcome.message})`);
     return s;
@@ -128,7 +128,7 @@ function buildSyncSummarySection(pull: WetPull, pushOutcome: PushOutcome): Docto
 /**
  * Render the wet-sync result: a compact `already in sync` line when nothing
  * changed on either half, otherwise the pull half's own grouped tree followed
- * by the two-phase status Summary. The push half's own grouped tree (or its
+ * by the two-phase status Sync summary. The push half's own grouped tree (or its
  * `nothing to commit` no-scan tree) has already rendered by the time this
  * runs; this function only ever adds the pull tree and the final status line
  * on top.

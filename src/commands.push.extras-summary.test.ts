@@ -80,11 +80,11 @@ describe('cmdPush: extras pipeline integration', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    // The in-tree Summary row confirms we reached the success path (not the
-    // empty-status or dry-run branches whose own coverage exists elsewhere)
-    // and carries the combined 2 + 3 = 5 unmapped count.
+    // The in-tree Push summary row confirms we reached the success path (not
+    // the empty-status or dry-run branches whose own coverage exists
+    // elsewhere) and carries the combined 2 + 3 = 5 unmapped count.
     const out = logOutput(env);
-    expect(out).toContain('Summary');
+    expect(out).toContain('Push summary');
     expect(out).toContain('5 unmapped on push');
     expect(out).toMatch(/no leaks/);
     vi.doUnmock('./push-leak-verdict.ts');

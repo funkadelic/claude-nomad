@@ -354,9 +354,9 @@ describe('cmdPull: extras integration', () => {
     expect(remapExtrasPullMock).toHaveBeenCalled();
   });
 
-  it('surfaces extrasResult.skipped in the WET-pull Summary row of the grouped tree', async () => {
-    // skipped=3 from remapExtrasPull surfaces in the in-tree Summary row as
-    // "3 extras skipped". On the WET path the summary renders through the
+  it('surfaces extrasResult.skipped in the WET-pull Pull summary row of the grouped tree', async () => {
+    // skipped=3 from remapExtrasPull surfaces in the in-tree Pull summary row
+    // as "3 extras skipped". On the WET path the summary renders through the
     // grouped tree (summaryRow via console.log / stdout), not the standalone
     // emitSummary warn() on stderr; the phrasing is preserved.
     writeFileSync(
@@ -390,7 +390,7 @@ describe('cmdPull: extras integration', () => {
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull()).not.toThrow();
     const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
-    expect(combined).toContain('Summary');
+    expect(combined).toContain('Pull summary');
     expect(combined).toContain('3 extras skipped');
   });
 
@@ -443,7 +443,7 @@ describe('cmdPull: extras integration', () => {
     expect(out).toContain('1 not in path-map (run nomad doctor to list)');
     expect(out).toContain('Extras');
     expect(out).toMatch(/✓ +proj-a\/\.planning/);
-    expect(out).toContain('Summary');
+    expect(out).toContain('Pull summary');
     expect(out).not.toContain('pull complete');
   });
 
