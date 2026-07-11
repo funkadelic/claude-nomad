@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.0](https://github.com/funkadelic/claude-nomad/compare/v0.57.1...v0.58.0) (2026-07-11)
+
+
+### Added
+
+* **preview:** render an Extras section in pull/diff dry-run previews ([#394](https://github.com/funkadelic/claude-nomad/issues/394)) ([6b929dc](https://github.com/funkadelic/claude-nomad/commit/6b929dc7c63aad905ba267f793b31308fa7cb76e))
+
 ## [0.57.1](https://github.com/funkadelic/claude-nomad/compare/v0.57.0...v0.57.1) (2026-07-08)
 
 
