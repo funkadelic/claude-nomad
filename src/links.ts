@@ -1,12 +1,21 @@
 import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from './config.ts';
+import {
+  allSharedLinks,
+  claudeHome,
+  repoHome,
+  ALWAYS_NEVER_SYNC,
+  HOST,
+  isDeniedName,
+  type PathMap,
+} from './config.ts';
 import {
   classifySettingsDrift,
   describeSettings,
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
+import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
@@ -79,6 +88,79 @@ function runAutoMovePasses(
 }
 
 /**
+ * Win32 copy-model helper: overlays `shared/<name>` (repo side) into
+ * `~/.claude/<name>` (host side) via `copyExtrasFilteredPreservingBy`, the
+ * same predicate-driven preserving-copy primitive `skills-sync.ts` uses for
+ * `copySkillsPull`. `SHARED_LINKS` names are not gsd-owned, so no gsd-prefix
+ * filter is needed here (contrast `isSkillExcluded`); the predicate only
+ * excludes `ALWAYS_NEVER_SYNC` names at every depth, so a crafted
+ * `shared/<name>/settings.local.json`-style entry cannot ride into
+ * `~/.claude/` from a poisoned repo. `src` may be a single file (`CLAUDE.md`,
+ * `my-statusline.cjs`) or a directory (`commands`, `rules`); the underlying
+ * `cpSync` handles both.
+ *
+ * @param src - Source path (`shared/<name>`, repo side).
+ * @param dst - Destination path (`~/.claude/<name>`, host side).
+ */
+export function copySharedLinkPull(src: string, dst: string): void {
+  copyExtrasFilteredPreservingBy(src, dst, (name) => isDeniedName(ALWAYS_NEVER_SYNC, name));
+}
+
+/**
+ * Win32 branch of `applySharedLinks`: materializes each shared link name as a
+ * real copy via `copySharedLinkPull` instead of a symlink. Symlink creation on
+ * Windows needs Developer Mode or admin, and junctions are directory-only, so
+ * file entries like `CLAUDE.md` have no unprivileged symlink equivalent; the
+ * accepted trade-off is that Windows edits are captured at the next
+ * `nomad push`, the same semantics `skills/` already has.
+ *
+ * Skips a name entirely when the repo has no `shared/<name>` counterpart
+ * (mirrors the posix skip-when-no-counterpart behavior). When `linkPath` is a
+ * live symlink (a symlink-era leftover from before this branch existed, or a
+ * host that previously shared `~/.claude` with a symlink-capable OS), it is
+ * backed up and removed before the copy, mirroring `syncSkillsPull`'s
+ * migration guard. A real, non-symlink `linkPath` is the normal post-copy
+ * state on win32 and is simply overwritten by the copy; it is NOT routed
+ * through `runAutoMovePasses` (that pass is posix-only and would wrongly treat
+ * every already-copied file as a conflict to migrate on every subsequent
+ * pull).
+ *
+ * Kept as a separate function (rather than inlined into `applySharedLinks`)
+ * so the win32 loop body stays flat under the cognitive-complexity gate.
+ *
+ * @param linkNames - Names to materialize (from `allSharedLinks(map)`).
+ * @param claude - `claudeHome()` (host `~/.claude` dir).
+ * @param repo - `repoHome()` (local sync repo checkout).
+ * @param ts - Backup timestamp for a symlink-era migration.
+ * @param dryRun - When `true`, emit a preview event instead of copying.
+ * @param onPreview - Structured-event sink; see `LinkOpts.onPreview`.
+ */
+function applySharedLinksWin32(
+  linkNames: readonly string[],
+  claude: string,
+  repo: string,
+  ts: string,
+  dryRun: boolean,
+  onPreview: LinkOpts['onPreview'],
+): void {
+  for (const name of linkNames) {
+    const target = join(repo, 'shared', name);
+    if (!existsSync(target)) continue;
+    const linkPath = join(claude, name);
+    if (dryRun) {
+      emitCreate(onPreview, linkPath, target);
+      continue;
+    }
+    const stat = lstatSync(linkPath, { throwIfNoEntry: false });
+    if (stat?.isSymbolicLink() === true) {
+      backupBeforeWrite(linkPath, ts);
+      rmSync(linkPath, { recursive: true, force: true });
+    }
+    copySharedLinkPull(target, linkPath);
+  }
+}
+
+/**
  * Symlink every name in `allSharedLinks(map)` (the static shared-link set
  * plus any validated `sharedDirs` entries from `path-map.json`) from the
  * repo's `shared/` dir into `~/.claude/`. Two-pass: first back up and remove
@@ -99,6 +181,11 @@ function runAutoMovePasses(
  *
  * Backwards-compatible: a call with no opts arg or with `dryRun: false` keeps
  * the prior mutating behavior.
+ *
+ * On `process.platform === 'win32'`, this delegates entirely to
+ * `applySharedLinksWin32`, which materializes real copies instead of
+ * symlinks (see that function's doc comment). macOS/Linux fall through to the
+ * symlink path below, byte-identical to before this branch existed.
  */
 export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}): void {
   const dryRun = opts.dryRun === true;
@@ -107,6 +194,10 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
   // Derive once: allSharedLinks emits a WARN per invalid sharedDirs entry, so
   // calling it per loop would double every such warning in a single run.
   const linkNames = allSharedLinks(map);
+  if (process.platform === 'win32') {
+    applySharedLinksWin32(linkNames, claude, repo, ts, dryRun, opts.onPreview);
+    return;
+  }
   runAutoMovePasses(linkNames, claude, repo, ts, dryRun, opts.onPreview);
   for (const name of linkNames) {
     const target = join(repo, 'shared', name);

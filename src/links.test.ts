@@ -637,6 +637,129 @@ describe('applySharedLinks auto-move', () => {
   });
 });
 
+describe('applySharedLinks win32 copy branch', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-win32-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('materializes a file entry and a directory entry as real copies on win32 (no symlink)', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+
+    setPlatform('win32');
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260701-000000', { projects: {} });
+
+    const claudeMd = join(claudeDir, 'CLAUDE.md');
+    expect(lstatSync(claudeMd).isSymbolicLink()).toBe(false);
+    expect(readFileSync(claudeMd, 'utf8')).toBe('# shared\n');
+
+    const commandsDir = join(claudeDir, 'commands');
+    expect(lstatSync(commandsDir).isSymbolicLink()).toBe(false);
+    expect(lstatSync(commandsDir).isDirectory()).toBe(true);
+    expect(readFileSync(join(commandsDir, 'foo.md'), 'utf8')).toBe('# shared command\n');
+  });
+
+  it('migrates a symlink-era leftover: backs it up and replaces it with a real copy on win32', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+    const linkPath = join(claudeDir, 'CLAUDE.md');
+    // Simulate a leftover symlink from before this branch existed (or a host
+    // that previously shared ~/.claude with a symlink-capable OS).
+    symlinkSync(join(sharedDir, 'CLAUDE.md'), linkPath);
+
+    setPlatform('win32');
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260701-000001', { projects: {} });
+
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(readFileSync(linkPath, 'utf8')).toBe('# new\n');
+
+    const backupFile = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      '20260701-000001',
+      'CLAUDE.md',
+    );
+    expect(existsSync(backupFile)).toBe(true);
+  });
+
+  it('skips a name whose repo shared/<name> counterpart is absent, on win32', async () => {
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'local-only.md'), '# local-only\n');
+    // At least one other shared link exists so the run is not a no-op.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+
+    setPlatform('win32');
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260701-000002', { projects: {} });
+
+    expect(existsSync(join(claudeDir, 'commands', 'local-only.md'))).toBe(true);
+    expect(readFileSync(join(claudeDir, 'commands', 'local-only.md'), 'utf8')).toBe(
+      '# local-only\n',
+    );
+  });
+
+  it('does not create a symlink; posix host in the same run still symlinks unchanged', async () => {
+    // Sanity: on a non-win32 stub the same setup still produces a symlink,
+    // proving the win32 branch above is genuinely gated on process.platform
+    // and not a global behavior change.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260701-000003', { projects: {} });
+    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+  });
+
+  it('dry-run on win32 emits a preview event and does not mutate disk', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    setPlatform('win32');
+    const events: unknown[] = [];
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks(
+      '20260701-000004',
+      { projects: {} },
+      { dryRun: true, onPreview: (e) => events.push(e) },
+    );
+    expect(existsSync(join(claudeDir, 'CLAUDE.md'))).toBe(false);
+    expect(events.length).toBeGreaterThan(0);
+  });
+});
+
 describe('applySharedLinks dry-run', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
