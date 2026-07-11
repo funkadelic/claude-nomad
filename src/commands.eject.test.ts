@@ -419,3 +419,67 @@ describe('cmdEject', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: get-shit-done'));
   });
 });
+
+describe('cmdEject win32 copy-sync modality', () => {
+  let logSpy: MockInstance<(msg: string) => void>;
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation((_msg: string) => undefined);
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    vi.restoreAllMocks();
+  });
+
+  it('live: a real-copy SHARED_LINKS name is reported as "already a real copy" on win32', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real (win32 copy)');
+
+    setPlatform('win32');
+    cmdEject({}, { claudeHome, repoHome });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('already a real copy (win32 copy-sync): CLAUDE.md'),
+    );
+    expect(logSpy.mock.calls.some((c) => c[0].includes('skipped (not a symlink): CLAUDE.md'))).toBe(
+      false,
+    );
+    // Unchanged, no mutation of the real file.
+    expect(readFileSync(join(claudeHome, 'CLAUDE.md'), 'utf8')).toBe('already real (win32 copy)');
+  });
+
+  it('dry-run: a real-copy SHARED_LINKS name is reported as "already a real copy" on win32', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real (win32 copy)');
+
+    setPlatform('win32');
+    cmdEject({ dryRun: true }, { claudeHome, repoHome });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('already a real copy (win32 copy-sync): CLAUDE.md'),
+    );
+    expect(logSpy.mock.calls.some((c) => c[0].includes('skipped (not a symlink): CLAUDE.md'))).toBe(
+      false,
+    );
+  });
+
+  it('non-win32: the same real-copy fixture still reports the posix "not a symlink" wording', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real');
+
+    // realPlatform is whatever this dev/CI host actually is (posix here); no
+    // setPlatform call, proving the win32 wording above is genuinely gated.
+    cmdEject({}, { claudeHome, repoHome });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('skipped (not a symlink): CLAUDE.md'),
+    );
+  });
+});
