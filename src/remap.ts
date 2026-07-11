@@ -1,13 +1,4 @@
-import {
-  cpSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from './config.sharedDirs.guard.ts';
@@ -16,7 +7,7 @@ import { assertSafeLocalRoot } from './extras-sync.guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { type ManifestDiff } from './push-manifest.ts';
 import { die, item, log } from './utils.ts';
-import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
+import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from './utils.fs.ts';
 import { encodePath, readPathMap } from './utils.json.ts';
 
 /**
@@ -29,9 +20,10 @@ const TMP_SUFFIX = '.nomad-tmp';
 
 /**
  * Atomic mirror copy: fully populate a sibling temp dir, then swap it into
- * place with a single `renameSync`. The temp dir is a sibling of `dst` (same
- * parent, so same filesystem) which keeps the rename atomic with no EXDEV
- * cross-device fallback.
+ * place via `renameAtomicRetry` (a single `renameSync` call on posix; a
+ * bounded EPERM/EBUSY retry on win32). The temp dir is a sibling of `dst`
+ * (same parent, so same filesystem) which keeps the rename atomic with no
+ * EXDEV cross-device fallback.
  *
  * Replaces the previous rm-then-copy: that wiped `dst` and then ran the long
  * `cpSync` into the empty dir, so an interrupt (Ctrl-C during a large copy,
@@ -47,7 +39,7 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
   rmSync(tmp, { recursive: true, force: true });
   cpSync(src, tmp, options);
   rmSync(dst, { recursive: true, force: true });
-  renameSync(tmp, dst);
+  renameAtomicRetry(tmp, dst);
 }
 
 /**
@@ -98,7 +90,7 @@ export function copyFileAtomic(src: string, dst: string): void {
   mkdirSync(dirname(dst), { recursive: true });
   const tmp = `${dst}.tmp.${process.pid}`;
   cpSync(src, tmp, { force: true, preserveTimestamps: true });
-  renameSync(tmp, dst);
+  renameAtomicRetry(tmp, dst);
 }
 
 /**

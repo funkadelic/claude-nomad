@@ -115,7 +115,7 @@ export function writeJsonAtomic(path: string, data: unknown): void {
   } finally {
     closeSync(fd);
   }
-  renameSync(tmp, path);
+  renameAtomicRetry(tmp, path);
   // Fsync the parent directory so the rename itself is durable across a crash;
   // otherwise the file contents are persisted but the directory entry can be
   // lost. Linux/macOS support this on a read-only fd to the dir.
