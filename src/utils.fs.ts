@@ -18,6 +18,88 @@ import { encodePath } from './utils.json.ts';
 import { die, log } from './utils.ts';
 
 /**
+ * Total attempts (including the first) `renameAtomicRetry` makes on win32
+ * before giving up and re-throwing the last error.
+ */
+const RENAME_RETRY_MAX_ATTEMPTS = 5;
+
+/**
+ * Synchronous backoff between `renameAtomicRetry` win32 attempts, in
+ * milliseconds. Short and bounded: long enough for a transient antivirus or
+ * indexer file lock to clear, short enough that the worst case (all
+ * `RENAME_RETRY_MAX_ATTEMPTS` attempts fail) adds only tens of milliseconds.
+ */
+const RENAME_RETRY_BACKOFF_MS = 10;
+
+/**
+ * Returns true when `code` is a transient Windows file-lock errno
+ * (`EPERM`/`EBUSY`) that a bounded retry can plausibly clear, rather than a
+ * real failure that should surface immediately. Extracted to keep
+ * `renameAtomicRetry` under the cognitive-complexity gate.
+ */
+function isRetryableRenameCode(code: string | undefined): boolean {
+  return code === 'EPERM' || code === 'EBUSY';
+}
+
+/**
+ * Synchronous bounded busy-wait used only inside `renameAtomicRetry`'s win32
+ * backoff. `Atomics.wait` on a throwaway `SharedArrayBuffer` blocks the
+ * calling thread for `ms` milliseconds without yielding to the event loop;
+ * every caller here is a synchronous fs helper that cannot `await`.
+ */
+function sleepSyncMs(ms: number): void {
+  const view = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(view, 0, 0, ms);
+}
+
+/**
+ * Rename `tmp` over `dst`, retrying on win32 when the OS reports a transient
+ * file lock. NTFS can hold a brief handle on a file being renamed over
+ * (Windows Defender scanning it, the Search indexer reading it), so a single
+ * `renameSync` over an existing destination intermittently throws
+ * `EPERM`/`EBUSY` on Windows even though the lock clears within
+ * milliseconds. This targets exactly that destination-already-exists
+ * overwrite case, which every atomic-write site in this codebase hits on
+ * every write.
+ *
+ * On any platform other than win32 this is exactly one `renameFn(tmp, dst)`
+ * call with no retry, no backoff, and no added latency; posix behavior is
+ * byte-identical to a bare `renameSync` call. On win32 it retries only when
+ * the caught error's `.code` is `EPERM` or `EBUSY`, up to
+ * `RENAME_RETRY_MAX_ATTEMPTS` total attempts with a short synchronous
+ * backoff between attempts. Any other error code re-throws immediately with
+ * no retry. After the attempt cap is exhausted the last error is re-thrown,
+ * so a permanent lock surfaces as a real error rather than hanging.
+ *
+ * @param tmp - Source path (the temp file/dir being renamed into place).
+ * @param dst - Destination path; may already exist, which is the case this
+ *   helper exists to cover.
+ * @param renameFn - Injectable `renameSync`-shaped function so tests can
+ *   stub failure/success sequences without touching the real filesystem.
+ *   Defaults to the real `renameSync`.
+ */
+export function renameAtomicRetry(
+  tmp: string,
+  dst: string,
+  renameFn: typeof renameSync = renameSync,
+): void {
+  if (process.platform !== 'win32') {
+    renameFn(tmp, dst);
+    return;
+  }
+  for (let attempt = 1; attempt <= RENAME_RETRY_MAX_ATTEMPTS; attempt++) {
+    try {
+      renameFn(tmp, dst);
+      return;
+    } catch (e: unknown) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (!isRetryableRenameCode(code) || attempt === RENAME_RETRY_MAX_ATTEMPTS) throw e;
+      sleepSyncMs(RENAME_RETRY_BACKOFF_MS);
+    }
+  }
+}
+
+/**
  * Atomic write: temp + fsync + rename + parent-dir fsync. Survives
  * interrupted pulls. Preserves the destination file's existing mode when it
  * exists, defaults to 0o600 otherwise so credentials in `settings.json` are

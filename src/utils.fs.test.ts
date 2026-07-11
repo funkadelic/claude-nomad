@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  type renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -16,7 +17,18 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { freshBackupTs, nowTimestamp, writeJsonAtomic } from './utils.fs.ts';
+import { freshBackupTs, nowTimestamp, renameAtomicRetry, writeJsonAtomic } from './utils.fs.ts';
+
+/**
+ * Builds a fake `NodeJS.ErrnoException` with the given errno `code`, used to
+ * drive `renameAtomicRetry`'s retryable/non-retryable branches without
+ * touching the real filesystem.
+ */
+function mkErrnoError(code: string): NodeJS.ErrnoException {
+  const err = new Error(`${code}: simulated rename failure`) as NodeJS.ErrnoException;
+  err.code = code;
+  return err;
+}
 
 /**
  * Filesystem-helper coverage, split off from utils.test.ts to mirror the
@@ -208,6 +220,84 @@ describe('writeJsonAtomic directory-fsync EPERM handling (mocked node:fs)', () =
     const mocked = await import('./utils.fs.ts');
     const target = join(testHome, 'settings.json');
     expect(() => mocked.writeJsonAtomic(target, { a: 1 })).toThrow(/EPERM/);
+  });
+});
+
+describe('renameAtomicRetry', () => {
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value });
+  };
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+  });
+
+  it('retries EPERM twice then succeeds on win32 against an existing destination', () => {
+    setPlatform('win32');
+    let calls = 0;
+    const renameFn: typeof renameSync = () => {
+      calls++;
+      if (calls < 3) throw mkErrnoError('EPERM');
+    };
+    expect(() => renameAtomicRetry('tmp', 'dst', renameFn)).not.toThrow();
+    expect(calls).toBe(3);
+  });
+
+  it('retries EBUSY the same way as EPERM on win32', () => {
+    setPlatform('win32');
+    let calls = 0;
+    const renameFn: typeof renameSync = () => {
+      calls++;
+      if (calls < 2) throw mkErrnoError('EBUSY');
+    };
+    expect(() => renameAtomicRetry('tmp', 'dst', renameFn)).not.toThrow();
+    expect(calls).toBe(2);
+  });
+
+  it('re-throws a non-EPERM/EBUSY code immediately on win32 (single call, no retry)', () => {
+    setPlatform('win32');
+    let calls = 0;
+    const renameFn: typeof renameSync = () => {
+      calls++;
+      throw mkErrnoError('ENOENT');
+    };
+    expect(() => renameAtomicRetry('tmp', 'dst', renameFn)).toThrow(/ENOENT/);
+    expect(calls).toBe(1);
+  });
+
+  it('re-throws after exhausting the bounded attempt cap when EPERM persists on win32', () => {
+    setPlatform('win32');
+    let calls = 0;
+    const renameFn: typeof renameSync = () => {
+      calls++;
+      throw mkErrnoError('EPERM');
+    };
+    expect(() => renameAtomicRetry('tmp', 'dst', renameFn)).toThrow(/EPERM/);
+    expect(calls).toBe(5);
+  });
+
+  it('on non-win32, calls renameFn exactly once on success (no retry)', () => {
+    setPlatform('darwin');
+    let calls = 0;
+    const renameFn: typeof renameSync = () => {
+      calls++;
+    };
+    expect(() => renameAtomicRetry('tmp', 'dst', renameFn)).not.toThrow();
+    expect(calls).toBe(1);
+  });
+
+  it('on non-win32, re-throws immediately with a single call (no retry, no backoff)', () => {
+    setPlatform('darwin');
+    let calls = 0;
+    const renameFn: typeof renameSync = () => {
+      calls++;
+      throw mkErrnoError('EPERM');
+    };
+    expect(() => renameAtomicRetry('tmp', 'dst', renameFn)).toThrow(/EPERM/);
+    expect(calls).toBe(1);
   });
 });
 
