@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { type ExecFileSyncOptions } from 'node:child_process';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { cmdUpdate, readInstalledVersion } from './commands.update.ts';
 import { NomadFatal } from './utils.ts';
@@ -89,6 +91,80 @@ describe('cmdUpdate', () => {
     };
 
     expect(() => cmdUpdate('0.46.0', run)).toThrow('npm ERR! permission denied');
+  });
+});
+
+describe('cmdUpdate platform branching', () => {
+  let originalPlatform: NodeJS.Platform;
+
+  beforeEach(() => {
+    originalPlatform = process.platform;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  function setPlatform(value: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  }
+
+  function makeCapturingRun(): {
+    run: (bin: string, args: readonly string[], opts?: ExecFileSyncOptions) => string;
+    calls: { bin: string; args: readonly string[]; opts?: ExecFileSyncOptions }[];
+  } {
+    const calls: { bin: string; args: readonly string[]; opts?: ExecFileSyncOptions }[] = [];
+    const run = (bin: string, args: readonly string[], opts?: ExecFileSyncOptions): string => {
+      calls.push({ bin, args, opts });
+      if (args[0] === '--version') return '0.47.1\n';
+      return '';
+    };
+    return { run, calls };
+  }
+
+  it('spawns npm.cmd with shell:true and the literal args array on win32', () => {
+    setPlatform('win32');
+    const { run, calls } = makeCapturingRun();
+
+    cmdUpdate('0.46.0', run);
+
+    expect(calls[0].bin).toBe('npm.cmd');
+    expect(calls[0].args).toEqual(['update', '-g', 'claude-nomad']);
+    expect(calls[0].opts?.shell).toBe(true);
+    // Existing options preserved alongside the new shell:true.
+    expect(calls[0].opts?.encoding).toBe('utf8');
+    expect(calls[0].opts?.stdio).toEqual(['ignore', 'pipe', 'pipe']);
+    expect(calls[0].opts?.maxBuffer).toBe(64 * 1024 * 1024);
+  });
+
+  it('spawns npm unchanged (no shell:true) on a non-win32 platform', () => {
+    setPlatform('darwin');
+    const { run, calls } = makeCapturingRun();
+
+    cmdUpdate('0.46.0', run);
+
+    expect(calls[0].bin).toBe('npm');
+    expect(calls[0].opts?.shell).not.toBe(true);
+  });
+
+  it('ENOENT and stderr-fold error paths fire identically on a win32 stub', () => {
+    setPlatform('win32');
+    const enoentRun = () => {
+      const err = new Error('spawn npm.cmd ENOENT') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    };
+    expect(() => cmdUpdate('0.46.0', enoentRun)).toThrow(NomadFatal);
+    expect(() => cmdUpdate('0.46.0', enoentRun)).toThrow('npm not found on PATH');
+
+    const stderrRun = () => {
+      const err = new Error('npm exited with code 1') as NodeJS.ErrnoException & {
+        stderr?: string;
+      };
+      err.stderr = 'npm ERR! code EACCES\nnpm ERR! permission denied';
+      throw err;
+    };
+    expect(() => cmdUpdate('0.46.0', stderrRun)).toThrow('npm ERR! permission denied');
   });
 });
 

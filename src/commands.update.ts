@@ -43,7 +43,15 @@ export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | 
  * doctor`, or any git operation. Use `nomad pull` after updating if you want
  * to sync config state.
  *
- * Uses an argv-array (no shell) with an injectable `run` for test isolation.
+ * Uses an argv-array (no shell) with an injectable `run` for test isolation,
+ * except on win32 where `shell: true` is required (see below).
+ *
+ * On win32, `npm` resolves to the `npm.cmd` batch shim, and spawning a
+ * `.cmd` file without `shell: true` throws `EINVAL` on current Node
+ * releases. The args array stays the fixed literal
+ * `['update', '-g', 'claude-nomad']` (never user or config-derived), so
+ * `shell: true` introduces no command-injection surface here; do not reuse
+ * this pattern for a spawn whose arguments come from user input or config.
  *
  * @param currentVersion - The in-process package version (the OLD dist), shown
  *   in the pre-update status line.
@@ -52,14 +60,16 @@ export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | 
  */
 export function cmdUpdate(currentVersion: string, run: SpawnSyncFn = execFileSync): void {
   console.log(`Updating claude-nomad v${currentVersion}...`);
+  const isWin = process.platform === 'win32';
   try {
-    run('npm', ['update', '-g', 'claude-nomad'], {
+    run(isWin ? 'npm.cmd' : 'npm', ['update', '-g', 'claude-nomad'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       // Now that output is captured rather than inherited, execFileSync buffers
       // it; lift the default 1 MiB ceiling so a noisy-but-successful npm run
       // (deprecation/funding spam) cannot throw ENOBUFS.
       maxBuffer: 64 * 1024 * 1024,
+      ...(isWin ? { shell: true } : {}),
     });
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer | string };
