@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
 import type * as osModule from 'node:os';
+import type * as pathModule from 'node:path';
 
 describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
   let originalHome: string | undefined;
@@ -471,6 +472,7 @@ describe('gitleaksInstallHint (platform-aware install scaffold)', () => {
     if (originalPath !== undefined) process.env.PATH = originalPath;
     else delete process.env.PATH;
     vi.doUnmock('node:os');
+    vi.doUnmock('node:path');
   });
 
   /** Swap `node:os`'s platform() and homedir() for fixed test values. */
@@ -549,14 +551,45 @@ describe('gitleaksInstallHint (platform-aware install scaffold)', () => {
     expect(out).toContain('export PATH="$HOME/.local/bin:$PATH"');
   });
 
-  it('Unsupported platform returns just the releases link', async () => {
+  it('win32 returns the winget/scoop hint and none of the Linux numbered steps', async () => {
     mockOs('win32', 'C:/Users/test');
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).toMatch(/gitleaks not on PATH/);
+    expect(out).toContain('winget install gitleaks.gitleaks');
+    expect(out).toContain('scoop install gitleaks');
+    expect(out).not.toContain('brew install');
+    expect(out).not.toMatch(/mkdir -p ~\/\.local\/bin/);
+  });
+
+  it('Unsupported platform returns just the releases link', async () => {
+    mockOs('aix', '/home/test');
     const { gitleaksInstallHint } = await import('./push-checks.ts');
     const out = gitleaksInstallHint();
     expect(out).toMatch(/gitleaks not on PATH/);
     expect(out).toContain('https://github.com/gitleaks/gitleaks/releases');
     expect(out).not.toContain('brew install');
+    expect(out).not.toContain('winget install');
     expect(out).not.toMatch(/mkdir -p ~\/\.local\/bin/);
+  });
+
+  it('the linux PATH-membership check splits using path.delimiter, not a hardcoded colon', async () => {
+    // Mock node:path's delimiter to ';' (the win32 value) and build a PATH
+    // string using that same separator. If the source still hardcoded
+    // `.split(':')` this PATH would parse as one giant entry and the
+    // PATH-fix step would wrongly appear; with the delimiter import wired
+    // correctly, ~/.local/bin is recognized as present and the step is
+    // omitted.
+    mockOs('linux', '/home/test');
+    setArch('x64');
+    vi.doMock('node:path', async (importOriginal) => {
+      const actual = await importOriginal<typeof pathModule>();
+      return { ...actual, delimiter: ';' };
+    });
+    process.env.PATH = '/home/test/.local/bin;/usr/bin';
+    const { gitleaksInstallHint } = await import('./push-checks.ts');
+    const out = gitleaksInstallHint();
+    expect(out).not.toMatch(/~\/\.local\/bin is not on PATH/);
   });
 });
 
