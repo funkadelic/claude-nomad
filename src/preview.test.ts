@@ -274,6 +274,7 @@ describe('previewSettings canonicalization', () => {
 describe('computePreview orchestration', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
   let originalNoColor: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
@@ -285,7 +286,12 @@ describe('computePreview orchestration', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
     originalNoColor = process.env.NO_COLOR;
+    // A developer-exported NOMAD_REPO would win over the fixture repo under
+    // the temp HOME (repoHome resolves it first), pointing every repoHome()
+    // call at the real checkout; clear it so the fixtures are authoritative.
+    delete process.env.NOMAD_REPO;
     process.env.NO_COLOR = '1';
     testHome = mkdtempSync(join(tmpdir(), 'nomad-preview-test-'));
     process.env.HOME = testHome;
@@ -308,6 +314,8 @@ describe('computePreview orchestration', () => {
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
     else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     if (originalNoColor !== undefined) process.env.NO_COLOR = originalNoColor;
     else delete process.env.NO_COLOR;
     rmSync(testHome, { recursive: true, force: true });
@@ -705,6 +713,188 @@ describe('computePreview orchestration', () => {
     // empty-path-map clean fixture (default verb pull) the row is exactly 'clean'.
     const summaryLines = logs.filter((l) => l.includes('clean'));
     expect(summaryLines).toHaveLength(1);
+  });
+
+  it('renders an Extras section listing planned <logical>/<dirname> copies (verb=pull)', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
+    mkdirSync(repoExtrasFoo, { recursive: true });
+    writeFileSync(join(repoExtrasFoo, 'PROJECT.md'), '# project\n');
+    const localFoo = join(testHome, 'projects', 'foo');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('Extras');
+    expect(joined).toContain('foo/.planning');
+  });
+
+  it('renders the same Extras section for verb=diff', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
+    mkdirSync(repoExtrasFoo, { recursive: true });
+    writeFileSync(join(repoExtrasFoo, 'PROJECT.md'), '# project\n');
+    const localFoo = join(testHome, 'projects', 'foo');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'diff');
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('Extras');
+    expect(joined).toContain('foo/.planning');
+  });
+
+  it('still shows an extra in the Extras section when the local project has no copy yet', async () => {
+    // The host project directory for foo is never created; the dry-run source
+    // keys off the repo src existing, not the local dst.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
+    mkdirSync(repoExtrasFoo, { recursive: true });
+    writeFileSync(join(repoExtrasFoo, 'PROJECT.md'), '# project\n');
+    const localFoo = join(testHome, 'never-created', 'foo');
+    expect(existsSync(localFoo)).toBe(false);
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(logs.join('\n')).toContain('foo/.planning');
+    expect(existsSync(localFoo)).toBe(false);
+  });
+
+  it('omits the Extras header when path-map has no extras key', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    const joined = logs.join('\n');
+    expect(joined).not.toMatch(/^Extras$/m);
+  });
+
+  it('threads the real extras-skipped count into the Summary row', async () => {
+    // 'not-whitelisted' is not in SUPPORTED_EXTRAS, so eachExtrasTarget counts
+    // it as skipped rather than yielding a target.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedDir, 'extras'), { recursive: true });
+    const localFoo = join(testHome, 'projects', 'foo');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['not-whitelisted'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(logs.join('\n')).toContain('extras skipped');
+  });
+
+  it('combines session-unmapped and extras-unmapped in the Summary row like the wet pull', async () => {
+    // foo is keyed to another host: remapPull counts it session-unmapped (1)
+    // and remapExtrasPull counts its extras entry unmapped (1). The wet pull
+    // Summary reads '2 unmapped on pull' for this state; the preview must
+    // match instead of under-reporting with the session count alone.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedDir, 'extras'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { otherhost: '/x' } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    const result = computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(logs.join('\n')).toContain('2 unmapped on pull');
+    // The returned unmapped field stays session-only by contract.
+    expect(result.unmapped).toBe(1);
+  });
+
+  it('computePreview mutates no file under CLAUDE_HOME, backup base, or the project dir with extras configured', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const repoExtrasFoo = join(sharedDir, 'extras', 'foo', '.planning');
+    mkdirSync(repoExtrasFoo, { recursive: true });
+    writeFileSync(join(repoExtrasFoo, 'PROJECT.md'), '# project\n');
+    const localFoo = join(testHome, 'projects', 'foo');
+    mkdirSync(localFoo, { recursive: true });
+    writeFileSync(join(localFoo, 'existing.md'), '# existing\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { foo: { 'test-host': localFoo } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+
+    const beforeClaude = snapshotTree(claudeDir);
+    const beforeProject = snapshotTree(localFoo);
+    const cacheRoot = join(testHome, '.cache', 'claude-nomad');
+    const beforeCache = snapshotTree(cacheRoot);
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    expect(snapshotTree(claudeDir)).toEqual(beforeClaude);
+    expect(snapshotTree(localFoo)).toEqual(beforeProject);
+    expect(snapshotTree(cacheRoot)).toEqual(beforeCache);
+    expect(existsSync(join(localFoo, '.planning'))).toBe(false);
   });
 
   it('settings section raw diff block has native +/- prefixes with no tree connectors in diff lines', async () => {

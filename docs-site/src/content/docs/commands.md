@@ -37,7 +37,7 @@ reconcile.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, a count of retained local-only sessions, and any extras-divergence warning), no writes.                                                                            |
+| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning), no writes.                                                                            |
 | `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
 
 ## `diff`
@@ -47,7 +47,9 @@ reconcile.
 Offline, lockless twin of `pull --dry-run`. No network, no lock. Works against the current local
 repo state. The `settings.json` diff filters gsd-owned hook entries from both sides before
 comparing, so GSD's per-session hook self-heal does not show up as a phantom `hooks` change; the
-preview reflects what a real pull would write.
+preview reflects what a real pull would write. Also renders the same `Extras` section as
+`pull --dry-run`, listing every `<logical>/<dirname>` a pull would copy, including extras with no
+local copy yet.
 
 ## `push`
 
