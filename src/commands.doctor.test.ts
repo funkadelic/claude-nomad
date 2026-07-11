@@ -159,3 +159,60 @@ describe('cmdDoctor compact default vs --verbose', () => {
     expect(out).toContain('Summary');
   });
 });
+
+describe('cmdDoctor sync modality + long-paths rows', () => {
+  // process.platform stub so the Environment section's win32-only long-paths
+  // rows and the cross-platform sync-modality row can be driven end-to-end
+  // without a real Windows host.
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+    mockGitleaksPresent();
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('includes the copy-sync modality row and the long-paths rows on a win32 stub', async () => {
+    setPlatform('win32');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('copy-sync');
+    expect(out).toContain('core.longpaths');
+    expect(out).toContain('OS long paths');
+  });
+
+  it('includes the symlink modality row and excludes long-paths rows on a posix stub', async () => {
+    setPlatform('darwin');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('symlink');
+    expect(out).not.toContain('core.longpaths');
+    expect(out).not.toContain('OS long paths');
+  });
+});

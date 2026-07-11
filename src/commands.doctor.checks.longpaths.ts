@@ -1,18 +1,20 @@
 import { execFileSync } from 'node:child_process';
 
-import { green, okGlyph, warnGlyph, yellow } from './color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
 
 /**
- * Win32-only long-path diagnostics for `nomad doctor`. Deep encoded session
- * trees under `~/.claude/projects/<encoded>/` can exceed the legacy Windows
- * `MAX_PATH` (260 characters) limit unless long-path support is enabled at
- * both the git level (`core.longpaths`) and the OS level (`LongPathsEnabled`
- * registry value). This module probes both states, read-only, and WARNs
- * (never FAILs) when either is unset: a deep path CAN overflow MAX_PATH but
- * will not always, so this degrades gracefully like every other doctor WARN
- * (matches the header-comment contract in `commands.doctor.checks.deps.ts`).
+ * Win32-only long-path diagnostics plus a cross-platform sync-modality row for
+ * `nomad doctor`. Deep encoded session trees under `~/.claude/projects/<encoded>/`
+ * can exceed the legacy Windows `MAX_PATH` (260 characters) limit unless
+ * long-path support is enabled at both the git level (`core.longpaths`) and
+ * the OS level (`LongPathsEnabled` registry value). This module probes both
+ * states, read-only, and WARNs (never FAILs) when either is unset: a deep
+ * path CAN overflow MAX_PATH but will not always, so this degrades gracefully
+ * like every other doctor WARN (matches the header-comment contract in
+ * `commands.doctor.checks.deps.ts`). It also reports the active sync modality
+ * (copy-sync on win32, symlink on posix), an informational row only.
  */
 
 /**
@@ -121,4 +123,17 @@ export function reportLongPathsCheck(
     probeRegistryLongpaths(run),
     'enable LongPathsEnabled in Local Group Policy or the registry (admin required)',
   );
+}
+
+/**
+ * Emit a single informational row naming the active sync modality: copy-sync
+ * on win32 (symlinks need Developer Mode/admin there), symlink everywhere
+ * else. Mirrors the `dim(infoGlyph)` informational-row style `reportHostAndPaths`
+ * uses. Never sets `process.exitCode`.
+ *
+ * @param section - The Environment section to append the row to.
+ */
+export function reportSyncModality(section: DoctorSection): void {
+  const modality = process.platform === 'win32' ? 'copy-sync (win32)' : 'symlink (posix)';
+  addItem(section, `${dim(infoGlyph)} sync modality: ${modality}`);
 }

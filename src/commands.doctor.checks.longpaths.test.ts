@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { okGlyph, warnGlyph } from './color.ts';
 import { section } from './commands.doctor.format.ts';
-import { reportLongPathsCheck } from './commands.doctor.checks.longpaths.ts';
+import { reportLongPathsCheck, reportSyncModality } from './commands.doctor.checks.longpaths.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
 
 // win32 stub helper: overrides process.platform for the current test, restored
@@ -126,5 +126,27 @@ describe('reportLongPathsCheck', () => {
     expect(s.items).toHaveLength(0);
     expect(calls).toHaveLength(0);
     expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe('reportSyncModality', () => {
+  afterEach(() => {
+    setPlatform(realPlatform);
+  });
+
+  it('emits an informational row conveying copy-sync on win32', () => {
+    setPlatform('win32');
+    const s = section('Environment');
+    reportSyncModality(s);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain('copy-sync');
+  });
+
+  it('emits an informational row conveying symlink on a non-win32 platform', () => {
+    setPlatform('darwin');
+    const s = section('Environment');
+    reportSyncModality(s);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain('symlink');
   });
 });
