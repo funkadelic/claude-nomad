@@ -745,10 +745,10 @@ describe('applySharedLinks win32 copy branch', () => {
     expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
   });
 
-  it('dry-run on win32 emits a preview event and does not mutate disk', async () => {
+  it('dry-run on win32 emits a copy preview event (not create) and does not mutate disk', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
     setPlatform('win32');
-    const events: unknown[] = [];
+    const events: { kind: string; from: string; to: string }[] = [];
     const { applySharedLinks } = await import('./links.ts');
     applySharedLinks(
       '20260701-000004',
@@ -756,7 +756,50 @@ describe('applySharedLinks win32 copy branch', () => {
       { dryRun: true, onPreview: (e) => events.push(e) },
     );
     expect(existsSync(join(claudeDir, 'CLAUDE.md'))).toBe(false);
-    expect(events.length).toBeGreaterThan(0);
+    const copyEvents = events.filter((e) => e.kind === 'copy');
+    expect(copyEvents.length).toBeGreaterThan(0);
+    expect(events.some((e) => e.kind === 'create')).toBe(false);
+  });
+
+  it('falls back to log() with "would copy" text for win32 dry-run when onPreview is absent', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    setPlatform('win32');
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260701-000005', { projects: {} }, { dryRun: true });
+    expect(logs.join('\n')).toContain('would copy:');
+  });
+
+  it('dry-run/wet-run parity on win32: previewed copy names equal wet-copied names', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+    setPlatform('win32');
+
+    const events: { kind: string; from: string; to: string }[] = [];
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks(
+      '20260701-000006',
+      { projects: {} },
+      { dryRun: true, onPreview: (e) => events.push(e) },
+    );
+    const previewedNames = events
+      .filter((e) => e.kind === 'copy')
+      .map((e) => e.from)
+      .sort();
+
+    // Fresh module instance for the wet run so no dry-run side effects leak in.
+    vi.resetModules();
+    const { applySharedLinks: applySharedLinksWet } = await import('./links.ts');
+    applySharedLinksWet('20260701-000006', { projects: {} });
+    const wetCopiedNames = [join(claudeDir, 'CLAUDE.md'), join(claudeDir, 'commands')]
+      .filter((p) => existsSync(p))
+      .sort();
+
+    expect(previewedNames).toEqual(wetCopiedNames);
   });
 });
 

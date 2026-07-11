@@ -924,4 +924,46 @@ describe('computePreview orchestration', () => {
     );
     expect(diffLines.some((l) => l.includes('├') || l.includes('└'))).toBe(false);
   });
+
+  it('renders "would copy" (not "create") for the Symlinks section on a win32 dry-run', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const realPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    try {
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260516-000000', { projects: {} }, 'pull');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+    }
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('would copy');
+    expect(joined).not.toContain('would create symlink');
+    expect(joined).not.toMatch(/^create /m);
+  });
+
+  it('renders the symlink-create line unchanged on a non-win32 dry-run (no regression)', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    expect(process.platform).not.toBe('win32');
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} }, 'pull');
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('create');
+    expect(joined).not.toContain('would copy');
+  });
 });

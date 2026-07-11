@@ -121,8 +121,14 @@ export function previewSettings(
  * Examples:
  *   `create    ~/.claude/CLAUDE.md -> /home/user/claude-nomad/shared/CLAUDE.md`
  *   `auto-move ~/.claude/CLAUDE.md -> backup/20260516-000000/CLAUDE.md`
+ *   `would copy  ~/.claude/CLAUDE.md -> /home/user/claude-nomad/shared/CLAUDE.md`
+ *
+ * The `copy` kind (win32 only, see `applySharedLinksWin32`) renders as
+ * `would copy` rather than the generic `${kind}` prefix so it reads
+ * distinctly from the posix `create`/`auto-move` symlink rows.
  */
 function formatLinkRow(e: LinkPreviewEvent): string {
+  if (e.kind === 'copy') return `would copy  ${e.from} -> ${e.to}`;
   return `${e.kind}  ${e.from} -> ${e.to}`;
 }
 

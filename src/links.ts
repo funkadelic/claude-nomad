@@ -21,9 +21,16 @@ import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
 
-/** Event emitted by `applySharedLinks` when `onPreview` is provided. */
+/**
+ * Event emitted by `applySharedLinks` when `onPreview` is provided. `create`
+ * and `auto-move` describe the posix symlink path; `copy` describes the win32
+ * copy-model path (see `applySharedLinksWin32`), where a real file/dir is
+ * materialized instead of a symlink.
+ */
 export type LinkPreviewEvent =
-  { kind: 'create'; from: string; to: string } | { kind: 'auto-move'; from: string; to: string };
+  | { kind: 'create'; from: string; to: string }
+  | { kind: 'auto-move'; from: string; to: string }
+  | { kind: 'copy'; from: string; to: string };
 
 type LinkOpts = { dryRun?: boolean; onPreview?: (e: LinkPreviewEvent) => void };
 
@@ -47,6 +54,19 @@ function emitCreate(onPreview: LinkOpts['onPreview'], from: string, to: string):
     onPreview({ kind: 'create', from, to });
   } else {
     log(`would create symlink: ${from} -> ${to}`);
+  }
+}
+
+/**
+ * Emit a dry-run copy event via onPreview or fall back to log(). Used by the
+ * win32 branch of `applySharedLinks` (`applySharedLinksWin32`), where a real
+ * copy replaces symlink creation.
+ */
+function emitCopy(onPreview: LinkOpts['onPreview'], from: string, to: string): void {
+  if (onPreview) {
+    onPreview({ kind: 'copy', from, to });
+  } else {
+    log(`would copy: ${from} -> ${to}`);
   }
 }
 
@@ -148,7 +168,7 @@ function applySharedLinksWin32(
     if (!existsSync(target)) continue;
     const linkPath = join(claude, name);
     if (dryRun) {
-      emitCreate(onPreview, linkPath, target);
+      emitCopy(onPreview, linkPath, target);
       continue;
     }
     const stat = lstatSync(linkPath, { throwIfNoEntry: false });
