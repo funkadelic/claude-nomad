@@ -27,6 +27,14 @@ import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
 
 /**
+ * The pull half's grouped-tree summary-section header. Exported so
+ * `commands.sync.ts` can string-match against the exact same literal
+ * (`pullHasNoSyncedItems` and `pullPhrase`) instead of duplicating it, which
+ * would let the header and its matchers drift apart.
+ */
+export const PULL_SUMMARY_HEADER = 'Pull summary';
+
+/**
  * Capture one REPO_HOME HEAD SHA. Returns the trimmed SHA, or `undefined` when
  * the repo has no commits yet (unborn HEAD / fresh clone). Swallows the error
  * so the caller can treat `undefined` as "no pre-state" and skip the delete
@@ -71,14 +79,14 @@ function capturePrePostHeads(
 /**
  * Run the WET (non-dry-run) pull side effects in order and build (but do NOT
  * render) the doctor-style grouped tree sections: `Settings` / `Sessions` /
- * `Extras` / `Summary`, matching the `pull on host=... (backup=<ts>)` header
- * printed separately by the caller. `applySharedLinks` stays silent (no Links
- * group by design); `regenerateSettings` returns its override-source label so
- * the Settings row surfaces what was written without logging inline.
+ * `Extras` / `Pull summary`, matching the `pull on host=... (backup=<ts>)`
+ * header printed separately by the caller. `applySharedLinks` stays silent (no
+ * Links group by design); `regenerateSettings` returns its override-source
+ * label so the Settings row surfaces what was written without logging inline.
  * Sessions/Extras reuse the verb-agnostic builders shared with `cmdPush`, fed
  * the pull-side `pulled` detail arrays. The combined session + extras
- * unmapped count and the extras-skipped count drive the Summary row exactly
- * as `emitSummary` did.
+ * unmapped count and the extras-skipped count drive the Pull summary row
+ * exactly as `emitSummary` did.
  *
  * Returning the sections instead of rendering them lets the caller decide
  * whether to render at all (a composing caller, e.g. a future `nomad sync`,
@@ -90,8 +98,8 @@ function capturePrePostHeads(
  * @param prePostHeads - pre/post-rebase HEADs captured by `cmdPull`; threads
  *   into `remapExtrasPull` to drive upstream-deletion propagation for .planning
  *   extras. `undefined` when the pre-rebase capture failed (fresh clone).
- * @returns The ordered `Settings`/`Sessions`/`Extras`/`Summary` sections plus
- *   `localOnly`, the read-only count of retained local-only session files.
+ * @returns The ordered `Settings`/`Sessions`/`Extras`/`Pull summary` sections
+ *   plus `localOnly`, the read-only count of retained local-only session files.
  */
 function buildWetPullSections(
   ts: string,
@@ -111,7 +119,7 @@ function buildWetPullSections(
   // from the operator's perspective both mean "couldn't sync this for the
   // host". extras-skipped (non-whitelisted dirname) stays separate because it
   // signals config misuse, not a host-config gap.
-  const summary = section('Summary');
+  const summary = section(PULL_SUMMARY_HEADER);
   addItem(
     summary,
     summaryRow(
@@ -207,7 +215,7 @@ export type PullCoreResult =
  * to the caller, whose `try`/`finally` is responsible for releasing the lock.
  *
  * WET output is built (not rendered) as a doctor-style grouped tree
- * (`buildWetPullSections`): `Settings` / `Sessions` / `Extras` / `Summary`
+ * (`buildWetPullSections`): `Settings` / `Sessions` / `Extras` / `Pull summary`
  * sections meant to render with tree connector glyphs under a
  * `pull on host=... (backup=<ts>)` header. The Settings row names the
  * regenerated settings.json plus its override-source label; pulled sessions
@@ -324,7 +332,7 @@ export function runPullCore(
  * `runPullCore`), and releases the lock. Output and exit codes are unchanged
  * from before the `runPullCore` extraction.
  *
- * The WET-path Summary row (including the warn glyph case) renders to STDOUT as
+ * The WET-path Pull summary row (including the warn glyph case) renders to STDOUT as
  * part of the grouped tree via `renderTree`, not to stderr via `warn` as in the
  * pre-tree behavior. The dry-run path still routes its summary through
  * `emitSummary` (stderr). This wet-stdout/dry-stderr stream split is

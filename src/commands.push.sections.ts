@@ -137,8 +137,8 @@ export type PushState = {
  * Assemble the Global config / Sessions / Extras sections shared by the real
  * and dry-run push paths. Global config leads (empty sections are dropped by
  * `renderTree`); Sessions and Extras follow, selecting the wet `pushed` detail
- * arrays or the `wouldPush` arrays under `dryRun`. The Leak scan and Summary
- * sections are appended by the caller in path-specific order.
+ * arrays or the `wouldPush` arrays under `dryRun`. The Leak scan and Push
+ * summary sections are appended by the caller in path-specific order.
  *
  * @param st - The collected push state.
  * @returns The ordered `[Global config, Sessions, Extras]` sections (any may be empty).
@@ -154,15 +154,15 @@ function syncedSections(st: PushState): DoctorSection[] {
 }
 
 /**
- * Build the single-row Summary section from the combined unmapped count
+ * Build the single-row Push summary section from the combined unmapped count
  * (sessions + extras), the collision count, and the extras-skipped count.
  * Phrasing is delegated to `summaryRow` so it matches `emitSummary` exactly.
  *
  * @param st - The collected push state.
- * @returns A `Summary` `DoctorSection` holding the one summary row.
+ * @returns A `Push summary` `DoctorSection` holding the one summary row.
  */
 function summarySection(st: PushState): DoctorSection {
-  const s = section('Summary');
+  const s = section('Push summary');
   const unmapped = st.remap.unmapped + st.extras.unmapped;
   addItem(s, summaryRow('push', unmapped, st.remap.collisions, st.extras.skipped));
   return s;
@@ -170,7 +170,7 @@ function summarySection(st: PushState): DoctorSection {
 
 /**
  * Render the grouped push tree with a Leak scan section (carrying `verdict`'s
- * row) between Extras and Summary. The caller throws the recovery body as a
+ * row) between Extras and Push summary. The caller throws the recovery body as a
  * `NomadFatal` AFTER this returns (real-push leak) or prints it via `fail`
  * (dry-run) so the recovery block follows the tree.
  *
@@ -185,8 +185,8 @@ export function renderPushTree(st: PushState, verdict: LeakVerdict): void {
 
 /**
  * Render the no-Leak-scan push tree: the Sessions/Extras rows (if any) plus the
- * Summary row. `renderTree` skips empty sections, so an empty push prints only
- * the Summary. Two callers: the real-push nothing-to-commit early return
+ * Push summary row. `renderTree` skips empty sections, so an empty push prints only
+ * the Push summary. Two callers: the real-push nothing-to-commit early return
  * (`noMapHint` omitted) and the dry-run no-`path-map.json` case
  * (`noMapHint: true`), which prepends a `Path map` section carrying a single
  * `${dim(infoGlyph)} no path-map.json (nothing to preview)` row so a dry-run
