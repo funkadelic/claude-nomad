@@ -11,16 +11,27 @@ import { warn } from './utils.ts';
  * (no env, no uid mapping); callers should verify it is non-empty at CLI
  * entry via `nomad.ts`.
  *
- * The explicit `process.env.HOME` read is load-bearing for worker threads:
- * `process.env` mutations in a `worker_threads` worker update only that
- * isolate's copy, while `os.homedir()` reads the real process environ and
- * stays blind to them. Tools that run tests in worker threads (Stryker's
- * vitest runner forces `pool: 'threads'`) need the env read for the
- * tests' HOME swap to take effect.
+ * On win32, `USERPROFILE` is preferred over `HOME`: Git Bash (MSYS2) exports
+ * an MSYS-style `HOME` (e.g. `/c/Users/name`) that Node's fs calls cannot
+ * resolve, while `USERPROFILE` is always a native Windows path. A set-but-empty
+ * `USERPROFILE` falls through to `HOME`, then to `homedir()`, same fallthrough
+ * shape as the non-win32 path.
+ *
+ * The explicit `process.env.HOME`/`process.env.USERPROFILE` read is
+ * load-bearing for worker threads: `process.env` mutations in a
+ * `worker_threads` worker update only that isolate's copy, while
+ * `os.homedir()` reads the real process environ and stays blind to them.
+ * Tools that run tests in worker threads (Stryker's vitest runner forces
+ * `pool: 'threads'`) need the env read for the tests' HOME/USERPROFILE swap
+ * to take effect.
  *
  * Call-time resolver: resolved on each call, not at module load.
  */
 export function home(): string {
+  if (process.platform === 'win32') {
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    return process.env.USERPROFILE || process.env.HOME || homedir();
+  }
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   return process.env.HOME || homedir();
 }
