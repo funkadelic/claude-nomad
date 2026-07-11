@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.1](https://github.com/funkadelic/claude-nomad/compare/v0.58.0...v0.58.1) (2026-07-11)
+
+
+### Fixed
+
+* **sync:** distinguish push/pull/sync summary headers ([#396](https://github.com/funkadelic/claude-nomad/issues/396)) ([e88a3d6](https://github.com/funkadelic/claude-nomad/commit/e88a3d61eaeedd5c6ab7c8d85c3c3e201226e430))
+
 ## [0.58.0](https://github.com/funkadelic/claude-nomad/compare/v0.57.1...v0.58.0) (2026-07-11)
 
 
