@@ -67,10 +67,10 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     expect(() => cmdPush()).not.toThrow();
-    // The Summary section row now renders inside the tree (stdout); the
+    // The Push summary section row now renders inside the tree (stdout); the
     // standalone `push complete` line is gone.
     const out = logOutput(env);
-    expect(out).toContain('Summary');
+    expect(out).toContain('Push summary');
     expect(out).toContain('1 unmapped on push, 0 collisions (run nomad doctor to list)');
     expect(out).toContain('Leak scan');
     expect(out).toMatch(/no leaks/);
@@ -165,9 +165,9 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(() => cmdPush()).not.toThrow();
     const out = logOutput(env);
     expect(out).toContain('nothing to commit');
-    // The Summary row renders in-tree (stdout). With 3 unmapped sessions the
-    // Sessions section shows the collapsed count row.
-    expect(out).toContain('Summary');
+    // The Push summary row renders in-tree (stdout). With 3 unmapped sessions
+    // the Sessions section shows the collapsed count row.
+    expect(out).toContain('Push summary');
     expect(out).toContain('3 unmapped on push, 0 collisions (run nomad doctor to list)');
     expect(out).toContain('Sessions');
     expect(out).toContain('3 not in path-map (run nomad doctor to list)');

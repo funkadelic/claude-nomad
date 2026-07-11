@@ -155,7 +155,7 @@ function pullSections(opts: { sessionItem?: string; summaryText?: string } = {})
   const settings = { header: 'Settings', items: ['settings.json (base + no host overrides)'] };
   const sessions = { header: 'Sessions', items: opts.sessionItem ? [opts.sessionItem] : [] };
   const extras = { header: 'Extras', items: [] as string[] };
-  const summary = { header: 'Summary', items: [opts.summaryText ?? 'clean'] };
+  const summary = { header: 'Pull summary', items: [opts.summaryText ?? 'clean'] };
   return [settings, sessions, extras, summary];
 }
 
@@ -170,8 +170,9 @@ describe('cmdSync: wet composition', () => {
     teardownSyncEnv(env);
   });
 
-  it('happy path: renders the pull tree then a two-phase Summary with pull/push rows', async () => {
+  it('happy path: renders the pull tree then a two-phase Sync summary with pull/push rows', async () => {
     vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => ({
         tag: 'wet',
         sections: pullSections({
@@ -195,8 +196,34 @@ describe('cmdSync: wet composition', () => {
     expect(existsSync(env.lockPath)).toBe(false);
   });
 
+  it('composed output renders distinct Pull summary and Sync summary headers', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => ({
+        tag: 'wet',
+        sections: pullSections({
+          sessionItem: 'proj-a',
+          summaryText: '1 unmapped on pull (run nomad doctor to list)',
+        }),
+        localOnly: 0,
+        divergedKeptLocal: 0,
+      })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => ({ tag: 'pushed' })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const lines = out(env).split('\n');
+    expect(lines).toContain('Pull summary');
+    expect(lines).toContain('Sync summary');
+    expect(lines.indexOf('Pull summary')).not.toBe(lines.indexOf('Sync summary'));
+    expect(process.exitCode).not.toBe(1);
+  });
+
   it('no-op: prints a single "already in sync" line, not two trees', async () => {
     vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => ({
         tag: 'wet',
         sections: pullSections(),
@@ -220,6 +247,7 @@ describe('cmdSync: wet composition', () => {
     const { NomadFatal } = await import('./utils.ts');
     const pushSpy = vi.fn(() => ({ tag: 'nothing' }));
     vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => {
         throw new NomadFatal(
           "repo is mid-rebase from a previous failed pull; run 'nomad pull --force-remote' to auto-recover",
@@ -240,6 +268,7 @@ describe('cmdSync: wet composition', () => {
   it('push-half failure after pull applied: prints the two-phase status and exits 1, no rollback', async () => {
     const { NomadFatal } = await import('./utils.ts');
     vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => ({
         tag: 'wet',
         sections: pullSections({ sessionItem: 'proj-a' }),
@@ -263,6 +292,7 @@ describe('cmdSync: wet composition', () => {
 
   it('reconciled notes: divergence kept-local and local-only render as resolved and exit 0', async () => {
     vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => ({
         tag: 'wet',
         sections: pullSections({ sessionItem: 'proj-a' }),
@@ -284,6 +314,7 @@ describe('cmdSync: wet composition', () => {
   it('a non-fatal error from the push half propagates unchanged (not swallowed)', async () => {
     const plainError = new Error('boom');
     vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => ({
         tag: 'wet',
         sections: pullSections(),
@@ -301,8 +332,9 @@ describe('cmdSync: wet composition', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
-  it('falls back to "applied" for the pull row when the pull sections carry no Summary', async () => {
+  it('falls back to "applied" for the pull row when the pull sections carry no Pull summary', async () => {
     vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => ({
         tag: 'wet',
         sections: [{ header: 'Settings', items: ['settings.json (base + no host overrides)'] }],
@@ -345,7 +377,10 @@ describe('cmdSync: dry-run composition', () => {
       const actual = await importOriginal<typeof previewModule>();
       return { ...actual, computePreview: pullPreviewSpy };
     });
-    vi.doMock('./commands.pull.ts', () => ({ runPullCore: runPullCoreSpy }));
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: runPullCoreSpy,
+    }));
     vi.doMock('./commands.push.ts', () => ({ runPushCore: runPushCoreSpy }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync({ dryRun: true });
@@ -364,7 +399,10 @@ describe('cmdSync: dry-run composition', () => {
       const actual = await importOriginal<typeof previewModule>();
       return { ...actual, computePreview: pullPreviewSpy };
     });
-    vi.doMock('./commands.pull.ts', () => ({ runPullCore: vi.fn() }));
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(),
+    }));
     vi.doMock('./commands.push.ts', () => ({ runPushCore: vi.fn(() => ({ tag: 'dry' })) }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync({ dryRun: true });
@@ -379,7 +417,10 @@ describe('cmdSync: dry-run composition', () => {
         computePreview: vi.fn(() => ({ unmapped: 0, collisions: 0, localOnly: 0 })),
       };
     });
-    vi.doMock('./commands.pull.ts', () => ({ runPullCore: vi.fn() }));
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(),
+    }));
     vi.doMock('./commands.push.ts', () => ({ runPushCore: vi.fn(() => ({ tag: 'dry' })) }));
     const acquireSpy = vi.fn(() => null);
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
@@ -421,6 +462,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
     // composition reaches the exact same recovery entry point standalone
     // `nomad push` uses.
     vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => ({
         tag: 'wet',
         sections: pullSections(),

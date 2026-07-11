@@ -183,8 +183,8 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // The Leak scan section renders the preview's clean verdict row.
     expect(out).toContain('Leak scan');
     expect(out).toMatch(/no leaks/);
-    // The Summary row carries the combined unmapped count.
-    expect(out).toContain('Summary');
+    // The Push summary row carries the combined unmapped count.
+    expect(out).toContain('Push summary');
     expect(out).toContain('2 unmapped on push, 0 collisions (run nomad doctor to list)');
     expect(out).not.toContain('push complete');
     vi.doUnmock('./spinner.ts');
@@ -400,9 +400,9 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // previewPushLeaks is NOT reached when there is no map to stage from.
     expect(previewPushLeaksMock).not.toHaveBeenCalled();
     const out = logOutput(env);
-    // The no-scan tree renders (Summary, no Leak scan section) with the
+    // The no-scan tree renders (Push summary, no Leak scan section) with the
     // no-path-map hint so the user sees why nothing was scanned.
-    expect(out).toContain('Summary');
+    expect(out).toContain('Push summary');
     expect(out).not.toContain('Leak scan');
     expect(out).toContain('no path-map.json');
     // The missing-map FATAL did NOT fire.
