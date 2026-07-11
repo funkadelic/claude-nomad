@@ -15,6 +15,54 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ALWAYS_NEVER_SYNC, isDeniedName } from './config.ts';
+import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
+
+// Wave-0 gap (63-04 Task 1): the win32 copy-sync branch of applySharedLinks
+// wires SHARED_LINKS names (which include FILE entries like CLAUDE.md, not
+// only directories) through copyExtrasFilteredPreservingBy. No existing test
+// exercises that primitive against a single-file source, so this proves it
+// works for both a file source and a directory source before applySharedLinks
+// depends on it.
+describe('copyExtrasFilteredPreservingBy (file-source and directory-source coverage)', () => {
+  let testHome: string;
+
+  beforeEach(() => {
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-copyprim-'));
+  });
+
+  afterEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('copies a single-file source to a byte-identical destination file (no throw, no no-op)', () => {
+    const src = join(testHome, 'src-CLAUDE.md');
+    const dst = join(testHome, 'dst-CLAUDE.md');
+    writeFileSync(src, '# shared CLAUDE.md content\n');
+
+    copyExtrasFilteredPreservingBy(src, dst, () => false);
+
+    expect(existsSync(dst)).toBe(true);
+    expect(lstatSync(dst).isFile()).toBe(true);
+    expect(readFileSync(dst, 'utf8')).toBe('# shared CLAUDE.md content\n');
+  });
+
+  it('copies a directory source, preserving the tree and excluding a nested ALWAYS_NEVER_SYNC entry', () => {
+    const srcDir = join(testHome, 'src-commands');
+    const dstDir = join(testHome, 'dst-commands');
+    mkdirSync(join(srcDir, 'nested'), { recursive: true });
+    writeFileSync(join(srcDir, 'a.md'), '# a\n');
+    writeFileSync(join(srcDir, 'nested', 'b.md'), '# b\n');
+    writeFileSync(join(srcDir, 'nested', 'settings.local.json'), '{"secret":true}');
+
+    copyExtrasFilteredPreservingBy(srcDir, dstDir, (name) => isDeniedName(ALWAYS_NEVER_SYNC, name));
+
+    expect(readFileSync(join(dstDir, 'a.md'), 'utf8')).toBe('# a\n');
+    expect(readFileSync(join(dstDir, 'nested', 'b.md'), 'utf8')).toBe('# b\n');
+    expect(existsSync(join(dstDir, 'nested', 'settings.local.json'))).toBe(false);
+  });
+});
+
 describe('regenerateSettings (integration)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
