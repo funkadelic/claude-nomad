@@ -238,7 +238,9 @@ Make that edit in `shared/settings.base.json` in your sync repo, not in `~/.clau
 Any tool that stores hook scripts in a `sharedDirs`-symlinked directory and references other
 `~/.claude/` paths relative to its own file location can hit this, often right after the tool
 updates itself. You do not have to spot it yourself: `nomad doctor` warns about hook commands with
-this shape and prints the same fix hint.
+this shape and prints the same fix hint. Native Windows hosts cannot hit this at all: shared
+directories are real copies there (no symlinks), so Node never resolves a hook script into the
+sync repo.
 
 :::note
 `hooks/` and `agents/` are **not** synced by nomad. They are installed per-host by
@@ -256,7 +258,9 @@ Use whichever you prefer.
 Run `nomad eject`. It replaces every managed `~/.claude/` symlink with a real copy of its target, so
 your config keeps working after the sync repo is gone. It only touches nomad-managed symlinks: real
 files and directories are left alone, and it aborts safely (with a `nomad pull` hint) if it finds a
-dangling symlink rather than guessing. After it runs it prints a short manual-remainder checklist:
+dangling symlink rather than guessing. On native Windows the managed names are already real copies
+(the win32 copy-sync modality), so eject has nothing to materialize and goes straight to the
+checklist. After it runs it prints a short manual-remainder checklist:
 uninstall the CLI, drop the `NOMAD_HOST` / `NOMAD_REPO` env vars and the alias, and optionally delete
 the sync repo. Preview first with `nomad eject --dry-run`. See the
 [offboard a machine](/claude-nomad/recipes/#stop-using-nomad-offboard-a-machine) recipe for the full

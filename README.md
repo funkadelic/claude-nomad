@@ -114,6 +114,57 @@ export NOMAD_HOST=<your-host-label>   # add to ~/.zshrc or ~/.bashrc
 $ nomad pull
 ```
 
+### Windows
+
+claude-nomad also runs natively on Windows, no WSL required (WSL2 still works fine too, if you
+prefer it). The steps are the same as above with a couple of PowerShell-specific swaps:
+
+```powershell
+# 1. Install the CLI.
+> npm i -g claude-nomad
+
+# 2. Create your private sync repo and scaffold it.
+> nomad init
+
+# 3. Add a stable host label. PowerShell has no ~/.bashrc equivalent, so set it
+#    as a persistent user environment variable instead, then restart your
+#    terminal so the new value is picked up.
+> [System.Environment]::SetEnvironmentVariable('NOMAD_HOST', '<your-host-label>', 'User')
+#    Using cmd instead of PowerShell? The equivalent one-liner is:
+#    setx NOMAD_HOST <your-host-label>
+
+# 4. Publish the scaffold to your private repo.
+> nomad push
+```
+
+A few Windows-specific things worth knowing:
+
+- **Installing gh:** `winget install GitHub.cli` (or `scoop install gh`), then `gh auth login`.
+  Needed before `nomad init` on the first host; later hosts only clone with it.
+- **Installing gitleaks:** `winget install gitleaks.gitleaks` (or `scoop install gitleaks` if you
+  use Scoop). `nomad doctor` prints the same hint whenever gitleaks is missing from PATH.
+- **Shared config is copied, not symlinked.** On macOS and Linux, files like `CLAUDE.md` and your
+  skills live in the sync repo and are symlinked into `~/.claude/`, so there is one source of truth
+  on disk. Creating a symlink on Windows needs Developer Mode or admin rights, so on Windows these
+  are real copies instead. What this means for you: after editing a shared file on Windows, run
+  `nomad push` before your next `nomad pull` or `nomad sync`. `nomad sync` always pulls first, and
+  the pull half overlays the repo's copy onto yours (the prior content is snapshotted to the backup
+  dir first, so it is recoverable, but it is still reverted in place); pushing first is what
+  actually captures your edit. This is the same behavior claude-nomad's `skills/` sync already has
+  on every platform.
+- **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
+  finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
+  macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the
+  identical finding can reappear as "new" the first time it is scanned from a macOS/Linux host, and
+  the same happens in reverse. This is a known gitleaks limitation, not a claude-nomad bug; just
+  allow it again from the other host.
+- **Line endings stay put.** A fresh `nomad init` writes a `.gitattributes` with `* -text`, so Git
+  never converts line endings between hosts. If you are joining a sync repo created before this file
+  existed, add that one line from any host (or watch for the `nomad doctor` warning that nudges
+  you), otherwise a Windows checkout with the common `core.autocrlf=true` Git default would rewrite
+  every text file's line endings, and every host would then see the whole tree as permanently
+  changed.
+
 Everyday loop on any host:
 
 ```bash
@@ -234,6 +285,10 @@ independently from the CLI, but requires nomad `>= 0.35.0` because it calls rece
 - Git
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) (required for `nomad push`)
 - `gh` ([GitHub CLI](https://cli.github.com/)), required by `nomad init`
+
+Works on macOS, Linux (including WSL2), and native Windows (PowerShell or cmd). See
+[Windows](#windows) above for the Windows equivalents of the install and host-label steps, the
+copy-sync trade-off, and the `.gitleaksignore` cross-host caveat.
 
 **Optional:** [curl](https://curl.se/) or [wget](https://www.gnu.org/software/wget/) for the
 version-staleness check and `nomad doctor --check-schema`. The CLI works without them. The opt-in

@@ -16,7 +16,10 @@ export function guardGitlinks(repo: string): void {
   const gitlinks = findGitlinks(join(repo, 'shared'));
   if (gitlinks.length === 0) return;
   for (const p of gitlinks) {
-    const rel = relative(repo, p);
+    // Repo-relative paths are forward-slash on every platform (matches how
+    // git itself reports paths); relative() returns a native (backslash on
+    // win32) separator, so normalize before display.
+    const rel = relative(repo, p).replaceAll('\\', '/');
     fail(`gitlink: ${rel} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`);
   }
   const noun = gitlinks.length === 1 ? 'entry' : 'entries';

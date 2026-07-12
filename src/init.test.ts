@@ -87,6 +87,20 @@ describe('cmdInit empty-scaffold mode', () => {
     expect(readFileSync(join(repo, 'path-map.json'), 'utf8')).toBe(
       JSON.stringify({ projects: {} }, null, 2) + '\n',
     );
+    // Root .gitattributes disables git line-ending conversion for all paths.
+    expect(readFileSync(join(repo, '.gitattributes'), 'utf8')).toMatch(/^\*\s+-text\s*$/m);
+  });
+
+  it('writes a root .gitattributes with a `* -text` line', async () => {
+    const { cmdInit } = await import('./init.ts');
+    cmdInit({ run: makeOriginExistsRun() });
+    const repo = join(env.testHome, 'claude-nomad');
+    const content = readFileSync(join(repo, '.gitattributes'), 'utf8');
+    const nonCommentLines = content
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#'));
+    expect(nonCommentLines).toEqual(['* -text']);
   });
 
   it('emits a final log line that ends with "init complete"', async () => {
@@ -132,6 +146,19 @@ describe('cmdInit empty-scaffold mode', () => {
       expect(msg).toContain('already initialized');
       expect(msg).toContain(join(repo, 'shared'));
     }
+  });
+
+  it('refuses to clobber on a re-init before writing .gitattributes', async () => {
+    // The existing preflightConflict clobber guard runs before any scaffold
+    // write, so a re-init on an already-scaffolded repo must not leave a
+    // .gitattributes behind either.
+    const repo = join(env.testHome, 'claude-nomad');
+    mkdirSync(join(repo, 'shared'), { recursive: true });
+    const { cmdInit } = await import('./init.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const run = makeOriginExistsRun();
+    expect(() => cmdInit({ run })).toThrow(NomadFatal);
+    expect(existsSync(join(repo, '.gitattributes'))).toBe(false);
   });
 
   it('passes repoName through to ensureOriginRepo (no-op when origin exists)', async () => {

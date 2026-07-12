@@ -1,7 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { type ExecFileSyncOptions } from 'node:child_process';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { cmdUpdate, readInstalledVersion } from './commands.update.ts';
 import { NomadFatal } from './utils.ts';
+
+// The default-platform test below asserts the literal 'npm' bin without
+// overriding process.platform, so it is posix-only by construction; the
+// win32 branch (npm.cmd) is covered explicitly in the platform-branching
+// describe block further down via setPlatform.
+const isWin = process.platform === 'win32';
 
 /**
  * Build a fake SpawnSyncFn that dispatches on the first argument element.
@@ -29,7 +37,7 @@ describe('cmdUpdate', () => {
     vi.restoreAllMocks();
   });
 
-  it('prints status line, runs npm update, then reports the new version', () => {
+  it.skipIf(isWin)('prints status line, runs npm update, then reports the new version', () => {
     const logSpy = vi.spyOn(console, 'log');
     const { run, calls } = makeFakeRun('0.47.1\n');
 
@@ -92,6 +100,80 @@ describe('cmdUpdate', () => {
   });
 });
 
+describe('cmdUpdate platform branching', () => {
+  let originalPlatform: NodeJS.Platform;
+
+  beforeEach(() => {
+    originalPlatform = process.platform;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  function setPlatform(value: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  }
+
+  function makeCapturingRun(): {
+    run: (bin: string, args: readonly string[], opts?: ExecFileSyncOptions) => string;
+    calls: { bin: string; args: readonly string[]; opts?: ExecFileSyncOptions }[];
+  } {
+    const calls: { bin: string; args: readonly string[]; opts?: ExecFileSyncOptions }[] = [];
+    const run = (bin: string, args: readonly string[], opts?: ExecFileSyncOptions): string => {
+      calls.push({ bin, args, opts });
+      if (args[0] === '--version') return '0.47.1\n';
+      return '';
+    };
+    return { run, calls };
+  }
+
+  it('spawns npm.cmd with shell:true and the literal args array on win32', () => {
+    setPlatform('win32');
+    const { run, calls } = makeCapturingRun();
+
+    cmdUpdate('0.46.0', run);
+
+    expect(calls[0].bin).toBe('npm.cmd');
+    expect(calls[0].args).toEqual(['update', '-g', 'claude-nomad']);
+    expect(calls[0].opts?.shell).toBe(true);
+    // Existing options preserved alongside the new shell:true.
+    expect(calls[0].opts?.encoding).toBe('utf8');
+    expect(calls[0].opts?.stdio).toEqual(['ignore', 'pipe', 'pipe']);
+    expect(calls[0].opts?.maxBuffer).toBe(64 * 1024 * 1024);
+  });
+
+  it('spawns npm unchanged (no shell:true) on a non-win32 platform', () => {
+    setPlatform('darwin');
+    const { run, calls } = makeCapturingRun();
+
+    cmdUpdate('0.46.0', run);
+
+    expect(calls[0].bin).toBe('npm');
+    expect(calls[0].opts?.shell).not.toBe(true);
+  });
+
+  it('ENOENT and stderr-fold error paths fire identically on a win32 stub', () => {
+    setPlatform('win32');
+    const enoentRun = () => {
+      const err = new Error('spawn npm.cmd ENOENT') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    };
+    expect(() => cmdUpdate('0.46.0', enoentRun)).toThrow(NomadFatal);
+    expect(() => cmdUpdate('0.46.0', enoentRun)).toThrow('npm not found on PATH');
+
+    const stderrRun = () => {
+      const err = new Error('npm exited with code 1') as NodeJS.ErrnoException & {
+        stderr?: string;
+      };
+      err.stderr = 'npm ERR! code EACCES\nnpm ERR! permission denied';
+      throw err;
+    };
+    expect(() => cmdUpdate('0.46.0', stderrRun)).toThrow('npm ERR! permission denied');
+  });
+});
+
 describe('readInstalledVersion', () => {
   it('returns trimmed version string on success', () => {
     const run = (_bin: string, _args: readonly string[]) => '0.47.1\n';
@@ -107,6 +189,63 @@ describe('readInstalledVersion', () => {
 
   it('returns null when the output is empty or whitespace only', () => {
     const run = (_bin: string, _args: readonly string[]) => '   \n';
+    expect(readInstalledVersion(run)).toBeNull();
+  });
+});
+
+describe('readInstalledVersion platform branching', () => {
+  let originalPlatform: NodeJS.Platform;
+
+  beforeEach(() => {
+    originalPlatform = process.platform;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  function setPlatform(value: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  }
+
+  function makeCapturingRun(): {
+    run: (bin: string, args: readonly string[], opts?: ExecFileSyncOptions) => string;
+    calls: { bin: string; args: readonly string[]; opts?: ExecFileSyncOptions }[];
+  } {
+    const calls: { bin: string; args: readonly string[]; opts?: ExecFileSyncOptions }[] = [];
+    const run = (bin: string, args: readonly string[], opts?: ExecFileSyncOptions): string => {
+      calls.push({ bin, args, opts });
+      return '0.47.1\n';
+    };
+    return { run, calls };
+  }
+
+  it('spawns nomad.cmd with shell:true and the literal args array on win32', () => {
+    setPlatform('win32');
+    const { run, calls } = makeCapturingRun();
+
+    expect(readInstalledVersion(run)).toBe('0.47.1');
+
+    expect(calls[0].bin).toBe('nomad.cmd');
+    expect(calls[0].args).toEqual(['--version']);
+    expect(calls[0].opts?.shell).toBe(true);
+  });
+
+  it('spawns nomad unchanged (no shell:true) on a non-win32 platform', () => {
+    setPlatform('darwin');
+    const { run, calls } = makeCapturingRun();
+
+    expect(readInstalledVersion(run)).toBe('0.47.1');
+
+    expect(calls[0].bin).toBe('nomad');
+    expect(calls[0].opts?.shell).not.toBe(true);
+  });
+
+  it('returns null on error identically on a win32 stub', () => {
+    setPlatform('win32');
+    const run = () => {
+      throw new Error('spawn nomad.cmd ENOENT');
+    };
     expect(readInstalledVersion(run)).toBeNull();
   });
 });

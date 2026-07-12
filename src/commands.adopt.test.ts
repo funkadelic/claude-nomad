@@ -14,6 +14,14 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+// Posix-only assertions (symlink creation, clobber-refusal wording) below
+// assume the process is genuinely running on a non-win32 host. On a real
+// win32 runner cmdAdopt takes the copy-back branch for real (process.platform
+// is not mocked in these cases), so those tests are skipped there; the win32
+// behavior is covered separately by the "cmdAdopt win32 copy-back branch"
+// describe block, which explicitly overrides process.platform.
+const isWin = process.platform === 'win32';
+
 // ---------------------------------------------------------------------------
 // Harness types
 // ---------------------------------------------------------------------------
@@ -272,7 +280,7 @@ describe('cmdAdopt (precondition matrix)', () => {
   });
 
   // shared/<name> already exists -> clobber refusal, non-zero exit
-  it('refuses when shared/<name> already exists (would clobber)', async () => {
+  it.skipIf(isWin)('refuses when shared/<name> already exists (would clobber)', async () => {
     addSharedDir(env, 'my-dir');
     mkdirSync(join(env.claudeHome, 'my-dir'), { recursive: true });
     mkdirSync(join(env.repoHome, 'shared', 'my-dir'), { recursive: true });
@@ -288,7 +296,7 @@ describe('cmdAdopt (precondition matrix)', () => {
   // refused. existsSync follows links and reports false for a dangling link,
   // so the clobber guard uses an lstat-based check; otherwise cpSync would
   // throw an opaque non-NomadFatal error on the dangling destination.
-  it('refuses when shared/<name> is a dangling symlink (would clobber)', async () => {
+  it.skipIf(isWin)('refuses when shared/<name> is a dangling symlink (would clobber)', async () => {
     addSharedDir(env, 'my-dir');
     mkdirSync(join(env.claudeHome, 'my-dir'), { recursive: true });
     mkdirSync(join(env.repoHome, 'shared'), { recursive: true });
@@ -305,7 +313,7 @@ describe('cmdAdopt (precondition matrix)', () => {
   });
 
   // Verify lstatSync is used: a real dir should NOT take the already-adopted branch
-  it('does not take the already-adopted branch for a real directory', async () => {
+  it.skipIf(isWin)('does not take the already-adopted branch for a real directory', async () => {
     addSharedDir(env, 'real-dir');
     mkdirSync(join(env.claudeHome, 'real-dir'), { recursive: true });
 
@@ -335,34 +343,37 @@ describe('cmdAdopt (happy path and move sequence)', () => {
   });
 
   // Happy path moves content, creates symlink, stages, prints hint
-  it('happy path: moves dir, creates symlink at source, stages shared/<name>', async () => {
-    addSharedDir(env, 'my-tools');
-    const linkPath = join(env.claudeHome, 'my-tools');
-    mkdirSync(linkPath, { recursive: true });
-    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
-    writeFileSync(join(linkPath, 'config.json'), '{"key":"value"}\n');
+  it.skipIf(isWin)(
+    'happy path: moves dir, creates symlink at source, stages shared/<name>',
+    async () => {
+      addSharedDir(env, 'my-tools');
+      const linkPath = join(env.claudeHome, 'my-tools');
+      mkdirSync(linkPath, { recursive: true });
+      writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+      writeFileSync(join(linkPath, 'config.json'), '{"key":"value"}\n');
 
-    const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('my-tools')).not.toThrow();
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('my-tools')).not.toThrow();
 
-    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+      const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
 
-    // shared/<name> contains the original files
-    expect(existsSync(join(sharedTarget, 'tool.sh'))).toBe(true);
-    expect(existsSync(join(sharedTarget, 'config.json'))).toBe(true);
-    expect(readFileSync(join(sharedTarget, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+      // shared/<name> contains the original files
+      expect(existsSync(join(sharedTarget, 'tool.sh'))).toBe(true);
+      expect(existsSync(join(sharedTarget, 'config.json'))).toBe(true);
+      expect(readFileSync(join(sharedTarget, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
 
-    // source removed then symlink recreated
-    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      // source removed then symlink recreated
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
 
-    // gitOrFatal called with exactly ['add', '--', 'shared/my-tools']
-    expect(diffCached(env)).toContain('shared/my-tools');
+      // gitOrFatal called with exactly ['add', '--', 'shared/my-tools']
+      expect(diffCached(env)).toContain('shared/my-tools');
 
-    // hint printed verbatim
-    const out = logOutput(env);
-    expect(out).toContain('nomad push');
-    expect(out).toContain('my-tools');
-  });
+      // hint printed verbatim
+      const out = logOutput(env);
+      expect(out).toContain('nomad push');
+      expect(out).toContain('my-tools');
+    },
+  );
 
   // Exact literal: ADOPT_PUSH_HINT exported and printed verbatim
   it('prints the exact ADOPT_PUSH_HINT literal', async () => {
@@ -380,36 +391,39 @@ describe('cmdAdopt (happy path and move sequence)', () => {
 
   // Ordering: copy completes before source removal -- verified by observing
   // that shared/<name> is fully populated and the source is removed in the final state
-  it('ordering: shared copy is fully populated before source is removed', async () => {
-    // We verify the copy-before-remove ordering invariant by:
-    // 1. Running cmdAdopt on a dir with nested content
-    // 2. Asserting shared/<name> has full content (proves cpSync ran)
-    // 3. Asserting source is gone (proves rmSync ran after cpSync)
-    // The implementation guarantees the order because rmSync follows cpSync in source;
-    // if cpSync threw (ENOSPC, permission error), rmSync would never execute.
-    addSharedDir(env, 'my-tools');
-    const linkPath = join(env.claudeHome, 'my-tools');
-    const subDir = join(linkPath, 'sub');
-    mkdirSync(subDir, { recursive: true });
-    writeFileSync(join(linkPath, 'root.txt'), 'root\n');
-    writeFileSync(join(subDir, 'nested.txt'), 'nested\n');
+  it.skipIf(isWin)(
+    'ordering: shared copy is fully populated before source is removed',
+    async () => {
+      // We verify the copy-before-remove ordering invariant by:
+      // 1. Running cmdAdopt on a dir with nested content
+      // 2. Asserting shared/<name> has full content (proves cpSync ran)
+      // 3. Asserting source is gone (proves rmSync ran after cpSync)
+      // The implementation guarantees the order because rmSync follows cpSync in source;
+      // if cpSync threw (ENOSPC, permission error), rmSync would never execute.
+      addSharedDir(env, 'my-tools');
+      const linkPath = join(env.claudeHome, 'my-tools');
+      const subDir = join(linkPath, 'sub');
+      mkdirSync(subDir, { recursive: true });
+      writeFileSync(join(linkPath, 'root.txt'), 'root\n');
+      writeFileSync(join(subDir, 'nested.txt'), 'nested\n');
 
-    const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('my-tools')).not.toThrow();
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('my-tools')).not.toThrow();
 
-    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+      const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
 
-    // shared copy is fully populated (proves cpSync completed)
-    expect(existsSync(join(sharedTarget, 'root.txt'))).toBe(true);
-    expect(existsSync(join(sharedTarget, 'sub', 'nested.txt'))).toBe(true);
+      // shared copy is fully populated (proves cpSync completed)
+      expect(existsSync(join(sharedTarget, 'root.txt'))).toBe(true);
+      expect(existsSync(join(sharedTarget, 'sub', 'nested.txt'))).toBe(true);
 
-    // source is gone (proves rmSync ran AFTER cpSync completed)
-    // The symlink at linkPath exists, but the real dir is gone
-    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      // source is gone (proves rmSync ran AFTER cpSync completed)
+      // The symlink at linkPath exists, but the real dir is gone
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
 
-    // The real directory content is now under sharedTarget
-    expect(readFileSync(join(sharedTarget, 'root.txt'), 'utf8')).toBe('root\n');
-  });
+      // The real directory content is now under sharedTarget
+      expect(readFileSync(join(sharedTarget, 'root.txt'), 'utf8')).toBe('root\n');
+    },
+  );
 
   // Dry-run is a true no-op
   it('dry-run: zero fs writes, zero git mutations, prints would-do lines', async () => {
@@ -527,4 +541,166 @@ describe('cmdAdopt (happy path and move sequence)', () => {
     expect(() => cmdAdopt('commands')).not.toThrow();
     expect(errOutput(env)).toBe('');
   });
+});
+
+// ---------------------------------------------------------------------------
+// win32 copy-back branch (no unprivileged symlink support)
+// ---------------------------------------------------------------------------
+
+describe('cmdAdopt win32 copy-back branch', () => {
+  let env: Env;
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    teardownAdoptEnv(env);
+  });
+
+  it('win32: leaves ~/.claude/<name> as a real copy (not a symlink) and stages shared/<name>', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    // shared/<name> contains the original files
+    expect(existsSync(join(sharedTarget, 'tool.sh'))).toBe(true);
+    expect(readFileSync(join(sharedTarget, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+
+    // linkPath is a real copy, NOT a symlink
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+
+    // staged
+    expect(diffCached(env)).toContain('shared/my-tools');
+  });
+
+  it('win32: does not call ensureSymlink (no symlink created at any point)', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    // The precondition matrix's "already a symlink" branch never applied
+    // (source was real), and the win32 branch never created one either.
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+  });
+
+  it('win32 dry-run: reports a copy-back plan (not a symlink relink) and mutates nothing', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools', { dryRun: true })).not.toThrow();
+
+    const out = logOutput(env);
+    expect(out).toContain('would copy back');
+    expect(out).not.toContain('would relink');
+
+    // Zero mutation
+    expect(existsSync(linkPath)).toBe(true);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(env.repoHome, 'shared', 'my-tools'))).toBe(false);
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('win32: re-running adopt on an already-adopted real copy returns 0 with a success message', async () => {
+    // shared/<name> already exists (a prior adopt already ran) and linkPath is
+    // a real (non-symlink) copy -- the win32 healthy state. Re-running adopt
+    // must short-circuit before the clobber guard: no process.exit(1), no fs
+    // mutation, no git staging, just a success message.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    mkdirSync(sharedTarget, { recursive: true });
+    writeFileSync(join(sharedTarget, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+    expect(env.exitSpy).not.toHaveBeenCalled();
+
+    const out = logOutput(env);
+    expect(out).toContain('already adopted');
+    expect(out).toContain('win32');
+
+    // Zero mutation: linkPath still a real copy, no git staging
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('win32: a genuinely un-adopted name (no shared/<name> yet) still runs the normal move', async () => {
+    // shared/<name> absent -- the already-adopted short-circuit must NOT fire,
+    // and the normal copy-back move must still run.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const out = logOutput(env);
+    expect(out).not.toContain('already adopted');
+    expect(diffCached(env)).toContain('shared/my-tools');
+  });
+
+  it('non-win32 (posix): the already-symlink branch is unchanged, not the win32 short-circuit', async () => {
+    // posix: an already-symlinked linkPath takes the existing posix
+    // already-adopted branch, never the win32-only message.
+    addSharedDir(env, 'my-dir');
+    const linkPath = join(env.claudeHome, 'my-dir');
+    const targetPath = join(env.repoHome, 'shared', 'my-dir');
+    mkdirSync(targetPath, { recursive: true });
+    symlinkSync(targetPath, linkPath);
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-dir')).not.toThrow();
+    const out = logOutput(env);
+    expect(out).toContain('already adopted (already a symlink)');
+    expect(out).not.toContain('win32 copy-sync');
+    expect(diffCached(env)).toBe('');
+  });
+
+  it.skipIf(isWin)(
+    'non-win32: dry-run still reports a symlink relink plan (posix wording unchanged)',
+    async () => {
+      addSharedDir(env, 'my-tools');
+      const linkPath = join(env.claudeHome, 'my-tools');
+      mkdirSync(linkPath, { recursive: true });
+      writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+
+      // No setPlatform call: exercises whatever this dev/CI host actually is
+      // (posix), proving the win32 wording above is genuinely gated.
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('my-tools', { dryRun: true })).not.toThrow();
+
+      const out = logOutput(env);
+      expect(out).toContain('would relink');
+      expect(out).not.toContain('would copy back');
+    },
+  );
 });

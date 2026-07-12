@@ -38,6 +38,11 @@ local quirks while sharing everything else.
 This is the ongoing case. One command becomes part of your routine, the same way `git pull` and
 `git push` bookend a coding session, except nomad folds both halves into `nomad sync`.
 
+## Works across platforms
+
+claude-nomad runs the same way on macOS, Linux, WSL2, and native Windows (no WSL required). See
+the [Quickstart](/claude-nomad/quickstart/) for the native Windows steps (PowerShell or cmd).
+
 ## What it is not
 
 claude-nomad is not a backup tool and not a general dotfiles manager. It syncs Claude Code state

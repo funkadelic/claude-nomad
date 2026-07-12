@@ -75,11 +75,17 @@ function stripShellPunctuation(token: string): string {
  * @returns Iterable of absolute resolved paths under `~/.claude`.
  */
 function* claudePathsIn(command: string): Iterable<string> {
-  const claudePrefix = `${claudeHome()}/`;
+  // Compare with forward slashes normalized on both sides: claudeHome() joins
+  // with the native separator (backslash on win32), but a hook command token
+  // written as `~/.claude/...` keeps its literal forward slashes after
+  // expandHome splices in the (backslash-style) home() prefix, so a raw
+  // startsWith would false-negative on win32 for a genuinely-under-claudeHome
+  // path.
+  const claudePrefix = `${claudeHome().replaceAll('\\', '/')}/`;
   for (const segment of command.split(/&&|\|\||;|\|/)) {
     for (const raw of segment.trim().split(/\s+/).filter(Boolean)) {
       const expanded = expandHome(stripShellPunctuation(raw));
-      if (expanded.startsWith(claudePrefix)) yield expanded;
+      if (expanded.replaceAll('\\', '/').startsWith(claudePrefix)) yield expanded;
     }
   }
 }

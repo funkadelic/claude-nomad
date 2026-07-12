@@ -25,6 +25,21 @@ const SHARED_CLAUDE_MD =
   '<!-- claude-nomad shared CLAUDE.md; symlinked into ~/.claude/CLAUDE.md by nomad pull -->\n';
 
 /**
+ * Content for the root `.gitattributes` scaffolded into every new sync repo.
+ * All synced content (settings JSON, CLAUDE.md, skills, session `.jsonl`
+ * transcripts) is byte-managed: nomad's drift comparisons and gitleaks scans
+ * operate on exact bytes, so git must never rewrite line endings on checkout.
+ * On a Windows host with the common global default `core.autocrlf=true`, an
+ * unguarded repo would CRLF-ify every text file on checkout, and those CRLF
+ * bytes would then get pulled into `~/.claude/`, permanently diverging that
+ * host's copy from every other host's. `* -text` disables all git
+ * line-ending conversion for every path in the repo, neutralizing the hazard
+ * on any host regardless of its `core.autocrlf` setting.
+ */
+const GITATTRIBUTES =
+  '# nomad: sync content is byte-managed, disable all line-ending conversion\n* -text\n';
+
+/**
  * Subdirectories under `shared/` that get a `.gitkeep` placeholder on a fresh
  * scaffold so the empty dirs survive git and materialize on every host. Pairs
  * with the SHARED_LINKS contract in `src/config.ts` (those same names are
@@ -145,6 +160,8 @@ export function cmdInit(
   item('created shared/settings.base.json');
   writeJsonAtomic(join(repo, 'path-map.json'), { projects: {} } satisfies PathMap);
   item('created path-map.json');
+  writeFileSync(join(repo, '.gitattributes'), GITATTRIBUTES);
+  item('created .gitattributes');
 
   if (snapshot) {
     // In the init path, path-map.json was just written as `{ projects: {} }`

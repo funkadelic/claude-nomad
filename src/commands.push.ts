@@ -10,6 +10,7 @@ import { reportSettingsAheadDrift, stripGsdHooksFromBase } from './commands.push
 import { guardGitlinks, guardResolutionModeConflicts } from './commands.push.guards.ts';
 import { commitAndPush, runDryRunPreview } from './commands.push.steps.ts';
 import { remapExtrasPush } from './extras-sync.ts';
+import { syncSharedLinksPush } from './links.ts';
 import { syncSkillsPush } from './skills-sync.ts';
 import { probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { remapPush } from './remap.ts';
@@ -170,11 +171,14 @@ export async function runPushCore(
   // both the gitlink walk and the downstream allow-list classification.
   // dryRun is forwarded so a preview push reports the same skipped count.
   const extras = withSpinner('Syncing extras', () => remapExtrasPush(ts, { dryRun }));
-  // syncSkillsPush runs between remapExtrasPush and guardGitlinks so the
-  // produced shared/skills content is visible to both the gitlink walk and
-  // the downstream allow-list classification. dryRun is forwarded: under
-  // dryRun, copySkillsPush writes nothing (mirroring remapPush/remapExtrasPush).
-  // Both steps are real-push-only (zero-mutation dry-run contract). Run them
+  // syncSkillsPush and syncSharedLinksPush run between remapExtrasPush and
+  // guardGitlinks so the shared/skills and shared/<name> content they produce
+  // is visible to both the gitlink walk and the downstream allow-list
+  // classification. dryRun is forwarded: under dryRun, neither writes
+  // anything (mirroring remapPush/remapExtrasPush). syncSharedLinksPush is a
+  // win32-only mirror (it returns immediately on darwin/linux and when
+  // path-map.json is absent), so it is safe to call unconditionally here.
+  // All steps are real-push-only (zero-mutation dry-run contract). Run them
   // together so their shared !dryRun guard counts as one branch in sonarjs.
   // stripGsdHooksFromBase runs BEFORE the status snapshot (below) so a host
   // whose only outstanding change is a dirty base (gsd entries from an earlier
@@ -183,6 +187,7 @@ export async function runPushCore(
   // no allow-list change is needed. Both calls are idempotent.
   if (!dryRun) {
     syncSkillsPush();
+    syncSharedLinksPush(map);
     stripGsdHooksFromBase(repo, backup);
   }
   const st: PushState = { dryRun, remap, extras, globalConfig: [] };

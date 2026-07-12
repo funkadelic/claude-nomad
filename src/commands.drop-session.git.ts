@@ -53,7 +53,13 @@ export function expandStagedDir(dirRel: string, repo: string): string[] {
  */
 export function isTrackedInHead(rel: string, repo: string): boolean {
   try {
-    execFileSync('git', ['cat-file', '-e', `HEAD:${rel}`], {
+    // The `<rev>:<path>` object-spec path segment is parsed as a tree path,
+    // not a pathspec: git requires forward slashes there on every platform.
+    // Only win32 relative() output uses backslash as a separator; on posix a
+    // backslash in rel is a literal filename character and must survive, or
+    // a HEAD-tracked path is misclassified as newly-staged.
+    const treePath = process.platform === 'win32' ? rel.replaceAll('\\', '/') : rel;
+    execFileSync('git', ['cat-file', '-e', `HEAD:${treePath}`], {
       cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

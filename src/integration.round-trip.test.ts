@@ -135,15 +135,19 @@ describe.skipIf(!hasGit || !hasGitleaks)(
       const pullResult = runNomad(b, ['pull']);
       expect(pullResult.status, `pull failed:\n${pullResult.stderr}`).toBe(0);
 
-      // Assertion 1: SHARED_LINKS symlinks resolve on B.
-      // Only assert the names that were seeded on A (CLAUDE.md and commands/).
-      // rules/ and my-statusline.cjs were not seeded so they have no shared/ target;
+      // Assertion 1: SHARED_LINKS resolve on B. Only assert the names that
+      // were seeded on A (CLAUDE.md and commands/). rules/ and
+      // my-statusline.cjs were not seeded so they have no shared/ target;
       // applySharedLinks skips a link when shared/<name> does not exist.
+      // On win32 (no unprivileged symlink support), the same names land as
+      // real copies via the copy-sync branch instead of symlinks; both are
+      // the platform's own definition of "resolved" here.
       const seededLinks = ['CLAUDE.md', 'commands'] as const;
+      const isWin = process.platform === 'win32';
       for (const name of seededLinks) {
         const linkPath = join(b.claudeHome, name);
-        expect(lstatSync(linkPath).isSymbolicLink(), `${name} is not a symlink on B`).toBe(true);
-        expect(existsSync(linkPath), `symlink ${name} target does not exist on B`).toBe(true);
+        expect(existsSync(linkPath), `${name} target does not exist on B`).toBe(true);
+        expect(lstatSync(linkPath).isSymbolicLink(), `${name} symlink state on B`).toBe(!isWin);
       }
       // Verify the seeded content is visible through the symlink on B.
       const bClaudeMd = readFileSync(join(b.claudeHome, 'CLAUDE.md'), 'utf8');

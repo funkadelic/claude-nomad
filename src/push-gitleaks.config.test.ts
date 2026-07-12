@@ -362,7 +362,9 @@ describe('resolveTomlPath (two-tier toml lookup)', () => {
       };
     });
     const { resolveTomlPath } = await import('./push-gitleaks.config.ts');
-    expect(resolveTomlPath()).toBe('/fake/repo/.gitleaks.toml');
+    // join() normalizes to the native separator (backslash on win32); build
+    // the expected value the same way so this holds on every platform.
+    expect(resolveTomlPath()).toBe(join('/fake/repo', '.gitleaks.toml'));
   });
 
   it('returns the bundled path when repo copy is absent but bundled exists', async () => {

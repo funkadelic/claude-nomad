@@ -19,6 +19,7 @@ type LogSpy = MockInstance<(...args: unknown[]) => void>;
 /** Sandbox state returned by `makePushEnv` for each cmdPush pipeline test. */
 export type PushEnv = {
   originalHome: string | undefined;
+  originalUserProfile: string | undefined;
   originalNomadHost: string | undefined;
   originalExitCode: typeof process.exitCode;
   testHome: string;
@@ -40,10 +41,14 @@ export type PushEnv = {
  */
 export function makePushEnv(): PushEnv {
   const originalHome = process.env.HOME;
+  // home() prefers USERPROFILE over HOME on win32 (see config.ts); swap it
+  // alongside HOME so the sandbox is isolated on a Windows runner too.
+  const originalUserProfile = process.env.USERPROFILE;
   const originalNomadHost = process.env.NOMAD_HOST;
   const originalExitCode = process.exitCode;
   const testHome = mkdtempSync(join(tmpdir(), 'nomad-push-test-'));
   process.env.HOME = testHome;
+  process.env.USERPROFILE = testHome;
   process.env.NOMAD_HOST = 'test-host';
   const repoUnderHome = join(testHome, 'claude-nomad');
   const lockPath = join(testHome, '.cache', 'claude-nomad', 'nomad.lock');
@@ -64,6 +69,7 @@ export function makePushEnv(): PushEnv {
   vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   return {
     originalHome,
+    originalUserProfile,
     originalNomadHost,
     originalExitCode,
     testHome,
@@ -91,6 +97,7 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('./remap.ts');
   vi.doUnmock('./extras-sync.ts');
   vi.doUnmock('./skills-sync.ts');
+  vi.doUnmock('./links.ts');
   vi.doUnmock('./utils.ts');
   vi.doUnmock('./utils.lockfile.ts');
   vi.doUnmock('./commands.push.allowlist.ts');
@@ -98,6 +105,8 @@ export function teardownPushEnv(env: PushEnv): void {
   process.exitCode = env.originalExitCode;
   if (env.originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = env.originalHome;
+  if (env.originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = env.originalUserProfile;
   if (env.originalNomadHost === undefined) delete process.env.NOMAD_HOST;
   else process.env.NOMAD_HOST = env.originalNomadHost;
   rmSync(env.testHome, { recursive: true, force: true });

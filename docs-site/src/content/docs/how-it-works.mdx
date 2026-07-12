@@ -76,6 +76,13 @@ What `~/claude-nomad/` looks like on a configured host:
 | **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
 | **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
 
+On native Windows the two symlinked rows are copy-synced instead: creating a symlink there needs
+Developer Mode or admin rights, so `nomad pull` materializes those names as real copies and
+`nomad push` mirrors your local edits back into `shared/`. After editing one of these files on
+Windows, run `nomad push` before your next `nomad pull` or `nomad sync` so the edit is captured
+rather than overlaid. Everything else in the table behaves identically. See
+[Windows](/claude-nomad/quickstart/#windows) in the Quickstart.
+
 If you run GSD (`@opengsd/gsd-core`), the `.planning` overlay, the `gsd-*` skill exclusion, and the
 unsynced `hooks/` and `agents/` are all part of nomad's GSD-aware handling. See
 [GSD-aware sync](/claude-nomad/gsd-aware-sync/) for what nomad does for a GSD machine out of the box.
@@ -259,7 +266,8 @@ field in `path-map.json` opts it into symlink sync:
 
 What this means for you: each listed name is symlinked from `shared/<name>` into
 `~/.claude/<name>` (the same model as the built-in synced links, not a copy), so editing it on
-any host updates the one shared copy. The field is additive and back-compatible: a `path-map.json`
+any host updates the one shared copy. On native Windows these names are real copies, like every
+synced link there, so `nomad push` is what captures a local edit. The field is additive and back-compatible: a `path-map.json`
 without it behaves exactly as before.
 
 Entries are validated before anything is linked. A name is accepted only if it is a single path

@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import type * as pathModule from 'node:path';
+
 import type { PathMap } from './config.ts';
 
 /** Run a git command in `cwd`, surfacing stderr on failure. Test-only helper
@@ -483,5 +485,137 @@ describe('enforceAllowList .gitleaksignore allow-list entry', () => {
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('M  .gitleaksignore.bak\0', map)).toThrow(NomadFatal);
+  });
+});
+
+// Regression: .gitattributes must be allowed by enforceAllowList so the root
+// .gitattributes scaffolded by nomad init (the CRLF guard) can reach the
+// shared repo on the first push. The entry must be an exact match (not a
+// prefix) so siblings like .gitattributes.bak remain rejected.
+describe('enforceAllowList .gitattributes allow-list entry', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('allows a staged .gitattributes (exact match in PUSH_ALLOWED_STATIC)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  .gitattributes\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects .gitattributes.bak (exact-match only, no prefix leak)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  .gitattributes.bak\0', map)).toThrow(NomadFatal);
+  });
+});
+
+// win32 path audit: enforceAllowList never derives a
+// comparison path from a host filesystem path via path.relative/path.sep --
+// it works entirely on forward-slash string literals (PUSH_ALLOWED_STATIC,
+// the runtime `shared/projects/${l}/` template entries) and git porcelain
+// output, which is already forward-slash on every OS (git normalizes its own
+// status output regardless of the host's native separator). Pinning that
+// invariant with an explicit win32 process.platform stub so a future change
+// that starts branching on platform cannot silently regress this.
+describe('enforceAllowList on a win32 stub: forward-slash porcelain paths unchanged', () => {
+  const realPlatform = process.platform;
+
+  function setPlatform(value: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  }
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+  });
+
+  it('accepts the same staged shared/... paths on win32 as it does today (no regression)', async () => {
+    setPlatform('win32');
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: { myproj: { 'test-host': 'C:\\Users\\name\\myproj' } } };
+    expect(() => enforceAllowList('M  shared/projects/myproj/session.jsonl\0', map)).not.toThrow();
+    expect(() => enforceAllowList('M  shared/skills/graphify/SKILL.md\0', map)).not.toThrow();
+  });
+
+  it('still rejects an out-of-allowlist path on win32 (no widened acceptance)', async () => {
+    setPlatform('win32');
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).toThrow(NomadFatal);
+  });
+});
+
+// win32 path audit: prove the path-map trust-boundary
+// guards (assertSafeLocalRoot / assertSafeLogical) accept a Windows-shaped
+// absolute path-map value on either separator style, and still reject a
+// Windows-shaped traversal value. `extras-sync.guards.ts` imports
+// isAbsolute/normalize/sep from the bare 'node:path' module, which resolves
+// to posix semantics on this (non-Windows) test host regardless of a
+// process.platform stub -- node:path's default export is fixed at Node's own
+// module-load time, not re-evaluated per call. To exercise real win32
+// semantics here, node:path's exports are swapped for the always-available
+// path.win32.* implementations (mirrors the node:path property-swap
+// convention already used in push-checks.test.ts for path.delimiter), and
+// process.platform is stubbed to win32 so the guard's own platform branch
+// takes the forward-slash-canonicalization path.
+describe('assertSafeLocalRoot / assertSafeLogical: win32-shaped path-map values', () => {
+  const realPlatform = process.platform;
+
+  afterEach(() => {
+    vi.doUnmock('node:path');
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+  });
+
+  function mockWin32PathSemantics(): void {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    vi.doMock('node:path', async (importOriginal) => {
+      const actual = await importOriginal<typeof pathModule>();
+      return { ...actual, ...actual.win32 };
+    });
+  }
+
+  it('accepts a backslash-form Windows absolute path-map value (C:\\Users\\name\\project)', async () => {
+    mockWin32PathSemantics();
+    const { assertSafeLocalRoot } = await import('./extras-sync.guards.ts');
+    expect(() => assertSafeLocalRoot('C:\\Users\\name\\project', 'myproj')).not.toThrow();
+  });
+
+  it('accepts a forward-slash-form Windows absolute path-map value (C:/Users/name/project)', async () => {
+    mockWin32PathSemantics();
+    const { assertSafeLocalRoot } = await import('./extras-sync.guards.ts');
+    expect(() => assertSafeLocalRoot('C:/Users/name/project', 'myproj')).not.toThrow();
+  });
+
+  it('rejects a Windows-shaped traversal path-map value (backslash form)', async () => {
+    mockWin32PathSemantics();
+    const { assertSafeLocalRoot } = await import('./extras-sync.guards.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => assertSafeLocalRoot('C:\\Users\\..\\..\\x', 'myproj')).toThrow(NomadFatal);
+  });
+
+  it('rejects a Windows-shaped traversal path-map value (forward-slash form)', async () => {
+    mockWin32PathSemantics();
+    const { assertSafeLocalRoot } = await import('./extras-sync.guards.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => assertSafeLocalRoot('C:/Users/../../x', 'myproj')).toThrow(NomadFatal);
+  });
+
+  it('assertSafeLogical is unaffected by the win32 path swap: still rejects a backslash-bearing key', async () => {
+    mockWin32PathSemantics();
+    const { assertSafeLogical } = await import('./extras-sync.guards.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => assertSafeLogical('foo\\bar')).toThrow(NomadFatal);
   });
 });

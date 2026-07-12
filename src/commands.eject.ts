@@ -1,8 +1,9 @@
-import { cpSync, existsSync, lstatSync, realpathSync, renameSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, realpathSync, rmSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
 import { allSharedLinks, backupBase, claudeHome, repoHome, type PathMap } from './config.ts';
 import { die, fail, item, log } from './utils.ts';
+import { renameAtomicRetry } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
 
 /**
@@ -129,11 +130,14 @@ function isManagedTarget(target: string, sharedRoot: string): boolean {
  *
  * Crash-safety windows: a crash before `rmSync(linkPath)` leaves the original
  * symlink intact (only the temp copy exists, and it is pre-cleaned on the next
- * run by the unique-suffix + pre-clean). After `rmSync` and before `renameSync`
- * the symlink is GONE and the temp holds the only copy; a crash in that narrow
- * window leaves the name missing until eject is re-run (idempotent: re-running
- * re-classifies the absent name and reports it skipped, while already-real names
- * are left alone). After `renameSync` the real copy is in place.
+ * run by the unique-suffix + pre-clean). After `rmSync` and before the final
+ * rename the symlink is GONE and the temp holds the only copy; a crash in that
+ * narrow window leaves the name missing until eject is re-run (idempotent:
+ * re-running re-classifies the absent name and reports it skipped, while
+ * already-real names are left alone). The final rename routes through
+ * `renameAtomicRetry` (win32-only bounded EPERM/EBUSY retry; a single
+ * unmodified `renameSync` call on posix), after which the real copy is in
+ * place.
  *
  * The `dereference: true` flag on `cpSync` is the `cp -rL` equivalent that
  * follows symlinks inside the target tree and copies real content.
@@ -166,7 +170,7 @@ function materializeOne(name: string, linkPath: string, sharedRoot: string): boo
       preserveTimestamps: true,
     });
     rmSync(linkPath, { force: true });
-    renameSync(tmp, linkPath);
+    renameAtomicRetry(tmp, linkPath);
     item(`ejected: ${name}`);
     return true;
   } catch (err) {
@@ -178,6 +182,25 @@ function materializeOne(name: string, linkPath: string, sharedRoot: string): boo
     }
     throw err;
   }
+}
+
+/**
+ * Render the report line for a `skip-real` name: on posix a real file/dir at
+ * `linkPath` means eject expected a symlink and found none, so it is reported
+ * as "skipped (not a symlink)". On win32 a real file/dir is the NORMAL
+ * post-copy state under the copy-sync model (see `applySharedLinksWin32` in
+ * `links.ts`); eject there is near a no-op, so it is reported as "already a
+ * real copy" instead of implying a missing symlink. Shared by both
+ * {@link previewDryRun} and {@link runLiveEject} so the two call sites cannot
+ * drift apart.
+ *
+ * @param name The managed name being reported.
+ * @returns The report line (without the `item()` dim prefix).
+ */
+function skipRealMessage(name: string): string {
+  return process.platform === 'win32'
+    ? `already a real copy (win32 copy-sync): ${name}`
+    : `skipped (not a symlink): ${name}`;
 }
 
 /**
@@ -206,7 +229,7 @@ function previewDryRun(
     if (cls === 'absent') {
       item(`skipped (absent): ${name}`);
     } else if (cls === 'skip-real') {
-      item(`skipped (not a symlink): ${name}`);
+      item(skipRealMessage(name));
     } else {
       previewMaterialize(name, linkPath, sharedRoot);
     }
@@ -273,7 +296,7 @@ function runLiveEject(
       item(`skipped (absent): ${name}`);
       skipped++;
     } else if (cls === 'skip-real') {
-      item(`skipped (not a symlink): ${name}`);
+      item(skipRealMessage(name));
       skipped++;
     } else if (materializeOneOrDie(name, linkPath, sharedRoot, done)) {
       done.push(name);

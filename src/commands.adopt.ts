@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { backupBase, claudeHome, repoHome, SHARED_LINKS, type PathMap } from './config.ts';
 import { isValidSharedDir } from './config.sharedDirs.guard.ts';
+import { copySharedLinkPull } from './links.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
@@ -79,6 +80,14 @@ function isValidAdoptName(name: string): boolean {
  * once all preconditions have passed. Extracts the mutation block so the
  * top-level function stays under the cognitive-complexity threshold.
  *
+ * The copy-into-shared, remove-source, and targeted `git add` steps are
+ * identical on every platform (copy BEFORE remove is already crash-safe on
+ * both). Only the final step differs: on posix, `ensureSymlink` recreates the
+ * symlink so `linkPath` keeps working; on win32 (no unprivileged symlink
+ * support), `copySharedLinkPull` copies `sharedTarget` back into `linkPath`
+ * as a real, deny-set-filtered copy so the host keeps a usable local
+ * counterpart under the copy-sync model.
+ *
  * @param name The validated, configured, real-directory name to adopt.
  * @param linkPath Absolute path of the source directory (`CLAUDE_HOME/<name>`).
  * @param sharedTarget Absolute path of the destination (`REPO_HOME/shared/<name>`).
@@ -100,8 +109,13 @@ function performAdoptMove(
   cpSync(linkPath, sharedTarget, { recursive: true, force: true, preserveTimestamps: true });
   rmSync(linkPath, { recursive: true, force: true });
 
-  // Recreate the symlink immediately on this host
-  ensureSymlink(linkPath, sharedTarget);
+  // Leave the host with a usable local counterpart: a real copy-back on
+  // win32 (no unprivileged symlink support), a recreated symlink elsewhere.
+  if (process.platform === 'win32') {
+    copySharedLinkPull(sharedTarget, linkPath);
+  } else {
+    ensureSymlink(linkPath, sharedTarget);
+  }
 
   // Targeted stage of shared/<name> only; never git add -A
   const rel = join('shared', name);
@@ -114,9 +128,9 @@ function performAdoptMove(
  * Bring a pre-existing `~/.claude/<name>` directory into the nomad shared set.
  *
  * Validates `name`, enforces the precondition matrix, then performs:
- * backup -> copy-into-shared -> remove-source -> recreate-symlink ->
- * targeted `git add` -> print follow-up hint. Stops there: no auto-commit,
- * no push pipeline.
+ * backup -> copy-into-shared -> remove-source -> recreate-symlink (posix) or
+ * copy-back (win32, see {@link performAdoptMove}) -> targeted `git add` ->
+ * print follow-up hint. Stops there: no auto-commit, no push pipeline.
  *
  * Accepts only already-configured names: a static SHARED_LINKS member or a
  * `sharedDirs` entry already declared in `path-map.json`. adopt is a mover,
@@ -159,13 +173,22 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const linkPath = join(claude, name);
   const sharedTarget = join(repo, 'shared', name);
 
-  // Precondition checks -- in order: absent, already symlink, would clobber
+  // Precondition checks -- in order: absent, already symlink, already
+  // adopted (win32 copy-sync), would clobber
   if (!existsSync(linkPath)) {
     log(`${name}: nothing to adopt (not present in ~/.claude/)`);
     return;
   }
   if (lstatSync(linkPath).isSymbolicLink()) {
     log(`${name}: already adopted (already a symlink)`);
+    return;
+  }
+  // win32 has no unprivileged symlink support, so a real (non-symlink) copy at
+  // linkPath IS the healthy adopted state there once shared/<name> exists.
+  // Short-circuit before the clobber guard below so re-running adopt on an
+  // already-adopted win32 name is a safe no-op, not a refused "would clobber".
+  if (process.platform === 'win32' && lexists(sharedTarget)) {
+    log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
     return;
   }
   if (lexists(sharedTarget)) {
@@ -178,6 +201,11 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     const ts = freshBackupTs(backup);
     log(`would backup: ${linkPath} -> backup/${ts}/${name}`);
     log(`would move: ${linkPath} -> shared/${name}`);
+    log(
+      process.platform === 'win32'
+        ? `would copy back: shared/${name} -> ${linkPath} (win32 copy-sync)`
+        : `would relink: ${linkPath} -> shared/${name}`,
+    );
     log(`would stage: shared/${name}`);
     return;
   }

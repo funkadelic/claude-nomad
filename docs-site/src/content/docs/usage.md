@@ -25,6 +25,12 @@ originals are preserved under that timestamped backup directory, not deleted. Pa
 `shared/<name>` is absent from the remote are left untouched, so a partial publish does not delete
 data on the destination host.
 
+On native Windows the same two-pass scan runs, but the names are materialized as real copies
+instead of symlinks (creating a symlink on Windows needs Developer Mode or admin rights); the
+backup semantics are identical. The one behavioral difference: after editing a shared file on
+Windows, run `nomad push` before your next `nomad pull` or `nomad sync` so the edit is captured
+rather than overlaid by the repo's copy. See [Windows](/claude-nomad/quickstart/#windows).
+
 If the remote has not been populated yet (you skipped `nomad init --snapshot` and `nomad push`),
 `nomad pull` is a no-op for SHARED_LINKS: there is nothing on the remote to symlink against, so
 your local `~/.claude/` files stay in place. The auto-move only triggers once the canonical state

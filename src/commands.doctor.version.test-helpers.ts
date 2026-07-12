@@ -42,7 +42,14 @@ export function mockPackageJsonVersion(
       ...actual,
       readFileSync: vi.fn(
         (path: fsModule.PathOrFileDescriptor, opts?: Parameters<typeof actual.readFileSync>[1]) => {
-          if (typeof path === 'string' && path.endsWith('/package.json')) {
+          // Check both separators: the production path is built via
+          // fileURLToPath(new URL(...)), which yields a backslash-separated
+          // path on win32, so a forward-slash-only suffix check never matches
+          // there and silently falls through to the real package.json.
+          if (
+            typeof path === 'string' &&
+            (path.endsWith('/package.json') || path.endsWith('\\package.json'))
+          ) {
             if (version === null) {
               const err = new Error('ENOENT package.json') as NodeJS.ErrnoException;
               err.code = 'ENOENT';

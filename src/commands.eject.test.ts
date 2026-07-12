@@ -17,6 +17,11 @@ import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } fr
 
 import { cmdEject, ejectChecklist, errMessage, previewMaterialize } from './commands.eject.ts';
 
+// Windows chmod only toggles the read-only attribute: a 0o500 dir still
+// accepts writes and a 0o000 file stays readable, so chmod-based
+// EACCES-injection assertions cannot hold on win32.
+const isWin = process.platform === 'win32';
+
 /**
  * Helper: create a temp directory pair (claudeHome + repoHome) for each test.
  */
@@ -160,7 +165,7 @@ describe('cmdEject', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: commands'));
   });
 
-  it('skip-real: already-real file is left untouched and reported', () => {
+  it.skipIf(isWin)('skip-real: already-real file is left untouched and reported', () => {
     const { claudeHome, repoHome } = makeTempRoots();
     const realPath = join(claudeHome, 'CLAUDE.md');
     writeFileSync(realPath, 'already real');
@@ -206,18 +211,21 @@ describe('cmdEject', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('CLAUDE.md'));
   });
 
-  it('dry-run: skip-real names are reported as not-a-symlink in dry-run output', () => {
-    const { claudeHome, repoHome } = makeTempRoots();
-    writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real');
+  it.skipIf(isWin)(
+    'dry-run: skip-real names are reported as not-a-symlink in dry-run output',
+    () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real');
 
-    cmdEject({ dryRun: true }, { claudeHome, repoHome });
+      cmdEject({ dryRun: true }, { claudeHome, repoHome });
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('skipped (not a symlink): CLAUDE.md'),
-    );
-    // File must be unchanged
-    expect(readFileSync(join(claudeHome, 'CLAUDE.md'), 'utf8')).toBe('already real');
-  });
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('skipped (not a symlink): CLAUDE.md'),
+      );
+      // File must be unchanged
+      expect(readFileSync(join(claudeHome, 'CLAUDE.md'), 'utf8')).toBe('already real');
+    },
+  );
 
   it('dry-run: logs would-materialize without mutating symlinks', () => {
     const { claudeHome, repoHome } = makeTempRoots();
@@ -335,52 +343,60 @@ describe('cmdEject', () => {
     );
   });
 
-  it('live fs fault: read-only claudeHome aborts with a FATAL naming the failed entry', () => {
-    const { claudeHome, repoHome } = makeTempRoots();
-    makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'one');
-    // Make claudeHome read-only so the sibling temp copy (cpSync) fails EACCES.
-    chmodSync(claudeHome, 0o500);
-    try {
-      expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
-      expect(errSpy).toHaveBeenCalledWith(
-        expect.stringContaining('failed to materialize CLAUDE.md'),
-      );
-      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('already materialized: (none)'));
-      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('do NOT delete'));
-      expect(exitSpy).toHaveBeenCalledWith(1);
-    } finally {
-      chmodSync(claudeHome, 0o700);
-    }
-  });
+  it.skipIf(isWin)(
+    'live fs fault: read-only claudeHome aborts with a FATAL naming the failed entry',
+    () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'one');
+      // Make claudeHome read-only so the sibling temp copy (cpSync) fails EACCES.
+      chmodSync(claudeHome, 0o500);
+      try {
+        expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining('failed to materialize CLAUDE.md'),
+        );
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining('already materialized: (none)'),
+        );
+        expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('do NOT delete'));
+        expect(exitSpy).toHaveBeenCalledWith(1);
+      } finally {
+        chmodSync(claudeHome, 0o700);
+      }
+    },
+  );
 
-  it('live fs fault: reports already-materialized names completed before the failure', () => {
-    const { claudeHome, repoHome } = makeTempRoots();
-    // Use sharedDirs to control ordering: allSharedLinks puts SHARED_LINKS
-    // first; CLAUDE.md materializes, then a later name fails. Point a later
-    // managed name at a target we make unreadable so cpSync dereference fails.
-    // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
-    const okTarget = join(repoHome, 'shared', 'CLAUDE.md');
-    writeFileSync(okTarget, 'ok');
-    symlinkSync(okTarget, join(claudeHome, 'CLAUDE.md'));
-    const badTarget = join(repoHome, 'shared', 'commands');
-    mkdirSync(badTarget, { recursive: true });
-    const badNested = join(badTarget, 'secret.md');
-    writeFileSync(badNested, 'x');
-    symlinkSync(badTarget, join(claudeHome, 'commands'));
-    chmodSync(badNested, 0o000); // unreadable; dereference copy fails
+  it.skipIf(isWin)(
+    'live fs fault: reports already-materialized names completed before the failure',
+    () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      // Use sharedDirs to control ordering: allSharedLinks puts SHARED_LINKS
+      // first; CLAUDE.md materializes, then a later name fails. Point a later
+      // managed name at a target we make unreadable so cpSync dereference fails.
+      // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
+      const okTarget = join(repoHome, 'shared', 'CLAUDE.md');
+      writeFileSync(okTarget, 'ok');
+      symlinkSync(okTarget, join(claudeHome, 'CLAUDE.md'));
+      const badTarget = join(repoHome, 'shared', 'commands');
+      mkdirSync(badTarget, { recursive: true });
+      const badNested = join(badTarget, 'secret.md');
+      writeFileSync(badNested, 'x');
+      symlinkSync(badTarget, join(claudeHome, 'commands'));
+      chmodSync(badNested, 0o000); // unreadable; dereference copy fails
 
-    try {
-      expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
-      expect(errSpy).toHaveBeenCalledWith(
-        expect.stringContaining('failed to materialize commands'),
-      );
-      expect(errSpy).toHaveBeenCalledWith(
-        expect.stringContaining('already materialized: CLAUDE.md'),
-      );
-    } finally {
-      chmodSync(badNested, 0o600);
-    }
-  });
+      try {
+        expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining('failed to materialize commands'),
+        );
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining('already materialized: CLAUDE.md'),
+        );
+      } finally {
+        chmodSync(badNested, 0o600);
+      }
+    },
+  );
 
   it('errMessage: extracts .message from Error and String-coerces non-Error throws', () => {
     expect(errMessage(new Error('boom'))).toBe('boom');
@@ -418,4 +434,71 @@ describe('cmdEject', () => {
     expect(readFileSync(join(ejected, 'README.md'), 'utf8')).toBe('# GSD');
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: get-shit-done'));
   });
+});
+
+describe('cmdEject win32 copy-sync modality', () => {
+  let logSpy: MockInstance<(msg: string) => void>;
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation((_msg: string) => undefined);
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    vi.restoreAllMocks();
+  });
+
+  it('live: a real-copy SHARED_LINKS name is reported as "already a real copy" on win32', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real (win32 copy)');
+
+    setPlatform('win32');
+    cmdEject({}, { claudeHome, repoHome });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('already a real copy (win32 copy-sync): CLAUDE.md'),
+    );
+    expect(logSpy.mock.calls.some((c) => c[0].includes('skipped (not a symlink): CLAUDE.md'))).toBe(
+      false,
+    );
+    // Unchanged, no mutation of the real file.
+    expect(readFileSync(join(claudeHome, 'CLAUDE.md'), 'utf8')).toBe('already real (win32 copy)');
+  });
+
+  it('dry-run: a real-copy SHARED_LINKS name is reported as "already a real copy" on win32', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real (win32 copy)');
+
+    setPlatform('win32');
+    cmdEject({ dryRun: true }, { claudeHome, repoHome });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('already a real copy (win32 copy-sync): CLAUDE.md'),
+    );
+    expect(logSpy.mock.calls.some((c) => c[0].includes('skipped (not a symlink): CLAUDE.md'))).toBe(
+      false,
+    );
+  });
+
+  it.skipIf(isWin)(
+    'non-win32: the same real-copy fixture still reports the posix "not a symlink" wording',
+    () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real');
+
+      // realPlatform is whatever this dev/CI host actually is (posix here); no
+      // setPlatform call, proving the win32 wording above is genuinely gated.
+      cmdEject({}, { claudeHome, repoHome });
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('skipped (not a symlink): CLAUDE.md'),
+      );
+    },
+  );
 });

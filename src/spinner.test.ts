@@ -8,10 +8,20 @@
  * candidates (mjs present = published, mjs absent = dev ts).
  */
 
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { resolveWorkerPath, startSpinner, withSpinner } from './spinner.ts';
 import type { SpinnerDeps, SpinnerWorker } from './spinner.ts';
+
+// A root-relative file URL (`file:///dist/...`) has no drive segment, which
+// `fileURLToPath` rejects on win32 ("File URL path must be absolute").
+// Building the fixture from a real absolute path via pathToFileURL produces
+// a valid file:// URL (with a drive letter) on every platform.
+const FAKE_DIST_URL = pathToFileURL(resolve('/dist/nomad.mjs')).href;
+const FAKE_SRC_URL = pathToFileURL(resolve('/src/nomad.ts')).href;
 
 // ---------------------------------------------------------------------------
 // Fake helpers
@@ -111,7 +121,7 @@ describe('resolveWorkerPath', () => {
   it('returns the .mjs sibling when existsSync returns true for it', () => {
     const result = resolveWorkerPath({
       existsSyncFn: (p) => p.endsWith('.mjs'),
-      baseUrl: 'file:///dist/nomad.mjs',
+      baseUrl: FAKE_DIST_URL,
     });
     expect(result).toMatch(/nomad\.worker\.mjs$/);
   });
@@ -119,7 +129,7 @@ describe('resolveWorkerPath', () => {
   it('returns the .ts sibling when .mjs does not exist (dev path)', () => {
     const result = resolveWorkerPath({
       existsSyncFn: () => false,
-      baseUrl: 'file:///src/nomad.ts',
+      baseUrl: FAKE_SRC_URL,
     });
     expect(result).toMatch(/spinner\.worker\.ts$/);
   });

@@ -189,6 +189,11 @@ function repoHasSharedSource(name: string): boolean {
  * shared-link path. Returns `{ line, fail }` where `fail` true means the
  * caller should set `process.exitCode = 1`.
  *
+ * A non-symlink is the copy-sync model's healthy state on win32 (no
+ * unprivileged symlink support there), so it is reported OK (`fail: false`)
+ * instead of the posix FAIL. On every other platform a non-symlink still
+ * blocks sync and FAILs, unchanged.
+ *
  * Extracted from `reportSharedLinks` to reduce cognitive complexity: the lstat
  * try/catch and the inner symlink-target try/catch each count against the
  * parent function's score.
@@ -210,6 +215,12 @@ function classifySharedLink(name: string, p: string): { line: string; fail: bool
     return { line: `${red(failGlyph)} ${name}: could not stat (${String(code)})`, fail: true };
   }
   if (!stat.isSymbolicLink()) {
+    if (process.platform === 'win32') {
+      return {
+        line: `${green(okGlyph)} ${name}: real copy (win32 copy-sync)`,
+        fail: false,
+      };
+    }
     return {
       line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync); run \`nomad adopt ${name}\` to fix`,
       fail: true,

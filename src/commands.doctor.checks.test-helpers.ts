@@ -4,7 +4,22 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { vi, type MockInstance } from 'vitest';
+import { afterAll, vi, type MockInstance } from 'vitest';
+
+// home() prefers USERPROFILE over HOME on win32 (see config.ts). The shared
+// vitest.setup.ts deletes USERPROFILE process-wide on win32, so a sandbox
+// that stamps only HOME already isolates correctly. makeDoctorEnv used to
+// ALSO set USERPROFILE to its own testHome, but that value outlived the
+// per-test rmSync teardown (only a file-level afterAll restored it), so any
+// later describe in the same file that stamped only HOME resolved home()
+// through the stale, already-deleted sandbox on win32. It now deletes
+// USERPROFILE instead, matching the setup-file convention; this afterAll
+// restores the import-time value for cross-file hygiene in a shared worker.
+const capturedUserProfile = process.env.USERPROFILE;
+afterAll(() => {
+  if (capturedUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = capturedUserProfile;
+});
 
 /** Spy handle over `console.log`, captured by `makeDoctorEnv`. */
 export type LogSpy = MockInstance<(...args: unknown[]) => void>;
@@ -32,6 +47,10 @@ export function makeDoctorEnv(opts: {
 }): Env {
   const testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
   process.env.HOME = testHome;
+  // Delete (not set) USERPROFILE so home()'s win32 branch falls through to
+  // the sandbox HOME, and no stale sandbox path can leak into later
+  // describes in the same file (see the module-level comment above).
+  delete process.env.USERPROFILE;
   if (opts.host !== undefined) process.env.NOMAD_HOST = opts.host;
   mkdirSync(join(testHome, 'claude-nomad', 'shared'), { recursive: true });
   mkdirSync(join(testHome, 'claude-nomad', 'hosts'), { recursive: true });

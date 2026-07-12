@@ -1018,3 +1018,60 @@ describe('copyExtrasOverlaySkipDiverged divergence-skip overlay copy', () => {
     expect(readFileSync(join(tmpDst, 'STATE.md'), 'utf8')).toBe('trusted local\n');
   });
 });
+
+// copyExtrasFilteredPreservingBy: repo-side dir/file type-flip guard
+// ---------------------------------------------------------------------------
+
+describe('copyExtrasFilteredPreservingBy repo-side dir/file type-flip guard', () => {
+  let tmpSrc: string;
+  let tmpDst: string;
+
+  beforeEach(() => {
+    tmpSrc = mkdtempSync(join(tmpdir(), 'nomad-core-typeflip-src-'));
+    tmpDst = mkdtempSync(join(tmpdir(), 'nomad-core-typeflip-dst-'));
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmpSrc, { recursive: true, force: true });
+    rmSync(tmpDst, { recursive: true, force: true });
+  });
+
+  it('throws NomadFatal naming --force-remote when repo src is a FILE but local dst is a directory', async () => {
+    // copySharedLinkPull feeds single-FILE sources (CLAUDE.md, my-statusline.cjs)
+    // through this primitive. Simulate the top-level type flip directly: a
+    // FILE src colliding with a pre-existing DIRECTORY dst. Without the guard,
+    // prunePreservingBy's readdirSync(dst) + lstatSync(join(src, name)) raises
+    // a raw ENOTDIR instead of an actionable message.
+    rmSync(tmpSrc, { recursive: true, force: true });
+    writeFileSync(tmpSrc, '# a file, not a directory\n');
+    mkdirSync(join(tmpDst, 'nested'), { recursive: true });
+    writeFileSync(join(tmpDst, 'nested', 'existing.md'), 'local\n');
+
+    const { copyExtrasFilteredPreservingBy } = await import('./extras-sync.core.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    expect(() => copyExtrasFilteredPreservingBy(tmpSrc, tmpDst, () => false)).toThrow(NomadFatal);
+    try {
+      copyExtrasFilteredPreservingBy(tmpSrc, tmpDst, () => false);
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain(tmpSrc);
+      expect(message).toContain(tmpDst);
+      expect(message).toContain('--force-remote');
+    }
+  });
+
+  it('same-type overlay (both directories) is unaffected by the guard', async () => {
+    writeFileSync(join(tmpSrc, 'PLAN.md'), '# plan\n');
+    writeFileSync(join(tmpDst, 'preserve-me.md'), 'local only\n');
+
+    const { copyExtrasFilteredPreservingBy } = await import('./extras-sync.core.ts');
+    expect(() =>
+      copyExtrasFilteredPreservingBy(tmpSrc, tmpDst, (name) => name === 'preserve-me.md'),
+    ).not.toThrow();
+
+    expect(existsSync(join(tmpDst, 'PLAN.md'))).toBe(true);
+    expect(existsSync(join(tmpDst, 'preserve-me.md'))).toBe(true);
+  });
+});

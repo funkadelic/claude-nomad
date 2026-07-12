@@ -3,28 +3,32 @@ import { relative } from 'node:path';
 
 import { warn } from './utils.ts';
 
-/** One parsed `--name-status` line: the status letter and the whole remainder path. */
+/** One parsed `--name-status` record: the status letter and the whole path. */
 type DiffEntry = { status: string; path: string };
 
 /**
- * Split raw `git diff --no-index --name-status` stdout into `{ status, path }`
- * entries, dropping empty lines. The remainder after the first tab is taken
- * whole so a rename/copy similarity score or a second path cannot truncate the
- * real path. Shared by `listDivergingFiles` (which labels each entry) and
- * `listDivergingModified` (which keeps the modified-both-sides subset).
+ * Split raw `git diff --no-index -z --name-status` stdout into `{ status,
+ * path }` entries. `-z` NUL-terminates every field instead of the default
+ * tab/newline format, which matters on win32: a path containing a literal
+ * backslash (every native Windows path) triggers git's C-style quoting in
+ * the default format, wrapping the whole path in double quotes and doubling
+ * each backslash, which corrupts any downstream string-prefix comparison
+ * against the same path built via `node:path`. `-z` disables that quoting
+ * entirely and returns the verbatim path, so parsing is platform-uniform.
+ * `--no-renames` (set by the caller) guarantees every record is exactly one
+ * status field followed by one path field, so a simple pairwise walk over
+ * the NUL-split fields is sufficient. Shared by `listDivergingFiles` (which
+ * labels each entry) and `listDivergingModified` (which keeps the
+ * modified-both-sides subset).
  *
  * @param stdout - The captured stdout of the diff invocation.
- * @returns One entry per non-empty diff line, status letter split from path.
+ * @returns One entry per record, status letter split from path.
  */
 function parseNameStatus(stdout: string): DiffEntry[] {
+  const fields = stdout.split('\0').filter((f) => f.length > 0);
   const entries: DiffEntry[] = [];
-  for (const line of stdout.split('\n')) {
-    if (line.length === 0) continue;
-    const tab = line.indexOf('\t');
-    /* c8 ignore start -- every --name-status line is tab-separated; a tabless line cannot occur */
-    if (tab === -1) continue;
-    /* c8 ignore stop */
-    entries.push({ status: line.slice(0, tab), path: line.slice(tab + 1) });
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    entries.push({ status: fields[i], path: fields[i + 1] });
   }
   return entries;
 }
@@ -75,17 +79,19 @@ function parseModifiedPaths(stdout: string, a: string): string[] {
 }
 
 /**
- * Run `git diff --no-index --name-status a b` and pass its stdout to `parse`.
- * The name-status flag is used (not the bare name flag) because in `--no-index`
- * mode the bare name flag prints the NEW-side name of each pair, so a file
- * present on one side only collapses to `/dev/null`. Exit 0 = identical, exit 1
- * = differences exist (read names from `e.stdout`, not an error). Missing-git
- * (ENOENT) and other git failures each surface a WARN instead of collapsing to a
- * silent empty list, so the operator can tell "no diff" (silent) apart from a
- * skipped check (the loud-doctor contract). Argv-array `execFileSync` (no shell)
- * so paths cannot inject. `--no-renames` keeps every record on the expected
- * `status<TAB>path` 2-field shape, so a rename is reported as a plain add/delete
- * pair rather than an `R<score><TAB>old<TAB>new` record the parser would mangle.
+ * Run `git diff --no-index -z --name-status a b` and pass its stdout to
+ * `parse`. The name-status flag is used (not the bare name flag) because in
+ * `--no-index` mode the bare name flag prints the NEW-side name of each pair,
+ * so a file present on one side only collapses to `/dev/null`. Exit 0 =
+ * identical, exit 1 = differences exist (read names from `e.stdout`, not an
+ * error). Missing-git (ENOENT) and other git failures each surface a WARN
+ * instead of collapsing to a silent empty list, so the operator can tell "no
+ * diff" (silent) apart from a skipped check (the loud-doctor contract).
+ * Argv-array `execFileSync` (no shell) so paths cannot inject. `--no-renames`
+ * keeps every record on the expected status/path 2-field shape, so a rename
+ * is reported as a plain add/delete pair rather than a 3-field rename record
+ * the parser would mangle. `-z` disables git's path quoting (see
+ * `parseNameStatus`) so a win32 path with backslashes round-trips verbatim.
  *
  * @param a - First path to compare (the local side, named in WARN messages).
  * @param b - Second path to compare (the repo side).
@@ -96,7 +102,7 @@ function runNameStatusDiff(a: string, b: string, parse: (stdout: string) => stri
   try {
     const stdout = execFileSync(
       'git',
-      ['diff', '--no-index', '--no-renames', '--name-status', a, b],
+      ['diff', '--no-index', '--no-renames', '-z', '--name-status', a, b],
       {
         stdio: ['ignore', 'pipe', 'pipe'],
       },

@@ -57,7 +57,10 @@ function resolveLiveTranscript(id: string, matches: string[]): string | null {
     const projects = readJson<PathMap>(mapPath).projects;
     const claude = claudeHome();
     for (const rel of matches) {
-      const logical = SHARED_PROJECT_LOGICAL.exec(rel)?.[1];
+      // matches entries come from node:path's relative() (native separator,
+      // backslash on win32); SHARED_PROJECT_LOGICAL is a forward-slash
+      // literal, so normalize before matching.
+      const logical = SHARED_PROJECT_LOGICAL.exec(rel.replaceAll('\\', '/'))?.[1];
       /* c8 ignore next -- defensive: every collectMatches path is rooted at shared/projects/<logical>/ */
       if (logical === undefined) continue;
       const abs = projects[logical]?.[HOST];

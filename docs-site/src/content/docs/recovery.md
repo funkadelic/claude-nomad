@@ -198,6 +198,9 @@ What the actions do:
 - **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root. Use this for
   confirmed false positives. The fingerprint format (`file:rule:line`) is tied to the current
   line, so if the content moves gitleaks re-prompts rather than silently suppressing a new hit.
+  The embedded path also uses the scanning host's separators, so an entry recorded on Windows
+  (backslashes) does not suppress the same finding scanned from macOS or Linux, and vice versa;
+  allow it again from the other host when that happens.
 - **Drop session** excludes this session from the current push by unstaging it from the repo's git
   index (same as `nomad drop-session <id>`). The local `~/.claude/projects/.../` transcript is
   kept intact and any running Claude session is not stopped. Not durable: the next push re-copies

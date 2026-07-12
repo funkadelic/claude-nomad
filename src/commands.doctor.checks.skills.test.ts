@@ -278,7 +278,7 @@ describe('reportSkillsDivergence git not on PATH', () => {
               // Return a diff line with a path that starts with neither base dir.
               const err = Object.assign(new Error('differ'), {
                 status: 1,
-                stdout: Buffer.from('M\t/unexpected/my-skill/FILE.md\n'),
+                stdout: Buffer.from('M\0/unexpected/my-skill/FILE.md\0'),
               });
               throw err;
             }
@@ -301,7 +301,9 @@ describe('reportSkillsDivergence git not on PATH', () => {
   it('treats git ENOENT as no divergence and emits okGlyph without throwing', async () => {
     mkdirSync(sharedSkills, { recursive: true });
     mkdirSync(localSkills, { recursive: true });
-    writeFileSync(join(localSkills, 'my-skill', 'SKILL.md').replace('/my-skill', ''), 'x');
+    // A file directly under localSkills (no skill subdir needed): the git
+    // mock throws ENOENT before any diff runs, so only existence matters.
+    writeFileSync(join(localSkills, 'SKILL.md'), 'x');
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {

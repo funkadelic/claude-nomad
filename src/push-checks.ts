@@ -20,7 +20,7 @@
 import { execFileSync } from 'node:child_process';
 import { readdirSync, rmSync, type Dirent } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
 import {
@@ -36,15 +36,21 @@ import { NomadFatal } from './utils.ts';
  *   - macOS: `brew install gitleaks`.
  *   - Linux: numbered steps (download arch-matched tarball, extract to
  *            `~/.local/bin`, optional PATH note when the dir isn't on PATH).
+ *   - win32: `winget install gitleaks.gitleaks` with a `scoop` alternative.
  *   - Other: just the release-page link.
  * Evaluated at call time so the PATH-on-rc check reflects the runtime
- * env, not the value at module load.
+ * env, not the value at module load. The PATH-membership check splits on
+ * `path.delimiter` (`;` on win32, `:` elsewhere) so it stays correct
+ * per-platform.
  */
 export function gitleaksInstallHint(): string {
   const head = 'gitleaks not on PATH (required for nomad push). Install:';
   const plat = platform();
   if (plat === 'darwin') {
     return `${head}\n  brew install gitleaks`;
+  }
+  if (plat === 'win32') {
+    return `${head}\n  winget install gitleaks.gitleaks\n  (or: scoop install gitleaks)`;
   }
   if (plat === 'linux') {
     const archMap: Record<string, string> = { x64: 'x64', arm64: 'arm64', arm: 'armv7' };
@@ -61,7 +67,7 @@ export function gitleaksInstallHint(): string {
       '       ~/.local/bin/gitleaks version   # verify',
     ];
     const localBin = `${homedir()}/.local/bin`;
-    const paths = (process.env.PATH ?? '').split(':');
+    const paths = (process.env.PATH ?? '').split(delimiter);
     if (!paths.includes(localBin)) {
       lines.push(
         '  3. ~/.local/bin is not on PATH; add to your shell rc:',

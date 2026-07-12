@@ -11,12 +11,19 @@ import {
 } from './commands.push.test-helpers.ts';
 
 import type * as childProcessModule from 'node:child_process';
+import type * as linksModule from './links.ts';
 import type * as pushChecksModule from './push-checks.ts';
 import type * as pushAllowlistModule from './commands.push.allowlist.ts';
 import type * as pushGlobalConfigModule from './push-global-config.ts';
 import type * as leakVerdictModule from './push-leak-verdict.ts';
 import type * as pushManifestModule from './push-manifest.ts';
 import type * as utilsModule from './utils.ts';
+
+// A "posix (non-win32)" sanity test below deliberately does not override
+// process.platform, relying on the host actually being posix to prove the
+// win32 mirror above it is genuinely gated. On a real win32 runner the host
+// IS win32, so that assumption is false by construction there; skip it.
+const isWin = process.platform === 'win32';
 
 // ---------------------------------------------------------------------------
 // cmdPush: defense-in-depth mutual-exclusivity guard
@@ -719,6 +726,217 @@ describe('cmdPush: skills pipeline integration', () => {
     // gsd-* excluded from shared/skills.
     expect(existsSync(join(sharedSkills, 'gsd-foo'))).toBe(false);
   });
+});
+
+// ---------------------------------------------------------------------------
+// cmdPush: win32 shared-links push mirror integration (syncSharedLinksPush
+// wired next to syncSkillsPush, real-push-only, no-op on posix)
+// ---------------------------------------------------------------------------
+
+describe('cmdPush: shared-links push mirror integration', () => {
+  let env: PushEnv;
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    teardownPushEnv(env);
+  });
+
+  it('WET push on win32: real syncSharedLinksPush mirrors a local edit into shared/ before the "nothing to commit" short-circuit', async () => {
+    // End-to-end with the real (unmocked) syncSharedLinksPush: a win32 local
+    // edit at ~/.claude/CLAUDE.md is mirrored into shared/CLAUDE.md by the
+    // time cmdPush reaches its status snapshot, mirroring the existing "real
+    // syncSkillsPush" integration test's shape.
+    writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# win32 local edit\n');
+    setPlatform('win32');
+
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPull: vi.fn(),
+      syncSkillsPush: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    expect(readFileSync(join(env.repoUnderHome, 'shared', 'CLAUDE.md'), 'utf8')).toBe(
+      '# win32 local edit\n',
+    );
+  });
+
+  it('dry-run push: syncSharedLinksPush is NOT called (zero-mutation contract)', async () => {
+    const syncSharedLinksPushMock = vi.fn();
+    setPlatform('win32');
+    vi.doMock('./links.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksModule>();
+      return { ...actual, syncSharedLinksPush: syncSharedLinksPushMock };
+    });
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPull: vi.fn(),
+      syncSkillsPush: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush({ dryRun: true })).resolves.toBeUndefined();
+
+    expect(syncSharedLinksPushMock).not.toHaveBeenCalled();
+  });
+
+  it('WET push: syncSharedLinksPush is called after syncSkillsPush and before the gitlink walk (call order)', async () => {
+    const callOrder: string[] = [];
+    setPlatform('win32');
+    vi.doMock('./links.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksModule>();
+      return {
+        ...actual,
+        syncSharedLinksPush: vi.fn(() => {
+          callOrder.push('syncSharedLinksPush');
+        }),
+      };
+    });
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => {
+          callOrder.push('findGitlinks');
+          return [];
+        }),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => {
+        callOrder.push('remapExtrasPush');
+        return { unmapped: 0, skipped: 0, pushed: [], wouldPush: [] };
+      }),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPull: vi.fn(),
+      syncSkillsPush: vi.fn(() => {
+        callOrder.push('syncSkillsPush');
+      }),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    expect(callOrder).toEqual([
+      'remapExtrasPush',
+      'syncSkillsPush',
+      'syncSharedLinksPush',
+      'findGitlinks',
+    ]);
+  });
+
+  it.skipIf(isWin)(
+    'WET push on posix (non-win32): real syncSharedLinksPush no-ops, shared/CLAUDE.md is not created',
+    async () => {
+      // Sanity: the same local edit as the win32 test above, but with no
+      // platform override (the default test-runner posix platform). Proves the
+      // mirror is genuinely gated on process.platform, not always-on.
+      writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# posix local edit\n');
+
+      vi.doMock('./push-checks.ts', async (importOriginal) => {
+        const actual = await importOriginal<typeof pushChecksModule>();
+        return {
+          ...actual,
+          probeGitleaks: vi.fn(() => 'v8.18.2'),
+          rebaseBeforePush: vi.fn(),
+          findGitlinks: vi.fn(() => []),
+        };
+      });
+      vi.doMock('./remap.ts', () => ({
+        remapPull: vi.fn(),
+        remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+      }));
+      vi.doMock('./extras-sync.ts', () => ({
+        remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+        remapExtrasPull: vi.fn(),
+        divergenceCheckExtras: vi.fn(),
+      }));
+      vi.doMock('./skills-sync.ts', () => ({
+        syncSkillsPull: vi.fn(),
+        syncSkillsPush: vi.fn(),
+      }));
+      vi.doMock('./utils.ts', async (importOriginal) => {
+        const actual = await importOriginal<typeof utilsModule>();
+        return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+      });
+
+      const { cmdPush } = await import('./commands.push.ts');
+      await expect(cmdPush()).resolves.toBeUndefined();
+
+      expect(existsSync(join(env.repoUnderHome, 'shared', 'CLAUDE.md'))).toBe(false);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
