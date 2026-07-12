@@ -496,6 +496,19 @@ function prunePreservingBy(src: string, dst: string, isPreserved: (name: string)
  * wholesale before the copy. Passes `verbatimSymlinks: true` (see nodejs/node
  * issue 41693).
  *
+ * If `dst` already exists as a directory but `src` is a FILE (a repo-side
+ * dir/file type flip), `prunePreservingBy` would `readdirSync(dst)` then
+ * `lstatSync(join(src, name))`, and joining a filename onto a file path
+ * raises a raw `ENOTDIR` instead of the intended "absent from src" no-entry
+ * case. That is guarded here up front: a file-src / directory-dst mismatch is
+ * converted into an actionable `NomadFatal` naming both paths and pointing at
+ * `nomad pull --force-remote`, mirroring the `cpSyncGuarded` type-collision
+ * convention, instead of letting the raw fs error abort `cmdPull`
+ * mid-mutation. The reverse mismatch (directory `src`, file `dst`) is not
+ * affected by that `ENOTDIR` failure mode; it already falls through to the
+ * existing `rmSync(dst, ...)` branch below, which safely clears the file so
+ * `cpSync` can recreate it as a directory.
+ *
  * @param src - Source directory to copy from (repo side on pull).
  * @param dst - Destination path (host-side dir on pull).
  * @param isPreserved - Returns `true` for a basename that must be preserved in
@@ -508,8 +521,19 @@ export function copyExtrasFilteredPreservingBy(
 ): void {
   const dstStat = lstatSync(dst, { throwIfNoEntry: false });
   if (dstStat !== undefined) {
-    if (dstStat.isDirectory()) prunePreservingBy(src, dst, isPreserved);
-    else rmSync(dst, { recursive: true, force: true });
+    if (dstStat.isDirectory()) {
+      const srcStat = lstatSync(src, { throwIfNoEntry: false });
+      if (srcStat !== undefined && !srcStat.isDirectory()) {
+        throw new NomadFatal(
+          `copyExtrasFilteredPreservingBy: type mismatch copying ${JSON.stringify(src)} -> ` +
+            `${JSON.stringify(dst)}: the repo entry is a file but the local entry is a ` +
+            `directory; run nomad pull --force-remote to recover`,
+        );
+      }
+      prunePreservingBy(src, dst, isPreserved);
+    } else {
+      rmSync(dst, { recursive: true, force: true });
+    }
   }
   stripCollidingDstSymlinks(src, dst, isPreserved);
   cpSync(src, dst, {
