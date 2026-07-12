@@ -694,6 +694,34 @@ describe('applySharedLinks win32 copy branch', () => {
     expect(readFileSync(join(commandsDir, 'foo.md'), 'utf8')).toBe('# shared command\n');
   });
 
+  it('backs up prior real-copy content before overwriting on win32 (non-symlink destructive path)', async () => {
+    // A real (non-symlink) file already occupies the link path -- the normal
+    // post-copy state on win32. The overlay must snapshot it via
+    // backupBeforeWrite BEFORE copySharedLinkPull overwrites it, so an
+    // unpushed local edit is recoverable.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new shared content\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# prior real-copy content\n');
+
+    setPlatform('win32');
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260701-000007', { projects: {} });
+
+    const claudeMd = join(claudeDir, 'CLAUDE.md');
+    expect(lstatSync(claudeMd).isSymbolicLink()).toBe(false);
+    expect(readFileSync(claudeMd, 'utf8')).toBe('# new shared content\n');
+
+    const backupFile = join(
+      testHome,
+      '.cache',
+      'claude-nomad',
+      'backup',
+      '20260701-000007',
+      'CLAUDE.md',
+    );
+    expect(existsSync(backupFile)).toBe(true);
+    expect(readFileSync(backupFile, 'utf8')).toBe('# prior real-copy content\n');
+  });
+
   it('migrates a symlink-era leftover: backs it up and replaces it with a real copy on win32', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
     const linkPath = join(claudeDir, 'CLAUDE.md');

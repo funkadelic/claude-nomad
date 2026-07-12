@@ -135,15 +135,18 @@ export function copySharedLinkPull(src: string, dst: string): void {
  * `nomad push`, the same semantics `skills/` already has.
  *
  * Skips a name entirely when the repo has no `shared/<name>` counterpart
- * (mirrors the posix skip-when-no-counterpart behavior). When `linkPath` is a
- * live symlink (a symlink-era leftover from before this branch existed, or a
- * host that previously shared `~/.claude` with a symlink-capable OS), it is
- * backed up and removed before the copy, mirroring `syncSkillsPull`'s
- * migration guard. A real, non-symlink `linkPath` is the normal post-copy
- * state on win32 and is simply overwritten by the copy; it is NOT routed
- * through `runAutoMovePasses` (that pass is posix-only and would wrongly treat
- * every already-copied file as a conflict to migrate on every subsequent
- * pull).
+ * (mirrors the posix skip-when-no-counterpart behavior). Any pre-existing
+ * entry at `linkPath` is snapshotted via `backupBeforeWrite` before the
+ * destructive overlay, so an unpushed local edit is always recoverable from
+ * the backup dir: when `linkPath` is a live symlink (a symlink-era leftover
+ * from before this branch existed, or a host that previously shared
+ * `~/.claude` with a symlink-capable OS), it is backed up and removed before
+ * the copy, mirroring `syncSkillsPull`'s migration guard; when `linkPath` is a
+ * real, non-symlink entry (the normal post-copy state on win32), it is backed
+ * up and then simply overwritten by the copy (no rm needed, `cpSync` inside
+ * `copySharedLinkPull` handles the overwrite). It is NOT routed through
+ * `runAutoMovePasses` (that pass is posix-only and would wrongly treat every
+ * already-copied file as a conflict to migrate on every subsequent pull).
  *
  * Kept as a separate function (rather than inlined into `applySharedLinks`)
  * so the win32 loop body stays flat under the cognitive-complexity gate.
@@ -172,9 +175,11 @@ function applySharedLinksWin32(
       continue;
     }
     const stat = lstatSync(linkPath, { throwIfNoEntry: false });
-    if (stat?.isSymbolicLink() === true) {
+    if (stat !== undefined) {
       backupBeforeWrite(linkPath, ts);
-      rmSync(linkPath, { recursive: true, force: true });
+      if (stat.isSymbolicLink()) {
+        rmSync(linkPath, { recursive: true, force: true });
+      }
     }
     copySharedLinkPull(target, linkPath);
   }
