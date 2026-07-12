@@ -142,9 +142,12 @@ A few Windows-specific things worth knowing:
 - **Shared config is copied, not symlinked.** On macOS and Linux, files like `CLAUDE.md` and your
   skills live in the sync repo and are symlinked into `~/.claude/`, so there is one source of truth
   on disk. Creating a symlink on Windows needs Developer Mode or admin rights, so on Windows these
-  are real copies instead. What this means for you: an edit to a shared file on Windows is captured
-  at your next `nomad push`, not instantly the way a symlinked edit is picked up on macOS/Linux.
-  This is the same behavior claude-nomad's `skills/` sync already has on every platform.
+  are real copies instead. What this means for you: after editing a shared file on Windows, run
+  `nomad push` before your next `nomad pull` or `nomad sync`. `nomad sync` always pulls first, and
+  the pull half overlays the repo's copy onto yours (the prior content is snapshotted to the backup
+  dir first, so it is recoverable, but it is still reverted in place); pushing first is what
+  actually captures your edit. This is the same behavior claude-nomad's `skills/` sync already has
+  on every platform.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
   macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the
