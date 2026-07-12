@@ -79,6 +79,26 @@ describe('reportCrlfGuardCheck', () => {
     expect(s.items[0]).toContain('actively converting');
   });
 
+  it('emits a WARN row conveying explicit-disabled guarding when autocrlf is false, without saying unset', () => {
+    const run: SpawnSyncFn = () => Buffer.from('false\n');
+    const s = section('Environment');
+    reportCrlfGuardCheck(s, run);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain(warnGlyph);
+    expect(s.items[0]).toContain('core.autocrlf=false');
+    expect(s.items[0]).not.toContain('unset');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('emits a WARN row conveying latent risk when the probe returns a value other than true/input/false', () => {
+    const run: SpawnSyncFn = () => Buffer.from('garbage\n');
+    const s = section('Environment');
+    reportCrlfGuardCheck(s, run);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain(warnGlyph);
+    expect(s.items[0]).toContain('latent risk');
+  });
+
   it('emits a WARN row conveying latent risk when the guard is absent and the config probe throws', () => {
     const run: SpawnSyncFn = () => {
       throw Object.assign(new Error('exit 1'), { code: 1 });

@@ -57,14 +57,16 @@ function hasGitattributesGuard(repo: string): boolean {
 }
 
 /** Classification of the probed `core.autocrlf` value. */
-type AutocrlfVerdict = 'active' | 'unset';
+type AutocrlfVerdict = 'active' | 'unset' | 'disabled';
 
 /**
  * Probe `git -C <repo> config core.autocrlf` via the injected runner and
  * classify the result. A trimmed value of `true` or `input` means git is
- * actively converting line endings on checkout right now (`active`); an
- * unset key, any other value, or a thrown probe (e.g. not a git repo) reads
- * as `unset` (a latent risk, nothing converting yet). Never throws.
+ * actively converting line endings on checkout right now (`active`); a
+ * trimmed value of `false` means the host is explicitly guarded already
+ * (`disabled`); an unset key, any other value, or a thrown probe (e.g. not a
+ * git repo) reads as `unset` (a latent risk, nothing converting yet or
+ * known). Never throws.
  *
  * @param repo - Absolute path to the sync repo root.
  * @param run - Injectable subprocess runner.
@@ -77,7 +79,9 @@ function probeAutocrlf(repo: string, run: SpawnSyncFn): AutocrlfVerdict {
     })
       .toString()
       .trim();
-    return out === 'true' || out === 'input' ? 'active' : 'unset';
+    if (out === 'true' || out === 'input') return 'active';
+    if (out === 'false') return 'disabled';
+    return 'unset';
   } catch {
     return 'unset';
   }
@@ -86,9 +90,11 @@ function probeAutocrlf(repo: string, run: SpawnSyncFn): AutocrlfVerdict {
 /**
  * Emit the WARN row for an exposed REPO_HOME (guard absent). Wording differs
  * by verdict: active conversion (checkout is rewriting line endings right
- * now) versus a latent missing-guard risk (nothing converting yet, but
- * nothing stopping it either). Both variants append the same remediation
- * hint naming the two fixes and the REPO_HOME path.
+ * now), an explicit `core.autocrlf=false` on this host (this host is already
+ * guarded, but no `.gitattributes` means other hosts are not), or a latent
+ * missing-guard risk (nothing converting yet, but nothing stopping it
+ * either, and the config state is unknown). All variants append the same
+ * remediation hint naming the two fixes and the REPO_HOME path.
  *
  * @param section - The section to append the row to.
  * @param repo - Absolute path to the sync repo root (named in the hint).
@@ -98,7 +104,9 @@ function addExposedRow(section: DoctorSection, repo: string, verdict: AutocrlfVe
   const risk =
     verdict === 'active'
       ? 'core.autocrlf is actively converting line endings on checkout'
-      : 'no .gitattributes guard and core.autocrlf is unset (latent risk)';
+      : verdict === 'disabled'
+        ? 'guarded on this host by core.autocrlf=false, but no .gitattributes to protect other hosts'
+        : 'no .gitattributes guard and core.autocrlf is unset (latent risk)';
   const remediation = `add a .gitattributes with a \`* -text\` line, or run \`git config core.autocrlf false\`, in ${repo}`;
   addItem(section, `${yellow(warnGlyph)} CRLF guard: ${risk}; ${remediation}`);
 }
