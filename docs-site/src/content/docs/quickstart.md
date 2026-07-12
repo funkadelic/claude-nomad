@@ -66,6 +66,55 @@ export NOMAD_HOST=<your-host-label>   # add to ~/.zshrc or ~/.bashrc
 $ nomad pull
 ```
 
+## Windows
+
+claude-nomad also runs natively on Windows, no WSL required (WSL2 still works fine too, if you
+prefer it). The steps are the same as [First host](#first-host-once-ever) and
+[Each additional host](#each-additional-host) above, with a couple of PowerShell-specific swaps:
+
+```powershell
+# 1. Install the CLI.
+> npm i -g claude-nomad
+
+# 2. Create your private sync repo and scaffold it.
+> nomad init
+
+# 3. Add a stable host label. PowerShell has no ~/.bashrc equivalent, so set it
+#    as a persistent user environment variable instead, then restart your
+#    terminal so the new value is picked up.
+> [System.Environment]::SetEnvironmentVariable('NOMAD_HOST', '<your-host-label>', 'User')
+
+# 4. Publish the scaffold to your private repo.
+> nomad push
+```
+
+A few Windows-specific things worth knowing:
+
+- **Installing gitleaks:** `winget install gitleaks.gitleaks` (or `scoop install gitleaks` if you
+  use Scoop). `nomad doctor` prints the same hint whenever gitleaks is missing from PATH.
+- **Shared config is copied, not symlinked.** On macOS and Linux, files like `CLAUDE.md` and your
+  skills live in the sync repo and are symlinked into `~/.claude/`, so there is one source of truth
+  on disk. Creating a symlink on Windows needs Developer Mode or admin rights, so on Windows these
+  are real copies instead. What this means for you: an edit to a shared file on Windows is captured
+  at your next `nomad push`, not instantly the way a symlinked edit is picked up on macOS/Linux.
+  This is the same behavior claude-nomad's `skills/` sync already has on every platform.
+- **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
+  finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
+  macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the
+  identical finding can reappear as "new" the first time it is scanned from a macOS/Linux host, and
+  the same happens in reverse. This is a known gitleaks limitation, not a claude-nomad bug; just
+  allow it again from the other host.
+- **Deep session paths and Windows's path-length limit.** `nomad doctor` checks `git config
+  core.longpaths` and the Windows `LongPathsEnabled` registry value, and warns if either is off.
+  Turning both on avoids problems with Windows's classic 260-character path limit, which a deeply
+  nested project's encoded session path can otherwise exceed.
+- **Line endings stay put.** A fresh `nomad init` writes a `.gitattributes` with `* -text`, so Git
+  never converts line endings between hosts. If you are joining a sync repo created before this file
+  existed, add that one line from any host (or watch for the `nomad doctor` warning that nudges
+  you), otherwise a Windows checkout with the common `core.autocrlf=true` Git default would rewrite
+  every text file's line endings, and every host would then see the whole tree as permanently
+  changed.
+
 ## Privacy by default
 
 Your private sync repo must stay private. Session transcripts contain the full text of your
