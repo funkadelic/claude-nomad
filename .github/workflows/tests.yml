@@ -59,6 +59,9 @@ jobs:
       # are passed via env: so they only enter the shell as quoted vars.
       - name: Decide whether to run heavy steps
         id: gate
+        # windows-latest defaults run: steps to pwsh, which hard-parse-errors
+        # on this bash script; pin Git Bash explicitly (no-op on ubuntu-latest).
+        shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
