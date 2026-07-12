@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,15 +31,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const COLOR_TS = join(HERE, 'color.ts');
+// A raw Windows absolute path (e.g. D:\a\...\color.ts) is not a valid ESM
+// import specifier: node's default loader throws ERR_UNSUPPORTED_ESM_URL_SCHEME
+// ("On Windows, absolute paths must be valid file:// URLs"). pathToFileURL
+// converts the native path into a file:// URL on every platform, which is a
+// valid specifier on both win32 and posix.
+const COLOR_TS_URL = pathToFileURL(COLOR_TS).href;
 
 /**
  * Spawn a fresh Node subprocess that imports `red` from `color.ts` and writes
  * `red(input)` to stdout. Used to test FORCE_COLOR / NO_COLOR behavior with
- * a clean module load — `vi.resetModules()` can't re-evaluate picocolors'
+ * a clean module load, since `vi.resetModules()` can't re-evaluate picocolors'
  * load-time `isColorSupported` cache from within the same process.
  */
 function spawnRed(input: string, env: NodeJS.ProcessEnv): string {
-  const script = `import { red } from ${JSON.stringify(COLOR_TS)}; process.stdout.write(red(${JSON.stringify(input)}));`;
+  const script = `import { red } from ${JSON.stringify(COLOR_TS_URL)}; process.stdout.write(red(${JSON.stringify(input)}));`;
   return execFileSync('node', ['--experimental-strip-types', '--input-type=module', '-e', script], {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -122,7 +128,7 @@ describe('color helpers (src/color.ts)', () => {
     delete env.FORCE_COLOR;
     env.NO_COLOR = '1';
     const script = `
-      import * as c from ${JSON.stringify(COLOR_TS)};
+      import * as c from ${JSON.stringify(COLOR_TS_URL)};
       const names = ['red','yellow','green','cyan','blue','dim','bold'];
       const out = names.map(n => c[n]('X')).join(',');
       process.stdout.write(out);
@@ -179,7 +185,7 @@ describe('color helpers (src/color.ts)', () => {
     delete env.NO_COLOR;
     delete env.FORCE_COLOR;
     const script = `
-      import { okGlyph, failGlyph } from ${JSON.stringify(COLOR_TS)};
+      import { okGlyph, failGlyph } from ${JSON.stringify(COLOR_TS_URL)};
       process.stdout.write(JSON.stringify({ ok: okGlyph, fail: failGlyph }));
     `;
     const got = execFileSync(
@@ -199,7 +205,7 @@ describe('color helpers (src/color.ts)', () => {
     delete env.NO_COLOR;
     delete env.FORCE_COLOR;
     const script = `
-      import { okGlyph, failGlyph } from ${JSON.stringify(COLOR_TS)};
+      import { okGlyph, failGlyph } from ${JSON.stringify(COLOR_TS_URL)};
       process.stdout.write(JSON.stringify({ ok: okGlyph, fail: failGlyph }));
     `;
     const got = execFileSync(
