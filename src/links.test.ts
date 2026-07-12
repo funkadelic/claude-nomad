@@ -18,6 +18,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALWAYS_NEVER_SYNC, isDeniedName } from './config.ts';
 import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 
+// Posix-only assertions (symlink creation) throughout this file assume the
+// process is genuinely running on a non-win32 host. On a real win32 runner,
+// applySharedLinks/syncSharedLinksPush take the copy-sync branch for real
+// (process.platform is not mocked in these cases), so these tests are
+// skipped there; the win32 behavior itself is covered separately by the
+// describe blocks that explicitly override process.platform.
+const isWin = process.platform === 'win32';
+
 // Wave-0 gap (63-04 Task 1): the win32 copy-sync branch of applySharedLinks
 // wires SHARED_LINKS names (which include FILE entries like CLAUDE.md, not
 // only directories) through copyExtrasFilteredPreservingBy. No existing test
@@ -415,33 +423,36 @@ describe('applySharedLinks auto-move', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('backs up a pre-existing real DIR and replaces it with a symlink in one call (commands)', async () => {
-    // skills is no longer in SHARED_LINKS (copy-synced via syncSkillsPull/Push); use commands instead.
-    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
-    writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
-    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
-    writeFileSync(join(claudeDir, 'commands', 'preexisting.md'), '# local content\n');
+  it.skipIf(isWin)(
+    'backs up a pre-existing real DIR and replaces it with a symlink in one call (commands)',
+    async () => {
+      // skills is no longer in SHARED_LINKS (copy-synced via syncSkillsPull/Push); use commands instead.
+      mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+      writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+      mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+      writeFileSync(join(claudeDir, 'commands', 'preexisting.md'), '# local content\n');
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {} });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {} });
 
-    const backupFile = join(
-      testHome,
-      '.cache',
-      'claude-nomad',
-      'backup',
-      '20260516-000000',
-      'commands',
-      'preexisting.md',
-    );
-    expect(existsSync(backupFile)).toBe(true);
-    expect(readFileSync(backupFile, 'utf8')).toBe('# local content\n');
+      const backupFile = join(
+        testHome,
+        '.cache',
+        'claude-nomad',
+        'backup',
+        '20260516-000000',
+        'commands',
+        'preexisting.md',
+      );
+      expect(existsSync(backupFile)).toBe(true);
+      expect(readFileSync(backupFile, 'utf8')).toBe('# local content\n');
 
-    const linkPath = join(claudeDir, 'commands');
-    const linkStat = lstatSync(linkPath);
-    expect(linkStat.isSymbolicLink()).toBe(true);
-    expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'commands'));
-  });
+      const linkPath = join(claudeDir, 'commands');
+      const linkStat = lstatSync(linkPath);
+      expect(linkStat.isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'commands'));
+    },
+  );
 
   it('does NOT create a symlink for skills (copy-synced, dropped from SHARED_LINKS)', async () => {
     // skills was removed from SHARED_LINKS; applySharedLinks must leave a pre-existing
@@ -527,114 +538,128 @@ describe('applySharedLinks auto-move', () => {
     expect(existsSync(backupHooks)).toBe(false);
   });
 
-  it('backs up a pre-existing real FILE (CLAUDE.md) and replaces it with a symlink', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+  it.skipIf(isWin)(
+    'backs up a pre-existing real FILE (CLAUDE.md) and replaces it with a symlink',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {} });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {} });
 
-    const backupFile = join(
-      testHome,
-      '.cache',
-      'claude-nomad',
-      'backup',
-      '20260516-000000',
-      'CLAUDE.md',
-    );
-    expect(existsSync(backupFile)).toBe(true);
-    expect(readFileSync(backupFile, 'utf8')).toBe('# old\n');
+      const backupFile = join(
+        testHome,
+        '.cache',
+        'claude-nomad',
+        'backup',
+        '20260516-000000',
+        'CLAUDE.md',
+      );
+      expect(existsSync(backupFile)).toBe(true);
+      expect(readFileSync(backupFile, 'utf8')).toBe('# old\n');
 
-    const linkPath = join(claudeDir, 'CLAUDE.md');
-    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'CLAUDE.md'));
-  });
+      const linkPath = join(claudeDir, 'CLAUDE.md');
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'CLAUDE.md'));
+    },
+  );
 
-  it('leaves pre-existing CORRECT symlinks alone and creates no backup (idempotent)', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
-    const sharedTarget = join(sharedDir, 'CLAUDE.md');
-    const linkPath = join(claudeDir, 'CLAUDE.md');
-    symlinkSync(sharedTarget, linkPath);
+  it.skipIf(isWin)(
+    'leaves pre-existing CORRECT symlinks alone and creates no backup (idempotent)',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      const sharedTarget = join(sharedDir, 'CLAUDE.md');
+      const linkPath = join(claudeDir, 'CLAUDE.md');
+      symlinkSync(sharedTarget, linkPath);
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {} });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {} });
 
-    const backupFile = join(
-      testHome,
-      '.cache',
-      'claude-nomad',
-      'backup',
-      '20260516-000000',
-      'CLAUDE.md',
-    );
-    expect(existsSync(backupFile)).toBe(false);
-    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(linkPath)).toBe(sharedTarget);
-  });
+      const backupFile = join(
+        testHome,
+        '.cache',
+        'claude-nomad',
+        'backup',
+        '20260516-000000',
+        'CLAUDE.md',
+      );
+      expect(existsSync(backupFile)).toBe(false);
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkPath)).toBe(sharedTarget);
+    },
+  );
 
-  it('leaves local SHARED_LINK content alone when repo has no counterpart', async () => {
-    // shared/commands/ does NOT exist in the repo. ~/.claude/commands/ has
-    // local content. Pre-fix, the first loop would back up and delete the
-    // local dir; the second loop would NOT recreate it. Post-fix, both loops
-    // skip names without a repo counterpart so the local dir survives.
-    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
-    writeFileSync(join(claudeDir, 'commands', 'local-only.md'), '# local-only\n');
-    // Sanity: at least one OTHER shared link MUST be a real symlinkable
-    // target so the function does something on the happy paths. Writing
-    // shared/CLAUDE.md so the test does not regress to a no-op.
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+  it.skipIf(isWin)(
+    'leaves local SHARED_LINK content alone when repo has no counterpart',
+    async () => {
+      // shared/commands/ does NOT exist in the repo. ~/.claude/commands/ has
+      // local content. Pre-fix, the first loop would back up and delete the
+      // local dir; the second loop would NOT recreate it. Post-fix, both loops
+      // skip names without a repo counterpart so the local dir survives.
+      mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+      writeFileSync(join(claudeDir, 'commands', 'local-only.md'), '# local-only\n');
+      // Sanity: at least one OTHER shared link MUST be a real symlinkable
+      // target so the function does something on the happy paths. Writing
+      // shared/CLAUDE.md so the test does not regress to a no-op.
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {} });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {} });
 
-    expect(existsSync(join(claudeDir, 'commands', 'local-only.md'))).toBe(true);
-    expect(readFileSync(join(claudeDir, 'commands', 'local-only.md'), 'utf8')).toBe(
-      '# local-only\n',
-    );
-    expect(lstatSync(join(claudeDir, 'commands')).isDirectory()).toBe(true);
-    expect(lstatSync(join(claudeDir, 'commands')).isSymbolicLink()).toBe(false);
-    // CLAUDE.md is still symlinked as expected.
-    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
-    // And no backup of commands/ was made (since we never touched it).
-    const backupCommands = join(
-      testHome,
-      '.cache',
-      'claude-nomad',
-      'backup',
-      '20260516-000000',
-      'commands',
-    );
-    expect(existsSync(backupCommands)).toBe(false);
-  });
+      expect(existsSync(join(claudeDir, 'commands', 'local-only.md'))).toBe(true);
+      expect(readFileSync(join(claudeDir, 'commands', 'local-only.md'), 'utf8')).toBe(
+        '# local-only\n',
+      );
+      expect(lstatSync(join(claudeDir, 'commands')).isDirectory()).toBe(true);
+      expect(lstatSync(join(claudeDir, 'commands')).isSymbolicLink()).toBe(false);
+      // CLAUDE.md is still symlinked as expected.
+      expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+      // And no backup of commands/ was made (since we never touched it).
+      const backupCommands = join(
+        testHome,
+        '.cache',
+        'claude-nomad',
+        'backup',
+        '20260516-000000',
+        'commands',
+      );
+      expect(existsSync(backupCommands)).toBe(false);
+    },
+  );
 
-  it('handles multiple non-symlink conflicts in a single pass (rules + commands)', async () => {
-    // skills is no longer in SHARED_LINKS; use rules + commands to cover the multi-conflict path.
-    mkdirSync(join(sharedDir, 'rules'), { recursive: true });
-    writeFileSync(join(sharedDir, 'rules', 's.md'), '# shared rules\n');
-    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
-    writeFileSync(join(sharedDir, 'commands', 'c.md'), '# shared c\n');
+  it.skipIf(isWin)(
+    'handles multiple non-symlink conflicts in a single pass (rules + commands)',
+    async () => {
+      // skills is no longer in SHARED_LINKS; use rules + commands to cover the multi-conflict path.
+      mkdirSync(join(sharedDir, 'rules'), { recursive: true });
+      writeFileSync(join(sharedDir, 'rules', 's.md'), '# shared rules\n');
+      mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+      writeFileSync(join(sharedDir, 'commands', 'c.md'), '# shared c\n');
 
-    mkdirSync(join(claudeDir, 'rules'), { recursive: true });
-    writeFileSync(join(claudeDir, 'rules', 'bar.md'), '# local rules\n');
-    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
-    writeFileSync(join(claudeDir, 'commands', 'baz.md'), '# local commands\n');
+      mkdirSync(join(claudeDir, 'rules'), { recursive: true });
+      writeFileSync(join(claudeDir, 'rules', 'bar.md'), '# local rules\n');
+      mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+      writeFileSync(join(claudeDir, 'commands', 'baz.md'), '# local commands\n');
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {} });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {} });
 
-    const rulesLink = join(claudeDir, 'rules');
-    const commandsLink = join(claudeDir, 'commands');
-    expect(lstatSync(rulesLink).isSymbolicLink()).toBe(true);
-    expect(lstatSync(commandsLink).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(rulesLink)).toBe(join(sharedDir, 'rules'));
-    expect(readlinkSync(commandsLink)).toBe(join(sharedDir, 'commands'));
+      const rulesLink = join(claudeDir, 'rules');
+      const commandsLink = join(claudeDir, 'commands');
+      expect(lstatSync(rulesLink).isSymbolicLink()).toBe(true);
+      expect(lstatSync(commandsLink).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(rulesLink)).toBe(join(sharedDir, 'rules'));
+      expect(readlinkSync(commandsLink)).toBe(join(sharedDir, 'commands'));
 
-    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
-    expect(existsSync(join(backupRoot, 'rules', 'bar.md'))).toBe(true);
-    expect(existsSync(join(backupRoot, 'commands', 'baz.md'))).toBe(true);
-    expect(readFileSync(join(backupRoot, 'rules', 'bar.md'), 'utf8')).toBe('# local rules\n');
-    expect(readFileSync(join(backupRoot, 'commands', 'baz.md'), 'utf8')).toBe('# local commands\n');
-  });
+      const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
+      expect(existsSync(join(backupRoot, 'rules', 'bar.md'))).toBe(true);
+      expect(existsSync(join(backupRoot, 'commands', 'baz.md'))).toBe(true);
+      expect(readFileSync(join(backupRoot, 'rules', 'bar.md'), 'utf8')).toBe('# local rules\n');
+      expect(readFileSync(join(backupRoot, 'commands', 'baz.md'), 'utf8')).toBe(
+        '# local commands\n',
+      );
+    },
+  );
 });
 
 describe('applySharedLinks win32 copy branch', () => {
@@ -763,15 +788,18 @@ describe('applySharedLinks win32 copy branch', () => {
     );
   });
 
-  it('does not create a symlink; posix host in the same run still symlinks unchanged', async () => {
-    // Sanity: on a non-win32 stub the same setup still produces a symlink,
-    // proving the win32 branch above is genuinely gated on process.platform
-    // and not a global behavior change.
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260701-000003', { projects: {} });
-    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
-  });
+  it.skipIf(isWin)(
+    'does not create a symlink; posix host in the same run still symlinks unchanged',
+    async () => {
+      // Sanity: on a non-win32 stub the same setup still produces a symlink,
+      // proving the win32 branch above is genuinely gated on process.platform
+      // and not a global behavior change.
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260701-000003', { projects: {} });
+      expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    },
+  );
 
   it('dry-run on win32 emits a copy preview event (not create) and does not mutate disk', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
@@ -927,7 +955,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
   });
 
-  it('is a no-op on a non-win32 stub', async () => {
+  it.skipIf(isWin)('is a no-op on a non-win32 stub', async () => {
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
     const { syncSharedLinksPush } = await import('./links.ts');
     syncSharedLinksPush({ projects: {} });
@@ -966,45 +994,51 @@ describe('applySharedLinks dry-run', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('logs would-create-symlink and would-auto-move lines without writing anything under HOME', async () => {
-    // shared/CLAUDE.md exists in the repo; ~/.claude/CLAUDE.md is a real file
-    // (not a symlink). Real-mode would back up and replace it; dry-run logs the
-    // intent only.
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-      logs.push(args.map(String).join(' '));
-    });
+  it.skipIf(isWin)(
+    'logs would-create-symlink and would-auto-move lines without writing anything under HOME',
+    async () => {
+      // shared/CLAUDE.md exists in the repo; ~/.claude/CLAUDE.md is a real file
+      // (not a symlink). Real-mode would back up and replace it; dry-run logs the
+      // intent only.
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      });
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {} }, { dryRun: true });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {} }, { dryRun: true });
 
-    const joined = logs.join('\n');
-    expect(joined).toContain('would auto-move non-symlink:');
-    expect(joined).toContain('would create symlink:');
+      const joined = logs.join('\n');
+      expect(joined).toContain('would auto-move non-symlink:');
+      expect(joined).toContain('would create symlink:');
 
-    const linkPath = join(claudeDir, 'CLAUDE.md');
-    // Content equality alone proves dry-run left the pre-existing file
-    // intact: an auto-move would have replaced it with a symlink whose
-    // target (shared/CLAUDE.md) holds different content. Avoiding a
-    // separate lstatSync check keeps the assertion off the
-    // check-then-use file system pattern CodeQL flags.
-    expect(readFileSync(linkPath, 'utf8')).toBe('# old\n');
+      const linkPath = join(claudeDir, 'CLAUDE.md');
+      // Content equality alone proves dry-run left the pre-existing file
+      // intact: an auto-move would have replaced it with a symlink whose
+      // target (shared/CLAUDE.md) holds different content. Avoiding a
+      // separate lstatSync check keeps the assertion off the
+      // check-then-use file system pattern CodeQL flags.
+      expect(readFileSync(linkPath, 'utf8')).toBe('# old\n');
 
-    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
-    expect(existsSync(backupRoot)).toBe(false);
-  });
+      const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
+      expect(existsSync(backupRoot)).toBe(false);
+    },
+  );
 
-  it('default (no opts) and dryRun:false continue to mutate disk as before', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {} });
-    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
-  });
+  it.skipIf(isWin)(
+    'default (no opts) and dryRun:false continue to mutate disk as before',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {} });
+      expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    },
+  );
 
-  it('dryRun:false explicit also mutates (no regression vs default)', async () => {
+  it.skipIf(isWin)('dryRun:false explicit also mutates (no regression vs default)', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
     const { applySharedLinks } = await import('./links.ts');
@@ -1044,54 +1078,60 @@ describe('applySharedLinks onPreview structured sink', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('calls onPreview with create event and does NOT call log() for create', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
-    // No pre-existing ~/.claude/CLAUDE.md so only create fires, not auto-move.
-    const events: unknown[] = [];
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
-      /* captured */
-    });
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks(
-      'ts1',
-      { projects: {} },
-      {
-        dryRun: true,
-        onPreview: (e) => events.push(e),
-      },
-    );
-    const createEvents = events.filter((e) => (e as { kind: string }).kind === 'create');
-    expect(createEvents.length).toBeGreaterThan(0);
-    // log() must NOT have been called for the create line when onPreview is set.
-    const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(logLines).not.toContain('would create symlink:');
-  });
+  it.skipIf(isWin)(
+    'calls onPreview with create event and does NOT call log() for create',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+      // No pre-existing ~/.claude/CLAUDE.md so only create fires, not auto-move.
+      const events: unknown[] = [];
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+        /* captured */
+      });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks(
+        'ts1',
+        { projects: {} },
+        {
+          dryRun: true,
+          onPreview: (e) => events.push(e),
+        },
+      );
+      const createEvents = events.filter((e) => (e as { kind: string }).kind === 'create');
+      expect(createEvents.length).toBeGreaterThan(0);
+      // log() must NOT have been called for the create line when onPreview is set.
+      const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logLines).not.toContain('would create symlink:');
+    },
+  );
 
-  it('calls onPreview with auto-move event and does NOT call log() for auto-move', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
-    const events: unknown[] = [];
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
-      /* captured */
-    });
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks(
-      'ts2',
-      { projects: {} },
-      {
-        dryRun: true,
-        onPreview: (e) => events.push(e),
-      },
-    );
-    const moveEvents = events.filter((e) => (e as { kind: string }).kind === 'auto-move');
-    expect(moveEvents.length).toBeGreaterThan(0);
-    expect((moveEvents[0] as { from: string }).from).toContain('CLAUDE.md');
-    expect((moveEvents[0] as { to: string }).to).toContain('backup/ts2/CLAUDE.md');
-    const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(logLines).not.toContain('would auto-move non-symlink:');
-  });
+  it.skipIf(isWin)(
+    'calls onPreview with auto-move event and does NOT call log() for auto-move',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
+      const events: unknown[] = [];
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+        /* captured */
+      });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks(
+        'ts2',
+        { projects: {} },
+        {
+          dryRun: true,
+          onPreview: (e) => events.push(e),
+        },
+      );
+      const moveEvents = events.filter((e) => (e as { kind: string }).kind === 'auto-move');
+      expect(moveEvents.length).toBeGreaterThan(0);
+      expect((moveEvents[0] as { from: string }).from).toContain('CLAUDE.md');
+      expect((moveEvents[0] as { to: string }).to).toContain('backup/ts2/CLAUDE.md');
+      const logLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logLines).not.toContain('would auto-move non-symlink:');
+    },
+  );
 
-  it('falls back to log() for create when onPreview is absent', async () => {
+  it.skipIf(isWin)('falls back to log() for create when onPreview is absent', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
     const logs: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
@@ -1102,7 +1142,7 @@ describe('applySharedLinks onPreview structured sink', () => {
     expect(logs.join('\n')).toContain('would create symlink:');
   });
 
-  it('falls back to log() for auto-move when onPreview is absent', async () => {
+  it.skipIf(isWin)('falls back to log() for auto-move when onPreview is absent', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# old\n');
     const logs: string[] = [];
@@ -1137,24 +1177,27 @@ describe('applySharedLinks onPreview structured sink', () => {
   });
 
   // Test B: missing link still emits a create event.
-  it('emits a create event for a name with shared/<name> present but no link on disk', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
-    // No ~/.claude/CLAUDE.md created.
+  it.skipIf(isWin)(
+    'emits a create event for a name with shared/<name> present but no link on disk',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      // No ~/.claude/CLAUDE.md created.
 
-    const events: unknown[] = [];
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks(
-      'ts-missing',
-      { projects: {} },
-      { dryRun: true, onPreview: (e) => events.push(e) },
-    );
+      const events: unknown[] = [];
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks(
+        'ts-missing',
+        { projects: {} },
+        { dryRun: true, onPreview: (e) => events.push(e) },
+      );
 
-    const creates = events.filter((e) => (e as { kind: string }).kind === 'create');
-    const claudeMdCreates = creates.filter((e) =>
-      (e as { from: string }).from.endsWith('CLAUDE.md'),
-    );
-    expect(claudeMdCreates.length).toBeGreaterThan(0);
-  });
+      const creates = events.filter((e) => (e as { kind: string }).kind === 'create');
+      const claudeMdCreates = creates.filter((e) =>
+        (e as { from: string }).from.endsWith('CLAUDE.md'),
+      );
+      expect(claudeMdCreates.length).toBeGreaterThan(0);
+    },
+  );
 
   // Test C: symlink pointing at a live but wrong target emits NO create event.
   // The guard mirrors ensureSymlink: any existing symlink (existsSync follows
@@ -1185,23 +1228,26 @@ describe('applySharedLinks onPreview structured sink', () => {
   });
 
   // Test D: non-symlink occupant still produces both auto-move and create events.
-  it('emits both auto-move and create events when a non-symlink occupies the link path', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# real file\n');
+  it.skipIf(isWin)(
+    'emits both auto-move and create events when a non-symlink occupies the link path',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# real file\n');
 
-    const events: unknown[] = [];
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks(
-      'ts-nonlink',
-      { projects: {} },
-      { dryRun: true, onPreview: (e) => events.push(e) },
-    );
+      const events: unknown[] = [];
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks(
+        'ts-nonlink',
+        { projects: {} },
+        { dryRun: true, onPreview: (e) => events.push(e) },
+      );
 
-    const moves = events.filter((e) => (e as { kind: string }).kind === 'auto-move');
-    const creates = events.filter((e) => (e as { kind: string }).kind === 'create');
-    expect(moves.length).toBeGreaterThan(0);
-    expect(creates.length).toBeGreaterThan(0);
-  });
+      const moves = events.filter((e) => (e as { kind: string }).kind === 'auto-move');
+      const creates = events.filter((e) => (e as { kind: string }).kind === 'create');
+      expect(moves.length).toBeGreaterThan(0);
+      expect(creates.length).toBeGreaterThan(0);
+    },
+  );
 });
 
 describe('applySharedLinks sharedDirs support', () => {
@@ -1235,91 +1281,113 @@ describe('applySharedLinks sharedDirs support', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('creates a symlink for a valid sharedDirs entry when shared/<entry> exists', async () => {
-    mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
-    writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
+  it.skipIf(isWin)(
+    'creates a symlink for a valid sharedDirs entry when shared/<entry> exists',
+    async () => {
+      mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+      writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
 
-    const linkPath = join(claudeDir, 'gsd');
-    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'gsd'));
-  });
+      const linkPath = join(claudeDir, 'gsd');
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'gsd'));
+    },
+  );
 
-  it('backs up a non-symlink at a sharedDirs link path and replaces it with a symlink', async () => {
-    mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
-    writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
-    mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
-    writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
+  it.skipIf(isWin)(
+    'backs up a non-symlink at a sharedDirs link path and replaces it with a symlink',
+    async () => {
+      mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+      writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
+      mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
+      writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
 
-    const backupFile = join(
-      testHome,
-      '.cache',
-      'claude-nomad',
-      'backup',
-      '20260516-000000',
-      'gsd',
-      'local.md',
-    );
-    expect(existsSync(backupFile)).toBe(true);
-    expect(readFileSync(backupFile, 'utf8')).toBe('# local gsd\n');
+      const backupFile = join(
+        testHome,
+        '.cache',
+        'claude-nomad',
+        'backup',
+        '20260516-000000',
+        'gsd',
+        'local.md',
+      );
+      expect(existsSync(backupFile)).toBe(true);
+      expect(readFileSync(backupFile, 'utf8')).toBe('# local gsd\n');
 
-    const linkPath = join(claudeDir, 'gsd');
-    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'gsd'));
-  });
+      const linkPath = join(claudeDir, 'gsd');
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkPath)).toBe(join(sharedDir, 'gsd'));
+    },
+  );
 
-  it('logs would-auto-move for a non-symlink sharedDirs entry under dryRun', async () => {
-    mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
-    writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
-    mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
-    writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
+  it.skipIf(isWin)(
+    'logs would-auto-move for a non-symlink sharedDirs entry under dryRun',
+    async () => {
+      mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+      writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
+      mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
+      writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
 
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-      logs.push(args.map(String).join(' '));
-    });
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      });
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] }, { dryRun: true });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] }, { dryRun: true });
 
-    expect(logs.join('\n')).toContain('would auto-move non-symlink:');
-    expect(logs.join('\n')).toContain('would create symlink:');
-    // Dry-run: original gsd dir must still be intact
-    expect(existsSync(join(claudeDir, 'gsd', 'local.md'))).toBe(true);
-    expect(lstatSync(join(claudeDir, 'gsd')).isSymbolicLink()).toBe(false);
-  });
+      expect(logs.join('\n')).toContain('would auto-move non-symlink:');
+      expect(logs.join('\n')).toContain('would create symlink:');
+      // Dry-run: original gsd dir must still be intact
+      expect(existsSync(join(claudeDir, 'gsd', 'local.md'))).toBe(true);
+      expect(lstatSync(join(claudeDir, 'gsd')).isSymbolicLink()).toBe(false);
+    },
+  );
 
-  it('skips a sharedDirs entry whose shared/<entry> source does not exist', async () => {
-    // shared/gsd does NOT exist; ~/.claude/gsd should be left untouched.
-    mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
-    writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
-    // Provide at least one SHARED_LINKS source so the function is not a no-op.
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+  it.skipIf(isWin)(
+    'skips a sharedDirs entry whose shared/<entry> source does not exist',
+    async () => {
+      // shared/gsd does NOT exist; ~/.claude/gsd should be left untouched.
+      mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
+      writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
+      // Provide at least one SHARED_LINKS source so the function is not a no-op.
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
 
-    const { applySharedLinks } = await import('./links.ts');
-    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['gsd'] });
 
-    // ~/.claude/gsd must be unchanged (not backed up, not symlinked)
-    expect(lstatSync(join(claudeDir, 'gsd')).isDirectory()).toBe(true);
-    expect(lstatSync(join(claudeDir, 'gsd')).isSymbolicLink()).toBe(false);
-    expect(existsSync(join(claudeDir, 'gsd', 'local.md'))).toBe(true);
-    const backupGsd = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000', 'gsd');
-    expect(existsSync(backupGsd)).toBe(false);
-    // CLAUDE.md is still symlinked (SHARED_LINKS still work)
-    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
-  });
+      // ~/.claude/gsd must be unchanged (not backed up, not symlinked)
+      expect(lstatSync(join(claudeDir, 'gsd')).isDirectory()).toBe(true);
+      expect(lstatSync(join(claudeDir, 'gsd')).isSymbolicLink()).toBe(false);
+      expect(existsSync(join(claudeDir, 'gsd', 'local.md'))).toBe(true);
+      const backupGsd = join(
+        testHome,
+        '.cache',
+        'claude-nomad',
+        'backup',
+        '20260516-000000',
+        'gsd',
+      );
+      expect(existsSync(backupGsd)).toBe(false);
+      // CLAUDE.md is still symlinked (SHARED_LINKS still work)
+      expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    },
+  );
 
-  it('no-sharedDirs path produces same output as pre-phase (no-sharedDirs map)', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
-    const { applySharedLinks } = await import('./links.ts');
-    // Both no-sharedDirs-key and empty-sharedDirs should behave identically
-    applySharedLinks('20260516-000000', { projects: {} });
-    expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
-  });
+  it.skipIf(isWin)(
+    'no-sharedDirs path produces same output as pre-phase (no-sharedDirs map)',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      const { applySharedLinks } = await import('./links.ts');
+      // Both no-sharedDirs-key and empty-sharedDirs should behave identically
+      applySharedLinks('20260516-000000', { projects: {} });
+      expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    },
+  );
 });
 
 describe('regenerateSettings dry-run', () => {

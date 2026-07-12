@@ -12,6 +12,13 @@ import { join, relative } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The "non-win32" test below asserts `process.platform !== 'win32'` directly
+// against the real host (no Object.defineProperty override), so it is false
+// by construction on an actual win32 runner. The win32 branch it contrasts
+// against is already covered by the sibling test above it, which does
+// override process.platform.
+const isWin = process.platform === 'win32';
+
 /**
  * Recursively snapshot `{ relativePath: fileContent }` for every regular
  * file under `root`. Used to assert that computePreview does NOT mutate any
@@ -357,10 +364,16 @@ describe('computePreview orchestration', () => {
 
     // Symlinks section header.
     expect(joined).toContain('Symlinks');
-    // auto-move row (non-symlink CLAUDE.md triggers it).
-    expect(joined).toContain('auto-move');
-    // create row (every shared link).
-    expect(joined).toContain('create');
+    if (process.platform === 'win32') {
+      // No unprivileged symlink support: every entry previews as a single
+      // unified "copy" event/wording, with no create/auto-move distinction.
+      expect(joined).toContain('would copy');
+    } else {
+      // auto-move row (non-symlink CLAUDE.md triggers it).
+      expect(joined).toContain('auto-move');
+      // create row (every shared link).
+      expect(joined).toContain('create');
+    }
 
     // settings.json section header present.
     expect(joined).toContain('settings.json');
@@ -949,21 +962,24 @@ describe('computePreview orchestration', () => {
     expect(joined).not.toMatch(/^create /m);
   });
 
-  it('renders the symlink-create line unchanged on a non-win32 dry-run (no regression)', async () => {
-    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
-    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+  it.skipIf(isWin)(
+    'renders the symlink-create line unchanged on a non-win32 dry-run (no regression)',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
 
-    expect(process.platform).not.toBe('win32');
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-      logs.push(args.map(String).join(' '));
-    });
+      expect(process.platform).not.toBe('win32');
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      });
 
-    const { computePreview } = await import('./preview.ts');
-    computePreview('20260516-000000', { projects: {} }, 'pull');
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260516-000000', { projects: {} }, 'pull');
 
-    const joined = logs.join('\n');
-    expect(joined).toContain('create');
-    expect(joined).not.toContain('would copy');
-  });
+      const joined = logs.join('\n');
+      expect(joined).toContain('create');
+      expect(joined).not.toContain('would copy');
+    },
+  );
 });

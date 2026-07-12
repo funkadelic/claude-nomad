@@ -4,6 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PathMap } from './config.ts';
 
+// The "on non-win32" tests below assert `process.platform !== 'win32'`
+// directly against the real host (no Object.defineProperty override), so
+// they are false by construction on an actual win32 runner. The win32
+// branches they contrast against are already covered by the sibling
+// "on win32" tests above, which do override process.platform.
+const isWin = process.platform === 'win32';
+
 // Type-only assignments proving PathMap accepts optional `extras` and
 // `sharedDirs` fields while remaining backward-compatible with legacy maps
 // that omit them. These live at module scope so the typecheck pass is the
@@ -288,34 +295,40 @@ describe('call-time resolvers: home, claudeHome, repoHome, backupBase', () => {
     }
   });
 
-  it('on non-win32, home() is unchanged: USERPROFILE is ignored, HOME wins when set', async () => {
-    const savedUserProfile = process.env.USERPROFILE;
-    expect(process.platform).not.toBe('win32');
-    process.env.USERPROFILE = 'C:\\Users\\should-be-ignored';
-    process.env.HOME = '/tmp/home-non-win32';
-    try {
-      const { home } = await import('./config.ts');
-      expect(home()).toBe('/tmp/home-non-win32');
-    } finally {
-      if (savedUserProfile === undefined) delete process.env.USERPROFILE;
-      else process.env.USERPROFILE = savedUserProfile;
-    }
-  });
+  it.skipIf(isWin)(
+    'on non-win32, home() is unchanged: USERPROFILE is ignored, HOME wins when set',
+    async () => {
+      const savedUserProfile = process.env.USERPROFILE;
+      expect(process.platform).not.toBe('win32');
+      process.env.USERPROFILE = 'C:\\Users\\should-be-ignored';
+      process.env.HOME = '/tmp/home-non-win32';
+      try {
+        const { home } = await import('./config.ts');
+        expect(home()).toBe('/tmp/home-non-win32');
+      } finally {
+        if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = savedUserProfile;
+      }
+    },
+  );
 
-  it('on non-win32, home() falls back to homedir() when HOME is unset, ignoring USERPROFILE', async () => {
-    const savedUserProfile = process.env.USERPROFILE;
-    expect(process.platform).not.toBe('win32');
-    process.env.USERPROFILE = 'C:\\Users\\should-be-ignored';
-    delete process.env.HOME;
-    try {
-      const { home } = await import('./config.ts');
-      const { homedir } = await import('node:os');
-      expect(home()).toBe(homedir());
-    } finally {
-      if (savedUserProfile === undefined) delete process.env.USERPROFILE;
-      else process.env.USERPROFILE = savedUserProfile;
-    }
-  });
+  it.skipIf(isWin)(
+    'on non-win32, home() falls back to homedir() when HOME is unset, ignoring USERPROFILE',
+    async () => {
+      const savedUserProfile = process.env.USERPROFILE;
+      expect(process.platform).not.toBe('win32');
+      process.env.USERPROFILE = 'C:\\Users\\should-be-ignored';
+      delete process.env.HOME;
+      try {
+        const { home } = await import('./config.ts');
+        const { homedir } = await import('node:os');
+        expect(home()).toBe(homedir());
+      } finally {
+        if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = savedUserProfile;
+      }
+    },
+  );
 
   it('home() honors a worker-thread HOME override that os.homedir() cannot see', async () => {
     // worker_threads keep a per-isolate copy of process.env; mutations there

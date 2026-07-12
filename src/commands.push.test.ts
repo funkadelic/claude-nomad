@@ -19,6 +19,12 @@ import type * as leakVerdictModule from './push-leak-verdict.ts';
 import type * as pushManifestModule from './push-manifest.ts';
 import type * as utilsModule from './utils.ts';
 
+// A "posix (non-win32)" sanity test below deliberately does not override
+// process.platform, relying on the host actually being posix to prove the
+// win32 mirror above it is genuinely gated. On a real win32 runner the host
+// IS win32, so that assumption is false by construction there; skip it.
+const isWin = process.platform === 'win32';
+
 // ---------------------------------------------------------------------------
 // cmdPush: defense-in-depth mutual-exclusivity guard
 // ---------------------------------------------------------------------------
@@ -890,44 +896,47 @@ describe('cmdPush: shared-links push mirror integration', () => {
     ]);
   });
 
-  it('WET push on posix (non-win32): real syncSharedLinksPush no-ops, shared/CLAUDE.md is not created', async () => {
-    // Sanity: the same local edit as the win32 test above, but with no
-    // platform override (the default test-runner posix platform). Proves the
-    // mirror is genuinely gated on process.platform, not always-on.
-    writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# posix local edit\n');
+  it.skipIf(isWin)(
+    'WET push on posix (non-win32): real syncSharedLinksPush no-ops, shared/CLAUDE.md is not created',
+    async () => {
+      // Sanity: the same local edit as the win32 test above, but with no
+      // platform override (the default test-runner posix platform). Proves the
+      // mirror is genuinely gated on process.platform, not always-on.
+      writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# posix local edit\n');
 
-    vi.doMock('./push-checks.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof pushChecksModule>();
-      return {
-        ...actual,
-        probeGitleaks: vi.fn(() => 'v8.18.2'),
-        rebaseBeforePush: vi.fn(),
-        findGitlinks: vi.fn(() => []),
-      };
-    });
-    vi.doMock('./remap.ts', () => ({
-      remapPull: vi.fn(),
-      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
-    }));
-    vi.doMock('./extras-sync.ts', () => ({
-      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
-      remapExtrasPull: vi.fn(),
-      divergenceCheckExtras: vi.fn(),
-    }));
-    vi.doMock('./skills-sync.ts', () => ({
-      syncSkillsPull: vi.fn(),
-      syncSkillsPush: vi.fn(),
-    }));
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
-    });
+      vi.doMock('./push-checks.ts', async (importOriginal) => {
+        const actual = await importOriginal<typeof pushChecksModule>();
+        return {
+          ...actual,
+          probeGitleaks: vi.fn(() => 'v8.18.2'),
+          rebaseBeforePush: vi.fn(),
+          findGitlinks: vi.fn(() => []),
+        };
+      });
+      vi.doMock('./remap.ts', () => ({
+        remapPull: vi.fn(),
+        remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+      }));
+      vi.doMock('./extras-sync.ts', () => ({
+        remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+        remapExtrasPull: vi.fn(),
+        divergenceCheckExtras: vi.fn(),
+      }));
+      vi.doMock('./skills-sync.ts', () => ({
+        syncSkillsPull: vi.fn(),
+        syncSkillsPush: vi.fn(),
+      }));
+      vi.doMock('./utils.ts', async (importOriginal) => {
+        const actual = await importOriginal<typeof utilsModule>();
+        return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+      });
 
-    const { cmdPush } = await import('./commands.push.ts');
-    await expect(cmdPush()).resolves.toBeUndefined();
+      const { cmdPush } = await import('./commands.push.ts');
+      await expect(cmdPush()).resolves.toBeUndefined();
 
-    expect(existsSync(join(env.repoUnderHome, 'shared', 'CLAUDE.md'))).toBe(false);
-  });
+      expect(existsSync(join(env.repoUnderHome, 'shared', 'CLAUDE.md'))).toBe(false);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
