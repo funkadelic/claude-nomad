@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, infoGlyph, warnGlyph } from './color.ts';
+import { failGlyph, infoGlyph, okGlyph, warnGlyph } from './color.ts';
 import { section } from './commands.doctor.format.ts';
 import {
   type Env,
@@ -269,5 +269,92 @@ describe('reportSharedLinks TOCTOU safety', () => {
       expect(item).toContain(infoGlyph);
       expect(item).toContain('not synced');
     }
+  });
+});
+
+describe('classifySharedLink win32 real-copy branch', () => {
+  // Regression tests for SC2: on win32 the copy-sync model's healthy state is
+  // a real (non-symlink) file/dir at the link path, so classifySharedLink
+  // must report it OK (fail:false) there while still FAILing a non-symlink on
+  // every other platform (byte-identical posix behavior).
+  let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let originalNoColor: string | undefined;
+  let testHome: string;
+  const realPlatform = process.platform;
+
+  /** Overrides process.platform for the current test; restored in afterEach. */
+  const setPlatform = (value: string): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-win32-repo-test-'));
+    process.env.HOME = testHome;
+    // home()'s win32 branch reads USERPROFILE before HOME (see config.ts); an
+    // earlier makeDoctorEnv() sandbox in this file leaves USERPROFILE pointed
+    // at its own (now-removed) temp home until the file-level afterAll, so
+    // this test must swap it too or the win32 branch resolves a stale path.
+    process.env.USERPROFILE = testHome;
+    process.env.NOMAD_REPO = join(testHome, 'claude-nomad');
+  });
+
+  afterEach(() => {
+    setPlatform(realPlatform);
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.resetModules();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('USERPROFILE', originalUserProfile);
+    restoreEnv('NOMAD_REPO', originalNomadRepo);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('reports a real non-symlink target as OK (fail:false) on win32', async () => {
+    setPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const claudeHomeDir = join(testHome, '.claude');
+    mkdirSync(claudeHomeDir, { recursive: true });
+    const name = SHARED_LINKS[0];
+    mkdirSync(join(claudeHomeDir, name), { recursive: true });
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(okGlyph);
+    expect(row).toContain('win32 copy-sync');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('still FAILs a real non-symlink target on posix (unchanged)', async () => {
+    setPlatform('linux');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const claudeHomeDir = join(testHome, '.claude');
+    mkdirSync(claudeHomeDir, { recursive: true });
+    const name = SHARED_LINKS[0];
+    mkdirSync(join(claudeHomeDir, name), { recursive: true });
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(failGlyph);
+    expect(row).toContain('NOT a symlink');
+    expect(process.exitCode).toBe(1);
   });
 });
