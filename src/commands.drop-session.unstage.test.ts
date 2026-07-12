@@ -161,4 +161,49 @@ describe('cmdDropSession (match collection + unstage)', () => {
       chmodSync(join(env.repoUnderHome, '.git'), 0o755);
     }
   });
+
+  it.skipIf(isWin)(
+    'restores (not rm --cached) a tracked-in-HEAD session whose logical name contains a literal backslash',
+    async () => {
+      // On posix a backslash is a legal filename character and survives
+      // encodePath (which only replaces `/`). The HEAD-presence probe must
+      // not rewrite it into a path separator: doing so makes the cat-file
+      // spec point at a nonexistent tree path, misclassifies the committed
+      // transcript as newly-staged, and stages a deletion that the next push
+      // would propagate to every other host. Backslash is illegal in win32
+      // filenames, so this fixture cannot exist there.
+      const path = stageSession(env, String.raw`we\ird`, 'sid-A', '{"v":"committed"}\n');
+      execFileSync('git', ['commit', '-q', '-m', 'add sid-A'], { cwd: env.repoUnderHome });
+      writeFileSync(path, '{"v":"new-staged"}\n');
+      execFileSync('git', ['add', '-A'], { cwd: env.repoUnderHome });
+      expect(diffCached(env)).not.toBe('');
+
+      const { cmdDropSession } = await import('./commands.drop-session.ts');
+      cmdDropSession('sid-A');
+
+      // Tracked-in-HEAD classification took the restore branch: index reset
+      // to HEAD (no staged deletion) and working tree back to the committed
+      // version.
+      expect(diffCached(env)).toBe('');
+      expect(readFileSync(path, 'utf8')).toBe('{"v":"committed"}\n');
+    },
+  );
+
+  it('normalizes win32 backslash path separators before probing the HEAD tree', async () => {
+    // On win32 node:path's relative() emits backslash separators, but the
+    // `<rev>:<path>` object spec requires forward slashes on every platform.
+    // Pin the platform to win32 so the separator rewrite is exercised on
+    // posix hosts too (on a real win32 runner the override is a no-op).
+    const realPlatform = process.platform;
+    stageSession(env, 'foo', 'sid-A', '{"v":"committed"}\n');
+    execFileSync('git', ['commit', '-q', '-m', 'add sid-A'], { cwd: env.repoUnderHome });
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      const { isTrackedInHead } = await import('./commands.drop-session.git.ts');
+      const rel = 'shared\\projects\\foo\\sid-A.jsonl';
+      expect(isTrackedInHead(rel, env.repoUnderHome)).toBe(true);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+    }
+  });
 });
