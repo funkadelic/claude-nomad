@@ -38,6 +38,7 @@ import {
 import { repoHome, type PathMap } from './config.ts';
 import { reportNodeEngineCheck } from './commands.doctor.engine.ts';
 import { reportLongPathsCheck, reportSyncModality } from './commands.doctor.checks.longpaths.ts';
+import { reportCrlfGuardCheck } from './commands.doctor.checks.crlf.ts';
 import {
   readJsonSafe,
   renderDoctor,
@@ -75,6 +76,7 @@ function gatherDoctorSections(opts: {
   reportRepoState(host);
   reportSyncModality(host);
   reportLongPathsCheck(host);
+  reportCrlfGuardCheck(host);
 
   const links = section('Shared links');
   // Tolerantly read path-map.json for sharedDirs: doctor is read-only and

@@ -216,3 +216,40 @@ describe('cmdDoctor sync modality + long-paths rows', () => {
     expect(out).not.toContain('OS long paths');
   });
 });
+
+describe('cmdDoctor CRLF guard row', () => {
+  // The sandbox REPO_HOME has no .gitattributes and is not a git repo, so the
+  // check WARNs (guard absent, config probe throws -> latent risk). WARN rows
+  // are kept in compact mode, so no --verbose flag is needed to see it.
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host' });
+    mockGitleaksPresent();
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('includes the CRLF guard row in the Environment section', async () => {
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('CRLF guard');
+  });
+});
