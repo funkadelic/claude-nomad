@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
+import { repoHome } from './config.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
 
 /**
@@ -33,17 +34,19 @@ const LONGPATHS_REG_KEY = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem'
 const LONGPATHS_REG_VALUE = 'LongPathsEnabled';
 
 /**
- * Probe `git config --get core.longpaths` via the injected runner. Returns
- * `true` when the trimmed stdout is `'true'` or `'1'`, `false` when the probe
- * throws (unset key, or any other error) or returns any other value. Never
- * throws: a thrown probe degrades to `false` (unset), matching the
- * WARN-not-FAIL contract.
+ * Probe `git -C <repoHome()> config --get core.longpaths` via the injected
+ * runner. Scoping to `-C repoHome()` reads the sync repo's config regardless
+ * of the current process cwd (mirrors the sibling `probeAutocrlf` in
+ * `commands.doctor.checks.crlf.ts`). Returns `true` when the trimmed stdout
+ * is `'true'` or `'1'`, `false` when the probe throws (unset key, or any
+ * other error) or returns any other value. Never throws: a thrown probe
+ * degrades to `false` (unset), matching the WARN-not-FAIL contract.
  *
  * @param run - Injectable subprocess runner.
  */
 function probeGitLongpaths(run: SpawnSyncFn): boolean {
   try {
-    const out = run('git', ['config', '--get', 'core.longpaths'], {
+    const out = run('git', ['-C', repoHome(), 'config', '--get', 'core.longpaths'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: PROBE_TIMEOUT_MS,
     })

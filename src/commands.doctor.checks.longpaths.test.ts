@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { okGlyph, warnGlyph } from './color.ts';
+import { repoHome } from './config.ts';
 import { section } from './commands.doctor.format.ts';
 import { reportLongPathsCheck, reportSyncModality } from './commands.doctor.checks.longpaths.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
@@ -63,6 +64,15 @@ describe('reportLongPathsCheck', () => {
     expect(regRow).toBeDefined();
     expect(regRow).toContain(okGlyph);
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('scopes the git config probe to -C repoHome() so it reads the sync repo, not cwd', () => {
+    setPlatform('win32');
+    const calls: string[][] = [];
+    const s = section('Environment');
+    reportLongPathsCheck(s, runBothEnabled(calls));
+    const gitCall = calls.find((c) => c[0] === 'git');
+    expect(gitCall).toEqual(['git', '-C', repoHome(), 'config', '--get', 'core.longpaths']);
   });
 
   it('accepts a trimmed "1" as enabled for git core.longpaths (not only "true")', () => {
