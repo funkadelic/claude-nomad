@@ -139,6 +139,8 @@ prefer it). The steps are the same as above with a couple of PowerShell-specific
 
 A few Windows-specific things worth knowing:
 
+- **Installing gh:** `winget install GitHub.cli` (or `scoop install gh`), then `gh auth login`.
+  Needed before `nomad init` on the first host; later hosts only clone with it.
 - **Installing gitleaks:** `winget install gitleaks.gitleaks` (or `scoop install gitleaks` if you
   use Scoop). `nomad doctor` prints the same hint whenever gitleaks is missing from PATH.
 - **Shared config is copied, not symlinked.** On macOS and Linux, files like `CLAUDE.md` and your
