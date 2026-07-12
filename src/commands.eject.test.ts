@@ -165,7 +165,7 @@ describe('cmdEject', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: commands'));
   });
 
-  it('skip-real: already-real file is left untouched and reported', () => {
+  it.skipIf(isWin)('skip-real: already-real file is left untouched and reported', () => {
     const { claudeHome, repoHome } = makeTempRoots();
     const realPath = join(claudeHome, 'CLAUDE.md');
     writeFileSync(realPath, 'already real');
@@ -211,18 +211,21 @@ describe('cmdEject', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('CLAUDE.md'));
   });
 
-  it('dry-run: skip-real names are reported as not-a-symlink in dry-run output', () => {
-    const { claudeHome, repoHome } = makeTempRoots();
-    writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real');
+  it.skipIf(isWin)(
+    'dry-run: skip-real names are reported as not-a-symlink in dry-run output',
+    () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real');
 
-    cmdEject({ dryRun: true }, { claudeHome, repoHome });
+      cmdEject({ dryRun: true }, { claudeHome, repoHome });
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('skipped (not a symlink): CLAUDE.md'),
-    );
-    // File must be unchanged
-    expect(readFileSync(join(claudeHome, 'CLAUDE.md'), 'utf8')).toBe('already real');
-  });
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('skipped (not a symlink): CLAUDE.md'),
+      );
+      // File must be unchanged
+      expect(readFileSync(join(claudeHome, 'CLAUDE.md'), 'utf8')).toBe('already real');
+    },
+  );
 
   it('dry-run: logs would-materialize without mutating symlinks', () => {
     const { claudeHome, repoHome } = makeTempRoots();
@@ -483,16 +486,19 @@ describe('cmdEject win32 copy-sync modality', () => {
     );
   });
 
-  it('non-win32: the same real-copy fixture still reports the posix "not a symlink" wording', () => {
-    const { claudeHome, repoHome } = makeTempRoots();
-    writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real');
+  it.skipIf(isWin)(
+    'non-win32: the same real-copy fixture still reports the posix "not a symlink" wording',
+    () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real');
 
-    // realPlatform is whatever this dev/CI host actually is (posix here); no
-    // setPlatform call, proving the win32 wording above is genuinely gated.
-    cmdEject({}, { claudeHome, repoHome });
+      // realPlatform is whatever this dev/CI host actually is (posix here); no
+      // setPlatform call, proving the win32 wording above is genuinely gated.
+      cmdEject({}, { claudeHome, repoHome });
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('skipped (not a symlink): CLAUDE.md'),
-    );
-  });
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('skipped (not a symlink): CLAUDE.md'),
+      );
+    },
+  );
 });

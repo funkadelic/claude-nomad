@@ -273,29 +273,37 @@ describe('reportSharedLinks non-symlink fail path (direct)', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('sets exitCode=1 and emits a FAIL row when a SHARED_LINKS entry is a regular file', async () => {
-    // Kills the L131 BooleanLiteral mutation: `fail: true` -> `fail: false` in
-    // classifySharedLink's non-symlink branch would let reportSharedLinks skip
-    // the `process.exitCode = 1` assignment, silently masking the "blocks sync"
-    // condition. Going directly to reportSharedLinks (not cmdDoctor) ensures the
-    // assertion is clean, without exitCode noise from other doctor sections.
-    const { SHARED_LINKS } = await import('./config.ts');
-    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
-    const { section } = await import('./commands.doctor.format.ts');
-    const name = SHARED_LINKS[0];
-    if (!name) throw new Error('SHARED_LINKS is empty');
-    // Write a regular file (NOT a symlink) at ~/.claude/<name>.
-    writeFileSync(join(testHome, '.claude', name), '# placeholder\n');
+  // On win32, classifySharedLink's copy-sync branch reports a regular file as
+  // OK by design; the posix FAIL expectation is false there. The win32-OK
+  // behavior is covered by commands.doctor.checks.repo2.test.ts.
+  const isWin = process.platform === 'win32';
 
-    const sec = section('Links');
-    reportSharedLinks(sec, { projects: {} });
+  it.skipIf(isWin)(
+    'sets exitCode=1 and emits a FAIL row when a SHARED_LINKS entry is a regular file',
+    async () => {
+      // Kills the L131 BooleanLiteral mutation: `fail: true` -> `fail: false` in
+      // classifySharedLink's non-symlink branch would let reportSharedLinks skip
+      // the `process.exitCode = 1` assignment, silently masking the "blocks sync"
+      // condition. Going directly to reportSharedLinks (not cmdDoctor) ensures the
+      // assertion is clean, without exitCode noise from other doctor sections.
+      const { SHARED_LINKS } = await import('./config.ts');
+      const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+      const { section } = await import('./commands.doctor.format.ts');
+      const name = SHARED_LINKS[0];
+      if (!name) throw new Error('SHARED_LINKS is empty');
+      // Write a regular file (NOT a symlink) at ~/.claude/<name>.
+      writeFileSync(join(testHome, '.claude', name), '# placeholder\n');
 
-    const failRows = sec.items.filter((r) => r.includes(failGlyph));
-    expect(failRows.length).toBeGreaterThan(0);
-    expect(failRows.some((r) => r.includes(name))).toBe(true);
-    expect(failRows.some((r) => r.includes('NOT a symlink'))).toBe(true);
-    expect(process.exitCode).toBe(1);
-  });
+      const sec = section('Links');
+      reportSharedLinks(sec, { projects: {} });
+
+      const failRows = sec.items.filter((r) => r.includes(failGlyph));
+      expect(failRows.length).toBeGreaterThan(0);
+      expect(failRows.some((r) => r.includes(name))).toBe(true);
+      expect(failRows.some((r) => r.includes('NOT a symlink'))).toBe(true);
+      expect(process.exitCode).toBe(1);
+    },
+  );
 });
 
 describe('reportHostAndPaths NOMAD_REPO info line (direct)', () => {

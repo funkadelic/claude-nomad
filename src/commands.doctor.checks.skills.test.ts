@@ -301,7 +301,9 @@ describe('reportSkillsDivergence git not on PATH', () => {
   it('treats git ENOENT as no divergence and emits okGlyph without throwing', async () => {
     mkdirSync(sharedSkills, { recursive: true });
     mkdirSync(localSkills, { recursive: true });
-    writeFileSync(join(localSkills, 'my-skill', 'SKILL.md').replace('/my-skill', ''), 'x');
+    // A file directly under localSkills (no skill subdir needed): the git
+    // mock throws ENOENT before any diff runs, so only existence matters.
+    writeFileSync(join(localSkills, 'SKILL.md'), 'x');
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
