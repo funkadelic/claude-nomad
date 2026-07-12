@@ -278,7 +278,7 @@ describe('reportSkillsDivergence git not on PATH', () => {
               // Return a diff line with a path that starts with neither base dir.
               const err = Object.assign(new Error('differ'), {
                 status: 1,
-                stdout: Buffer.from('M\t/unexpected/my-skill/FILE.md\n'),
+                stdout: Buffer.from('M\0/unexpected/my-skill/FILE.md\0'),
               });
               throw err;
             }

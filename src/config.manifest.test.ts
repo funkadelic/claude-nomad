@@ -1,3 +1,5 @@
+import { basename } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { HOST, manifestPath } from './config.ts';
@@ -27,18 +29,21 @@ describe('manifestPath', () => {
   });
 
   it('reflects a mid-process HOME swap without resetModules', () => {
+    // Assert on the swapped segment only, not a leading `/`: `join()` (used by
+    // manifestPath's `home()` call) normalizes to the native separator, so a
+    // posix-literal HOME like `/home/original` renders with backslashes on
+    // win32.
     process.env.HOME = '/home/original';
     const p1 = manifestPath();
     process.env.HOME = '/home/swapped';
     const p2 = manifestPath();
-    expect(p1).toContain('/home/original');
-    expect(p2).toContain('/home/swapped');
+    expect(p1).toContain('original');
+    expect(p2).toContain('swapped');
     expect(p1).not.toBe(p2);
   });
 
   it('embeds HOST in the filename so different hosts do not share a manifest', () => {
     const p = manifestPath();
-    const filename = p.split('/').pop() ?? '';
-    expect(filename).toBe(`push-manifest-${encodeURIComponent(HOST)}.json`);
+    expect(basename(p)).toBe(`push-manifest-${encodeURIComponent(HOST)}.json`);
   });
 });

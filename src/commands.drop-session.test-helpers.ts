@@ -43,6 +43,12 @@ function initRepo(repoUnderHome: string): void {
     cwd: repoUnderHome,
   });
   execFileSync('git', ['config', 'user.name', 'test'], { cwd: repoUnderHome });
+  // This suite commits fixture content then reads it back after a git
+  // restore/reset cycle and compares exact bytes. On win32 the global git
+  // install commonly defaults to core.autocrlf=true, which rewrites LF to
+  // CRLF on checkout and breaks that byte comparison; pin it off for this
+  // sandbox repo regardless of the host's global config.
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: repoUnderHome });
 }
 
 /**
