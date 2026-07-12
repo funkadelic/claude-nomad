@@ -157,20 +157,25 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
-  it('reports FAIL and sets exitCode=1 when a SHARED_LINKS entry exists as a regular file in ~/.claude/', async () => {
-    // Place a regular file (not a symlink) at ~/.claude/CLAUDE.md. The
-    // SHARED_LINKS loop's lstatSync().isSymbolicLink() branch must surface
-    // the blocks-sync diagnostic as an explicit FAIL and mark the run failed
-    // so scripts and CI catch the regression.
-    writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# regular file\n');
-    const { cmdDoctor } = await import('./commands.doctor.ts');
-    cmdDoctor({ verbose: true });
-    const out = joinedLog(env.logSpy);
-    expect(out).toContain(
-      `${failGlyph} CLAUDE.md: NOT a symlink (blocks sync); run \`nomad adopt CLAUDE.md\` to fix`,
-    );
-    expect(process.exitCode).toBe(1);
-  });
+  const isWin = process.platform === 'win32';
+
+  it.skipIf(isWin)(
+    'reports FAIL and sets exitCode=1 when a SHARED_LINKS entry exists as a regular file in ~/.claude/',
+    async () => {
+      // Place a regular file (not a symlink) at ~/.claude/CLAUDE.md. The
+      // SHARED_LINKS loop's lstatSync().isSymbolicLink() branch must surface
+      // the blocks-sync diagnostic as an explicit FAIL and mark the run failed
+      // so scripts and CI catch the regression.
+      writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# regular file\n');
+      const { cmdDoctor } = await import('./commands.doctor.ts');
+      cmdDoctor({ verbose: true });
+      const out = joinedLog(env.logSpy);
+      expect(out).toContain(
+        `${failGlyph} CLAUDE.md: NOT a symlink (blocks sync); run \`nomad adopt CLAUDE.md\` to fix`,
+      );
+      expect(process.exitCode).toBe(1);
+    },
+  );
 });
 
 describe('cmdDoctor sharedDirs symlink row', () => {

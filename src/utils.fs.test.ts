@@ -219,7 +219,9 @@ describe('writeJsonAtomic directory-fsync EPERM handling (mocked node:fs)', () =
     expect(() => mocked.writeJsonAtomic(target, { a: 1 })).toThrow(/EIO/);
   });
 
-  it('rethrows EPERM from the directory fsync on non-Windows platforms', async () => {
+  const isWin = process.platform === 'win32';
+
+  it.skipIf(isWin)('rethrows EPERM from the directory fsync on non-Windows platforms', async () => {
     mockDirFsyncFailure('EPERM');
     expect(process.platform).not.toBe('win32');
     const mocked = await import('./utils.fs.ts');
