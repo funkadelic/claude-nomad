@@ -4,7 +4,23 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { vi, type MockInstance } from 'vitest';
+import { afterAll, vi, type MockInstance } from 'vitest';
+
+// home() prefers USERPROFILE over HOME on win32 (see config.ts), so
+// makeDoctorEnv below swaps USERPROFILE alongside HOME to isolate the
+// sandbox on a Windows runner. This module is re-imported fresh per test
+// file (vitest module isolation), so capturing the real USERPROFILE once at
+// import time and restoring it in a single per-file afterAll is enough: each
+// makeDoctorEnv call within the file re-sets USERPROFILE to that call's fresh
+// sandbox home, and this afterAll guarantees the real value is back before
+// the next test file's tests run in a shared worker. Mirrors the per-file
+// restoreEnv('HOME', originalHome) convention callers already use, without
+// requiring every caller to also thread a second captured var through.
+const capturedUserProfile = process.env.USERPROFILE;
+afterAll(() => {
+  if (capturedUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = capturedUserProfile;
+});
 
 /** Spy handle over `console.log`, captured by `makeDoctorEnv`. */
 export type LogSpy = MockInstance<(...args: unknown[]) => void>;
@@ -32,6 +48,11 @@ export function makeDoctorEnv(opts: {
 }): Env {
   const testHome = mkdtempSync(join(tmpdir(), 'nomad-test-home-'));
   process.env.HOME = testHome;
+  // Swap USERPROFILE alongside HOME: home()'s win32 branch reads USERPROFILE
+  // first, so leaving the real USERPROFILE in place would leak it into any
+  // sandbox-isolation assertion on a Windows runner. Restored per-file by the
+  // module-level afterAll above.
+  process.env.USERPROFILE = testHome;
   if (opts.host !== undefined) process.env.NOMAD_HOST = opts.host;
   mkdirSync(join(testHome, 'claude-nomad', 'shared'), { recursive: true });
   mkdirSync(join(testHome, 'claude-nomad', 'hosts'), { recursive: true });
