@@ -12,6 +12,7 @@ import {
   stageSession,
   teardownDropSessionEnv,
 } from './commands.drop-session.test-helpers.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 // Match-collection and unstage cases for cmdDropSession (the flat `<id>.jsonl`
 // path: newly-staged vs tracked-in-HEAD, multi-logical walk, no-match unwind,
@@ -197,13 +198,13 @@ describe('cmdDropSession (match collection + unstage)', () => {
     const realPlatform = process.platform;
     stageSession(env, 'foo', 'sid-A', '{"v":"committed"}\n');
     execFileSync('git', ['commit', '-q', '-m', 'add sid-A'], { cwd: env.repoUnderHome });
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    stubPlatform('win32');
     try {
       const { isTrackedInHead } = await import('./commands.drop-session.git.ts');
       const rel = 'shared\\projects\\foo\\sid-A.jsonl';
       expect(isTrackedInHead(rel, env.repoUnderHome)).toBe(true);
     } finally {
-      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      stubPlatform(realPlatform);
     }
   });
 });

@@ -12,6 +12,8 @@ import { join, relative } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { stubPlatform } from './test-helpers.platform.ts';
+
 // The "non-win32" test below asserts `process.platform !== 'win32'` directly
 // against the real host (no Object.defineProperty override), so it is false
 // by construction on an actual win32 runner. The win32 branch it contrasts
@@ -943,7 +945,7 @@ describe('computePreview orchestration', () => {
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
 
     const realPlatform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    stubPlatform('win32');
     const logs: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
       logs.push(args.map(String).join(' '));
@@ -953,7 +955,7 @@ describe('computePreview orchestration', () => {
       const { computePreview } = await import('./preview.ts');
       computePreview('20260516-000000', { projects: {} }, 'pull');
     } finally {
-      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      stubPlatform(realPlatform);
     }
 
     const joined = logs.join('\n');

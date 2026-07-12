@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type * as pathModule from 'node:path';
 
 import type { PathMap } from './config.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 /** Run a git command in `cwd`, surfacing stderr on failure. Test-only helper
  * for the real-repo regression suites (no production code path uses it). */
@@ -532,16 +533,12 @@ describe('enforceAllowList .gitattributes allow-list entry', () => {
 describe('enforceAllowList on a win32 stub: forward-slash porcelain paths unchanged', () => {
   const realPlatform = process.platform;
 
-  function setPlatform(value: NodeJS.Platform): void {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  }
-
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
   });
 
   it('accepts the same staged shared/... paths on win32 as it does today (no regression)', async () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const map: PathMap = { projects: { myproj: { 'test-host': 'C:\\Users\\name\\myproj' } } };
     expect(() => enforceAllowList('M  shared/projects/myproj/session.jsonl\0', map)).not.toThrow();
@@ -549,7 +546,7 @@ describe('enforceAllowList on a win32 stub: forward-slash porcelain paths unchan
   });
 
   it('still rejects an out-of-allowlist path on win32 (no widened acceptance)', async () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {} };
@@ -575,11 +572,11 @@ describe('assertSafeLocalRoot / assertSafeLogical: win32-shaped path-map values'
 
   afterEach(() => {
     vi.doUnmock('node:path');
-    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+    stubPlatform(realPlatform);
   });
 
   function mockWin32PathSemantics(): void {
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    stubPlatform('win32');
     vi.doMock('node:path', async (importOriginal) => {
       const actual = await importOriginal<typeof pathModule>();
       return { ...actual, ...actual.win32 };

@@ -9,6 +9,7 @@ import {
   teardownPushEnv,
   type PushEnv,
 } from './commands.push.test-helpers.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 import type * as childProcessModule from 'node:child_process';
 import type * as linksModule from './links.ts';
@@ -737,17 +738,12 @@ describe('cmdPush: shared-links push mirror integration', () => {
   let env: PushEnv;
   const realPlatform = process.platform;
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  };
-
   beforeEach(() => {
     env = makePushEnv();
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     teardownPushEnv(env);
   });
 
@@ -757,7 +753,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
     // time cmdPush reaches its status snapshot, mirroring the existing "real
     // syncSkillsPush" integration test's shape.
     writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# win32 local edit\n');
-    setPlatform('win32');
+    stubPlatform('win32');
 
     vi.doMock('./push-checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
@@ -796,7 +792,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
 
   it('dry-run push: syncSharedLinksPush is NOT called (zero-mutation contract)', async () => {
     const syncSharedLinksPushMock = vi.fn();
-    setPlatform('win32');
+    stubPlatform('win32');
     vi.doMock('./links.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksModule>();
       return { ...actual, syncSharedLinksPush: syncSharedLinksPushMock };
@@ -840,7 +836,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
 
   it('WET push: syncSharedLinksPush is called after syncSkillsPush and before the gitlink walk (call order)', async () => {
     const callOrder: string[] = [];
-    setPlatform('win32');
+    stubPlatform('win32');
     vi.doMock('./links.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksModule>();
       return {

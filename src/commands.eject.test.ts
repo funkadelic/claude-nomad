@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { cmdEject, ejectChecklist, errMessage, previewMaterialize } from './commands.eject.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 // Windows chmod only toggles the read-only attribute: a 0o500 dir still
 // accepts writes and a 0o000 file stays readable, so chmod-based
@@ -440,17 +441,12 @@ describe('cmdEject win32 copy-sync modality', () => {
   let logSpy: MockInstance<(msg: string) => void>;
   const realPlatform = process.platform;
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  };
-
   beforeEach(() => {
     logSpy = vi.spyOn(console, 'log').mockImplementation((_msg: string) => undefined);
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     vi.restoreAllMocks();
   });
 
@@ -458,7 +454,7 @@ describe('cmdEject win32 copy-sync modality', () => {
     const { claudeHome, repoHome } = makeTempRoots();
     writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real (win32 copy)');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     cmdEject({}, { claudeHome, repoHome });
 
     expect(logSpy).toHaveBeenCalledWith(
@@ -475,7 +471,7 @@ describe('cmdEject win32 copy-sync modality', () => {
     const { claudeHome, repoHome } = makeTempRoots();
     writeFileSync(join(claudeHome, 'CLAUDE.md'), 'already real (win32 copy)');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     cmdEject({ dryRun: true }, { claudeHome, repoHome });
 
     expect(logSpy).toHaveBeenCalledWith(

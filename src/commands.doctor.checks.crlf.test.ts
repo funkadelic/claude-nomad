@@ -8,16 +8,12 @@ import { okGlyph, warnGlyph } from './color.ts';
 import { section } from './commands.doctor.format.ts';
 import { reportCrlfGuardCheck } from './commands.doctor.checks.crlf.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 // win32 stub helper: overrides process.platform for the current test, restored
 // in afterEach. NO_COLOR=1 is set so glyph substring asserts are not split by
 // ANSI escapes (picocolors forces color ON for win32 regardless of TTY).
 const realPlatform = process.platform;
-
-/** Overrides process.platform for the current test. */
-function setPlatform(value: string): void {
-  Object.defineProperty(process, 'platform', { value, configurable: true });
-}
 
 describe('reportCrlfGuardCheck', () => {
   let originalNoColor: string | undefined;
@@ -36,7 +32,7 @@ describe('reportCrlfGuardCheck', () => {
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     if (originalNoColor === undefined) delete process.env.NO_COLOR;
     else process.env.NO_COLOR = originalNoColor;
     if (originalNomadRepo === undefined) delete process.env.NOMAD_REPO;
@@ -123,7 +119,7 @@ describe('reportCrlfGuardCheck', () => {
   });
 
   it('runs on a darwin stub (no process.platform gate)', () => {
-    setPlatform('darwin');
+    stubPlatform('darwin');
     const run: SpawnSyncFn = () => Buffer.from('true\n');
     const s = section('Environment');
     reportCrlfGuardCheck(s, run);
