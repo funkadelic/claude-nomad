@@ -67,7 +67,10 @@ export function reportGitlinks(section: DoctorSection): void {
   if (existsSync(sharedDir)) {
     const gitlinks = findGitlinks(sharedDir);
     for (const p of gitlinks) {
-      const rel = relative(repo, p);
+      // Repo-relative paths are forward-slash on every platform (matches how
+      // git itself reports paths); relative() returns a native (backslash on
+      // win32) separator, so normalize before display.
+      const rel = relative(repo, p).replaceAll('\\', '/');
       addItem(
         section,
         `${red(failGlyph)} gitlink: ${blue(rel)} would push as submodule (run: rm -rf ${rel} or remove the nested repo)`,

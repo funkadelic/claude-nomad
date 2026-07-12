@@ -53,7 +53,12 @@ export function expandStagedDir(dirRel: string, repo: string): string[] {
  */
 export function isTrackedInHead(rel: string, repo: string): boolean {
   try {
-    execFileSync('git', ['cat-file', '-e', `HEAD:${rel}`], {
+    // The `<rev>:<path>` object-spec path segment is parsed as a tree path,
+    // not a pathspec: git requires forward slashes there on every platform.
+    // `rel` is native-separator (backslash on win32) when it comes from
+    // node:path's relative(), so normalize before building the spec.
+    const treePath = rel.replaceAll('\\', '/');
+    execFileSync('git', ['cat-file', '-e', `HEAD:${treePath}`], {
       cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

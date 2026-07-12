@@ -80,9 +80,15 @@ function readPathMapSafe(): PathMap {
  * @returns True when the script resolves under a nomad-managed symlink.
  */
 function resolvesUnderSymlinkedShared(scriptPath: string, sharedLinkNames: string[]): boolean {
+  // Compare with forward slashes normalized on both sides: claudeHome() joins
+  // with the native separator (backslash on win32), but scriptPath keeps its
+  // literal forward slashes after expandHome splices in the (backslash-style)
+  // home() prefix, so a raw startsWith would false-negative on win32 for a
+  // genuinely-under-claudeHome script.
+  const normalizedScript = scriptPath.replaceAll('\\', '/');
   for (const name of sharedLinkNames) {
-    const prefix = `${claudeHome()}/${name}/`;
-    if (scriptPath.startsWith(prefix)) return true;
+    const prefix = `${claudeHome().replaceAll('\\', '/')}/${name}/`;
+    if (normalizedScript.startsWith(prefix)) return true;
   }
   return false;
 }
