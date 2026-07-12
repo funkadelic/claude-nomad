@@ -14,12 +14,27 @@ import { NomadFatal } from './utils.ts';
  * `nomad --version` prints a bare semver (e.g. `0.47.1`), so the caller is
  * responsible for adding any desired prefix (e.g. `v`).
  *
+ * On win32, `nomad` resolves to the `nomad.cmd` batch shim, and spawning a
+ * `.cmd` file without `shell: true` throws `EINVAL` on current Node
+ * releases (mirrors `cmdUpdate`'s own `npm.cmd` treatment below). The args
+ * array stays the fixed literal `['--version']` (never user or
+ * config-derived), so `shell: true` introduces no command-injection surface
+ * here.
+ *
  * @param run - Subprocess runner; defaults to `execFileSync`. Inject a fake in
  *   tests to assert behavior without touching the real filesystem.
  */
 export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | null {
+  const isWin = process.platform === 'win32';
   try {
-    return run('nomad', ['--version'], { encoding: 'utf8' }).toString().trim() || null;
+    return (
+      run(isWin ? 'nomad.cmd' : 'nomad', ['--version'], {
+        encoding: 'utf8',
+        ...(isWin ? { shell: true } : {}),
+      })
+        .toString()
+        .trim() || null
+    );
   } catch {
     return null;
   }

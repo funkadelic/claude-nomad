@@ -186,3 +186,60 @@ describe('readInstalledVersion', () => {
     expect(readInstalledVersion(run)).toBeNull();
   });
 });
+
+describe('readInstalledVersion platform branching', () => {
+  let originalPlatform: NodeJS.Platform;
+
+  beforeEach(() => {
+    originalPlatform = process.platform;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  function setPlatform(value: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  }
+
+  function makeCapturingRun(): {
+    run: (bin: string, args: readonly string[], opts?: ExecFileSyncOptions) => string;
+    calls: { bin: string; args: readonly string[]; opts?: ExecFileSyncOptions }[];
+  } {
+    const calls: { bin: string; args: readonly string[]; opts?: ExecFileSyncOptions }[] = [];
+    const run = (bin: string, args: readonly string[], opts?: ExecFileSyncOptions): string => {
+      calls.push({ bin, args, opts });
+      return '0.47.1\n';
+    };
+    return { run, calls };
+  }
+
+  it('spawns nomad.cmd with shell:true and the literal args array on win32', () => {
+    setPlatform('win32');
+    const { run, calls } = makeCapturingRun();
+
+    expect(readInstalledVersion(run)).toBe('0.47.1');
+
+    expect(calls[0].bin).toBe('nomad.cmd');
+    expect(calls[0].args).toEqual(['--version']);
+    expect(calls[0].opts?.shell).toBe(true);
+  });
+
+  it('spawns nomad unchanged (no shell:true) on a non-win32 platform', () => {
+    setPlatform('darwin');
+    const { run, calls } = makeCapturingRun();
+
+    expect(readInstalledVersion(run)).toBe('0.47.1');
+
+    expect(calls[0].bin).toBe('nomad');
+    expect(calls[0].opts?.shell).not.toBe(true);
+  });
+
+  it('returns null on error identically on a win32 stub', () => {
+    setPlatform('win32');
+    const run = () => {
+      throw new Error('spawn nomad.cmd ENOENT');
+    };
+    expect(readInstalledVersion(run)).toBeNull();
+  });
+});
