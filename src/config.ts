@@ -291,6 +291,7 @@ export const PUSH_ALLOWED_STATIC = [
   'path-map.json',
   '.gitleaksignore', // written by nomad push Allow action
   '.gitleaks.overlay.toml', // user-owned gitleaks allowlist overlay layered on the bundled base
+  '.gitattributes', // scaffolded by nomad init as the CRLF guard doctor recommends adding
 ] as const;
 
 /**

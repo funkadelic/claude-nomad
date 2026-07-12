@@ -488,6 +488,39 @@ describe('enforceAllowList .gitleaksignore allow-list entry', () => {
   });
 });
 
+// Regression: .gitattributes must be allowed by enforceAllowList so the root
+// .gitattributes scaffolded by nomad init (the CRLF guard) can reach the
+// shared repo on the first push. The entry must be an exact match (not a
+// prefix) so siblings like .gitattributes.bak remain rejected.
+describe('enforceAllowList .gitattributes allow-list entry', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('allows a staged .gitattributes (exact match in PUSH_ALLOWED_STATIC)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  .gitattributes\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects .gitattributes.bak (exact-match only, no prefix leak)', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {} };
+    expect(() => enforceAllowList('M  .gitattributes.bak\0', map)).toThrow(NomadFatal);
+  });
+});
+
 // win32 path audit: enforceAllowList never derives a
 // comparison path from a host filesystem path via path.relative/path.sep --
 // it works entirely on forward-slash string literals (PUSH_ALLOWED_STATIC,
