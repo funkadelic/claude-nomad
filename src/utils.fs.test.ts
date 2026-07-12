@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { freshBackupTs, nowTimestamp, renameAtomicRetry, writeJsonAtomic } from './utils.fs.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 /**
  * Builds a fake `NodeJS.ErrnoException` with the given errno `code`, used to
@@ -181,11 +182,6 @@ describe('writeJsonAtomic directory-fsync EPERM handling (mocked node:fs)', () =
     });
   };
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value });
-  };
-
   beforeEach(() => {
     vi.resetModules();
     originalHome = process.env.HOME;
@@ -194,7 +190,7 @@ describe('writeJsonAtomic directory-fsync EPERM handling (mocked node:fs)', () =
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     vi.doUnmock('node:fs');
     vi.restoreAllMocks();
     if (originalHome !== undefined) process.env.HOME = originalHome;
@@ -204,7 +200,7 @@ describe('writeJsonAtomic directory-fsync EPERM handling (mocked node:fs)', () =
 
   it('swallows EPERM from the directory fsync on win32 and completes the write', async () => {
     mockDirFsyncFailure('EPERM');
-    setPlatform('win32');
+    stubPlatform('win32');
     const mocked = await import('./utils.fs.ts');
     const target = join(testHome, 'settings.json');
     expect(() => mocked.writeJsonAtomic(target, { a: 1 })).not.toThrow();
@@ -213,7 +209,7 @@ describe('writeJsonAtomic directory-fsync EPERM handling (mocked node:fs)', () =
 
   it('rethrows a non-EPERM directory-fsync error on win32', async () => {
     mockDirFsyncFailure('EIO');
-    setPlatform('win32');
+    stubPlatform('win32');
     const mocked = await import('./utils.fs.ts');
     const target = join(testHome, 'settings.json');
     expect(() => mocked.writeJsonAtomic(target, { a: 1 })).toThrow(/EIO/);
@@ -233,17 +229,12 @@ describe('writeJsonAtomic directory-fsync EPERM handling (mocked node:fs)', () =
 describe('renameAtomicRetry', () => {
   const realPlatform = process.platform;
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value });
-  };
-
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
   });
 
   it('retries EPERM twice then succeeds on win32 against an existing destination', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     let calls = 0;
     const renameFn: typeof renameSync = () => {
       calls++;
@@ -254,7 +245,7 @@ describe('renameAtomicRetry', () => {
   });
 
   it('retries EBUSY the same way as EPERM on win32', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     let calls = 0;
     const renameFn: typeof renameSync = () => {
       calls++;
@@ -265,7 +256,7 @@ describe('renameAtomicRetry', () => {
   });
 
   it('re-throws a non-EPERM/EBUSY code immediately on win32 (single call, no retry)', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     let calls = 0;
     const renameFn: typeof renameSync = () => {
       calls++;
@@ -276,7 +267,7 @@ describe('renameAtomicRetry', () => {
   });
 
   it('re-throws after exhausting the bounded attempt cap when EPERM persists on win32', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     let calls = 0;
     const renameFn: typeof renameSync = () => {
       calls++;
@@ -287,7 +278,7 @@ describe('renameAtomicRetry', () => {
   });
 
   it('on non-win32, calls renameFn exactly once on success (no retry)', () => {
-    setPlatform('darwin');
+    stubPlatform('darwin');
     let calls = 0;
     const renameFn: typeof renameSync = () => {
       calls++;
@@ -297,7 +288,7 @@ describe('renameAtomicRetry', () => {
   });
 
   it('on non-win32, re-throws immediately with a single call (no retry, no backoff)', () => {
-    setPlatform('darwin');
+    stubPlatform('darwin');
     let calls = 0;
     const renameFn: typeof renameSync = () => {
       calls++;

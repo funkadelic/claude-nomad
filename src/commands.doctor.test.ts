@@ -11,6 +11,7 @@ import {
   mockGitleaksPresent,
   restoreEnv,
 } from './commands.doctor.checks.test-helpers.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 describe('cmdDoctor --check-shared dispatch wiring', () => {
   // Dispatch-level wiring only: plain doctor must NOT scan, the flag
@@ -170,11 +171,6 @@ describe('cmdDoctor sync modality + long-paths rows', () => {
   let env: Env;
   const realPlatform = process.platform;
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  };
-
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
@@ -186,7 +182,7 @@ describe('cmdDoctor sync modality + long-paths rows', () => {
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     process.exitCode = 0;
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
@@ -197,7 +193,7 @@ describe('cmdDoctor sync modality + long-paths rows', () => {
   });
 
   it('includes the copy-sync modality row and the long-paths rows on a win32 stub', async () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);
@@ -207,7 +203,7 @@ describe('cmdDoctor sync modality + long-paths rows', () => {
   });
 
   it('includes the symlink modality row and excludes long-paths rows on a posix stub', async () => {
-    setPlatform('darwin');
+    stubPlatform('darwin');
     const { cmdDoctor } = await import('./commands.doctor.ts');
     cmdDoctor({ verbose: true });
     const out = joinedLog(env.logSpy);

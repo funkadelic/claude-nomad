@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ALWAYS_NEVER_SYNC, isDeniedName } from './config.ts';
 import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 // Posix-only assertions (symlink creation) throughout this file assume the
 // process is genuinely running on a non-win32 host. On a real win32 runner,
@@ -671,11 +672,6 @@ describe('applySharedLinks win32 copy branch', () => {
   let sharedDir: string;
   const realPlatform = process.platform;
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  };
-
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
@@ -691,7 +687,7 @@ describe('applySharedLinks win32 copy branch', () => {
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     vi.restoreAllMocks();
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -705,7 +701,7 @@ describe('applySharedLinks win32 copy branch', () => {
     mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { applySharedLinks } = await import('./links.ts');
     applySharedLinks('20260701-000000', { projects: {} });
 
@@ -727,7 +723,7 @@ describe('applySharedLinks win32 copy branch', () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new shared content\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# prior real-copy content\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { applySharedLinks } = await import('./links.ts');
     applySharedLinks('20260701-000007', { projects: {} });
 
@@ -754,7 +750,7 @@ describe('applySharedLinks win32 copy branch', () => {
     // that previously shared ~/.claude with a symlink-capable OS).
     symlinkSync(join(sharedDir, 'CLAUDE.md'), linkPath);
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { applySharedLinks } = await import('./links.ts');
     applySharedLinks('20260701-000001', { projects: {} });
 
@@ -778,7 +774,7 @@ describe('applySharedLinks win32 copy branch', () => {
     // At least one other shared link exists so the run is not a no-op.
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { applySharedLinks } = await import('./links.ts');
     applySharedLinks('20260701-000002', { projects: {} });
 
@@ -803,7 +799,7 @@ describe('applySharedLinks win32 copy branch', () => {
 
   it('dry-run on win32 emits a copy preview event (not create) and does not mutate disk', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
-    setPlatform('win32');
+    stubPlatform('win32');
     const events: { kind: string; from: string; to: string }[] = [];
     const { applySharedLinks } = await import('./links.ts');
     applySharedLinks(
@@ -819,7 +815,7 @@ describe('applySharedLinks win32 copy branch', () => {
 
   it('falls back to log() with "would copy" text for win32 dry-run when onPreview is absent', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
-    setPlatform('win32');
+    stubPlatform('win32');
     const logs: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
       logs.push(args.map(String).join(' '));
@@ -833,7 +829,7 @@ describe('applySharedLinks win32 copy branch', () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
     mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
-    setPlatform('win32');
+    stubPlatform('win32');
 
     const events: { kind: string; from: string; to: string }[] = [];
     const { applySharedLinks } = await import('./links.ts');
@@ -868,11 +864,6 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
   let sharedDir: string;
   const realPlatform = process.platform;
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  };
-
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
@@ -888,7 +879,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     vi.restoreAllMocks();
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -902,7 +893,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { syncSharedLinksPush } = await import('./links.ts');
     syncSharedLinksPush({ projects: {} });
 
@@ -914,7 +905,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
     symlinkSync(join(sharedDir, 'CLAUDE.md'), join(claudeDir, 'CLAUDE.md'));
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { syncSharedLinksPush } = await import('./links.ts');
     syncSharedLinksPush({ projects: {} });
 
@@ -931,7 +922,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
     writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{"secret":true}');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { syncSharedLinksPush } = await import('./links.ts');
     syncSharedLinksPush({ projects: {} });
 
@@ -941,7 +932,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
 
   it('skips a name absent from ~/.claude/ without throwing', async () => {
     // No CLAUDE.md, commands, or rules under claudeDir at all.
-    setPlatform('win32');
+    stubPlatform('win32');
     const { syncSharedLinksPush } = await import('./links.ts');
     expect(() => syncSharedLinksPush({ projects: {} })).not.toThrow();
     expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
@@ -949,7 +940,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
 
   it('is a no-op when path-map.json is absent (map is null)', async () => {
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
-    setPlatform('win32');
+    stubPlatform('win32');
     const { syncSharedLinksPush } = await import('./links.ts');
     expect(() => syncSharedLinksPush(null)).not.toThrow();
     expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);

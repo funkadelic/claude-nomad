@@ -13,6 +13,7 @@ import {
   makeDoctorEnv,
   restoreEnv,
 } from './commands.doctor.checks.test-helpers.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 describe('cmdDoctor NOMAD_REPO annotation', () => {
   // The annotation lives in reportRepoState (per SPEC §5). It must appear on
@@ -284,11 +285,6 @@ describe('classifySharedLink win32 real-copy branch', () => {
   let testHome: string;
   const realPlatform = process.platform;
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  };
-
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalUserProfile = process.env.USERPROFILE;
@@ -307,7 +303,7 @@ describe('classifySharedLink win32 real-copy branch', () => {
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     process.exitCode = 0;
     vi.restoreAllMocks();
     vi.resetModules();
@@ -319,7 +315,7 @@ describe('classifySharedLink win32 real-copy branch', () => {
   });
 
   it('reports a real non-symlink target as OK (fail:false) on win32', async () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     vi.resetModules();
     const { SHARED_LINKS } = await import('./config.ts');
     const claudeHomeDir = join(testHome, '.claude');
@@ -339,7 +335,7 @@ describe('classifySharedLink win32 real-copy branch', () => {
   });
 
   it('still FAILs a real non-symlink target on posix (unchanged)', async () => {
-    setPlatform('linux');
+    stubPlatform('linux');
     vi.resetModules();
     const { SHARED_LINKS } = await import('./config.ts');
     const claudeHomeDir = join(testHome, '.claude');

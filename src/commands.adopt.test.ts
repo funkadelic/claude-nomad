@@ -14,6 +14,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { stubPlatform } from './test-helpers.platform.ts';
+
 // Posix-only assertions (symlink creation, clobber-refusal wording) below
 // assume the process is genuinely running on a non-win32 host. On a real
 // win32 runner cmdAdopt takes the copy-back branch for real (process.platform
@@ -551,17 +553,12 @@ describe('cmdAdopt win32 copy-back branch', () => {
   let env: Env;
   const realPlatform = process.platform;
 
-  /** Overrides process.platform for the current test; restored in afterEach. */
-  const setPlatform = (value: string): void => {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  };
-
   beforeEach(() => {
     env = makeAdoptEnv();
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     teardownAdoptEnv(env);
   });
 
@@ -571,7 +568,7 @@ describe('cmdAdopt win32 copy-back branch', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('my-tools')).not.toThrow();
 
@@ -594,7 +591,7 @@ describe('cmdAdopt win32 copy-back branch', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'file.txt'), 'content\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('my-tools')).not.toThrow();
 
@@ -609,7 +606,7 @@ describe('cmdAdopt win32 copy-back branch', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'file.txt'), 'content\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('my-tools', { dryRun: true })).not.toThrow();
 
@@ -637,7 +634,7 @@ describe('cmdAdopt win32 copy-back branch', () => {
     mkdirSync(sharedTarget, { recursive: true });
     writeFileSync(join(sharedTarget, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('my-tools')).not.toThrow();
     expect(env.exitSpy).not.toHaveBeenCalled();
@@ -659,7 +656,7 @@ describe('cmdAdopt win32 copy-back branch', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'file.txt'), 'content\n');
 
-    setPlatform('win32');
+    stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('my-tools')).not.toThrow();
 

@@ -5,16 +5,12 @@ import { repoHome } from './config.ts';
 import { section } from './commands.doctor.format.ts';
 import { reportLongPathsCheck, reportSyncModality } from './commands.doctor.checks.longpaths.ts';
 import type { SpawnSyncFn } from './gh-actions.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 // win32 stub helper: overrides process.platform for the current test, restored
 // in afterEach. NO_COLOR=1 is set so glyph substring asserts are not split by
 // ANSI escapes (picocolors forces color ON for win32 regardless of TTY).
 const realPlatform = process.platform;
-
-/** Overrides process.platform for the current test. */
-function setPlatform(value: string): void {
-  Object.defineProperty(process, 'platform', { value, configurable: true });
-}
 
 /**
  * Build a SpawnSyncFn that returns enabled output for both `git config` and
@@ -45,14 +41,14 @@ describe('reportLongPathsCheck', () => {
   });
 
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
     if (originalNoColor === undefined) delete process.env.NO_COLOR;
     else process.env.NO_COLOR = originalNoColor;
     process.exitCode = savedExitCode;
   });
 
   it('emits two OK rows on win32 when both git core.longpaths and the registry are enabled', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const calls: string[][] = [];
     const s = section('Environment');
     reportLongPathsCheck(s, runBothEnabled(calls));
@@ -67,7 +63,7 @@ describe('reportLongPathsCheck', () => {
   });
 
   it('scopes the git config probe to -C repoHome() so it reads the sync repo, not cwd', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const calls: string[][] = [];
     const s = section('Environment');
     reportLongPathsCheck(s, runBothEnabled(calls));
@@ -76,7 +72,7 @@ describe('reportLongPathsCheck', () => {
   });
 
   it('accepts a trimmed "1" as enabled for git core.longpaths (not only "true")', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const run: SpawnSyncFn = (bin) => {
       if (bin === 'git') return Buffer.from('1\n');
       return Buffer.from('    LongPathsEnabled    REG_DWORD    0x1\n');
@@ -89,7 +85,7 @@ describe('reportLongPathsCheck', () => {
   });
 
   it('emits WARN rows on win32 when git core.longpaths is unset and the registry value is 0x0', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const run: SpawnSyncFn = (bin) => {
       if (bin === 'git') {
         // `git config --get` exits non-zero when the key is unset.
@@ -111,7 +107,7 @@ describe('reportLongPathsCheck', () => {
   });
 
   it('degrades to a WARN row on win32 when the reg query throws ENOENT (reg.exe absent)', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const run: SpawnSyncFn = (bin) => {
       if (bin === 'git') return Buffer.from('true\n');
       throw Object.assign(new Error('spawn reg ENOENT'), { code: 'ENOENT' });
@@ -125,7 +121,7 @@ describe('reportLongPathsCheck', () => {
   });
 
   it('is a zero-row, zero-spawn no-op on darwin', () => {
-    setPlatform('darwin');
+    stubPlatform('darwin');
     const calls: string[][] = [];
     const run: SpawnSyncFn = (bin, args) => {
       calls.push([bin, ...args]);
@@ -141,11 +137,11 @@ describe('reportLongPathsCheck', () => {
 
 describe('reportSyncModality', () => {
   afterEach(() => {
-    setPlatform(realPlatform);
+    stubPlatform(realPlatform);
   });
 
   it('emits an informational row conveying copy-sync on win32', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const s = section('Environment');
     reportSyncModality(s);
     expect(s.items).toHaveLength(1);
@@ -153,7 +149,7 @@ describe('reportSyncModality', () => {
   });
 
   it('emits an informational row conveying symlink on a non-win32 platform', () => {
-    setPlatform('darwin');
+    stubPlatform('darwin');
     const s = section('Environment');
     reportSyncModality(s);
     expect(s.items).toHaveLength(1);

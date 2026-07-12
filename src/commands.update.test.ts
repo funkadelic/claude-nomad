@@ -3,12 +3,13 @@ import { type ExecFileSyncOptions } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { cmdUpdate, readInstalledVersion } from './commands.update.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 import { NomadFatal } from './utils.ts';
 
 // The default-platform test below asserts the literal 'npm' bin without
 // overriding process.platform, so it is posix-only by construction; the
 // win32 branch (npm.cmd) is covered explicitly in the platform-branching
-// describe block further down via setPlatform.
+// describe block further down via stubPlatform.
 const isWin = process.platform === 'win32';
 
 /**
@@ -108,12 +109,8 @@ describe('cmdUpdate platform branching', () => {
   });
 
   afterEach(() => {
-    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    stubPlatform(originalPlatform);
   });
-
-  function setPlatform(value: NodeJS.Platform): void {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  }
 
   function makeCapturingRun(): {
     run: (bin: string, args: readonly string[], opts?: ExecFileSyncOptions) => string;
@@ -129,7 +126,7 @@ describe('cmdUpdate platform branching', () => {
   }
 
   it('spawns npm.cmd with shell:true and the literal args array on win32', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const { run, calls } = makeCapturingRun();
 
     cmdUpdate('0.46.0', run);
@@ -144,7 +141,7 @@ describe('cmdUpdate platform branching', () => {
   });
 
   it('spawns npm unchanged (no shell:true) on a non-win32 platform', () => {
-    setPlatform('darwin');
+    stubPlatform('darwin');
     const { run, calls } = makeCapturingRun();
 
     cmdUpdate('0.46.0', run);
@@ -154,7 +151,7 @@ describe('cmdUpdate platform branching', () => {
   });
 
   it('ENOENT and stderr-fold error paths fire identically on a win32 stub', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const enoentRun = () => {
       const err = new Error('spawn npm.cmd ENOENT') as NodeJS.ErrnoException;
       err.code = 'ENOENT';
@@ -201,12 +198,8 @@ describe('readInstalledVersion platform branching', () => {
   });
 
   afterEach(() => {
-    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    stubPlatform(originalPlatform);
   });
-
-  function setPlatform(value: NodeJS.Platform): void {
-    Object.defineProperty(process, 'platform', { value, configurable: true });
-  }
 
   function makeCapturingRun(): {
     run: (bin: string, args: readonly string[], opts?: ExecFileSyncOptions) => string;
@@ -221,7 +214,7 @@ describe('readInstalledVersion platform branching', () => {
   }
 
   it('spawns nomad.cmd with shell:true and the literal args array on win32', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const { run, calls } = makeCapturingRun();
 
     expect(readInstalledVersion(run)).toBe('0.47.1');
@@ -232,7 +225,7 @@ describe('readInstalledVersion platform branching', () => {
   });
 
   it('spawns nomad unchanged (no shell:true) on a non-win32 platform', () => {
-    setPlatform('darwin');
+    stubPlatform('darwin');
     const { run, calls } = makeCapturingRun();
 
     expect(readInstalledVersion(run)).toBe('0.47.1');
@@ -242,7 +235,7 @@ describe('readInstalledVersion platform branching', () => {
   });
 
   it('returns null on error identically on a win32 stub', () => {
-    setPlatform('win32');
+    stubPlatform('win32');
     const run = () => {
       throw new Error('spawn nomad.cmd ENOENT');
     };

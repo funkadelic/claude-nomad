@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PathMap } from './config.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 // The "on non-win32" tests below assert `process.platform !== 'win32'`
 // directly against the real host (no Object.defineProperty override), so
@@ -233,14 +234,14 @@ describe('call-time resolvers: home, claudeHome, repoHome, backupBase', () => {
   it('on win32, home() prefers USERPROFILE over HOME when both are set', async () => {
     const realPlatform = process.platform;
     const savedUserProfile = process.env.USERPROFILE;
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    stubPlatform('win32');
     process.env.USERPROFILE = 'C:\\Users\\win-profile';
     process.env.HOME = '/c/Users/msys-home';
     try {
       const { home } = await import('./config.ts');
       expect(home()).toBe('C:\\Users\\win-profile');
     } finally {
-      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      stubPlatform(realPlatform);
       if (savedUserProfile === undefined) delete process.env.USERPROFILE;
       else process.env.USERPROFILE = savedUserProfile;
     }
@@ -249,14 +250,14 @@ describe('call-time resolvers: home, claudeHome, repoHome, backupBase', () => {
   it('on win32, home() falls through to HOME when USERPROFILE is unset', async () => {
     const realPlatform = process.platform;
     const savedUserProfile = process.env.USERPROFILE;
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    stubPlatform('win32');
     delete process.env.USERPROFILE;
     process.env.HOME = 'C:\\Users\\home-fallback';
     try {
       const { home } = await import('./config.ts');
       expect(home()).toBe('C:\\Users\\home-fallback');
     } finally {
-      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      stubPlatform(realPlatform);
       if (savedUserProfile === undefined) delete process.env.USERPROFILE;
       else process.env.USERPROFILE = savedUserProfile;
     }
@@ -265,14 +266,14 @@ describe('call-time resolvers: home, claudeHome, repoHome, backupBase', () => {
   it('on win32, home() falls through to HOME when USERPROFILE is set-but-empty', async () => {
     const realPlatform = process.platform;
     const savedUserProfile = process.env.USERPROFILE;
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    stubPlatform('win32');
     process.env.USERPROFILE = '';
     process.env.HOME = 'C:\\Users\\home-fallback-empty';
     try {
       const { home } = await import('./config.ts');
       expect(home()).toBe('C:\\Users\\home-fallback-empty');
     } finally {
-      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      stubPlatform(realPlatform);
       if (savedUserProfile === undefined) delete process.env.USERPROFILE;
       else process.env.USERPROFILE = savedUserProfile;
     }
@@ -281,7 +282,7 @@ describe('call-time resolvers: home, claudeHome, repoHome, backupBase', () => {
   it('on win32, home() falls back to homedir() when both USERPROFILE and HOME are unset', async () => {
     const realPlatform = process.platform;
     const savedUserProfile = process.env.USERPROFILE;
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    stubPlatform('win32');
     delete process.env.USERPROFILE;
     delete process.env.HOME;
     try {
@@ -289,7 +290,7 @@ describe('call-time resolvers: home, claudeHome, repoHome, backupBase', () => {
       const { homedir } = await import('node:os');
       expect(home()).toBe(homedir());
     } finally {
-      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      stubPlatform(realPlatform);
       if (savedUserProfile === undefined) delete process.env.USERPROFILE;
       else process.env.USERPROFILE = savedUserProfile;
     }
