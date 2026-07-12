@@ -130,6 +130,8 @@ prefer it). The steps are the same as above with a couple of PowerShell-specific
 #    as a persistent user environment variable instead, then restart your
 #    terminal so the new value is picked up.
 > [System.Environment]::SetEnvironmentVariable('NOMAD_HOST', '<your-host-label>', 'User')
+#    Using cmd instead of PowerShell? The equivalent one-liner is:
+#    setx NOMAD_HOST <your-host-label>
 
 # 4. Publish the scaffold to your private repo.
 > nomad push
@@ -282,9 +284,9 @@ independently from the CLI, but requires nomad `>= 0.35.0` because it calls rece
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) (required for `nomad push`)
 - `gh` ([GitHub CLI](https://cli.github.com/)), required by `nomad init`
 
-Works on macOS, Linux (including WSL2), and native Windows via PowerShell. See [Windows](#windows)
-above for the PowerShell equivalents of the install and host-label steps, the copy-sync trade-off,
-and the `.gitleaksignore` cross-host caveat.
+Works on macOS, Linux (including WSL2), and native Windows (PowerShell or cmd). See
+[Windows](#windows) above for the Windows equivalents of the install and host-label steps, the
+copy-sync trade-off, and the `.gitleaksignore` cross-host caveat.
 
 **Optional:** [curl](https://curl.se/) or [wget](https://www.gnu.org/software/wget/) for the
 version-staleness check and `nomad doctor --check-schema`. The CLI works without them. The opt-in

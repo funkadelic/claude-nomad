@@ -41,7 +41,7 @@ This is the ongoing case. One command becomes part of your routine, the same way
 ## Works across platforms
 
 claude-nomad runs the same way on macOS, Linux, WSL2, and native Windows (no WSL required). See
-the [Quickstart](/claude-nomad/quickstart/) for the PowerShell steps on native Windows.
+the [Quickstart](/claude-nomad/quickstart/) for the native Windows steps (PowerShell or cmd).
 
 ## What it is not
 

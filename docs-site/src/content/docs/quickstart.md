@@ -83,6 +83,8 @@ prefer it). The steps are the same as [First host](#first-host-once-ever) and
 #    as a persistent user environment variable instead, then restart your
 #    terminal so the new value is picked up.
 > [System.Environment]::SetEnvironmentVariable('NOMAD_HOST', '<your-host-label>', 'User')
+#    Using cmd instead of PowerShell? The equivalent one-liner is:
+#    setx NOMAD_HOST <your-host-label>
 
 # 4. Publish the scaffold to your private repo.
 > nomad push
