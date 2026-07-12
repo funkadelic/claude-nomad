@@ -17,6 +17,11 @@ import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } fr
 
 import { cmdEject, ejectChecklist, errMessage, previewMaterialize } from './commands.eject.ts';
 
+// Windows chmod only toggles the read-only attribute: a 0o500 dir still
+// accepts writes and a 0o000 file stays readable, so chmod-based
+// EACCES-injection assertions cannot hold on win32.
+const isWin = process.platform === 'win32';
+
 /**
  * Helper: create a temp directory pair (claudeHome + repoHome) for each test.
  */
@@ -335,52 +340,60 @@ describe('cmdEject', () => {
     );
   });
 
-  it('live fs fault: read-only claudeHome aborts with a FATAL naming the failed entry', () => {
-    const { claudeHome, repoHome } = makeTempRoots();
-    makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'one');
-    // Make claudeHome read-only so the sibling temp copy (cpSync) fails EACCES.
-    chmodSync(claudeHome, 0o500);
-    try {
-      expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
-      expect(errSpy).toHaveBeenCalledWith(
-        expect.stringContaining('failed to materialize CLAUDE.md'),
-      );
-      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('already materialized: (none)'));
-      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('do NOT delete'));
-      expect(exitSpy).toHaveBeenCalledWith(1);
-    } finally {
-      chmodSync(claudeHome, 0o700);
-    }
-  });
+  it.skipIf(isWin)(
+    'live fs fault: read-only claudeHome aborts with a FATAL naming the failed entry',
+    () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      makeLinkedFile(claudeHome, repoHome, 'CLAUDE.md', 'one');
+      // Make claudeHome read-only so the sibling temp copy (cpSync) fails EACCES.
+      chmodSync(claudeHome, 0o500);
+      try {
+        expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining('failed to materialize CLAUDE.md'),
+        );
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining('already materialized: (none)'),
+        );
+        expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('do NOT delete'));
+        expect(exitSpy).toHaveBeenCalledWith(1);
+      } finally {
+        chmodSync(claudeHome, 0o700);
+      }
+    },
+  );
 
-  it('live fs fault: reports already-materialized names completed before the failure', () => {
-    const { claudeHome, repoHome } = makeTempRoots();
-    // Use sharedDirs to control ordering: allSharedLinks puts SHARED_LINKS
-    // first; CLAUDE.md materializes, then a later name fails. Point a later
-    // managed name at a target we make unreadable so cpSync dereference fails.
-    // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
-    const okTarget = join(repoHome, 'shared', 'CLAUDE.md');
-    writeFileSync(okTarget, 'ok');
-    symlinkSync(okTarget, join(claudeHome, 'CLAUDE.md'));
-    const badTarget = join(repoHome, 'shared', 'commands');
-    mkdirSync(badTarget, { recursive: true });
-    const badNested = join(badTarget, 'secret.md');
-    writeFileSync(badNested, 'x');
-    symlinkSync(badTarget, join(claudeHome, 'commands'));
-    chmodSync(badNested, 0o000); // unreadable; dereference copy fails
+  it.skipIf(isWin)(
+    'live fs fault: reports already-materialized names completed before the failure',
+    () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      // Use sharedDirs to control ordering: allSharedLinks puts SHARED_LINKS
+      // first; CLAUDE.md materializes, then a later name fails. Point a later
+      // managed name at a target we make unreadable so cpSync dereference fails.
+      // skills is no longer in SHARED_LINKS (copy-synced); use commands instead.
+      const okTarget = join(repoHome, 'shared', 'CLAUDE.md');
+      writeFileSync(okTarget, 'ok');
+      symlinkSync(okTarget, join(claudeHome, 'CLAUDE.md'));
+      const badTarget = join(repoHome, 'shared', 'commands');
+      mkdirSync(badTarget, { recursive: true });
+      const badNested = join(badTarget, 'secret.md');
+      writeFileSync(badNested, 'x');
+      symlinkSync(badTarget, join(claudeHome, 'commands'));
+      chmodSync(badNested, 0o000); // unreadable; dereference copy fails
 
-    try {
-      expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
-      expect(errSpy).toHaveBeenCalledWith(
-        expect.stringContaining('failed to materialize commands'),
-      );
-      expect(errSpy).toHaveBeenCalledWith(
-        expect.stringContaining('already materialized: CLAUDE.md'),
-      );
-    } finally {
-      chmodSync(badNested, 0o600);
-    }
-  });
+      try {
+        expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining('failed to materialize commands'),
+        );
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining('already materialized: CLAUDE.md'),
+        );
+      } finally {
+        chmodSync(badNested, 0o600);
+      }
+    },
+  );
 
   it('errMessage: extracts .message from Error and String-coerces non-Error throws', () => {
     expect(errMessage(new Error('boom'))).toBe('boom');

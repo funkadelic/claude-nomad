@@ -19,6 +19,11 @@ import {
 // commands.drop-session.cascade.test.ts; validation/idempotency/lock cases in
 // commands.drop-session.test.ts. SUT path `./commands.drop-session.ts` unchanged.
 
+// Windows chmod only toggles the read-only attribute; a directory chmod'd to
+// 0o555 does not block git's index rewrite there the way a posix read-only
+// dir does, so this EACCES-injection assertion cannot hold on win32.
+const isWin = process.platform === 'win32';
+
 describe('cmdDropSession (match collection + unstage)', () => {
   let env: Env;
 
@@ -129,7 +134,7 @@ describe('cmdDropSession (match collection + unstage)', () => {
     expect(cached).toContain('not-matching/other-id.jsonl');
   });
 
-  it('wraps `git rm --cached` failures as `✗ git failed to unstage`', async () => {
+  it.skipIf(isWin)('wraps `git rm --cached` failures as `✗ git failed to unstage`', async () => {
     // When git itself returns non-zero on the mutation step (e.g., EACCES on
     // .git/index from a read-only filesystem, a locked index, or a corrupt
     // tree), the failure must surface as a NomadFatal with the git stderr

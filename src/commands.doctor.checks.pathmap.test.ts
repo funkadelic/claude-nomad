@@ -12,6 +12,11 @@ import {
   restoreEnv,
 } from './commands.doctor.checks.test-helpers.ts';
 
+// Windows chmod only toggles the read-only attribute; a directory chmod'd to
+// 0o000 still allows readdirSync there, so this EACCES-injection assertion
+// cannot hold on win32.
+const isWin = process.platform === 'win32';
+
 describe('cmdDoctor path-encoding collision detection', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -72,29 +77,35 @@ describe('cmdDoctor path-encoding collision detection', () => {
     expect(out).not.toContain('├ -srv-foo');
   });
 
-  it('skips the unmapped listing without throwing when the projects dir is unreadable', async () => {
-    const map: PathMap = {
-      projects: {
-        foo: { 'test-host': '/srv/foo' },
-      },
-    };
-    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
-    const projectsDir = join(env.testHome, '.claude', 'projects');
-    mkdirSync(join(projectsDir, '-srv-stray'), { recursive: true });
-    // Revoke read permission so readdirSync throws (EACCES); the tolerant
-    // doctor must skip the listing, not crash mid-output.
-    chmodSync(projectsDir, 0o000);
-    try {
-      const { cmdDoctor } = await import('./commands.doctor.ts');
-      cmdDoctor({ verbose: true });
-      const out = joinedLog(env.logSpy);
-      expect(out).not.toContain('Unmapped local projects');
-      // Output continued past the listing: the collision scan still ran.
-      expect(out).toContain('path-encoding');
-    } finally {
-      chmodSync(projectsDir, 0o755);
-    }
-  });
+  it.skipIf(isWin)(
+    'skips the unmapped listing without throwing when the projects dir is unreadable',
+    async () => {
+      const map: PathMap = {
+        projects: {
+          foo: { 'test-host': '/srv/foo' },
+        },
+      };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      const projectsDir = join(env.testHome, '.claude', 'projects');
+      mkdirSync(join(projectsDir, '-srv-stray'), { recursive: true });
+      // Revoke read permission so readdirSync throws (EACCES); the tolerant
+      // doctor must skip the listing, not crash mid-output.
+      chmodSync(projectsDir, 0o000);
+      try {
+        const { cmdDoctor } = await import('./commands.doctor.ts');
+        cmdDoctor({ verbose: true });
+        const out = joinedLog(env.logSpy);
+        expect(out).not.toContain('Unmapped local projects');
+        // Output continued past the listing: the collision scan still ran.
+        expect(out).toContain('path-encoding');
+      } finally {
+        chmodSync(projectsDir, 0o755);
+      }
+    },
+  );
 
   it('omits the unmapped header entirely when every local project dir is mapped', async () => {
     const map: PathMap = {

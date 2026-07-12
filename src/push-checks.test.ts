@@ -18,6 +18,11 @@ import type * as fsModule from 'node:fs';
 import type * as osModule from 'node:os';
 import type * as pathModule from 'node:path';
 
+// Windows chmod only toggles the read-only attribute; a directory chmod'd to
+// 0o000 still allows readdirSync there, so this EACCES-injection assertion
+// cannot hold on win32.
+const isWin = process.platform === 'win32';
+
 describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
   let originalHome: string | undefined;
   let testDir: string;
@@ -99,7 +104,7 @@ describe('findGitlinks (hand-rolled symlink-safe walker)', () => {
     expect(hits).toHaveLength(1);
   });
 
-  it('silently skips a subdirectory whose readdirSync throws EACCES', async () => {
+  it.skipIf(isWin)('silently skips a subdirectory whose readdirSync throws EACCES', async () => {
     // Two real sibling subtrees: `accessible/foo/.git` (a real hit) plus
     // `locked/` chmodded to 0o000 so readdirSync throws EACCES on entry. The
     // walker's catch (line 90) returns from that subtree without rethrowing

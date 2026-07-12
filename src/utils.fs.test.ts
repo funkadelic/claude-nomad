@@ -127,7 +127,12 @@ describe('writeJsonAtomic', () => {
     expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ fresh: 1 });
   });
 
-  it('preserves an existing destination file mode (0o600 stays 0o600)', () => {
+  // Windows chmod only toggles the read-only attribute; a mode explicitly set
+  // to 0o600 stats back as 0o666 there, so these posix-permission assertions
+  // cannot hold on win32.
+  const isWin = process.platform === 'win32';
+
+  it.skipIf(isWin)('preserves an existing destination file mode (0o600 stays 0o600)', () => {
     const target = join(testHome, '.claude', 'settings.json');
     writeFileSync(target, '{"a":1}\n');
     chmodSync(target, 0o600);
@@ -135,7 +140,7 @@ describe('writeJsonAtomic', () => {
     expect(statSync(target).mode & 0o777).toBe(0o600);
   });
 
-  it('defaults to 0o600 when destination did not exist', () => {
+  it.skipIf(isWin)('defaults to 0o600 when destination did not exist', () => {
     const target = join(testHome, '.claude', 'settings.json');
     expect(existsSync(target)).toBe(false);
     writeJsonAtomic(target, { fresh: 1 });
