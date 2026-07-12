@@ -173,13 +173,22 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const linkPath = join(claude, name);
   const sharedTarget = join(repo, 'shared', name);
 
-  // Precondition checks -- in order: absent, already symlink, would clobber
+  // Precondition checks -- in order: absent, already symlink, already
+  // adopted (win32 copy-sync), would clobber
   if (!existsSync(linkPath)) {
     log(`${name}: nothing to adopt (not present in ~/.claude/)`);
     return;
   }
   if (lstatSync(linkPath).isSymbolicLink()) {
     log(`${name}: already adopted (already a symlink)`);
+    return;
+  }
+  // win32 has no unprivileged symlink support, so a real (non-symlink) copy at
+  // linkPath IS the healthy adopted state there once shared/<name> exists.
+  // Short-circuit before the clobber guard below so re-running adopt on an
+  // already-adopted win32 name is a safe no-op, not a refused "would clobber".
+  if (process.platform === 'win32' && lexists(sharedTarget)) {
+    log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
     return;
   }
   if (lexists(sharedTarget)) {

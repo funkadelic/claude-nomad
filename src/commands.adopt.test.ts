@@ -610,6 +610,67 @@ describe('cmdAdopt win32 copy-back branch', () => {
     expect(diffCached(env)).toBe('');
   });
 
+  it('win32: re-running adopt on an already-adopted real copy returns 0 with a success message', async () => {
+    // shared/<name> already exists (a prior adopt already ran) and linkPath is
+    // a real (non-symlink) copy -- the win32 healthy state. Re-running adopt
+    // must short-circuit before the clobber guard: no process.exit(1), no fs
+    // mutation, no git staging, just a success message.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    mkdirSync(sharedTarget, { recursive: true });
+    writeFileSync(join(sharedTarget, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+    expect(env.exitSpy).not.toHaveBeenCalled();
+
+    const out = logOutput(env);
+    expect(out).toContain('already adopted');
+    expect(out).toContain('win32');
+
+    // Zero mutation: linkPath still a real copy, no git staging
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('win32: a genuinely un-adopted name (no shared/<name> yet) still runs the normal move', async () => {
+    // shared/<name> absent -- the already-adopted short-circuit must NOT fire,
+    // and the normal copy-back move must still run.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+
+    setPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const out = logOutput(env);
+    expect(out).not.toContain('already adopted');
+    expect(diffCached(env)).toContain('shared/my-tools');
+  });
+
+  it('non-win32 (posix): the already-symlink branch is unchanged, not the win32 short-circuit', async () => {
+    // posix: an already-symlinked linkPath takes the existing posix
+    // already-adopted branch, never the win32-only message.
+    addSharedDir(env, 'my-dir');
+    const linkPath = join(env.claudeHome, 'my-dir');
+    const targetPath = join(env.repoHome, 'shared', 'my-dir');
+    mkdirSync(targetPath, { recursive: true });
+    symlinkSync(targetPath, linkPath);
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-dir')).not.toThrow();
+    const out = logOutput(env);
+    expect(out).toContain('already adopted (already a symlink)');
+    expect(out).not.toContain('win32 copy-sync');
+    expect(diffCached(env)).toBe('');
+  });
+
   it('non-win32: dry-run still reports a symlink relink plan (posix wording unchanged)', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
