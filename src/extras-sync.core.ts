@@ -14,6 +14,16 @@ import { assertSafeLocalRoot, assertSafeLogical } from './extras-sync.guards.ts'
 import { log, NomadFatal } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
 
+/**
+ * Wrap a path in double quotes for a user-facing message, WITHOUT
+ * JSON-escaping. `JSON.stringify` doubles every backslash, so on win32 the
+ * quoted path no longer contains the real path as a substring, breaking any
+ * caller (or test) that greps the message for the raw path.
+ */
+function quoted(p: string): string {
+  return `"${p}"`;
+}
+
 /** Parsed `path-map.json` plus its validated `extras` block. */
 export type ValidatedExtras = { map: PathMap; extrasMap: Record<string, string[]> };
 
@@ -186,17 +196,22 @@ export function cpSyncGuarded(
     // cpSync tried to overwrite a non-empty directory with a file (or vice
     // versa) -- a file/dir type change upstream. The code varies by platform
     // and Node version: EINVAL/ENOTEMPTY on current runtimes, the ERR_FS_CP_*
-    // family in Node's documented error set. Convert any of them to NomadFatal.
+    // family in Node's documented error set. On win32, cpSync's internal
+    // unlink/rmdir fallback for this same collision can surface the raw
+    // Windows ERROR_DIR_NOT_EMPTY system code (145) in `errno` with `code`
+    // left empty (`''`), instead of the normalized `ENOTEMPTY`; match that
+    // shape too. Convert any of them to NomadFatal.
     /* c8 ignore start -- collision codes are platform/Node-version-specific */
     if (
       e.code === 'EINVAL' ||
       e.code === 'ENOTEMPTY' ||
       e.code === 'ERR_FS_CP_NON_DIR_TO_DIR' ||
-      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR'
+      e.code === 'ERR_FS_CP_DIR_TO_NON_DIR' ||
+      (process.platform === 'win32' && e.errno === 145)
     ) {
       throw new NomadFatal(
-        `${label}: type collision copying ${JSON.stringify(src)} -> ` +
-          `${JSON.stringify(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
+        `${label}: type collision copying ${quoted(src)} -> ` +
+          `${quoted(dst)} (${e.path ?? 'unknown path'}): a file/directory type ` +
           `changed upstream; run nomad pull --force-remote to recover`,
       );
     }
@@ -525,8 +540,8 @@ export function copyExtrasFilteredPreservingBy(
       const srcStat = lstatSync(src, { throwIfNoEntry: false });
       if (srcStat !== undefined && !srcStat.isDirectory()) {
         throw new NomadFatal(
-          `copyExtrasFilteredPreservingBy: type mismatch copying ${JSON.stringify(src)} -> ` +
-            `${JSON.stringify(dst)}: the repo entry is a file but the local entry is a ` +
+          `copyExtrasFilteredPreservingBy: type mismatch copying ${quoted(src)} -> ` +
+            `${quoted(dst)}: the repo entry is a file but the local entry is a ` +
             `directory; run nomad pull --force-remote to recover`,
         );
       }
