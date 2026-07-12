@@ -26,7 +26,9 @@ host you are on. Start a conversation on your desktop, run `nomad sync` on each 
 
 Your skills, slash commands, rules, statusline, and global `CLAUDE.md` live once in the sync repo.
 Slash commands, rules, statusline, and `CLAUDE.md` are symlinked into `~/.claude/`; skills are
-copy-synced (gsd-owned `gsd-*` skills excluded). Edit a skill anywhere and every machine gets it on
+copy-synced (gsd-owned `gsd-*` skills excluded). On native Windows, where symlinks need Developer
+Mode or admin rights, the symlinked names are real copies instead and `nomad push` captures your
+edits. Edit a skill anywhere and every machine gets it on
 the next pull. (`agents/` and `hooks/` are intentionally left to gsd; see GSD-aware sync.)
 
 Settings are smarter than a straight copy: every pull regenerates `~/.claude/settings.json` by
@@ -115,6 +117,8 @@ Leaving is just as transparent: everything **claude-nomad** manages in `~/.claud
 files and symlinks, with no proprietary format to export from. Transcripts and `settings.json`
 are real files that keep working untouched. To walk away, run `nomad eject`: it replaces every
 managed symlink with a real dereferenced copy in one step, so your setup keeps working after you
-delete the `~/claude-nomad/` checkout and uninstall the CLI. After ejecting, it prints a checklist
+delete the `~/claude-nomad/` checkout and uninstall the CLI. (On native Windows, where synced
+names are already real copies, `adopt` copies back a real copy and `eject` has almost nothing to
+materialize.) After ejecting, it prints a checklist
 of the remaining manual steps (uninstall, remove the env vars, optionally delete the repo and
 backup cache). See [Commands](/claude-nomad/commands/) for the full flag reference.

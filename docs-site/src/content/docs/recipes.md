@@ -217,7 +217,8 @@ directory into symlink sync with the top-level `sharedDirs` field:
 }
 ```
 
-Each listed name is symlinked from `shared/<name>` into `~/.claude/<name>`. Entries are validated
+Each listed name is symlinked from `shared/<name>` into `~/.claude/<name>` (a real copy on native
+Windows, where `nomad push` captures local edits). Entries are validated
 before linking: a name must be a single path segment (no `/` or `..`), must not be one of the
 never-synced names, and must not collide with a reserved name. In particular `hooks`, `agents`, and
 `skills` are reserved and cannot be re-added this way: `hooks` and `agents` are gsd-owned per host,
@@ -240,7 +241,8 @@ nomad eject
 
 Eject only touches symlinks nomad created: real files and directories are left untouched, and it
 aborts (pointing you at `nomad pull`) if it finds a dangling symlink rather than copying from an
-unknown target. When it finishes it prints a manual-remainder checklist for the steps it cannot do
+unknown target. On native Windows the managed names are already real copies (the win32 copy-sync
+modality), so eject has nothing to materialize and goes straight to the checklist. When it finishes it prints a manual-remainder checklist for the steps it cannot do
 for you:
 
 ```bash

@@ -11,7 +11,10 @@ full invocation, and lists any flags in its own table.
 `nomad init [--repo <name>] [--snapshot] [--keep-actions]`
 
 Create a private GitHub repo via `gh`, wire it as `origin`, disable Actions, and scaffold `shared/`,
-`hosts/`, `path-map.json`. Does not commit or push; run `nomad push` afterward to publish. Prompts
+`hosts/`, `path-map.json`, and a root `.gitattributes` (`* -text`) that stops Git from rewriting
+line endings between hosts (what would otherwise happen on a Windows checkout with the common
+`core.autocrlf=true` default; `nomad doctor` warns when an older repo lacks the guard). Does not
+commit or push; run `nomad push` afterward to publish. Prompts
 for a repo name (default: `claude-nomad-config`). `gh`
 must be installed and authenticated; exits with FATAL otherwise. Refuses to clobber existing
 scaffold. Without `--snapshot`, an interactive `init` that finds an existing `~/.claude/` (a
@@ -29,7 +32,8 @@ empty scaffold, and a non-interactive shell skips the prompt and prints a `--sna
 
 `nomad pull [--dry-run] [--force-remote]`
 
-`git pull --rebase --autostash`, apply symlinks, regenerate `settings.json`, remap session paths,
+`git pull --rebase --autostash`, apply symlinks (real copies on native Windows), regenerate
+`settings.json`, remap session paths,
 and pull opted-in per-project extras. Errors out if scaffold missing. Non-destructive: unpushed
 local-only session transcripts are retained, and a repo-tracked extras file you have edited locally
 is kept (not overwritten) when it diverges from the incoming copy, with a warning to push and
@@ -120,7 +124,11 @@ subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the lo
 Back up, then move a pre-existing `~/.claude/<name>` directory into `shared/<name>`, recreate the
 symlink so this host keeps working, and stage the result for push. `<name>` must already be listed
 in `SHARED_LINKS` or in the `sharedDirs` field of `path-map.json`; adopt is a mover, not a config
-editor, so it never writes `path-map.json` itself.
+editor, so it never writes `path-map.json` itself. On native Windows adopt recreates the name as a
+real copy instead of a symlink (the win32 copy-sync modality). On Windows a name whose
+`shared/<name>` counterpart already exists is reported as already adopted and skipped (with a
+`nomad pull` hint to refresh the local copy), where macOS/Linux would refuse with a would-clobber
+error.
 
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
@@ -142,7 +150,10 @@ copy is written, with a hint to run `nomad pull` first to restore the missing ta
 copies succeed, eject prints a checklist of the manual steps remaining: uninstall the CLI, remove
 `NOMAD_HOST` and `NOMAD_REPO` from your shell rc, and optionally delete the local sync checkout
 and backup cache. `eject` never writes to the sync repo, never invokes git, and never touches
-`~/.claude/projects/` (session transcripts are already real files).
+`~/.claude/projects/` (session transcripts are already real files). On native Windows there is
+usually nothing to materialize: under the win32 copy-sync modality the managed names are already
+real copies, so each is reported as `already a real copy (win32 copy-sync)` and only the manual
+checklist remains.
 
 | Flag        | Description                                                                  |
 | ----------- | ---------------------------------------------------------------------------- |
@@ -256,7 +267,14 @@ mismatch; a Node-engine floor check; a hook command that runs a Node script unde
 that already configures other hosts, a hostname-derived host key that matches neither a
 `hosts/<NOMAD_HOST>.json` override nor a path-map entry (the silent-misalignment nudge: per-host
 settings and session sync key off this label, so set `NOMAD_HOST` to the label this host should use
-when the warning fires; a single-host or fresh repo stays silent). The Path map section lists both
+when the warning fires; a single-host or fresh repo stays silent). The Environment section prints
+an informational sync-modality row (`symlink (posix)` or `copy-sync (win32)`), and a CRLF-guard
+check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
+wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or
+unset). On native Windows two further warn-only rows check long-path support (`git config
+core.longpaths` and the OS `LongPathsEnabled` registry value), since deep encoded session paths
+under `~/.claude/projects/` can exceed the legacy 260-character `MAX_PATH`; the
+gitleaks-missing install hint also switches to `winget`/`scoop` there. The Path map section lists both
 the
 projects mapped for this host and any local project directories with no path-map entry (what
 `nomad push` counts as "unmapped"; they are left alone in both directions).
