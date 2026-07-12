@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './push-gitleaks.ts';
+import { encodePath } from './utils.json.ts';
 
 /**
  * Probe for a usable gitleaks binary once at suite-load time. Real-binary
@@ -107,7 +108,11 @@ function plantSession(
   localPath: string,
   content: string,
 ): { encodedDir: string; sid: string } {
-  const encoded = localPath.replace(/\//g, '-');
+  // Use the production encoder (not a hand-rolled `/` replace): on win32,
+  // localPath is a backslash-separated absolute path, and a `/`-only replace
+  // leaves the backslashes and colon intact, turning the "encoded" name into
+  // a multi-segment path when joined, not a single directory name.
+  const encoded = encodePath(localPath);
   const projectsDir = join(env.claudeHome, 'projects', encoded);
   mkdirSync(projectsDir, { recursive: true });
   const sid = 'test-session-01';
@@ -883,7 +888,7 @@ describe('previewPushLeaks: selective staging via selection.changed', () => {
     // Plant a session dir with two files; only one is in selection.changed.
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
-    const encoded = localPath.replace(/\//g, '-');
+    const encoded = encodePath(localPath);
     const projectsDir = join(env.claudeHome, 'projects', encoded);
     mkdirSync(projectsDir, { recursive: true });
     writeFileSync(join(projectsDir, 'session-a.jsonl'), '{"role":"user"}\n');
@@ -963,7 +968,7 @@ describe('previewPushLeaks: selective staging via selection.changed', () => {
     // instead of routed through join()/relative().
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
-    const encoded = localPath.replace(/\//g, '-');
+    const encoded = encodePath(localPath);
     const projectsDir = join(env.claudeHome, 'projects', encoded);
     const nestedDir = join(projectsDir, 'subdir');
     mkdirSync(nestedDir, { recursive: true });
@@ -1084,7 +1089,7 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
     // a full scan when the changed file is a nested .md containing a secret.
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
-    const encoded = localPath.replace(/\//g, '-');
+    const encoded = encodePath(localPath);
     const projectsDir = join(env.claudeHome, 'projects', encoded);
     mkdirSync(join(projectsDir, 'memory'), { recursive: true });
     const fakePat = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');
@@ -1122,7 +1127,7 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
     // returns clean.
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
-    const encoded = localPath.replace(/\//g, '-');
+    const encoded = encodePath(localPath);
     const projectsDir = join(env.claudeHome, 'projects', encoded);
     mkdirSync(join(projectsDir, 'memory'), { recursive: true });
     const fakePat = ['gh', 'p_', 'BCcU4rgWmX3aPlSt9bN6yKzD7vH2eF8oG1qZ'].join('');

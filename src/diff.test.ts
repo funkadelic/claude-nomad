@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import type * as childProcessModule from 'node:child_process';
 
+import { encodePath } from './utils.json.ts';
+
 /**
  * Snapshot helper mirroring preview.test.ts. Captures the `{ relPath:
  * content }` map for every regular file under `root`. Used to assert
@@ -271,7 +273,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     // under the host encoded dir. cmdDiff routes through the same computePreview
     // as pull --dry-run, so the honest local-only count must appear here too.
     const projectRoot = join(testHome, 'fake-project');
-    const encodedLocal = join(claudeDir, 'projects', projectRoot.replace(/\//g, '-'));
+    const encodedLocal = join(claudeDir, 'projects', encodePath(projectRoot));
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     mkdirSync(join(sharedDir, 'projects', 'foo'), { recursive: true });
     mkdirSync(encodedLocal, { recursive: true });
@@ -300,7 +302,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     // divergenceCheckExtras) and the local-only count, while creating no backup
     // dir and never invoking git pull.
     const projectRoot = join(testHome, 'fake-project');
-    const encodedLocal = join(claudeDir, 'projects', projectRoot.replace(/\//g, '-'));
+    const encodedLocal = join(claudeDir, 'projects', encodePath(projectRoot));
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     // Session side: repo-tracked foo/ plus a local-only leaf.
     mkdirSync(join(sharedDir, 'projects', 'foo'), { recursive: true });

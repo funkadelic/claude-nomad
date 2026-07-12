@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -205,7 +205,8 @@ describe('enumerateSourceFiles', () => {
     writeFileSync(join(testDir, 'session.jsonl'), 'data');
     const files = enumerateSourceFiles(testDir);
     for (const f of files) {
-      expect(f.startsWith('/')).toBe(true);
+      // A win32 absolute path starts with a drive letter, not '/'.
+      expect(isAbsolute(f)).toBe(true);
     }
   });
 

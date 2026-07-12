@@ -535,6 +535,14 @@ describe('gitleaksInstallHint (platform-aware install scaffold)', () => {
   it('Linux + ~/.local/bin already on PATH omits the PATH-fix step', async () => {
     mockOs('linux', '/home/test');
     setArch('x64');
+    // gitleaksInstallHint splits process.env.PATH on the real node:path
+    // delimiter (';' on an actual win32 host), so a colon-joined PATH must
+    // be paired with a mocked colon delimiter to simulate a Linux PATH on
+    // any host, mirroring the dedicated delimiter test below.
+    vi.doMock('node:path', async (importOriginal) => {
+      const actual = await importOriginal<typeof pathModule>();
+      return { ...actual, delimiter: ':' };
+    });
     process.env.PATH = '/home/test/.local/bin:/usr/bin';
     const { gitleaksInstallHint } = await import('./push-checks.ts');
     const out = gitleaksInstallHint();

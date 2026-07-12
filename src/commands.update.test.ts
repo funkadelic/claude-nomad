@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cmdUpdate, readInstalledVersion } from './commands.update.ts';
 import { NomadFatal } from './utils.ts';
 
+// The default-platform test below asserts the literal 'npm' bin without
+// overriding process.platform, so it is posix-only by construction; the
+// win32 branch (npm.cmd) is covered explicitly in the platform-branching
+// describe block further down via setPlatform.
+const isWin = process.platform === 'win32';
+
 /**
  * Build a fake SpawnSyncFn that dispatches on the first argument element.
  * Calls with args[0] === '--version' return `versionResult` (or throw if it is
@@ -31,7 +37,7 @@ describe('cmdUpdate', () => {
     vi.restoreAllMocks();
   });
 
-  it('prints status line, runs npm update, then reports the new version', () => {
+  it.skipIf(isWin)('prints status line, runs npm update, then reports the new version', () => {
     const logSpy = vi.spyOn(console, 'log');
     const { run, calls } = makeFakeRun('0.47.1\n');
 
