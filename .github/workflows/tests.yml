@@ -52,10 +52,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-          # Full history on ubuntu: SonarCloud needs it for blame attribution
-          # and new-code metrics. The windows leg never runs Sonar (OS-gated
-          # below), so it clones shallow.
-          fetch-depth: ${{ matrix.os == 'windows-latest' && 1 || 0 }}
+          # Full history on every leg: SonarCloud needs it for blame
+          # attribution and new-code metrics (ubuntu), and the gate step's
+          # `git diff BASE HEAD` needs both SHAs resolvable on all legs. A
+          # shallow windows clone breaks that diff silently: the `if` swallows
+          # the git error and the empty pipe reads as docs-only, so the whole
+          # suite self-skips while the job reports green.
+          fetch-depth: 0
 
       # Single gate step. Sets `skip=true` when (a) the post-merge push:main
       # is a release-please bookkeeping commit (the source has already passed
