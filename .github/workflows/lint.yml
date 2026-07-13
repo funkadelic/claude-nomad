@@ -27,12 +27,9 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          # Pinned to the install.sh runtime floor (22.22.1+) so the typecheck
-          # step exercises the same TS type-stripping rules that production
-          # hosts use. `@types/node` is also pinned to 22 majors via
-          # .github/dependabot.yml; running tsc on a newer Node would mask
-          # API drift that only manifests on the floor.
-          node-version: '22'
+          # Node version single-sourced from .nvmrc; the install.sh runtime
+          # floor (22.22.1+) is still exercised by the tests.yml matrix.
+          node-version-file: '.nvmrc'
           cache: npm
 
       - name: Install deps
@@ -49,3 +46,25 @@ jobs:
 
       - name: Markdownlint
         run: npm run lint:md
+
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Pinned to a specific release + verified sha256, mirroring the
+      # gitleaks install pattern in tests.yml (supply-chain integrity).
+      - name: Install and run actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl -fsSL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/actionlint.tar.gz
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          /tmp/actionlint -color
