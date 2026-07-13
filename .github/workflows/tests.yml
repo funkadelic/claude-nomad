@@ -52,9 +52,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-          # Full history: SonarCloud needs it for blame attribution
-          # and new-code metrics.
-          fetch-depth: 0
+          # Full history on ubuntu: SonarCloud needs it for blame attribution
+          # and new-code metrics. The windows leg never runs Sonar (OS-gated
+          # below), so it clones shallow.
+          fetch-depth: ${{ matrix.os == 'windows-latest' && 1 || 0 }}
 
       # Single gate step. Sets `skip=true` when (a) the post-merge push:main
       # is a release-please bookkeeping commit (the source has already passed
@@ -132,6 +133,15 @@ jobs:
         run: |
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           git diff --exit-code package-lock.json
+
+      # Exclude the workspace and runner temp dir from Defender real-time
+      # scanning. The subprocess test project spawns node (cold-start type
+      # stripping), git, esbuild, and gitleaks repeatedly; per-spawn scanning
+      # dominates the suite's wall clock on this leg. Scoped to the ephemeral
+      # runner VM only.
+      - name: Exclude workspace from Defender scanning (Windows)
+        if: steps.gate.outputs.skip != 'true' && matrix.os == 'windows-latest'
+        run: Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE", "$env:RUNNER_TEMP"
 
       - name: Install deps
         if: steps.gate.outputs.skip != 'true'
