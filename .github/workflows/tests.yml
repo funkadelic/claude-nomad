@@ -35,6 +35,15 @@ jobs:
         # ubuntu-latest, minus coverage/Sonar/Codecov (see the OS-gated
         # steps below).
         os: [ubuntu-latest, windows-latest]
+        # Node-version regressions surface on the ubuntu legs; the windows
+        # leg guards platform behavior, which does not vary by node line.
+        # One windows leg (24, the recommended runtime) keeps the platform
+        # signal at half the flake surface. Branch protection requires the
+        # three remaining legs; update it in the same change if this list
+        # moves again.
+        exclude:
+          - os: windows-latest
+            node-version: '22'
     env:
       # Surfaced at job level so the SonarCloud step's `if:` can detect
       # an unset secret (e.g. on fork PRs) and skip cleanly.
