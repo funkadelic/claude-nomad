@@ -1,0 +1,17 @@
+self-hosted-runner:
+  labels: []
+
+config-variables: null
+
+# tests.yml's job-level `runs-on: ${{ matrix.os }}` is a matrix expression, so
+# actionlint cannot statically resolve which shell a `run:` step uses and
+# defaults to bash/shellcheck for all of them. That misfires on the
+# "Install gitleaks (Windows)" step, whose script is PowerShell (the windows
+# runner's actual default shell) gated by an `if: matrix.os == 'windows-latest'`
+# condition actionlint does not evaluate. tests.yml is a read-only reference
+# for this change, so the false positive is suppressed here rather than by
+# adding an explicit `shell:` key to that step.
+paths:
+  .github/workflows/tests.yml:
+    ignore:
+      - 'shellcheck reported issue in this script'
