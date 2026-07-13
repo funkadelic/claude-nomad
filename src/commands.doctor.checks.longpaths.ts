@@ -28,7 +28,7 @@ import type { SpawnSyncFn } from './gh-actions.ts';
 const PROBE_TIMEOUT_MS = 3_000;
 
 /** Registry path probed for the OS-level long-path opt-in. */
-const LONGPATHS_REG_KEY = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem';
+const LONGPATHS_REG_KEY = String.raw`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`;
 
 /** Registry value name probed under `LONGPATHS_REG_KEY`. */
 const LONGPATHS_REG_VALUE = 'LongPathsEnabled';
