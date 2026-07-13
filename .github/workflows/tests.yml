@@ -55,9 +55,8 @@ jobs:
           # Full history on every leg: SonarCloud needs it for blame
           # attribution and new-code metrics (ubuntu), and the gate step's
           # `git diff BASE HEAD` needs both SHAs resolvable on all legs. A
-          # shallow windows clone breaks that diff silently: the `if` swallows
-          # the git error and the empty pipe reads as docs-only, so the whole
-          # suite self-skips while the job reports green.
+          # shallow clone cannot resolve those SHAs; the gate fails loudly
+          # rather than misclassifying the changes as docs-only.
           fetch-depth: 0
 
       # Single gate step. Sets `skip=true` when (a) the post-merge push:main
@@ -114,7 +113,10 @@ jobs:
             echo "ERROR: git diff $BASE $HEAD failed; cannot classify the changeset" >&2
             exit 1
           fi
-          if printf '%s\n' "$CHANGED" | grep -qvE '\.md$|^LICENSE$'; then
+          # No `grep -q`: quiet mode exits at the first match, and on a large
+          # changeset the resulting SIGPIPE to printf plus pipefail would read
+          # as "no code changes" and skip the suite.
+          if printf '%s\n' "$CHANGED" | grep -vE '\.md$|^LICENSE$' > /dev/null; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             echo "skip=true" >> "$GITHUB_OUTPUT"
