@@ -182,9 +182,12 @@ jobs:
       # pinned GITLEAKS_VERSION, same release, a windows_x64.zip asset
       # instead of a tarball, verified with PowerShell's Get-FileHash
       # instead of sha256sum. GITHUB_PATH appends gitleaks.exe's directory
-      # to PATH for later steps in this job.
+      # to PATH for later steps in this job. The explicit `shell: pwsh`
+      # matches the windows runner default; it is declared so static tools
+      # (actionlint) do not assume bash for a matrix-valued runs-on.
       - name: Install gitleaks (Windows)
         if: steps.gate.outputs.skip != 'true' && matrix.os == 'windows-latest'
+        shell: pwsh
         env:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_SHA256_WINDOWS: d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e
