@@ -62,6 +62,7 @@ export default defineConfig({
         test: {
           name: 'subprocess',
           include: subprocessTests,
+          exclude: SHARED_EXCLUDE,
           setupFiles: SETUP_FILES,
           sequence: { groupOrder: 1 },
           // Serialized so child processes (node cold-start, esbuild, git,
