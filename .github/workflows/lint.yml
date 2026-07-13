@@ -27,12 +27,9 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          # Pinned to the install.sh runtime floor (22.22.1+) so the typecheck
-          # step exercises the same TS type-stripping rules that production
-          # hosts use. `@types/node` is also pinned to 22 majors via
-          # .github/dependabot.yml; running tsc on a newer Node would mask
-          # API drift that only manifests on the floor.
-          node-version: '22'
+          # Node version single-sourced from .nvmrc; the install.sh runtime
+          # floor (22.22.1+) is still exercised by the tests.yml matrix.
+          node-version-file: '.nvmrc'
           cache: npm
 
       - name: Install deps
