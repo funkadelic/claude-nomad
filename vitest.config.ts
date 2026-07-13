@@ -1,21 +1,83 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
+
+// Self-maintaining classification: any test file that touches a child-process
+// API (spawning node's type-stripping probes, esbuild, real git, gitleaks)
+// lands in the bounded "subprocess" project below instead of the fully
+// parallel "unit" project, so a new subprocess-spawning test auto-isolates
+// without a config edit. A file matching only inside a comment still lands
+// here (harmless, just less parallelism); err toward isolation.
+const SUBPROCESS_TOKEN_RE =
+  /execFileSync|spawnSync|execSync|fork\(|spawn\(|experimental-strip-types|esbuild/;
+
+function findTestFiles(dir: string): string[] {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      files.push(...findTestFiles(path));
+    } else if (entry.name.endsWith('.test.ts')) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
+// Test files live in both src/ and scripts/ today (verified against the
+// implicit default-include baseline), so both are scanned; a future nested
+// test dir under either root is still found via the recursive walk.
+const allTestFiles = [...findTestFiles('src'), ...findTestFiles('scripts')];
+const subprocessTests = allTestFiles.filter((path) =>
+  SUBPROCESS_TOKEN_RE.test(readFileSync(path, 'utf8')),
+);
+
+// setupFiles applies NO_COLOR and (on win32) deletes USERPROFILE; both
+// projects need it explicitly since projects do not inherit root test options.
+const SETUP_FILES = ['./vitest.setup.ts'];
+const SHARED_EXCLUDE = ['**/node_modules/**', '**/dist/**', '.stryker-tmp/**'];
 
 export default defineConfig({
   test: {
-    setupFiles: ['./vitest.setup.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '.stryker-tmp/**'],
-    // The default 5s timeout is too tight for the suites that spawn a fresh
-    // Node subprocess (color probes, the find-zero-kill driver) or run real git
-    // (the round-trip integration test): Node cold-start plus type-stripping can
-    // take several seconds each, and they tip over 5s under thread-pool
-    // contention. 20s gives real headroom; pure-logic tests finish in ms either
-    // way, so the higher ceiling never slows the steady-state run.
-    testTimeout: 20000,
-    hookTimeout: 20000,
-    // Cap worker oversubscription so the subprocess-heavy tests get scheduled
-    // CPU instead of starving and timing out (also avoids the pool's own
-    // "Timeout waiting for worker to respond" flake under load).
-    maxWorkers: '50%',
+    exclude: SHARED_EXCLUDE,
+    projects: [
+      {
+        test: {
+          name: 'unit',
+          include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
+          exclude: [...subprocessTests, ...SHARED_EXCLUDE],
+          setupFiles: SETUP_FILES,
+          sequence: { groupOrder: 0 },
+          // Half the cores, not all of them: an uncapped pool spawning one
+          // fork per core can miss the pool's worker-start deadline on a
+          // contended machine ("Timeout waiting for worker to respond").
+          maxWorkers: '50%',
+          // Pure in-process tests: no subprocess contention, so a tighter
+          // timeout surfaces a real hang faster instead of masking it.
+          testTimeout: 10000,
+          hookTimeout: 10000,
+        },
+      },
+      {
+        test: {
+          name: 'subprocess',
+          include: subprocessTests,
+          setupFiles: SETUP_FILES,
+          sequence: { groupOrder: 1 },
+          // Serialized so child processes (node cold-start, esbuild, git,
+          // gitleaks) never compete with each other for cores; even two
+          // concurrent subprocess files starved the heavyweight round-trip
+          // integration test past its 20s ceiling on a contended machine.
+          // Groups run in `sequence.groupOrder`, so this bounded phase also
+          // never contends with the unit group's parallel phase.
+          maxWorkers: 1,
+          // Node cold-start plus type-stripping, esbuild, real git, and
+          // gitleaks legitimately need headroom beyond the default 5s.
+          testTimeout: 20000,
+          hookTimeout: 20000,
+        },
+      },
+    ],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
