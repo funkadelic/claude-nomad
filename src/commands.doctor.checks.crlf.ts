@@ -88,12 +88,22 @@ function probeAutocrlf(repo: string, run: SpawnSyncFn): AutocrlfVerdict {
 }
 
 /**
- * Emit the WARN row for an exposed REPO_HOME (guard absent). Wording differs
- * by verdict: active conversion (checkout is rewriting line endings right
- * now), an explicit `core.autocrlf=false` on this host (this host is already
- * guarded, but no `.gitattributes` means other hosts are not), or a latent
- * missing-guard risk (nothing converting yet, but nothing stopping it
- * either, and the config state is unknown). All variants append the same
+ * Risk wording per `AutocrlfVerdict`: active conversion (checkout is
+ * rewriting line endings right now), an explicit `core.autocrlf=false` on
+ * this host (this host is already guarded, but no `.gitattributes` means
+ * other hosts are not), or a latent missing-guard risk (nothing converting
+ * yet, but nothing stopping it either, and the config state is unknown).
+ */
+const AUTOCRLF_RISK: Record<AutocrlfVerdict, string> = {
+  active: 'core.autocrlf is actively converting line endings on checkout',
+  disabled:
+    'guarded on this host by core.autocrlf=false, but no .gitattributes to protect other hosts',
+  unset: 'no .gitattributes guard and core.autocrlf is unset (latent risk)',
+};
+
+/**
+ * Emit the WARN row for an exposed REPO_HOME (guard absent). Looks up the
+ * risk wording for `verdict` in `AUTOCRLF_RISK` and appends the same
  * remediation hint naming the two fixes and the REPO_HOME path.
  *
  * @param section - The section to append the row to.
@@ -101,12 +111,7 @@ function probeAutocrlf(repo: string, run: SpawnSyncFn): AutocrlfVerdict {
  * @param verdict - The classified `core.autocrlf` state.
  */
 function addExposedRow(section: DoctorSection, repo: string, verdict: AutocrlfVerdict): void {
-  const risk =
-    verdict === 'active'
-      ? 'core.autocrlf is actively converting line endings on checkout'
-      : verdict === 'disabled'
-        ? 'guarded on this host by core.autocrlf=false, but no .gitattributes to protect other hosts'
-        : 'no .gitattributes guard and core.autocrlf is unset (latent risk)';
+  const risk = AUTOCRLF_RISK[verdict];
   const remediation = `add a .gitattributes with a \`* -text\` line, or run \`git config core.autocrlf false\`, in ${repo}`;
   addItem(section, `${yellow(warnGlyph)} CRLF guard: ${risk}; ${remediation}`);
 }
