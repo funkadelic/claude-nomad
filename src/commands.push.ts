@@ -5,10 +5,11 @@ import { backupBase, HOST, manifestPath, repoHome } from './config.ts';
 import { computeConfigHash, readManifest } from './push-manifest.ts';
 import { loadSelectionForPush } from './commands.push.selection.ts';
 import { enforceAllowList } from './commands.push.allowlist.ts';
-import { type PushState, renderNoScanTree } from './commands.push.sections.ts';
+import { buildNoScanSections, type PushState, renderNoScanTree } from './commands.push.sections.ts';
 import { reportSettingsAheadDrift, stripGsdHooksFromBase } from './commands.push.settings.ts';
 import { guardGitlinks, guardResolutionModeConflicts } from './commands.push.guards.ts';
 import { commitAndPush, runDryRunPreview } from './commands.push.steps.ts';
+import type { DoctorSection } from './output-tree.ts';
 import { remapExtrasPush } from './extras-sync.ts';
 import { syncSharedLinksPush } from './links.ts';
 import { syncSkillsPush } from './skills-sync.ts';
@@ -26,13 +27,56 @@ export { reportSettingsAheadDrift } from './commands.push.settings.ts';
  * without the caller needing to re-derive it: `nothing` for the real-push
  * "nothing to commit" early return, `dry` for either dry-run preview path
  * (with or without a `path-map.json`), and `pushed` for a completed
- * `commitAndPush`. A composing caller (e.g. a future `nomad sync`) can use
- * the tag alone to decide whether anything changed; the push tree itself
- * still renders inside `commitAndPush`/`runDryRunPreview`/`renderNoScanTree`
- * exactly as before this extraction (see those functions' JSDoc for the
- * render detail).
+ * `commitAndPush`. A composing caller (e.g. `nomad sync`) can use the tag
+ * alone to decide whether anything changed. Without `opts.compose`, the push
+ * tree still renders inside `commitAndPush`/`runDryRunPreview`/
+ * `renderNoScanTree` exactly as before this extraction (see those functions'
+ * JSDoc for the render detail) and `sections` is absent. Under
+ * `opts.compose`, the `nothing` and `pushed` arms carry the built (unrendered)
+ * push tree sections so the composing caller owns the single merged render;
+ * `sections` is empty on the resolved-leak path (already rendered inline, see
+ * `commitAndPush`).
  */
-export type PushCoreResult = { tag: 'nothing' } | { tag: 'dry' } | { tag: 'pushed' };
+export type PushCoreResult =
+  | { tag: 'nothing'; sections?: DoctorSection[] }
+  | { tag: 'dry' }
+  | { tag: 'pushed'; sections?: DoctorSection[] };
+
+/**
+ * Handle the real-push empty-status early return. Standalone push logs
+ * `nothing to commit` and renders the no-scan tree inline; a composing caller
+ * (`compose`) gets the built sections back unrendered instead. Extracted from
+ * `runPushCore` to keep it under the sonarjs cognitive-complexity threshold.
+ *
+ * @param st - The collected push state.
+ * @param compose - Composing-caller render mode (see `runPushCore`).
+ * @returns The `nothing`-tagged result, with `sections` only under `compose`.
+ */
+function emptyStatusResult(st: PushState, compose: boolean): PushCoreResult {
+  if (compose) return { tag: 'nothing', sections: buildNoScanSections(st) };
+  log('nothing to commit');
+  renderNoScanTree(st);
+  return { tag: 'nothing' };
+}
+
+/**
+ * Map `commitAndPush`'s object return onto a `PushCoreResult`: under
+ * `compose` the arm carries the built sections so the composing caller owns
+ * the render; otherwise the tag alone (standalone push already rendered).
+ *
+ * @param outcome - `commitAndPush`'s outcome.
+ * @param sections - The built push tree sections `commitAndPush` returned.
+ * @param compose - Composing-caller render mode (see `runPushCore`).
+ * @returns The `nothing`- or `pushed`-tagged result.
+ */
+function toPushCoreResult(
+  outcome: 'pushed' | 'nothing',
+  sections: DoctorSection[],
+  compose: boolean,
+): PushCoreResult {
+  const tag = outcome === 'nothing' ? ('nothing' as const) : ('pushed' as const);
+  return compose ? { tag, sections } : { tag };
+}
 
 /**
  * Lock-free core of `nomad push`: runs the pre-push safety checks in the
@@ -106,12 +150,21 @@ export type PushCoreResult = { tag: 'nothing' } | { tag: 'dry' } | { tag: 'pushe
  * pre-existing violation surfaces; an empty status has nothing to classify.
  * Mirrors `cmdPull`'s `dryRun` contract.
  *
+ * `opts.compose` (default `false`, wet-only; a dry-run never sets it): when
+ * `true`, a composing caller (`nomad sync`) owns the render. The
+ * `push on host=...` header and the `nothing to commit` log are suppressed,
+ * the clean/pushed paths render nothing here, and the returned `nothing`/
+ * `pushed` arms carry the built sections instead (see `PushCoreResult`). The
+ * leak path still renders its tree inline before the recovery flow (see
+ * `commitAndPush`), so the safety pipeline's output is never suppressed.
+ *
  * @param opts.dryRun - Preview mode; see above.
  * @param opts.redactAll - Non-interactive leak resolution: redact every finding.
  * @param opts.allowAll - Non-interactive leak resolution: allow every finding.
  * @param opts.allowRule - Non-interactive leak resolution: allow one rule.
  * @param opts.fullScan - When `true`, ignore the per-host manifest and rescan
  *   all mapped transcripts.
+ * @param opts.compose - Composing-caller render mode; see above.
  * @returns A `PushCoreResult` tagged `nothing`, `dry`, or `pushed`.
  */
 export async function runPushCore(
@@ -121,6 +174,7 @@ export async function runPushCore(
     allowAll?: boolean;
     allowRule?: string;
     fullScan?: boolean;
+    compose?: boolean;
   } = {},
 ): Promise<PushCoreResult> {
   const dryRun = opts.dryRun === true;
@@ -128,11 +182,17 @@ export async function runPushCore(
   const allowAll = opts.allowAll === true;
   const allowRule = opts.allowRule;
   const fullScan = opts.fullScan === true;
+  const compose = opts.compose === true;
+  // Standalone push renders inline; a composing caller renders the returned
+  // sections itself.
+  const render = !compose;
   // Resolve roots once per function entry (mirrors the convention used by
   // every other command/extras/remap module in this codebase).
   const repo = repoHome();
   const backup = backupBase();
-  console.log(dryRun ? `push on host=${HOST} (dry-run)` : `push on host=${HOST}`);
+  if (!compose) {
+    console.log(dryRun ? `push on host=${HOST} (dry-run)` : `push on host=${HOST}`);
+  }
   // Non-mutating ahead-drift check: inform before the pipeline mutates anything.
   // Best-effort: a missing or malformed settings.json is silently skipped.
   reportSettingsAheadDrift(repo);
@@ -204,11 +264,7 @@ export async function runPushCore(
   // REAL-PUSH-ONLY early return: a dry-run copies nothing into shared/, so an
   // empty status is the normal headline case (clean repo, new mapped
   // sessions) and must still reach the dry-run preview below.
-  if (!dryRun && !status) {
-    log('nothing to commit');
-    renderNoScanTree(st);
-    return { tag: 'nothing' };
-  }
+  if (!dryRun && !status) return emptyStatusResult(st, compose);
   // A dry-run with no map cannot enforce nor scan: render the no-scan tree and
   // return without dying. A real push with a non-empty status still dies.
   if (map === null) {
@@ -230,16 +286,19 @@ export async function runPushCore(
   }
   // commitAndPush reports whether it actually committed and pushed: the
   // gsd-only staged payload short-circuits inside it as a no-op, and a
-  // composing caller (nomad sync) must not label that run 'pushed'.
-  const outcome = await commitAndPush(
+  // composing caller (nomad sync) must not label that run 'pushed'. Under
+  // compose (render === false) it returns the built sections unrendered so
+  // the composing caller owns the single merged render.
+  const { outcome, sections } = await commitAndPush(
     st,
     ts,
     map,
     { redactAll, allowAll, allowRule },
     repo,
     newManifest,
+    render,
   );
-  return outcome === 'nothing' ? { tag: 'nothing' } : { tag: 'pushed' };
+  return toPushCoreResult(outcome, sections, compose);
 }
 
 /**
