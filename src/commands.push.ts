@@ -16,7 +16,7 @@ import { syncSkillsPush } from './skills-sync.ts';
 import { probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { remapPush } from './remap.ts';
 import { withSpinner } from './spinner.ts';
-import { die, fail, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
+import { die, fail, gitCaptureRaw, gitStatusPorcelainZ, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
@@ -36,24 +36,60 @@ export { reportSettingsAheadDrift } from './commands.push.settings.ts';
  * push tree sections so the composing caller owns the single merged render;
  * `sections` is empty on the resolved-leak path (already rendered inline, see
  * `commitAndPush`).
+ *
+ * `aheadOfOrigin` is set only on the compose-mode empty-status arm: `true`
+ * when the sync repo's HEAD carries commits its upstream lacks (e.g. a prior
+ * push committed but the network push failed), so a composing caller must not
+ * report the run as fully in sync even though there was nothing to commit.
  */
 export type PushCoreResult =
-  | { tag: 'nothing'; sections?: DoctorSection[] }
+  | { tag: 'nothing'; sections?: DoctorSection[]; aheadOfOrigin?: boolean }
   | { tag: 'dry' }
   | { tag: 'pushed'; sections?: DoctorSection[] };
 
 /**
+ * Best-effort probe for committed-but-unpushed state: count the commits the
+ * sync repo's HEAD has that its upstream lacks. Any git failure (no upstream
+ * configured, detached HEAD) yields `false` so callers preserve the
+ * pre-probe behavior. Never prints anything: output is captured, and a
+ * failure is swallowed.
+ *
+ * @param repo - Resolved repo root path for this invocation.
+ * @returns `true` when at least one local commit is missing from upstream.
+ */
+function aheadOfUpstream(repo: string): boolean {
+  try {
+    const raw = gitCaptureRaw(['rev-list', '--count', '@{u}..HEAD'], repo);
+    return Number.parseInt(raw.trim(), 10) > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Handle the real-push empty-status early return. Standalone push logs
  * `nothing to commit` and renders the no-scan tree inline; a composing caller
- * (`compose`) gets the built sections back unrendered instead. Extracted from
- * `runPushCore` to keep it under the sonarjs cognitive-complexity threshold.
+ * (`compose`) gets the built sections back unrendered instead, plus the
+ * `aheadOfOrigin` probe result so a clean worktree sitting on unpushed
+ * commits is never reported as fully in sync. The probe runs only under
+ * `compose`: standalone push output and side effects stay byte-identical.
+ * Extracted from `runPushCore` to keep it under the sonarjs
+ * cognitive-complexity threshold.
  *
  * @param st - The collected push state.
  * @param compose - Composing-caller render mode (see `runPushCore`).
- * @returns The `nothing`-tagged result, with `sections` only under `compose`.
+ * @param repo - Resolved repo root path for the ahead-of-upstream probe.
+ * @returns The `nothing`-tagged result, with `sections` and `aheadOfOrigin`
+ *   only under `compose`.
  */
-function emptyStatusResult(st: PushState, compose: boolean): PushCoreResult {
-  if (compose) return { tag: 'nothing', sections: buildNoScanSections(st) };
+function emptyStatusResult(st: PushState, compose: boolean, repo: string): PushCoreResult {
+  if (compose) {
+    return {
+      tag: 'nothing',
+      sections: buildNoScanSections(st),
+      aheadOfOrigin: aheadOfUpstream(repo),
+    };
+  }
   log('nothing to commit');
   renderNoScanTree(st);
   return { tag: 'nothing' };
@@ -264,7 +300,7 @@ export async function runPushCore(
   // REAL-PUSH-ONLY early return: a dry-run copies nothing into shared/, so an
   // empty status is the normal headline case (clean repo, new mapped
   // sessions) and must still reach the dry-run preview below.
-  if (!dryRun && !status) return emptyStatusResult(st, compose);
+  if (!dryRun && !status) return emptyStatusResult(st, compose, repo);
   // A dry-run with no map cannot enforce nor scan: render the no-scan tree and
   // return without dying. A real push with a non-empty status still dies.
   if (map === null) {

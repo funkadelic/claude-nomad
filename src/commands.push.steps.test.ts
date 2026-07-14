@@ -236,8 +236,16 @@ describe('commitAndPush render flag', () => {
  * sandbox: safety probes stubbed, remap/extras return empty results, git
  * status returns `statusLine`, git plumbing is intercepted at
  * node:child_process, and the leak scan returns clean.
+ *
+ * `opts.revListCount` sets the stdout of the ahead-of-upstream
+ * `git rev-list --count` probe (defaults to `'0\n'`, i.e. not ahead);
+ * `opts.revListFails: true` makes that probe throw instead (no upstream
+ * configured).
  */
-function mockPipeline(statusLine: string): void {
+function mockPipeline(
+  statusLine: string,
+  opts: { revListCount?: string; revListFails?: boolean } = {},
+): void {
   vi.doMock('./push-checks.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof pushChecksModule>();
     return {
@@ -281,7 +289,16 @@ function mockPipeline(statusLine: string): void {
   });
   vi.doMock('node:child_process', async (importOriginal) => {
     const actual = await importOriginal<typeof childProcessModule>();
-    return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    return {
+      ...actual,
+      execFileSync: vi.fn((_cmd: string, args?: readonly string[]) => {
+        if (args?.[0] === 'rev-list') {
+          if (opts.revListFails === true) throw new Error('no upstream configured');
+          return Buffer.from(opts.revListCount ?? '0\n');
+        }
+        return Buffer.from('');
+      }),
+    };
   });
   vi.doMock('./utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
@@ -308,8 +325,30 @@ describe('runPushCore compose mode', () => {
     expect(result.tag).toBe('nothing');
     if (result.tag !== 'nothing') throw new Error('unreachable');
     expect(result.sections?.map((s) => s.header)).toContain('Push summary');
+    expect(result.aheadOfOrigin).toBe(false);
     expect(logOutput(env)).not.toContain('push on host=');
     expect(logOutput(env)).not.toContain('nothing to commit');
+    expect(env.logSpy).not.toHaveBeenCalled();
+  });
+
+  it('compose: true empty-status carries aheadOfOrigin: true when HEAD has commits upstream lacks', async () => {
+    mockPipeline('', { revListCount: '2\n' });
+    const { runPushCore } = await import('./commands.push.ts');
+    const result = await runPushCore({ compose: true });
+    expect(result.tag).toBe('nothing');
+    if (result.tag !== 'nothing') throw new Error('unreachable');
+    expect(result.aheadOfOrigin).toBe(true);
+    // The probe itself never prints.
+    expect(env.logSpy).not.toHaveBeenCalled();
+  });
+
+  it('compose: true empty-status treats a failing ahead-of-upstream probe as not ahead', async () => {
+    mockPipeline('', { revListFails: true });
+    const { runPushCore } = await import('./commands.push.ts');
+    const result = await runPushCore({ compose: true });
+    expect(result.tag).toBe('nothing');
+    if (result.tag !== 'nothing') throw new Error('unreachable');
+    expect(result.aheadOfOrigin).toBe(false);
     expect(env.logSpy).not.toHaveBeenCalled();
   });
 

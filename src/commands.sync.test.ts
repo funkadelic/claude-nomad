@@ -362,6 +362,36 @@ describe('cmdSync: wet composition', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
+  it('does not collapse when the push half reports unpushed sync-repo commits, and notes the state', async () => {
+    // Clean worktree but HEAD ahead of upstream (e.g. a prior push committed
+    // and the network push failed): asserting "already in sync" here would
+    // mask exactly the state a sync run exists to surface.
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => ({
+        tag: 'wet',
+        sections: pullSections(),
+        localOnly: 0,
+        divergedKeptLocal: 0,
+        incomingChanges: false,
+      })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => ({
+        tag: 'nothing',
+        sections: pushSideSections(),
+        aheadOfOrigin: true,
+      })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).not.toContain('already in sync');
+    expect(combined).toContain('push: nothing to push');
+    expect(combined).toContain('sync repo has unpushed commits');
+    expect(process.exitCode).not.toBe(1);
+  });
+
   it('does not collapse when incomingChanges is true, even with an otherwise-clean push', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',

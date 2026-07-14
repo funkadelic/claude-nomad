@@ -49,6 +49,11 @@ type PushOutcome = { ok: true; result: PushCoreResult } | { ok: false; message: 
  * dir, so a `Sessions`/`Extras` row with items does NOT by itself mean
  * anything changed upstream; the rebase HEAD delta does.
  *
+ * A `nothing`-tagged push half with `aheadOfOrigin: true` never collapses:
+ * the sync repo carries committed-but-unpushed work (e.g. a prior push
+ * committed and then the network push failed), so asserting "already in
+ * sync" would mask exactly the state a sync run exists to surface.
+ *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
  * @returns `true` when the run is a true no-op.
@@ -57,6 +62,7 @@ function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
   if (!pushOutcome.ok) return false;
   if (pull.localOnly !== 0 || pull.divergedKeptLocal !== 0) return false;
   if (pushOutcome.result.tag !== 'nothing') return false;
+  if (pushOutcome.result.aheadOfOrigin === true) return false;
   return !pull.incomingChanges;
 }
 
@@ -98,7 +104,8 @@ function reconciledNotes(pull: WetPull): string[] {
  * Build the two-phase status Sync summary section rendered after the pull
  * tree. On a failed push half this collapses to the single status line naming
  * which half failed; on a successful run it lists a `pull:` row, a `push:`
- * row, and any reconciled-work notes.
+ * row, a committed-but-unpushed note when the push half reported
+ * `aheadOfOrigin`, and any reconciled-work notes.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
@@ -112,6 +119,9 @@ function buildSyncSummarySection(pull: WetPull, pushOutcome: PushOutcome): Docto
   }
   addItem(s, `pull: ${pullPhrase(pull)}`);
   addItem(s, `push: ${pushOutcome.result.tag === 'pushed' ? 'pushed' : 'nothing to push'}`);
+  if (pushOutcome.result.tag === 'nothing' && pushOutcome.result.aheadOfOrigin === true) {
+    addItem(s, 'sync repo has unpushed commits');
+  }
   for (const note of reconciledNotes(pull)) addItem(s, note);
   return s;
 }
