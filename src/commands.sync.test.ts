@@ -694,6 +694,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
         sections: pullSections(),
         localOnly: 0,
         divergedKeptLocal: 0,
+        incomingChanges: true,
       })),
     }));
     vi.doMock('./push-checks.ts', async (importOriginal) => {
