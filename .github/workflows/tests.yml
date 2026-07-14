@@ -152,13 +152,23 @@ jobs:
       # dominates the suite's wall clock on this leg. Scoped to the ephemeral
       # runner VM only, and to same-repo runs: fork PR code stays under
       # Defender scanning (the fork leg just runs slower).
+      # Best-effort: some runner images boot with the Defender service
+      # unavailable and Add-MpPreference fails with 0x800106ba; nothing is
+      # scanning in that state, so warn and continue instead of failing the
+      # leg before vitest runs.
       - name: Exclude workspace from Defender scanning (Windows)
         if: >-
           ${{ steps.gate.outputs.skip != 'true'
           && matrix.os == 'windows-latest'
           && (github.event_name != 'pull_request'
           || github.event.pull_request.head.repo.full_name == github.repository) }}
-        run: Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE", "$env:RUNNER_TEMP"
+        shell: pwsh
+        run: |
+          try {
+            Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE", "$env:RUNNER_TEMP"
+          } catch {
+            Write-Warning "Defender exclusion skipped (service unavailable): $_"
+          }
 
       - name: Install deps
         if: steps.gate.outputs.skip != 'true'
