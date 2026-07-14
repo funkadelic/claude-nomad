@@ -257,15 +257,23 @@ export type PullCoreResult =
  * `nomad/stranded-<ts>` and resets hard to `origin/main`, then falls through
  * to the normal pull. Cannot combine with `--dry-run`.
  *
+ * `opts.compose` (default `false`, wet-only; `nomad sync`'s dry-run path
+ * never calls this function): when `true`, a composing caller owns the
+ * header, so the `pull on host=... (backup=<ts>)` line is suppressed. Every
+ * side effect and the returned sections are unchanged; standalone `cmdPull`
+ * never sets it, so its output is byte-identical.
+ *
  * @param opts.dryRun - Preview mode; see above.
  * @param opts.forceRemote - Wedge recovery mode; see above.
+ * @param opts.compose - Composing-caller header suppression; see above.
  * @returns A `PullCoreResult` tagged `dry` or `wet` (see `PullCoreResult`).
  */
 export function runPullCore(
-  opts: { dryRun?: boolean; forceRemote?: boolean } = {},
+  opts: { dryRun?: boolean; forceRemote?: boolean; compose?: boolean } = {},
 ): PullCoreResult {
   const dryRun = opts.dryRun === true;
   const forceRemote = opts.forceRemote === true;
+  const compose = opts.compose === true;
   // Resolve roots once per function entry (mirrors the convention used by
   // every other command/extras/remap module in this codebase).
   const repo = repoHome();
@@ -295,12 +303,14 @@ export function runPullCore(
   }
   // WET header becomes the tree header (no `pulling` prefix). The dry-run
   // header phrasing is LEFT byte-identical so the readable diff path does
-  // not regress.
-  log(
-    dryRun
-      ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
-      : `pull on host=${HOST} (backup=${ts})`,
-  );
+  // not regress. A composing caller prints its own single header instead.
+  if (!compose) {
+    log(
+      dryRun
+        ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
+        : `pull on host=${HOST} (backup=${ts})`,
+    );
+  }
   // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
   // --autostash between them. capturePrePostHeads handles the unborn-HEAD
   // case (fresh clone, no commits) by returning undefined; when undefined

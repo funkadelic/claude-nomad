@@ -1576,6 +1576,24 @@ describe('runPullCore: return shape and lock-free contract', () => {
     expect(result.incomingChanges).toBe(false);
   });
 
+  it('suppresses the pull-on-host header under compose: true (composing caller owns the header)', async () => {
+    const logSpy = vi.spyOn(console, 'log');
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore({ compose: true });
+    expect(result.tag).toBe('wet');
+    const combined = logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
+    expect(combined).not.toContain('pull on host=');
+  });
+
+  it('prints the pull-on-host header when compose is not set (standalone output unchanged)', async () => {
+    const logSpy = vi.spyOn(console, 'log');
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore();
+    expect(result.tag).toBe('wet');
+    const combined = logSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
+    expect(combined).toContain('pull on host=');
+  });
+
   it('returns { tag: "dry" } on --dry-run and renders its own preview inline', async () => {
     vi.doMock('./preview.ts', () => ({
       computePreview: vi.fn(() => ({ unmapped: 0 })),
