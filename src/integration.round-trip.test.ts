@@ -60,7 +60,7 @@ describe.skipIf(!hasGit || !hasGitleaks)(
       rmSync(tmp, { recursive: true, force: true });
     });
 
-    it('syncs SHARED_LINKS symlinks, settings, and a session transcript from A to B', () => {
+    it('syncs symlinks, settings merge, a session transcript, the .claude extra, and skills from A to B', () => {
       // Create the shared origin first; host B is cloned AFTER host A pushes so
       // B's clone is not stale and nomad pull can see shared/settings.base.json.
       const { makeHost } = makeWorld(tmp);
@@ -73,7 +73,25 @@ describe.skipIf(!hasGit || !hasGitleaks)(
       writeFileSync(join(a.claudeHome, 'CLAUDE.md'), '# shared claude md\n');
       mkdirSync(join(a.claudeHome, 'commands'), { recursive: true });
       writeFileSync(join(a.claudeHome, 'commands', 'hello.md'), '# hello command\n');
-      const seedSettings: Record<string, unknown> = { theme: 'dark', fontSize: 14 };
+
+      // Seed a user skill plus a gsd-prefixed skill BEFORE init: init --snapshot
+      // does not touch skills (they are copy-synced, not a SHARED_LINK), so this
+      // is safe and lets syncSkillsPush/syncSkillsPull carry both through the
+      // same push/pull legs as everything else.
+      mkdirSync(join(a.claudeHome, 'skills', 'my-skill'), { recursive: true });
+      const skillContent = '# my skill (from A)\n';
+      writeFileSync(join(a.claudeHome, 'skills', 'my-skill', 'SKILL.md'), skillContent);
+      mkdirSync(join(a.claudeHome, 'skills', 'gsd-something'), { recursive: true });
+      writeFileSync(join(a.claudeHome, 'skills', 'gsd-something', 'SKILL.md'), '# gsd skill\n');
+
+      // Extend the seeded settings with a nested array key (permissions.allow) so
+      // the eventual hosts/host-b.json override below exercises array-replace
+      // merge semantics, not just the scalar theme/fontSize keys.
+      const seedSettings: Record<string, unknown> = {
+        theme: 'dark',
+        fontSize: 14,
+        permissions: { allow: ['Bash(git:*)', 'Read'] },
+      };
       writeFileSync(join(a.claudeHome, 'settings.json'), JSON.stringify(seedSettings) + '\n');
 
       // Plant a session transcript on A under a project root that lives under tmp.
@@ -86,6 +104,17 @@ describe.skipIf(!hasGit || !hasGitleaks)(
       // --keep-actions prevents the gh-actions disable flow from running in CI.
       const initResult = runNomad(a, ['init', '--snapshot', '--keep-actions']);
       expect(initResult.status, `init failed:\n${initResult.stderr}`).toBe(0);
+
+      // Non-empty host-override payload: hosts/host-b.json with a scalar override
+      // (theme) and an array key holding different members than the base
+      // (permissions.allow), so the merge oracle below exercises a real override
+      // instead of merging against an empty {}. init already scaffolded hosts/
+      // via hosts/host-a.json; mkdir defensively in case that ever changes.
+      mkdirSync(join(a.repo, 'hosts'), { recursive: true });
+      writeFileSync(
+        join(a.repo, 'hosts', 'host-b.json'),
+        JSON.stringify({ theme: 'light', permissions: { allow: ['Read'] } }) + '\n',
+      );
 
       // Commit the scaffold written by init so the files are tracked in origin
       // before push runs. A human user does this after reviewing the scaffold
@@ -118,8 +147,20 @@ describe.skipIf(!hasGit || !hasGitleaks)(
             'host-b': bProjectRoot,
           },
         },
+        extras: {
+          myproject: ['.claude'],
+        },
       };
       writeFileSync(pathMapPath, JSON.stringify(pathMap) + '\n');
+
+      // .claude extra deny-set payload on A: a syncable agent file (agents/ is
+      // not in CLAUDE_EXTRA_NEVER_SYNC) plus a host-local settings.local.json
+      // (deny-set) that must never leave host A.
+      const aClaudeExtra = join(projectRoot, '.claude');
+      mkdirSync(join(aClaudeExtra, 'agents'), { recursive: true });
+      const agentContent = '# my agent (from A)\n';
+      writeFileSync(join(aClaudeExtra, 'agents', 'my-agent.md'), agentContent);
+      writeFileSync(join(aClaudeExtra, 'settings.local.json'), '{"host":"host-a"}\n');
 
       // Host A: push the session transcript and updated path-map to the shared origin.
       const pushResult = runNomad(a, ['push']);
@@ -130,6 +171,14 @@ describe.skipIf(!hasGit || !hasGitleaks)(
       // pushed session transcript). This mirrors a second user doing
       // `git clone <origin> ~/claude-nomad` then `nomad pull`.
       const b = makeHost('host-b');
+
+      // Pre-plant B's own pre-existing host-local settings.local.json before the
+      // pull. This is the 0.47.1 mirror-wipe regression guard: the pull must
+      // preserve this file untouched rather than overwrite or delete it.
+      const bClaudeExtra = join(bProjectRoot, '.claude');
+      mkdirSync(bClaudeExtra, { recursive: true });
+      const bLocalSettingsContent = '{"host":"host-b"}\n';
+      writeFileSync(join(bClaudeExtra, 'settings.local.json'), bLocalSettingsContent);
 
       // Host B: pull from the shared origin.
       const pullResult = runNomad(b, ['pull']);
@@ -154,8 +203,9 @@ describe.skipIf(!hasGit || !hasGitleaks)(
       expect(bClaudeMd).toBe('# shared claude md\n');
 
       // Assertion 2: B's settings.json equals deepMerge(base, hosts/host-b.json).
-      // The snapshot wrote the seeded settings.json into hosts/host-a.json.
-      // No hosts/host-b.json was pushed so the pull-side merge is base + {}.
+      // The snapshot wrote the seeded settings.json into hosts/host-a.json;
+      // hosts/host-b.json was written and pushed separately above so the
+      // pull-side merge exercises a real, non-empty override.
       // Compute the oracle by reading the repo files on B's clone.
       const bRepoBase = join(b.repo, 'shared', 'settings.base.json');
       const bRepoHostJson = join(b.repo, 'hosts', 'host-b.json');
@@ -168,6 +218,15 @@ describe.skipIf(!hasGit || !hasGitleaks)(
         readFileSync(join(b.claudeHome, 'settings.json'), 'utf8'),
       ) as Record<string, unknown>;
       expect(actualSettings).toEqual(expectedSettings);
+      // Assertion 5 (non-empty host override merge): exact-literal expectations
+      // on the overridden keys, in addition to the oracle comparison above, so a
+      // deepMerge regression that also breaks the oracle (computed with the same
+      // function) cannot hide behind it.
+      expect(actualSettings.theme, 'scalar override did not win').toBe('light');
+      expect(
+        (actualSettings.permissions as { allow: string[] }).allow,
+        'array key was concatenated instead of replaced',
+      ).toEqual(['Read']);
 
       // Assertion 3: the transcript appears under B's encodePath project dir.
       // The path-map maps 'myproject' to B's distinct bProjectRoot so remapPull
@@ -176,6 +235,53 @@ describe.skipIf(!hasGit || !hasGitleaks)(
       const bSessionPath = join(b.claudeHome, 'projects', bEncodedDir, `${sid}.jsonl`);
       expect(existsSync(bSessionPath), `session not found at ${bSessionPath}`).toBe(true);
       expect(readFileSync(bSessionPath, 'utf8')).toBe(sessionContent);
+
+      // Assertion 4: the .claude extra round-trips with deny-set preservation.
+      // Guards two boundaries at once: the push-side deny filter (A's
+      // settings.local.json must never enter the repo) and the pull-side
+      // preserving overlay (B's pre-existing settings.local.json must survive
+      // the pull untouched, the 0.47.1 mirror-wipe regression).
+      const bAgentPath = join(bProjectRoot, '.claude', 'agents', 'my-agent.md');
+      expect(existsSync(bAgentPath), 'agent file not found on B').toBe(true);
+      expect(readFileSync(bAgentPath, 'utf8')).toBe(agentContent);
+
+      const bLocalSettingsPath = join(bProjectRoot, '.claude', 'settings.local.json');
+      expect(
+        readFileSync(bLocalSettingsPath, 'utf8'),
+        "B's settings.local.json was overwritten by the pull",
+      ).toBe(bLocalSettingsContent);
+
+      const repoLeakedPath = join(
+        b.repo,
+        'shared',
+        'extras',
+        'myproject',
+        '.claude',
+        'settings.local.json',
+      );
+      expect(existsSync(repoLeakedPath), "A's settings.local.json leaked into the repo").toBe(
+        false,
+      );
+
+      // Assertion 6: skills copy-sync mirrors the user skill as a real (non-
+      // symlink) copy and excludes the gsd-prefixed skill from both the repo
+      // and B.
+      const bSkillPath = join(b.claudeHome, 'skills', 'my-skill', 'SKILL.md');
+      expect(existsSync(bSkillPath), 'user skill not found on B').toBe(true);
+      expect(
+        lstatSync(bSkillPath).isSymbolicLink(),
+        'user skill should be a real copy, not a symlink',
+      ).toBe(false);
+      expect(readFileSync(bSkillPath, 'utf8')).toBe(skillContent);
+
+      expect(
+        existsSync(join(b.claudeHome, 'skills', 'gsd-something')),
+        'gsd-prefixed skill leaked to B',
+      ).toBe(false);
+      expect(
+        existsSync(join(b.repo, 'shared', 'skills', 'gsd-something')),
+        'gsd-prefixed skill leaked into the repo',
+      ).toBe(false);
     });
   },
 );
