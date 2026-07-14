@@ -37,26 +37,16 @@ type WetPull = Extract<PullCoreResult, { tag: 'wet' }>;
 type PushOutcome = { ok: true; result: PushCoreResult } | { ok: false; message: string };
 
 /**
- * True when the sections a wet pull built carry no synced-item rows: every
- * section is either `Settings` (always one row, the regenerated
- * settings.json), `Pull summary` (always one row), or has zero items. Used to
- * decide whether the pull half actually moved anything.
+ * True when neither half of this run changed anything: the pull half's rebase
+ * moved nothing (`!pull.incomingChanges`) and retained nothing new (no
+ * local-only sessions, no diverged files kept local), and the push half found
+ * nothing to push. Callers use this to collapse the run to a single compact
+ * line instead of two full grouped trees.
  *
- * @param sections - The grouped-tree sections returned by a wet pull.
- * @returns `true` when no Sessions/Extras rows were produced.
- */
-function pullHasNoSyncedItems(sections: DoctorSection[]): boolean {
-  return sections.every(
-    (s) => s.header === 'Settings' || s.header === PULL_SUMMARY_HEADER || s.items.length === 0,
-  );
-}
-
-/**
- * True when neither half of this run changed anything: the pull half synced
- * no items and retained nothing new (no local-only sessions, no diverged
- * files kept local), and the push half found nothing to push. Callers use
- * this to collapse the run to a single compact line instead of two full
- * grouped trees.
+ * Gating on `incomingChanges` rather than the pull sections' row contents is
+ * deliberate: the pull overlay always re-copies every mapped session/extras
+ * dir, so a `Sessions`/`Extras` row with items does NOT by itself mean
+ * anything changed upstream; the rebase HEAD delta does.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
@@ -66,7 +56,7 @@ function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
   if (!pushOutcome.ok) return false;
   if (pull.localOnly !== 0 || pull.divergedKeptLocal !== 0) return false;
   if (pushOutcome.result.tag !== 'nothing') return false;
-  return pullHasNoSyncedItems(pull.sections);
+  return !pull.incomingChanges;
 }
 
 /**

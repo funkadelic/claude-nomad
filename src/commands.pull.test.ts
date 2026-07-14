@@ -1506,7 +1506,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('returns { tag: "wet", sections, localOnly, divergedKeptLocal } without acquiring the lock', async () => {
+  it('returns { tag: "wet", sections, localOnly, divergedKeptLocal, incomingChanges } without acquiring the lock', async () => {
     const { runPullCore } = await import('./commands.pull.ts');
     const result = runPullCore();
     expect(result.tag).toBe('wet');
@@ -1518,8 +1518,62 @@ describe('runPullCore: return shape and lock-free contract', () => {
     // divergedKeptLocal comes straight from the mocked divergenceCheckExtras()
     // return value (the both-sides-modified count).
     expect(result.divergedKeptLocal).toBe(3);
+    // gitCaptureRaw always returns '' in this suite's default mock, so both
+    // the pre- and post-rebase HEAD captures are equal ('' === ''):
+    // incomingChanges must be false.
+    expect(result.incomingChanges).toBe(false);
     // runPullCore never calls acquireLock: no lockfile is written.
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('reports incomingChanges: true when the pre-rebase HEAD cannot be captured (fresh clone)', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: vi.fn(),
+        gitCaptureRaw: vi.fn(() => {
+          throw new Error('fatal: ambiguous argument HEAD');
+        }),
+      };
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore();
+    expect(result.tag).toBe('wet');
+    if (result.tag !== 'wet') throw new Error('unreachable');
+    expect(result.incomingChanges).toBe(true);
+  });
+
+  it('reports incomingChanges: true when the rebase moves REPO_HOME HEAD (pre !== post)', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: vi.fn(),
+        gitCaptureRaw: vi.fn().mockReturnValueOnce('sha-before').mockReturnValueOnce('sha-after'),
+      };
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore();
+    expect(result.tag).toBe('wet');
+    if (result.tag !== 'wet') throw new Error('unreachable');
+    expect(result.incomingChanges).toBe(true);
+  });
+
+  it('reports incomingChanges: false when the rebase leaves REPO_HOME HEAD unchanged (pre === post)', async () => {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: vi.fn(),
+        gitCaptureRaw: vi.fn(() => 'sha-same'),
+      };
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore();
+    expect(result.tag).toBe('wet');
+    if (result.tag !== 'wet') throw new Error('unreachable');
+    expect(result.incomingChanges).toBe(false);
   });
 
   it('returns { tag: "dry" } on --dry-run and renders its own preview inline', async () => {

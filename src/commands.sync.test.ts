@@ -229,6 +229,7 @@ describe('cmdSync: wet composition', () => {
         sections: pullSections(),
         localOnly: 0,
         divergedKeptLocal: 0,
+        incomingChanges: false,
       })),
     }));
     vi.doMock('./commands.push.ts', () => ({
@@ -240,6 +241,56 @@ describe('cmdSync: wet composition', () => {
     expect(combined).toContain('already in sync');
     expect(combined).not.toContain('pull:');
     expect(combined).not.toContain('push:');
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it('no-op collapse fires even when the pull sections carry a synced Sessions row (regression)', async () => {
+    // The overlay always re-copies mapped session dirs, so a non-empty
+    // Sessions row does NOT by itself mean anything changed upstream; only
+    // the rebase HEAD-delta signal (incomingChanges: false here) should
+    // drive the collapse.
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => ({
+        tag: 'wet',
+        sections: pullSections({ sessionItem: 'proj-a' }),
+        localOnly: 0,
+        divergedKeptLocal: 0,
+        incomingChanges: false,
+      })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => ({ tag: 'nothing' })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain('already in sync');
+    expect(combined).not.toContain('pull:');
+    expect(combined).not.toContain('push:');
+    expect(combined).not.toContain('proj-a');
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it('does not collapse when incomingChanges is true, even with an otherwise-clean push', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => ({
+        tag: 'wet',
+        sections: pullSections({ sessionItem: 'proj-a' }),
+        localOnly: 0,
+        divergedKeptLocal: 0,
+        incomingChanges: true,
+      })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => ({ tag: 'nothing' })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).not.toContain('already in sync');
+    expect(combined).toContain('proj-a');
     expect(process.exitCode).not.toBe(1);
   });
 
