@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.59.0](https://github.com/funkadelic/claude-nomad/compare/v0.58.1...v0.59.0) (2026-07-14)
+
+
+### Added
+
+* native Windows support via win32 copy-sync modality ([#399](https://github.com/funkadelic/claude-nomad/issues/399)) ([524bce8](https://github.com/funkadelic/claude-nomad/commit/524bce8a3a4a1d900fb28778ed25ba7dd28ffb5d))
+
+
+### Changed
+
+* add pinned actionlint job and single-source node version via .nvmrc ([#413](https://github.com/funkadelic/claude-nomad/issues/413)) ([e9fde67](https://github.com/funkadelic/claude-nomad/commit/e9fde67b50cbe0f0244a242a8dc9b9a8c7079079))
+* drop the windows node 22 test leg ([#402](https://github.com/funkadelic/claude-nomad/issues/402)) ([1973b89](https://github.com/funkadelic/claude-nomad/commit/1973b89439b0d32db72c3046aca6d96b43d2a86c))
+* **pages:** deploy docs on release publish instead of every main push ([#411](https://github.com/funkadelic/claude-nomad/issues/411)) ([c0f2658](https://github.com/funkadelic/claude-nomad/commit/c0f2658a8ed0369ef7216d08c7df07bb0635b9d1))
+* platform stub helper and extras-sync collision-guard split ([#401](https://github.com/funkadelic/claude-nomad/issues/401)) ([5b3f906](https://github.com/funkadelic/claude-nomad/commit/5b3f906943004be5f3cf3411b6d0a250ce61ff04))
+* **sonar:** fix doctor check smells and suppress S5976 for tests ([#409](https://github.com/funkadelic/claude-nomad/issues/409)) ([52e506e](https://github.com/funkadelic/claude-nomad/commit/52e506ebaa9a55b29d7946b408fd2db4b623cdc4))
+* **tests:** declare shell pwsh on windows gitleaks step, drop lint ignore ([#414](https://github.com/funkadelic/claude-nomad/issues/414)) ([21a620f](https://github.com/funkadelic/claude-nomad/commit/21a620fb841fe7eb2432044f5ee69f8c0d11736b))
+* **tests:** speed up windows leg via Defender scanning exclusion ([#412](https://github.com/funkadelic/claude-nomad/issues/412)) ([a7409bc](https://github.com/funkadelic/claude-nomad/commit/a7409bcf6e5ee4372a0e86c01ddde6653d531e40))
+
+
+### Testing
+
+* isolate subprocess-heavy tests into a bounded vitest project ([#403](https://github.com/funkadelic/claude-nomad/issues/403)) ([579de5b](https://github.com/funkadelic/claude-nomad/commit/579de5b3583a4968e109fd8987ac25f8b7a9cc54))
+
+
+### Dependencies
+
+* bump actions/labeler from 6.1.0 to 6.2.0 ([#405](https://github.com/funkadelic/claude-nomad/issues/405)) ([e582f9d](https://github.com/funkadelic/claude-nomad/commit/e582f9df0897614472a10b6ebbe30e2d94f3c9e9))
+* bump astro in /docs-site in the prod-dependencies group ([#408](https://github.com/funkadelic/claude-nomad/issues/408)) ([7726450](https://github.com/funkadelic/claude-nomad/commit/7726450933cb54e320e60aa2903ca091c8e6206c))
+* bump the codeql-action group across 1 directory with 2 updates ([#404](https://github.com/funkadelic/claude-nomad/issues/404)) ([ddd61c3](https://github.com/funkadelic/claude-nomad/commit/ddd61c34185d2702681d3a8af63ece19dbcfb4c1))
+* bump the dev-dependencies group across 1 directory with 5 updates ([#410](https://github.com/funkadelic/claude-nomad/issues/410)) ([e9e98f8](https://github.com/funkadelic/claude-nomad/commit/e9e98f819cf80feeff59627678369cd63dd4b9df))
+
 ## [0.58.1](https://github.com/funkadelic/claude-nomad/compare/v0.58.0...v0.58.1) (2026-07-11)
 
 
