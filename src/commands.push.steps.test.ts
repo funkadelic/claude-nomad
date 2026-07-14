@@ -220,10 +220,42 @@ describe('commitAndPush render flag', () => {
     // The pre-recovery tree rendered inline before resolveLeakFindings ran.
     expect(logCallsAtRecovery).toBeGreaterThan(0);
     expect(logOutput(env)).toContain('✗ 1 leak found');
+    // The compose-mode context header attributes the detached inline trees.
+    expect(logOutput(env)).toContain('push (leak recovery)');
     // The resolved tree also rendered inline; the caller gets no sections so
     // a composing caller cannot double-render.
     expect(logOutput(env)).toContain('✓ no leaks');
     expect(sections).toEqual([]);
+  });
+
+  it('the leak path under render: true prints no compose-mode context header', async () => {
+    const leakVerdict: TestVerdict = {
+      leak: true,
+      verdictRow: '✗ 1 leak found',
+      recovery: 'recovery body',
+      findings: [],
+    };
+    const resolveSpy = vi.fn(() => CLEAN_VERDICT);
+    mockCommitDeps({
+      statusLine: 'M  shared/CLAUDE.md\0',
+      verdict: leakVerdict,
+      resolveSpy,
+    });
+    const { commitAndPush } = await import('./commands.push.steps.ts');
+    const { outcome } = await commitAndPush(
+      makeState(),
+      'ts',
+      { projects: {} },
+      NO_RESOLUTION,
+      env.repoUnderHome,
+      EMPTY_MANIFEST,
+      true,
+    );
+    expect(outcome).toBe('pushed');
+    const combined = logOutput(env);
+    expect(combined).toContain('✗ 1 leak found');
+    // Standalone push already printed its own header; no extra context line.
+    expect(combined).not.toContain('push (leak recovery)');
   });
 });
 

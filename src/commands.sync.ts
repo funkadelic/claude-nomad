@@ -134,15 +134,31 @@ function buildSyncSummarySection(pull: WetPull, pushOutcome: PushOutcome): Docto
 const SYNC_SECTION_ORDER = ['Settings', 'Global config', 'Sessions', 'Extras', 'Leak scan'];
 
 /**
+ * True for the per-half summary headers dropped from the merged tree: the
+ * single Sync summary replaces both. Dropping by name (rather than dropping
+ * everything outside `SYNC_SECTION_ORDER`) means a section header added to a
+ * half's builder later still reaches `nomad sync` output instead of
+ * vanishing silently. A function rather than a module-level set so the
+ * constant is read lazily, not at import time.
+ *
+ * @param header - A section header from either half.
+ * @returns `true` when the header is one of the two dropped summaries.
+ */
+function isDroppedSummaryHeader(header: string): boolean {
+  return header === PULL_SUMMARY_HEADER || header === 'Push summary';
+}
+
+/**
  * Merge the pull half's and push half's built sections into one tree: the
  * `Pull summary` (`PULL_SUMMARY_HEADER`) and `Push summary` sections are
- * dropped (the single Sync summary replaces both; they are the only wet
- * headers outside `SYNC_SECTION_ORDER`, so the header-map lookup below drops
- * exactly them), the remaining sections are grouped by header in
- * `SYNC_SECTION_ORDER`, and within each header the items from both halves
- * are concatenated de-duplicated by exact string value in first-seen order
- * (so the byte-identical `not in path-map` skip row both halves emit
- * collapses to one).
+ * dropped by name (the single Sync summary replaces both), the remaining
+ * sections are grouped by header in `SYNC_SECTION_ORDER` with any header
+ * outside that canonical list appended after it in first-seen order (the
+ * `Map` preserves insertion order, so unknown headers render last instead of
+ * being discarded), and within each header the items from both halves are
+ * concatenated de-duplicated by exact string value in first-seen order (so
+ * the byte-identical `not in path-map` skip row both halves emit collapses
+ * to one).
  *
  * @param pullSections - The wet pull result's built sections.
  * @param pushSections - The push half's built sections (compose mode).
@@ -156,9 +172,12 @@ function mergeSyncSections(
     SYNC_SECTION_ORDER.map((header) => [header, section(header)]),
   );
   for (const s of [...pullSections, ...pushSections]) {
-    const target = byHeader.get(s.header);
-    // Headers outside SYNC_SECTION_ORDER are the two dropped summaries.
-    if (target === undefined) continue;
+    if (isDroppedSummaryHeader(s.header)) continue;
+    let target = byHeader.get(s.header);
+    if (target === undefined) {
+      target = section(s.header);
+      byHeader.set(s.header, target);
+    }
     for (const item of s.items) {
       if (!target.items.includes(item)) addItem(target, item);
     }

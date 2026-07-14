@@ -32,6 +32,10 @@ import { fail, gitOrFatal, gitStatusPorcelainZ, log, warn } from './utils.ts';
  * post-recovery tree inline, regardless of `render`, because the interactive
  * recovery menu / recovery body needs the tree already visible; the returned
  * `sections` is empty on that path so a composing caller never double-renders.
+ * Under `render: false` the leak path additionally prints a one-line
+ * `push (leak recovery)` context header first, so the inline push trees are
+ * attributable inside the composing caller's transcript (which otherwise
+ * prints its own header only later).
  *
  * @param st - Push state for the tree render.
  * @param ts - Backup timestamp passed to the recovery flow.
@@ -84,6 +88,9 @@ export async function commitAndPush(
   let verdict = withSpinner('Scanning for secrets', () => scanPushVerdict(repo));
   const hadLeak = verdict.leak;
   if (verdict.leak) {
+    // A composing caller has not printed any push context yet, so name the
+    // flow the detached inline trees below belong to.
+    if (!render) log('push (leak recovery)');
     // Unconditional regardless of `render`: the interactive recovery menu /
     // recovery body needs the tree already visible before it prints.
     renderPushTree(st, verdict);

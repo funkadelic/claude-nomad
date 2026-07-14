@@ -392,6 +392,32 @@ describe('cmdSync: wet composition', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
+  it('merged tree: a push-half header outside the canonical order survives after the canonical sections', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => ({
+        tag: 'wet',
+        sections: pullSections({ sessionItem: 'proj-a' }),
+        localOnly: 0,
+        divergedKeptLocal: 0,
+        incomingChanges: true,
+      })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => ({
+        tag: 'pushed',
+        sections: [...pushSideSections(), { header: 'Path map', items: ['path-map.json missing'] }],
+      })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain('Path map');
+    expect(combined).toContain('path-map.json missing');
+    // Unknown headers append after the canonical sections, never vanish.
+    expect(combined.indexOf('Leak scan')).toBeLessThan(combined.indexOf('Path map'));
+  });
+
   it('does not collapse when incomingChanges is true, even with an otherwise-clean push', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',

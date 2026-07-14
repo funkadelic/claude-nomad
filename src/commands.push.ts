@@ -110,8 +110,7 @@ function toPushCoreResult(
   sections: DoctorSection[],
   compose: boolean,
 ): PushCoreResult {
-  const tag = outcome === 'nothing' ? ('nothing' as const) : ('pushed' as const);
-  return compose ? { tag, sections } : { tag };
+  return compose ? { tag: outcome, sections } : { tag: outcome };
 }
 
 /**
