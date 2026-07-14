@@ -1446,6 +1446,11 @@ describe('runPullCore: return shape and lock-free contract', () => {
   let testHome: string;
   let repoUnderHome: string;
   let lockPath: string;
+  // Shared gitCaptureRaw mock instance: tests override its implementation
+  // in place instead of re-registering the ./utils.ts doMock, because a
+  // second doMock of a module already wired into an imported graph is racy
+  // (the re-import may keep the first factory's instances).
+  let gitCaptureRawMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -1463,9 +1468,10 @@ describe('runPullCore: return shape and lock-free contract', () => {
       const actual = await importOriginal<typeof wedgeModule>();
       return { ...actual, classifyWedge: vi.fn(() => null) };
     });
+    gitCaptureRawMock = vi.fn(() => '');
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
-      return { ...actual, gitOrFatal: vi.fn(), gitCaptureRaw: vi.fn(() => '') };
+      return { ...actual, gitOrFatal: vi.fn(), gitCaptureRaw: gitCaptureRawMock };
     });
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
@@ -1527,15 +1533,8 @@ describe('runPullCore: return shape and lock-free contract', () => {
   });
 
   it('reports incomingChanges: true when the pre-rebase HEAD cannot be captured (fresh clone)', async () => {
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return {
-        ...actual,
-        gitOrFatal: vi.fn(),
-        gitCaptureRaw: vi.fn(() => {
-          throw new Error('fatal: ambiguous argument HEAD');
-        }),
-      };
+    gitCaptureRawMock.mockImplementation(() => {
+      throw new Error('fatal: ambiguous argument HEAD');
     });
     const { runPullCore } = await import('./commands.pull.ts');
     const result = runPullCore();
@@ -1545,14 +1544,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
   });
 
   it('reports incomingChanges: true when the rebase moves REPO_HOME HEAD (pre !== post)', async () => {
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return {
-        ...actual,
-        gitOrFatal: vi.fn(),
-        gitCaptureRaw: vi.fn().mockReturnValueOnce('sha-before').mockReturnValueOnce('sha-after'),
-      };
-    });
+    gitCaptureRawMock.mockReturnValueOnce('sha-before').mockReturnValueOnce('sha-after');
     const { runPullCore } = await import('./commands.pull.ts');
     const result = runPullCore();
     expect(result.tag).toBe('wet');
@@ -1561,14 +1553,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
   });
 
   it('reports incomingChanges: false when the rebase leaves REPO_HOME HEAD unchanged (pre === post)', async () => {
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return {
-        ...actual,
-        gitOrFatal: vi.fn(),
-        gitCaptureRaw: vi.fn(() => 'sha-same'),
-      };
-    });
+    gitCaptureRawMock.mockReturnValue('sha-same');
     const { runPullCore } = await import('./commands.pull.ts');
     const result = runPullCore();
     expect(result.tag).toBe('wet');
