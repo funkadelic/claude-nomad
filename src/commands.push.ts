@@ -37,7 +37,8 @@ export { reportSettingsAheadDrift } from './commands.push.settings.ts';
  * `sections` is empty on the resolved-leak path (already rendered inline, see
  * `commitAndPush`).
  *
- * `aheadOfOrigin` is set only on the compose-mode empty-status arm: `true`
+ * `aheadOfOrigin` is set on every compose-mode `nothing` arm (the
+ * empty-status early return and the gsd-only staged-drop no-op): `true`
  * when the sync repo's HEAD carries commits its upstream lacks (e.g. a prior
  * push committed but the network push failed), so a composing caller must not
  * report the run as fully in sync even though there was nothing to commit.
@@ -99,18 +100,27 @@ function emptyStatusResult(st: PushState, compose: boolean, repo: string): PushC
  * Map `commitAndPush`'s object return onto a `PushCoreResult`: under
  * `compose` the arm carries the built sections so the composing caller owns
  * the render; otherwise the tag alone (standalone push already rendered).
+ * The compose-mode `nothing` arm (the gsd-only staged-drop no-op) runs the
+ * same ahead-of-upstream probe as the empty-status arm, so no `nothing`
+ * result a composing caller sees can hide unpushed commits.
  *
  * @param outcome - `commitAndPush`'s outcome.
  * @param sections - The built push tree sections `commitAndPush` returned.
  * @param compose - Composing-caller render mode (see `runPushCore`).
+ * @param repo - Resolved repo root path for the ahead-of-upstream probe.
  * @returns The `nothing`- or `pushed`-tagged result.
  */
 function toPushCoreResult(
   outcome: 'pushed' | 'nothing',
   sections: DoctorSection[],
   compose: boolean,
+  repo: string,
 ): PushCoreResult {
-  return compose ? { tag: outcome, sections } : { tag: outcome };
+  if (!compose) return { tag: outcome };
+  if (outcome === 'nothing') {
+    return { tag: 'nothing', sections, aheadOfOrigin: aheadOfUpstream(repo) };
+  }
+  return { tag: 'pushed', sections };
 }
 
 /**
@@ -333,7 +343,7 @@ export async function runPushCore(
     newManifest,
     render,
   );
-  return toPushCoreResult(outcome, sections, compose);
+  return toPushCoreResult(outcome, sections, compose, repo);
 }
 
 /**

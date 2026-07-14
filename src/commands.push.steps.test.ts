@@ -384,6 +384,17 @@ describe('runPushCore compose mode', () => {
     expect(env.logSpy).not.toHaveBeenCalled();
   });
 
+  it('compose: true on the gsd-only no-op carries aheadOfOrigin from the upstream probe', async () => {
+    mockPipeline('M  shared/hooks/gsd-prompt-guard.js\0', { revListCount: '1\n' });
+    const { runPushCore } = await import('./commands.push.ts');
+    const result = await runPushCore({ compose: true });
+    expect(result.tag).toBe('nothing');
+    if (result.tag !== 'nothing') throw new Error('unreachable');
+    expect(result.sections?.map((s) => s.header)).toContain('Push summary');
+    expect(result.aheadOfOrigin).toBe(true);
+    expect(env.logSpy).not.toHaveBeenCalled();
+  });
+
   it('compose: true on a real push returns { tag: "pushed", sections } and renders nothing itself', async () => {
     mockPipeline('M  shared/CLAUDE.md\0');
     const { runPushCore } = await import('./commands.push.ts');
