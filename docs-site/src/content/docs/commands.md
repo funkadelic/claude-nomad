@@ -89,8 +89,9 @@ Run `nomad pull --force-remote` to recover, then re-run `nomad sync` (`sync` its
 after a successful pull reports `pull: applied, push: failed (<reason>)` and exits non-zero; there
 is no rollback, since the pull half already retained everything and made local state strictly
 better than before. A run where neither half changed anything prints a single compact
-`already in sync` line; any other run renders one merged status tree (Settings, Sessions, Extras,
-Sync summary) instead of separate pull and push reports. If the sync repo holds commits that never
+`already in sync` line; any other run renders one merged status tree (Settings, Global config,
+Sessions, Extras, and Leak scan, as applicable) ending in a single Sync summary, instead of
+separate pull and push reports. If the sync repo holds commits that never
 reached the remote (for example a push interrupted mid-run), the run does not claim to be in sync;
 the Sync summary adds a `sync repo has unpushed commits` note instead. A run where the pull half
 retained diverged extras or local-only sessions
