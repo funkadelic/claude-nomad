@@ -186,14 +186,27 @@ function handleWedge(repo: string, forceRemote: boolean): void {
  * nothing extra (the dry-run branch renders its own preview tree inline via
  * `computePreview`, matching standalone `cmdPull --dry-run` output). The
  * `wet` tag carries the built (not-yet-rendered) grouped-tree sections plus
- * the two summary counts a composing caller needs without re-deriving them:
- * `localOnly` (retained-but-unpushed local-only session files) and
+ * the summary counts a composing caller needs without re-deriving them:
+ * `localOnly` (retained-but-unpushed local-only session files),
  * `divergedKeptLocal` (both-sides-modified extras files the pull kept local
- * on conflict).
+ * on conflict), and `incomingChanges` (whether the rebase actually moved
+ * `REPO_HOME`'s HEAD, i.e. `pre !== post`, or `true` when the pre-rebase HEAD
+ * could not be captured at all, an unborn HEAD on a fresh clone). A composing
+ * caller (`nomad sync`) needs `incomingChanges` rather than inspecting
+ * `sections` for synced rows: the pull overlay always re-copies every mapped
+ * session/extras dir regardless of whether upstream actually changed, so a
+ * `Sessions`/`Extras` row with items does NOT imply a real change, while the
+ * rebase HEAD delta does.
  */
 export type PullCoreResult =
   | { tag: 'dry' }
-  | { tag: 'wet'; sections: DoctorSection[]; localOnly: number; divergedKeptLocal: number };
+  | {
+      tag: 'wet';
+      sections: DoctorSection[];
+      localOnly: number;
+      divergedKeptLocal: number;
+      incomingChanges: boolean;
+    };
 
 /**
  * Lock-free core of `nomad pull`: takes a backup timestamp, runs
@@ -244,15 +257,23 @@ export type PullCoreResult =
  * `nomad/stranded-<ts>` and resets hard to `origin/main`, then falls through
  * to the normal pull. Cannot combine with `--dry-run`.
  *
+ * `opts.compose` (default `false`, wet-only; `nomad sync`'s dry-run path
+ * never calls this function): when `true`, a composing caller owns the
+ * header, so the `pull on host=... (backup=<ts>)` line is suppressed. Every
+ * side effect and the returned sections are unchanged; standalone `cmdPull`
+ * never sets it, so its output is byte-identical.
+ *
  * @param opts.dryRun - Preview mode; see above.
  * @param opts.forceRemote - Wedge recovery mode; see above.
+ * @param opts.compose - Composing-caller header suppression; see above.
  * @returns A `PullCoreResult` tagged `dry` or `wet` (see `PullCoreResult`).
  */
 export function runPullCore(
-  opts: { dryRun?: boolean; forceRemote?: boolean } = {},
+  opts: { dryRun?: boolean; forceRemote?: boolean; compose?: boolean } = {},
 ): PullCoreResult {
   const dryRun = opts.dryRun === true;
   const forceRemote = opts.forceRemote === true;
+  const compose = opts.compose === true;
   // Resolve roots once per function entry (mirrors the convention used by
   // every other command/extras/remap module in this codebase).
   const repo = repoHome();
@@ -282,12 +303,14 @@ export function runPullCore(
   }
   // WET header becomes the tree header (no `pulling` prefix). The dry-run
   // header phrasing is LEFT byte-identical so the readable diff path does
-  // not regress.
-  log(
-    dryRun
-      ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
-      : `pull on host=${HOST} (backup=${ts})`,
-  );
+  // not regress. A composing caller prints its own single header instead.
+  if (!compose) {
+    log(
+      dryRun
+        ? `pulling on host=${HOST} (backup=${ts}; dry-run)`
+        : `pull on host=${HOST} (backup=${ts})`,
+    );
+  }
   // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
   // --autostash between them. capturePrePostHeads handles the unborn-HEAD
   // case (fresh clone, no commits) by returning undefined; when undefined
@@ -322,7 +345,14 @@ export function runPullCore(
     return { tag: 'dry' };
   }
   const { sections, localOnly } = buildWetPullSections(ts, map, prePostHeads);
-  return { tag: 'wet', sections, localOnly, divergedKeptLocal };
+  // An unborn/uncapturable pre-rebase HEAD (fresh clone) is treated as
+  // "changes present" so a first-ever pull is never collapsed to a no-op;
+  // otherwise the signal is the rebase's own HEAD delta, not the sections
+  // (the overlay always re-copies mapped dirs, so a synced row alone does
+  // not mean anything actually changed upstream).
+  const incomingChanges =
+    prePostHeads === undefined ? true : prePostHeads.pre !== prePostHeads.post;
+  return { tag: 'wet', sections, localOnly, divergedKeptLocal, incomingChanges };
 }
 
 /**

@@ -2,7 +2,14 @@ import { HOST, manifestPath, type PathMap } from './config.ts';
 import { type Manifest, type ManifestDiff, writeManifest } from './push-manifest.ts';
 import { isGsdDropped, parsePorcelainZ } from './commands.push.allowlist.ts';
 import { resolveLeakFindings } from './commands.push.recovery.ts';
-import { type PushState, renderNoScanTree, renderPushTree } from './commands.push.sections.ts';
+import {
+  buildNoScanSections,
+  buildPushTreeSections,
+  type PushState,
+  renderNoScanTree,
+  renderPushTree,
+} from './commands.push.sections.ts';
+import { type DoctorSection, renderTree } from './output-tree.ts';
 import { collectGlobalConfigChanges } from './push-global-config.ts';
 import { scanPushVerdict } from './push-leak-verdict.ts';
 import { previewPushLeaks } from './push-preview.ts';
@@ -15,15 +22,33 @@ import { fail, gitOrFatal, gitStatusPorcelainZ, log, warn } from './utils.ts';
  * (TTY interactive menu or non-TTY FATAL throw). On a clean
  * scan commits, pushes, and renders the `✓ no leaks` row.
  *
+ * `render` controls whether this function prints anything for the
+ * clean/pushed paths: `true` (standalone `cmdPush`) renders exactly as before
+ * this compose-mode extraction. `false` (a composing caller, e.g. `nomad
+ * sync`) suppresses the `nothing to commit` log and both push-tree renders on
+ * the clean paths, returning the built sections instead so the caller renders
+ * its own merged tree. The leak path is the one exception: it always renders
+ * the pre-recovery tree inline (before `resolveLeakFindings`) AND the final
+ * post-recovery tree inline, regardless of `render`, because the interactive
+ * recovery menu / recovery body needs the tree already visible; the returned
+ * `sections` is empty on that path so a composing caller never double-renders.
+ * Under `render: false` the leak path additionally prints a one-line
+ * `push (leak recovery)` context header first, so the inline push trees are
+ * attributable inside the composing caller's transcript (which otherwise
+ * prints its own header only later).
+ *
  * @param st - Push state for the tree render.
  * @param ts - Backup timestamp passed to the recovery flow.
  * @param map - Parsed path-map for session path resolution.
  * @param resolution - Non-interactive resolution modes (redactAll/allowAll/allowRule).
  * @param repo - Resolved repo root path for this invocation.
  * @param newManifest - The manifest to persist after a successful push.
- * @returns `'pushed'` after a completed commit/push, `'nothing'` when the gsd
- *   payload was the only staged change and the no-op early return fired (so a
- *   composing caller never reports a push that did not happen).
+ * @param render - Whether to render inline (see above).
+ * @returns `{ outcome, sections }`: `outcome` is `'pushed'` after a completed
+ *   commit/push, `'nothing'` when the gsd payload was the only staged change
+ *   and the no-op early return fired (so a composing caller never reports a
+ *   push that did not happen); `sections` are the built tree sections for a
+ *   composing caller to render (empty on the leak path, already rendered inline).
  */
 export async function commitAndPush(
   st: PushState,
@@ -32,7 +57,8 @@ export async function commitAndPush(
   resolution: { redactAll: boolean; allowAll: boolean; allowRule: string | undefined },
   repo: string,
   newManifest: Manifest,
-): Promise<'pushed' | 'nothing'> {
+  render: boolean,
+): Promise<{ outcome: 'pushed' | 'nothing'; sections: DoctorSection[] }> {
   gitOrFatal(['add', '-A'], 'git add', repo);
   // Unstage gsd-dropped paths immediately after staging: gsd reinstalls these
   // per-host automatically, so they must never enter the shared commit. Uses the
@@ -49,15 +75,24 @@ export async function commitAndPush(
   // no-scan tree and return a clean no-op push instead of dying. toDrop is a
   // subset of staged, so equal lengths means every staged path was dropped.
   if (staged.length === toDrop.length) {
-    log('nothing to commit');
-    renderNoScanTree(st);
-    return 'nothing';
+    const sections = buildNoScanSections(st);
+    if (render) {
+      log('nothing to commit');
+      renderTree(sections);
+    }
+    return { outcome: 'nothing', sections };
   }
   // Collect staged shared-config changes AFTER git add -A so the index reflects
   // the full staged tree. Assigned onto st so renderPushTree sees the section.
   st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: true });
   let verdict = withSpinner('Scanning for secrets', () => scanPushVerdict(repo));
+  const hadLeak = verdict.leak;
   if (verdict.leak) {
+    // A composing caller has not printed any push context yet, so name the
+    // flow the detached inline trees below belong to.
+    if (!render) log('push (leak recovery)');
+    // Unconditional regardless of `render`: the interactive recovery menu /
+    // recovery body needs the tree already visible before it prints.
     renderPushTree(st, verdict);
     verdict = await resolveLeakFindings(verdict, ts, map, resolution);
   }
@@ -72,8 +107,17 @@ export async function commitAndPush(
   } catch (err) {
     warn(`could not write push manifest (next push will full-rescan): ${String(err)}`);
   }
-  renderPushTree(st, verdict);
-  return 'pushed';
+  if (hadLeak) {
+    // Already rendered the leak tree inline above; render the resolved
+    // (post-recovery) tree inline too, unconditionally, so the recovery
+    // block still follows it. Return no sections: a composing caller must
+    // not render this tree a second time.
+    renderPushTree(st, verdict);
+    return { outcome: 'pushed', sections: [] };
+  }
+  const sections = buildPushTreeSections(st, verdict);
+  if (render) renderTree(sections);
+  return { outcome: 'pushed', sections };
 }
 
 /**

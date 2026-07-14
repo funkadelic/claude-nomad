@@ -6,10 +6,11 @@
  *
  * `cmdSync` is composition only: it delegates every side effect to the
  * lock-free `runPullCore` / `runPushCore` bodies (see `commands.pull.ts` /
- * `commands.push.ts`) and owns nothing but lock scope, control flow, and the
- * two-phase status rendering. The push half's full safety pipeline (secret
- * scan, interactive recovery on a leak) runs unchanged inside `runPushCore`;
- * this module never re-implements or bypasses it.
+ * `commands.push.ts`, both run in compose mode so neither renders) and owns
+ * nothing but lock scope, control flow, and the single merged-tree render
+ * ending in the two-phase Sync summary. The push half's full safety pipeline
+ * (secret scan, interactive recovery on a leak) runs unchanged inside
+ * `runPushCore`; this module never re-implements or bypasses it.
  */
 
 import { existsSync } from 'node:fs';
@@ -17,7 +18,7 @@ import { join } from 'node:path';
 
 import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './commands.pull.ts';
 import { runPushCore, type PushCoreResult } from './commands.push.ts';
-import { backupBase, repoHome, type PathMap } from './config.ts';
+import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
 import { computePreview } from './preview.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
 import { die, fail, log, ok, NomadFatal } from './utils.ts';
@@ -37,26 +38,21 @@ type WetPull = Extract<PullCoreResult, { tag: 'wet' }>;
 type PushOutcome = { ok: true; result: PushCoreResult } | { ok: false; message: string };
 
 /**
- * True when the sections a wet pull built carry no synced-item rows: every
- * section is either `Settings` (always one row, the regenerated
- * settings.json), `Pull summary` (always one row), or has zero items. Used to
- * decide whether the pull half actually moved anything.
+ * True when neither half of this run changed anything: the pull half's rebase
+ * moved nothing (`!pull.incomingChanges`) and retained nothing new (no
+ * local-only sessions, no diverged files kept local), and the push half found
+ * nothing to push. Callers use this to collapse the run to a single compact
+ * line instead of two full grouped trees.
  *
- * @param sections - The grouped-tree sections returned by a wet pull.
- * @returns `true` when no Sessions/Extras rows were produced.
- */
-function pullHasNoSyncedItems(sections: DoctorSection[]): boolean {
-  return sections.every(
-    (s) => s.header === 'Settings' || s.header === PULL_SUMMARY_HEADER || s.items.length === 0,
-  );
-}
-
-/**
- * True when neither half of this run changed anything: the pull half synced
- * no items and retained nothing new (no local-only sessions, no diverged
- * files kept local), and the push half found nothing to push. Callers use
- * this to collapse the run to a single compact line instead of two full
- * grouped trees.
+ * Gating on `incomingChanges` rather than the pull sections' row contents is
+ * deliberate: the pull overlay always re-copies every mapped session/extras
+ * dir, so a `Sessions`/`Extras` row with items does NOT by itself mean
+ * anything changed upstream; the rebase HEAD delta does.
+ *
+ * A `nothing`-tagged push half with `aheadOfOrigin: true` never collapses:
+ * the sync repo carries committed-but-unpushed work (e.g. a prior push
+ * committed and then the network push failed), so asserting "already in
+ * sync" would mask exactly the state a sync run exists to surface.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
@@ -66,7 +62,8 @@ function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
   if (!pushOutcome.ok) return false;
   if (pull.localOnly !== 0 || pull.divergedKeptLocal !== 0) return false;
   if (pushOutcome.result.tag !== 'nothing') return false;
-  return pullHasNoSyncedItems(pull.sections);
+  if (pushOutcome.result.aheadOfOrigin === true) return false;
+  return !pull.incomingChanges;
 }
 
 /**
@@ -107,7 +104,8 @@ function reconciledNotes(pull: WetPull): string[] {
  * Build the two-phase status Sync summary section rendered after the pull
  * tree. On a failed push half this collapses to the single status line naming
  * which half failed; on a successful run it lists a `pull:` row, a `push:`
- * row, and any reconciled-work notes.
+ * row, a committed-but-unpushed note when the push half reported
+ * `aheadOfOrigin`, and any reconciled-work notes.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
@@ -121,17 +119,94 @@ function buildSyncSummarySection(pull: WetPull, pushOutcome: PushOutcome): Docto
   }
   addItem(s, `pull: ${pullPhrase(pull)}`);
   addItem(s, `push: ${pushOutcome.result.tag === 'pushed' ? 'pushed' : 'nothing to push'}`);
+  if (pushOutcome.result.tag === 'nothing' && pushOutcome.result.aheadOfOrigin === true) {
+    addItem(s, 'sync repo has unpushed commits');
+  }
   for (const note of reconciledNotes(pull)) addItem(s, note);
   return s;
 }
 
 /**
+ * Canonical merged-tree section order: the pull-owned Settings leads, then
+ * the push-only Global config, the merged Sessions/Extras, and the push-only
+ * Leak scan. The caller appends the Sync summary after these.
+ */
+const SYNC_SECTION_ORDER = ['Settings', 'Global config', 'Sessions', 'Extras', 'Leak scan'];
+
+/**
+ * True for the per-half summary headers dropped from the merged tree: the
+ * single Sync summary replaces both. Dropping by name (rather than dropping
+ * everything outside `SYNC_SECTION_ORDER`) means a section header added to a
+ * half's builder later still reaches `nomad sync` output instead of
+ * vanishing silently. A function rather than a module-level set so the
+ * constant is read lazily, not at import time.
+ *
+ * @param header - A section header from either half.
+ * @returns `true` when the header is one of the two dropped summaries.
+ */
+function isDroppedSummaryHeader(header: string): boolean {
+  return header === PULL_SUMMARY_HEADER || header === 'Push summary';
+}
+
+/**
+ * Merge the pull half's and push half's built sections into one tree: the
+ * `Pull summary` (`PULL_SUMMARY_HEADER`) and `Push summary` sections are
+ * dropped by name (the single Sync summary replaces both), the remaining
+ * sections are grouped by header in `SYNC_SECTION_ORDER` with any header
+ * outside that canonical list appended after it in first-seen order (the
+ * `Map` preserves insertion order, so unknown headers render last instead of
+ * being discarded), and within each header the items from both halves are
+ * concatenated de-duplicated by exact string value in first-seen order (so
+ * the byte-identical `not in path-map` skip row both halves emit collapses
+ * to one).
+ *
+ * @param pullSections - The wet pull result's built sections.
+ * @param pushSections - The push half's built sections (compose mode).
+ * @returns The ordered non-empty merged sections.
+ */
+function mergeSyncSections(
+  pullSections: DoctorSection[],
+  pushSections: DoctorSection[],
+): DoctorSection[] {
+  const byHeader = new Map<string, DoctorSection>(
+    SYNC_SECTION_ORDER.map((header) => [header, section(header)]),
+  );
+  for (const s of [...pullSections, ...pushSections]) {
+    if (isDroppedSummaryHeader(s.header)) continue;
+    let target = byHeader.get(s.header);
+    if (target === undefined) {
+      target = section(s.header);
+      byHeader.set(s.header, target);
+    }
+    for (const item of s.items) {
+      if (!target.items.includes(item)) addItem(target, item);
+    }
+  }
+  return [...byHeader.values()].filter((s) => s.items.length > 0);
+}
+
+/**
+ * Read the push half's built sections out of a successful compose-mode
+ * outcome. A failed push half or a tag without sections (the `dry` arm, or
+ * the resolved-leak path that already rendered inline) yields an empty array.
+ *
+ * @param pushOutcome - The push half's outcome.
+ * @returns The push half's built sections, or `[]`.
+ */
+function pushSectionsOf(pushOutcome: PushOutcome): DoctorSection[] {
+  if (!pushOutcome.ok) return [];
+  const result = pushOutcome.result;
+  if (result.tag === 'dry') return [];
+  return result.sections ?? [];
+}
+
+/**
  * Render the wet-sync result: a compact `already in sync` line when nothing
- * changed on either half, otherwise the pull half's own grouped tree followed
- * by the two-phase status Sync summary. The push half's own grouped tree (or its
- * `nothing to commit` no-scan tree) has already rendered by the time this
- * runs; this function only ever adds the pull tree and the final status line
- * on top.
+ * changed on either half, otherwise a single `sync on host=...` header
+ * followed by ONE merged grouped tree (both halves' sections merged in
+ * pull-then-push canonical order, each duplicated fact stated once) ending
+ * in the two-phase status Sync summary. Both halves ran in compose mode, so
+ * nothing has rendered before this function; it owns the entire output.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
@@ -141,8 +216,9 @@ function renderWetSync(pull: WetPull, pushOutcome: PushOutcome): void {
     ok('already in sync');
     return;
   }
-  renderTree(pull.sections);
-  renderTree([buildSyncSummarySection(pull, pushOutcome)]);
+  log(`sync on host=${HOST}`);
+  const merged = mergeSyncSections(pull.sections, pushSectionsOf(pushOutcome));
+  renderTree([...merged, buildSyncSummarySection(pull, pushOutcome)]);
 }
 
 /**
@@ -157,7 +233,7 @@ function renderWetSync(pull: WetPull, pushOutcome: PushOutcome): void {
  */
 async function runSyncPushHalf(): Promise<PushOutcome> {
   try {
-    const result = await runPushCore();
+    const result = await runPushCore({ compose: true });
     return { ok: true, result };
   } catch (err) {
     if (err instanceof NomadFatal) {
@@ -169,14 +245,15 @@ async function runSyncPushHalf(): Promise<PushOutcome> {
 }
 
 /**
- * Run the wet (real) sync: the pull half first, then the push half. A
- * pull-half fatal error is NOT caught here, so it propagates to `cmdSync`'s
- * own catch and the push half never runs. The pull half always returns the
- * `wet` tag when run without a preview flag, so the cast below carries no
- * risk.
+ * Run the wet (real) sync: the pull half first, then the push half, both in
+ * compose mode so neither renders anything itself and `renderWetSync` owns
+ * the single merged tree. A pull-half fatal error is NOT caught here, so it
+ * propagates to `cmdSync`'s own catch and the push half never runs. The pull
+ * half always returns the `wet` tag when run without a preview flag, so the
+ * cast below carries no risk.
  */
 async function runSyncWet(): Promise<void> {
-  const pull = runPullCore() as WetPull;
+  const pull = runPullCore({ compose: true }) as WetPull;
   const pushOutcome = await runSyncPushHalf();
   renderWetSync(pull, pushOutcome);
 }

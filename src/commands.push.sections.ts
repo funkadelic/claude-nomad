@@ -169,6 +169,22 @@ function summarySection(st: PushState): DoctorSection {
 }
 
 /**
+ * Build the ordered push tree sections (Global config / Sessions / Extras /
+ * Leak scan / Push summary) that `renderPushTree` renders. Pulled out as a
+ * pure builder so a composing caller (e.g. `nomad sync`'s compose mode) can
+ * get the same sections back without `renderPushTree` printing anything.
+ *
+ * @param st - The collected push state.
+ * @param verdict - The leak verdict for the Leak scan section.
+ * @returns The ordered sections `renderPushTree` renders unchanged.
+ */
+export function buildPushTreeSections(st: PushState, verdict: LeakVerdict): DoctorSection[] {
+  const leakScan = section('Leak scan');
+  addItem(leakScan, verdict.verdictRow);
+  return [...syncedSections(st), leakScan, summarySection(st)];
+}
+
+/**
  * Render the grouped push tree with a Leak scan section (carrying `verdict`'s
  * row) between Extras and Push summary. The caller throws the recovery body as a
  * `NomadFatal` AFTER this returns (real-push leak) or prints it via `fail`
@@ -178,9 +194,31 @@ function summarySection(st: PushState): DoctorSection {
  * @param verdict - The leak verdict for the Leak scan section.
  */
 export function renderPushTree(st: PushState, verdict: LeakVerdict): void {
-  const leakScan = section('Leak scan');
-  addItem(leakScan, verdict.verdictRow);
-  renderTree([...syncedSections(st), leakScan, summarySection(st)]);
+  renderTree(buildPushTreeSections(st, verdict));
+}
+
+/**
+ * Build the ordered no-Leak-scan push tree sections (optional `Path map` hint,
+ * Global config / Sessions / Extras, Push summary) that `renderNoScanTree`
+ * renders. Pulled out as a pure builder so a composing caller (e.g.
+ * `nomad sync`'s compose mode) can get the same sections back without
+ * `renderNoScanTree` printing anything.
+ *
+ * @param st - The collected push state.
+ * @param opts.noMapHint - When `true`, prepend the no-path-map hint section.
+ * @returns The ordered sections `renderNoScanTree` renders unchanged.
+ */
+export function buildNoScanSections(
+  st: PushState,
+  opts: { noMapHint?: boolean } = {},
+): DoctorSection[] {
+  const sections: DoctorSection[] = [];
+  if (opts.noMapHint === true) {
+    const pathMap = section('Path map');
+    addItem(pathMap, `${dim(infoGlyph)} no path-map.json (nothing to preview)`);
+    sections.push(pathMap);
+  }
+  return [...sections, ...syncedSections(st), summarySection(st)];
 }
 
 /**
@@ -197,11 +235,5 @@ export function renderPushTree(st: PushState, verdict: LeakVerdict): void {
  * @returns Nothing; renders to stdout.
  */
 export function renderNoScanTree(st: PushState, opts: { noMapHint?: boolean } = {}): void {
-  const sections: DoctorSection[] = [];
-  if (opts.noMapHint === true) {
-    const pathMap = section('Path map');
-    addItem(pathMap, `${dim(infoGlyph)} no path-map.json (nothing to preview)`);
-    sections.push(pathMap);
-  }
-  renderTree([...sections, ...syncedSections(st), summarySection(st)]);
+  renderTree(buildNoScanSections(st, opts));
 }
