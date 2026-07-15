@@ -50,6 +50,9 @@ const hasGitleaks = ((): boolean => {
 
 /** The logical project name mapped across both hosts in every flow below. */
 const LOGICAL = 'myproject';
+/** A second logical project mapped to host A only, used to advance origin without
+ * touching host B's project dir (so a stale B can rebase without a mirror clash). */
+const OTHER = 'other';
 
 /**
  * The pieces a flow test needs after host A is bootstrapped: the shared origin,
@@ -62,6 +65,8 @@ type Bootstrap = {
   a: Host;
   projectRoot: string;
   bProjectRoot: string;
+  /** Host A's root for the host-A-only `OTHER` project. */
+  otherRoot: string;
 };
 
 /**
@@ -86,18 +91,23 @@ function bootstrapHostA(tmp: string): Bootstrap {
 
   const projectRoot = join(tmp, LOGICAL);
   const bProjectRoot = join(tmp, 'host-b', LOGICAL);
+  const otherRoot = join(tmp, OTHER);
   mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(otherRoot, { recursive: true });
 
   // --keep-actions prevents the gh-actions disable flow from running in CI.
   const init = runNomad(a, ['init', '--snapshot', '--keep-actions']);
   expect(init.status, `init failed:\n${init.stderr}`).toBe(0);
 
-  // Map the logical project under both hosts, with distinct paths so encodePath
-  // produces a different session-dir key per host.
+  // Map `myproject` under both hosts (distinct paths so encodePath produces a
+  // different session-dir key per host), plus `other` under host A only.
   writeFileSync(
     join(a.repo, 'path-map.json'),
     JSON.stringify({
-      projects: { [LOGICAL]: { 'host-a': projectRoot, 'host-b': bProjectRoot } },
+      projects: {
+        [LOGICAL]: { 'host-a': projectRoot, 'host-b': bProjectRoot },
+        [OTHER]: { 'host-a': otherRoot },
+      },
     }) + '\n',
   );
 
@@ -107,7 +117,7 @@ function bootstrapHostA(tmp: string): Bootstrap {
   g(['commit', '-q', '-m', 'nomad init scaffold'], a.repo);
   g(['push', '-q', 'origin', 'main'], a.repo);
 
-  return { origin, makeHost, a, projectRoot, bProjectRoot };
+  return { origin, makeHost, a, projectRoot, bProjectRoot, otherRoot };
 }
 
 /** Absolute path of a planted session under a host's ~/.claude for a project root. */
@@ -209,29 +219,35 @@ describe.skipIf(!hasGit || !hasGitleaks)('multi-host sync flows (real git + real
     ).not.toContain(fakePat);
   });
 
-  it('propagates B -> A and converges concurrent pushes via rebase (both sessions land)', () => {
-    const { origin, makeHost, a, projectRoot, bProjectRoot } = bootstrapHostA(tmp);
+  it('propagates B -> A after B rebases its stale push onto A (both sessions land)', () => {
+    const { origin, makeHost, a, projectRoot, bProjectRoot, otherRoot } = bootstrapHostA(tmp);
 
-    // A publishes sidA first.
-    const sidA = plantLocalSession(a.home, projectRoot, '{"role":"user","text":"from A"}\n');
-    expect(runNomad(a, ['push']).status).toBe(0);
-
-    // B joins, pulls the scaffold + sidA, then publishes its own sidB. B is not
-    // behind here (it cloned after A's push), but the reverse direction is the
-    // point: a session authored on B must reach A.
+    // Both hosts start at the scaffold commit. A will advance origin on the
+    // host-A-only `other` project; B holds a myproject session. The push-side
+    // session copy mirror-replaces a project dir, so A and B pushing DIFFERENT
+    // projects lets B rebase onto A's commit without clobbering it (two hosts
+    // racing the SAME project is last-write-wins by design and is covered by the
+    // sync/round-trip flows).
     const b = makeHost('host-b');
-    expect(runNomad(b, ['pull']).status).toBe(0);
+    const sidO = plantLocalSession(a.home, otherRoot, '{"role":"user","text":"from A other"}\n');
     const sidB = plantLocalSession(b.home, bProjectRoot, '{"role":"user","text":"from B"}\n');
+
+    // A advances origin first. B is now genuinely stale, so its push must rebase
+    // onto A's commit before it can land (a push-rebase regression fails here).
+    expect(runNomad(a, ['push']).status).toBe(0);
     expect(runNomad(b, ['push']).status).toBe(0);
 
-    // Origin now carries BOTH sessions (distinct files, no conflict; the push
-    // rebases cleanly onto A's commit).
+    // Origin carries BOTH pushes: B's push rebased onto A's `other` commit rather
+    // than replacing it.
     const verify = join(tmp, 'verify');
     g(['clone', '-q', origin, verify], tmp);
-    expect(existsSync(publishedPath(verify, sidA)), 'A session missing from origin').toBe(true);
+    expect(
+      existsSync(join(verify, 'shared', 'projects', OTHER, `${sidO}.jsonl`)),
+      "A's other-project session missing from origin (B's push did not rebase)",
+    ).toBe(true);
     expect(existsSync(publishedPath(verify, sidB)), 'B session missing from origin').toBe(true);
 
-    // A pulls and sees B's session under A's own encoded project dir.
+    // Reverse direction: A pulls and sees the session authored on B.
     expect(runNomad(a, ['pull']).status).toBe(0);
     expect(existsSync(sessionPath(a, projectRoot, sidB)), 'B session did not reach A').toBe(true);
     expect(readFileSync(sessionPath(a, projectRoot, sidB), 'utf8')).toBe(
@@ -282,14 +298,26 @@ describe.skipIf(!hasGit || !hasGitleaks)('multi-host sync flows (real git + real
     const bSettings = join(b.claudeHome, 'settings.json');
     const bSession = sessionPath(b, bProjectRoot, sidA);
 
-    // diff is the offline, lockless preview; it must not touch the filesystem.
+    // diff is the offline, lockless preview; pull --dry-run is the online one.
     const diff = runNomad(b, ['diff']);
     expect(diff.status, `diff failed:\n${diff.stderr}`).toBe(0);
-
-    // pull --dry-run previews the same work but applies none of it.
     const dry = runNomad(b, ['pull', '--dry-run']);
     expect(dry.status, `pull --dry-run failed:\n${dry.stderr}`).toBe(0);
 
+    // Both previews must actually describe the pending work, not just exit 0: the
+    // Symlinks section names the CLAUDE.md link and the Sessions section names
+    // the mapped project copy. Otherwise an empty preview would pass this test.
+    for (const [label, out] of [
+      ['diff', diff.stdout],
+      ['pull --dry-run', dry.stdout],
+    ] as const) {
+      expect(out, `${label} did not preview the CLAUDE.md link`).toMatch(
+        /Symlinks[\s\S]*CLAUDE\.md/,
+      );
+      expect(out, `${label} did not preview the session copy`).toMatch(/Sessions[\s\S]*myproject/);
+    }
+
+    // ...while touching nothing on disk.
     expect(existsSync(bClaudeMd), 'preview created a shared link').toBe(false);
     expect(existsSync(bSettings), 'preview wrote settings.json').toBe(false);
     expect(existsSync(bSession), 'preview copied a session transcript').toBe(false);
