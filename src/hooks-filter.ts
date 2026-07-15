@@ -289,6 +289,81 @@ export function keepGsdHookEntries(settings: Record<string, unknown>): Record<st
   return Object.keys(keptHooks).length === 0 ? {} : { hooks: keptHooks };
 }
 
+// ---------------------------------------------------------------------------
+// Hooks-union graft (preserve gsd hooks across regeneration)
+// ---------------------------------------------------------------------------
+
+/**
+ * Narrow a value to a plain hooks-block object (non-null, non-array object), or
+ * return `null` for any other shape. Lets `graftGsdHookEntries` fail-safe both
+ * the base and gsd-only `hooks` blocks without throwing.
+ *
+ * @param value - Any candidate `hooks` value.
+ * @returns The value as a record, or `null` when it is not a plain object.
+ */
+function asPlainObject(value: unknown): Record<string, unknown> | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+/**
+ * Concatenate one event's `base` matcher array with `gsd` matcher entries,
+ * skipping any gsd entry structurally already present in `base` (compared via
+ * `JSON.stringify`) so a gsd matcher that survived stripping is not duplicated.
+ *
+ * @param baseMatchers - The event's matcher array from the base side.
+ * @param gsdMatchers - The event's matcher array from the gsd-only side.
+ * @returns A new array: base matchers then the non-duplicate gsd matchers.
+ */
+function unionMatcherArrays(baseMatchers: unknown[], gsdMatchers: unknown[]): unknown[] {
+  const seen = new Set(baseMatchers.map((m) => JSON.stringify(m)));
+  const merged = [...baseMatchers];
+  for (const m of gsdMatchers) {
+    if (!seen.has(JSON.stringify(m))) merged.push(m);
+  }
+  return merged;
+}
+
+/**
+ * Union `gsdOnly.hooks` into `base.hooks` per event key and return a new object.
+ * For each event key present in `gsdOnly`, the matcher array is the
+ * CONCATENATION of `base`'s matchers then `gsdOnly`'s matchers (a union, NOT the
+ * array-replace `deepMerge` performs, which is precisely why `deepMerge` cannot
+ * be reused here): a user matcher and a preserved gsd matcher coexist under one
+ * event key. A gsd matcher structurally already present in `base` is not
+ * appended again (dedup guard). Event keys only in `gsdOnly` are added; `base`'s
+ * own event keys and all non-`hooks` keys pass through untouched (by reference).
+ *
+ * When `gsdOnly` carries no `hooks` (e.g. the `{}` from `keepGsdHookEntries`) or
+ * an empty hooks block, `base` is returned unchanged so the serialization is
+ * byte-identical (no empty `hooks: {}` scaffold is introduced).
+ *
+ * Fail-safe: a non-object/array `hooks` value or a non-array event value on
+ * either side is treated as "nothing to union" for that key rather than
+ * throwing; neither input is mutated.
+ *
+ * @param base - The stripped, regenerated settings (`stripGsdHookEntries` output).
+ * @param gsdOnly - The preserved gsd hook subtree (`keepGsdHookEntries` output).
+ * @returns A new settings object with the gsd hooks grafted back in.
+ */
+export function graftGsdHookEntries(
+  base: Record<string, unknown>,
+  gsdOnly: Record<string, unknown>,
+): Record<string, unknown> {
+  const gsdHooks = asPlainObject(gsdOnly.hooks);
+  if (gsdHooks === null || Object.keys(gsdHooks).length === 0) return base;
+
+  const mergedHooks: Record<string, unknown> = { ...(asPlainObject(base.hooks) ?? {}) };
+  for (const [event, gsdMatchers] of Object.entries(gsdHooks)) {
+    if (!Array.isArray(gsdMatchers)) continue;
+    const baseMatchers = mergedHooks[event];
+    mergedHooks[event] = Array.isArray(baseMatchers)
+      ? unionMatcherArrays(baseMatchers, gsdMatchers)
+      : gsdMatchers;
+  }
+  return { ...base, hooks: mergedHooks };
+}
+
 /**
  * Walk one matcher entry's inner `hooks` array and return `true` when at least
  * one inner hook entry is gsd-owned. Returns `false` when entry is not a plain
