@@ -1632,3 +1632,155 @@ describe('regenerateSettings gsd-hook filtering', () => {
     expect(captured).toContain('hooks');
   });
 });
+
+// ---------------------------------------------------------------------------
+// gsd-owned hook entry PRESERVATION in regenerateSettings (Phase 64)
+// ---------------------------------------------------------------------------
+
+/** A gsd SessionStart hook (the check-update hook gsd self-heals each session). */
+const gsdCheckUpdate = { type: 'command', command: 'node /a/hooks/gsd-check-update.js' };
+
+describe('regenerateSettings gsd-hook preservation', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let hostsDir: string;
+  let sharedDir: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-hook-preserve-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    hostsDir = join(repoUnderHome, 'hosts');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(hostsDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('retains a live gsd-check-update.js SessionStart hook across a wet regenerate', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    // The live file carries a gsd hook (as gsd self-heals it) that base lacks.
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { SessionStart: [{ matcher: '', hooks: [gsdCheckUpdate] }] },
+      }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000');
+    const written = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const event = (written.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+    const inner = (event[0] as Record<string, unknown>).hooks as unknown[];
+    expect((inner[0] as Record<string, unknown>).command).toBe('node /a/hooks/gsd-check-update.js');
+  });
+
+  it('clean path (live file has no gsd hooks) is byte-identical to the pre-change write', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
+    // Live file has only a user-authored prior state, no gsd hooks.
+    writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000');
+    // Exact serialized string: identical to the empty-hooks-stripped baseline.
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(
+      JSON.stringify({ model: 'sonnet' }, null, 2) + '\n',
+    );
+  });
+
+  it('a user hook (from base) and a preserved gsd hook coexist under a shared event key', async () => {
+    // Base contributes a USER hook under SessionStart; the live file contributes
+    // a gsd hook under the SAME event key. Both must survive the regenerate.
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { SessionStart: [{ matcher: 'user', hooks: [userEntry] }] },
+      }) + '\n',
+    );
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { SessionStart: [{ matcher: 'gsd', hooks: [gsdCheckUpdate] }] },
+      }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000');
+    const written = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const event = (written.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(2);
+    const matchers = event.map((e) => (e as Record<string, unknown>).matcher);
+    expect(matchers).toContain('user');
+    expect(matchers).toContain('gsd');
+  });
+
+  it('a malformed live settings.json degrades to no-preserve without throwing', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(claudeDir, 'settings.json'), '{ this is not, valid json');
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    expect(() => regenerateSettings('20260101-000000')).not.toThrow();
+    // The malformed WARN still fires and the file is overwritten from base only.
+    expect(writes.join('')).toContain('⚠︎ existing settings.json is malformed');
+    expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toEqual({
+      model: 'sonnet',
+    });
+  });
+
+  it('dry-run does not preserve or write (live gsd hook file left byte-identical)', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const priorContent =
+      JSON.stringify({
+        model: 'opus',
+        hooks: { SessionStart: [{ matcher: '', hooks: [gsdCheckUpdate] }] },
+      }) + '\n';
+    writeFileSync(join(claudeDir, 'settings.json'), priorContent);
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260101-000000', { dryRun: true });
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(priorContent);
+  });
+});
