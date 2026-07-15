@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './commands.pull.ts';
 import { runPushCore, type PushCoreResult } from './commands.push.ts';
 import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
+import { dim, infoGlyph, warnGlyph, yellow } from './color.ts';
 import { computePreview } from './preview.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
 import { die, fail, log, ok, NomadFatal } from './utils.ts';
@@ -67,45 +68,107 @@ function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
 }
 
 /**
- * Read the pull half's own Pull summary row text so the two-phase status line
- * below reuses its exact phrasing instead of recomputing it. Falls back to
- * `'applied'` in the defensive case where the pull sections carry no Pull
- * summary row (never happens in practice; the wet pull path always appends one).
+ * Build the pull-half summary row from outcome data: whether the rebase
+ * actually moved `REPO_HOME`'s HEAD (`incomingChanges`), naming the settings
+ * override-source label regenerated on every pull regardless of whether
+ * anything came in.
  *
  * @param pull - The wet pull result.
- * @returns The pull half's Pull summary row text, or `'applied'` as a fallback.
+ * @returns The `pull: ...` row text (no leading glyph).
  */
-function pullPhrase(pull: WetPull): string {
-  const summary = pull.sections.find((s) => s.header === PULL_SUMMARY_HEADER);
-  return summary?.items[0] ?? 'applied';
+function buildPullSummaryRow(pull: WetPull): string {
+  const applied = pull.incomingChanges ? 'upstream changes applied' : 'no upstream changes';
+  return `pull: ${applied}; settings regenerated (base + ${pull.settingsLabel})`;
 }
 
 /**
- * Build the reconciled-work notes for a successful run: one line naming how
- * many diverged extras files the pull half kept local (now pushed) and one
- * line naming how many local-only sessions the pull half retained (now
- * pushed). Both are omitted when their count is zero.
+ * Render a count with a count-aware noun, e.g. `1 config file` vs
+ * `2 config files`.
+ *
+ * @param n - The count (caller guarantees nonzero for summary rows).
+ * @param singular - The noun phrase used when `n` is exactly 1.
+ * @param plural - The noun phrase used otherwise.
+ * @returns The `<n> <noun>` phrase.
+ */
+function countNoun(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
+ * Build the nonzero parenthetical parts for a successful `push: pushed` row:
+ * the pull half's `localOnly`/`divergedKeptLocal` counts plus the push
+ * half's `globalConfigCount`, each included only when nonzero.
  *
  * @param pull - The wet pull result.
- * @returns Zero, one, or two note lines.
+ * @param globalConfigCount - The push half's changed-config-file count.
+ * @returns Zero or more phrase fragments, e.g. `2 local-only sessions`.
  */
-function reconciledNotes(pull: WetPull): string[] {
-  const notes: string[] = [];
-  if (pull.divergedKeptLocal > 0) {
-    notes.push(`${pull.divergedKeptLocal} diverged files kept local and pushed`);
-  }
+function pushedParenParts(pull: WetPull, globalConfigCount: number): string[] {
+  const parts: string[] = [];
   if (pull.localOnly > 0) {
-    notes.push(`${pull.localOnly} local-only sessions pushed`);
+    parts.push(countNoun(pull.localOnly, 'local-only session', 'local-only sessions'));
   }
-  return notes;
+  if (pull.divergedKeptLocal > 0) {
+    parts.push(countNoun(pull.divergedKeptLocal, 'diverged extras file', 'diverged extras files'));
+  }
+  if (globalConfigCount > 0) {
+    parts.push(countNoun(globalConfigCount, 'config file', 'config files'));
+  }
+  return parts;
 }
 
 /**
- * Build the two-phase status Sync summary section rendered after the pull
- * tree. On a failed push half this collapses to the single status line naming
- * which half failed; on a successful run it lists a `pull:` row, a `push:`
- * row, a committed-but-unpushed note when the push half reported
- * `aheadOfOrigin`, and any reconciled-work notes.
+ * Build the push-half summary row: `push: pushed` with a parenthetical of
+ * only the nonzero reconciled-work parts (omitted entirely when every part
+ * is zero), or `push: nothing to push` on the `nothing` or defensive `dry`
+ * tag (a wet sync's push half never actually returns `dry`; see the
+ * `pushSectionsOf` JSDoc).
+ *
+ * @param pull - The wet pull result.
+ * @param result - The push half's successful `PushCoreResult`.
+ * @returns The `push: ...` row text (no leading glyph).
+ */
+function buildPushSummaryRow(pull: WetPull, result: PushCoreResult): string {
+  if (result.tag !== 'pushed') return 'push: nothing to push';
+  const parts = pushedParenParts(pull, result.globalConfigCount ?? 0);
+  return parts.length > 0 ? `push: pushed (${parts.join(', ')})` : 'push: pushed';
+}
+
+/**
+ * Build the collapsed skip/warn info rows appended after the pull/push rows:
+ * a combined not-in-path-map count, an extras-skipped count, and a
+ * push-collision count, each present only when nonzero.
+ *
+ * @param pull - The wet pull result.
+ * @param result - The push half's successful `PushCoreResult`.
+ * @returns Zero or more info/warn row strings.
+ */
+function buildSkipAndCollisionRows(pull: WetPull, result: PushCoreResult): string[] {
+  const rows: string[] = [];
+  if (pull.unmapped > 0) {
+    rows.push(`${dim(infoGlyph)} ${pull.unmapped} not in path-map (run nomad doctor to list)`);
+  }
+  if (pull.extrasSkipped > 0) {
+    rows.push(`${dim(infoGlyph)} ${pull.extrasSkipped} extras skipped`);
+  }
+  const collisions = result.tag === 'dry' ? undefined : result.collisions;
+  if (collisions !== undefined && collisions > 0) {
+    const phrase = countNoun(collisions, 'collision', 'collisions');
+    rows.push(`${yellow(warnGlyph)} ${phrase} (run nomad doctor to list)`);
+  }
+  return rows;
+}
+
+/**
+ * Build the two-phase status Sync summary section: composed entirely from
+ * outcome data on both halves rather than quoting either half's own rendered
+ * summary row (the old behavior quoted the pull half's `Pull summary` row
+ * verbatim, carrying stale `(push to reconcile)` advice into a run that had
+ * already pushed). On a failed push half this collapses to the single status
+ * line naming which half failed; on a successful run it composes the pull
+ * row, the push row (whose parenthetical already names the reconciled-work
+ * counts), a committed-but-unpushed note when the push half reported
+ * `aheadOfOrigin`, and the collapsed skip/warn info rows.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
@@ -117,12 +180,13 @@ function buildSyncSummarySection(pull: WetPull, pushOutcome: PushOutcome): Docto
     addItem(s, `pull: applied, push: failed (${pushOutcome.message})`);
     return s;
   }
-  addItem(s, `pull: ${pullPhrase(pull)}`);
-  addItem(s, `push: ${pushOutcome.result.tag === 'pushed' ? 'pushed' : 'nothing to push'}`);
-  if (pushOutcome.result.tag === 'nothing' && pushOutcome.result.aheadOfOrigin === true) {
+  const { result } = pushOutcome;
+  addItem(s, buildPullSummaryRow(pull));
+  addItem(s, buildPushSummaryRow(pull, result));
+  if (result.tag === 'nothing' && result.aheadOfOrigin === true) {
     addItem(s, 'sync repo has unpushed commits');
   }
-  for (const note of reconciledNotes(pull)) addItem(s, note);
+  for (const row of buildSkipAndCollisionRows(pull, result)) addItem(s, row);
   return s;
 }
 
@@ -203,22 +267,30 @@ function pushSectionsOf(pushOutcome: PushOutcome): DoctorSection[] {
 /**
  * Render the wet-sync result: a compact `already in sync` line when nothing
  * changed on either half, otherwise a single `sync on host=...` header
- * followed by ONE merged grouped tree (both halves' sections merged in
- * pull-then-push canonical order, each duplicated fact stated once) ending
- * in the two-phase status Sync summary. Both halves ran in compose mode, so
- * nothing has rendered before this function; it owns the entire output.
+ * followed by the two-phase status Sync summary. By default (compact,
+ * matching `nomad doctor`'s compact-by-default precedent) only the Sync
+ * summary prints; under `verbose`, ONE merged grouped tree (both halves'
+ * sections merged in pull-then-push canonical order, each duplicated fact
+ * stated once) renders first. Both halves ran in compose mode, so nothing
+ * has rendered before this function; it owns the entire output.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
+ * @param verbose - When `true`, render the full merged tree before the summary.
  */
-function renderWetSync(pull: WetPull, pushOutcome: PushOutcome): void {
+function renderWetSync(pull: WetPull, pushOutcome: PushOutcome, verbose: boolean): void {
   if (isNoopSync(pull, pushOutcome)) {
     ok('already in sync');
     return;
   }
   log(`sync on host=${HOST}`);
+  const summary = buildSyncSummarySection(pull, pushOutcome);
+  if (!verbose) {
+    renderTree([summary]);
+    return;
+  }
   const merged = mergeSyncSections(pull.sections, pushSectionsOf(pushOutcome));
-  renderTree([...merged, buildSyncSummarySection(pull, pushOutcome)]);
+  renderTree([...merged, summary]);
 }
 
 /**
@@ -251,11 +323,13 @@ async function runSyncPushHalf(): Promise<PushOutcome> {
  * propagates to `cmdSync`'s own catch and the push half never runs. The pull
  * half always returns the `wet` tag when run without a preview flag, so the
  * cast below carries no risk.
+ *
+ * @param verbose - Threaded into `renderWetSync`; see its JSDoc.
  */
-async function runSyncWet(): Promise<void> {
+async function runSyncWet(verbose: boolean): Promise<void> {
   const pull = runPullCore({ compose: true }) as WetPull;
   const pushOutcome = await runSyncPushHalf();
-  renderWetSync(pull, pushOutcome);
+  renderWetSync(pull, pushOutcome, verbose);
 }
 
 /**
@@ -285,9 +359,12 @@ async function runSyncDryRun(repo: string, backup: string): Promise<void> {
  * released even when a half throws.
  *
  * @param opts.dryRun - Preview mode: stacks both previews, mutates nothing.
+ * @param opts.verbose - Wet-path only: render the full merged tree before
+ *   the Sync summary (default renders the Sync summary alone).
  */
-export async function cmdSync(opts: { dryRun?: boolean } = {}): Promise<void> {
+export async function cmdSync(opts: { dryRun?: boolean; verbose?: boolean } = {}): Promise<void> {
   const dryRun = opts.dryRun === true;
+  const verbose = opts.verbose === true;
   // Resolve roots once per command invocation (TOCTOU mitigation, mirrors
   // cmdPull/cmdPush).
   const repo = repoHome();
@@ -302,7 +379,7 @@ export async function cmdSync(opts: { dryRun?: boolean } = {}): Promise<void> {
     if (dryRun) {
       await runSyncDryRun(repo, backup);
     } else {
-      await runSyncWet();
+      await runSyncWet(verbose);
     }
   } catch (err) {
     if (err instanceof NomadFatal) {

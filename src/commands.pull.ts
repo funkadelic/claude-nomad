@@ -99,13 +99,23 @@ function capturePrePostHeads(
  *   into `remapExtrasPull` to drive upstream-deletion propagation for .planning
  *   extras. `undefined` when the pre-rebase capture failed (fresh clone).
  * @returns The ordered `Settings`/`Sessions`/`Extras`/`Pull summary` sections
- *   plus `localOnly`, the read-only count of retained local-only session files.
+ *   plus `localOnly` (retained local-only session files), `settingsLabel` (the
+ *   `regenerateSettings` override-source tag), the combined session+extras
+ *   `unmapped` count, and `extrasSkipped` (extras dirnames the whitelist
+ *   declined); the last three let a composing caller (`nomad sync`) build its
+ *   own summary without re-deriving them from the sections.
  */
 function buildWetPullSections(
   ts: string,
   map: PathMap,
   prePostHeads?: { pre: string; post: string },
-): { sections: DoctorSection[]; localOnly: number } {
+): {
+  sections: DoctorSection[];
+  localOnly: number;
+  settingsLabel: string;
+  unmapped: number;
+  extrasSkipped: number;
+} {
   applySharedLinks(ts, map);
   const { label } = regenerateSettings(ts);
   syncSkillsPull(ts);
@@ -119,17 +129,9 @@ function buildWetPullSections(
   // from the operator's perspective both mean "couldn't sync this for the
   // host". extras-skipped (non-whitelisted dirname) stays separate because it
   // signals config misuse, not a host-config gap.
+  const unmapped = remapResult.unmapped + extrasResult.unmapped;
   const summary = section(PULL_SUMMARY_HEADER);
-  addItem(
-    summary,
-    summaryRow(
-      'pull',
-      remapResult.unmapped + extrasResult.unmapped,
-      0,
-      extrasResult.skipped,
-      localOnly,
-    ),
-  );
+  addItem(summary, summaryRow('pull', unmapped, 0, extrasResult.skipped, localOnly));
   return {
     sections: [
       buildSettingsSection(label),
@@ -138,6 +140,9 @@ function buildWetPullSections(
       summary,
     ],
     localOnly,
+    settingsLabel: label,
+    unmapped,
+    extrasSkipped: extrasResult.skipped,
   };
 }
 
@@ -189,9 +194,13 @@ function handleWedge(repo: string, forceRemote: boolean): void {
  * the summary counts a composing caller needs without re-deriving them:
  * `localOnly` (retained-but-unpushed local-only session files),
  * `divergedKeptLocal` (both-sides-modified extras files the pull kept local
- * on conflict), and `incomingChanges` (whether the rebase actually moved
+ * on conflict), `incomingChanges` (whether the rebase actually moved
  * `REPO_HOME`'s HEAD, i.e. `pre !== post`, or `true` when the pre-rebase HEAD
- * could not be captured at all, an unborn HEAD on a fresh clone). A composing
+ * could not be captured at all, an unborn HEAD on a fresh clone), and three
+ * fields a composing caller's own summary needs without inspecting
+ * `sections`: `settingsLabel` (the `regenerateSettings` override-source tag),
+ * `unmapped` (the combined session+extras unmapped count), and
+ * `extrasSkipped` (extras dirnames the whitelist declined). A composing
  * caller (`nomad sync`) needs `incomingChanges` rather than inspecting
  * `sections` for synced rows: the pull overlay always re-copies every mapped
  * session/extras dir regardless of whether upstream actually changed, so a
@@ -206,6 +215,9 @@ export type PullCoreResult =
       localOnly: number;
       divergedKeptLocal: number;
       incomingChanges: boolean;
+      settingsLabel: string;
+      unmapped: number;
+      extrasSkipped: number;
     };
 
 /**
@@ -344,7 +356,11 @@ export function runPullCore(
     log('dry-run complete; no mutation');
     return { tag: 'dry' };
   }
-  const { sections, localOnly } = buildWetPullSections(ts, map, prePostHeads);
+  const { sections, localOnly, settingsLabel, unmapped, extrasSkipped } = buildWetPullSections(
+    ts,
+    map,
+    prePostHeads,
+  );
   // An unborn/uncapturable pre-rebase HEAD (fresh clone) is treated as
   // "changes present" so a first-ever pull is never collapsed to a no-op;
   // otherwise the signal is the rebase's own HEAD delta, not the sections
@@ -352,7 +368,16 @@ export function runPullCore(
   // not mean anything actually changed upstream).
   const incomingChanges =
     prePostHeads === undefined ? true : prePostHeads.pre !== prePostHeads.post;
-  return { tag: 'wet', sections, localOnly, divergedKeptLocal, incomingChanges };
+  return {
+    tag: 'wet',
+    sections,
+    localOnly,
+    divergedKeptLocal,
+    incomingChanges,
+    settingsLabel,
+    unmapped,
+    extrasSkipped,
+  };
 }
 
 /**

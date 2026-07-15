@@ -172,6 +172,75 @@ function pushSideSections(opts: { sessionRows?: string[] } = {}) {
   ];
 }
 
+/**
+ * Build a full `runPullCore({ compose: true })`-shaped wet mock return,
+ * carrying the outcome fields `buildSyncSummarySection` reads
+ * (`settingsLabel`/`unmapped`/`extrasSkipped`) alongside the section
+ * fixtures built by `pullSections`. Defaults produce a clean,
+ * incoming-changes run with no host override.
+ */
+function wetPull(
+  opts: {
+    sessionItem?: string;
+    summaryText?: string;
+    sessionExtraRows?: string[];
+    localOnly?: number;
+    divergedKeptLocal?: number;
+    incomingChanges?: boolean;
+    settingsLabel?: string;
+    unmapped?: number;
+    extrasSkipped?: number;
+  } = {},
+) {
+  return {
+    tag: 'wet' as const,
+    sections: pullSections({
+      sessionItem: opts.sessionItem,
+      summaryText: opts.summaryText,
+      sessionExtraRows: opts.sessionExtraRows,
+    }),
+    localOnly: opts.localOnly ?? 0,
+    divergedKeptLocal: opts.divergedKeptLocal ?? 0,
+    incomingChanges: opts.incomingChanges ?? true,
+    settingsLabel: opts.settingsLabel ?? 'no host overrides',
+    unmapped: opts.unmapped ?? 0,
+    extrasSkipped: opts.extrasSkipped ?? 0,
+  };
+}
+
+/**
+ * Build a `runPushCore({ compose: true })`-shaped `pushed` mock return,
+ * carrying `globalConfigCount`/`collisions` alongside the section fixtures
+ * built by `pushSideSections`.
+ */
+function pushedResult(
+  opts: { sessionRows?: string[]; globalConfigCount?: number; collisions?: number } = {},
+) {
+  return {
+    tag: 'pushed' as const,
+    sections: pushSideSections({ sessionRows: opts.sessionRows }),
+    globalConfigCount: opts.globalConfigCount ?? 0,
+    collisions: opts.collisions ?? 0,
+  };
+}
+
+/**
+ * Build a `runPushCore({ compose: true })`-shaped `nothing` mock return,
+ * carrying `globalConfigCount`/`collisions` alongside the optional
+ * `aheadOfOrigin` flag and section fixtures.
+ */
+function nothingResult(
+  opts: { aheadOfOrigin?: boolean; globalConfigCount?: number; collisions?: number } = {},
+) {
+  return {
+    tag: 'nothing' as const,
+    sections: pushSideSections(),
+    ...(opts.aheadOfOrigin !== undefined ? { aheadOfOrigin: opts.aheadOfOrigin } : {}),
+    globalConfigCount: opts.globalConfigCount ?? 0,
+    collisions: opts.collisions ?? 0,
+  };
+}
+
 describe('cmdSync: wet composition', () => {
   let env: SyncEnv;
 
@@ -183,18 +252,9 @@ describe('cmdSync: wet composition', () => {
     teardownSyncEnv(env);
   });
 
-  it('happy path: renders one merged tree then a two-phase Sync summary with pull/push rows', async () => {
-    const runPullCoreSpy = vi.fn(() => ({
-      tag: 'wet',
-      sections: pullSections({
-        sessionItem: 'proj-a',
-        summaryText: '1 unmapped on pull (run nomad doctor to list)',
-      }),
-      localOnly: 0,
-      divergedKeptLocal: 0,
-      incomingChanges: true,
-    }));
-    const runPushCoreSpy = vi.fn(() => ({ tag: 'pushed', sections: pushSideSections() }));
+  it('happy path: compact default renders only the Sync summary composed from outcome data', async () => {
+    const runPullCoreSpy = vi.fn(() => wetPull({ sessionItem: 'proj-a' }));
+    const runPushCoreSpy = vi.fn(() => pushedResult());
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: runPullCoreSpy,
@@ -205,8 +265,10 @@ describe('cmdSync: wet composition', () => {
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync();
     const combined = out(env);
-    expect(combined).toContain('proj-a');
-    expect(combined).toContain('pull: 1 unmapped on pull (run nomad doctor to list)');
+    expect(combined).toContain('Sync summary');
+    expect(combined).toContain(
+      'pull: upstream changes applied; settings regenerated (base + no host overrides)',
+    );
     expect(combined).toContain('push: pushed');
     // Both halves ran in compose mode: cmdSync owns the single merged render.
     expect(runPullCoreSpy).toHaveBeenCalledWith({ compose: true });
@@ -215,93 +277,88 @@ describe('cmdSync: wet composition', () => {
     expect(existsSync(env.lockPath)).toBe(false);
   });
 
-  it('merged tree: a Sessions row from each half renders under a single Sessions header', async () => {
+  it('compact default: prints no per-half section headers, only the Sync summary', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'pulled-proj' }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
     vi.doMock('./commands.push.ts', () => ({
-      runPushCore: vi.fn(() => ({
-        tag: 'pushed',
-        sections: pushSideSections({ sessionRows: ['pushed-proj'] }),
-      })),
+      runPushCore: vi.fn(() => pushedResult({ sessionRows: ['pushed-proj'] })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync();
     const lines = out(env).split('\n');
+    expect(lines).toContain('Sync summary');
+    expect(lines).not.toContain('Settings');
+    expect(lines).not.toContain('Sessions');
+    expect(lines).not.toContain('Extras');
+    expect(lines).not.toContain('Leak scan');
+    expect(lines).not.toContain('Global config');
+    const combined = out(env);
+    expect(combined).not.toContain('proj-a');
+    expect(combined).not.toContain('pushed-proj');
+  });
+
+  it('verbose: renders the full merged tree with per-half section headers before the Sync summary', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'pulled-proj' })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult({ sessionRows: ['pushed-proj'] })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ verbose: true });
+    const lines = out(env).split('\n');
     expect(lines.filter((l) => l === 'Sessions')).toHaveLength(1);
+    expect(lines).toContain('Sync summary');
     const combined = out(env);
     expect(combined).toContain('pulled-proj');
     expect(combined).toContain('pushed-proj');
     // Pull-then-push order within the merged Sessions section.
     expect(combined.indexOf('pulled-proj')).toBeLessThan(combined.indexOf('pushed-proj'));
+    // The tree still renders before the Sync summary.
+    expect(combined.indexOf('pulled-proj')).toBeLessThan(combined.indexOf('Sync summary'));
   });
 
-  it('merged tree: an identical not-in-path-map skip row from both halves appears exactly once', async () => {
+  it('verbose: an identical not-in-path-map skip row from both halves appears exactly once', async () => {
     const skipRow = '2 not in path-map (run nomad doctor to list)';
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a', sessionExtraRows: [skipRow] }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a', sessionExtraRows: [skipRow] })),
     }));
     vi.doMock('./commands.push.ts', () => ({
-      runPushCore: vi.fn(() => ({
-        tag: 'pushed',
-        sections: pushSideSections({ sessionRows: [skipRow] }),
-      })),
+      runPushCore: vi.fn(() => pushedResult({ sessionRows: [skipRow] })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
-    await cmdSync();
+    await cmdSync({ verbose: true });
     const lines = out(env).split('\n');
     expect(lines.filter((l) => l.includes(skipRow))).toHaveLength(1);
   });
 
-  it('merged tree: Pull summary and Push summary headers are dropped in favor of one Sync summary', async () => {
+  it('verbose: Pull summary and Push summary headers are dropped in favor of one Sync summary', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a' }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
     vi.doMock('./commands.push.ts', () => ({
-      runPushCore: vi.fn(() => ({ tag: 'pushed', sections: pushSideSections() })),
+      runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
-    await cmdSync();
+    await cmdSync({ verbose: true });
     const lines = out(env).split('\n');
     expect(lines).not.toContain('Pull summary');
     expect(lines).not.toContain('Push summary');
     expect(lines).toContain('Sync summary');
   });
 
-  it('merged tree: exactly one sync-on-host header prints and neither per-half header appears', async () => {
+  it('exactly one sync-on-host header prints (compact default) and neither per-half header appears', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a' }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
     vi.doMock('./commands.push.ts', () => ({
-      runPushCore: vi.fn(() => ({ tag: 'pushed', sections: pushSideSections() })),
+      runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync();
@@ -314,13 +371,7 @@ describe('cmdSync: wet composition', () => {
   it('no-op: prints a single "already in sync" line, not two trees', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections(),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: false,
-      })),
+      runPullCore: vi.fn(() => wetPull({ incomingChanges: false })),
     }));
     vi.doMock('./commands.push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'nothing' })),
@@ -341,13 +392,7 @@ describe('cmdSync: wet composition', () => {
     // drive the collapse.
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a' }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: false,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a', incomingChanges: false })),
     }));
     vi.doMock('./commands.push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'nothing' })),
@@ -368,20 +413,10 @@ describe('cmdSync: wet composition', () => {
     // mask exactly the state a sync run exists to surface.
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections(),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: false,
-      })),
+      runPullCore: vi.fn(() => wetPull({ incomingChanges: false })),
     }));
     vi.doMock('./commands.push.ts', () => ({
-      runPushCore: vi.fn(() => ({
-        tag: 'nothing',
-        sections: pushSideSections(),
-        aheadOfOrigin: true,
-      })),
+      runPushCore: vi.fn(() => nothingResult({ aheadOfOrigin: true })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync();
@@ -392,25 +427,19 @@ describe('cmdSync: wet composition', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
-  it('merged tree: a push-half header outside the canonical order survives after the canonical sections', async () => {
+  it('verbose: a push-half header outside the canonical order survives after the canonical sections', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a' }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
     vi.doMock('./commands.push.ts', () => ({
       runPushCore: vi.fn(() => ({
-        tag: 'pushed',
+        ...pushedResult(),
         sections: [...pushSideSections(), { header: 'Path map', items: ['path-map.json missing'] }],
       })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
-    await cmdSync();
+    await cmdSync({ verbose: true });
     const combined = out(env);
     expect(combined).toContain('Path map');
     expect(combined).toContain('path-map.json missing');
@@ -421,13 +450,7 @@ describe('cmdSync: wet composition', () => {
   it('does not collapse when incomingChanges is true, even with an otherwise-clean push', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a' }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a', incomingChanges: true })),
     }));
     vi.doMock('./commands.push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'nothing' })),
@@ -436,7 +459,7 @@ describe('cmdSync: wet composition', () => {
     await cmdSync();
     const combined = out(env);
     expect(combined).not.toContain('already in sync');
-    expect(combined).toContain('proj-a');
+    expect(combined).toContain('pull: upstream changes applied');
     expect(process.exitCode).not.toBe(1);
   });
 
@@ -466,13 +489,7 @@ describe('cmdSync: wet composition', () => {
     const { NomadFatal } = await import('./utils.ts');
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a' }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
     vi.doMock('./commands.push.ts', () => ({
       runPushCore: vi.fn(() => {
@@ -480,7 +497,7 @@ describe('cmdSync: wet composition', () => {
       }),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
-    await cmdSync();
+    await cmdSync({ verbose: true });
     const combined = out(env);
     expect(combined).toContain('proj-a');
     expect(combined).toContain('pull: applied, push: failed (secret found)');
@@ -488,16 +505,29 @@ describe('cmdSync: wet composition', () => {
     expect(existsSync(env.lockPath)).toBe(false);
   });
 
-  it('reconciled notes: divergence kept-local and local-only render as resolved and exit 0', async () => {
+  it('reconciled work: push row lists the nonzero parts (local-only, diverged, config) in one parenthetical', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a' }),
-        localOnly: 3,
-        divergedKeptLocal: 2,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() =>
+        wetPull({ sessionItem: 'proj-a', localOnly: 3, divergedKeptLocal: 2 }),
+      ),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult({ globalConfigCount: 1 })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain(
+      'push: pushed (3 local-only sessions, 2 diverged extras files, 1 config file)',
+    );
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it('push row defaults a missing globalConfigCount to zero (defensive, tag "pushed" with no count field)', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull()),
     }));
     vi.doMock('./commands.push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'pushed', sections: pushSideSections() })),
@@ -505,30 +535,68 @@ describe('cmdSync: wet composition', () => {
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync();
     const combined = out(env);
-    expect(combined).toContain('2 diverged files kept local and pushed');
-    expect(combined).toContain('3 local-only sessions pushed');
+    expect(combined).toContain('push: pushed');
+    expect(combined).not.toContain('push: pushed (');
+  });
+
+  it('push row omits the parenthetical entirely when every reconciled-work part is zero', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull()),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult()),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain('push: pushed');
+    expect(combined).not.toContain('push: pushed (');
+  });
+
+  it('push row lists only the config-files part when only globalConfigCount is nonzero', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull()),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult({ globalConfigCount: 4 })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain('push: pushed (4 config files)');
+  });
+
+  it('verbose: a sections-less push result (resolved-leak arm) renders the pull tree alone without crashing', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => ({ tag: 'pushed', globalConfigCount: 1, collisions: 0 })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ verbose: true });
+    const combined = out(env);
+    expect(combined).toContain('proj-a');
+    expect(combined).toContain('push: pushed (1 config file)');
     expect(process.exitCode).not.toBe(1);
   });
 
-  it('defensive: a dry-tagged push result in a wet run renders with no push sections', async () => {
+  it('defensive: a dry-tagged push result in a wet run renders "nothing to push" with no push sections', async () => {
     // The wet push half can never return the dry tag (cmdSync only passes
-    // compose, never dryRun), but pushSectionsOf must not crash on it: the
-    // dry arm carries no sections, so the merged tree gets none.
+    // compose, never dryRun), but pushSectionsOf/buildPushSummaryRow must not
+    // crash on it: the dry arm carries no sections and no counts.
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections({ sessionItem: 'proj-a' }),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
     vi.doMock('./commands.push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'dry' })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
-    await cmdSync();
+    await cmdSync({ verbose: true });
     const combined = out(env);
     expect(combined).toContain('proj-a');
     expect(combined).toContain('push: nothing to push');
@@ -539,13 +607,7 @@ describe('cmdSync: wet composition', () => {
     const plainError = new Error('boom');
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections(),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: false,
-      })),
+      runPullCore: vi.fn(() => wetPull({ incomingChanges: false })),
     }));
     vi.doMock('./commands.push.ts', () => ({
       runPushCore: vi.fn(() => {
@@ -557,26 +619,113 @@ describe('cmdSync: wet composition', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
-  it('falls back to "applied" for the pull row when the pull sections carry no Pull summary', async () => {
+  it('pull row: reads "no upstream changes" when incomingChanges is false', async () => {
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: [{ header: 'Settings', items: ['settings.json (base + no host overrides)'] }],
-        localOnly: 1,
-        divergedKeptLocal: 0,
-        incomingChanges: false,
-      })),
+      runPullCore: vi.fn(() =>
+        wetPull({ incomingChanges: false, settingsLabel: 'test-host.json', localOnly: 1 }),
+      ),
     }));
     vi.doMock('./commands.push.ts', () => ({
-      runPushCore: vi.fn(() => ({ tag: 'nothing', sections: pushSideSections() })),
+      runPushCore: vi.fn(() => nothingResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync();
     const combined = out(env);
-    expect(combined).toContain('pull: applied');
+    expect(combined).toContain(
+      'pull: no upstream changes; settings regenerated (base + test-host.json)',
+    );
     expect(combined).toContain('push: nothing to push');
     expect(process.exitCode).not.toBe(1);
+  });
+
+  it('pull row: reads "upstream changes applied" when incomingChanges is true', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ incomingChanges: true, settingsLabel: 'test-host.json' })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult()),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain(
+      'pull: upstream changes applied; settings regenerated (base + test-host.json)',
+    );
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it('surfaces the combined unmapped count as a collapsed info row', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ unmapped: 4 })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult()),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain('4 not in path-map (run nomad doctor to list)');
+  });
+
+  it('surfaces the extras-skipped count as a collapsed info row', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ extrasSkipped: 2 })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult()),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain('2 extras skipped');
+  });
+
+  it('omits the skip/collision info rows entirely when every count is zero', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull()),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult()),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).not.toContain('not in path-map');
+    expect(combined).not.toContain('extras skipped');
+    expect(combined).not.toContain('collisions');
+  });
+
+  it('surfaces a nonzero push collision count as a warn row', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull()),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult({ collisions: 1 })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain('1 collision (run nomad doctor to list)');
+  });
+
+  it('never repeats the stale pull-summary reconcile-advice phrase', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ localOnly: 5 })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult()),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ verbose: true });
+    const combined = out(env);
+    expect(combined).not.toContain('push to reconcile');
   });
 });
 

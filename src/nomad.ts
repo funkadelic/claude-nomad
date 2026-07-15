@@ -109,14 +109,14 @@ try {
       break;
     }
     case 'sync': {
-      // parseSyncArgs accepts only --dry-run; rejects duplicates, unknown
-      // tokens, and extra positional arguments.
+      // parseSyncArgs accepts --dry-run and the verbosity flags; rejects
+      // duplicates, unknown tokens, and extra positional arguments.
       const syncArgs = parseSyncArgs(process.argv);
       if (syncArgs === null) {
-        console.error('usage: nomad sync [--dry-run]');
+        console.error('usage: nomad sync [--dry-run] [--verbose|--all|-v]');
         process.exit(1);
       }
-      await cmdSync({ dryRun: syncArgs.dryRun });
+      await cmdSync({ dryRun: syncArgs.dryRun, verbose: syncArgs.verbose });
       break;
     }
     case 'init': {

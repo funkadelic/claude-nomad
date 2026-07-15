@@ -12,12 +12,38 @@ function argv(...tokens: string[]): string[] {
 }
 
 describe('parseSyncArgs', () => {
-  it('bare sync (no flags) returns { dryRun: false }', () => {
-    expect(parseSyncArgs(argv())).toEqual({ dryRun: false });
+  it('bare sync (no flags) returns { dryRun: false, verbose: false }', () => {
+    expect(parseSyncArgs(argv())).toEqual({ dryRun: false, verbose: false });
   });
 
-  it('sync --dry-run returns { dryRun: true }', () => {
-    expect(parseSyncArgs(argv('--dry-run'))).toEqual({ dryRun: true });
+  it('sync --dry-run returns { dryRun: true, verbose: false }', () => {
+    expect(parseSyncArgs(argv('--dry-run'))).toEqual({ dryRun: true, verbose: false });
+  });
+
+  it('sync --verbose returns { dryRun: false, verbose: true }', () => {
+    expect(parseSyncArgs(argv('--verbose'))).toEqual({ dryRun: false, verbose: true });
+  });
+
+  it('sync --all returns { dryRun: false, verbose: true }', () => {
+    expect(parseSyncArgs(argv('--all'))).toEqual({ dryRun: false, verbose: true });
+  });
+
+  it('sync -v returns { dryRun: false, verbose: true }', () => {
+    expect(parseSyncArgs(argv('-v'))).toEqual({ dryRun: false, verbose: true });
+  });
+
+  it('sync --dry-run --verbose composes both flags', () => {
+    expect(parseSyncArgs(argv('--dry-run', '--verbose'))).toEqual({
+      dryRun: true,
+      verbose: true,
+    });
+  });
+
+  it('sync --verbose --dry-run composes both flags regardless of order', () => {
+    expect(parseSyncArgs(argv('--verbose', '--dry-run'))).toEqual({
+      dryRun: true,
+      verbose: true,
+    });
   });
 
   it('duplicate --dry-run returns null', () => {
@@ -34,5 +60,9 @@ describe('parseSyncArgs', () => {
 
   it('extra positional after --dry-run returns null', () => {
     expect(parseSyncArgs(argv('--dry-run', 'extra'))).toBeNull();
+  });
+
+  it('extra positional after --verbose returns null', () => {
+    expect(parseSyncArgs(argv('--verbose', 'extra'))).toBeNull();
   });
 });
