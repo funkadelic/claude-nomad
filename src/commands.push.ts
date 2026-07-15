@@ -42,11 +42,24 @@ export { reportSettingsAheadDrift } from './commands.push.settings.ts';
  * when the sync repo's HEAD carries commits its upstream lacks (e.g. a prior
  * push committed but the network push failed), so a composing caller must not
  * report the run as fully in sync even though there was nothing to commit.
+ *
+ * `globalConfigCount` (changed shared-config file count) and `collisions`
+ * (push remap collision count, always `0` on the success path since a real
+ * collision throws instead of returning) are set alongside `sections` on
+ * every compose-mode `nothing`/`pushed` arm so a composing caller
+ * (`nomad sync`) can build its own summary row without re-deriving the counts
+ * from `st`.
  */
 export type PushCoreResult =
-  | { tag: 'nothing'; sections?: DoctorSection[]; aheadOfOrigin?: boolean }
+  | {
+      tag: 'nothing';
+      sections?: DoctorSection[];
+      aheadOfOrigin?: boolean;
+      globalConfigCount?: number;
+      collisions?: number;
+    }
   | { tag: 'dry' }
-  | { tag: 'pushed'; sections?: DoctorSection[] };
+  | { tag: 'pushed'; sections?: DoctorSection[]; globalConfigCount?: number; collisions?: number };
 
 /**
  * Best-effort probe for committed-but-unpushed state: count the commits the
@@ -72,16 +85,17 @@ function aheadOfUpstream(repo: string): boolean {
  * `nothing to commit` and renders the no-scan tree inline; a composing caller
  * (`compose`) gets the built sections back unrendered instead, plus the
  * `aheadOfOrigin` probe result so a clean worktree sitting on unpushed
- * commits is never reported as fully in sync. The probe runs only under
- * `compose`: standalone push output and side effects stay byte-identical.
- * Extracted from `runPushCore` to keep it under the sonarjs
- * cognitive-complexity threshold.
+ * commits is never reported as fully in sync, plus `globalConfigCount`/
+ * `collisions` read off `st` (an empty status means nothing changed, so both
+ * are `0` here in practice). The probe runs only under `compose`: standalone
+ * push output and side effects stay byte-identical. Extracted from
+ * `runPushCore` to keep it under the sonarjs cognitive-complexity threshold.
  *
  * @param st - The collected push state.
  * @param compose - Composing-caller render mode (see `runPushCore`).
  * @param repo - Resolved repo root path for the ahead-of-upstream probe.
- * @returns The `nothing`-tagged result, with `sections` and `aheadOfOrigin`
- *   only under `compose`.
+ * @returns The `nothing`-tagged result, with `sections`/`aheadOfOrigin`/
+ *   `globalConfigCount`/`collisions` only under `compose`.
  */
 function emptyStatusResult(st: PushState, compose: boolean, repo: string): PushCoreResult {
   if (compose) {
@@ -89,6 +103,8 @@ function emptyStatusResult(st: PushState, compose: boolean, repo: string): PushC
       tag: 'nothing',
       sections: buildNoScanSections(st),
       aheadOfOrigin: aheadOfUpstream(repo),
+      globalConfigCount: st.globalConfig.length,
+      collisions: st.remap.collisions,
     };
   }
   log('nothing to commit');
@@ -102,12 +118,16 @@ function emptyStatusResult(st: PushState, compose: boolean, repo: string): PushC
  * the render; otherwise the tag alone (standalone push already rendered).
  * The compose-mode `nothing` arm (the gsd-only staged-drop no-op) runs the
  * same ahead-of-upstream probe as the empty-status arm, so no `nothing`
- * result a composing caller sees can hide unpushed commits.
+ * result a composing caller sees can hide unpushed commits. Both compose-mode
+ * arms also carry `globalConfigCount`/`collisions` read off `st`, which
+ * `commitAndPush` has already mutated in place (`st.globalConfig`) by the
+ * time this runs.
  *
  * @param outcome - `commitAndPush`'s outcome.
  * @param sections - The built push tree sections `commitAndPush` returned.
  * @param compose - Composing-caller render mode (see `runPushCore`).
  * @param repo - Resolved repo root path for the ahead-of-upstream probe.
+ * @param st - The collected push state (already mutated by `commitAndPush`).
  * @returns The `nothing`- or `pushed`-tagged result.
  */
 function toPushCoreResult(
@@ -115,12 +135,21 @@ function toPushCoreResult(
   sections: DoctorSection[],
   compose: boolean,
   repo: string,
+  st: PushState,
 ): PushCoreResult {
   if (!compose) return { tag: outcome };
+  const globalConfigCount = st.globalConfig.length;
+  const collisions = st.remap.collisions;
   if (outcome === 'nothing') {
-    return { tag: 'nothing', sections, aheadOfOrigin: aheadOfUpstream(repo) };
+    return {
+      tag: 'nothing',
+      sections,
+      aheadOfOrigin: aheadOfUpstream(repo),
+      globalConfigCount,
+      collisions,
+    };
   }
-  return { tag: 'pushed', sections };
+  return { tag: 'pushed', sections, globalConfigCount, collisions };
 }
 
 /**
@@ -343,7 +372,7 @@ export async function runPushCore(
     newManifest,
     render,
   );
-  return toPushCoreResult(outcome, sections, compose, repo);
+  return toPushCoreResult(outcome, sections, compose, repo, st);
 }
 
 /**
