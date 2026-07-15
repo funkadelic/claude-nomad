@@ -351,12 +351,14 @@ describe.skipIf(!hasGit || !hasGitleaks)('multi-host sync flows (real git + real
     const eject = runNomad(b, ['eject']);
     expect(eject.status, `eject failed:\n${eject.stderr}`).toBe(0);
 
-    // The managed link is now a real (dereferenced) file with the same content.
-    // On win32 it was already a real copy; the assertion holds on both.
+    // Read the content first, then stat: a stat check followed by a read of the
+    // same path is a check-then-use file-system race (CodeQL js/file-system-race).
+    expect(readFileSync(bClaudeMd, 'utf8'), 'ejected content differs').toBe(contentBefore);
+    // The managed link is now a real (dereferenced) file, not a symlink. On
+    // win32 it was already a real copy; the assertion holds on both.
     expect(lstatSync(bClaudeMd).isSymbolicLink(), 'CLAUDE.md still a symlink after eject').toBe(
       false,
     );
-    expect(readFileSync(bClaudeMd, 'utf8'), 'ejected content differs').toBe(contentBefore);
 
     // The sync repo is untouched: same HEAD, clean working tree.
     expect(gitOut(['rev-parse', 'HEAD'], b.repo), 'eject moved repo HEAD').toBe(repoHeadBefore);
