@@ -89,6 +89,14 @@ jobs:
     # surfaces as a timeout instead of the intended FAIL message.
     timeout-minutes: 12
     steps:
+      # Checkout only to read .nvmrc: this job installs the package from the
+      # public registry, but setup-node's node-version-file needs the file on
+      # disk. Keeps .nvmrc the single source of the Node version.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        # No git operations after checkout; drop the credential so a
+        # downstream step or dep cannot read it.
+        with:
+          persist-credentials: false
       - name: Set up Node 24
         # No registry-url needed: smoke-test installs from the default npm
         # registry. Only publishing requires the OIDC-aware .npmrc.
