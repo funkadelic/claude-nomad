@@ -16,7 +16,7 @@ import {
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
 import { copyExtrasFiltered, copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
-import { stripGsdHookEntries } from './hooks-filter.ts';
+import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import { die, log, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
@@ -283,11 +283,82 @@ export function syncSharedLinksPush(map: PathMap | null): void {
 }
 
 /**
+ * Fail-safe read of the live `~/.claude/settings.json`. Returns the parsed
+ * object plus `present` (a file exists on disk) and `malformed` (the file
+ * exists but is not valid JSON) flags. An absent file yields
+ * `{ existing: {}, present: false, malformed: false }`; a malformed file yields
+ * `{ existing: {}, present: true, malformed: true }`. Never throws, so one
+ * unconditional read can feed both the drift classifier and gsd-hook
+ * preservation without duplicating the read or re-deriving the absent/malformed
+ * distinction inside `regenerateSettings`.
+ *
+ * @param settingsPath - Absolute path to `~/.claude/settings.json`.
+ * @returns The parsed settings (or `{}`) plus presence and malformed flags.
+ */
+function readExistingSettings(settingsPath: string): {
+  existing: Record<string, unknown>;
+  present: boolean;
+  malformed: boolean;
+} {
+  if (!existsSync(settingsPath)) return { existing: {}, present: false, malformed: false };
+  try {
+    const parsed = readJson<unknown>(settingsPath);
+    // Valid-but-non-object JSON (null, an array, a primitive) is treated as
+    // malformed: keepGsdHookEntries/stripGsdHookEntries/classifySettingsDrift
+    // all dereference it as a plain object, so degrade to nothing-to-preserve
+    // rather than crash regeneration.
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { existing: {}, present: true, malformed: true };
+    }
+    return { existing: parsed as Record<string, unknown>, present: true, malformed: false };
+  } catch {
+    return { existing: {}, present: true, malformed: true };
+  }
+}
+
+/**
+ * Emit the pull-side drift WARNs by classifying the live `existing` settings
+ * against the freshly `merged` result: a behind-drift key (present in the
+ * synced copy, missing locally) advises `nomad pull`, and a promotable
+ * ahead-drift key (local-only, capture-eligible) advises `nomad capture-settings`.
+ * Informational only; extracted from `regenerateSettings` so the main function
+ * stays under the cognitive-complexity gate.
+ *
+ * @param merged - The deep-merged base+host result about to be written.
+ * @param existing - The parsed live settings.json (well-formed).
+ */
+function emitDriftWarnings(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): void {
+  const drift = classifySettingsDrift(merged, existing);
+  if (drift.behind.length > 0) {
+    const { phrase, pronoun } = describeSettings(drift.behind);
+    warn(
+      `your settings.json is missing ${phrase} that the synced copy has; ` +
+        `run 'nomad pull' to restore ${pronoun}.`,
+    );
+  }
+  const { promotable } = partitionByCaptureExclusion(drift.ahead);
+  if (promotable.length > 0) {
+    const { phrase, pronoun, verb } = describeSettings(promotable);
+    warn(
+      `your settings.json has ${phrase} that ${verb} not yet synced; ` +
+        `run 'nomad capture-settings' to save ${pronoun} to the repo before the next pull overwrites ${pronoun}.`,
+    );
+  }
+}
+
+/**
  * Deep-merge `shared/settings.base.json` with `hosts/<HOST>.json` (when
  * present) and atomically rewrite `~/.claude/settings.json`. Composes
  * `writeJsonAtomic` (temp + fsync + rename + parent fsync) on top of
  * `backupBeforeWrite`, so an interrupted pull leaves either the pre-pull
- * file or the fully-merged file, never a half-written one. Surfaces a
+ * file or the fully-merged file, never a half-written one. Before writing, the
+ * gsd-owned hook entries the live file already carries are preserved (grafted
+ * back onto the stripped merge via `keepGsdHookEntries` + `graftGsdHookEntries`)
+ * so pull stops deleting the hooks gsd self-heals each session; the clean path
+ * (no gsd hooks in the live file) stays byte-identical. Surfaces a
  * stderr WARN when no host override exists AND prior settings has top-level
  * keys not in base; the matching doctor-side FAIL with non-zero exit lives
  * in `cmdDoctor`.
@@ -341,32 +412,22 @@ export function regenerateSettings(
 
   const settingsPath = join(claude, 'settings.json');
 
+  // Read the live settings.json ONCE and unconditionally, fail-safe: the same
+  // parsed object feeds both the pull-side drift surface below and the gsd-hook
+  // preservation graft at write time. An absent or malformed file degrades to
+  // nothing-to-preserve and never blocks regeneration.
+  const { existing, present, malformed } = readExistingSettings(settingsPath);
+
   // Pull-side drift surface: classify existing settings against the merged
   // result and emit direction-specific guidance. Informational only; pull does
   // NOT abort. The WARN runs in dry-run mode too: the user sees the same drift
   // signal they would see on a real pull. Malformed prior settings.json must
   // not block regeneration; the whole point is to overwrite from base+overrides.
-  if (!suppressDriftWarn && existsSync(settingsPath)) {
-    try {
-      const existing = readJson<Record<string, unknown>>(settingsPath);
-      const drift = classifySettingsDrift(merged, existing);
-      if (drift.behind.length > 0) {
-        const { phrase, pronoun } = describeSettings(drift.behind);
-        warn(
-          `your settings.json is missing ${phrase} that the synced copy has; ` +
-            `run 'nomad pull' to restore ${pronoun}.`,
-        );
-      }
-      const { promotable } = partitionByCaptureExclusion(drift.ahead);
-      if (promotable.length > 0) {
-        const { phrase, pronoun, verb } = describeSettings(promotable);
-        warn(
-          `your settings.json has ${phrase} that ${verb} not yet synced; ` +
-            `run 'nomad capture-settings' to save ${pronoun} to the repo before the next pull overwrites ${pronoun}.`,
-        );
-      }
-    } catch {
+  if (!suppressDriftWarn && present) {
+    if (malformed) {
       warn('existing settings.json is malformed; skipping drift-check and regenerating.');
+    } else {
+      emitDriftWarnings(merged, existing);
     }
   }
 
@@ -377,7 +438,15 @@ export function regenerateSettings(
     return { label: overrideLabel };
   }
 
+  // Preserve the gsd-owned hook entries the live file already carries (gsd
+  // self-heals them into settings.json each session) by grafting them back onto
+  // the stripped merge, so pull stops deleting them. The clean path (no gsd
+  // hooks in the live file, or an absent/malformed file) is a byte-identical
+  // no-op.
   backupBeforeWrite(settingsPath, ts);
-  writeJsonAtomic(settingsPath, stripGsdHookEntries(merged));
+  writeJsonAtomic(
+    settingsPath,
+    graftGsdHookEntries(stripGsdHookEntries(merged), keepGsdHookEntries(existing)),
+  );
   return { label: overrideLabel };
 }

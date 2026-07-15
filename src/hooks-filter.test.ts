@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { baseHasGsdHookEntries, isGsdHookEntry, stripGsdHookEntries } from './hooks-filter.ts';
+import {
+  baseHasGsdHookEntries,
+  graftGsdHookEntries,
+  isGsdHookEntry,
+  keepGsdHookEntries,
+  stripGsdHookEntries,
+} from './hooks-filter.ts';
 
 // ---------------------------------------------------------------------------
 // isGsdHookEntry -- Test 1-7
@@ -343,6 +349,348 @@ describe('stripGsdHookEntries', () => {
     expect(event).toHaveLength(1);
     expect(event[0]).not.toBeNull();
     expect(event[0]).not.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// keepGsdHookEntries -- the KEEP complement of stripGsdHookEntries
+// ---------------------------------------------------------------------------
+
+/** Narrow a value to a plain (non-null, non-array) object, or null otherwise. */
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+/** Push every inner hook `command` string of one matcher entry into `out`. */
+function collectMatcherCommands(entry: unknown, out: string[]): void {
+  const entryObj = asObject(entry);
+  if (entryObj === null || !Array.isArray(entryObj.hooks)) return;
+  for (const h of entryObj.hooks as unknown[]) {
+    const cmd = asObject(h)?.command;
+    if (typeof cmd === 'string') out.push(cmd);
+  }
+}
+
+/**
+ * Collect every inner hook `command` string from a settings-shaped object's
+ * `hooks` block, in a flat sorted array, for the keep/strip partition test.
+ * Ignores any non-array/non-object shape so it can walk a filtered subtree.
+ *
+ * @param settings - A settings-shaped object (or a keep/strip result subtree).
+ * @returns Sorted list of inner hook command strings found under `hooks`.
+ */
+function collectCommands(settings: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const hooks = asObject(settings.hooks);
+  if (hooks === null) return out;
+  for (const matchers of Object.values(hooks)) {
+    if (!Array.isArray(matchers)) continue;
+    for (const entry of matchers) collectMatcherCommands(entry, out);
+  }
+  return out.sort((a, b) => a.localeCompare(b, 'en'));
+}
+
+describe('keepGsdHookEntries', () => {
+  it('gsd-only matcher -> keeps the entry, event key, and hooks key', () => {
+    const input = {
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [gsdHook()] }],
+      },
+    };
+    const result = keepGsdHookEntries(input);
+    expect(result).toEqual(input);
+  });
+
+  it('user-only matcher -> returns {} (no hooks key)', () => {
+    const input = {
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [userHook()] }],
+      },
+    };
+    expect(keepGsdHookEntries(input)).toEqual({});
+  });
+
+  it('mixed matcher (gsd + user) -> keeps only the gsd inner hook', () => {
+    const input = {
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdHook(), userHook()] }],
+      },
+    };
+    const result = keepGsdHookEntries(input);
+    const event = (result.hooks as Record<string, unknown>).PreToolUse as unknown[];
+    expect(event).toHaveLength(1);
+    const inner = (event[0] as Record<string, unknown>).hooks as unknown[];
+    expect(inner).toHaveLength(1);
+    expect((inner[0] as Record<string, unknown>).command).toBe(
+      'node /a/hooks/gsd-context-monitor.js',
+    );
+  });
+
+  it('no gsd hooks anywhere -> {}', () => {
+    const input = {
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [userHook()] }],
+        Stop: [{ matcher: '', hooks: [userHook()] }],
+      },
+    };
+    expect(keepGsdHookEntries(input)).toEqual({});
+  });
+
+  it('no hooks key at all -> {}', () => {
+    expect(keepGsdHookEntries({ model: 'sonnet', permissions: { allow: ['*'] } })).toEqual({});
+  });
+
+  it('non-hooks keys are dropped (keep returns only the hooks subtree)', () => {
+    const input = {
+      model: 'sonnet',
+      env: { FOO: 'bar' },
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [gsdHook()] }],
+      },
+    };
+    const result = keepGsdHookEntries(input);
+    expect(result).not.toHaveProperty('model');
+    expect(result).not.toHaveProperty('env');
+    expect(result).toHaveProperty('hooks');
+  });
+
+  it('two events, one gsd one user -> keeps only the gsd event key', () => {
+    const input = {
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [gsdHook()] }],
+        PreToolUse: [{ matcher: 'Bash', hooks: [userHook()] }],
+      },
+    };
+    const result = keepGsdHookEntries(input);
+    const hooks = result.hooks as Record<string, unknown>;
+    expect(hooks).toHaveProperty('SessionStart');
+    expect(hooks).not.toHaveProperty('PreToolUse');
+  });
+
+  it('fail-safe: hooks value is a string -> {}', () => {
+    expect(keepGsdHookEntries({ hooks: 'not-an-object' })).toEqual({});
+  });
+
+  it('fail-safe: hooks value is null -> {}', () => {
+    expect(keepGsdHookEntries({ hooks: null })).toEqual({});
+  });
+
+  it('fail-safe: hooks value is an array -> {}', () => {
+    expect(keepGsdHookEntries({ hooks: [] })).toEqual({});
+  });
+
+  it('fail-safe: event value is not an array -> {}', () => {
+    expect(keepGsdHookEntries({ hooks: { SessionStart: 'not-an-array' } })).toEqual({});
+  });
+
+  it('fail-safe: null matcher entry -> dropped, {}', () => {
+    expect(keepGsdHookEntries({ hooks: { SessionStart: [null] } })).toEqual({});
+  });
+
+  it('fail-safe: array matcher entry -> dropped, {}', () => {
+    expect(keepGsdHookEntries({ hooks: { SessionStart: [['not', 'an', 'object']] } })).toEqual({});
+  });
+
+  it('fail-safe: matcher without inner hooks array -> dropped, {}', () => {
+    expect(keepGsdHookEntries({ hooks: { SessionStart: [{ matcher: 'Bash' }] } })).toEqual({});
+  });
+
+  it('fail-safe: inner hook that is null -> dropped; only gsd kept', () => {
+    const input = {
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [null, gsdHook()] }],
+      },
+    };
+    const result = keepGsdHookEntries(input);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    const inner = (event[0] as Record<string, unknown>).hooks as unknown[];
+    expect(inner).toHaveLength(1);
+    expect((inner[0] as Record<string, unknown>).command).toBe(
+      'node /a/hooks/gsd-context-monitor.js',
+    );
+  });
+
+  it('fail-safe: inner hook whose command is not a string -> dropped, {}', () => {
+    const input = {
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [{ type: 'command' }] }],
+      },
+    };
+    expect(keepGsdHookEntries(input)).toEqual({});
+  });
+
+  it('does not mutate its input', () => {
+    const input = {
+      model: 'sonnet',
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [gsdHook(), userHook()] }],
+      },
+    };
+    const snapshot = JSON.stringify(input);
+    keepGsdHookEntries(input);
+    expect(JSON.stringify(input)).toBe(snapshot);
+  });
+
+  it('keep and strip partition the hook entries of a mixed fixture (no overlap, no loss)', () => {
+    const input = {
+      model: 'sonnet',
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [gsdHook('check-update.js')] }],
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [gsdHook(), userHook()] },
+          { matcher: 'Edit', hooks: [userHook()] },
+        ],
+      },
+    };
+    const kept = collectCommands(keepGsdHookEntries(input));
+    const stripped = collectCommands(stripGsdHookEntries(input));
+    const all = collectCommands(input);
+    // Union of keep and strip commands equals every command, with no overlap.
+    expect([...kept, ...stripped].sort((a, b) => a.localeCompare(b, 'en'))).toEqual(all);
+    expect(kept.some((c) => stripped.includes(c))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// graftGsdHookEntries -- per-event-key union of preserved gsd hooks
+// ---------------------------------------------------------------------------
+
+describe('graftGsdHookEntries', () => {
+  it('gsdOnly {} -> base returned byte-identical (no empty hooks scaffold)', () => {
+    const base = { model: 'sonnet' };
+    const result = graftGsdHookEntries(base, {});
+    expect(result).toBe(base);
+    expect(JSON.stringify(result)).toBe(JSON.stringify(base));
+  });
+
+  it('gsdOnly with empty hooks block -> base returned unchanged', () => {
+    const base = { model: 'sonnet' };
+    expect(graftGsdHookEntries(base, { hooks: {} })).toBe(base);
+  });
+
+  it('base without hooks + gsdOnly hooks -> result.hooks equals gsdOnly.hooks', () => {
+    const base = { model: 'sonnet' };
+    const gsdOnly = { hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook()] }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    expect(result.hooks).toEqual(gsdOnly.hooks);
+    expect(result.model).toBe('sonnet');
+  });
+
+  it('shared event key -> matchers concatenated (user + gsd coexist)', () => {
+    const base = {
+      hooks: { SessionStart: [{ matcher: 'user', hooks: [userHook()] }] },
+    };
+    const gsdOnly = {
+      hooks: { SessionStart: [{ matcher: 'gsd', hooks: [gsdHook()] }] },
+    };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(2);
+    expect((event[0] as Record<string, unknown>).matcher).toBe('user');
+    expect((event[1] as Record<string, unknown>).matcher).toBe('gsd');
+  });
+
+  it('event key only in gsdOnly -> added alongside base event keys', () => {
+    const base = {
+      hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [userHook()] }] },
+    };
+    const gsdOnly = {
+      hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook()] }] },
+    };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const hooks = result.hooks as Record<string, unknown>;
+    expect(hooks).toHaveProperty('PreToolUse');
+    expect(hooks).toHaveProperty('SessionStart');
+  });
+
+  it('dedup: a gsd matcher already present in base is not appended twice', () => {
+    const shared = { matcher: '', hooks: [gsdHook()] };
+    const base = { hooks: { SessionStart: [{ ...shared, hooks: [gsdHook()] }] } };
+    const gsdOnly = { hooks: { SessionStart: [{ ...shared, hooks: [gsdHook()] }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+  });
+
+  it('dedup is key-order-independent: a gsd matcher matching base only in key order is not duplicated', () => {
+    // base authored { matcher, hooks }; gsd authored { hooks, matcher } (same
+    // content, different key order). The canonical key must treat them as equal.
+    const base = { hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook()] }] } };
+    const gsdOnly = { hooks: { SessionStart: [{ hooks: [gsdHook()], matcher: '' }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+  });
+
+  it('dedup within gsdMatchers: duplicate gsd entries collapse to one', () => {
+    const dup = { matcher: '', hooks: [gsdHook()] };
+    // base must carry the event as an array so the union path (not the
+    // gsd-takes-the-key path) runs and dedups gsdMatchers against itself.
+    const base = { hooks: { SessionStart: [] as unknown[] } };
+    const gsdOnly = { hooks: { SessionStart: [{ ...dup }, { ...dup }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+  });
+
+  it('fail-safe: a non-object matcher entry keys off its raw serialization', () => {
+    const base = { hooks: { SessionStart: [] as unknown[] } };
+    const gsdOnly = { hooks: { SessionStart: [null, null, { matcher: '', hooks: [gsdHook()] }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    // Both nulls collapse to one, the object entry is kept: length 2.
+    expect(event).toHaveLength(2);
+    expect(event[0]).toBeNull();
+  });
+
+  it('non-hooks base keys pass through by reference', () => {
+    const permissions = { allow: ['*'] };
+    const base = { permissions, hooks: { Stop: [{ matcher: '', hooks: [userHook()] }] } };
+    const gsdOnly = { hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook()] }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    expect(result.permissions).toBe(permissions);
+  });
+
+  it('fail-safe: gsdOnly.hooks is a string -> base unchanged', () => {
+    const base = { model: 'sonnet' };
+    expect(graftGsdHookEntries(base, { hooks: 'not-an-object' })).toBe(base);
+  });
+
+  it('fail-safe: gsdOnly event value is not an array -> that key skipped', () => {
+    const base = { hooks: { SessionStart: [{ matcher: '', hooks: [userHook()] }] } };
+    const gsdOnly = { hooks: { SessionStart: 'not-an-array' } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    // The base SessionStart array is preserved untouched (nothing to union).
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+    expect((event[0] as Record<string, unknown>).matcher).toBe('');
+  });
+
+  it('fail-safe: base.hooks is not a plain object -> gsd hooks replace it', () => {
+    const base = { hooks: 'not-an-object' };
+    const gsdOnly = { hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook()] }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    expect(result.hooks).toEqual(gsdOnly.hooks);
+  });
+
+  it('fail-safe: base event value is not an array -> gsd matchers take that key', () => {
+    const base = { hooks: { SessionStart: 'not-an-array' } };
+    const gsdOnly = { hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook()] }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+    expect((event[0] as Record<string, unknown>).matcher).toBe('');
+  });
+
+  it('does not mutate either input', () => {
+    const base = { hooks: { SessionStart: [{ matcher: 'user', hooks: [userHook()] }] } };
+    const gsdOnly = { hooks: { SessionStart: [{ matcher: 'gsd', hooks: [gsdHook()] }] } };
+    const baseSnapshot = JSON.stringify(base);
+    const gsdSnapshot = JSON.stringify(gsdOnly);
+    graftGsdHookEntries(base, gsdOnly);
+    expect(JSON.stringify(base)).toBe(baseSnapshot);
+    expect(JSON.stringify(gsdOnly)).toBe(gsdSnapshot);
   });
 });
 
