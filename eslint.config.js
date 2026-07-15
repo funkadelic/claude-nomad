@@ -19,6 +19,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
+  sonarjs.configs.recommended,
   {
     languageOptions: {
       ecmaVersion: 2024,
@@ -29,7 +30,6 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
-    plugins: { sonarjs },
     rules: {
       '@typescript-eslint/consistent-type-imports': [
         'error',
@@ -43,6 +43,23 @@ export default tseslint.config(
       'no-console': 'off',
       'sonarjs/cognitive-complexity': ['error', 15],
       'max-lines': ['warn', { max: 220, skipBlankLines: true, skipComments: true }],
+      // sonarjs.configs.recommended is enabled above so local lint mirrors the
+      // ESLint-equivalent SonarCloud rules and bugs like S2871 (a comparator-less
+      // sort) are caught pre-push instead of only server-side. The rules below are
+      // turned back off as accepted-risk or false-positive for this codebase:
+      // S4036 exec-from-PATH: this is a single-user CLI wrapping the user's own
+      // git/gitleaks binaries and is Marked Safe in SonarCloud (see the standing
+      // hotspot policy); flagging every execFileSync locally is pure noise.
+      'sonarjs/no-os-command-from-path': 'off',
+      // Temp-dir use (os.tmpdir, ~/.cache) is legitimate and intentional here.
+      'sonarjs/publicly-writable-directories': 'off',
+      // False-positive on the intentional defensive runtime-null guards this code
+      // uses on parsed JSON (e.g. `parsed === null` where the static type omits
+      // null but JSON.parse can still yield it). SonarCloud does not flag these.
+      'sonarjs/different-types-comparison': 'off',
+      // Stylistic: this codebase intentionally returns union types from several
+      // helpers; "always return the same type" is not a defect signal here.
+      'sonarjs/function-return-type': 'off',
     },
   },
   {
@@ -106,7 +123,20 @@ export default tseslint.config(
   },
   {
     files: ['src/**/*.test.ts'],
-    rules: { 'max-lines': 'off' },
+    // These sonarjs rules stay ON for production src; they are low-value or
+    // deliberately-ignored noise in test files (intentional helper duplication,
+    // fixture unions, `void` on floating promises, comparator-less sorts whose
+    // order is asserted directly). The bug-catching value is in src.
+    rules: {
+      'max-lines': 'off',
+      'sonarjs/no-alphabetical-sort': 'off',
+      'sonarjs/void-use': 'off',
+      'sonarjs/no-identical-functions': 'off',
+      'sonarjs/use-type-alias': 'off',
+      'sonarjs/super-linear-regex': 'off',
+      'sonarjs/no-misleading-array-reverse': 'off',
+      'sonarjs/no-unused-collection': 'off',
+    },
   },
   eslintConfigPrettier,
 );
