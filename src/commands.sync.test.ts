@@ -568,6 +568,22 @@ describe('cmdSync: wet composition', () => {
     expect(combined).toContain('push: pushed (4 config files)');
   });
 
+  it('verbose: a sections-less push result (resolved-leak arm) renders the pull tree alone without crashing', async () => {
+    vi.doMock('./commands.pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
+    }));
+    vi.doMock('./commands.push.ts', () => ({
+      runPushCore: vi.fn(() => ({ tag: 'pushed', globalConfigCount: 1, collisions: 0 })),
+    }));
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ verbose: true });
+    const combined = out(env);
+    expect(combined).toContain('proj-a');
+    expect(combined).toContain('push: pushed (1 config file)');
+    expect(process.exitCode).not.toBe(1);
+  });
+
   it('defensive: a dry-tagged push result in a wet run renders "nothing to push" with no push sections', async () => {
     // The wet push half can never return the dry tag (cmdSync only passes
     // compose, never dryRun), but pushSectionsOf/buildPushSummaryRow must not
