@@ -68,26 +68,6 @@ function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
 }
 
 /**
- * Build the reconciled-work notes for a successful run: one line naming how
- * many diverged extras files the pull half kept local (now pushed) and one
- * line naming how many local-only sessions the pull half retained (now
- * pushed). Both are omitted when their count is zero.
- *
- * @param pull - The wet pull result.
- * @returns Zero, one, or two note lines.
- */
-function reconciledNotes(pull: WetPull): string[] {
-  const notes: string[] = [];
-  if (pull.divergedKeptLocal > 0) {
-    notes.push(`${pull.divergedKeptLocal} diverged files kept local and pushed`);
-  }
-  if (pull.localOnly > 0) {
-    notes.push(`${pull.localOnly} local-only sessions pushed`);
-  }
-  return notes;
-}
-
-/**
  * Build the pull-half summary row from outcome data: whether the rebase
  * actually moved `REPO_HOME`'s HEAD (`incomingChanges`), naming the settings
  * override-source label regenerated on every pull regardless of whether
@@ -166,9 +146,9 @@ function buildSkipAndCollisionRows(pull: WetPull, result: PushCoreResult): strin
  * verbatim, carrying stale `(push to reconcile)` advice into a run that had
  * already pushed). On a failed push half this collapses to the single status
  * line naming which half failed; on a successful run it composes the pull
- * row, the push row, a committed-but-unpushed note when the push half
- * reported `aheadOfOrigin`, any reconciled-work notes, and the collapsed
- * skip/warn info rows.
+ * row, the push row (whose parenthetical already names the reconciled-work
+ * counts), a committed-but-unpushed note when the push half reported
+ * `aheadOfOrigin`, and the collapsed skip/warn info rows.
  *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
@@ -186,7 +166,6 @@ function buildSyncSummarySection(pull: WetPull, pushOutcome: PushOutcome): Docto
   if (result.tag === 'nothing' && result.aheadOfOrigin === true) {
     addItem(s, 'sync repo has unpushed commits');
   }
-  for (const note of reconciledNotes(pull)) addItem(s, note);
   for (const row of buildSkipAndCollisionRows(pull, result)) addItem(s, row);
   return s;
 }
