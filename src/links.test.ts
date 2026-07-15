@@ -271,6 +271,35 @@ describe('regenerateSettings (integration)', () => {
     });
   });
 
+  // Valid JSON that is not a plain object (null, an array, a primitive) must
+  // degrade to nothing-to-preserve exactly like unparseable content, never
+  // crash keepGsdHookEntries/stripGsdHookEntries/classifySettingsDrift.
+  it.each([
+    ['the JSON literal null', 'null'],
+    ['a JSON array', '[]'],
+    ['a JSON primitive', '42'],
+  ])('regenerates settings when prior settings.json is %s', async (_label, content) => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(claudeDir, 'settings.json'), content);
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const { regenerateSettings } = await import('./links.ts');
+    expect(() => regenerateSettings('20260516-000000')).not.toThrow();
+    expect(writes.join('')).toContain('⚠︎ existing settings.json is malformed');
+    expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toEqual({
+      model: 'sonnet',
+    });
+  });
+
   // First-run FATAL phrasing replaces the bare `missing <path>` die when
   // shared/settings.base.json is absent. The canonical message text MUST
   // contain `repo not initialized` and reference `nomad init` so users

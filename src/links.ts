@@ -302,11 +302,15 @@ function readExistingSettings(settingsPath: string): {
 } {
   if (!existsSync(settingsPath)) return { existing: {}, present: false, malformed: false };
   try {
-    return {
-      existing: readJson<Record<string, unknown>>(settingsPath),
-      present: true,
-      malformed: false,
-    };
+    const parsed = readJson<unknown>(settingsPath);
+    // Valid-but-non-object JSON (null, an array, a primitive) is treated as
+    // malformed: keepGsdHookEntries/stripGsdHookEntries/classifySettingsDrift
+    // all dereference it as a plain object, so degrade to nothing-to-preserve
+    // rather than crash regeneration.
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { existing: {}, present: true, malformed: true };
+    }
+    return { existing: parsed as Record<string, unknown>, present: true, malformed: false };
   } catch {
     return { existing: {}, present: true, malformed: true };
   }

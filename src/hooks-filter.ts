@@ -307,19 +307,45 @@ function asPlainObject(value: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * Build a key-order-independent structural key for a matcher entry so the dedup
+ * guard treats two matchers with the same content but different key ordering as
+ * equal (base comes from repo JSON, gsd from the independently-authored live
+ * `settings.json`, so their key order can differ). A non-object entry falls back
+ * to a raw `JSON.stringify`.
+ *
+ * @param m - A matcher entry (or any value from a matcher array).
+ * @returns A stable string key for equality comparison.
+ */
+function canonicalMatcherKey(m: unknown): string {
+  const obj = asPlainObject(m);
+  if (obj === null) return JSON.stringify(m);
+  return JSON.stringify(
+    Object.keys(obj)
+      .sort()
+      .map((k) => [k, obj[k]]),
+  );
+}
+
+/**
  * Concatenate one event's `base` matcher array with `gsd` matcher entries,
- * skipping any gsd entry structurally already present in `base` (compared via
- * `JSON.stringify`) so a gsd matcher that survived stripping is not duplicated.
+ * skipping any gsd entry structurally already present in `base` OR already
+ * emitted from `gsdMatchers` itself, compared via `canonicalMatcherKey` (so key
+ * ordering does not defeat the guard), so a gsd matcher that survived stripping
+ * is not duplicated.
  *
  * @param baseMatchers - The event's matcher array from the base side.
  * @param gsdMatchers - The event's matcher array from the gsd-only side.
  * @returns A new array: base matchers then the non-duplicate gsd matchers.
  */
 function unionMatcherArrays(baseMatchers: unknown[], gsdMatchers: unknown[]): unknown[] {
-  const seen = new Set(baseMatchers.map((m) => JSON.stringify(m)));
+  const seen = new Set(baseMatchers.map(canonicalMatcherKey));
   const merged = [...baseMatchers];
   for (const m of gsdMatchers) {
-    if (!seen.has(JSON.stringify(m))) merged.push(m);
+    const key = canonicalMatcherKey(m);
+    if (!seen.has(key)) {
+      merged.push(m);
+      seen.add(key);
+    }
   }
   return merged;
 }
@@ -353,7 +379,8 @@ export function graftGsdHookEntries(
   const gsdHooks = asPlainObject(gsdOnly.hooks);
   if (gsdHooks === null || Object.keys(gsdHooks).length === 0) return base;
 
-  const mergedHooks: Record<string, unknown> = { ...(asPlainObject(base.hooks) ?? {}) };
+  const baseHooks = asPlainObject(base.hooks);
+  const mergedHooks: Record<string, unknown> = baseHooks ? { ...baseHooks } : {};
   for (const [event, gsdMatchers] of Object.entries(gsdHooks)) {
     if (!Array.isArray(gsdMatchers)) continue;
     const baseMatchers = mergedHooks[event];

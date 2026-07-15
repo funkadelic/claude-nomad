@@ -613,6 +613,37 @@ describe('graftGsdHookEntries', () => {
     expect(event).toHaveLength(1);
   });
 
+  it('dedup is key-order-independent: a gsd matcher matching base only in key order is not duplicated', () => {
+    // base authored { matcher, hooks }; gsd authored { hooks, matcher } (same
+    // content, different key order). The canonical key must treat them as equal.
+    const base = { hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook()] }] } };
+    const gsdOnly = { hooks: { SessionStart: [{ hooks: [gsdHook()], matcher: '' }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+  });
+
+  it('dedup within gsdMatchers: duplicate gsd entries collapse to one', () => {
+    const dup = { matcher: '', hooks: [gsdHook()] };
+    // base must carry the event as an array so the union path (not the
+    // gsd-takes-the-key path) runs and dedups gsdMatchers against itself.
+    const base = { hooks: { SessionStart: [] as unknown[] } };
+    const gsdOnly = { hooks: { SessionStart: [{ ...dup }, { ...dup }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+  });
+
+  it('fail-safe: a non-object matcher entry keys off its raw serialization', () => {
+    const base = { hooks: { SessionStart: [] as unknown[] } };
+    const gsdOnly = { hooks: { SessionStart: [null, null, { matcher: '', hooks: [gsdHook()] }] } };
+    const result = graftGsdHookEntries(base, gsdOnly);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    // Both nulls collapse to one, the object entry is kept: length 2.
+    expect(event).toHaveLength(2);
+    expect(event[0]).toBeNull();
+  });
+
   it('non-hooks base keys pass through by reference', () => {
     const permissions = { allow: ['*'] };
     const base = { permissions, hooks: { Stop: [{ matcher: '', hooks: [userHook()] }] } };
