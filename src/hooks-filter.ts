@@ -321,7 +321,7 @@ function canonicalMatcherKey(m: unknown): string {
   if (obj === null) return JSON.stringify(m);
   return JSON.stringify(
     Object.keys(obj)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((k) => [k, obj[k]]),
   );
 }
