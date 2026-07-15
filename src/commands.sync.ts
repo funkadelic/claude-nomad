@@ -82,6 +82,19 @@ function buildPullSummaryRow(pull: WetPull): string {
 }
 
 /**
+ * Render a count with a count-aware noun, e.g. `1 config file` vs
+ * `2 config files`.
+ *
+ * @param n - The count (caller guarantees nonzero for summary rows).
+ * @param singular - The noun phrase used when `n` is exactly 1.
+ * @param plural - The noun phrase used otherwise.
+ * @returns The `<n> <noun>` phrase.
+ */
+function countNoun(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
  * Build the nonzero parenthetical parts for a successful `push: pushed` row:
  * the pull half's `localOnly`/`divergedKeptLocal` counts plus the push
  * half's `globalConfigCount`, each included only when nonzero.
@@ -92,9 +105,15 @@ function buildPullSummaryRow(pull: WetPull): string {
  */
 function pushedParenParts(pull: WetPull, globalConfigCount: number): string[] {
   const parts: string[] = [];
-  if (pull.localOnly > 0) parts.push(`${pull.localOnly} local-only sessions`);
-  if (pull.divergedKeptLocal > 0) parts.push(`${pull.divergedKeptLocal} diverged extras files`);
-  if (globalConfigCount > 0) parts.push(`${globalConfigCount} config files`);
+  if (pull.localOnly > 0) {
+    parts.push(countNoun(pull.localOnly, 'local-only session', 'local-only sessions'));
+  }
+  if (pull.divergedKeptLocal > 0) {
+    parts.push(countNoun(pull.divergedKeptLocal, 'diverged extras file', 'diverged extras files'));
+  }
+  if (globalConfigCount > 0) {
+    parts.push(countNoun(globalConfigCount, 'config file', 'config files'));
+  }
   return parts;
 }
 
@@ -134,7 +153,8 @@ function buildSkipAndCollisionRows(pull: WetPull, result: PushCoreResult): strin
   }
   const collisions = result.tag === 'dry' ? undefined : result.collisions;
   if (collisions !== undefined && collisions > 0) {
-    rows.push(`${yellow(warnGlyph)} ${collisions} collisions (run nomad doctor to list)`);
+    const phrase = countNoun(collisions, 'collision', 'collisions');
+    rows.push(`${yellow(warnGlyph)} ${phrase} (run nomad doctor to list)`);
   }
   return rows;
 }

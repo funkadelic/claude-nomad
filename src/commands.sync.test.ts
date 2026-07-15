@@ -519,7 +519,7 @@ describe('cmdSync: wet composition', () => {
     await cmdSync();
     const combined = out(env);
     expect(combined).toContain(
-      'push: pushed (3 local-only sessions, 2 diverged extras files, 1 config files)',
+      'push: pushed (3 local-only sessions, 2 diverged extras files, 1 config file)',
     );
     expect(process.exitCode).not.toBe(1);
   });
@@ -695,7 +695,7 @@ describe('cmdSync: wet composition', () => {
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync();
     const combined = out(env);
-    expect(combined).toContain('1 collisions (run nomad doctor to list)');
+    expect(combined).toContain('1 collision (run nomad doctor to list)');
   });
 
   it('never repeats the stale pull-summary reconcile-advice phrase', async () => {
