@@ -60,7 +60,7 @@ function parseNpmPackJson(text) {
     // The --json array begins at the start of its own line, so anchor on that
     // (rather than the first '[') to skip any prepended notice line that itself
     // contains brackets.
-    const startMatch = text.match(/^\s*\[/m);
+    const startMatch = text.match(/^[ \t]*\[/m);
     const end = text.lastIndexOf(']');
     if (startMatch && end > startMatch.index) {
       return JSON.parse(text.slice(startMatch.index, end + 1));
