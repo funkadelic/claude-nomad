@@ -65,13 +65,18 @@ export default defineConfig({
           exclude: SHARED_EXCLUDE,
           setupFiles: SETUP_FILES,
           sequence: { groupOrder: 1 },
-          // Serialized so child processes (node cold-start, esbuild, git,
-          // gitleaks) never compete with each other for cores; even two
-          // concurrent subprocess files starved the heavyweight round-trip
-          // integration test past its 20s ceiling on a contended machine.
+          // Bounded low parallelism. Each file here spawns external children
+          // (node cold-start plus type-stripping, esbuild, real git, gitleaks),
+          // so real core demand per worker exceeds one. A fixed 2 keeps peak
+          // demand inside the fast cores of older or asymmetric-core CPUs (where
+          // work spilling onto slow/efficiency cores under contention is what
+          // pushes the heavyweight round-trip test past its 20s ceiling),
+          // while roughly halving this serial phase versus maxWorkers: 1. A
+          // fixed count (not a percentage) is deliberate so the ceiling does
+          // not scale up with core count and reopen that starvation risk.
           // Groups run in `sequence.groupOrder`, so this bounded phase also
           // never contends with the unit group's parallel phase.
-          maxWorkers: 1,
+          maxWorkers: 2,
           // Node cold-start plus type-stripping, esbuild, real git, and
           // gitleaks legitimately need headroom beyond the default 5s.
           testTimeout: 20000,
