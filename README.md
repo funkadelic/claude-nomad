@@ -174,12 +174,13 @@ $ nomad sync     # pull config, then publish local changes, in one step
 
 `nomad sync` is the command to reach for day to day: it always pulls first (so changes from your
 other machines land before anything is pushed, and work that exists only on this machine is kept,
-not deleted) and then pushes, under one lock, so there is no ordering to remember. `nomad pull` and
-`nomad push` are still available as lower-level commands for cases `sync` does not cover: recovering
-a wedged repo with `nomad pull --force-remote`, or resolving a detected secret without the
-interactive menu via `nomad push --redact-all` / `--allow` / `--allow-all` (see
-[Changing settings](#changing-settings) and
-[Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/)). The
+not deleted) and then pushes, under one lock, so there is no ordering to remember. Output is compact
+by default: a run prints only a short Sync summary, not the full status tree; pass
+`nomad sync --verbose` (or `-v`) to see the full tree. `nomad pull` and `nomad push` are still
+available as lower-level commands for cases `sync` does not cover: recovering a wedged repo with
+`nomad pull --force-remote`, or resolving a detected secret without the interactive menu via
+`nomad push --redact-all` / `--allow` / `--allow-all` (see [Changing settings](#changing-settings)
+and [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/)). The
 [FAQ](https://funkadelic.github.io/claude-nomad/faq/) covers what `sync` does under the hood and the
 push/pull order it enforces.
 

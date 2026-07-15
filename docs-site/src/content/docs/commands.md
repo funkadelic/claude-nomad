@@ -75,7 +75,7 @@ forces a full rescan of all transcripts.
 
 ## `sync`
 
-`nomad sync [--dry-run]`
+`nomad sync [--dry-run] [--verbose|--all|-v]`
 
 The recommended everyday command: pulls first, then pushes, under a single lock, so you never
 have to reason about which one to run first. The pull half is the same retain-merge overlay
@@ -83,22 +83,26 @@ have to reason about which one to run first. The pull half is the same retain-me
 so it is always safe to run first; the push half then reconciles everything local, including any
 local-only sessions and diverged extras files the pull half just retained, to the remote.
 
+Output is compact by default, matching `nomad doctor`: a run prints its `sync on host=<HOST>`
+header, then a single Sync summary composed from the run's outcome, not the full status tree.
+Pass `--verbose` (or `--all` / `-v`) to also print the full merged status tree (Settings, Global
+config, Sessions, Extras, and Leak scan, as applicable) before the summary, the same tree every
+`nomad sync` run used to print unconditionally.
+
 A pull-half failure (for example a wedged repo) stops the run immediately; no push is attempted.
 Run `nomad pull --force-remote` to recover, then re-run `nomad sync` (`sync` itself has no
 `--force-remote` flag; that recovery stays on the low-level `pull` command). A push-half failure
 after a successful pull reports `pull: applied, push: failed (<reason>)` and exits non-zero; there
 is no rollback, since the pull half already retained everything and made local state strictly
 better than before. A run where neither half changed anything prints a single compact
-`already in sync` line; any other run renders one merged status tree (Settings, Global config,
-Sessions, Extras, and Leak scan, as applicable) ending in a single Sync summary, instead of
-separate pull and push reports. If the sync repo holds commits that never
-reached the remote (for example a push interrupted mid-run), the run does not claim to be in sync;
-the Sync summary adds a `sync repo has unpushed commits` note instead. A run where the pull half
-retained diverged extras or local-only sessions
-and the push half then reconciled them still exits 0, with a summary line naming how many items
-were reconciled (this is treated as resolved work, not a standing problem). If `nomad push`'s
-secret scan finds something mid-sync, the same interactive Redact/Allow/Drop/Skip menu you would
-see from a plain `nomad push` opens; recovery behaves identically either way.
+`already in sync` line. If the sync repo holds commits that never reached the remote (for example a
+push interrupted mid-run), the run does not claim to be in sync; the Sync summary adds a
+`sync repo has unpushed commits` note instead. A run where the pull half retained diverged extras
+or local-only sessions and the push half then reconciled them still exits 0, with the push row's
+own parenthetical naming how many items were reconciled (this is treated as resolved work, not a
+standing problem). If `nomad push`'s secret scan finds something mid-sync, the same interactive
+Redact/Allow/Drop/Skip menu you would see from a plain `nomad push` opens; recovery behaves
+identically either way.
 
 `--dry-run` previews both halves without writing anything: the pull preview renders first, then a
 one-line note that the push preview below is computed against pre-pull state (a real sync runs the
@@ -109,9 +113,10 @@ the push preview.
 cover, such as `--force-remote` wedge recovery or the non-interactive leak-resolution flags
 (`--redact-all`, `--allow`, `--allow-all`, `--full-scan`).
 
-| Flag        | Description                                                                     |
-| ----------- | -------------------------------------------------------------------------------- |
-| `--dry-run` | Stack the pull preview then the push preview; acquires the lock, writes nothing. |
+| Flag                     | Description                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| `--dry-run`              | Stack the pull preview then the push preview; acquires the lock, writes nothing. |
+| `--verbose`, `--all`, `-v` | Print the full merged status tree before the Sync summary; default output is the summary alone. |
 
 ## `drop-session`
 
