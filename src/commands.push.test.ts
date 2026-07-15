@@ -2442,7 +2442,12 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
     }));
     vi.doMock('./push-global-config.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushGlobalConfigModule>();
-      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+      return {
+        ...actual,
+        collectGlobalConfigChanges: vi.fn(() => [
+          { status: 'M', label: 'modify', path: 'shared/CLAUDE.md' },
+        ]),
+      };
     });
     vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof leakVerdictModule>();
@@ -2466,7 +2471,7 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
     const result = await runPushCore({ compose: true });
     expect(result).toMatchObject({
       tag: 'pushed',
-      globalConfigCount: 0,
+      globalConfigCount: 1,
       collisions: 0,
     });
   });
