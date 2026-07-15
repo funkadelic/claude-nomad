@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.60.0](https://github.com/funkadelic/claude-nomad/compare/v0.59.0...v0.60.0) (2026-07-15)
+
+
+### Added
+
+* **links:** preserve live gsd hook entries across regenerateSettings ([#421](https://github.com/funkadelic/claude-nomad/issues/421)) ([10a18ca](https://github.com/funkadelic/claude-nomad/commit/10a18ca7ed6c1851cdc43e46ad616527d41a1f92))
+* **sync:** compact output with merged tree and no-op collapse ([#415](https://github.com/funkadelic/claude-nomad/issues/415)) ([9bb9cdd](https://github.com/funkadelic/claude-nomad/commit/9bb9cdd7e901ea463d5c1fb5b66ffc39b2864f8a))
+* **sync:** compact summary-only output by default, add --verbose ([#420](https://github.com/funkadelic/claude-nomad/issues/420)) ([b5b95b3](https://github.com/funkadelic/claude-nomad/commit/b5b95b372634a0b372023b399e7f16bb0063ff74))
+
+
+### Changed
+
+* **lint:** enable sonarjs recommended ruleset with triaged exclusions ([#422](https://github.com/funkadelic/claude-nomad/issues/422)) ([f92fce8](https://github.com/funkadelic/claude-nomad/commit/f92fce8533e06814d5e3f58c1f120adf3e00ded7))
+* **tests:** make Defender exclusion step non-fatal ([#419](https://github.com/funkadelic/claude-nomad/issues/419)) ([413a906](https://github.com/funkadelic/claude-nomad/commit/413a9065ef152dfaedd76b325de749070e2165ab))
+
+
+### Testing
+
+* **integration:** cover extras deny-set, host overrides, and skills sync in round-trip ([#418](https://github.com/funkadelic/claude-nomad/issues/418)) ([70074b5](https://github.com/funkadelic/claude-nomad/commit/70074b5c5a8831a93726576e346e7e89ac511ffa))
+* **pull:** fix flaky incomingChanges tests via shared mock instance ([#417](https://github.com/funkadelic/claude-nomad/issues/417)) ([6589887](https://github.com/funkadelic/claude-nomad/commit/6589887d0ac1c77f7696b89a1a518e469e913dae))
+* **vitest:** raise subprocess project maxWorkers to 2 ([#423](https://github.com/funkadelic/claude-nomad/issues/423)) ([8fa28b5](https://github.com/funkadelic/claude-nomad/commit/8fa28b5a2ef4cae4816f5b6ad23bf90189a611d1))
+
 ## [0.59.0](https://github.com/funkadelic/claude-nomad/compare/v0.58.1...v0.59.0) (2026-07-14)
 
 
