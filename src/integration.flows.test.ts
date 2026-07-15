@@ -234,8 +234,10 @@ describe.skipIf(!hasGit || !hasGitleaks)('multi-host sync flows (real git + real
 
     // A advances origin first. B is now genuinely stale, so its push must rebase
     // onto A's commit before it can land (a push-rebase regression fails here).
-    expect(runNomad(a, ['push']).status).toBe(0);
-    expect(runNomad(b, ['push']).status).toBe(0);
+    const pushA = runNomad(a, ['push']);
+    expect(pushA.status, `A push failed:\n${pushA.stderr}`).toBe(0);
+    const pushB = runNomad(b, ['push']);
+    expect(pushB.status, `B push failed:\n${pushB.stderr}`).toBe(0);
 
     // Origin carries BOTH pushes: B's push rebased onto A's `other` commit rather
     // than replacing it.
