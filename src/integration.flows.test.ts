@@ -339,7 +339,9 @@ describe.skipIf(!hasGit || !hasGitleaks)('multi-host sync flows (real git + real
     expect(runNomad(b, ['pull']).status).toBe(0);
 
     const bClaudeMd = join(b.claudeHome, 'CLAUDE.md');
-    expect(existsSync(bClaudeMd), 'pull did not create the CLAUDE.md link').toBe(true);
+    // readFileSync both proves the pull created the link and captures the
+    // pre-eject content in one step; a separate existsSync check followed by a
+    // read is a file-system race (flagged by CodeQL js/file-system-race).
     const contentBefore = readFileSync(bClaudeMd, 'utf8');
 
     // Snapshot the sync repo so eject can be proven to never touch it.
