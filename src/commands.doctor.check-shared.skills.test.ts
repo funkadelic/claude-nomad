@@ -434,3 +434,135 @@ describe('commands.doctor.check-shared.skills', () => {
     expect(process.exitCode).toBe(0);
   });
 });
+
+/**
+ * Wiring coverage: `reportCheckShared` (`./commands.doctor.check-shared.ts`)
+ * must call `reportCommittedSkills` on every gitleaks-ready path, including
+ * the `staged === 0` local-preview early return (proving the advisory is not
+ * a local-preview-only add-on: a committed skill secret can originate from
+ * any host, not just the one running `doctor`). Mocks `node:child_process`
+ * for the gitleaks `version` probe (forwarding real `git` invocations through
+ * so `buildSkillScanTree`'s HEAD-sourced read still works) so
+ * `ensureGitleaksReady` passes, and `./push-gitleaks.ts`'s `scanStagedTree`
+ * distinguishing the local-preview temp tree (`check-shared-tree-`) from the
+ * committed-skills temp tree (`check-shared-skills-tree-`) by directory name,
+ * so each scan can be controlled independently without a real gitleaks binary.
+ */
+describe('reportCheckShared wiring (committed-skills advisory always runs)', () => {
+  let testHome: string;
+  let repo: string;
+  let originalHome: string | undefined;
+  let originalNoColor: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNoColor = process.env.NO_COLOR;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-check-shared-skills-wiring-'));
+    repo = join(testHome, 'claude-nomad');
+    process.env.HOME = testHome;
+    process.env.NO_COLOR = '1';
+    mkdirSync(join(repo, 'shared'), { recursive: true });
+    process.exitCode = 0;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.doUnmock('node:child_process');
+    vi.doUnmock('./push-gitleaks.ts');
+    vi.restoreAllMocks();
+    process.exitCode = 0;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = originalNoColor;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  function writeSkillFile(name: string, relPath: string, content: string): void {
+    const dest = join(repo, 'shared', 'skills', name, relPath);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, content);
+  }
+
+  function mockGitleaksProbe(): void {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (
+            bin: string,
+            args?: readonly string[],
+            opts?: Parameters<typeof cpModule.execFileSync>[2],
+          ) => {
+            if (bin === 'gitleaks' && (args ?? [])[0] === 'version') return Buffer.from('8.0.0');
+            // Forward opts (encoding/stdio/timeout/maxBuffer): buildSkillScanTree's
+            // `git ls-tree`/`git cat-file` calls rely on these, e.g. `encoding: 'utf8'`
+            // to get a string back instead of a Buffer.
+            return actual.execFileSync(bin, args as string[], opts);
+          },
+        ),
+      };
+    });
+  }
+
+  it('WARNs on a committed skill secret even when staged === 0 (no local path-map entries)', async () => {
+    // No path-map.json written: the local preview short-circuits to a clean
+    // "0 project(s)" row without ever calling scanStagedTree. The advisory
+    // must still run and WARN on the committed skill secret.
+    writeSkillFile('foo', 'SKILL.md', 'secret\n');
+    gitInit(repo);
+    commitAll(repo);
+    mockGitleaksProbe();
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<PushGitleaksModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((dir: string) =>
+          dir.includes('check-shared-skills-tree-')
+            ? [
+                {
+                  RuleID: 'generic-api-key',
+                  File: 'shared/skills/foo/SKILL.md',
+                  StartLine: 1,
+                  StartColumn: 1,
+                  EndColumn: 10,
+                  Match: 'THE-REAL-SECRET-VALUE',
+                  Fingerprint: 'fp1',
+                },
+              ]
+            : [],
+        ),
+      };
+    });
+    vi.resetModules();
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    expect(rows).toContain(warnGlyph);
+    expect(rows).toContain('shared/skills/foo/SKILL.md');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('adds no advisory row on a --check-shared run with no committed skill secret', async () => {
+    writeSkillFile('foo', 'SKILL.md', 'clean\n');
+    gitInit(repo);
+    commitAll(repo);
+    mockGitleaksProbe();
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<PushGitleaksModule>();
+      return { ...actual, scanStagedTree: vi.fn(() => []) };
+    });
+    vi.resetModules();
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    expect(section.items.some((r) => r.includes(warnGlyph))).toBe(false);
+    expect(process.exitCode).toBe(0);
+  });
+});
