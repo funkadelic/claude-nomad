@@ -41,6 +41,10 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
     /* Muted version pill trailing the wordmark: small, dim, non-clickable so
        it reads as metadata rather than a second brand element. */
     .version-badge {
+      /* Sit the badge text on the wordmark's baseline instead of the flex
+         container's centered cross-axis (Starlight's title-wrapper centers
+         its children by default). */
+      align-self: baseline;
       margin-inline-start: 0.5rem;
       padding: 0.1em 0.45em;
       border-radius: 0.35rem;
