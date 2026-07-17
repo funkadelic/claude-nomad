@@ -1,16 +1,19 @@
 /**
- * Host-uniform skill-file resolution for the push-time recovery menu. A
- * skill is a global artifact keyed only by its name:
+ * Host-uniform skill-file resolution and redaction for the push-time
+ * recovery menu. A skill is a global artifact keyed only by its name:
  * `~/.claude/skills/<name>/...` maps 1:1 to `shared/skills/<name>/...` on
  * every host, unlike a project-level memory file which needs a
  * `path-map.json` host-mapping lookup
  * (`commands.push.recovery.memory.ts`). No `PathMap`/`HOST` parameter
  * appears anywhere in this module.
  *
- * Provides the pure finding parser (`skillFileFromFinding`,
- * `isSkillFindingPath`) and the double-guarded local-path resolver
- * (`resolveSkillLocalPath`). The preflight and redact-plus-copy-back
- * actions land in a follow-up addition to this same module.
+ * Provides the same shape as the memory module: a pure finding parser
+ * (`skillFileFromFinding`), a double-guarded local-path resolver
+ * (`resolveSkillLocalPath`), a no-mutation preflight
+ * (`preflightSkillRedactable`), and the in-place redact-plus-copy-back
+ * action (`applySkillRedact`). Reuses `applyRedactions`
+ * (`commands.redact.core.ts`) and `scanFile` (`push-gitleaks.scan.ts`)
+ * unchanged; the `.jsonl` session-subtree and memory paths are untouched.
  *
  * Unlike memory's flat `memory/<file>.md`, a skill is an arbitrarily nested
  * tree (`SKILL.md`, `references/*.md`, `scripts/*.py`, dotfiles, ...), so
@@ -21,12 +24,16 @@
  * later plan.
  */
 
-import { existsSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, sep } from 'node:path';
 
-import { claudeHome } from './config.ts';
+import { claudeHome, repoHome } from './config.ts';
 import { isGsdOwned } from './skills-sync.ts';
+import { applyRedactions } from './commands.redact.core.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
+import { scanFile } from './push-gitleaks.scan.ts';
+import { backupBeforeWrite } from './utils.fs.ts';
+import { log } from './utils.ts';
 
 /**
  * Matches a repo-relative POSIX finding path of the form
@@ -125,4 +132,87 @@ export function resolveSkillLocalPath(name: string, relPath: string): string | n
   if (localPath !== skillRoot && !localPath.startsWith(skillRoot + sep)) return null;
   /* c8 ignore stop */
   return existsSync(localPath) ? localPath : null;
+}
+
+/**
+ * No-scan, no-mutation redactability preflight for one finding, parallel to
+ * `preflightMemoryRedactable`. Returns a human-readable refusal reason when
+ * the finding is not a skill file or the local file cannot be resolved
+ * (unsafe name/path, gsd-owned, missing), else null. Intended for
+ * `--redact-all`'s all-or-nothing gate (wired in a later plan).
+ *
+ * @param f Finding to preflight.
+ * @returns A refusal reason string, or null when the finding would proceed.
+ */
+export function preflightSkillRedactable(f: Finding): string | null {
+  const parsed = skillFileFromFinding(f);
+  if (parsed === null) return 'a finding is not a skill file';
+  const localPath = resolveSkillLocalPath(parsed.name, parsed.relPath);
+  if (localPath === null) {
+    return `skill file ${parsed.name}/${parsed.relPath}: local file not found or unresolvable`;
+  }
+  return null;
+}
+
+/**
+ * Apply the Redact action for one skill finding. Resolves the local file,
+ * re-scans it via `scan` (default `scanFile`, no `--redact`, so
+ * `Finding.Match` carries the real secret value), and on a non-empty scan:
+ * backs up the local file (`backupBeforeWrite`), rewrites it in place via
+ * the shared `applyRedactions`, then copies the scrubbed file to the staged
+ * `shared/skills/<name>/<relPath>` (creating intermediate directories so a
+ * nested `relPath` is preserved). Returns false (with a logged refusal,
+ * never the raw secret) when the finding cannot be resolved, the scan
+ * itself fails (gitleaks error, `scan` returns null), or the scan finds
+ * nothing to redact; no local write occurs in those cases.
+ *
+ * Reuses `applyRedactions` and `scanFile` unchanged -- both primitives are
+ * content-agnostic and already correct regardless of file extension
+ * (`.md`, `.py`, `.json`, ...), so no extension special-casing is applied
+ * here.
+ *
+ * @param f Trigger finding (used for name/relPath extraction).
+ * @param ts Backup timestamp for `backupBeforeWrite`.
+ * @param scan Injectable scan function for the local re-scan (default `scanFile`).
+ * @returns True when the redaction was applied; false when refused or failed.
+ */
+export function applySkillRedact(
+  f: Finding,
+  ts: string,
+  scan: (p: string) => Finding[] | null = scanFile,
+): boolean {
+  const refuse = (msg: string): false => {
+    log(msg);
+    return false;
+  };
+
+  const parsed = skillFileFromFinding(f);
+  if (parsed === null) {
+    return refuse('could not parse this finding as a skill file; choose Skip.');
+  }
+  const { name, relPath } = parsed;
+
+  const localPath = resolveSkillLocalPath(name, relPath);
+  if (localPath === null) {
+    return refuse(`could not locate the local skill file for ${name}/${relPath}; choose Skip.`);
+  }
+
+  const findings = scan(localPath);
+  if (findings === null) {
+    return refuse(`re-scan of ${name}/${relPath} failed; choose Skip.`);
+  }
+  if (findings.length === 0) {
+    return refuse(`nothing to redact in ${name}/${relPath}; choose Skip.`);
+  }
+
+  backupBeforeWrite(localPath, ts);
+  const before = readFileSync(localPath, 'utf8');
+  const after = applyRedactions(before, findings);
+  writeFileSync(localPath, after, 'utf8');
+
+  const dest = join(repoHome(), 'shared', 'skills', name, ...relPath.split('/'));
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(localPath, dest, { force: true });
+
+  return true;
 }

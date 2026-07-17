@@ -1,17 +1,19 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as utilsFsModule from './utils.fs.ts';
+import type * as utilsModule from './utils.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 
 /**
  * Unit tests for `src/commands.push.recovery.skills.ts`: the host-uniform
- * skill-file resolution seam. Fixtures mirror the REAL, nested skill layout
- * (`SKILL.md` plus a `references/*.md` subdir), unlike memory's flat
- * single-level layout, and never carry a `PathMap` (skills need no
- * host-mapping lookup).
+ * skill-file resolution and redaction seam. Fixtures mirror the REAL,
+ * nested skill layout (`SKILL.md` plus a `references/*.md` subdir), unlike
+ * memory's flat single-level layout, and never carry a `PathMap` (skills
+ * need no host-mapping lookup).
  */
 
 /** Build a minimal Finding fixture with optional field overrides. */
@@ -211,5 +213,204 @@ describe('resolveSkillLocalPath', () => {
     makeSkillFixture(testHome);
     const { resolveSkillLocalPath } = await import('./commands.push.recovery.skills.ts');
     expect(resolveSkillLocalPath('foo', 'missing.md')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// preflightSkillRedactable
+// ---------------------------------------------------------------------------
+
+describe('preflightSkillRedactable', () => {
+  let testHome: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-skills-preflight-'));
+    process.env.HOME = testHome;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+  });
+
+  it('returns null (would proceed) when the skill file resolves cleanly', async () => {
+    makeSkillFixture(testHome);
+    const { preflightSkillRedactable } = await import('./commands.push.recovery.skills.ts');
+    const f = makeFinding({ File: 'shared/skills/foo/SKILL.md' });
+    expect(preflightSkillRedactable(f)).toBeNull();
+  });
+
+  it('returns a refusal reason when the finding is not a skill file', async () => {
+    makeSkillFixture(testHome);
+    const { preflightSkillRedactable } = await import('./commands.push.recovery.skills.ts');
+    const f = makeFinding({ File: 'shared/projects/foo/memory/notes.md' });
+    expect(preflightSkillRedactable(f)).toMatch(/not a skill file/);
+  });
+
+  it('returns a refusal reason when the local file cannot be resolved', async () => {
+    makeSkillFixture(testHome);
+    const { preflightSkillRedactable } = await import('./commands.push.recovery.skills.ts');
+    const f = makeFinding({ File: 'shared/skills/foo/missing.md' });
+    expect(preflightSkillRedactable(f)).toMatch(/local file not found or unresolvable/);
+  });
+
+  it('returns a refusal reason when the skill is gsd-owned', async () => {
+    makeSkillFixture(testHome);
+    const { preflightSkillRedactable } = await import('./commands.push.recovery.skills.ts');
+    const f = makeFinding({ File: 'shared/skills/gsd-foo/SKILL.md' });
+    expect(preflightSkillRedactable(f)).toMatch(/local file not found or unresolvable/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applySkillRedact
+// ---------------------------------------------------------------------------
+
+describe('applySkillRedact', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-skills-redact-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('./utils.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+  });
+
+  it('scrubs a flat skill file, backs it up, copies the scrubbed file to the staged tree, returns true', async () => {
+    const { skillPath } = makeSkillFixture(testHome);
+
+    const backupSpy = vi.fn();
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: backupSpy };
+    });
+
+    const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
+    const trigger = makeFinding({ File: 'shared/skills/foo/SKILL.md' });
+    const fakeScan = (p: string): Finding[] =>
+      p === skillPath
+        ? [
+            {
+              RuleID: 'generic-api-key',
+              File: p,
+              StartLine: 1,
+              StartColumn: 1,
+              EndColumn: 10,
+              Match: 'real-secret-value',
+              Fingerprint: 'fp1',
+            },
+          ]
+        : [];
+
+    const result = applySkillRedact(trigger, 'ts-x', fakeScan);
+
+    expect(result).toBe(true);
+    expect(backupSpy).toHaveBeenCalledOnce();
+    const localAfter = readFileSync(skillPath, 'utf8');
+    expect(localAfter).toContain('[REDACTED:generic-api-key]');
+    expect(localAfter).not.toContain('real-secret-value');
+    const stagedPath = join(testHome, 'shared', 'skills', 'foo', 'SKILL.md');
+    expect(existsSync(stagedPath)).toBe(true);
+    const stagedContent = readFileSync(stagedPath, 'utf8');
+    expect(stagedContent).toContain('[REDACTED:generic-api-key]');
+    expect(stagedContent).not.toContain('real-secret-value');
+  });
+
+  it('preserves a nested relPath when copying the scrubbed file back to the staged tree', async () => {
+    const { nestedPath } = makeSkillFixture(testHome);
+
+    const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
+    const trigger = makeFinding({ File: 'shared/skills/foo/references/notes.md' });
+    const fakeScan = (p: string): Finding[] =>
+      p === nestedPath
+        ? [
+            {
+              RuleID: 'generic-api-key',
+              File: p,
+              StartLine: 1,
+              StartColumn: 1,
+              EndColumn: 10,
+              Match: 'real-secret-value',
+              Fingerprint: 'fp1',
+            },
+          ]
+        : [];
+
+    const result = applySkillRedact(trigger, 'ts-x', fakeScan);
+
+    expect(result).toBe(true);
+    const stagedPath = join(testHome, 'shared', 'skills', 'foo', 'references', 'notes.md');
+    expect(existsSync(stagedPath)).toBe(true);
+    const stagedContent = readFileSync(stagedPath, 'utf8');
+    expect(stagedContent).toContain('[REDACTED:generic-api-key]');
+    expect(stagedContent).not.toContain('real-secret-value');
+  });
+
+  it('returns false and logs a refusal (no raw secret) when the finding is not a skill file', async () => {
+    makeSkillFixture(testHome);
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+    const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
+    const trigger = makeFinding({ File: 'shared/projects/foo/memory/notes.md' });
+
+    const result = applySkillRedact(trigger, 'ts-x');
+
+    expect(result).toBe(false);
+    expect(logSpy).toHaveBeenCalledOnce();
+    const loggedMsg = logSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMsg).not.toContain('real-secret-value');
+  });
+
+  it('returns false when the local skill file cannot be resolved', async () => {
+    makeSkillFixture(testHome);
+    const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
+    const trigger = makeFinding({ File: 'shared/skills/foo/missing.md' });
+
+    const result = applySkillRedact(trigger, 'ts-x');
+
+    expect(result).toBe(false);
+  });
+
+  it('returns false when the re-scan fails (scan returns null)', async () => {
+    makeSkillFixture(testHome);
+    const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
+    const trigger = makeFinding({ File: 'shared/skills/foo/SKILL.md' });
+
+    const result = applySkillRedact(trigger, 'ts-x', () => null);
+
+    expect(result).toBe(false);
+  });
+
+  it('returns false when the re-scan finds nothing to redact (empty findings)', async () => {
+    makeSkillFixture(testHome);
+    const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
+    const trigger = makeFinding({ File: 'shared/skills/foo/SKILL.md' });
+
+    const result = applySkillRedact(trigger, 'ts-x', () => []);
+
+    expect(result).toBe(false);
   });
 });
