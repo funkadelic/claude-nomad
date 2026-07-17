@@ -97,24 +97,33 @@ describe('commands.doctor.check-shared.skills', () => {
     writeFileSync(dest, content);
   }
 
-  it('buildSkillScanTree returns 0 when repoHome is not a git repo', async () => {
+  it('buildSkillScanTree returns staged 0 (not incomplete) when repoHome is not a git repo', async () => {
     mkdirSync(repo, { recursive: true });
     const { buildSkillScanTree } = await import('./commands.doctor.check-shared.skills.ts');
-    expect(buildSkillScanTree(join(testHome, 'tmp-scan'))).toBe(0);
+    expect(buildSkillScanTree(join(testHome, 'tmp-scan'))).toEqual({
+      staged: 0,
+      incomplete: false,
+    });
   });
 
-  it('buildSkillScanTree returns 0 when the repo is a git repo with no HEAD (no commits)', async () => {
+  it('buildSkillScanTree returns staged 0 (not incomplete) when the repo is a git repo with no HEAD (no commits)', async () => {
     gitInit(repo);
     const { buildSkillScanTree } = await import('./commands.doctor.check-shared.skills.ts');
-    expect(buildSkillScanTree(join(testHome, 'tmp-scan'))).toBe(0);
+    expect(buildSkillScanTree(join(testHome, 'tmp-scan'))).toEqual({
+      staged: 0,
+      incomplete: false,
+    });
   });
 
-  it('buildSkillScanTree returns 0 when shared/skills is absent from HEAD', async () => {
+  it('buildSkillScanTree returns staged 0 (not incomplete) when shared/skills is absent from HEAD', async () => {
     gitInit(repo);
     writeFileSync(join(repo, 'README.md'), 'hello\n');
     commitAll(repo);
     const { buildSkillScanTree } = await import('./commands.doctor.check-shared.skills.ts');
-    expect(buildSkillScanTree(join(testHome, 'tmp-scan'))).toBe(0);
+    expect(buildSkillScanTree(join(testHome, 'tmp-scan'))).toEqual({
+      staged: 0,
+      incomplete: false,
+    });
   });
 
   it('buildSkillScanTree copies each committed skill file (incl. a nested path) and returns the distinct skill-name count', async () => {
@@ -125,7 +134,7 @@ describe('commands.doctor.check-shared.skills', () => {
     commitAll(repo);
     const { buildSkillScanTree } = await import('./commands.doctor.check-shared.skills.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildSkillScanTree(tmpRoot)).toBe(2);
+    expect(buildSkillScanTree(tmpRoot)).toEqual({ staged: 2, incomplete: false });
     const fooSkill = join(tmpRoot, 'shared', 'skills', 'foo', 'SKILL.md');
     const fooNested = join(tmpRoot, 'shared', 'skills', 'foo', 'references', 'notes.md');
     const barSkill = join(tmpRoot, 'shared', 'skills', 'bar', 'SKILL.md');
@@ -134,15 +143,15 @@ describe('commands.doctor.check-shared.skills', () => {
     expect(readFileSync(barSkill, 'utf8')).toBe('world\n');
   });
 
-  it('skips a gsd-owned skill dir entirely, even with a planted secret', async () => {
+  it('stages a gsd-owned skill dir too (read-only advisory does not exclude gsd-*)', async () => {
     writeSkillFile('gsd-foo', 'SKILL.md', 'secret-content\n');
     writeSkillFile('bar', 'SKILL.md', 'clean\n');
     gitInit(repo);
     commitAll(repo);
     const { buildSkillScanTree } = await import('./commands.doctor.check-shared.skills.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildSkillScanTree(tmpRoot)).toBe(1);
-    expect(existsSync(join(tmpRoot, 'shared', 'skills', 'gsd-foo', 'SKILL.md'))).toBe(false);
+    expect(buildSkillScanTree(tmpRoot)).toEqual({ staged: 2, incomplete: false });
+    expect(existsSync(join(tmpRoot, 'shared', 'skills', 'gsd-foo', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(tmpRoot, 'shared', 'skills', 'bar', 'SKILL.md'))).toBe(true);
   });
 
@@ -154,7 +163,7 @@ describe('commands.doctor.check-shared.skills', () => {
     commitAll(repo);
     const { buildSkillScanTree } = await import('./commands.doctor.check-shared.skills.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildSkillScanTree(tmpRoot)).toBe(1);
+    expect(buildSkillScanTree(tmpRoot)).toEqual({ staged: 1, incomplete: false });
     expect(existsSync(join(tmpRoot, 'shared', 'skills', 'bare-file.md'))).toBe(false);
     expect(existsSync(join(tmpRoot, 'shared', 'skills', 'foo', 'SKILL.md'))).toBe(true);
   });
@@ -170,14 +179,14 @@ describe('commands.doctor.check-shared.skills', () => {
 
     const { buildSkillScanTree } = await import('./commands.doctor.check-shared.skills.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildSkillScanTree(tmpRoot)).toBe(1);
+    expect(buildSkillScanTree(tmpRoot)).toEqual({ staged: 1, incomplete: false });
     const aCopy = join(tmpRoot, 'shared', 'skills', 'foo', 'a.md');
     const bCopy = join(tmpRoot, 'shared', 'skills', 'foo', 'b.md');
     expect(readFileSync(aCopy, 'utf8')).toBe('A1\n');
     expect(readFileSync(bCopy, 'utf8')).toBe('B1\n');
   });
 
-  it('skips a file whose git cat-file blob read fails, continuing with the rest', async () => {
+  it('flags the build incomplete (fail-safe) when a git cat-file blob read fails, staging the rest', async () => {
     writeSkillFile('foo', 'a.md', 'aaa\n');
     writeSkillFile('foo', 'b.md', 'bbb\n');
     gitInit(repo);
@@ -209,7 +218,7 @@ describe('commands.doctor.check-shared.skills', () => {
     vi.resetModules();
     const { buildSkillScanTree } = await import('./commands.doctor.check-shared.skills.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildSkillScanTree(tmpRoot)).toBe(1);
+    expect(buildSkillScanTree(tmpRoot)).toEqual({ staged: 1, incomplete: true });
     expect(existsSync(join(tmpRoot, 'shared', 'skills', 'foo', 'b.md'))).toBe(true);
     expect(existsSync(join(tmpRoot, 'shared', 'skills', 'foo', 'a.md'))).toBe(false);
   });
@@ -301,6 +310,92 @@ describe('commands.doctor.check-shared.skills', () => {
     expect(rows).toContain('shared/skills/foo/references/notes.md');
     expect(rows).not.toContain('THE-REAL-SECRET-VALUE');
     expect(rows).toContain('Redact');
+    expect(rows).toContain('gsd-* skill is not auto-redactable');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('surfaces a secret committed to a gsd-* skill (read-only advisory does not exclude gsd-*)', async () => {
+    writeSkillFile('gsd-foo', 'SKILL.md', 'secret\n');
+    gitInit(repo);
+    commitAll(repo);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<PushGitleaksModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn(() => [
+          {
+            RuleID: 'generic-api-key',
+            File: 'shared/skills/gsd-foo/SKILL.md',
+            StartLine: 1,
+            StartColumn: 1,
+            EndColumn: 10,
+            Match: 'THE-REAL-SECRET-VALUE',
+            Fingerprint: 'fp1',
+          },
+        ]),
+      };
+    });
+    vi.resetModules();
+    const { reportCommittedSkills } = await import('./commands.doctor.check-shared.skills.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCommittedSkills(section);
+    const rows = section.items.join('\n');
+    expect(rows).toContain(warnGlyph);
+    expect(rows).toContain('shared/skills/gsd-foo/SKILL.md');
+    expect(rows).not.toContain('THE-REAL-SECRET-VALUE');
+    expect(rows).toContain('gsd-* skill is not auto-redactable');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a WARN-skip (never a clean pass) when blob materialization is incomplete', async () => {
+    // A committed blob that cannot be read might be the only leaking file, so
+    // the advisory must fail safe: WARN-skip, not silently scan a subset.
+    writeSkillFile('foo', 'a.md', 'aaa\n');
+    writeSkillFile('foo', 'b.md', 'bbb\n');
+    gitInit(repo);
+    commitAll(repo);
+    let scanCalled = false;
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<PushGitleaksModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn(() => {
+          scanCalled = true;
+          return [];
+        }),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (
+            bin: string,
+            args?: readonly string[],
+            opts?: Parameters<typeof cpModule.execFileSync>[2],
+          ) => {
+            const a = args ?? [];
+            if (
+              bin === 'git' &&
+              a.includes('cat-file') &&
+              a.some((x) => String(x).includes('a.md'))
+            ) {
+              throw new Error('cat-file boom');
+            }
+            return actual.execFileSync(bin, a as string[], opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportCommittedSkills } = await import('./commands.doctor.check-shared.skills.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCommittedSkills(section);
+    expect(scanCalled).toBe(false);
+    expect(section.items).toHaveLength(1);
+    expect(section.items[0]).toContain(warnGlyph);
+    expect(section.items[0]).toContain('could not read every committed skill blob');
     expect(process.exitCode).toBe(0);
   });
 

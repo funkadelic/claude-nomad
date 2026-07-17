@@ -37,7 +37,6 @@ import { dim, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { repoHome } from './config.ts';
 import { type Finding, scanStagedTree } from './push-gitleaks.ts';
-import { isGsdOwned } from './skills-sync.ts';
 import { nowTimestamp } from './utils.fs.ts';
 
 /**
@@ -50,25 +49,39 @@ import { nowTimestamp } from './utils.fs.ts';
 const SKILL_PATH = /^shared\/skills\/([^/]+)\/(.+)$/;
 
 /**
+ * Result of a scan-tree build: how many distinct skill names were staged, and
+ * whether the build was incomplete (at least one committed blob could not be
+ * materialized). `incomplete` is the fail-safe signal for a security advisory:
+ * a partial tree must never be scanned and reported clean, because the one blob
+ * that failed to read could be the only leaking file.
+ */
+export type SkillScanBuild = { staged: number; incomplete: boolean };
+
+/**
  * Materialize every committed skill blob from the sync repo's `HEAD` into
- * `tmpRoot/shared/skills/<name>/<relPath>`, mirroring
- * `buildMemoryScanTree`'s temp-copy pattern but widened to a recursive
- * pattern (skills nest; memory does not) and adding a gsd-ownership skip.
- * Sourcing from `HEAD` (via `git ls-tree` + `git cat-file`) rather than
- * `cpSync`-ing the working tree is load-bearing for the same reason as the
- * memory advisory: a dirty or deleted local file must not hide a secret that
- * is still committed and reachable by anyone who clones the repo. Returns
- * the count of distinct skill names staged; returns 0 (no crash) on any git
- * failure (empty repo, not a git repo, `git` missing, or `shared/skills`
- * absent from `HEAD`). Copying into a fresh temp dir first is load-bearing
- * for a separate reason: `scanStagedTree` internally runs `git add -A`, and
- * running that against the real `repoHome()` would mutate the actual repo's
- * index as a side effect of a read-only check.
+ * `tmpRoot/shared/skills/<name>/<relPath>`. Sourcing from `HEAD` (via `git
+ * ls-tree` + `git cat-file`) rather than `cpSync`-ing the working tree is
+ * load-bearing: a dirty or deleted local file must not hide a secret that is
+ * still committed and cloneable. Copying into a fresh temp dir first is also
+ * load-bearing: `scanStagedTree` runs `git add -A` internally, which against
+ * the real `repoHome()` would mutate the actual repo's index.
+ *
+ * Every committed `shared/skills/**` file is staged, INCLUDING `gsd-*`
+ * skills: this is a read-only advisory and a stale committed `gsd-*` blob is
+ * already cloneable, so excluding it would yield a false-clean result. (The
+ * push-recovery REDACT path still excludes `gsd-*` skills, since those are not
+ * safe to auto-modify; here we only surface, never mutate.)
+ *
+ * Returns `{ staged, incomplete }`. `staged` is 0 with `incomplete: false` on
+ * any git failure that prevents listing at all (empty repo, not a git repo,
+ * `git` missing, `shared/skills` absent from `HEAD`): legitimately "nothing to
+ * check". `incomplete` is true when a listed blob's `git cat-file` failed, so
+ * the caller fails safe and emits a WARN-skip instead of scanning a subset.
  *
  * @param tmpRoot Absolute path to the (not-yet-existing) temp scan tree.
- * @returns The number of distinct `<name>` skill dirs staged.
+ * @returns The staged distinct-name count and an incomplete-materialization flag.
  */
-export function buildSkillScanTree(tmpRoot: string): number {
+export function buildSkillScanTree(tmpRoot: string): SkillScanBuild {
   let paths: string[];
   try {
     const out = execFileSync(
@@ -78,14 +91,14 @@ export function buildSkillScanTree(tmpRoot: string): number {
     );
     paths = out.split('\0').filter((p) => p.length > 0);
   } catch {
-    return 0;
+    return { staged: 0, incomplete: false };
   }
 
   const names = new Set<string>();
+  let incomplete = false;
   for (const rel of paths) {
     const m = SKILL_PATH.exec(rel);
     if (m?.[1] === undefined) continue;
-    if (isGsdOwned(m[1])) continue; // defense-in-depth: never stage a stale gsd-* entry
     let blob: Buffer;
     try {
       blob = execFileSync('git', ['-C', repoHome(), 'cat-file', 'blob', `HEAD:${rel}`], {
@@ -94,6 +107,9 @@ export function buildSkillScanTree(tmpRoot: string): number {
         timeout: 10000,
       });
     } catch {
+      // Fail safe: a blob we could not read might be the only leaking file, so
+      // flag the whole build incomplete rather than silently scanning a subset.
+      incomplete = true;
       continue;
     }
     const dest = join(tmpRoot, rel);
@@ -101,15 +117,18 @@ export function buildSkillScanTree(tmpRoot: string): number {
     writeFileSync(dest, blob);
     names.add(m[1]);
   }
-  return names.size;
+  return { staged: names.size, incomplete };
 }
 
 /**
  * Emit one WARN row per finding, naming `File` + `RuleID` only, never
  * `Match`/the matched secret (mirrors `reportMemoryFindings`'s disclosure
  * convention). Does NOT set `process.exitCode`: a committed-skill finding
- * does not block anything, it is purely retroactive. Followed by a single
- * remediation hint pointing at the push-recovery Redact path.
+ * does not block anything, it is purely retroactive. Followed by a
+ * remediation hint pointing at the push-recovery Redact path, plus a note
+ * that `gsd-*` skills are not auto-redactable and must be removed by hand
+ * (the advisory surfaces them, but the redact path deliberately excludes
+ * gsd-owned skills).
  */
 function reportSkillFindings(section: DoctorSection, findings: Finding[]): void {
   for (const f of findings) {
@@ -118,6 +137,10 @@ function reportSkillFindings(section: DoctorSection, findings: Finding[]): void 
   addItem(
     section,
     `  ${dim('run `nomad push` and choose Redact in the recovery menu to scrub these')}`,
+  );
+  addItem(
+    section,
+    `  ${dim('a gsd-* skill is not auto-redactable; remove the secret from it by hand')}`,
   );
 }
 
@@ -158,7 +181,17 @@ export function reportCommittedSkills(section: DoctorSection): void {
     // contain the very secrets this advisory scans for, so a 0o700 root keeps
     // another local user from reading them out of the temp tree mid-scan.
     mkdirSync(tmpRoot, { recursive: true, mode: 0o700 });
-    const staged = buildSkillScanTree(tmpRoot);
+    const { staged, incomplete } = buildSkillScanTree(tmpRoot);
+    // Fail safe: an incomplete materialization must never scan-and-report
+    // clean, since the unreadable blob could be the only leaking file. Emit
+    // the same WARN-skip shape used when the scan itself cannot complete.
+    if (incomplete) {
+      addItem(
+        section,
+        `${yellow(warnGlyph)} committed-skills scan skipped: could not read every committed skill blob`,
+      );
+      return;
+    }
     if (staged === 0) return;
 
     let findings: Finding[] | null;
