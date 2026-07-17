@@ -1,7 +1,13 @@
 ---
 // Replaces Starlight's SiteTitle so the header brand matches the hero image:
-// a green ">_" prompt glyph followed by "nomad". Link target and base styles
-// mirror the stock component; only the inner markup differs.
+// a green ">_" prompt glyph followed by "nomad", trailed by a muted version
+// badge. Link target and base styles mirror the stock component; only the
+// inner markup differs. The version reads from the root package.json (the
+// single source of truth bumped by release-please), so the docs always show
+// the version they were built from. The Pages deploy runs on release publish,
+// so the live badge tracks the newest published npm version.
+import pkg from '../../../package.json';
+
 const { siteTitleHref } = Astro.locals.starlightRoute;
 ---
 
@@ -10,6 +16,7 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
     <span class="prompt-glyph" aria-hidden="true">&gt;_</span> nomad
   </span>
 </a>
+<span translate="no" class="version-badge">v{pkg.version}</span>
 
 <style>
   @layer starlight.core {
@@ -30,6 +37,19 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
        next to the green prompt glyph. */
     .wordmark {
       color: var(--sl-color-white);
+    }
+    /* Muted version pill trailing the wordmark: small, dim, non-clickable so
+       it reads as metadata rather than a second brand element. */
+    .version-badge {
+      margin-inline-start: 0.5rem;
+      padding: 0.1em 0.45em;
+      border-radius: 0.35rem;
+      background: var(--sl-color-gray-6);
+      color: var(--sl-color-gray-2);
+      font-size: var(--sl-text-xs);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.4;
+      white-space: nowrap;
     }
   }
 </style>
