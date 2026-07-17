@@ -48,6 +48,18 @@ const hasGitleaks = ((): boolean => {
  */
 const ghpFixture = (body: string): string => ['gh', 'p_', body].join('');
 
+/**
+ * Assemble an `AY`-prefixed, block-1-shaped token from fragments so no
+ * contiguous high-entropy `AY<20+>` literal is stored in source-controlled
+ * bytes (the gitleaks CI check scans the working tree and would flag the
+ * literal, which the transcript-scoped allowlist does not suppress outside a
+ * synced path). Same split-fragment convention as `ghpFixture`.
+ *
+ * @param body The url-safe token body that follows the `AY` prefix.
+ * @returns An `AY`-prefixed token assembled at runtime.
+ */
+const ayFixture = (body: string): string => ['A', 'Y', body].join('');
+
 describe.skipIf(!hasGitleaks)(
   '.gitleaks.toml memory/*.md allowlist widening (real gitleaks)',
   () => {
@@ -116,7 +128,7 @@ describe.skipIf(!hasGitleaks)(
       // findings there), so if the widening had accidentally leaked block 1's
       // path scope onto `memory/*.md`, this would also come back suppressed.
       // Placed under `memory/*.md` (never widened), it must still fire.
-      writeMemoryFile('key = "AYNbrnTP3fAbnFbmOHnKYa"\n');
+      writeMemoryFile(`key = "${ayFixture('NbrnTP3fAbnFbmOHnKYa')}"\n`);
       const findings = scanStagedTree(scanRoot);
       expect(findings).not.toBeNull();
       expect((findings ?? []).length).toBeGreaterThanOrEqual(1);
