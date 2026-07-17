@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
 import type * as redactModule from './commands.redact.core.ts';
+import type * as memoryModule from './commands.push.recovery.memory.ts';
 import type * as utilsModule from './utils.ts';
+import type { PathMap } from './config.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 
 // ---------------------------------------------------------------------------
@@ -833,5 +835,201 @@ describe('collectActions - masked context line in prompt', () => {
       if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
       else delete process.env.NOMAD_REPO;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dispatchActions - memory finding dispatch (D-04 wiring: Redact/Allow/Drop)
+// ---------------------------------------------------------------------------
+
+describe('dispatchActions - memory finding dispatch', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.push.recovery.memory.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./commands.redact.core.ts');
+  });
+
+  it('memory Redact invokes applyMemoryRedact exactly once for two findings in the same memory file', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(true);
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/projects/myproj/memory/notes.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproj/memory/notes.md', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    // Second finding hits the redactedMemory dedupe (same logical/filename).
+    expect(applyMemoryRedactMock).toHaveBeenCalledOnce();
+  });
+
+  it('memory Redact for two different memory files calls applyMemoryRedact once per file (no cross-file dedupe)', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(true);
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/projects/myproj/memory/a.md' });
+    const f2 = makeFinding({ File: 'shared/projects/myproj/memory/b.md' });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applyMemoryRedactMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mark a memory file redacted when applyMemoryRedact fails, retrying the next finding', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(false);
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/projects/myproj/memory/notes.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproj/memory/notes.md', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    // applyMemoryRedact returned false both times, so the file was never
+    // marked redacted and the second finding retried.
+    expect(applyMemoryRedactMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('memory Drop logs a refusal containing "cannot be dropped" and does not call ctx.drop', async () => {
+    const logMock = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/projects/myproj/memory/notes.md' });
+    const actions = new Map([[findingKey(f), 'drop' as const]]);
+    const map: PathMap = { projects: {} };
+    const dropSpy = vi.fn().mockReturnValue(true);
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+      drop: dropSpy,
+    });
+
+    expect(dropSpy).not.toHaveBeenCalled();
+    const msgs = logMock.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => m.includes('cannot be dropped'))).toBe(true);
+  });
+
+  it('memory Allow still appends the fingerprint via applyAllow (unchanged, no sid dependency)', async () => {
+    const appendMock = vi.fn();
+    vi.doMock('./commands.redact.core.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof redactModule>();
+      return { ...actual, appendGitleaksIgnore: appendMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({
+      File: 'shared/projects/myproj/memory/notes.md',
+      Fingerprint: 'fp-mem',
+    });
+    const actions = new Map([[findingKey(f), 'allow' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(appendMock).toHaveBeenCalledWith('fp-mem', '/repo');
+  });
+
+  it('a non-memory non-session finding is still a no-op for redact (dispatchMemory does not act)', async () => {
+    const applyMemoryRedactMock = vi.fn();
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/other/not-a-session.txt' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applyMemoryRedactMock).not.toHaveBeenCalled();
+  });
+
+  it('a non-memory non-session finding is still a no-op for drop (no refusal logged)', async () => {
+    const logMock = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/other/not-a-session.txt' });
+    const actions = new Map([[findingKey(f), 'drop' as const]]);
+    const map: PathMap = { projects: {} };
+    const dropSpy = vi.fn();
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+      drop: dropSpy,
+    });
+
+    expect(dropSpy).not.toHaveBeenCalled();
+    expect(logMock).not.toHaveBeenCalled();
   });
 });

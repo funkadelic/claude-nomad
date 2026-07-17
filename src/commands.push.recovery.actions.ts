@@ -14,6 +14,7 @@ import { repoHome } from './config.ts';
 import { appendGitleaksIgnore } from './commands.redact.core.ts';
 import { applyRedact, preflightRedactable } from './commands.push.recovery.redact.ts';
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
+import { applyMemoryRedact, memoryFileFromFinding } from './commands.push.recovery.memory.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { log, NomadFatal } from './utils.ts';
@@ -159,7 +160,35 @@ type DispatchCtx = {
   drop: (sid: string, map: PathMap) => boolean;
   redactedSids: Set<string>;
   droppedSids: Set<string>;
+  redactedMemory: Set<string>;
 };
+
+/**
+ * Apply one finding's triaged action for a project-level `memory/*.md`
+ * finding, reached from `dispatchOne` when `sessionIdFromFinding` returns
+ * null (a session id cannot be resolved). `'allow'` and `'skip'` are handled
+ * by the caller before this function is reached, so only `'redact'` and
+ * `'drop'` are meaningful here. A genuine non-session non-memory finding
+ * (`memoryFileFromFinding` returns null) is still a no-op, preserving the
+ * prior silent-return behavior for that case.
+ *
+ * @param f The finding to act on.
+ * @param action The triaged action.
+ * @param ctx Loop-invariant dispatch context (see `DispatchCtx`).
+ */
+function dispatchMemory(f: Finding, action: FindingAction, ctx: DispatchCtx): void {
+  const parsed = memoryFileFromFinding(f);
+  if (parsed === null) return;
+  if (action === 'drop') {
+    log('memory files cannot be dropped; use Redact or Skip');
+    return;
+  }
+  // Only 'redact' can reach here: dispatchOne handles 'skip' and 'allow'
+  // before calling this function, and 'drop' returned just above.
+  const memKey = `${parsed.logical}/${parsed.filename}`;
+  if (ctx.redactedMemory.has(memKey)) return;
+  if (applyMemoryRedact(f, ctx.ts, ctx.map, ctx.scan)) ctx.redactedMemory.add(memKey);
+}
 
 /**
  * Apply one finding's triaged action against local state. Extracted from
@@ -182,7 +211,10 @@ function dispatchOne(f: Finding, ctx: DispatchCtx): void {
     applyAllow(f, ctx.repo);
     return;
   }
-  if (sid === null) return;
+  if (sid === null) {
+    dispatchMemory(f, action, ctx);
+    return;
+  }
   if (action === 'drop') {
     ctx.droppedSids.add(sid);
     if (ctx.drop(sid, ctx.map)) {
@@ -236,6 +268,7 @@ export function dispatchActions(
     drop,
     redactedSids: new Set<string>(),
     droppedSids: new Set<string>(),
+    redactedMemory: new Set<string>(),
   };
   for (const f of findings) {
     dispatchOne(f, ctx);
