@@ -50,49 +50,49 @@ describe('nomad.ts adopt dispatcher', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects bare `nomad adopt` (no name) with the usage line and exitCode=1', async () => {
+  it('rejects bare `nomad adopt` (no name) with the usage line and exitCode=2', async () => {
     const cmdAdoptMock = vi.fn();
     vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdAdoptMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad adopt <name>'),
     );
   });
 
-  it('rejects `nomad adopt foo bar` (two positionals) with the usage line and exitCode=1', async () => {
+  it('rejects `nomad adopt foo bar` (two positionals) with the usage line and exitCode=2', async () => {
     const cmdAdoptMock = vi.fn();
     vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', 'foo', 'bar'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdAdoptMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad adopt <name>'),
     );
   });
 
-  it('rejects `nomad adopt --dry-run` (flag before name) with the usage line and exitCode=1', async () => {
+  it('rejects `nomad adopt --dry-run` (flag before name) with the usage line and exitCode=2', async () => {
     const cmdAdoptMock = vi.fn();
     vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', '--dry-run'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdAdoptMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad adopt <name>'),
     );
   });
 
-  it('rejects `nomad adopt foo --bogus` (unknown flag) with the usage line and exitCode=1', async () => {
+  it('rejects `nomad adopt foo --bogus` (unknown flag) with the usage line and exitCode=2', async () => {
     const cmdAdoptMock = vi.fn();
     vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', 'foo', '--bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdAdoptMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad adopt <name>'),
     );

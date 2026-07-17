@@ -18,6 +18,7 @@
  */
 
 import { repoHome } from './config.ts';
+import { EXIT } from './exit-codes.ts';
 import { gitleaksInstallHint } from './push-checks.ts';
 import { type Finding, scanStagedTree } from './push-gitleaks.scan.ts';
 import { NomadFatal } from './utils.ts';
@@ -300,5 +301,5 @@ export function runGitleaksScan(): void {
   }
   if (findings.length === 0) return;
   const { bySession, other } = partitionFindings(findings);
-  throw new NomadFatal(buildSessionAwareFatal(bySession, other));
+  throw new NomadFatal(buildSessionAwareFatal(bySession, other), { code: EXIT.LEAK_BLOCKED });
 }

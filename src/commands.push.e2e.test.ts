@@ -112,10 +112,10 @@ describe.skipIf(!hasGitleaks)('cmdPush end-to-end (real git + real gitleaks)', (
 
     const { cmdPush } = await import('./commands.push.ts');
     // Non-TTY: the leak verdict aborts via NomadFatal, which cmdPush catches and
-    // turns into exitCode 1 (no interactive prompt, no commit, no push).
+    // turns into exitCode 5 (EXIT.LEAK_BLOCKED; no interactive prompt, no commit, no push).
     await cmdPush();
 
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(5);
     // The scan ran BEFORE the commit, so origin never advanced.
     expect(gitOut(['rev-list', '--count', 'main'], origin)).toBe(before);
     // And the secret-bearing transcript was never published.

@@ -412,7 +412,7 @@ export async function cmdPush(
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);
-      process.exitCode = 1;
+      process.exitCode = err.code;
     } else {
       throw err;
     }

@@ -12,6 +12,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { EXIT } from './exit-codes.ts';
+
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
 import type * as redactModule from './commands.redact.core.ts';
 import type * as utilsModule from './utils.ts';
@@ -171,6 +173,13 @@ describe('resolveLeakFindings - non-TTY path', () => {
         isTTYCheck: () => false,
       }),
     ).rejects.toThrow('gitleaks detected secrets; recover manually');
+    // Non-TTY unresolved-leak abort is a confirmed finding: EXIT.LEAK_BLOCKED.
+    expect.assertions(3);
+    try {
+      await resolveLeakFindings(verdict, 'ts-001', map, { isTTYCheck: () => false });
+    } catch (err) {
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.LEAK_BLOCKED);
+    }
   });
 });
 
@@ -230,6 +239,17 @@ describe('resolveLeakFindings - TTY all-Skip -> NomadFatal', () => {
         scanVerdict: () => ({ leak: false, verdictRow: '✓', recovery: null, findings: [] }),
       }),
     ).rejects.toThrow(NomadFatal);
+    // Interactive Skip-leaves-findings is a confirmed finding: EXIT.LEAK_BLOCKED.
+    expect.assertions(2);
+    try {
+      await resolveLeakFindings(verdict, 'ts-001', map, {
+        isTTYCheck: () => true,
+        makePrompt: () => () => Promise.resolve(''),
+        scanVerdict: () => ({ leak: false, verdictRow: '✓', recovery: null, findings: [] }),
+      });
+    } catch (err) {
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.LEAK_BLOCKED);
+    }
   });
 
   it('NomadFatal message names the session id of the skipped finding', async () => {
@@ -547,6 +567,22 @@ describe('resolveLeakFindings - --redact-all non-interactive batch redact', () =
         }),
       }),
     ).rejects.toThrow(NomadFatal);
+    // The re-scan-still-shows-a-leak throw (applyThenRescan) is a confirmed
+    // finding: EXIT.LEAK_BLOCKED.
+    expect.assertions(2);
+    try {
+      await resolveLeakFindings(verdict, 'ts-001', map, {
+        redactAll: true,
+        scanVerdict: () => ({
+          leak: true,
+          verdictRow: '✗ still leaking',
+          recovery: 'still leaking',
+          findings: [finding],
+        }),
+      });
+    } catch (err) {
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.LEAK_BLOCKED);
+    }
   });
 });
 

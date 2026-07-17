@@ -145,7 +145,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     );
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush();
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(5);
     expect(existsSync(env.lockPath)).toBe(false);
     // The recovery block prints below the tree via fail() (stderr, ✗ prefix).
     const out = errOutput(env);

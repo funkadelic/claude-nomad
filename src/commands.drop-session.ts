@@ -79,7 +79,7 @@ export function cmdDropSession(id: string): void {
     // session matches the id, git mutation failed, etc.); the red `✗`
     // glyph carries the severity uniformly.
     fail(err.message);
-    process.exitCode = 1;
+    process.exitCode = err.code;
   } finally {
     releaseLock(handle);
   }

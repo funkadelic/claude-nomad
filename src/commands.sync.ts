@@ -309,7 +309,7 @@ async function runSyncPushHalf(): Promise<PushOutcome> {
     return { ok: true, result };
   } catch (err) {
     if (err instanceof NomadFatal) {
-      process.exitCode = 1;
+      process.exitCode = err.code;
       return { ok: false, message: err.message };
     }
     throw err;
@@ -384,7 +384,7 @@ export async function cmdSync(opts: { dryRun?: boolean; verbose?: boolean } = {}
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);
-      process.exitCode = 1;
+      process.exitCode = err.code;
     } else {
       throw err;
     }

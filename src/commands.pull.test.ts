@@ -581,7 +581,7 @@ describe('cmdPull wedge preflight', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('dies with actionable message and sets exitCode=1 on a mid-rebase repo (before backup dir)', async () => {
+  it('dies with actionable message and sets exitCode=4 (CONFLICT) on a mid-rebase repo (before backup dir)', async () => {
     // Point BACKUP_BASE into our temp HOME so we can assert no backup dir exists.
     const backupBase = join(testHome, '.cache', 'claude-nomad', 'backup');
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
@@ -590,7 +590,7 @@ describe('cmdPull wedge preflight', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
     // No backup dir created before the wedge check fires.
     expect(existsSync(backupBase)).toBe(false);
   });
@@ -835,13 +835,13 @@ describe('cmdPull forceRemote routing', () => {
     vi.doUnmock('./extras-sync.ts');
   });
 
-  it('forceRemote: false on wedged repo still refuses (exitCode 1, no recovery)', async () => {
+  it('forceRemote: false on wedged repo still refuses (exitCode 4 CONFLICT, no recovery)', async () => {
     const { local } = buildWedgedRepo(tmp);
     process.env.NOMAD_REPO = local;
     const headBefore = gitOut(['rev-parse', 'HEAD'], local);
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull({ forceRemote: false });
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
 
     // No recovery: HEAD unchanged, no parking branch.
     const headAfter = gitOut(['rev-parse', 'HEAD'], local);
@@ -952,7 +952,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull({ forceRemote: false });
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
     const combined = errorLines.join('\n');
     // Runbook must name the manual recovery steps.
     expect(combined).toMatch(/git reset --mixed HEAD/);
