@@ -268,6 +268,26 @@ memory secret that already slipped through, `nomad doctor --check-shared` runs a
 over the `memory/*.md` files already committed to the sync repo and points you back at this Redact
 step; it warns only (`⚠︎`) and never fails the doctor run.
 
+## Recovery flow: a secret in a synced skill
+
+Your own skills under `~/.claude/skills/` are copy-synced to the sync repo (only `gsd-`prefixed
+skills are excluded). Skill content is executable (`SKILL.md`, helper scripts in `references/` or
+`scripts/`, dotfiles), so it is a plausible place for a pasted API key or token to end up. A
+gitleaks finding in a skill file, like a memory note, has no session id, so it gets the same
+treatment:
+
+- `nomad drop-session` and `nomad redact <session-id>` do not touch skill files. In the push-time
+  menu, choosing Drop on a skill finding is refused with a note to use Redact or Skip instead.
+- Redact is the fix. In the interactive menu, Redact rewrites the flagged span in the local
+  `~/.claude/skills/<name>/...` file in place (with a backup first), then re-copies the cleaned
+  file to the staged tree. `nomad push --redact-all` scrubs skill findings the same way in one
+  non-interactive pass.
+
+The same caveats apply: rotate the credential at its provider first, and scrubbing the local copy
+does not remove a secret a previous push already sent to the remote. `nomad doctor --check-shared`
+runs a read-only advisory over the `shared/skills/` files already committed to the sync repo and
+points you back at this Redact step; it warns only (`⚠︎`) and never fails the doctor run.
+
 ## .gitleaks.toml allowlist policy
 
 `gitleaks protect` runs against the staged tree on every `nomad push` and can flag

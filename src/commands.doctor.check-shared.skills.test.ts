@@ -90,6 +90,7 @@ describe('commands.doctor.check-shared.skills', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
+  /** Write `content` to `shared/skills/<name>/<relPath>` in the fake repo, creating parent dirs. */
   function writeSkillFile(name: string, relPath: string, content: string): void {
     const dest = join(repo, 'shared', 'skills', name, relPath);
     mkdirSync(dirname(dest), { recursive: true });
@@ -478,12 +479,14 @@ describe('reportCheckShared wiring (committed-skills advisory always runs)', () 
     rmSync(testHome, { recursive: true, force: true });
   });
 
+  /** Write `content` to `shared/skills/<name>/<relPath>` in the fake repo, creating parent dirs. */
   function writeSkillFile(name: string, relPath: string, content: string): void {
     const dest = join(repo, 'shared', 'skills', name, relPath);
     mkdirSync(dirname(dest), { recursive: true });
     writeFileSync(dest, content);
   }
 
+  /** Mock `execFileSync` so the gitleaks version probe succeeds while git subprocesses pass through. */
   function mockGitleaksProbe(): void {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();

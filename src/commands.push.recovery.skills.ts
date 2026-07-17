@@ -20,8 +20,8 @@
  * the finding-path parser captures a multi-segment relative path and the
  * traversal guard validates every segment, not a single filename pattern.
  *
- * Not wired into the recovery loop's dispatch/menu yet; that lands in a
- * later plan.
+ * Wired into the recovery menu via `dispatchSkill`/`dispatchNonSession` and
+ * into `--redact-all` in `commands.push.recovery.actions.ts`.
  */
 
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
