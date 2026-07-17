@@ -261,7 +261,7 @@ files and directories are left alone, and it aborts safely (with a `nomad pull` 
 dangling symlink rather than guessing. On native Windows the managed names are already real copies
 (the win32 copy-sync modality), so eject has nothing to materialize and goes straight to the
 checklist. After it runs it prints a short manual-remainder checklist:
-uninstall the CLI, drop the `NOMAD_HOST` / `NOMAD_REPO` env vars and the alias, and optionally delete
+uninstall the CLI, drop the `NOMAD_HOST` / `NOMAD_REPO` env vars, and optionally delete
 the sync repo. Preview first with `nomad eject --dry-run`. See the
 [offboard a machine](/claude-nomad/recipes/#stop-using-nomad-offboard-a-machine) recipe for the full
 sequence.

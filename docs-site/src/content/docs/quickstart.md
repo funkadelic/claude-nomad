@@ -61,7 +61,7 @@ the [command reference](/claude-nomad/commands/#sync).
 
 ```bash
 $ npm i -g claude-nomad
-$ gh repo clone <your-username>/claude-nomad-config ~/claude-nomad
+$ gh repo clone <your-username>/<your-repo-name> ~/claude-nomad   # default: claude-nomad-config
 export NOMAD_HOST=<your-host-label>   # add to ~/.zshrc or ~/.bashrc
 $ nomad pull
 ```
@@ -225,10 +225,10 @@ flow.
 # Install the CLI.
 $ npm i -g claude-nomad
 
-# Clone your private data repo.
-$ gh repo clone <your-username>/claude-nomad-config ~/claude-nomad
+# Clone your private data repo (<your-repo-name> defaults to claude-nomad-config).
+$ gh repo clone <your-username>/<your-repo-name> ~/claude-nomad
 # or with plain git:
-$ git clone git@github.com:<your-username>/claude-nomad-config.git ~/claude-nomad
+$ git clone git@github.com:<your-username>/<your-repo-name>.git ~/claude-nomad
 
 # Add to ~/.zshrc or ~/.bashrc, then reload.
 export NOMAD_HOST=<your-host-label>

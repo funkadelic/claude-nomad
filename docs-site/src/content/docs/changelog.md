@@ -10,5 +10,7 @@ The full changelog is maintained by
 - [Releases on GitHub](https://github.com/funkadelic/claude-nomad/releases)
 
 Each release entry records the version, date, and the `feat` / `fix` / `perf` / `deps` /
-`deps-dev` / other changes included in that release. Patch bumps are driven by `fix` and `perf`
-commits; minor bumps by `feat`; major bumps by a `BREAKING CHANGE:` footer or `!` suffix.
+`deps-dev` / other changes included in that release. Minor bumps come from `feat`; major bumps from
+a `BREAKING CHANGE:` footer or `!` suffix; every other Conventional Commit type used here (`fix`,
+`perf`, `chore`, `docs`, `refactor`, and the rest) produces a patch bump, since none is hidden from
+release-please.
