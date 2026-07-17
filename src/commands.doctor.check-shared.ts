@@ -185,12 +185,18 @@ function runLocalPreviewScan(section: DoctorSection): void {
  * Thin orchestrator: `ensureGitleaksReady` gates entry (a missing binary
  * WARN-skips, a probe failure FAILs) -- this is the ONLY path that skips the
  * rest of the function. `runLocalPreviewScan` runs the local, not-yet-pushed
- * transcript preflight (FAIL semantics, unchanged). `reportCommittedMemory`
- * (`./commands.doctor.check-shared.memory.ts`) then runs unconditionally,
+ * transcript preflight (FAIL semantics, unchanged) guarded by a `try/catch`:
+ * its own `mkdirSync`/`finally rmSync` are unguarded, so a throw there is
+ * caught here, reported as a FAIL row, and `process.exitCode` is set, rather
+ * than escaping and skipping the advisory that follows (this reporter itself
+ * never throws). `reportCommittedMemory`
+ * (`./commands.doctor.check-shared.memory.ts`) then runs unconditionally --
+ * in a `finally`, so it still runs when `runLocalPreviewScan` throws --
  * scanning already-committed `memory/*.md` in the sync repo (WARN semantics,
- * never sets `process.exitCode`) -- it runs even when the local preview found
- * nothing to stage, because a latent committed secret can originate from any
- * host, not just this one.
+ * never sets `process.exitCode`). It runs even when the local preview found
+ * nothing to stage, or failed outright, because a latent committed secret can
+ * originate from any host, not just this one, and must never be hidden by an
+ * unrelated local-preview failure.
  *
  * `gitleaksReady` lets the doctor orchestrator pass the Repository section's
  * probe result so `version` is not invoked twice on a `--check-shared` run;
@@ -198,6 +204,12 @@ function runLocalPreviewScan(section: DoctorSection): void {
  */
 export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolean): void {
   if (!ensureGitleaksReady(section, gitleaksReady)) return;
-  runLocalPreviewScan(section);
-  reportCommittedMemory(section);
+  try {
+    runLocalPreviewScan(section);
+  } catch (err) {
+    addItem(section, `${red(failGlyph)} shared scan failed: ${(err as Error).message}`);
+    process.exitCode = 1;
+  } finally {
+    reportCommittedMemory(section);
+  }
 }
