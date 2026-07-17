@@ -1033,6 +1033,36 @@ describe('dispatchActions - memory finding dispatch', () => {
     expect(dropSpy).not.toHaveBeenCalled();
     expect(logMock).not.toHaveBeenCalled();
   });
+
+  it('a nested memory finding logs a not-auto-redactable message and does not redact', async () => {
+    const logMock = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+    const applyMemoryRedactMock = vi.fn();
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/projects/myproj/memory/sub/x.md' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applyMemoryRedactMock).not.toHaveBeenCalled();
+    const msgs = logMock.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => m.includes('not auto-redactable'))).toBe(true);
+    expect(msgs.some((m) => m.includes('shared/projects/myproj/memory/sub/x.md'))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

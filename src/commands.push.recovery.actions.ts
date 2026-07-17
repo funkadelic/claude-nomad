@@ -16,6 +16,7 @@ import { applyRedact, preflightRedactable } from './commands.push.recovery.redac
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
 import {
   applyMemoryRedact,
+  isMemoryFindingPath,
   memoryFileFromFinding,
   preflightMemoryRedactable,
 } from './commands.push.recovery.memory.ts';
@@ -172,9 +173,11 @@ type DispatchCtx = {
  * finding, reached from `dispatchOne` when `sessionIdFromFinding` returns
  * null (a session id cannot be resolved). `'allow'` and `'skip'` are handled
  * by the caller before this function is reached, so only `'redact'` and
- * `'drop'` are meaningful here. A genuine non-session non-memory finding
- * (`memoryFileFromFinding` returns null) is still a no-op, preserving the
- * prior silent-return behavior for that case.
+ * `'drop'` are meaningful here. `memoryFileFromFinding` returns null for
+ * both a genuine non-memory finding and a memory finding it cannot
+ * auto-redact (nested `memory/<sub>/x.md`, non-`.md`): `isMemoryFindingPath`
+ * distinguishes the two so the latter logs a message pointing the operator at
+ * a manual scrub or Skip, rather than silently no-oping like the former.
  *
  * @param f The finding to act on.
  * @param action The triaged action.
@@ -182,7 +185,12 @@ type DispatchCtx = {
  */
 function dispatchMemory(f: Finding, action: FindingAction, ctx: DispatchCtx): void {
   const parsed = memoryFileFromFinding(f);
-  if (parsed === null) return;
+  if (parsed === null) {
+    if (isMemoryFindingPath(f)) {
+      log(`memory path not auto-redactable: ${f.File}; scrub it by hand or choose Skip`);
+    }
+    return;
+  }
   if (action === 'drop') {
     log('memory files cannot be dropped; use Redact or Skip');
     return;
