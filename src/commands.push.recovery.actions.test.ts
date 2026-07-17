@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
 import type * as redactModule from './commands.redact.core.ts';
+import type * as memoryModule from './commands.push.recovery.memory.ts';
 import type * as utilsModule from './utils.ts';
+import type * as utilsFsModule from './utils.fs.ts';
+import type { PathMap } from './config.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 
 // ---------------------------------------------------------------------------
@@ -833,5 +836,443 @@ describe('collectActions - masked context line in prompt', () => {
       if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
       else delete process.env.NOMAD_REPO;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dispatchActions - memory finding dispatch (Redact/Allow/Drop)
+// ---------------------------------------------------------------------------
+
+describe('dispatchActions - memory finding dispatch', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.push.recovery.memory.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./commands.redact.core.ts');
+  });
+
+  it('memory Redact invokes applyMemoryRedact exactly once for two findings in the same memory file', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(true);
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/projects/myproj/memory/notes.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproj/memory/notes.md', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    // Second finding hits the redactedMemory dedupe (same logical/filename).
+    expect(applyMemoryRedactMock).toHaveBeenCalledOnce();
+  });
+
+  it('memory Redact for two different memory files calls applyMemoryRedact once per file (no cross-file dedupe)', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(true);
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/projects/myproj/memory/a.md' });
+    const f2 = makeFinding({ File: 'shared/projects/myproj/memory/b.md' });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applyMemoryRedactMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mark a memory file redacted when applyMemoryRedact fails, retrying the next finding', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(false);
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/projects/myproj/memory/notes.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproj/memory/notes.md', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    // applyMemoryRedact returned false both times, so the file was never
+    // marked redacted and the second finding retried.
+    expect(applyMemoryRedactMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('memory Drop logs a refusal containing "cannot be dropped" and does not call ctx.drop', async () => {
+    const logMock = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/projects/myproj/memory/notes.md' });
+    const actions = new Map([[findingKey(f), 'drop' as const]]);
+    const map: PathMap = { projects: {} };
+    const dropSpy = vi.fn().mockReturnValue(true);
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+      drop: dropSpy,
+    });
+
+    expect(dropSpy).not.toHaveBeenCalled();
+    const msgs = logMock.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => m.includes('cannot be dropped'))).toBe(true);
+  });
+
+  it('memory Allow still appends the fingerprint via applyAllow (unchanged, no sid dependency)', async () => {
+    const appendMock = vi.fn();
+    vi.doMock('./commands.redact.core.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof redactModule>();
+      return { ...actual, appendGitleaksIgnore: appendMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({
+      File: 'shared/projects/myproj/memory/notes.md',
+      Fingerprint: 'fp-mem',
+    });
+    const actions = new Map([[findingKey(f), 'allow' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(appendMock).toHaveBeenCalledWith('fp-mem', '/repo');
+  });
+
+  it('a non-memory non-session finding is still a no-op for redact (dispatchMemory does not act)', async () => {
+    const applyMemoryRedactMock = vi.fn();
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/other/not-a-session.txt' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applyMemoryRedactMock).not.toHaveBeenCalled();
+  });
+
+  it('a non-memory non-session finding is still a no-op for drop (no refusal logged)', async () => {
+    const logMock = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/other/not-a-session.txt' });
+    const actions = new Map([[findingKey(f), 'drop' as const]]);
+    const map: PathMap = { projects: {} };
+    const dropSpy = vi.fn();
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+      drop: dropSpy,
+    });
+
+    expect(dropSpy).not.toHaveBeenCalled();
+    expect(logMock).not.toHaveBeenCalled();
+  });
+
+  it('a nested memory finding logs a not-auto-redactable message and does not redact', async () => {
+    const logMock = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+    const applyMemoryRedactMock = vi.fn();
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/projects/myproj/memory/sub/x.md' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applyMemoryRedactMock).not.toHaveBeenCalled();
+    const msgs = logMock.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => m.includes('not auto-redactable'))).toBe(true);
+    expect(msgs.some((m) => m.includes('shared/projects/myproj/memory/sub/x.md'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// redactAllFindings - memory-aware batch redaction (--redact-all)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a fixture combining a redactable session transcript AND a
+ * project-level `memory/*.md` file under the same mapped project, plus a
+ * matching `path-map.json`. Mirrors the empirically-observed layout: `memory/`
+ * is a flat, project-level sibling of the session's `<sid>/` subtree.
+ */
+function makeMixedRedactAllFixture(testHome: string): {
+  transcriptPath: string;
+  memoryPath: string;
+  farFuture: number;
+  map: PathMap;
+} {
+  const claudeHomeDir = join(testHome, '.claude');
+  const projectsDir = join(claudeHomeDir, 'projects', '-home-norm-git-myproject');
+  mkdirSync(projectsDir, { recursive: true });
+  const transcriptPath = join(projectsDir, 'sid123.jsonl');
+  writeFileSync(transcriptPath, '{"text":"real-secret-value"}\n');
+  const memoryDir = join(projectsDir, 'memory');
+  mkdirSync(memoryDir, { recursive: true });
+  const memoryPath = join(memoryDir, 'notes.md');
+  writeFileSync(memoryPath, 'prose containing real-secret-value inline\n');
+  writeFileSync(
+    join(testHome, 'path-map.json'),
+    JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+  );
+  const map: PathMap = {
+    projects: { myproject: { 'test-host': '/home/norm/git/myproject' } },
+  };
+  return { transcriptPath, memoryPath, farFuture: Date.now() + 10 * 60 * 1000, map };
+}
+
+describe('redactAllFindings - memory-aware batch redaction', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-redactall-memory-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('redacts a memory finding alongside a session finding in one batch', async () => {
+    const { transcriptPath, memoryPath, farFuture, map } = makeMixedRedactAllFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const scanSpy = vi.fn((p: string): Finding[] => {
+      if (p === transcriptPath) {
+        return [
+          {
+            RuleID: 'test-rule',
+            File: p,
+            StartLine: 1,
+            StartColumn: 9,
+            EndColumn: 25,
+            Match: 'real-secret-value',
+            Fingerprint: 'fp1',
+          },
+        ];
+      }
+      if (p === memoryPath) {
+        return [
+          {
+            RuleID: 'test-rule',
+            File: p,
+            StartLine: 1,
+            StartColumn: 1,
+            EndColumn: 10,
+            Match: 'real-secret-value',
+            Fingerprint: 'fp2',
+          },
+        ];
+      }
+      return [];
+    });
+
+    const sessionFinding = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl' });
+    const memoryFinding = makeFinding({ File: 'shared/projects/myproject/memory/notes.md' });
+
+    redactAllFindings([sessionFinding, memoryFinding], 'ts-x', map, () => farFuture, scanSpy);
+
+    expect(readFileSync(transcriptPath, 'utf8')).toContain('[REDACTED:test-rule]');
+    const memoryAfter = readFileSync(memoryPath, 'utf8');
+    expect(memoryAfter).toContain('[REDACTED:test-rule]');
+    expect(memoryAfter).not.toContain('real-secret-value');
+  });
+
+  it('redacts two findings in the same memory file once (dedup by logical/filename)', async () => {
+    const { memoryPath, map } = makeMixedRedactAllFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const scanSpy = vi.fn().mockReturnValue([
+      {
+        RuleID: 'test-rule',
+        File: memoryPath,
+        StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'real-secret-value',
+        Fingerprint: 'fp2',
+      },
+    ] satisfies Finding[]);
+
+    const f1 = makeFinding({ File: 'shared/projects/myproject/memory/notes.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproject/memory/notes.md', StartLine: 2 });
+
+    redactAllFindings([f1, f2], 'ts-x', map, () => Date.now(), scanSpy);
+
+    expect(scanSpy).toHaveBeenCalledOnce();
+    const memoryAfter = readFileSync(memoryPath, 'utf8');
+    expect(memoryAfter).toContain('[REDACTED:test-rule]');
+  });
+
+  it('aborts the whole batch (no local mutation) when a memory finding is unresolvable in preflight', async () => {
+    const { transcriptPath, memoryPath, farFuture, map } = makeMixedRedactAllFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const transcriptOriginal = readFileSync(transcriptPath, 'utf8');
+    const memoryOriginal = readFileSync(memoryPath, 'utf8');
+    const scanSpy = vi.fn().mockReturnValue([]);
+
+    const sessionFinding = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl' });
+    // memory/missing.md does not exist on disk -> preflightMemoryRedactable refuses.
+    const unresolvableMemory = makeFinding({
+      File: 'shared/projects/myproject/memory/missing.md',
+    });
+
+    expect(() =>
+      redactAllFindings(
+        [sessionFinding, unresolvableMemory],
+        'ts-x',
+        map,
+        () => farFuture,
+        scanSpy,
+      ),
+    ).toThrow(NomadFatal);
+    // Preflight runs before any redaction, so scan never ran and neither the
+    // mapped session nor the memory file was mutated (all-or-nothing).
+    expect(scanSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(transcriptOriginal);
+    expect(readFileSync(memoryPath, 'utf8')).toBe(memoryOriginal);
+  });
+
+  it('a lone unresolvable memory finding is not silently skipped: throws NomadFatal', async () => {
+    makeMixedRedactAllFixture(testHome);
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const emptyMap: PathMap = { projects: {} };
+    const memoryFinding = makeFinding({ File: 'shared/projects/myproject/memory/notes.md' });
+
+    expect(() => redactAllFindings([memoryFinding], 'ts-x', emptyMap, () => Date.now())).toThrow(
+      NomadFatal,
+    );
+  });
+
+  it('does not mark a memory file redacted when applyMemoryRedact fails (scan returns null), retrying the next finding', async () => {
+    const { memoryPath, map } = makeMixedRedactAllFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const original = readFileSync(memoryPath, 'utf8');
+    const scanSpy = vi.fn().mockReturnValue(null);
+    const f1 = makeFinding({ File: 'shared/projects/myproject/memory/notes.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/projects/myproject/memory/notes.md', StartLine: 2 });
+
+    redactAllFindings([f1, f2], 'ts-x', map, () => Date.now(), scanSpy);
+
+    // applyMemoryRedact returned false both times (scan null), so the memory
+    // file was never marked redacted and the second finding retried.
+    expect(scanSpy).toHaveBeenCalledTimes(2);
+    expect(readFileSync(memoryPath, 'utf8')).toBe(original);
   });
 });

@@ -35,6 +35,10 @@ const hasGitleaks = ((): boolean => {
 /** Local shim for the SESSION_PATH regex re-imported in the fidelity case. */
 type PushGitleaksModule = { SESSION_PATH: RegExp };
 
+/** Named type alias for `importOriginal`, avoiding an inline `import()` type annotation. */
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+type CheckSharedMemoryModule = typeof import('./commands.doctor.check-shared.memory.ts');
+
 describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
   let snapshot: EnvSnapshot;
   let testHome: string;
@@ -195,6 +199,7 @@ describe('reportCheckShared buildScanTree unit tests (gitleaks mocked)', () => {
   afterEach(() => {
     vi.doUnmock('node:child_process');
     vi.doUnmock('./commands.doctor.check-shared.scan.ts');
+    vi.doUnmock('./commands.doctor.check-shared.memory.ts');
     restoreEnv(snapshot, testHome);
   });
 
@@ -351,5 +356,62 @@ describe('reportCheckShared buildScanTree unit tests (gitleaks mocked)', () => {
     reportCheckShared(sec);
     // staged must be 1 (one session dir was staged); scanAndReport was called.
     expect(getStaged()).toBe(1);
+  });
+
+  it('recovers from a local-preview scan throw: FAIL row + exitCode=1, and reportCommittedMemory still runs', async () => {
+    // scanAndReport (not the gitleaks probe) throws here, simulating an
+    // unguarded failure inside runLocalPreviewScan's own mkdirSync/finally
+    // rmSync. reportCheckShared must catch it, emit a FAIL row, set
+    // process.exitCode, and still run the committed-memory advisory.
+    const env = makeEnv();
+    testHome = env.testHome;
+    writeFileSync(
+      join(testHome, '.claude', 'projects', env.encodedDir, 'session1.jsonl'),
+      '{"role":"user","text":"hello"}\n',
+    );
+    writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (
+            bin: string,
+            args: readonly string[],
+            opts?: Parameters<typeof cpModule.execFileSync>[2],
+          ) => {
+            if (bin === 'gitleaks' && args[0] === 'version') return Buffer.from('v8.18.2\n');
+            return actual.execFileSync(bin, args, opts);
+          },
+        ),
+      };
+    });
+    vi.doMock('./commands.doctor.check-shared.scan.ts', async (importOriginal) => {
+      const actual =
+        // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+        await importOriginal<typeof import('./commands.doctor.check-shared.scan.ts')>();
+      return {
+        ...actual,
+        scanAndReport: vi.fn(() => {
+          throw new Error('scan-and-report boom');
+        }),
+      };
+    });
+    const reportCommittedMemoryMock = vi.fn();
+    vi.doMock('./commands.doctor.check-shared.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<CheckSharedMemoryModule>();
+      return { ...actual, reportCommittedMemory: reportCommittedMemoryMock };
+    });
+    vi.resetModules();
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const sec: Section = { header: 'Shared scan', items: [] };
+    expect(() => reportCheckShared(sec)).not.toThrow();
+
+    const rows = sec.items.join('\n');
+    expect(rows).toContain(failGlyph);
+    expect(rows).toContain('scan-and-report boom');
+    expect(process.exitCode).toBe(1);
+    expect(reportCommittedMemoryMock).toHaveBeenCalledOnce();
   });
 });

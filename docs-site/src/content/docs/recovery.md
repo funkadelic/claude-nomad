@@ -204,7 +204,8 @@ What the actions do:
 - **Drop session** excludes this session from the current push by unstaging it from the repo's git
   index (same as `nomad drop-session <id>`). The local `~/.claude/projects/.../` transcript is
   kept intact and any running Claude session is not stopped. Not durable: the next push re-copies
-  from local unless you also redact or remove the local transcript.
+  from local unless you also redact or remove the local transcript. Drop is refused for a
+  `memory/*.md` finding (a memory note is not a session): choose Redact or Skip instead.
 - **Skip** (default on bare Enter) leaves the finding unresolved for now.
 
 After you respond to every finding, the menu applies your choices. If any finding was Skipped, the
@@ -217,11 +218,11 @@ On a non-TTY (CI, piped input, or scripted `nomad push`), the menu never appears
 aborts with the existing session-aware FATAL unchanged.
 
 **Batch redact without a TTY:** `nomad push --redact-all` redacts every finding
-non-interactively (backup written first) without prompting and without requiring a TTY. It does
-not auto-Allow. After redaction the staged tree is re-scanned; any surviving finding aborts with
-the FATAL. Use this in scripts or when every finding is a real secret that should be scrubbed. For
-a single session, `nomad redact <session-id>` gives you per-session control with `--rule` and
-`--dry-run` options.
+non-interactively (backup written first) without prompting and without requiring a TTY, session
+transcripts and `memory/*.md` notes alike. It does not auto-Allow. After redaction the staged tree
+is re-scanned; any surviving finding aborts with the FATAL. Use this in scripts or when every
+finding is a real secret that should be scrubbed. For a single session, `nomad redact <session-id>`
+gives you per-session control with `--rule` and `--dry-run` options.
 
 **Non-interactive allowlist:** three paths let you record false positives and proceed without the
 interactive menu, all without requiring a TTY:
@@ -245,6 +246,27 @@ still reports a leak, the push aborts AND the entries the `--allow*` run just wr
 back, so an aborted push leaves no allowlist lines behind. `--redact-all`, `--allow-all`, and
 `--allow <rule>` are mutually exclusive with each other, and none of them can be combined with
 `--dry-run` (a dry-run resolves nothing). See [Commands](/claude-nomad/commands/) for the full flag reference.
+
+## Recovery flow: a secret in a memory note
+
+Claude Code keeps project memory in `memory/*.md` files that sit alongside your session
+transcripts, and `nomad push` copies them to the sync repo just like a transcript. If gitleaks
+flags a secret in one, it appears as a finding with no session id (a memory note is not tied to a
+session), so the session-only tools do not apply to it:
+
+- `nomad drop-session` and `nomad redact <session-id>` both operate on a session subtree, so
+  neither one touches a `memory/*.md` file. In the push-time menu, choosing Drop on a memory
+  finding is refused with a note to use Redact or Skip instead.
+- Redact is the fix. In the interactive menu, Redact rewrites the flagged span in the local
+  `memory/*.md` file in place (with a backup first), the same way it does for a transcript, then
+  re-copies the cleaned file to the staged tree. `nomad push --redact-all` scrubs memory findings
+  the same way in one non-interactive pass.
+
+As with any redaction, rotate the credential at its provider first, and remember that scrubbing the
+local copy does not remove a secret that a previous push already sent to the remote. To catch a
+memory secret that already slipped through, `nomad doctor --check-shared` runs a read-only advisory
+over the `memory/*.md` files already committed to the sync repo and points you back at this Redact
+step; it warns only (`⚠︎`) and never fails the doctor run.
 
 ## .gitleaks.toml allowlist policy
 

@@ -14,6 +14,12 @@ import { repoHome } from './config.ts';
 import { appendGitleaksIgnore } from './commands.redact.core.ts';
 import { applyRedact, preflightRedactable } from './commands.push.recovery.redact.ts';
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
+import {
+  applyMemoryRedact,
+  isMemoryFindingPath,
+  memoryFileFromFinding,
+  preflightMemoryRedactable,
+} from './commands.push.recovery.memory.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { log, NomadFatal } from './utils.ts';
@@ -159,7 +165,42 @@ type DispatchCtx = {
   drop: (sid: string, map: PathMap) => boolean;
   redactedSids: Set<string>;
   droppedSids: Set<string>;
+  redactedMemory: Set<string>;
 };
+
+/**
+ * Apply one finding's triaged action for a project-level `memory/*.md`
+ * finding, reached from `dispatchOne` when `sessionIdFromFinding` returns
+ * null (a session id cannot be resolved). `'allow'` and `'skip'` are handled
+ * by the caller before this function is reached, so only `'redact'` and
+ * `'drop'` are meaningful here. `memoryFileFromFinding` returns null for
+ * both a genuine non-memory finding and a memory finding it cannot
+ * auto-redact (nested `memory/<sub>/x.md`, non-`.md`): `isMemoryFindingPath`
+ * distinguishes the two so the latter logs a message pointing the operator at
+ * a manual scrub or Skip, rather than silently no-oping like the former.
+ *
+ * @param f The finding to act on.
+ * @param action The triaged action.
+ * @param ctx Loop-invariant dispatch context (see `DispatchCtx`).
+ */
+function dispatchMemory(f: Finding, action: FindingAction, ctx: DispatchCtx): void {
+  const parsed = memoryFileFromFinding(f);
+  if (parsed === null) {
+    if (isMemoryFindingPath(f)) {
+      log(`memory path not auto-redactable: ${f.File}; scrub it by hand or choose Skip`);
+    }
+    return;
+  }
+  if (action === 'drop') {
+    log('memory files cannot be dropped; use Redact or Skip');
+    return;
+  }
+  // Only 'redact' can reach here: dispatchOne handles 'skip' and 'allow'
+  // before calling this function, and 'drop' returned just above.
+  const memKey = `${parsed.logical}/${parsed.filename}`;
+  if (ctx.redactedMemory.has(memKey)) return;
+  if (applyMemoryRedact(f, ctx.ts, ctx.map, ctx.scan)) ctx.redactedMemory.add(memKey);
+}
 
 /**
  * Apply one finding's triaged action against local state. Extracted from
@@ -182,7 +223,10 @@ function dispatchOne(f: Finding, ctx: DispatchCtx): void {
     applyAllow(f, ctx.repo);
     return;
   }
-  if (sid === null) return;
+  if (sid === null) {
+    dispatchMemory(f, action, ctx);
+    return;
+  }
   if (action === 'drop') {
     ctx.droppedSids.add(sid);
     if (ctx.drop(sid, ctx.map)) {
@@ -236,6 +280,7 @@ export function dispatchActions(
     drop,
     redactedSids: new Set<string>(),
     droppedSids: new Set<string>(),
+    redactedMemory: new Set<string>(),
   };
   for (const f of findings) {
     dispatchOne(f, ctx);
@@ -243,16 +288,98 @@ export function dispatchActions(
 }
 
 /**
- * Batch-redact all findings non-interactively (the `--redact-all` path).
- * Does not require a TTY. Sessions are de-duplicated: the first finding per
- * session triggers the rewrite.
+ * Deterministic dedupe key for one finding in the `--redact-all` preflight
+ * and redact loops: the session id when resolvable, else the memory
+ * file's `logical/filename` when the finding is a project-level `memory/*.md`
+ * finding, else the finding's own `findingKey` (a genuine non-session
+ * non-memory finding, refused individually by `preflightRedactable`).
  *
- * All-or-nothing: a no-mutation preflight (`preflightRedactable`) runs over
- * every distinct session first. If any finding is refused for a deterministic
- * reason (no session id, unlocatable transcript, an active session, or an
- * unmapped staged copy), the whole batch throws `NomadFatal` BEFORE any local
- * transcript is rewritten. Without this, an earlier session would be scrubbed
- * on disk and the push would only abort later on the re-scan, leaving surprising
+ * @param f The finding to key.
+ * @returns The dedupe key.
+ */
+function redactAllDedupeKey(f: Finding): string {
+  const sid = sessionIdFromFinding(f);
+  if (sid !== null) return sid;
+  const parsed = memoryFileFromFinding(f);
+  return parsed !== null ? `${parsed.logical}/${parsed.filename}` : findingKey(f);
+}
+
+/**
+ * No-mutation preflight for one finding in the `--redact-all` batch. Routes a
+ * project-level memory finding (`sid === null` and `memoryFileFromFinding`
+ * matches) to `preflightMemoryRedactable`; everything else (session findings
+ * and genuine non-session non-memory findings) goes through the unchanged
+ * `preflightRedactable`, which itself refuses a non-memory `sid === null`
+ * finding as "not a session transcript".
+ *
+ * @param f Finding to preflight.
+ * @param map Parsed path-map.
+ * @param nowMs Injectable clock for the live-session mtime check.
+ * @returns A refusal reason string, or null when the finding would proceed.
+ */
+function redactAllPreflightOne(f: Finding, map: PathMap, nowMs: () => number): string | null {
+  if (sessionIdFromFinding(f) === null && memoryFileFromFinding(f) !== null) {
+    return preflightMemoryRedactable(f, map);
+  }
+  return preflightRedactable(f, map, nowMs);
+}
+
+/**
+ * Apply the redact action for one finding in the `--redact-all` batch,
+ * de-duplicated per session (`redactedSids`) or per memory file
+ * (`redactedMemory`). A genuine non-session non-memory finding is a no-op
+ * (already refused in the preflight pass, so this branch is unreachable in
+ * practice; kept for defense in depth).
+ *
+ * @param f The finding to redact.
+ * @param ts Backup timestamp.
+ * @param map Parsed path-map.
+ * @param nowMs Injectable clock.
+ * @param scan Injectable scan function.
+ * @param redactedSids Session ids already redacted this batch.
+ * @param redactedMemory Memory files (`logical/filename`) already redacted this batch.
+ */
+function redactAllOne(
+  f: Finding,
+  ts: string,
+  map: PathMap,
+  nowMs: () => number,
+  scan: (p: string) => Finding[] | null,
+  redactedSids: Set<string>,
+  redactedMemory: Set<string>,
+): void {
+  const sid = sessionIdFromFinding(f);
+  if (sid !== null) {
+    if (redactedSids.has(sid)) return;
+    if (applyRedact(f, ts, map, nowMs, scan)) redactedSids.add(sid);
+    return;
+  }
+  const parsed = memoryFileFromFinding(f);
+  /* c8 ignore start -- a non-memory, non-session finding always refuses in
+   * the preflight pass above (all-or-nothing throws before this loop runs),
+   * so this branch is unreachable through the public redactAllFindings entry
+   * point; kept as defense in depth against a future preflight change. */
+  if (parsed === null) return;
+  /* c8 ignore stop */
+  const memKey = `${parsed.logical}/${parsed.filename}`;
+  if (redactedMemory.has(memKey)) return;
+  if (applyMemoryRedact(f, ts, map, scan)) redactedMemory.add(memKey);
+}
+
+/**
+ * Batch-redact all findings non-interactively (the `--redact-all` path).
+ * Does not require a TTY. Sessions and project-level `memory/*.md` files are
+ * each de-duplicated: the first finding per session or per memory file
+ * triggers the rewrite.
+ *
+ * All-or-nothing: a no-mutation preflight (`preflightRedactable`, or
+ * `preflightMemoryRedactable` for a memory finding) runs over every distinct
+ * session or memory file first. If any finding is refused for a deterministic
+ * reason (no session id and not a memory file, unlocatable transcript, an
+ * active session, an unmapped staged copy, or an unresolvable memory file),
+ * the whole batch throws `NomadFatal` BEFORE any local file is rewritten.
+ * Without this, an earlier session or memory file would be scrubbed on disk
+ * and the push would only abort later on the re-scan, leaving surprising
  * partial local state from a flag the user expects to be all-or-nothing.
  *
  * @param findings All findings from the current verdict.
@@ -271,10 +398,10 @@ export function redactAllFindings(
   const refusals: string[] = [];
   const preflighted = new Set<string>();
   for (const f of findings) {
-    const dedupeKey = sessionIdFromFinding(f) ?? findingKey(f);
+    const dedupeKey = redactAllDedupeKey(f);
     if (preflighted.has(dedupeKey)) continue;
     preflighted.add(dedupeKey);
-    const reason = preflightRedactable(f, map, nowMs);
+    const reason = redactAllPreflightOne(f, map, nowMs);
     if (reason !== null) refusals.push(reason);
   }
   if (refusals.length > 0) {
@@ -287,9 +414,8 @@ export function redactAllFindings(
   }
 
   const redactedSids = new Set<string>();
+  const redactedMemory = new Set<string>();
   for (const f of findings) {
-    const sid = sessionIdFromFinding(f);
-    if (sid === null || redactedSids.has(sid)) continue;
-    if (applyRedact(f, ts, map, nowMs, scan)) redactedSids.add(sid);
+    redactAllOne(f, ts, map, nowMs, scan, redactedSids, redactedMemory);
   }
 }
