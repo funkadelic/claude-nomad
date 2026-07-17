@@ -1,8 +1,8 @@
 /**
  * Project-level memory-file resolution and redaction for the push-time
  * recovery menu. `memory/*.md` is a PROJECT-LEVEL sibling of every session's
- * `<sid>/` subtree (see `.planning/phases/.../65-RESEARCH.md`), so the
- * existing session-subtree redactor (`commands.redact.subtree.ts`,
+ * `<sid>/` subtree, so the existing session-subtree redactor
+ * (`commands.redact.subtree.ts`,
  * `commands.push.recovery.redact.ts`) structurally cannot reach it: it is
  * scoped to one `<sid>/` directory, one level below where `memory/` lives.
  *
@@ -36,12 +36,19 @@ import { log } from './utils.ts';
  * `shared/projects/<logical>/memory/<filename>.md`. The filename group
  * (`[^/]+`) forbids further path separators, so a nested `memory/sub/a.md`
  * does not match (the real, empirically-observed layout has `memory/` as a
- * flat, single-level directory; see RESEARCH.md Assumption A1).
+ * flat, single-level directory).
  */
 const MEMORY_FINDING_PATH = /^shared\/projects\/([^/]+)\/memory\/([^/]+\.md)$/;
 
 /** Filename shape allowed once extracted: no path separators, `.md` suffix. */
 const SAFE_MEMORY_FILENAME = /^[^/\\]+\.md$/;
+
+/**
+ * Matches any finding under a project-level `memory/` directory, whether the
+ * redactable flat `memory/<file>.md` shape or a nested `memory/<subdir>/...`
+ * path. Broader than `MEMORY_FINDING_PATH` on purpose.
+ */
+const MEMORY_DIR_PATH = /^shared\/projects\/[^/]+\/memory\//;
 
 /**
  * Parse a gitleaks finding's `File` path into a project-level memory-file
@@ -55,6 +62,19 @@ export function memoryFileFromFinding(f: Finding): { logical: string; filename: 
   const m = MEMORY_FINDING_PATH.exec(f.File);
   if (m?.[1] === undefined || m[2] === undefined) return null;
   return { logical: m[1], filename: m[2] };
+}
+
+/**
+ * True when a finding's `File` path lies under a project-level `memory/`
+ * directory (flat or nested). Used to exclude the whole memory subtree from
+ * session-id resolution so a nested `memory/<subdir>/x.md` cannot mis-resolve
+ * to a bogus `"memory"` session id and steer the operator toward Allow.
+ *
+ * @param f The gitleaks finding.
+ * @returns true when the path is under a project-level `memory/` directory.
+ */
+export function isMemoryFindingPath(f: Finding): boolean {
+  return MEMORY_DIR_PATH.test(f.File);
 }
 
 /**

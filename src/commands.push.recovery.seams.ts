@@ -7,7 +7,7 @@
 
 import type { Finding } from './push-gitleaks.scan.ts';
 import { SESSION_PATH } from './push-gitleaks.ts';
-import { memoryFileFromFinding } from './commands.push.recovery.memory.ts';
+import { isMemoryFindingPath } from './commands.push.recovery.memory.ts';
 
 // ---------------------------------------------------------------------------
 // Secret masking constants
@@ -56,18 +56,20 @@ const VALID_SID = /^[A-Za-z0-9_-]+$/;
  * `commands.push.recovery.redact.ts`) already redacts every file in a
  * session's subtree, not just `.jsonl` transcripts (subagents, `.meta.json`,
  * `tool-results/*.txt`), so session-id resolution must match that scope. This
- * pattern alone would also capture `"memory"` as a false session id for a
- * `memory/*.md` finding; the `memoryFileFromFinding` pre-check below excludes
- * that case explicitly instead.
+ * pattern alone would also capture `"memory"` as a false session id for any
+ * finding under a project-level `memory/` directory; the `isMemoryFindingPath`
+ * pre-check below excludes that whole subtree (flat or nested) explicitly
+ * instead.
  */
 const SUBTREE_PATH = /^shared\/projects\/[^/]+\/([^/]+)\/.+$/;
 
 /**
- * Extract the session id from a finding's File path. A `memory/*.md` finding
- * is excluded FIRST via `memoryFileFromFinding` (imported from
- * `commands.push.recovery.memory.ts`, the single source of truth for the
- * memory-path shape) and returns null rather than mis-capturing `"memory"` as
- * a session id. Otherwise handles both the flat
+ * Extract the session id from a finding's File path. Any finding under a
+ * project-level `memory/` directory is excluded FIRST via `isMemoryFindingPath`
+ * (imported from `commands.push.recovery.memory.ts`, the single source of truth
+ * for the memory-path shape) and returns null rather than mis-capturing
+ * `"memory"` as a session id, for both the flat `memory/<file>.md` shape and a
+ * nested `memory/<subdir>/<file>.md`. Otherwise handles both the flat
  * `shared/projects/<logical>/<sid>.jsonl` form (`SESSION_PATH`) and any
  * deeper file under a session directory,
  * `shared/projects/<logical>/<sid>/...` (`SUBTREE_PATH`). The extracted id is
@@ -80,7 +82,7 @@ const SUBTREE_PATH = /^shared\/projects\/[^/]+\/([^/]+)\/.+$/;
  *   `[A-Za-z0-9_-]`.
  */
 export function sessionIdFromFinding(f: Finding): string | null {
-  if (memoryFileFromFinding(f) !== null) return null;
+  if (isMemoryFindingPath(f)) return null;
   // Try the flat `<sid>.jsonl` form first, then any nested subtree file. Both
   // patterns capture the session id at group 1; a matched capture group is
   // always a string, so no nullish guard on `m[1]` is needed.

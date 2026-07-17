@@ -48,6 +48,14 @@ describe('sessionIdFromFinding', () => {
     expect(sessionIdFromFinding(finding)).toBeNull();
   });
 
+  it('returns null for a nested memory/<subdir>/x.md finding (no bogus "memory" session id)', () => {
+    // Defensive: a nested path under the project-level memory/ directory is not
+    // the redactable flat shape, but it must still be excluded from session-id
+    // resolution so it cannot mis-resolve to sid "memory" and steer to Allow.
+    const finding = makeFinding({ File: 'shared/projects/foo/memory/sub/notes.md' });
+    expect(sessionIdFromFinding(finding)).toBeNull();
+  });
+
   it('returns the session id for a flat <sid>.jsonl finding', () => {
     const finding = makeFinding({ File: 'shared/projects/foo/abc123.jsonl' });
     expect(sessionIdFromFinding(finding)).toBe('abc123');

@@ -13,9 +13,9 @@ import type { Finding } from './push-gitleaks.scan.ts';
  * Unit tests for `src/commands.push.recovery.memory.ts`: the project-level
  * memory-file resolution and redaction seam. Fixtures deliberately mirror the
  * REAL, empirically-observed layout (`memory/` as a flat, project-level
- * sibling of every `<sid>/` subtree, NOT nested inside one) per
- * 65-RESEARCH.md Pitfall 2, distinguishing this suite from the session-subtree
- * fixtures in `commands.push.recovery.redact.test.ts`.
+ * sibling of every `<sid>/` subtree, NOT nested inside one), distinguishing
+ * this suite from the session-subtree fixtures in
+ * `commands.push.recovery.redact.test.ts`.
  */
 
 /** Build a minimal Finding fixture with optional field overrides. */
@@ -83,6 +83,40 @@ describe('memoryFileFromFinding (pure)', () => {
     const { memoryFileFromFinding } = await import('./commands.push.recovery.memory.ts');
     const f = makeFinding({ File: 'shared/projects/foo/memory/notes.txt' });
     expect(memoryFileFromFinding(f)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isMemoryFindingPath (pure)
+// ---------------------------------------------------------------------------
+
+describe('isMemoryFindingPath (pure)', () => {
+  it('is true for a flat memory/*.md path', async () => {
+    const { isMemoryFindingPath } = await import('./commands.push.recovery.memory.ts');
+    expect(isMemoryFindingPath(makeFinding({ File: 'shared/projects/foo/memory/a.md' }))).toBe(
+      true,
+    );
+  });
+
+  it('is true for a nested memory/<subdir>/x path (broader than memoryFileFromFinding)', async () => {
+    const { isMemoryFindingPath } = await import('./commands.push.recovery.memory.ts');
+    expect(isMemoryFindingPath(makeFinding({ File: 'shared/projects/foo/memory/sub/a.md' }))).toBe(
+      true,
+    );
+  });
+
+  it('is true for a non-.md file under memory/', async () => {
+    const { isMemoryFindingPath } = await import('./commands.push.recovery.memory.ts');
+    expect(isMemoryFindingPath(makeFinding({ File: 'shared/projects/foo/memory/notes.txt' }))).toBe(
+      true,
+    );
+  });
+
+  it('is false for a session .jsonl path outside memory/', async () => {
+    const { isMemoryFindingPath } = await import('./commands.push.recovery.memory.ts');
+    expect(isMemoryFindingPath(makeFinding({ File: 'shared/projects/foo/abc123.jsonl' }))).toBe(
+      false,
+    );
   });
 });
 
