@@ -458,7 +458,7 @@ describe('cmdRedact', () => {
     else delete process.env.NOMAD_HOST;
   });
 
-  it('exits 1 on an invalid session id (contains slash)', async () => {
+  it('exits 2 (usage) on an invalid session id (contains slash)', async () => {
     const exitSpy = vi
       .spyOn(process, 'exit')
       .mockImplementation((_code?: number | string | null) => {
@@ -466,10 +466,10 @@ describe('cmdRedact', () => {
       });
     const { cmdRedact } = await import('./commands.redact.ts');
     expect(() => cmdRedact({ id: 'bad/id' })).toThrow('process.exit');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
   });
 
-  it('exits 1 on an empty session id', async () => {
+  it('exits 2 (usage) on an empty session id', async () => {
     const exitSpy = vi
       .spyOn(process, 'exit')
       .mockImplementation((_code?: number | string | null) => {
@@ -477,10 +477,10 @@ describe('cmdRedact', () => {
       });
     const { cmdRedact } = await import('./commands.redact.ts');
     expect(() => cmdRedact({ id: '' })).toThrow('process.exit');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
   });
 
-  it('exits 1 on a session id longer than 128 chars', async () => {
+  it('exits 2 (usage) on a session id longer than 128 chars', async () => {
     const exitSpy = vi
       .spyOn(process, 'exit')
       .mockImplementation((_code?: number | string | null) => {
@@ -488,7 +488,7 @@ describe('cmdRedact', () => {
       });
     const { cmdRedact } = await import('./commands.redact.ts');
     expect(() => cmdRedact({ id: 'a'.repeat(129) })).toThrow('process.exit');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
   });
 
   it('accepts a session id of exactly 128 chars (boundary: max valid length)', async () => {

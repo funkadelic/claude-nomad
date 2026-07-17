@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 
 import { repoHome } from './config.ts';
 import { appendGitleaksIgnore, isValidFingerprint } from './commands.redact.core.ts';
+import { EXIT } from './exit-codes.ts';
 import { die, fail, item, log } from './utils.ts';
 
 /**
@@ -26,7 +27,7 @@ export function cmdAllow(fingerprints: string[]): void {
       // across lines (the value is rejected, never written).
       const shown = fp.replaceAll('\r', String.raw`\r`).replaceAll('\n', String.raw`\n`);
       fail(`invalid fingerprint: ${shown}`);
-      process.exit(1);
+      process.exit(EXIT.USAGE);
     }
   }
   for (const fp of fingerprints) {

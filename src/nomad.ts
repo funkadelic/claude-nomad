@@ -42,6 +42,7 @@ import { parseSyncArgs } from './nomad.dispatch.sync.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
 import { fail, NomadFatal } from './utils.ts';
+import { EXIT } from './exit-codes.ts';
 
 /**
  * Static JSON import for the `--version` arm. Uses `with { type: 'json' }`
@@ -57,7 +58,7 @@ if (!h) {
   fail(
     'could not determine home directory (HOME env unset and no uid mapping). Set HOME and retry.',
   );
-  process.exit(1);
+  process.exit(EXIT.GENERIC_FAILURE);
 }
 
 try {
@@ -71,7 +72,7 @@ try {
       // to the published tag minus the leading `v`).
       if (process.argv.length !== 3) {
         console.error('usage: nomad --version (no extra arguments)');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       console.log(pkg.version);
       break;
@@ -82,7 +83,7 @@ try {
       const pullArgs = parsePullArgs(process.argv);
       if (pullArgs === null) {
         console.error('usage: nomad pull [--dry-run] [--force-remote]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdPull({ dryRun: pullArgs.dryRun, forceRemote: pullArgs.forceRemote });
       break;
@@ -97,7 +98,7 @@ try {
         console.error(
           'usage: nomad push [--dry-run] [--full-scan] [--redact-all] [--allow <rule>] [--allow-all]',
         );
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       await cmdPush({
         dryRun: pushArgs.dryRun,
@@ -114,7 +115,7 @@ try {
       const syncArgs = parseSyncArgs(process.argv);
       if (syncArgs === null) {
         console.error('usage: nomad sync [--dry-run] [--verbose|--all|-v]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       await cmdSync({ dryRun: syncArgs.dryRun, verbose: syncArgs.verbose });
       break;
@@ -127,7 +128,7 @@ try {
       const initArgs = parseInitArgs(process.argv);
       if (initArgs === null) {
         console.error('usage: nomad init [--snapshot] [--keep-actions] [--repo <name>]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       // Without --snapshot, offer to seed the repo from an existing ~/.claude/
       // (interactive only); a fresh host with no config is never prompted. Skip
@@ -149,7 +150,7 @@ try {
       // accepts no flags.
       if (process.argv.length > 3) {
         console.error('usage: nomad diff');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdDiff();
       break;
@@ -158,7 +159,7 @@ try {
       // pattern as the --version arm).
       if (process.argv.length !== 3) {
         console.error('usage: nomad update');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdUpdate(pkg.version);
       break;
@@ -176,7 +177,7 @@ try {
         (sub !== undefined && (sub !== '--dry-run' || process.argv.length !== 5))
       ) {
         console.error('usage: nomad adopt <name> [--dry-run]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdAdopt(name, { dryRun: sub === '--dry-run' });
       break;
@@ -187,7 +188,7 @@ try {
       const ejectArgs = parseEjectArgs(process.argv);
       if (ejectArgs === null) {
         console.error('usage: nomad eject [--dry-run]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdEject({ dryRun: ejectArgs.dryRun });
       break;
@@ -198,7 +199,7 @@ try {
       const captureArgs = parseCaptureSettingsArgs(process.argv);
       if (captureArgs === null) {
         console.error('usage: nomad capture-settings [--host] [--dry-run] [--yes]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       await cmdCaptureSettings({
         host: captureArgs.host,
@@ -219,7 +220,7 @@ try {
           'usage: nomad doctor [--check-shared] [--check-schema] [--check-remote] [--verbose|--all|-v]' +
             ' | --resume-cmd <session-id>',
         );
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       } else if (parsed.kind === 'resume') {
         resumeCmd(parsed.id);
       } else {
@@ -239,7 +240,7 @@ try {
       const id = process.argv[3];
       if (process.argv.length !== 4 || typeof id !== 'string' || !/^\w[\w-]{0,127}$/.test(id)) {
         console.error('usage: nomad drop-session <id>');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdDropSession(id);
       break;
@@ -250,7 +251,7 @@ try {
       const redactArgs = parseRedactArgs(process.argv);
       if (redactArgs === null) {
         console.error('usage: nomad redact <session-id> [--rule <rule-id>] [--dry-run]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdRedact(redactArgs);
       break;
@@ -261,7 +262,7 @@ try {
       const allowArgs = parseAllowArgs(process.argv);
       if (allowArgs === null) {
         console.error('usage: nomad allow <fingerprint> [<fingerprint>...]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdAllow(allowArgs);
       break;
@@ -272,14 +273,14 @@ try {
       const cleanArgs = parseCleanArgs(process.argv);
       if (cleanArgs === null) {
         console.error('usage: nomad clean --backups [--dry-run] [--older-than <dur> | --keep <N>]');
-        process.exit(1);
+        process.exit(EXIT.USAGE);
       }
       cmdClean(cleanArgs);
       break;
     }
     default:
       console.error(DEFAULT_HELP);
-      process.exit(1);
+      process.exit(EXIT.USAGE);
   }
 } catch (err) {
   // Top-level safety net for NomadFatal thrown from contexts that don't have
@@ -287,7 +288,7 @@ try {
   // have their own catches so their finally blocks release the lock first.
   if (err instanceof NomadFatal) {
     fail(err.message);
-    process.exit(1);
+    process.exit(err.code);
   }
   throw err;
 }

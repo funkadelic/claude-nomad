@@ -10,6 +10,7 @@ import {
 } from './commands.redact.subtree.ts';
 import { warnIfSessionPushed } from './commands.pushed-history.ts';
 import { type Finding, scanFile } from './push-gitleaks.scan.ts';
+import { EXIT } from './exit-codes.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';
 import { die, fail, log, NomadFatal } from './utils.ts';
@@ -101,7 +102,7 @@ export function cmdRedact(
 
   if (id.length === 0 || id.length > 128 || !/^[A-Za-z0-9_-]+$/.test(id)) {
     fail(`invalid session id: ${id}`);
-    process.exit(1);
+    process.exit(EXIT.USAGE);
   }
   // Resolve roots once per command invocation to avoid a time-of-check/
   // time-of-use race: resolving twice could observe a different filesystem
