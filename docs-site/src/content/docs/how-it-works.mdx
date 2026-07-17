@@ -11,25 +11,11 @@ import { FileTree } from '@astrojs/starlight/components';
 (`npm i -g claude-nomad`) and keep a separate **private** Git repo that holds only your config:
 `CLAUDE.md`, skills, settings, session transcripts. No tool source code lives in that repo.
 
-<FileTree>
-
-- claude-nomad-config/ your private config repo
-  - shared/ your config, synced to every host
-    - CLAUDE.md
-    - skills/ your own skills (gsd-* excluded)
-    - commands/
-    - rules/
-    - settings.base.json
-    - projects/
-  - hosts/
-    - \<hostname>.json
-  - path-map.json
-
-</FileTree>
-
 `nomad init` creates this repo for you (via `gh`) and scaffolds the directory structure in one
-step. Every host after the first installs the CLI, clones your private data repo to
-`~/claude-nomad/`, and runs `nomad pull` to sync.
+step. By default the private GitHub repo is named `claude-nomad-config` and is cloned locally to
+`~/claude-nomad/`, so those two names refer to the same repo (the remote and its local checkout).
+Every host after the first installs the CLI, clones your private data repo to `~/claude-nomad/`,
+and runs `nomad pull` to sync.
 
 By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config.ts`). Developers
 working from an alternate checkout can `export NOMAD_REPO=/path/to/repo` to point the CLI at their
