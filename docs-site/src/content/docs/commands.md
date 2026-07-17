@@ -363,3 +363,20 @@ once the base is clean. See [GSD-aware sync](/claude-nomad/gsd-aware-sync/) for 
 
 Print the installed CLI version as bare semver to stdout; exits 0. Used by the npm-publish smoke
 test and useful for ad-hoc upgrade checks.
+
+## Exit codes
+
+Every `nomad` subcommand exits with one of a small set of codes, so a script or cron wrapper can
+branch on `$?` without parsing stderr text.
+
+| Code | Name            | Meaning                                                                                                               |
+| ---- | --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 0    | Success         | Completed successfully.                                                                                                 |
+| 1    | Generic failure | Unclassified failure; the default for any error not covered below.                                                     |
+| 2    | Usage           | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                            |
+| 4    | Conflict        | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution, or `nomad pull --force-remote`.    |
+| 5    | Leak blocked    | gitleaks confirmed a secret in the staged tree and the push was aborted.                                               |
+
+A run skipped because another nomad process already holds the lock also exits 0: this is an
+intentional no-op skip, not a failure, so a backgrounded shell-rc or cron invocation never raises a
+false alarm from a concurrent run. Value `3` is reserved for future use.
