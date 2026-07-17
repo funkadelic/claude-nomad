@@ -151,6 +151,10 @@ export function reportCommittedMemory(section: DoctorSection): void {
     // dir collision-resistant against two same-second, same-pid invocations.
     const stamp = `${nowTimestamp()}-${process.pid}-${randomBytes(4).toString('hex')}`;
     tmpRoot = join(cacheDir, `check-shared-memory-tree-${stamp}`);
+    // Owner-only (0o700): the staged copies are committed memory blobs that may
+    // contain the very secrets this advisory scans for, so a 0o700 root keeps
+    // another local user from reading them out of the temp tree mid-scan.
+    mkdirSync(tmpRoot, { recursive: true, mode: 0o700 });
     const staged = buildMemoryScanTree(tmpRoot);
     if (staged === 0) return;
 

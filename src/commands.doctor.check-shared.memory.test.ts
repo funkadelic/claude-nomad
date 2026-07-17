@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -228,6 +236,31 @@ describe('commands.doctor.check-shared.memory', () => {
     expect(capturedDir).not.toBe(repo);
     expect(capturedDir).toContain('check-shared-memory-tree-');
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'creates the temp scan tree owner-only (0o700) so committed secrets are not world-readable',
+    async () => {
+      writeMemoryFile('foo', 'notes.md', 'hello\n');
+      gitInit(repo);
+      commitAll(repo);
+      let capturedMode = -1;
+      vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+        const actual = await importOriginal<PushGitleaksModule>();
+        return {
+          ...actual,
+          scanStagedTree: vi.fn((dir: string) => {
+            capturedMode = statSync(dir).mode & 0o777;
+            return [];
+          }),
+        };
+      });
+      vi.resetModules();
+      const { reportCommittedMemory } = await import('./commands.doctor.check-shared.memory.ts');
+      const section: Section = { header: 'Shared scan', items: [] };
+      reportCommittedMemory(section);
+      expect(capturedMode).toBe(0o700);
+    },
+  );
 
   it('emits a WARN row per finding naming File + RuleID, never the matched secret, and leaves exitCode untouched', async () => {
     writeMemoryFile('foo', 'notes.md', 'secret\n');
