@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.61.0](https://github.com/funkadelic/claude-nomad/compare/v0.60.0...v0.61.0) (2026-07-17)
+
+
+### Added
+
+* **push:** handle memory/*.md secrets at parity with session transcripts ([#427](https://github.com/funkadelic/claude-nomad/issues/427)) ([d1e544c](https://github.com/funkadelic/claude-nomad/commit/d1e544c4f402dae80e319c62ed1fae903fef6e4b))
+
+
+### Changed
+
+* **publish:** checkout in smoke-test so setup-node can read .nvmrc ([#424](https://github.com/funkadelic/claude-nomad/issues/424)) ([3d8fd2c](https://github.com/funkadelic/claude-nomad/commit/3d8fd2c66ba7947a9326c46f997c336793786efc))
+
+
+### Documentation
+
+* correct release-bump, Stryker HOME, and offboarding details ([#429](https://github.com/funkadelic/claude-nomad/issues/429)) ([bb5f0fe](https://github.com/funkadelic/claude-nomad/commit/bb5f0fede4cafb848609134bbd1581ac62d42f2c))
+* drop redundant overview file tree in how-it-works ([#428](https://github.com/funkadelic/claude-nomad/issues/428)) ([dd795c8](https://github.com/funkadelic/claude-nomad/commit/dd795c831b876be3ed6bfe1b1313c8ce8f108715))
+* **site:** show claude-nomad version badge in the header ([#430](https://github.com/funkadelic/claude-nomad/issues/430)) ([18d5e86](https://github.com/funkadelic/claude-nomad/commit/18d5e864cd5579d79a79fdd8060352afedcc32fe))
+
+
+### Testing
+
+* **integration:** cover recovery, sync, dry-run, manifest, and eject flows ([#426](https://github.com/funkadelic/claude-nomad/issues/426)) ([c9c5223](https://github.com/funkadelic/claude-nomad/commit/c9c5223117426439ad57e2442137891c379af1f7))
+
 ## [0.60.0](https://github.com/funkadelic/claude-nomad/compare/v0.59.0...v0.60.0) (2026-07-15)
 
 
