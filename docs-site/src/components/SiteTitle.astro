@@ -11,15 +11,27 @@ import pkg from '../../../package.json';
 const { siteTitleHref } = Astro.locals.starlightRoute;
 ---
 
-<a href={siteTitleHref} class="site-title sl-flex">
-  <span translate="no" aria-label="claude-nomad" class="wordmark">
-    <span class="prompt-glyph" aria-hidden="true">&gt;_</span> nomad
-  </span>
-</a>
-<span translate="no" class="version-badge">v{pkg.version}</span>
+<div class="brand">
+  <a href={siteTitleHref} class="site-title sl-flex">
+    <span translate="no" aria-label="claude-nomad" class="wordmark">
+      <span class="prompt-glyph" aria-hidden="true">&gt;_</span> nomad
+    </span>
+  </a>
+  <span translate="no" class="version-badge">v{pkg.version}</span>
+</div>
 
 <style>
   @layer starlight.core {
+    /* Own the flex context for the wordmark + version badge so they share a
+       baseline. Starlight's title-wrapper centers its children, so aligning
+       the badge alone there just floats it to the top; wrapping both in a
+       baseline-aligned box is what actually seats the badge on the wordmark's
+       baseline. */
+    .brand {
+      display: flex;
+      align-items: baseline;
+      min-width: 0;
+    }
     .site-title {
       align-items: center;
       gap: var(--sl-nav-gap);
@@ -41,10 +53,6 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
     /* Muted version pill trailing the wordmark: small, dim, non-clickable so
        it reads as metadata rather than a second brand element. */
     .version-badge {
-      /* Sit the badge text on the wordmark's baseline instead of the flex
-         container's centered cross-axis (Starlight's title-wrapper centers
-         its children by default). */
-      align-self: baseline;
       margin-inline-start: 0.5rem;
       padding: 0.1em 0.45em;
       border-radius: 0.35rem;
