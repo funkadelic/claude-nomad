@@ -5,11 +5,14 @@
  * session transcripts a push would stage; it never reads the sync repo's own
  * already-committed content. A secret that already rode a prior push into
  * `shared/projects/<logical>/memory/*.md` therefore has no advisory surface
- * outside an actual push. This module closes that gap: it copies every
- * committed `memory/*.md` file into a fresh temp tree (never scanning
- * `repoHome()` in place, which would `git add -A` the real repo index as a
- * side effect of a read-only doctor check) and scans the copy through the
- * same `scanStagedTree` mechanism push and the local-preview scan use.
+ * outside an actual push. This module closes that gap: it sources every
+ * committed, flat `memory/*.md` file from the sync repo's `HEAD` (via `git
+ * ls-tree` + `git cat-file`, never a working-tree copy, so a dirty or deleted
+ * local file cannot change the result and nested/non-`.md` paths are out of
+ * scope) into a fresh temp tree (never scanning `repoHome()` in place, which
+ * would `git add -A` the real repo index as a side effect of a read-only
+ * doctor check) and scans the copy through the same `scanStagedTree`
+ * mechanism push and the local-preview scan use.
  *
  * WARN-only, never FAIL: a finding here is retroactive (it already left in a
  * prior push), not blocking, so `process.exitCode` is never set by this
@@ -18,10 +21,11 @@
  * run mid-output.
  */
 
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { dim, warnGlyph, yellow } from './color.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
@@ -30,30 +34,67 @@ import { type Finding, scanStagedTree } from './push-gitleaks.ts';
 import { nowTimestamp } from './utils.fs.ts';
 
 /**
- * Copy every committed `shared/projects/<logical>/memory/` directory from the
- * sync repo into `tmpRoot/shared/projects/<logical>/memory`, mirroring the
- * `buildScanTree` temp-copy pattern in the sibling `check-shared.ts` but
- * sourcing from `repoHome()` (the committed repo) instead of `claudeHome()`
- * (the local, not-yet-pushed transcripts). Returns the count of logicals
- * staged; returns 0 (no crash) when `shared/projects` does not exist. Copying
- * into a fresh temp dir first is load-bearing: `scanStagedTree` internally
+ * Matches a committed, repo-relative POSIX path of the form
+ * `shared/projects/<logical>/memory/<filename>.md` as returned by
+ * `git ls-tree --name-only`. Deliberately flat: a nested
+ * `memory/<subdir>/x.md` path (or any non-`.md` file under `memory/`) does
+ * not match and is skipped, matching the documented flat `memory/*.md` scope.
+ */
+const MEMORY_MD_PATH = /^shared\/projects\/([^/]+)\/memory\/[^/]+\.md$/;
+
+/**
+ * Materialize every committed, flat `memory/*.md` blob from the sync repo's
+ * `HEAD` into `tmpRoot/shared/projects/<logical>/memory/<file>`, mirroring
+ * the `buildScanTree` temp-copy pattern in the sibling `check-shared.ts` but
+ * sourcing from the committed `HEAD` (via `git ls-tree` + `git cat-file`)
+ * instead of `cpSync`-ing `repoHome()`'s live working tree. Sourcing from
+ * `HEAD` is load-bearing: a `cpSync` of the working tree would let an
+ * uncommitted local deletion hide a secret that is still committed and
+ * reachable by anyone who clones the repo, and would recursively copy
+ * anything nested under `memory/` rather than enforcing the documented flat
+ * `memory/*.md` scope. Returns the count of distinct logicals staged; returns
+ * 0 (no crash) on any git failure (empty repo, not a git repo, `git` missing,
+ * or `shared/projects` absent from `HEAD`). Copying into a fresh temp dir
+ * first is load-bearing for a separate reason: `scanStagedTree` internally
  * runs `git add -A`, and running that against the real `repoHome()` would
  * mutate the actual repo's index as a side effect of a read-only check.
  *
  * @param tmpRoot Absolute path to the (not-yet-existing) temp scan tree.
- * @returns The number of `<logical>/memory` directories copied.
+ * @returns The number of distinct `<logical>` memory dirs staged.
  */
 export function buildMemoryScanTree(tmpRoot: string): number {
-  const projectsDir = join(repoHome(), 'shared', 'projects');
-  if (!existsSync(projectsDir)) return 0;
-  let staged = 0;
-  for (const logical of readdirSync(projectsDir)) {
-    const memDir = join(projectsDir, logical, 'memory');
-    if (!existsSync(memDir)) continue;
-    cpSync(memDir, join(tmpRoot, 'shared', 'projects', logical, 'memory'), { recursive: true });
-    staged++;
+  let paths: string[];
+  try {
+    const out = execFileSync(
+      'git',
+      ['-C', repoHome(), 'ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', 'shared/projects'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 },
+    );
+    paths = out.split('\0').filter((p) => p.length > 0);
+  } catch {
+    return 0;
   }
-  return staged;
+
+  const logicals = new Set<string>();
+  for (const rel of paths) {
+    const m = MEMORY_MD_PATH.exec(rel);
+    if (m?.[1] === undefined) continue;
+    let blob: Buffer;
+    try {
+      blob = execFileSync('git', ['-C', repoHome(), 'cat-file', 'blob', `HEAD:${rel}`], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        maxBuffer: 67108864,
+        timeout: 10000,
+      });
+    } catch {
+      continue;
+    }
+    const dest = join(tmpRoot, rel);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, blob);
+    logicals.add(m[1]);
+  }
+  return logicals.size;
 }
 
 /**
@@ -93,19 +134,23 @@ function reportMemoryFindings(section: DoctorSection, findings: Finding[]): void
  * report -- collapses to a single WARN-skip row rather than escaping and
  * aborting the whole `--check-shared` run mid-output. An empty findings array
  * is silent (clean, no row); a non-empty array is reported via
- * `reportMemoryFindings`.
+ * `reportMemoryFindings`. The temp-tree path is computed inside the `try` (so
+ * a failure before it is assigned leaves `tmpRoot` undefined) and the
+ * `finally` cleanup itself is guarded: a `rmSync` failure is swallowed rather
+ * than escaping the `finally` block, which would otherwise abort the doctor
+ * run even though this advisory is WARN-only.
  *
  * @param section The doctor section to append WARN rows to.
  */
 export function reportCommittedMemory(section: DoctorSection): void {
-  const cacheDir = join(homedir(), '.cache', 'claude-nomad');
-  // See reportCheckShared's stamp comment: the random suffix makes the temp
-  // dir collision-resistant against two same-second, same-pid invocations.
-  const stamp = `${nowTimestamp()}-${process.pid}-${randomBytes(4).toString('hex')}`;
-  const tmpRoot = join(cacheDir, `check-shared-memory-tree-${stamp}`);
-
+  let tmpRoot: string | undefined;
   try {
+    const cacheDir = join(homedir(), '.cache', 'claude-nomad');
     mkdirSync(cacheDir, { recursive: true });
+    // See reportCheckShared's stamp comment: the random suffix makes the temp
+    // dir collision-resistant against two same-second, same-pid invocations.
+    const stamp = `${nowTimestamp()}-${process.pid}-${randomBytes(4).toString('hex')}`;
+    tmpRoot = join(cacheDir, `check-shared-memory-tree-${stamp}`);
     const staged = buildMemoryScanTree(tmpRoot);
     if (staged === 0) return;
 
@@ -137,6 +182,13 @@ export function reportCommittedMemory(section: DoctorSection): void {
       `${yellow(warnGlyph)} committed-memory scan skipped: ${(err as Error).message}`,
     );
   } finally {
-    rmSync(tmpRoot, { recursive: true, force: true });
+    if (tmpRoot !== undefined) {
+      try {
+        rmSync(tmpRoot, { recursive: true, force: true });
+      } catch {
+        // Cleanup failure must never abort the doctor run: this advisory is
+        // WARN-only and never sets process.exitCode.
+      }
+    }
   }
 }
