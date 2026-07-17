@@ -18,6 +18,10 @@ useDefault = true
 # base64url chars = 19-24 total, matching the sibling `key:`/`rule:` block) and
 # token-anchored with `\b` on both ends, so it cannot suppress a longer or
 # embedded `AY`-prefixed credential as a substring (an unbounded `{20,}` could).
+# Also scoped (recursively) to `shared/skills/<name>/**`: curated, portable skill
+# content can legitimately embed the same tool-output noise shapes (e.g. a
+# skill doc pasting an example npm-audit or Sonar dump), and the noise shapes
+# here carry no false-negative risk in that tree either.
 [[allowlists]]
 description = "claude-nomad: structurally-distinguishable tool-output noise in synced session transcripts"
 regexes = [
@@ -28,6 +32,7 @@ regexes = [
 ]
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
+    '''^shared/skills/[^/]+/.*$''',
 ]
 condition = "AND"
 
@@ -72,7 +77,10 @@ condition = "AND"
 # it to synced transcripts. Also scoped to `shared/projects/<logical>/memory/*.md`:
 # this is plausible content in a curated memory note documenting a commit
 # signature-verification procedure, and the structural `with <keytype> key
-# SHA256:` anchor keeps the false-negative risk low there too.
+# SHA256:` anchor keeps the false-negative risk low there too. Also scoped
+# (recursively) to `shared/skills/<name>/**`: a skill documenting a
+# signature-verification procedure can plausibly quote the same fingerprint
+# line shape, with the same low false-negative risk.
 [[allowlists]]
 description = "claude-nomad: SSH public-key fingerprints (with <keytype> key SHA256:<b64>) in git signature output in synced session transcripts"
 regexTarget = "line"
@@ -82,6 +90,7 @@ regexes = [
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
     '''^shared/projects/[^/]+/memory/[^/]+\.md$''',
+    '''^shared/skills/[^/]+/.*$''',
 ]
 condition = "AND"
 
@@ -93,7 +102,10 @@ condition = "AND"
 # above keys on. Anchoring on the surrounding `key:`/`rule:` structure (via
 # regexTarget = "line") keeps this from whitelisting a bare token: a real API
 # key is never followed by `\n  rule: <lang>:S####`. `condition = "AND"` plus
-# the session-jsonl path scope double-locks it to synced transcripts.
+# the session-jsonl path scope double-locks it to synced transcripts. Also
+# scoped (recursively) to `shared/skills/<name>/**`: a skill documenting a
+# SonarCloud triage procedure can plausibly quote the same issue-listing
+# pair shape, with the same low false-negative risk.
 [[allowlists]]
 description = "claude-nomad: SonarCloud issue-listing output (key: <id> / rule: <lang>:S<n>) in synced session transcripts"
 regexTarget = "line"
@@ -102,5 +114,6 @@ regexes = [
 ]
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
+    '''^shared/skills/[^/]+/.*$''',
 ]
 condition = "AND"
