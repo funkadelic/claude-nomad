@@ -24,7 +24,15 @@
  * into `--redact-all` in `commands.push.recovery.actions.ts`.
  */
 
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 import { claudeHome, repoHome } from './config.ts';
@@ -105,33 +113,56 @@ function isSafeRelPath(relPath: string): boolean {
  * every host, unlike a project-level memory file
  * (`resolveMemoryLocalPath`).
  *
- * Double-guarded: `name` and every `relPath` segment are validated before
- * any `join()`, and the resolved path is independently confirmed to stay
- * under the skill root after the join (defense-in-depth against a guard
- * that missed some obscure segment shape). Also refuses a gsd-owned skill
- * name (`isGsdOwned`, imported from `skills-sync.ts`, the single source of
- * truth for the `gsd-` boundary) so a stale repo-side `gsd-*` entry from the
- * pre-copy-sync symlink era can never be auto-redacted.
+ * Triple-guarded: `name` and every `relPath` segment are validated before
+ * any `join()` (lexical), the joined path is confirmed to stay under the
+ * skill root (lexical, string-only), and finally the candidate is
+ * canonicalized with `realpathSync` and required to stay under the REAL
+ * skills root AND be a regular file (physical). The physical guard is what
+ * closes the symlink hole the lexical checks cannot: a leaf symlink, an
+ * intermediate symlink directory that resolves outside `~/.claude/skills`, or
+ * a directory/other non-file target are all refused, so a redaction can never
+ * back up and overwrite an unrelated target reached through a symlink. Also
+ * refuses a gsd-owned skill name (`isGsdOwned`, imported from
+ * `skills-sync.ts`, the single source of truth for the `gsd-` boundary) so a
+ * stale repo-side `gsd-*` entry from the pre-copy-sync symlink era can never
+ * be auto-redacted.
  *
  * @param name Skill name extracted from the finding.
  * @param relPath Relative path within the skill extracted from the finding.
- * @returns The absolute local path when name/segments are safe, the skill
- *   is not gsd-owned, and the file exists; else null.
+ * @returns The absolute local path when name/segments are safe, the skill is
+ *   not gsd-owned, and the real target is a regular file under the real skills
+ *   root; else null.
  */
 export function resolveSkillLocalPath(name: string, relPath: string): string | null {
   if (!SAFE_SKILL_NAME.test(name) || name === '.' || name === '..') return null;
   if (isGsdOwned(name)) return null;
   if (!isSafeRelPath(relPath)) return null;
-  const skillRoot = join(claudeHome(), 'skills', name);
+  const skillsRoot = join(claudeHome(), 'skills');
+  const skillRoot = join(skillsRoot, name);
   const localPath = join(skillRoot, ...relPath.split('/'));
   /* c8 ignore start -- defense-in-depth: unreachable once SAFE_SKILL_NAME (no
      path separators in name) and isSafeRelPath (rejects '..'/'.'/empty
      segments above) both pass, join() cannot produce a path escaping
-     skillRoot; kept as a second guard in case either upstream check is ever
-     weakened */
+     skillRoot; kept as a cheap first lexical guard in case either upstream
+     check is ever weakened */
   if (localPath !== skillRoot && !localPath.startsWith(skillRoot + sep)) return null;
   /* c8 ignore stop */
-  return existsSync(localPath) ? localPath : null;
+  // Physical containment guard: the lexical check above is string-only and
+  // cannot see through symlinks. Reject a leaf symlink outright (lstat does
+  // not follow it), then canonicalize and require the real target stays under
+  // the real skills root and is a regular file.
+  try {
+    if (lstatSync(localPath).isSymbolicLink()) return null;
+    const realLocal = realpathSync(localPath);
+    const realRoot = realpathSync(skillsRoot);
+    if (!realLocal.startsWith(realRoot + sep)) return null;
+    if (!statSync(realLocal).isFile()) return null;
+  } catch {
+    // ENOENT (missing file or missing skills root) or any other stat/realpath
+    // failure: treat as not redactable. A resolver must never throw.
+    return null;
+  }
+  return localPath;
 }
 
 /**

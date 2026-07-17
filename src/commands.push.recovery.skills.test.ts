@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -214,6 +222,43 @@ describe('resolveSkillLocalPath', () => {
     const { resolveSkillLocalPath } = await import('./commands.push.recovery.skills.ts');
     expect(resolveSkillLocalPath('foo', 'missing.md')).toBeNull();
   });
+
+  it('returns null when the target path is a directory, not a regular file', async () => {
+    // makeSkillFixture creates a real `references/` subdir under the skill.
+    makeSkillFixture(testHome);
+    const { resolveSkillLocalPath } = await import('./commands.push.recovery.skills.ts');
+    expect(resolveSkillLocalPath('foo', 'references')).toBeNull();
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'returns null for a leaf symlink under the skill dir that resolves outside the skills root',
+    async () => {
+      const { skillDir } = makeSkillFixture(testHome);
+      const outsideDir = join(testHome, 'outside');
+      mkdirSync(outsideDir, { recursive: true });
+      const outsideFile = join(outsideDir, 'secret.md');
+      writeFileSync(outsideFile, 'outside secret\n');
+      symlinkSync(outsideFile, join(skillDir, 'evil.md'));
+      const { resolveSkillLocalPath } = await import('./commands.push.recovery.skills.ts');
+      expect(resolveSkillLocalPath('foo', 'evil.md')).toBeNull();
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'returns null when an intermediate directory is a symlink escaping the skills root',
+    async () => {
+      const { skillDir } = makeSkillFixture(testHome);
+      const outsideDir = join(testHome, 'outside');
+      mkdirSync(outsideDir, { recursive: true });
+      const outsideFile = join(outsideDir, 'notes.md');
+      writeFileSync(outsideFile, 'outside secret\n');
+      // `refs` is a symlinked directory pointing outside the skills root, so a
+      // lexically-contained `refs/notes.md` physically resolves outside.
+      symlinkSync(outsideDir, join(skillDir, 'refs'));
+      const { resolveSkillLocalPath } = await import('./commands.push.recovery.skills.ts');
+      expect(resolveSkillLocalPath('foo', 'refs/notes.md')).toBeNull();
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -413,4 +458,40 @@ describe('applySkillRedact', () => {
 
     expect(result).toBe(false);
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a leaf symlink escaping the skills root and never writes the outside target',
+    async () => {
+      const { skillDir } = makeSkillFixture(testHome);
+      const outsideDir = join(testHome, 'outside');
+      mkdirSync(outsideDir, { recursive: true });
+      const outsideFile = join(outsideDir, 'secret.md');
+      const original = 'real-secret-value must remain untouched\n';
+      writeFileSync(outsideFile, original);
+      symlinkSync(outsideFile, join(skillDir, 'evil.md'));
+
+      const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
+      const trigger = makeFinding({ File: 'shared/skills/foo/evil.md' });
+      // A scan that would report a finding if ever reached; resolution must
+      // refuse first, so this is never called and the outside file is untouched.
+      const scan = (p: string): Finding[] => [
+        {
+          RuleID: 'generic-api-key',
+          File: p,
+          StartLine: 1,
+          StartColumn: 1,
+          EndColumn: 10,
+          Match: 'real-secret-value',
+          Fingerprint: 'fp1',
+        },
+      ];
+
+      const result = applySkillRedact(trigger, 'ts-x', scan);
+
+      expect(result).toBe(false);
+      expect(readFileSync(outsideFile, 'utf8')).toBe(original);
+      // No copy landed in the staged repo tree either.
+      expect(existsSync(join(testHome, 'shared', 'skills', 'foo', 'evil.md'))).toBe(false);
+    },
+  );
 });
