@@ -305,13 +305,13 @@ skips with a `⚠︎` when the ref is unavailable, and is non-fatal in all cases
 Every `nomad` subcommand exits with one of a small set of codes, so a script or cron wrapper can
 branch on `$?` without parsing stderr text.
 
-| Code | Name            | Meaning                                                                                                              |
-| ---- | --------------- | -------------------------------------------------------------------------------------------------------------------- |
-| 0    | Success         | Completed successfully.                                                                                              |
-| 1    | Generic failure | Unclassified failure; the default for any error not covered below.                                                   |
-| 2    | Usage           | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                         |
-| 4    | Conflict        | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution, or `nomad pull --force-remote`. |
-| 5    | Leak blocked    | gitleaks confirmed a secret in the staged tree and the push was aborted.                                             |
+| Code | Name            | Meaning                                                                                                                        |
+| ---- | --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | Success         | Completed successfully.                                                                                                        |
+| 1    | Generic failure | Unclassified failure; the default for any error not covered below.                                                             |
+| 2    | Usage           | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                                   |
+| 4    | Conflict        | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution; recover with `nomad pull --force-remote`. |
+| 5    | Leak blocked    | gitleaks confirmed a secret in the staged tree and the push was aborted.                                                       |
 
 A run skipped because another nomad process already holds the lock also exits 0: this is an
 intentional no-op skip, not a failure, so a backgrounded shell-rc or cron invocation never raises a

@@ -91,17 +91,18 @@ describe('nomad process exit codes (subprocess, real dev entry)', () => {
   describe.skipIf(!hasGit)('wedged-repo pull (real git fixture)', () => {
     it('exits 4 (CONFLICT) on a mid-rebase wedged repo', () => {
       const tmp = mkdtempSync(join(tmpdir(), 'nomad-exitcode-conflict-'));
+      const home = mkdtempSync(join(tmpdir(), 'nomad-exitcode-conflict-home-'));
       try {
         const { local } = buildPushRepo(tmp);
         // Plant a mid-rebase marker directly: classifyWedge is a pure
         // marker-file probe (no real rebase needs to be in progress), the
         // same fixture shape push-checks.test.ts uses for its preflight tests.
         mkdirSync(join(local, '.git', 'rebase-merge'));
-        const home = mkdtempSync(join(tmpdir(), 'nomad-exitcode-conflict-home-'));
         const host = makeMinimalHost(home, local);
         const result = runNomad(host, ['pull']);
         expect(result.status).toBe(EXIT.CONFLICT);
       } finally {
+        rmSync(home, { recursive: true, force: true });
         rmSync(tmp, { recursive: true, force: true });
       }
     });
