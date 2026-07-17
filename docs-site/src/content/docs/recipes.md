@@ -247,10 +247,10 @@ for you:
 
 ```bash
 # 1. Remove the CLI.
-npm rm -g claude-nomad
+npm uninstall -g claude-nomad
 
-# 2. Drop the env vars and alias from your shell profile.
-#    (NOMAD_HOST, NOMAD_REPO, and the `nomad` alias.)
+# 2. Drop the env vars from your shell profile.
+#    (NOMAD_HOST and NOMAD_REPO.)
 
 # 3. Optional: delete the local clone of the sync repo once you no longer need it.
 rm -rf ~/claude-nomad

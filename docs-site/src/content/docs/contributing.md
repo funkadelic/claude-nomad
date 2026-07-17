@@ -113,17 +113,19 @@ Reports land in `reports/mutation/` (gitignored). Archive each module's
 The `reports/stryker-incremental.json` incremental cache accumulates across sessions so you can
 resume a multi-session sweep without re-running completed modules.
 
-### Known limitation: HOME-based test isolation
+### Mutation testing and HOME-based test isolation
 
-Modules whose tests set `process.env.HOME = <tmpDir>` and call `vi.resetModules()` to reload
-[`src/config.ts`](https://github.com/funkadelic/claude-nomad/blob/main/src/config.ts) cannot
-currently be mutation-tested. That module resolves `REPO_HOME` at module load time via
-`os.homedir()`, and Stryker's sandbox pins that resolution at process start. The re-imported module
-sees the sandbox HOME, not the test HOME, so the dry-run baseline fails before any mutation runs.
+[`src/config.ts`](https://github.com/funkadelic/claude-nomad/blob/main/src/config.ts) resolves
+`home()`, `claudeHome()`, and `repoHome()` on every call, reading `process.env.HOME` (and
+`USERPROFILE` on win32) before falling back to `os.homedir()`. That read is deliberate: it lets a
+test swap `process.env.HOME` to a tmpdir and see the change immediately, including inside Stryker's
+`pool: 'threads'` worker isolates where `os.homedir()` stays blind to an in-process env swap. So
+HOME-swapping tests mutation-test normally; an earlier limitation here (config resolved at module
+load, so the swap did not take effect) was removed by moving to call-time resolution.
 
-Modules that use a `NOMAD_REPO` environment override instead of HOME (or that do not mutate HOME at
-all) are not affected and can be swept normally. This limitation does not reduce test coverage;
-those modules remain fully exercised by the normal `npm test` run.
+The one value fixed at module load is `HOST` (`NOMAD_HOST` or the machine hostname, resolved once at
+import). A test that needs a different host label sets `NOMAD_HOST` before reloading the module with
+`vi.resetModules()` rather than relying on a bare hostname swap.
 
 ### Triage
 
@@ -195,11 +197,12 @@ Commit subject (a CI check enforces this).
 Releases are automated by release-please, which reads Conventional Commit types to decide both
 the version bump and the changelog grouping:
 
-- `feat` triggers a minor bump; `fix` and `perf` trigger a patch bump; a `!` suffix or a
-  `BREAKING CHANGE:` footer triggers a major bump.
-- Other types (`docs`, `refactor`, `test`, `build`, `ci`, `chore`, `style`, `deps`, `deps-dev`)
-  are grouped into the changelog but do not by themselves bump the version. The full
-  type-to-section mapping lives in `release-please-config.json`.
+- `feat` triggers a minor bump; a `!` suffix or a `BREAKING CHANGE:` footer triggers a major
+  bump; every other Conventional Commit type in the config (`fix`, `perf`, `docs`, `refactor`,
+  `test`, `build`, `ci`, `chore`, `style`, `deps`, `deps-dev`) triggers a patch bump.
+- The type only decides which changelog section the entry lands in, not whether a release
+  happens. None of these types is marked `hidden` in `release-please-config.json`, so any one of
+  them landing on `main` is enough to cut a release. The full type-to-section mapping lives there.
 
 Two per-PR escape hatches override the computed version when you need them: add a
 `Release-As: <version>` footer to force a specific version, or wrap a replacement message in a
