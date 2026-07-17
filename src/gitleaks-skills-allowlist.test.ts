@@ -1,5 +1,4 @@
 import { execFileSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -124,12 +123,12 @@ describe.skipIf(!hasGitleaks)(
       // transcript-only Sonar-issue-key allowlist regex, but that block is NOT
       // scoped to skills. A real `AY`-shaped credential pasted into executable
       // skill content must therefore still fire, or the skills-parity purpose
-      // of this PR would be defeated. High-entropy body assembled at runtime so
-      // no contiguous `AY<20>` literal is stored in source-controlled bytes.
-      const body = randomBytes(15)
-        .toString('base64url')
-        .replace(/[^A-Za-z0-9_-]/g, '')
-        .slice(0, 20);
+      // of this PR would be defeated. Deterministic high-entropy body assembled
+      // at runtime from short fragments: no contiguous `AY<20>` literal (nor a
+      // high-entropy 20-char literal) is stored in source-controlled bytes, so
+      // the gitleaks CI self-scan cannot flag this test file, yet the token is
+      // reproducible rather than a probabilistic random draw.
+      const body = ['xK7p', 'Qm2v', 'Rt9w', 'Zb4n', 'Yc5d'].join('');
       writeSkillFile('myskill', 'SKILL.md', `api_key = "${ayFixture(body)}"\n`);
       const findings = scanStagedTree(scanRoot);
       expect(findings).not.toBeNull();
