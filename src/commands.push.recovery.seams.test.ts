@@ -62,6 +62,16 @@ describe('sessionIdFromFinding', () => {
     const finding = makeFinding({ File: 'shared/projects/foo/../etc/x.jsonl' });
     expect(sessionIdFromFinding(finding)).toBeNull();
   });
+
+  it('returns the session id for a non-.jsonl subtree file (tool-results/*.txt regression)', () => {
+    // Regression guard: sessionIdFromFinding must resolve a session id for
+    // ANY file under a session's subtree, not just .jsonl transcripts, since
+    // applyRedact already redacts tool-results/*.txt and other non-jsonl
+    // subtree files. A prior fix that reused the .jsonl-anchored
+    // SUBAGENT_SESSION_PATH here broke this case.
+    const finding = makeFinding({ File: 'shared/projects/foo/abc123/tool-results/x.txt' });
+    expect(sessionIdFromFinding(finding)).toBe('abc123');
+  });
 });
 
 // ---------------------------------------------------------------------------
