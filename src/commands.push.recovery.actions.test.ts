@@ -840,7 +840,7 @@ describe('collectActions - masked context line in prompt', () => {
 });
 
 // ---------------------------------------------------------------------------
-// dispatchActions - memory finding dispatch (D-04 wiring: Redact/Allow/Drop)
+// dispatchActions - memory finding dispatch (Redact/Allow/Drop)
 // ---------------------------------------------------------------------------
 
 describe('dispatchActions - memory finding dispatch', () => {
@@ -1036,7 +1036,7 @@ describe('dispatchActions - memory finding dispatch', () => {
 });
 
 // ---------------------------------------------------------------------------
-// redactAllFindings - memory-aware batch redaction (--redact-all D-04 wiring)
+// redactAllFindings - memory-aware batch redaction (--redact-all)
 // ---------------------------------------------------------------------------
 
 /**

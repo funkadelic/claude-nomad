@@ -1307,7 +1307,7 @@ describe('SESSION_PATH and SUBAGENT_SESSION_PATH regex hardening (security routi
   });
 
   it('exported SUBAGENT_SESSION_PATH matches a nested .jsonl subagent path but not a memory/*.md path', async () => {
-    // Direct assertion on the exported constant itself (Task 1: promoted from
+    // Direct assertion on the exported constant itself (promoted from
     // module-private to `export const` so commands.push.recovery.seams.ts can
     // reuse it instead of a divergent inline regex). Covers both the intended
     // match (nested subagent transcript) and the fix's whole point (a

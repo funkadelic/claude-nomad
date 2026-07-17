@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { scanStagedTree } from './push-gitleaks.scan.ts';
 
 /**
- * Real-binary regression suite pinning the scope of the D-03 `.gitleaks.toml`
+ * Real-binary regression suite pinning the scope of the `.gitleaks.toml`
  * widening: the documented github-pat fixture block and the SSH public-key
  * fingerprint block now also match `shared/projects/<logical>/memory/*.md`,
  * while the structurally tool-output-only blocks (noise fingerprints,
