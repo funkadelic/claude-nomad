@@ -168,9 +168,19 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
  * @param filePath Absolute path to the file to scan.
  * @param forwardStreams Forward gitleaks stderr/stdout to process streams on
  *   scan-crash (report missing or unparseable). Default `false`.
+ * @param timeoutMs Wall-clock ceiling (milliseconds) forwarded to the
+ *   `execFileSync` options for the gitleaks invocation. Defaults to
+ *   `GITLEAKS_SCAN_TIMEOUT_MS` (the pinned 900s push-scan ceiling), so every
+ *   existing caller keeps its current behavior unchanged. A caller with a
+ *   tighter latency budget (e.g. the crash-report redactor) can pass a
+ *   shorter value.
  * @returns `Finding[]` on success (possibly empty), `null` on scan error.
  */
-export function scanFile(filePath: string, forwardStreams = false): Finding[] | null {
+export function scanFile(
+  filePath: string,
+  forwardStreams = false,
+  timeoutMs = GITLEAKS_SCAN_TIMEOUT_MS,
+): Finding[] | null {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   const reportPath = join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}.json`);
@@ -186,7 +196,7 @@ export function scanFile(filePath: string, forwardStreams = false): Finding[] | 
   if (toml !== null) args.push('--config', toml);
   const opts: ExecFileSyncOptions = {
     stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: GITLEAKS_SCAN_TIMEOUT_MS,
+    timeout: timeoutMs,
   };
   try {
     execFileSync('gitleaks', args, opts);

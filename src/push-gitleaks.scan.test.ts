@@ -258,6 +258,25 @@ describe('scanFile (mocked child_process)', () => {
     expect(capturedOpts?.timeout).toBe(GITLEAKS_SCAN_TIMEOUT_MS);
   });
 
+  it('passes an explicit timeoutMs into the gitleaks execFileSync options', async () => {
+    let capturedOpts: { timeout?: number } | undefined;
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (_bin: string, _args?: readonly string[], opts?: { timeout?: number }) => {
+            capturedOpts = opts;
+            return Buffer.from('');
+          },
+        ),
+      };
+    });
+    const { scanFile } = await import('./push-gitleaks.scan.ts');
+    scanFile('/some/file.jsonl', false, 3_000);
+    expect(capturedOpts?.timeout).toBe(3_000);
+  });
+
   it('forwards stdout on the crash path when only stdout is set', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();

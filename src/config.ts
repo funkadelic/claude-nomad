@@ -73,6 +73,19 @@ export function backupBase(): string {
 }
 
 /**
+ * Host-local crash-report root (`~/.cache/claude-nomad/crash`). Never synced:
+ * the crash handler writes bounded, structurally-scrubbed error reports here
+ * for the operator to inspect and optionally attach to a bug report. Mirrors
+ * the `backupBase()` cache-dir convention (same `.cache/claude-nomad/` parent).
+ * Resolved on each call so a mid-process HOME override is reflected
+ * immediately, same call-time convention as `backupBase()`/`manifestPath()`
+ * (load-bearing for Stryker's worker-thread test runner).
+ */
+export function crashDir(): string {
+  return join(home(), '.cache', 'claude-nomad', 'crash');
+}
+
+/**
  * Per-host manifest path: `~/.cache/claude-nomad/push-manifest-<HOST>.json`.
  * Records the file metadata observed during the last successful push on this
  * host so `nomad push` can skip unchanged files. Never synced to the repo.

@@ -224,6 +224,14 @@ describe('call-time resolvers: home, claudeHome, repoHome, backupBase', () => {
     expect(backupBase()).toBe(join('/tmp/home-h', '.cache', 'claude-nomad', 'backup'));
   });
 
+  it('crashDir() returns join(home(), ".cache", "claude-nomad", "crash") and tracks HOME changes', async () => {
+    const { crashDir } = await import('./config.ts');
+    process.env.HOME = '/tmp/home-i';
+    expect(crashDir()).toBe(join('/tmp/home-i', '.cache', 'claude-nomad', 'crash'));
+    process.env.HOME = '/tmp/home-j';
+    expect(crashDir()).toBe(join('/tmp/home-j', '.cache', 'claude-nomad', 'crash'));
+  });
+
   it('home() falls back to os.homedir() when HOME is unset', async () => {
     const { home } = await import('./config.ts');
     const { homedir } = await import('node:os');
