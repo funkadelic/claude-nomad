@@ -1305,6 +1305,19 @@ describe('SESSION_PATH and SUBAGENT_SESSION_PATH regex hardening (security routi
     expect(hint).toContain('nomad drop-session abc123');
     expect(hint).toContain('nomad redact abc123');
   });
+
+  it('exported SUBAGENT_SESSION_PATH matches a nested .jsonl subagent path but not a memory/*.md path', async () => {
+    // Direct assertion on the exported constant itself (Task 1: promoted from
+    // module-private to `export const` so commands.push.recovery.seams.ts can
+    // reuse it instead of a divergent inline regex). Covers both the intended
+    // match (nested subagent transcript) and the fix's whole point (a
+    // memory/*.md path must NOT match, since it is not anchored to .jsonl).
+    const { SUBAGENT_SESSION_PATH } = (await import('./push-gitleaks.ts')) as PushGitleaksModule & {
+      SUBAGENT_SESSION_PATH: RegExp;
+    };
+    expect(SUBAGENT_SESSION_PATH.test('shared/projects/foo/abc123/subagents/x.jsonl')).toBe(true);
+    expect(SUBAGENT_SESSION_PATH.test('shared/projects/foo/memory/notes.md')).toBe(false);
+  });
 });
 
 // --config wiring: pass --config <REPO_HOME>/.gitleaks.toml when the file

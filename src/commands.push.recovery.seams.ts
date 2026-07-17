@@ -6,7 +6,7 @@
  */
 
 import type { Finding } from './push-gitleaks.scan.ts';
-import { SESSION_PATH } from './push-gitleaks.ts';
+import { SESSION_PATH, SUBAGENT_SESSION_PATH } from './push-gitleaks.ts';
 
 // ---------------------------------------------------------------------------
 // Secret masking constants
@@ -48,8 +48,12 @@ const VALID_SID = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Extract the session id from a finding's File path. Handles both the flat
- * `shared/projects/<logical>/<sid>.jsonl` form (SESSION_PATH) and the deeper
- * subagent form `shared/projects/<logical>/<sid>/...`. The extracted id is
+ * `shared/projects/<logical>/<sid>.jsonl` form (`SESSION_PATH`) and the deeper
+ * subagent transcript form `shared/projects/<logical>/<sid>/.../<file>.jsonl`
+ * (`SUBAGENT_SESSION_PATH`, imported from `push-gitleaks.ts` so both consumers
+ * share one `.jsonl`-anchored source of truth). A `memory/*.md` finding
+ * matches neither pattern (the `.jsonl` anchor excludes it) and returns null
+ * rather than mis-capturing `"memory"` as a session id. The extracted id is
  * validated against `/^[A-Za-z0-9_-]+$/` before being returned; path-traversal
  * segments (e.g. `..`) are rejected and cause a null return.
  *
@@ -61,7 +65,7 @@ export function sessionIdFromFinding(f: Finding): string | null {
   // Try the flat `<sid>.jsonl` form first, then the deeper subagent form. Both
   // patterns capture the session id at group 1; a matched capture group is
   // always a string, so no nullish guard on `m[1]` is needed.
-  const m = SESSION_PATH.exec(f.File) ?? /^shared\/projects\/[^/]+\/([^/]+)\//.exec(f.File);
+  const m = SESSION_PATH.exec(f.File) ?? SUBAGENT_SESSION_PATH.exec(f.File);
   if (m === null) return null;
   const sid = m[1];
   return VALID_SID.test(sid) ? sid : null;

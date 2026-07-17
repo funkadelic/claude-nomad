@@ -45,8 +45,13 @@ export const SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\.jsonl$/;
  * paths under the same directory (e.g. `memory/notes.md`, `README`).
  * Requiring `.jsonl` prevents "memory" from being captured as a session id when
  * the path is `shared/projects/<logical>/memory/notes.md`.
+ *
+ * Exported: `sessionIdFromFinding` in `commands.push.recovery.seams.ts` also
+ * depends on the `.jsonl` anchor here (it previously carried a divergent,
+ * unanchored copy that mis-captured `"memory"` as a session id). Do not drop
+ * the `.jsonl` requirement in a future edit; both consumers rely on it.
  */
-const SUBAGENT_SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\/.*\.jsonl$/;
+export const SUBAGENT_SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\/.*\.jsonl$/;
 
 /**
  * Legacy fallback FATAL emitted when no finding's File matches the session

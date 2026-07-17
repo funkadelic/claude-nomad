@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Finding } from './push-gitleaks.scan.ts';
-import { buildFindingContext, maskSecret } from './commands.push.recovery.seams.ts';
+import {
+  buildFindingContext,
+  maskSecret,
+  sessionIdFromFinding,
+} from './commands.push.recovery.seams.ts';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -33,6 +37,32 @@ function makeFinding(
 
 /** Injected readLine that always returns null. */
 const nullReader = (_file: string, _line: number): string | null => null;
+
+// ---------------------------------------------------------------------------
+// sessionIdFromFinding
+// ---------------------------------------------------------------------------
+
+describe('sessionIdFromFinding', () => {
+  it('returns null for a memory/*.md finding (no bogus "memory" session id)', () => {
+    const finding = makeFinding({ File: 'shared/projects/foo/memory/notes.md' });
+    expect(sessionIdFromFinding(finding)).toBeNull();
+  });
+
+  it('returns the session id for a flat <sid>.jsonl finding', () => {
+    const finding = makeFinding({ File: 'shared/projects/foo/abc123.jsonl' });
+    expect(sessionIdFromFinding(finding)).toBe('abc123');
+  });
+
+  it('returns the session id for a nested subagent <sid>/.../x.jsonl finding', () => {
+    const finding = makeFinding({ File: 'shared/projects/foo/abc123/subagents/x.jsonl' });
+    expect(sessionIdFromFinding(finding)).toBe('abc123');
+  });
+
+  it('returns null when the extracted id contains a path-traversal segment', () => {
+    const finding = makeFinding({ File: 'shared/projects/foo/../etc/x.jsonl' });
+    expect(sessionIdFromFinding(finding)).toBeNull();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // maskSecret
