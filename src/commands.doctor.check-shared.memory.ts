@@ -86,22 +86,26 @@ function reportMemoryFindings(section: DoctorSection, findings: Finding[]): void
  * need to share `reportCheckShared`'s temp-tree lifecycle and a failure here
  * can never leave the local-preview scan's temp tree behind.
  *
- * Never throws and never sets `process.exitCode`: a scan-throw or a `null`
- * (unparseable) report both become a single WARN-skip row; an empty findings
- * array is silent (clean, no row); a non-empty array is reported via
+ * Never throws and never sets `process.exitCode`: the ENTIRE body (including
+ * its own `mkdirSync(cacheDir)` and `buildMemoryScanTree`, not just the scan
+ * call) is wrapped in one outer `try/catch` so any failure anywhere in the
+ * advisory -- not only a `scanStagedTree` throw or a `null` (unparseable)
+ * report -- collapses to a single WARN-skip row rather than escaping and
+ * aborting the whole `--check-shared` run mid-output. An empty findings array
+ * is silent (clean, no row); a non-empty array is reported via
  * `reportMemoryFindings`.
  *
  * @param section The doctor section to append WARN rows to.
  */
 export function reportCommittedMemory(section: DoctorSection): void {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
-  mkdirSync(cacheDir, { recursive: true });
   // See reportCheckShared's stamp comment: the random suffix makes the temp
   // dir collision-resistant against two same-second, same-pid invocations.
   const stamp = `${nowTimestamp()}-${process.pid}-${randomBytes(4).toString('hex')}`;
   const tmpRoot = join(cacheDir, `check-shared-memory-tree-${stamp}`);
 
   try {
+    mkdirSync(cacheDir, { recursive: true });
     const staged = buildMemoryScanTree(tmpRoot);
     if (staged === 0) return;
 
@@ -127,6 +131,11 @@ export function reportCommittedMemory(section: DoctorSection): void {
     }
     if (findings.length === 0) return;
     reportMemoryFindings(section, findings);
+  } catch (err) {
+    addItem(
+      section,
+      `${yellow(warnGlyph)} committed-memory scan skipped: ${(err as Error).message}`,
+    );
   } finally {
     rmSync(tmpRoot, { recursive: true, force: true });
   }

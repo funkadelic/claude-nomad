@@ -4,6 +4,9 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as cpModule from 'node:child_process';
+import type * as fsModule from 'node:fs';
+
 import { warnGlyph } from './color.ts';
 
 /** Shape of the section reportCommittedMemory appends rows to (mirrors DoctorSection). */
@@ -38,6 +41,7 @@ describe('commands.doctor.check-shared.memory', () => {
 
   afterEach(() => {
     vi.doUnmock('./push-gitleaks.ts');
+    vi.doUnmock('node:fs');
     vi.restoreAllMocks();
     process.exitCode = 0;
     if (originalHome === undefined) delete process.env.HOME;
@@ -186,6 +190,30 @@ describe('commands.doctor.check-shared.memory', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('emits a single WARN-skip row when a failure occurs before the scan (e.g. mkdirSync), never throwing', async () => {
+    writeMemoryFile('foo', 'notes.md', 'x\n');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        mkdirSync: vi.fn((p: fsModule.PathLike, o?: fsModule.MakeDirectoryOptions) => {
+          if (String(p).includes(join('.cache', 'claude-nomad'))) {
+            throw Object.assign(new Error('mkdir cache failed: disk error'), { code: 'EIO' });
+          }
+          return actual.mkdirSync(p, o);
+        }),
+      };
+    });
+    vi.resetModules();
+    const { reportCommittedMemory } = await import('./commands.doctor.check-shared.memory.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    expect(() => reportCommittedMemory(section)).not.toThrow();
+    expect(section.items).toHaveLength(1);
+    expect(section.items[0]).toContain(warnGlyph);
+    expect(section.items[0]).toContain('disk error');
+    expect(process.exitCode).toBe(0);
+  });
+
   it('removes the temp tree in a finally on every path, including the throw path', async () => {
     writeMemoryFile('foo', 'notes.md', 'x\n');
     let capturedDir = '';
@@ -205,5 +233,121 @@ describe('commands.doctor.check-shared.memory', () => {
     reportCommittedMemory(section);
     expect(capturedDir).not.toBe('');
     expect(existsSync(capturedDir)).toBe(false);
+  });
+});
+
+/**
+ * Wiring coverage: `reportCheckShared` (`./commands.doctor.check-shared.ts`)
+ * must call `reportCommittedMemory` on every gitleaks-ready path, including
+ * the `staged === 0` local-preview early return (proving the advisory is not
+ * a local-preview-only add-on: a committed memory secret can originate from
+ * any host, not just the one running `doctor`). Mocks `node:child_process`
+ * (gitleaks `version` probe) so `ensureGitleaksReady` passes, and
+ * `./push-gitleaks.ts`'s `scanStagedTree` distinguishing the local-preview
+ * temp tree (`check-shared-tree-`) from the committed-memory temp tree
+ * (`check-shared-memory-tree-`) by directory name, so each scan can be
+ * controlled independently without a real gitleaks binary.
+ */
+describe('reportCheckShared wiring (committed-memory advisory always runs)', () => {
+  let testHome: string;
+  let originalHome: string | undefined;
+  let originalNoColor: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNoColor = process.env.NO_COLOR;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-check-shared-wiring-'));
+    process.env.HOME = testHome;
+    process.env.NO_COLOR = '1';
+    mkdirSync(join(testHome, 'claude-nomad', 'shared'), { recursive: true });
+    process.exitCode = 0;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.doUnmock('node:child_process');
+    vi.doUnmock('./push-gitleaks.ts');
+    vi.restoreAllMocks();
+    process.exitCode = 0;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = originalNoColor;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  function writeMemoryFile(logical: string, filename: string, content: string): void {
+    const dir = join(testHome, 'claude-nomad', 'shared', 'projects', logical, 'memory');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, filename), content);
+  }
+
+  function mockGitleaksProbe(): void {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'gitleaks' && (args ?? [])[0] === 'version') return Buffer.from('8.0.0');
+          return actual.execFileSync(bin, args as string[]);
+        }),
+      };
+    });
+  }
+
+  it('WARNs on a committed memory secret even when staged === 0 (no local path-map entries)', async () => {
+    // No path-map.json written: the local preview short-circuits to a clean
+    // "0 project(s)" row without ever calling scanStagedTree. The advisory
+    // must still run and WARN on the committed memory secret.
+    writeMemoryFile('foo', 'notes.md', 'secret\n');
+    mockGitleaksProbe();
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<PushGitleaksModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((dir: string) =>
+          dir.includes('check-shared-memory-tree-')
+            ? [
+                {
+                  RuleID: 'generic-api-key',
+                  File: 'shared/projects/foo/memory/notes.md',
+                  StartLine: 1,
+                  StartColumn: 1,
+                  EndColumn: 10,
+                  Match: 'THE-REAL-SECRET-VALUE',
+                  Fingerprint: 'fp1',
+                },
+              ]
+            : [],
+        ),
+      };
+    });
+    vi.resetModules();
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    const rows = section.items.join('\n');
+    expect(rows).toContain(warnGlyph);
+    expect(rows).toContain('shared/projects/foo/memory/notes.md');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('adds no advisory row on a --check-shared run with no committed memory secret', async () => {
+    writeMemoryFile('foo', 'notes.md', 'clean\n');
+    mockGitleaksProbe();
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<PushGitleaksModule>();
+      return { ...actual, scanStagedTree: vi.fn(() => []) };
+    });
+    vi.resetModules();
+
+    const { reportCheckShared } = await import('./commands.doctor.check-shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+
+    expect(section.items.some((r) => r.includes(warnGlyph))).toBe(false);
+    expect(process.exitCode).toBe(0);
   });
 });

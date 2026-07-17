@@ -14,6 +14,13 @@
  * findings classification + guidance composer live in the `.scan.ts` sibling.
  * All external calls use `execFileSync` argv-array form so no argument is
  * ever interpreted by a shell.
+ *
+ * After the local-preview scan, `reportCheckShared` also runs
+ * `reportCommittedMemory` (`./commands.doctor.check-shared.memory.ts`), a
+ * distinct WARN-only advisory over already-committed `memory/*.md` content in
+ * the sync repo itself. It runs on every gitleaks-ready invocation -- including
+ * when nothing local is staged -- because a latent committed secret can
+ * originate from any host.
  */
 
 import { randomBytes } from 'node:crypto';
@@ -23,6 +30,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { red, yellow, failGlyph, warnGlyph } from './color.ts';
+import { reportCommittedMemory } from './commands.doctor.check-shared.memory.ts';
 import { emitClean, scanAndReport } from './commands.doctor.check-shared.scan.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { claudeHome, HOST, repoHome, type PathMap } from './config.ts';
@@ -124,25 +132,17 @@ function ensureGitleaksReady(section: DoctorSection, gitleaksReady?: boolean): b
 }
 
 /**
- * Run the `--check-shared` preflight and append its rows to `section`.
- *
- * Thin orchestrator: `ensureGitleaksReady` gates entry (a missing
- * binary WARN-skips, a probe failure FAILs); `buildScanTree` stages a temp copy
- * of this-host mapped session dirs (a malformed `path-map.json` -> FAIL row,
- * no crash); `scanAndReport` runs the shared `scanStagedTree` (the same
- * mechanism push uses, so the preflight cannot miss what push catches) and
- * emits the clean / leak / scan-failed rows, setting `process.exitCode = 1` on
- * any failure. The temp report + tree (including the injected throwaway `.git`)
- * are removed in `finally` on every path. Never writes to stderr (read-only
- * doctor contract: `scanStagedTree` runs with `forwardStreams` left false).
- *
- * `gitleaksReady` lets the doctor orchestrator pass the Repository section's
- * probe result so `version` is not invoked twice on a `--check-shared` run;
- * when omitted (the standalone contract) this reporter probes for itself.
+ * Run the local-preview half of `--check-shared`: stage a temp copy of this-host
+ * mapped session dirs (a malformed `path-map.json` -> FAIL row, no crash) and
+ * scan it through the same mechanism push uses. Split out of `reportCheckShared`
+ * so that reporter's malformed-path-map and `staged === 0` early returns no
+ * longer short-circuit the committed-memory advisory that follows it (both
+ * must run on every gitleaks-ready `--check-shared` invocation, not just the
+ * scan-happy path). Owns its own temp report + tree cleanup in `finally`
+ * (including the injected throwaway `.git`), independent of the
+ * committed-memory advisory's own temp lifecycle.
  */
-export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolean): void {
-  if (!ensureGitleaksReady(section, gitleaksReady)) return;
-
+function runLocalPreviewScan(section: DoctorSection): void {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   // nowTimestamp() is second-resolution and --check-shared takes no lock
@@ -177,4 +177,27 @@ export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolea
     rmSync(reportPath, { force: true });
     rmSync(tmpRoot, { recursive: true, force: true });
   }
+}
+
+/**
+ * Run the `--check-shared` preflight and append its rows to `section`.
+ *
+ * Thin orchestrator: `ensureGitleaksReady` gates entry (a missing binary
+ * WARN-skips, a probe failure FAILs) -- this is the ONLY path that skips the
+ * rest of the function. `runLocalPreviewScan` runs the local, not-yet-pushed
+ * transcript preflight (FAIL semantics, unchanged). `reportCommittedMemory`
+ * (`./commands.doctor.check-shared.memory.ts`) then runs unconditionally,
+ * scanning already-committed `memory/*.md` in the sync repo (WARN semantics,
+ * never sets `process.exitCode`) -- it runs even when the local preview found
+ * nothing to stage, because a latent committed secret can originate from any
+ * host, not just this one.
+ *
+ * `gitleaksReady` lets the doctor orchestrator pass the Repository section's
+ * probe result so `version` is not invoked twice on a `--check-shared` run;
+ * when omitted (the standalone contract) this reporter probes for itself.
+ */
+export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolean): void {
+  if (!ensureGitleaksReady(section, gitleaksReady)) return;
+  runLocalPreviewScan(section);
+  reportCommittedMemory(section);
 }
