@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
 import { dim, failGlyph, green, infoGlyph, okGlyph, red, warnGlyph, yellow } from './color.ts';
+import { EXIT, type ExitCode } from './exit-codes.ts';
 
 /**
  * Print an informational line prefixed with the dim `ℹ︎` glyph (U+2139+VS15)
@@ -53,20 +54,31 @@ export const item = (msg: string): void => console.log(dim(`  ${msg}`));
  * `finally` block can release locks before the process exits. Avoids the
  * pre-fix bug where `process.exit()` skipped pending `finally` clauses and
  * leaked the lockfile.
+ *
+ * Carries an optional `code` classifying which {@link EXIT} value the process
+ * should exit with; defaults to `EXIT.GENERIC_FAILURE` so every existing
+ * single-argument caller keeps its current exit-1 behavior unchanged.
  */
 export class NomadFatal extends Error {
-  constructor(message: string) {
+  readonly code: ExitCode;
+
+  constructor(message: string, opts: { code?: ExitCode } = {}) {
     super(message);
     this.name = 'NomadFatal';
+    this.code = opts.code ?? EXIT.GENERIC_FAILURE;
   }
 }
 
 /**
  * Throw a `NomadFatal` with the given message. Callers should `catch` it in
  * the cmdPull/cmdPush try/finally so the lock is released before exit.
+ *
+ * @param msg - The fatal error message.
+ * @param opts - Optional `code` classifying the {@link EXIT} value to exit
+ *   with; defaults to `EXIT.GENERIC_FAILURE` when omitted.
  */
-export const die = (msg: string): never => {
-  throw new NomadFatal(msg);
+export const die = (msg: string, opts: { code?: ExitCode } = {}): never => {
+  throw new NomadFatal(msg, opts);
 };
 
 /**
