@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
 import type * as redactModule from './commands.redact.core.ts';
 import type * as memoryModule from './commands.push.recovery.memory.ts';
+import type * as skillsModule from './commands.push.recovery.skills.ts';
 import type * as utilsModule from './utils.ts';
 import type * as utilsFsModule from './utils.fs.ts';
 import type { PathMap } from './config.ts';
@@ -1062,6 +1063,204 @@ describe('dispatchActions - memory finding dispatch', () => {
     const msgs = logMock.mock.calls.map((c) => c[0] as string);
     expect(msgs.some((m) => m.includes('not auto-redactable'))).toBe(true);
     expect(msgs.some((m) => m.includes('shared/projects/myproj/memory/sub/x.md'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dispatchActions - skill finding dispatch (Redact/Allow/Drop)
+// ---------------------------------------------------------------------------
+
+describe('dispatchActions - skill finding dispatch', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.push.recovery.skills.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./commands.redact.core.ts');
+  });
+
+  it('skill Redact invokes applySkillRedact exactly once for two findings in the same skill file', async () => {
+    const applySkillRedactMock = vi.fn().mockReturnValue(true);
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    // Second finding hits the redactedSkills dedupe (same name/relPath).
+    expect(applySkillRedactMock).toHaveBeenCalledOnce();
+  });
+
+  it('skill Redact for two different skill files calls applySkillRedact once per file (no cross-file dedupe)', async () => {
+    const applySkillRedactMock = vi.fn().mockReturnValue(true);
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/skills/skill-a/SKILL.md' });
+    const f2 = makeFinding({ File: 'shared/skills/skill-b/SKILL.md' });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applySkillRedactMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mark a skill file redacted when applySkillRedact fails, retrying the next finding', async () => {
+    const applySkillRedactMock = vi.fn().mockReturnValue(false);
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    // applySkillRedact returned false both times, so the file was never
+    // marked redacted and the second finding retried.
+    expect(applySkillRedactMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('skill Drop logs a refusal containing "cannot be dropped" and does not call ctx.drop', async () => {
+    const logMock = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/skills/my-skill/SKILL.md' });
+    const actions = new Map([[findingKey(f), 'drop' as const]]);
+    const map: PathMap = { projects: {} };
+    const dropSpy = vi.fn().mockReturnValue(true);
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+      drop: dropSpy,
+    });
+
+    expect(dropSpy).not.toHaveBeenCalled();
+    const msgs = logMock.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => m.includes('cannot be dropped'))).toBe(true);
+  });
+
+  it('skill Allow still appends the fingerprint via applyAllow (unchanged, no sid dependency)', async () => {
+    const appendMock = vi.fn();
+    vi.doMock('./commands.redact.core.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof redactModule>();
+      return { ...actual, appendGitleaksIgnore: appendMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({
+      File: 'shared/skills/my-skill/SKILL.md',
+      Fingerprint: 'fp-skill',
+    });
+    const actions = new Map([[findingKey(f), 'allow' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(appendMock).toHaveBeenCalledWith('fp-skill', '/repo');
+  });
+
+  it('a bare shared/skills/<name> path (no trailing file) is a genuine no-op via dispatchNonSession', async () => {
+    const applySkillRedactMock = vi.fn();
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    // Bare `shared/skills/<name>` with no trailing file: isSkillFindingPath
+    // requires a trailing separator, so this is a genuine non-skill no-op.
+    const f = makeFinding({ File: 'shared/skills/my-skill' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applySkillRedactMock).not.toHaveBeenCalled();
+  });
+
+  it('a skill directory path with an empty relPath (dispatchSkill reached, parse fails) is a no-op', async () => {
+    const applySkillRedactMock = vi.fn();
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    // isSkillFindingPath matches (trailing separator present), but
+    // skillFileFromFinding's relPath capture requires at least one char, so
+    // dispatchSkill is reached and its own null-parse guard fires.
+    const f = makeFinding({ File: 'shared/skills/my-skill/' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applySkillRedactMock).not.toHaveBeenCalled();
   });
 });
 

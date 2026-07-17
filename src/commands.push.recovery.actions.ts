@@ -20,6 +20,11 @@ import {
   memoryFileFromFinding,
   preflightMemoryRedactable,
 } from './commands.push.recovery.memory.ts';
+import {
+  applySkillRedact,
+  isSkillFindingPath,
+  skillFileFromFinding,
+} from './commands.push.recovery.skills.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { log, NomadFatal } from './utils.ts';
@@ -166,6 +171,7 @@ type DispatchCtx = {
   redactedSids: Set<string>;
   droppedSids: Set<string>;
   redactedMemory: Set<string>;
+  redactedSkills: Set<string>;
 };
 
 /**
@@ -203,6 +209,59 @@ function dispatchMemory(f: Finding, action: FindingAction, ctx: DispatchCtx): vo
 }
 
 /**
+ * Apply one finding's triaged action for a `shared/skills/<name>/<relPath>`
+ * finding, reached from `dispatchNonSession` when the finding is not a
+ * project-level memory file. `'allow'` and `'skip'` are handled by the caller
+ * before this function is reached, so only `'redact'` and `'drop'` are
+ * meaningful here. A skill is a host-uniform global artifact (no `PathMap`
+ * lookup), so unlike `dispatchMemory`, `skillFileFromFinding` returning null
+ * here is a genuine no-op: `dispatchNonSession` only calls this function when
+ * `isSkillFindingPath` already matched, so a null parse means the shape
+ * matched the directory prefix but not the full `<name>/<relPath>` pattern.
+ *
+ * @param f The finding to act on.
+ * @param action The triaged action.
+ * @param ctx Loop-invariant dispatch context (see `DispatchCtx`).
+ */
+function dispatchSkill(f: Finding, action: FindingAction, ctx: DispatchCtx): void {
+  const parsed = skillFileFromFinding(f);
+  if (parsed === null) return;
+  if (action === 'drop') {
+    log('skill files cannot be dropped; use Redact or Skip');
+    return;
+  }
+  // Only 'redact' can reach here: dispatchOne handles 'skip' and 'allow'
+  // before calling this function, and 'drop' returned just above.
+  const skillKey = `${parsed.name}/${parsed.relPath}`;
+  if (ctx.redactedSkills.has(skillKey)) return;
+  if (applySkillRedact(f, ctx.ts, ctx.scan)) ctx.redactedSkills.add(skillKey);
+}
+
+/**
+ * Route a `sid === null` finding (no resolvable session id) to the correct
+ * non-session dispatcher, extracted so `dispatchOne` stays under the
+ * cognitive-complexity gate. Tries project-level memory first, then a
+ * global skill file, falling through to a no-op for a genuine non-session
+ * non-memory non-skill finding (unchanged from the prior single-branch
+ * behavior).
+ *
+ * @param f The finding to act on.
+ * @param action The triaged action.
+ * @param ctx Loop-invariant dispatch context (see `DispatchCtx`).
+ */
+function dispatchNonSession(f: Finding, action: FindingAction, ctx: DispatchCtx): void {
+  if (isMemoryFindingPath(f)) {
+    dispatchMemory(f, action, ctx);
+    return;
+  }
+  if (isSkillFindingPath(f)) {
+    dispatchSkill(f, action, ctx);
+  }
+  // Genuine non-session non-memory non-skill finding falls through here:
+  // unchanged no-op (nothing left to do; the function returns implicitly).
+}
+
+/**
  * Apply one finding's triaged action against local state. Extracted from
  * `dispatchActions` so each function stays under the cognitive-complexity gate.
  * Drop wins: once a session id appears in `ctx.droppedSids`, subsequent redact
@@ -224,7 +283,7 @@ function dispatchOne(f: Finding, ctx: DispatchCtx): void {
     return;
   }
   if (sid === null) {
-    dispatchMemory(f, action, ctx);
+    dispatchNonSession(f, action, ctx);
     return;
   }
   if (action === 'drop') {
@@ -281,6 +340,7 @@ export function dispatchActions(
     redactedSids: new Set<string>(),
     droppedSids: new Set<string>(),
     redactedMemory: new Set<string>(),
+    redactedSkills: new Set<string>(),
   };
   for (const f of findings) {
     dispatchOne(f, ctx);
