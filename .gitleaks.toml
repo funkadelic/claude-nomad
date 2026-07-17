@@ -41,7 +41,11 @@ condition = "AND"
 # false-positive handler is a narrow allowlist scoped to synced session
 # paths. `condition = "AND"` requires BOTH a known literal AND a
 # `shared/projects/<logical>/.../*.jsonl` path; a real PAT in the same
-# file (different 36-char body) still fires.
+# file (different 36-char body) still fires. Also scoped to
+# `shared/projects/<logical>/memory/*.md`: these exact literals legitimately
+# appear in curated memory prose that discusses the fixture pattern itself
+# (e.g. a memory note documenting this allowlist), and the exact-literal match
+# carries no false-negative risk there either.
 [[allowlists]]
 description = "claude-nomad: documented test-fixture github-pat literals + scrub placeholders in synced session transcripts"
 regexes = [
@@ -52,6 +56,7 @@ regexes = [
 ]
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
+    '''^shared/projects/[^/]+/memory/[^/]+\.md$''',
 ]
 condition = "AND"
 
@@ -64,7 +69,10 @@ condition = "AND"
 # regexTarget = "line") keeps this from whitelisting a bare token: a real
 # secret is never preceded by an SSH key-type label and the SHA256: scheme
 # prefix. `condition = "AND"` plus the session-jsonl path scope double-locks
-# it to synced transcripts.
+# it to synced transcripts. Also scoped to `shared/projects/<logical>/memory/*.md`:
+# this is plausible content in a curated memory note documenting a commit
+# signature-verification procedure, and the structural `with <keytype> key
+# SHA256:` anchor keeps the false-negative risk low there too.
 [[allowlists]]
 description = "claude-nomad: SSH public-key fingerprints (with <keytype> key SHA256:<b64>) in git signature output in synced session transcripts"
 regexTarget = "line"
@@ -73,6 +81,7 @@ regexes = [
 ]
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
+    '''^shared/projects/[^/]+/memory/[^/]+\.md$''',
 ]
 condition = "AND"
 
