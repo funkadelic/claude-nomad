@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -10,14 +11,18 @@ import { scanStagedTree } from './push-gitleaks.scan.ts';
 
 /**
  * Real-binary regression suite pinning the scope of the `.gitleaks.toml`
- * skills widening: the structurally-anchored noise blocks (tool-output
- * noise, SSH public-key fingerprints, SonarCloud issue-listing) now also
- * match `shared/skills/<name>/**` (recursively, any nesting depth), while
- * the documented github-pat fixture block stays deliberately unwidened.
- * Proves both halves of the change: documented structural noise is
- * suppressed under `shared/skills/**`, and a genuine credential (or the
- * block-2 fixture literal) in the same tree still fires, so the widening
- * cannot silently swallow a real leak.
+ * skills widening: the structurally-ANCHORED noise blocks (gitleaks
+ * fingerprints / npm-audit id / coverage line-keys, SSH public-key
+ * fingerprints, SonarCloud issue-listing) now also match
+ * `shared/skills/<name>/**` (recursively, any nesting depth), while the
+ * documented github-pat fixture block AND the bare `AY` Sonar-issue-key token
+ * shape stay deliberately unwidened (transcript-only). The `AY` shape is
+ * context-free, so widening it to executable skill content could mask a real
+ * `AY`-prefixed credential; it lives in its own transcript-only block.
+ * Proves every half of the change: structurally-anchored noise is suppressed
+ * under `shared/skills/**`, while a genuine credential (a high-entropy
+ * `AY`-shaped token OR a github-pat) in the same tree still fires, so the
+ * widening cannot silently swallow a real leak.
  *
  * Copies the worktree's `.gitleaks.toml` into a fake `REPO_HOME` under a temp
  * `HOME` (mirroring the hermetic pattern in `gitleaks-memory-allowlist.test.ts`)
@@ -100,17 +105,35 @@ describe.skipIf(!hasGitleaks)(
       writeFileSync(filePath, body);
     }
 
-    it('suppresses a block-1-shaped tool-output token under a nested skill path', () => {
+    it('suppresses a structurally-anchored gitleaks-fingerprint noise shape under a nested skill path', () => {
       // Nested relPath (references/notes.md) proves the recursive anchor
       // `^shared/skills/[^/]+/.*$` covers arbitrary nesting depth, unlike the
-      // flat memory anchor.
+      // flat memory anchor. The `<path>.<ext>:<rule>:<line>` shape carries
+      // structural context, so it is safe to suppress under skills.
       writeSkillFile(
         'myskill',
         'references/notes.md',
-        `Example dump: ${ayFixture('abcdefghijklmnopqrst')}\n`,
+        'gitleaks fingerprint: src/foo.ts:my-rule:42\n',
       );
       const findings = scanStagedTree(scanRoot);
       expect(findings).toEqual([]);
+    });
+
+    it('still fires on a standalone high-entropy AY-shaped token under shared/skills/** (AY block not widened to skills)', () => {
+      // The bare `AY`-prefixed token shape is context-free and matches the
+      // transcript-only Sonar-issue-key allowlist regex, but that block is NOT
+      // scoped to skills. A real `AY`-shaped credential pasted into executable
+      // skill content must therefore still fire, or the skills-parity purpose
+      // of this PR would be defeated. High-entropy body assembled at runtime so
+      // no contiguous `AY<20>` literal is stored in source-controlled bytes.
+      const body = randomBytes(15)
+        .toString('base64url')
+        .replace(/[^A-Za-z0-9_-]/g, '')
+        .slice(0, 20);
+      writeSkillFile('myskill', 'SKILL.md', `api_key = "${ayFixture(body)}"\n`);
+      const findings = scanStagedTree(scanRoot);
+      expect(findings).not.toBeNull();
+      expect((findings ?? []).length).toBeGreaterThanOrEqual(1);
     });
 
     it('suppresses a block-3 SSH public-key fingerprint line under shared/skills/**', () => {
