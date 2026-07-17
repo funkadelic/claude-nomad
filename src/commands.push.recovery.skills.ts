@@ -1,0 +1,128 @@
+/**
+ * Host-uniform skill-file resolution for the push-time recovery menu. A
+ * skill is a global artifact keyed only by its name:
+ * `~/.claude/skills/<name>/...` maps 1:1 to `shared/skills/<name>/...` on
+ * every host, unlike a project-level memory file which needs a
+ * `path-map.json` host-mapping lookup
+ * (`commands.push.recovery.memory.ts`). No `PathMap`/`HOST` parameter
+ * appears anywhere in this module.
+ *
+ * Provides the pure finding parser (`skillFileFromFinding`,
+ * `isSkillFindingPath`) and the double-guarded local-path resolver
+ * (`resolveSkillLocalPath`). The preflight and redact-plus-copy-back
+ * actions land in a follow-up addition to this same module.
+ *
+ * Unlike memory's flat `memory/<file>.md`, a skill is an arbitrarily nested
+ * tree (`SKILL.md`, `references/*.md`, `scripts/*.py`, dotfiles, ...), so
+ * the finding-path parser captures a multi-segment relative path and the
+ * traversal guard validates every segment, not a single filename pattern.
+ *
+ * Not wired into the recovery loop's dispatch/menu yet; that lands in a
+ * later plan.
+ */
+
+import { existsSync } from 'node:fs';
+import { join, sep } from 'node:path';
+
+import { claudeHome } from './config.ts';
+import { isGsdOwned } from './skills-sync.ts';
+import type { Finding } from './push-gitleaks.scan.ts';
+
+/**
+ * Matches a repo-relative POSIX finding path of the form
+ * `shared/skills/<name>/<relPath>`, where `relPath` (the second capture
+ * group) intentionally allows internal `/` separators so an arbitrarily
+ * nested skill file (`references/notes.md`, `scripts/x.py`) is captured
+ * whole rather than truncated at the first segment.
+ */
+const SKILL_FINDING_PATH = /^shared\/skills\/([^/]+)\/(.+)$/;
+
+/** Single path-segment charset allowed for a skill `name`: no separators, no leading dot-traversal. */
+const SAFE_SKILL_NAME = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * Matches any finding anywhere under a named skill directory
+ * (`shared/skills/<name>/...`), used to route a `sid === null` finding to
+ * the skill dispatch branch before falling through to the generic no-op.
+ */
+const SKILL_DIR_PATH = /^shared\/skills\/[^/]+\//;
+
+/**
+ * Parse a gitleaks finding's `File` path into a skill-file reference. Pure.
+ * The `relPath` capture may itself contain further `/` separators (a nested
+ * skill file); this function does not validate safety, only shape -- see
+ * `resolveSkillLocalPath` for the traversal guard.
+ *
+ * @param f The gitleaks finding.
+ * @returns `{name, relPath}` on a match, else null for a non-skill path, a
+ *   bare `shared/skills/<name>` with no trailing file, or `shared/skills/`
+ *   alone.
+ */
+export function skillFileFromFinding(f: Finding): { name: string; relPath: string } | null {
+  const m = SKILL_FINDING_PATH.exec(f.File);
+  if (m?.[1] === undefined || m[2] === undefined) return null;
+  return { name: m[1], relPath: m[2] };
+}
+
+/**
+ * True when a finding's `File` path lies under a named skill directory
+ * (`shared/skills/<name>/...`), regardless of nesting depth.
+ *
+ * @param f The gitleaks finding.
+ * @returns true when the path is under `shared/skills/<name>/`.
+ */
+export function isSkillFindingPath(f: Finding): boolean {
+  return SKILL_DIR_PATH.test(f.File);
+}
+
+/**
+ * Per-segment traversal guard for a skill's relative path. Rejects an empty
+ * path, a leading `/`, any backslash, then splits on `/` and requires every
+ * segment be non-empty and not `.` or `..`. A flat single-filename pattern
+ * (memory's approach) would incorrectly reject legitimately nested skill
+ * files, so every segment is validated independently.
+ *
+ * @param relPath Candidate relative path extracted from a finding.
+ * @returns true when every segment of `relPath` is safe.
+ */
+function isSafeRelPath(relPath: string): boolean {
+  if (relPath.length === 0 || relPath.startsWith('/') || relPath.includes('\\')) return false;
+  const segments = relPath.split('/');
+  return segments.every((s) => s.length > 0 && s !== '.' && s !== '..');
+}
+
+/**
+ * Resolve a skill finding's `{name, relPath}` to the live local path
+ * `~/.claude/skills/<name>/<relPath>`. Host-uniform: no `PathMap`/`HOST`
+ * parameter, because a skill maps 1:1 to the same relative location on
+ * every host, unlike a project-level memory file
+ * (`resolveMemoryLocalPath`).
+ *
+ * Double-guarded: `name` and every `relPath` segment are validated before
+ * any `join()`, and the resolved path is independently confirmed to stay
+ * under the skill root after the join (defense-in-depth against a guard
+ * that missed some obscure segment shape). Also refuses a gsd-owned skill
+ * name (`isGsdOwned`, imported from `skills-sync.ts`, the single source of
+ * truth for the `gsd-` boundary) so a stale repo-side `gsd-*` entry from the
+ * pre-copy-sync symlink era can never be auto-redacted.
+ *
+ * @param name Skill name extracted from the finding.
+ * @param relPath Relative path within the skill extracted from the finding.
+ * @returns The absolute local path when name/segments are safe, the skill
+ *   is not gsd-owned, and the file exists; else null.
+ */
+export function resolveSkillLocalPath(name: string, relPath: string): string | null {
+  if (!SAFE_SKILL_NAME.test(name) || name === '.' || name === '..') return null;
+  if (isGsdOwned(name)) return null;
+  if (!isSafeRelPath(relPath)) return null;
+  const skillRoot = join(claudeHome(), 'skills', name);
+  const localPath = join(skillRoot, ...relPath.split('/'));
+  /* c8 ignore start -- defense-in-depth: unreachable once SAFE_SKILL_NAME (no
+     path separators in name) and isSafeRelPath (rejects '..'/'.'/empty
+     segments above) both pass, join() cannot produce a path escaping
+     skillRoot; kept as a second guard in case either upstream check is ever
+     weakened */
+  if (localPath !== skillRoot && !localPath.startsWith(skillRoot + sep)) return null;
+  /* c8 ignore stop */
+  return existsSync(localPath) ? localPath : null;
+}
