@@ -81,8 +81,18 @@ export class NomadFatal extends Error {
  * Carries the exit `code` the mock was called with; the message embeds it as
  * `exit:<code>` so tests can assert on the rejection.
  */
+/**
+ * Registered-symbol brand for {@link ProcessExit}. `Symbol.for` resolves to
+ * the same symbol in every module realm, so the brand survives the realm
+ * duplication `vi.resetModules()` introduces between a test and the
+ * dynamically re-imported `nomad.ts`, while (unlike a mutable `Error.name`) it
+ * cannot be spoofed by an unrelated error that happens to be named the same.
+ */
+const PROCESS_EXIT_BRAND: unique symbol = Symbol.for('claude-nomad.ProcessExit');
+
 export class ProcessExit extends Error {
   readonly code: string | number | null | undefined;
+  readonly [PROCESS_EXIT_BRAND] = true;
 
   constructor(code: string | number | null | undefined) {
     super(`exit:${String(code)}`);
@@ -92,14 +102,18 @@ export class ProcessExit extends Error {
 }
 
 /**
- * True when `err` is a {@link ProcessExit} sentinel. Brands on the `name`
- * string rather than `instanceof` so detection survives the module-realm
- * duplication `vi.resetModules()` introduces between a test (which imports
- * `ProcessExit` once) and the dynamically re-imported `nomad.ts` (which sees a
- * fresh `utils.ts` class object). No production error is named `ProcessExit`.
+ * True when `err` is a {@link ProcessExit} sentinel, identified by its
+ * {@link PROCESS_EXIT_BRAND} symbol rather than `instanceof` (which breaks
+ * across the `vi.resetModules()` realm split) or the mutable `name` (which any
+ * error could carry). A plain `Error` renamed to `ProcessExit` is NOT matched,
+ * so it still routes through crash handling.
  */
 export function isProcessExit(err: unknown): err is ProcessExit {
-  return err instanceof Error && err.name === 'ProcessExit';
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as Record<symbol, unknown>)[PROCESS_EXIT_BRAND] === true
+  );
 }
 
 /**
