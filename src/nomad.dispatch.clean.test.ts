@@ -106,8 +106,16 @@ describe('nomad.ts clean dispatcher', () => {
     originalArgv = process.argv;
     process.env.HOME = '/tmp';
     vi.resetModules();
+    // Real process.exit() terminates before any subsequent JS can run.
+    // Simulate that by pinning the thrown message to the FIRST exit code
+    // seen: the top-level crash funnel (handleTopLevelError) also calls the
+    // mocked process.exit on its own fallback path, and a naive per-call
+    // throw would let that second call overwrite the originally intended
+    // usage-error code.
+    let firstExitCode: string | number | null | undefined;
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
-      throw new Error(`exit:${String(code)}`);
+      if (firstExitCode === undefined) firstExitCode = code;
+      throw new Error(`exit:${String(firstExitCode)}`);
     });
     vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */
