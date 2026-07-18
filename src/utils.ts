@@ -106,14 +106,17 @@ export class ProcessExit extends Error {
  * {@link PROCESS_EXIT_BRAND} symbol rather than `instanceof` (which breaks
  * across the `vi.resetModules()` realm split) or the mutable `name` (which any
  * error could carry). A plain `Error` renamed to `ProcessExit` is NOT matched,
- * so it still routes through crash handling.
+ * so it still routes through crash handling. `err` is `unknown` (any thrown
+ * value), so the brand read is guarded: a throwing getter or Proxy trap
+ * degrades to `false` rather than aborting the crash funnel.
  */
 export function isProcessExit(err: unknown): err is ProcessExit {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as Record<symbol, unknown>)[PROCESS_EXIT_BRAND] === true
-  );
+  if (typeof err !== 'object' || err === null) return false;
+  try {
+    return (err as Record<symbol, unknown>)[PROCESS_EXIT_BRAND] === true;
+  } catch {
+    return false;
+  }
 }
 
 /**

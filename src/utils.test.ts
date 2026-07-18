@@ -131,6 +131,20 @@ describe('ProcessExit / isProcessExit', () => {
     expect(isProcessExit('exit:2')).toBe(false);
     expect(isProcessExit(null)).toBe(false);
   });
+
+  it('isProcessExit is false when reading the brand throws (hostile getter)', async () => {
+    const { isProcessExit } = await import('./utils.ts');
+    // A thrown value could be a Proxy or an object with a throwing getter on
+    // the brand key; the guarded read must degrade to false, not abort the
+    // crash funnel.
+    const hostile: Record<symbol, unknown> = {};
+    Object.defineProperty(hostile, Symbol.for('claude-nomad.ProcessExit'), {
+      get() {
+        throw new Error('trap');
+      },
+    });
+    expect(isProcessExit(hostile)).toBe(false);
+  });
 });
 
 describe('gitOrFatal (mocked child_process)', () => {
