@@ -97,6 +97,56 @@ describe('NomadFatal / die exit-code classification', () => {
   });
 });
 
+describe('ProcessExit / isProcessExit', () => {
+  it('ProcessExit carries the code and embeds it in an exit:<code> message', async () => {
+    const { ProcessExit } = await import('./utils.ts');
+    const err = new ProcessExit(2);
+    expect(err.code).toBe(2);
+    expect(err.name).toBe('ProcessExit');
+    expect(err.message).toBe('exit:2');
+  });
+
+  it('isProcessExit is true for a ProcessExit instance', async () => {
+    const { ProcessExit, isProcessExit } = await import('./utils.ts');
+    expect(isProcessExit(new ProcessExit(1))).toBe(true);
+  });
+
+  it('isProcessExit is false for a plain Error and for a NomadFatal', async () => {
+    const { isProcessExit, NomadFatal } = await import('./utils.ts');
+    expect(isProcessExit(new Error('boom'))).toBe(false);
+    expect(isProcessExit(new NomadFatal('nope'))).toBe(false);
+  });
+
+  it('isProcessExit rejects a plain Error spoofing the ProcessExit name', async () => {
+    const { isProcessExit } = await import('./utils.ts');
+    const spoof = new Error('boom');
+    spoof.name = 'ProcessExit';
+    // The symbol brand, not the mutable name, is what identifies the sentinel,
+    // so a renamed plain Error still routes through crash handling.
+    expect(isProcessExit(spoof)).toBe(false);
+  });
+
+  it('isProcessExit is false for non-object and null values', async () => {
+    const { isProcessExit } = await import('./utils.ts');
+    expect(isProcessExit('exit:2')).toBe(false);
+    expect(isProcessExit(null)).toBe(false);
+  });
+
+  it('isProcessExit is false when reading the brand throws (hostile getter)', async () => {
+    const { isProcessExit } = await import('./utils.ts');
+    // A thrown value could be a Proxy or an object with a throwing getter on
+    // the brand key; the guarded read must degrade to false, not abort the
+    // crash funnel.
+    const hostile: Record<symbol, unknown> = {};
+    Object.defineProperty(hostile, Symbol.for('claude-nomad.ProcessExit'), {
+      get() {
+        throw new Error('trap');
+      },
+    });
+    expect(isProcessExit(hostile)).toBe(false);
+  });
+});
+
 describe('gitOrFatal (mocked child_process)', () => {
   let stderrSpy: MockInstance<(...args: unknown[]) => boolean>;
 

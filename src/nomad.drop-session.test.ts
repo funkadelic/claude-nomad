@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { ProcessExit } from './utils.ts';
+
 // Dispatcher smoke tests for the `drop-session` arm. Split out of
 // nomad.test.ts to keep every file under the line cap. Each test sets
 // process.argv, doMocks ./commands.drop-session.ts, stubs process.exit to
@@ -17,11 +19,11 @@ describe('nomad.ts drop-session dispatcher', () => {
     originalArgv = process.argv;
     process.env.HOME = '/tmp';
     vi.resetModules();
-    // process.exit must throw so the script's switch terminates and the test
-    // can inspect call history. Throwing also prevents vitest's worker from
-    // actually exiting.
+    // A ProcessExit sentinel models real termination: the top-level crash
+    // funnel re-throws it untouched, so an expected usage exit never routes
+    // through crash handling (no throwaway crash report during the test).
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
-      throw new Error(`exit:${String(code)}`);
+      throw new ProcessExit(code);
     });
     vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */
@@ -50,7 +52,11 @@ describe('nomad.ts drop-session dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
@@ -62,7 +68,11 @@ describe('nomad.ts drop-session dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', '--bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
@@ -74,7 +84,11 @@ describe('nomad.ts drop-session dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', 'sid-A', 'extra-arg'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
@@ -86,7 +100,11 @@ describe('nomad.ts drop-session dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', ''];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
@@ -104,7 +122,11 @@ describe('nomad.ts drop-session dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', 'foo/bar'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
@@ -119,7 +141,11 @@ describe('nomad.ts drop-session dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', '..'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(

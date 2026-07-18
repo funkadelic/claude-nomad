@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { ProcessExit } from './utils.ts';
+
 // Smoke tests for the nomad.ts dispatcher. The file is a CLI entry point with
 // top-level switch logic, so each test sets process.argv, mocks the cmd
 // modules, stubs process.exit, then dynamically imports ./nomad.ts to trigger
@@ -19,11 +21,11 @@ describe('nomad.ts push dispatcher', () => {
     originalArgv = process.argv;
     process.env.HOME = '/tmp';
     vi.resetModules();
-    // process.exit must throw so the script's switch terminates and the test
-    // can inspect call history. Throwing also prevents vitest's worker from
-    // actually exiting.
+    // A ProcessExit sentinel models real termination: the top-level crash
+    // funnel re-throws it untouched, so an expected usage exit never routes
+    // through crash handling (no throwaway crash report during the test).
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
-      throw new Error(`exit:${String(code)}`);
+      throw new ProcessExit(code);
     });
     vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */
@@ -81,7 +83,11 @@ describe('nomad.ts push dispatcher', () => {
     const cmdPushMock = vi.fn();
     vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
     process.argv = ['node', 'nomad.ts', 'push', '--bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdPushMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     // The user-visible side of the error must include the canonical usage
@@ -111,7 +117,11 @@ describe('nomad.ts push dispatcher', () => {
     vi.doMock('./diff.ts', () => ({ cmdDiff: cmdDiffMock }));
     vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdPullMock).not.toHaveBeenCalled();
     expect(cmdPushMock).not.toHaveBeenCalled();
@@ -163,8 +173,11 @@ describe('nomad.ts --version dispatcher', () => {
     originalArgv = process.argv;
     process.env.HOME = '/tmp';
     vi.resetModules();
+    // A ProcessExit sentinel models real termination: the top-level crash
+    // funnel re-throws it untouched, so an expected usage exit never routes
+    // through crash handling (no throwaway crash report during the test).
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
-      throw new Error(`exit:${String(code)}`);
+      throw new ProcessExit(code);
     });
     logSpy = vi.spyOn(console, 'log').mockImplementation((..._args: unknown[]) => {
       /* captured for assertion */
@@ -195,7 +208,11 @@ describe('nomad.ts --version dispatcher', () => {
 
   it('rejects `nomad --version extra-arg` with the canonical usage line and exitCode=2', async () => {
     process.argv = ['node', 'nomad.ts', '--version', 'extra-arg'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad --version'));
   });

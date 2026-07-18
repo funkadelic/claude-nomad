@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { ProcessExit } from './utils.ts';
+
 // Dispatcher smoke tests for the `adopt` arm. Each test sets process.argv,
 // doMocks ./commands.adopt.ts, stubs process.exit to throw, then dynamically
 // imports ./nomad.ts (the unchanged SUT path) to trigger the dispatch.
@@ -14,8 +16,11 @@ describe('nomad.ts adopt dispatcher', () => {
     originalArgv = process.argv;
     process.env.HOME = '/tmp';
     vi.resetModules();
+    // A ProcessExit sentinel models real termination: the top-level crash
+    // funnel re-throws it untouched, so an expected usage exit never routes
+    // through crash handling (no throwaway crash report during the test).
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
-      throw new Error(`exit:${String(code)}`);
+      throw new ProcessExit(code);
     });
     vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */
@@ -54,7 +59,11 @@ describe('nomad.ts adopt dispatcher', () => {
     const cmdAdoptMock = vi.fn();
     vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdAdoptMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
@@ -66,7 +75,11 @@ describe('nomad.ts adopt dispatcher', () => {
     const cmdAdoptMock = vi.fn();
     vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', 'foo', 'bar'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdAdoptMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
@@ -78,7 +91,11 @@ describe('nomad.ts adopt dispatcher', () => {
     const cmdAdoptMock = vi.fn();
     vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', '--dry-run'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdAdoptMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
@@ -90,7 +107,11 @@ describe('nomad.ts adopt dispatcher', () => {
     const cmdAdoptMock = vi.fn();
     vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', 'foo', '--bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdAdoptMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { ProcessExit } from './utils.ts';
+
 // Dispatcher smoke tests for the `doctor` arm and its --check-shared /
 // --resume-cmd sub-flags. Split out of nomad.test.ts to keep every file
 // under the line cap. Each test sets process.argv, doMocks the relevant
@@ -18,11 +20,11 @@ describe('nomad.ts doctor dispatcher', () => {
     originalArgv = process.argv;
     process.env.HOME = '/tmp';
     vi.resetModules();
-    // process.exit must throw so the script's switch terminates and the test
-    // can inspect call history. Throwing also prevents vitest's worker from
-    // actually exiting.
+    // A ProcessExit sentinel models real termination: the top-level crash
+    // funnel re-throws it untouched, so an expected usage exit never routes
+    // through crash handling (no throwaway crash report during the test).
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
-      throw new Error(`exit:${String(code)}`);
+      throw new ProcessExit(code);
     });
     vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */
@@ -87,7 +89,11 @@ describe('nomad.ts doctor dispatcher', () => {
     const cmdDoctorMock = vi.fn();
     vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--check-shared', 'extra'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdDoctorMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad doctor'));
@@ -107,7 +113,11 @@ describe('nomad.ts doctor dispatcher', () => {
     const resumeCmdMock = vi.fn();
     vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--resume-cmd'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(resumeCmdMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad doctor'));
@@ -120,7 +130,11 @@ describe('nomad.ts doctor dispatcher', () => {
     const resumeCmdMock = vi.fn();
     vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--resume-cmd', 'sid-A', 'extra'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(resumeCmdMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad doctor'));
@@ -130,7 +144,11 @@ describe('nomad.ts doctor dispatcher', () => {
     const cmdDoctorMock = vi.fn();
     vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdDoctorMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad doctor'));

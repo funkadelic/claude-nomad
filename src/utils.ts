@@ -70,6 +70,56 @@ export class NomadFatal extends Error {
 }
 
 /**
+ * Termination boundary for tests. A real `process.exit()` ends the process
+ * before any surrounding `catch` can run; a test's `process.exit` mock cannot
+ * do that, so it throws this sentinel instead. The top-level crash funnel
+ * (`handleTopLevelError` in `nomad.ts`) re-throws a `ProcessExit` untouched
+ * rather than treating it as an unexpected error, so exit-path unit tests
+ * never route an expected usage exit through the crash-report writer. Real
+ * `process.exit` terminates, so this type is never constructed in production.
+ *
+ * Carries the exit `code` the mock was called with; the message embeds it as
+ * `exit:<code>` so tests can assert on the rejection.
+ */
+/**
+ * Registered-symbol brand for {@link ProcessExit}. `Symbol.for` resolves to
+ * the same symbol in every module realm, so the brand survives the realm
+ * duplication `vi.resetModules()` introduces between a test and the
+ * dynamically re-imported `nomad.ts`, while (unlike a mutable `Error.name`) it
+ * cannot be spoofed by an unrelated error that happens to be named the same.
+ */
+const PROCESS_EXIT_BRAND: unique symbol = Symbol.for('claude-nomad.ProcessExit');
+
+export class ProcessExit extends Error {
+  readonly code: string | number | null | undefined;
+  readonly [PROCESS_EXIT_BRAND] = true;
+
+  constructor(code: string | number | null | undefined) {
+    super(`exit:${String(code)}`);
+    this.name = 'ProcessExit';
+    this.code = code;
+  }
+}
+
+/**
+ * True when `err` is a {@link ProcessExit} sentinel, identified by its
+ * {@link PROCESS_EXIT_BRAND} symbol rather than `instanceof` (which breaks
+ * across the `vi.resetModules()` realm split) or the mutable `name` (which any
+ * error could carry). A plain `Error` renamed to `ProcessExit` is NOT matched,
+ * so it still routes through crash handling. `err` is `unknown` (any thrown
+ * value), so the brand read is guarded: a throwing getter or Proxy trap
+ * degrades to `false` rather than aborting the crash funnel.
+ */
+export function isProcessExit(err: unknown): err is ProcessExit {
+  if (typeof err !== 'object' || err === null) return false;
+  try {
+    return (err as Record<symbol, unknown>)[PROCESS_EXIT_BRAND] === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Throw a `NomadFatal` with the given message. Callers should `catch` it in
  * the cmdPull/cmdPush try/finally so the lock is released before exit.
  *

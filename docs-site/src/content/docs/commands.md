@@ -380,3 +380,24 @@ branch on `$?` without parsing stderr text.
 A run skipped because another nomad process already holds the lock also exits 0: this is an
 intentional no-op skip, not a failure, so a backgrounded shell-rc or cron invocation never raises a
 false alarm from a concurrent run. Value `3` is reserved for future use.
+
+## Crash reports
+
+When `nomad` hits an unexpected bug it prints a short "this looks like a bug" banner (with a link to
+the issue tracker) instead of a raw stack trace, and writes a bounded, redacted report to
+`~/.cache/claude-nomad/crash/`. The exit code contract is unchanged: an unexpected crash exits `1`,
+a documented failure keeps its own code.
+
+- **Local only, never uploaded.** The report is written owner-readable-only under your cache dir and
+  nothing is transmitted anywhere; you choose whether to attach it to an issue.
+- **Two-layer redaction.** A structural scrub (home directory to `~`, hostname to a placeholder)
+  always runs, followed by a best-effort gitleaks secret scan, the same redaction nomad uses for
+  session transcripts.
+- **Fail-safe without gitleaks.** If gitleaks is absent, the structural scrub still applies and the
+  report is still written, with a note that the secret scan did not run, so review it before sharing
+  publicly.
+- **Bounded contents.** Only the nomad version, the command you ran (bounded, including any flag
+  values), the error name and message, a trimmed stack, the platform, the Node.js version, and a
+  timestamp. No environment dump, no file contents.
+- **Self-pruning.** The crash directory keeps only the most recent reports and prunes older ones
+  automatically. There is intentionally no `nomad clean` flag for it.

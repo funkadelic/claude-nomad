@@ -28,6 +28,7 @@ import { cmdPush } from './commands.push.ts';
 import { cmdSync } from './commands.sync.ts';
 import { cmdUpdate } from './commands.update.ts';
 import { claudeHome, home, repoHome } from './config.ts';
+import { handleCrash } from './crash-report.write.ts';
 import { cmdDiff } from './diff.ts';
 import { cmdInit, isAlreadyInitialized } from './init.ts';
 import { resolveSnapshotChoice } from './init.prompt.ts';
@@ -41,7 +42,7 @@ import { parsePushArgs } from './nomad.dispatch.push.ts';
 import { parseSyncArgs } from './nomad.dispatch.sync.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
-import { fail, NomadFatal } from './utils.ts';
+import { fail, isProcessExit, NomadFatal } from './utils.ts';
 import { EXIT } from './exit-codes.ts';
 
 /**
@@ -53,6 +54,41 @@ import { EXIT } from './exit-codes.ts';
  */
 import pkg from '../package.json' with { type: 'json' };
 
+/**
+ * Single funnel for every unexpected top-level error: the dispatch `catch`,
+ * `uncaughtException`, and `unhandledRejection` all route through this
+ * function, so a `NomadFatal` can never reach the crash-report path from any
+ * of the three call sites. A test-only `ProcessExit` sentinel is re-thrown
+ * untouched (it models a real `process.exit`, not a crash). A `NomadFatal`
+ * keeps its own clean message and exit code with no crash report; anything
+ * else is handed to `handleCrash` (writes a redacted crash report) and exits
+ * `EXIT.GENERIC_FAILURE`.
+ *
+ * Typed `never`: registering an `uncaughtException` listener suppresses
+ * Node's default auto-exit, so every branch here must call `process.exit`
+ * explicitly or the process hangs.
+ */
+function handleTopLevelError(err: unknown): never {
+  // A test's `process.exit` mock throws `ProcessExit` to model real
+  // termination; re-throw it untouched so an expected usage exit never routes
+  // through crash handling. Real exits terminate and never reach here.
+  if (isProcessExit(err)) throw err;
+  if (err instanceof NomadFatal) {
+    fail(err.message);
+    process.exit(err.code);
+  }
+  const issuesUrl = pkg.bugs?.url ?? 'https://github.com/funkadelic/claude-nomad/issues';
+  handleCrash(err, process.argv, {
+    version: pkg.version,
+    platform: process.platform,
+    issuesUrl,
+  });
+  process.exit(EXIT.GENERIC_FAILURE);
+}
+
+process.on('uncaughtException', handleTopLevelError);
+process.on('unhandledRejection', handleTopLevelError);
+
 const h = home();
 if (!h) {
   fail(
@@ -62,6 +98,21 @@ if (!h) {
 }
 
 try {
+  // Test-only crash seam, gated on env vars set exclusively by
+  // src/nomad.crash.test.ts; never fires in normal use. Not documented in
+  // nomad.help.ts.
+  if (process.env.NOMAD_TEST_FORCE_CRASH) {
+    throw new Error('forced test crash (NOMAD_TEST_FORCE_CRASH)');
+  }
+  if (process.env.NOMAD_TEST_FORCE_ASYNC_CRASH) {
+    setImmediate(() => {
+      // Deliberately unhandled: void discards the reference without
+      // attaching a rejection handler, so Node's unhandledRejection listener
+      // is what catches it.
+      void Promise.reject(new Error('forced test async crash (NOMAD_TEST_FORCE_ASYNC_CRASH)'));
+    });
+  }
+
   const cmd = process.argv[2];
   switch (cmd) {
     case '--version':
@@ -283,12 +334,9 @@ try {
       process.exit(EXIT.USAGE);
   }
 } catch (err) {
-  // Top-level safety net for NomadFatal thrown from contexts that don't have
+  // Top-level safety net for any error thrown from contexts that don't have
   // their own try/catch (e.g., cmdDoctor's readJson path). cmdPull / cmdPush
   // have their own catches so their finally blocks release the lock first.
-  if (err instanceof NomadFatal) {
-    fail(err.message);
-    process.exit(err.code);
-  }
-  throw err;
+  // handleTopLevelError re-checks NomadFatal, so this simply funnels through.
+  handleTopLevelError(err);
 }
