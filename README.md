@@ -328,16 +328,19 @@ What this means for you:
 
 - **The report stays on your machine.** It is written to `~/.cache/claude-nomad/crash/` and nothing
   is ever uploaded anywhere. The file just sits there until you decide to share it or delete it.
-- **It is scrubbed twice before it touches disk.** First a structural pass rewrites your home
-  directory to `~` and your hostname to a placeholder (absolute paths are personal information a
-  secret scanner would not catch). Then a best-effort secret scan runs the same gitleaks-based
-  redaction nomad already uses for session transcripts.
+- **The saved report is scrubbed twice.** First a structural pass rewrites your home directory to
+  `~` and your hostname to a placeholder (absolute paths are personal information a secret scanner
+  would not catch). Then a best-effort secret scan runs the same gitleaks-based redaction nomad
+  already uses for session transcripts. The secret scan works on a temporary, owner-only (`0o600`)
+  copy that already has the structural scrub applied; that scratch file is deleted immediately after
+  the scan, and only the fully-redacted report is kept.
 - **It degrades safely without gitleaks.** If gitleaks is not installed, the structural scrub still
   runs and the report is still written, with a one-line note that the secret scan did not run, so
   give it a glance before posting it publicly.
-- **It is small and bounded.** The report contains only the nomad version, the subcommand you ran,
-  the error name and message, a trimmed stack, your platform, and a timestamp. It never includes an
-  environment dump or the contents of any file.
+- **It is small and bounded.** The report contains only the nomad version, the command you ran
+  (bounded, and including any flag values you typed), the error name and message, a trimmed stack,
+  your platform, the Node.js version, and a timestamp. It never includes an environment dump or the
+  contents of any file.
 - **The directory manages itself.** Only the most recent reports are kept; older ones are pruned
   automatically on the next crash. There is no `nomad clean` flag for the crash directory, by
   design: it self-manages.

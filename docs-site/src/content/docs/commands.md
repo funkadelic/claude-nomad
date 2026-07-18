@@ -396,7 +396,8 @@ a documented failure keeps its own code.
 - **Fail-safe without gitleaks.** If gitleaks is absent, the structural scrub still applies and the
   report is still written, with a note that the secret scan did not run, so review it before sharing
   publicly.
-- **Bounded contents.** Only the nomad version, the subcommand, the error name and message, a
-  trimmed stack, the platform, and a timestamp. No environment dump, no file contents.
+- **Bounded contents.** Only the nomad version, the command you ran (bounded, including any flag
+  values), the error name and message, a trimmed stack, the platform, the Node.js version, and a
+  timestamp. No environment dump, no file contents.
 - **Self-pruning.** The crash directory keeps only the most recent reports and prunes older ones
   automatically. There is intentionally no `nomad clean` flag for it.
