@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.62.0](https://github.com/funkadelic/claude-nomad/compare/v0.61.0...v0.62.0) (2026-07-18)
+
+
+### Added
+
+* **crash-handler:** redacted crash reports for unexpected errors ([#433](https://github.com/funkadelic/claude-nomad/issues/433)) ([cb2d23c](https://github.com/funkadelic/claude-nomad/commit/cb2d23c16165b0004a8769a8ab5c60af026c9577))
+* **exit-codes:** documented exit-code contract for scripted callers ([#432](https://github.com/funkadelic/claude-nomad/issues/432)) ([890e6a2](https://github.com/funkadelic/claude-nomad/commit/890e6a2a28d37e6559f7167ae57c695b4d1337f5))
+* **push:** handle shared/skills secrets at parity with sessions and memory ([#431](https://github.com/funkadelic/claude-nomad/issues/431)) ([759262c](https://github.com/funkadelic/claude-nomad/commit/759262c52aeaf4e2913fc1421ccd90260327c882))
+
+
+### Fixed
+
+* package.json & package-lock.json to reduce vulnerabilities ([#434](https://github.com/funkadelic/claude-nomad/issues/434)) ([68c6402](https://github.com/funkadelic/claude-nomad/commit/68c6402cea2dbc3a8f9c1eb8fd8db0a416005a53))
+
 ## [0.61.0](https://github.com/funkadelic/claude-nomad/compare/v0.60.0...v0.61.0) (2026-07-17)
 
 
