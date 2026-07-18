@@ -16,11 +16,12 @@
  * ever interpreted by a shell.
  *
  * After the local-preview scan, `reportCheckShared` also runs
- * `reportCommittedMemory` (`./commands.doctor.check-shared.memory.ts`), a
- * distinct WARN-only advisory over already-committed `memory/*.md` content in
- * the sync repo itself. It runs on every gitleaks-ready invocation -- including
- * when nothing local is staged -- because a latent committed secret can
- * originate from any host.
+ * `reportCommittedMemory` (`./commands.doctor.check-shared.memory.ts`) and
+ * `reportCommittedSkills` (`./commands.doctor.check-shared.skills.ts`), two
+ * distinct WARN-only advisories over already-committed `memory/*.md` and
+ * `shared/skills/**` content in the sync repo itself. Both run on every
+ * gitleaks-ready invocation -- including when nothing local is staged --
+ * because a latent committed secret can originate from any host.
  */
 
 import { randomBytes } from 'node:crypto';
@@ -32,6 +33,7 @@ import { join } from 'node:path';
 import { red, yellow, failGlyph, warnGlyph } from './color.ts';
 import { reportCommittedMemory } from './commands.doctor.check-shared.memory.ts';
 import { emitClean, scanAndReport } from './commands.doctor.check-shared.scan.ts';
+import { reportCommittedSkills } from './commands.doctor.check-shared.skills.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { claudeHome, HOST, repoHome, type PathMap } from './config.ts';
 import { copyDirJsonlOnly } from './remap.ts';
@@ -188,15 +190,16 @@ function runLocalPreviewScan(section: DoctorSection): void {
  * transcript preflight (FAIL semantics, unchanged) guarded by a `try/catch`:
  * its own `mkdirSync`/`finally rmSync` are unguarded, so a throw there is
  * caught here, reported as a FAIL row, and `process.exitCode` is set, rather
- * than escaping and skipping the advisory that follows (this reporter itself
+ * than escaping and skipping the advisories that follow (this reporter itself
  * never throws). `reportCommittedMemory`
- * (`./commands.doctor.check-shared.memory.ts`) then runs unconditionally --
- * in a `finally`, so it still runs when `runLocalPreviewScan` throws --
- * scanning already-committed `memory/*.md` in the sync repo (WARN semantics,
- * never sets `process.exitCode`). It runs even when the local preview found
- * nothing to stage, or failed outright, because a latent committed secret can
- * originate from any host, not just this one, and must never be hidden by an
- * unrelated local-preview failure.
+ * (`./commands.doctor.check-shared.memory.ts`) and `reportCommittedSkills`
+ * (`./commands.doctor.check-shared.skills.ts`) then run unconditionally -- in
+ * the same `finally`, so both still run when `runLocalPreviewScan` throws --
+ * scanning already-committed `memory/*.md` and `shared/skills/**` in the sync
+ * repo (WARN semantics, never sets `process.exitCode`). They run even when
+ * the local preview found nothing to stage, or failed outright, because a
+ * latent committed secret can originate from any host, not just this one,
+ * and must never be hidden by an unrelated local-preview failure.
  *
  * `gitleaksReady` lets the doctor orchestrator pass the Repository section's
  * probe result so `version` is not invoked twice on a `--check-shared` run;
@@ -211,5 +214,6 @@ export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolea
     process.exitCode = 1;
   } finally {
     reportCommittedMemory(section);
+    reportCommittedSkills(section);
   }
 }

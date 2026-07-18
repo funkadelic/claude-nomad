@@ -268,47 +268,86 @@ memory secret that already slipped through, `nomad doctor --check-shared` runs a
 over the `memory/*.md` files already committed to the sync repo and points you back at this Redact
 step; it warns only (`⚠︎`) and never fails the doctor run.
 
+## Recovery flow: a secret in a synced skill
+
+Your own skills under `~/.claude/skills/` are copy-synced to the sync repo (only `gsd-`prefixed
+skills are excluded). Skill content is executable (`SKILL.md`, helper scripts in `references/` or
+`scripts/`, dotfiles), so it is a plausible place for a pasted API key or token to end up. A
+gitleaks finding in a skill file, like a memory note, has no session id, so it gets the same
+treatment:
+
+- `nomad drop-session` and `nomad redact <session-id>` do not touch skill files. In the push-time
+  menu, choosing Drop on a skill finding is refused with a note to use Redact or Skip instead.
+- Redact is the fix. In the interactive menu, Redact rewrites the flagged span in the local
+  `~/.claude/skills/<name>/...` file in place (with a backup first), then re-copies the cleaned
+  file to the staged tree. `nomad push --redact-all` scrubs skill findings the same way in one
+  non-interactive pass.
+
+The same caveats apply: rotate the credential at its provider first, and scrubbing the local copy
+does not remove a secret a previous push already sent to the remote. `nomad doctor --check-shared`
+runs a read-only advisory over the `shared/skills/` files already committed to the sync repo and
+points you back at this Redact step; it warns only (`⚠︎`) and never fails the doctor run.
+
 ## .gitleaks.toml allowlist policy
 
 `gitleaks protect` runs against the staged tree on every `nomad push` and can flag
 structurally-distinguishable tool-output noise as `generic-api-key`. The repo-root
 `.gitleaks.toml` pre-allows several such patterns so routine pushes are not blocked. Every
-allowlist block is path-scoped to synced session transcripts
-(`shared/projects/<project>/.../*.jsonl`) with `condition = "AND"`, so a pattern can only suppress
-a finding inside a transcript, never a bare token in a source file or anywhere else in the repo:
+allowlist block uses `condition = "AND"` and is path-scoped, so a pattern can only suppress a
+finding inside an allowed path, never a bare token in a source file or anywhere else in the repo.
+The blocks fall into two scopes:
 
-- Sonar issue keys (`AY` prefix + 20+ url-safe chars).
+Transcript-only suppressions, scoped to synced session transcripts
+(`shared/projects/<project>/.../*.jsonl`) and NOT to skill content:
+
+- Sonar issue keys (`AY` prefix + 17-22 url-safe chars). This shape is context-free, so it is kept
+  out of skill scope on purpose: a real `AY`-prefixed credential pasted into an executable skill
+  file must still fire.
+- The documented test-fixture GitHub PAT literal and its scrub placeholders, which accumulate in
+  transcripts whenever a conversation touches the docs that quote them.
+
+Structurally-anchored suppressions, scoped to both synced transcripts and committed skill content
+(`shared/skills/<name>/...`, any nesting depth). Each carries surrounding structure a bare
+credential does not, so widening it to skills cannot mask a context-free secret token:
+
 - gitleaks fingerprint format (`<path>.<ext>:<rule>:<line>` emitted by gitleaks's own reports).
 - npm audit advisory hashes (anchored on the JSON shape `"id":"<40..64 hex>"`).
 - Coverage-report line-keys (`key=<hex> <path>:<line>`).
-- The documented test-fixture GitHub PAT literal and its scrub placeholders, which accumulate in
-  transcripts whenever a conversation touches the docs that quote them.
 - SonarCloud issue-listing output (`key: <id>` immediately followed by `rule: <lang>:S<n>`), the
   shape produced by dumping Sonar API results during a PR review.
 - SSH public-key fingerprints in git signature-verification output (`with <keytype> key
   SHA256:<43-char base64>`, as printed by `git log --show-signature`). A fingerprint is a hash of
   a public key, not a credential.
 
-The PAT-fixture entry matches exact documented literals, and the last two (SonarCloud
-issue-listing output and SSH public-key fingerprints) are additionally anchored on their
-surrounding output structure via `regexTarget = "line"`, so none can allow a bare token even within
-a transcript. The file extends the default gitleaks ruleset, so real high-entropy secrets like
-`ghp_*`, `sk_live_*`, `xoxb-*`, and `AKIA*` still fire. The allowlist patterns are structurally
-distinguishable from real-secret formats: a malformed credential cannot accidentally match an
-allowlist regex.
+The PAT-fixture entry matches exact documented literals, and the SonarCloud issue-listing and SSH
+public-key fingerprint entries are additionally anchored on their surrounding output structure via
+`regexTarget = "line"`, so none can allow a bare token even within their allowed paths. The file
+extends the default gitleaks ruleset, so real high-entropy secrets like `ghp_*`, `sk_live_*`,
+`xoxb-*`, and `AKIA*` still fire. The allowlist patterns are structurally distinguishable from
+real-secret formats: a malformed credential cannot accidentally match an allowlist regex.
 
 ```toml
 [extend]
 useDefault = true
 
+# Context-free AY token shape: transcripts only, deliberately NOT skills.
 [[allowlists]]
-description = "claude-nomad: structurally-distinguishable tool-output noise in synced session transcripts"
+description = "claude-nomad: Sonar issue-key token shape (AY-prefixed) in synced session transcripts only, NOT skills"
+regexes = ['''\bAY[A-Za-z0-9_-]{17,22}\b''']
+paths = ['''^shared/projects/[^/]+/.*\.jsonl$''']
+condition = "AND"
+
+# Structurally-anchored noise: transcripts AND skill content.
+[[allowlists]]
+description = "claude-nomad: structurally-anchored tool-output noise in synced session transcripts and skills"
 regexes = [
-    '''AY[A-Za-z0-9_-]{20,}''',
     '''[\w./-]+\.[A-Za-z0-9]+:[\w-]+:\d+''',
     # ...see .gitleaks.toml at the repo root for the full list
 ]
-paths = ['''^shared/projects/[^/]+/.*\.jsonl$''']
+paths = [
+    '''^shared/projects/[^/]+/.*\.jsonl$''',
+    '''^shared/skills/[^/]+/.*$''',
+]
 condition = "AND"
 ```
 

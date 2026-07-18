@@ -45,9 +45,9 @@ survives different file paths and your secrets never ride along.
   entirely and can leak a secret that `nomad push` would have caught. Steady-state pushes scan only
   the transcripts that changed since the last successful push (incremental); a cold start, a
   gitleaks version change, a config file change, or `--full-scan` forces a full rescan.
-  `nomad doctor --check-shared` also runs a read-only advisory over memory notes already synced to
-  the repo, flagging (but never blocking on) a secret that already made it through in a past push;
-  the fix is the same interactive Redact step `nomad push` offers.
+  `nomad doctor --check-shared` also runs a read-only advisory over memory notes and skill files
+  already synced to the repo, flagging (but never blocking on) a secret that already made it through
+  in a past push; the fix is the same interactive Redact step `nomad push` offers.
 - **Preview before you trust it.** `nomad diff` shows offline what a pull would change (gsd-owned
   hook churn is filtered the same as on pull, so the preview matches what a real pull writes), and
   `--dry-run` on pull and push prints the plan without writing anything.

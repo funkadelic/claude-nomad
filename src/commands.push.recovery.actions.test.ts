@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
 import type * as redactModule from './commands.redact.core.ts';
 import type * as memoryModule from './commands.push.recovery.memory.ts';
+import type * as skillsModule from './commands.push.recovery.skills.ts';
 import type * as utilsModule from './utils.ts';
 import type * as utilsFsModule from './utils.fs.ts';
 import type { PathMap } from './config.ts';
@@ -1066,6 +1067,204 @@ describe('dispatchActions - memory finding dispatch', () => {
 });
 
 // ---------------------------------------------------------------------------
+// dispatchActions - skill finding dispatch (Redact/Allow/Drop)
+// ---------------------------------------------------------------------------
+
+describe('dispatchActions - skill finding dispatch', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.push.recovery.skills.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./commands.redact.core.ts');
+  });
+
+  it('skill Redact invokes applySkillRedact exactly once for two findings in the same skill file', async () => {
+    const applySkillRedactMock = vi.fn().mockReturnValue(true);
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    // Second finding hits the redactedSkills dedupe (same name/relPath).
+    expect(applySkillRedactMock).toHaveBeenCalledOnce();
+  });
+
+  it('skill Redact for two different skill files calls applySkillRedact once per file (no cross-file dedupe)', async () => {
+    const applySkillRedactMock = vi.fn().mockReturnValue(true);
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/skills/skill-a/SKILL.md' });
+    const f2 = makeFinding({ File: 'shared/skills/skill-b/SKILL.md' });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applySkillRedactMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mark a skill file redacted when applySkillRedact fails, retrying the next finding', async () => {
+    const applySkillRedactMock = vi.fn().mockReturnValue(false);
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f1 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 2 });
+    const actions = new Map([
+      [findingKey(f1), 'redact' as const],
+      [findingKey(f2), 'redact' as const],
+    ]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f1, f2], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    // applySkillRedact returned false both times, so the file was never
+    // marked redacted and the second finding retried.
+    expect(applySkillRedactMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('skill Drop logs a refusal containing "cannot be dropped" and does not call ctx.drop', async () => {
+    const logMock = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({ File: 'shared/skills/my-skill/SKILL.md' });
+    const actions = new Map([[findingKey(f), 'drop' as const]]);
+    const map: PathMap = { projects: {} };
+    const dropSpy = vi.fn().mockReturnValue(true);
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+      drop: dropSpy,
+    });
+
+    expect(dropSpy).not.toHaveBeenCalled();
+    const msgs = logMock.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => m.includes('cannot be dropped'))).toBe(true);
+  });
+
+  it('skill Allow still appends the fingerprint via applyAllow (unchanged, no sid dependency)', async () => {
+    const appendMock = vi.fn();
+    vi.doMock('./commands.redact.core.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof redactModule>();
+      return { ...actual, appendGitleaksIgnore: appendMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFinding({
+      File: 'shared/skills/my-skill/SKILL.md',
+      Fingerprint: 'fp-skill',
+    });
+    const actions = new Map([[findingKey(f), 'allow' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(appendMock).toHaveBeenCalledWith('fp-skill', '/repo');
+  });
+
+  it('a bare shared/skills/<name> path (no trailing file) is a genuine no-op via dispatchNonSession', async () => {
+    const applySkillRedactMock = vi.fn();
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    // Bare `shared/skills/<name>` with no trailing file: isSkillFindingPath
+    // requires a trailing separator, so this is a genuine non-skill no-op.
+    const f = makeFinding({ File: 'shared/skills/my-skill' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applySkillRedactMock).not.toHaveBeenCalled();
+  });
+
+  it('a skill directory path with an empty relPath (dispatchSkill reached, parse fails) is a no-op', async () => {
+    const applySkillRedactMock = vi.fn();
+    vi.doMock('./commands.push.recovery.skills.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof skillsModule>();
+      return { ...actual, applySkillRedact: applySkillRedactMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    // isSkillFindingPath matches (trailing separator present), but
+    // skillFileFromFinding's relPath capture requires at least one char, so
+    // dispatchSkill is reached and its own null-parse guard fires.
+    const f = makeFinding({ File: 'shared/skills/my-skill/' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applySkillRedactMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // redactAllFindings - memory-aware batch redaction (--redact-all)
 // ---------------------------------------------------------------------------
 
@@ -1274,5 +1473,210 @@ describe('redactAllFindings - memory-aware batch redaction', () => {
     // file was never marked redacted and the second finding retried.
     expect(scanSpy).toHaveBeenCalledTimes(2);
     expect(readFileSync(memoryPath, 'utf8')).toBe(original);
+  });
+});
+// ---------------------------------------------------------------------------
+// redactAllFindings - skill-aware batch redaction (--redact-all)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a fixture combining a redactable session transcript, a project-level
+ * `memory/*.md` file, AND a `shared/skills/<name>/...` skill file, plus a
+ * matching `path-map.json`. Extends `makeMixedRedactAllFixture`'s layout with
+ * a host-uniform skill file under `~/.claude/skills/<name>/`.
+ */
+function makeSkillRedactAllFixture(testHome: string): {
+  transcriptPath: string;
+  memoryPath: string;
+  skillPath: string;
+  farFuture: number;
+  map: PathMap;
+} {
+  const base = makeMixedRedactAllFixture(testHome);
+  const skillDir = join(testHome, '.claude', 'skills', 'my-skill');
+  mkdirSync(skillDir, { recursive: true });
+  const skillPath = join(skillDir, 'SKILL.md');
+  writeFileSync(skillPath, 'skill prose containing real-secret-value inline\n');
+  return { ...base, skillPath };
+}
+
+describe('redactAllFindings - skill-aware batch redaction', () => {
+  let testHome: string;
+  let originalNomadRepo: string | undefined;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+
+  beforeEach(() => {
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-redactall-skill-'));
+    process.env.NOMAD_REPO = testHome;
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('./utils.fs.ts');
+    rmSync(testHome, { recursive: true, force: true });
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+  });
+
+  it('redacts a mix of one session, one memory, and one skill finding in one batch', async () => {
+    const { transcriptPath, memoryPath, skillPath, farFuture, map } =
+      makeSkillRedactAllFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const scanSpy = vi.fn((p: string): Finding[] => {
+      if (p === transcriptPath || p === memoryPath || p === skillPath) {
+        return [
+          {
+            RuleID: 'test-rule',
+            File: p,
+            StartLine: 1,
+            StartColumn: 1,
+            EndColumn: 10,
+            Match: 'real-secret-value',
+            Fingerprint: `fp-${p}`,
+          },
+        ];
+      }
+      return [];
+    });
+
+    const sessionFinding = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl' });
+    const memoryFinding = makeFinding({ File: 'shared/projects/myproject/memory/notes.md' });
+    const skillFinding = makeFinding({ File: 'shared/skills/my-skill/SKILL.md' });
+
+    redactAllFindings(
+      [sessionFinding, memoryFinding, skillFinding],
+      'ts-x',
+      map,
+      () => farFuture,
+      scanSpy,
+    );
+
+    expect(readFileSync(transcriptPath, 'utf8')).toContain('[REDACTED:test-rule]');
+    expect(readFileSync(memoryPath, 'utf8')).toContain('[REDACTED:test-rule]');
+    const skillAfter = readFileSync(skillPath, 'utf8');
+    expect(skillAfter).toContain('[REDACTED:test-rule]');
+    expect(skillAfter).not.toContain('real-secret-value');
+
+    // The scrubbed skill file is also copied back to the staged tree.
+    const stagedSkillPath = join(testHome, 'shared', 'skills', 'my-skill', 'SKILL.md');
+    expect(readFileSync(stagedSkillPath, 'utf8')).toContain('[REDACTED:test-rule]');
+  });
+
+  it('redacts two findings in the same skill file once (dedup by name/relPath)', async () => {
+    const { skillPath, map } = makeSkillRedactAllFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const scanSpy = vi.fn().mockReturnValue([
+      {
+        RuleID: 'test-rule',
+        File: skillPath,
+        StartLine: 1,
+        StartColumn: 1,
+        EndColumn: 10,
+        Match: 'real-secret-value',
+        Fingerprint: 'fp-skill',
+      },
+    ] satisfies Finding[]);
+
+    const f1 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 2 });
+
+    redactAllFindings([f1, f2], 'ts-x', map, () => Date.now(), scanSpy);
+
+    expect(scanSpy).toHaveBeenCalledOnce();
+    const skillAfter = readFileSync(skillPath, 'utf8');
+    expect(skillAfter).toContain('[REDACTED:test-rule]');
+  });
+
+  it('aborts the whole batch (no local mutation) when a skill finding is unresolvable in preflight', async () => {
+    const { transcriptPath, skillPath, farFuture, map } = makeSkillRedactAllFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const transcriptOriginal = readFileSync(transcriptPath, 'utf8');
+    const skillOriginal = readFileSync(skillPath, 'utf8');
+    const scanSpy = vi.fn().mockReturnValue([]);
+
+    const sessionFinding = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl' });
+    // shared/skills/missing-skill/SKILL.md has no local file on disk ->
+    // preflightSkillRedactable refuses.
+    const unresolvableSkill = makeFinding({
+      File: 'shared/skills/missing-skill/SKILL.md',
+    });
+
+    expect(() =>
+      redactAllFindings([sessionFinding, unresolvableSkill], 'ts-x', map, () => farFuture, scanSpy),
+    ).toThrow(NomadFatal);
+    // Preflight runs before any redaction, so scan never ran and neither the
+    // mapped session nor the skill file was mutated (all-or-nothing).
+    expect(scanSpy).not.toHaveBeenCalled();
+    expect(readFileSync(transcriptPath, 'utf8')).toBe(transcriptOriginal);
+    expect(readFileSync(skillPath, 'utf8')).toBe(skillOriginal);
+  });
+
+  it('a lone unresolvable skill finding is not silently skipped: throws NomadFatal', async () => {
+    makeSkillRedactAllFixture(testHome);
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const skillFinding = makeFinding({ File: 'shared/skills/missing-skill/SKILL.md' });
+
+    expect(() =>
+      redactAllFindings([skillFinding], 'ts-x', { projects: {} }, () => Date.now()),
+    ).toThrow(NomadFatal);
+  });
+
+  it('does not mark a skill file redacted when applySkillRedact fails (scan returns null), retrying the next finding', async () => {
+    const { skillPath, map } = makeSkillRedactAllFixture(testHome);
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
+    });
+
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const original = readFileSync(skillPath, 'utf8');
+    const scanSpy = vi.fn().mockReturnValue(null);
+    const f1 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 1 });
+    const f2 = makeFinding({ File: 'shared/skills/my-skill/SKILL.md', StartLine: 2 });
+
+    redactAllFindings([f1, f2], 'ts-x', map, () => Date.now(), scanSpy);
+
+    // applySkillRedact returned false both times (scan null), so the skill
+    // file was never marked redacted and the second finding retried.
+    expect(scanSpy).toHaveBeenCalledTimes(2);
+    expect(readFileSync(skillPath, 'utf8')).toBe(original);
+  });
+
+  it('a genuine non-session non-memory non-skill finding still refuses via the unchanged preflightRedactable path', async () => {
+    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const genuineFinding = makeFinding({ File: 'shared/other/not-a-session.txt' });
+
+    expect(() =>
+      redactAllFindings([genuineFinding], 'ts-x', { projects: {} }, () => Date.now()),
+    ).toThrow(NomadFatal);
   });
 });

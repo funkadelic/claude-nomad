@@ -6,28 +6,53 @@
 [extend]
 useDefault = true
 
-# Path-scoped: this tool-output noise (gitleaks fingerprints, coverage
-# line-keys, npm audit JSON id hashes, Sonar issue keys) accumulates in Claude
-# Code session transcripts when a conversation runs those tools. Two of these
-# regexes are structurally generic enough that, left global, they could suppress
-# a real credential that happened to sit in a `path:word:digit` or hex-`id`
-# context anywhere in the repo. Scoping to `shared/projects/<logical>/.../*.jsonl`
-# with `condition = "AND"` (matching every other block below) confines the
-# suppression to synced transcripts: a real secret in a source file still fires.
-# The Sonar-issue-key regex is length-bounded to the real key shape (`AY` + 17-22
-# base64url chars = 19-24 total, matching the sibling `key:`/`rule:` block) and
-# token-anchored with `\b` on both ends, so it cannot suppress a longer or
-# embedded `AY`-prefixed credential as a substring (an unbounded `{20,}` could).
+# Path-scoped: the bare Sonar-issue-key shape (`AY` + 17-22 base64url chars) is
+# a CONTEXT-FREE token pattern. Unlike the three structural noise shapes below
+# it carries no surrounding structure (no `:rule:line`, no `"id":`, no `key=`
+# prefix), so it cannot be distinguished from a real `AY`-prefixed high-entropy
+# credential of the same length. It is therefore scoped to synced session
+# transcripts ONLY (`shared/projects/<logical>/.../*.jsonl`), NOT to
+# `shared/skills/**`: a skill file is executable, curated content a user pastes
+# real values into, so an `AY`-shaped credential dropped into a skill MUST still
+# fire. `condition = "AND"` confines the suppression to transcripts: a real
+# secret in a source file still fires. The regex is length-bounded to the real
+# key shape and token-anchored with `\b` on both ends, so even inside a
+# transcript it cannot suppress a longer or embedded `AY`-prefixed credential as
+# a substring (an unbounded `{20,}` could).
 [[allowlists]]
-description = "claude-nomad: structurally-distinguishable tool-output noise in synced session transcripts"
+description = "claude-nomad: Sonar issue-key token shape (AY-prefixed) in synced session transcripts only, NOT skills"
 regexes = [
     '''\bAY[A-Za-z0-9_-]{17,22}\b''',
+]
+paths = [
+    '''^shared/projects/[^/]+/.*\.jsonl$''',
+]
+condition = "AND"
+
+# Path-scoped: this tool-output noise (gitleaks fingerprints, coverage
+# line-keys, npm audit JSON id hashes) accumulates in Claude Code session
+# transcripts when a conversation runs those tools. Each of these three regexes
+# carries structural context (`<path>.<ext>:<rule>:<line>`, `"id":"<hex>"`, or
+# `key=<hex> <path>:<line>`) that a bare credential does not, so widening them
+# to skill content cannot mask a context-free secret token. Scoping to
+# `shared/projects/<logical>/.../*.jsonl` with `condition = "AND"` (matching
+# every other block below) confines the suppression to synced transcripts: a
+# real secret in a source file still fires. Also scoped (recursively) to
+# `shared/skills/<name>/**`: curated, portable skill content can legitimately
+# embed the same structured tool-output noise shapes (e.g. a skill doc pasting
+# an example npm-audit or coverage dump), and the structural anchor keeps the
+# false-negative risk low in that tree too. The bare `AY` shape is deliberately
+# NOT in this block (see the transcript-only block above).
+[[allowlists]]
+description = "claude-nomad: structurally-anchored tool-output noise in synced session transcripts and skills"
+regexes = [
     '''[\w./-]+\.[A-Za-z0-9]+:[\w-]+:\d+''',
     '''"id"\s*:\s*"[a-f0-9]{40,64}"''',
     '''key=[a-f0-9]{8,} [\w./-]+\.\w+:\d+''',
 ]
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
+    '''^shared/skills/[^/]+/.*$''',
 ]
 condition = "AND"
 
@@ -72,7 +97,10 @@ condition = "AND"
 # it to synced transcripts. Also scoped to `shared/projects/<logical>/memory/*.md`:
 # this is plausible content in a curated memory note documenting a commit
 # signature-verification procedure, and the structural `with <keytype> key
-# SHA256:` anchor keeps the false-negative risk low there too.
+# SHA256:` anchor keeps the false-negative risk low there too. Also scoped
+# (recursively) to `shared/skills/<name>/**`: a skill documenting a
+# signature-verification procedure can plausibly quote the same fingerprint
+# line shape, with the same low false-negative risk.
 [[allowlists]]
 description = "claude-nomad: SSH public-key fingerprints (with <keytype> key SHA256:<b64>) in git signature output in synced session transcripts"
 regexTarget = "line"
@@ -82,6 +110,7 @@ regexes = [
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
     '''^shared/projects/[^/]+/memory/[^/]+\.md$''',
+    '''^shared/skills/[^/]+/.*$''',
 ]
 condition = "AND"
 
@@ -93,7 +122,10 @@ condition = "AND"
 # above keys on. Anchoring on the surrounding `key:`/`rule:` structure (via
 # regexTarget = "line") keeps this from whitelisting a bare token: a real API
 # key is never followed by `\n  rule: <lang>:S####`. `condition = "AND"` plus
-# the session-jsonl path scope double-locks it to synced transcripts.
+# the session-jsonl path scope double-locks it to synced transcripts. Also
+# scoped (recursively) to `shared/skills/<name>/**`: a skill documenting a
+# SonarCloud triage procedure can plausibly quote the same issue-listing
+# pair shape, with the same low false-negative risk.
 [[allowlists]]
 description = "claude-nomad: SonarCloud issue-listing output (key: <id> / rule: <lang>:S<n>) in synced session transcripts"
 regexTarget = "line"
@@ -102,5 +134,6 @@ regexes = [
 ]
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
+    '''^shared/skills/[^/]+/.*$''',
 ]
 condition = "AND"
