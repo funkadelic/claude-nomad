@@ -374,7 +374,7 @@ branch on `$?` without parsing stderr text.
 | 0    | Success         | Completed successfully.                                                                                                 |
 | 1    | Generic failure | Unclassified failure; the default for any error not covered below.                                                     |
 | 2    | Usage           | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                            |
-| 4    | Conflict        | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution; recover with `nomad pull --force-remote`. |
+| 4    | Conflict        | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution. |
 | 5    | Leak blocked    | gitleaks confirmed a secret in the staged tree and the push was aborted.                                               |
 
 A run skipped because another nomad process already holds the lock also exits 0: this is an
