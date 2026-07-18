@@ -57,13 +57,22 @@ type NormalizedError = {
  * `JSON.stringify` (covers plain objects, arrays, numbers, booleans, null);
  * falls back to `String(value)` when `JSON.stringify` returns `undefined`
  * (e.g. the input is `undefined` itself) or throws (e.g. a circular object).
+ * `String(value)` can itself throw for a value with a throwing `toString`/
+ * `Symbol.toPrimitive`, so that call is guarded too and degrades to a fixed
+ * placeholder rather than escaping into the crash path.
  */
 function safeStringify(value: unknown): string {
   try {
     const json: string | undefined = JSON.stringify(value);
-    return json ?? String(value);
+    if (json !== undefined) return json;
   } catch {
+    // JSON.stringify threw (circular graph or a throwing toJSON); fall
+    // through to the String() attempt below.
+  }
+  try {
     return String(value);
+  } catch {
+    return '(unstringifiable thrown value)';
   }
 }
 
@@ -152,11 +161,15 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
  * and a timestamp. It deliberately excludes any environment variable dump
  * and any file contents.
  *
- * The composed text is byte-capped to `CRASH_MAX_REPORT_BYTES` (with a
- * truncation marker on overflow), then passed through {@link scrubStructural}
- * as the final step, so the returned string is always already
- * structurally scrubbed before any caller writes it to disk or hands it to
- * the gitleaks-based redactor.
+ * The composed text is passed through {@link scrubStructural} FIRST, then
+ * byte-capped to `CRASH_MAX_REPORT_BYTES` (with a truncation marker on
+ * overflow) as the final step. Scrubbing before truncating is load-bearing:
+ * it prevents truncation from cutting through a `homeDir`/`hostLabel`
+ * occurrence and leaving a partial (undetectable) fragment, and it keeps the
+ * scrub (which can expand short labels into `<host>`) from pushing the output
+ * back over the byte cap. The returned string is therefore always both
+ * structurally scrubbed and within budget before any caller writes it to disk
+ * or hands it to the gitleaks-based redactor.
  *
  * @param input See {@link CrashReportInput}.
  * @returns The bounded, structurally-scrubbed crash report text.
@@ -176,6 +189,6 @@ export function buildCrashReport(input: CrashReportInput): string {
     `platform: ${platform} (node ${process.version})`,
     `timestamp: ${timestamp}`,
   ].join('\n');
-  const bounded = truncateToBytes(composed, CRASH_MAX_REPORT_BYTES);
-  return scrubStructural(bounded, homeDir, hostLabel);
+  const scrubbed = scrubStructural(composed, homeDir, hostLabel);
+  return truncateToBytes(scrubbed, CRASH_MAX_REPORT_BYTES);
 }

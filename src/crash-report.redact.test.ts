@@ -1,6 +1,15 @@
-import { existsSync, readFileSync } from 'node:fs';
+import * as fs from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Mock only mkdtempSync (delegating to the real impl by default) so a single
+// test can force scratch-dir creation to fail; every other fs call stays real.
+vi.mock('node:fs', async (importActual) => {
+  const actual = await importActual<typeof fs>();
+  return { ...actual, mkdtempSync: vi.fn(actual.mkdtempSync) };
+});
 
 import { CRASH_SCAN_TIMEOUT_MS, redactWithGitleaks } from './crash-report.redact.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
@@ -54,12 +63,24 @@ describe('redactWithGitleaks', () => {
 
   it('writes the text to a 0o600 scratch file before scanning', () => {
     const text = 'scratch-file-content';
-    redactWithGitleaks(text, fakeScan([]));
-    expect(capturedScratchDir).toBeDefined();
-    // The scratch dir is removed synchronously once redactWithGitleaks returns,
-    // so re-reading capturedScratchDir here would fail; assert on the path shape.
-    expect(capturedScratchDir).toContain('nomad-crash-scan-');
-    expect(capturedScratchDir).toMatch(/crash\.txt$/);
+    // Capture the file mode and parent dir DURING the scan, before the finally
+    // block removes the scratch directory. NTFS ignores POSIX mode bits, so the
+    // 0o600 assertion only holds off win32.
+    let modeDuringScan: number | undefined;
+    let parentDuringScan: string | undefined;
+    const scan = (path: string): Finding[] | null => {
+      modeDuringScan = statSync(path).mode & 0o777;
+      parentDuringScan = dirname(path);
+      return [];
+    };
+    redactWithGitleaks(text, scan);
+    expect(capturedScratchDir).toBeUndefined(); // this test injects its own scan
+    expect(parentDuringScan).toBeDefined();
+    if (process.platform !== 'win32') {
+      expect(modeDuringScan).toBe(0o600);
+    }
+    // The scratch dir is removed synchronously once redactWithGitleaks returns.
+    expect(existsSync(parentDuringScan!)).toBe(false);
   });
 
   it('passes CRASH_SCAN_TIMEOUT_MS to the scan function', () => {
@@ -96,13 +117,28 @@ describe('redactWithGitleaks', () => {
     expect(existsSync(dirDuringScan!)).toBe(false);
   });
 
-  it('removes the scratch directory even when scan throws, then re-throws (finally semantics)', () => {
+  it('degrades to the advisory when mkdtempSync itself fails (no scratch dir to clean)', () => {
+    // Force the scratch-dir creation to fail: `dir` stays undefined, so the
+    // catch returns the advisory and the finally skips the rmSync guard.
+    vi.mocked(fs.mkdtempSync).mockImplementationOnce(() => {
+      throw new Error('tmp unwritable');
+    });
+    const text = 'mkdtemp-fail';
+    const out = redactWithGitleaks(text, fakeScan([]));
+    expect(out).toContain(text);
+    expect(out).toContain('gitleaks value-based scan unavailable');
+  });
+
+  it('degrades to the advisory (never throws) when scan throws, and still cleans up', () => {
     let dirDuringScan: string | undefined;
     const scan = (path: string): Finding[] | null => {
       dirDuringScan = path;
       throw new Error('scan blew up');
     };
-    expect(() => redactWithGitleaks('will-throw', scan)).toThrow('scan blew up');
+    const text = 'will-throw';
+    const out = redactWithGitleaks(text, scan);
+    expect(out).toContain(text);
+    expect(out).toContain('gitleaks value-based scan unavailable');
     expect(dirDuringScan).toBeDefined();
     expect(existsSync(dirDuringScan!)).toBe(false);
   });

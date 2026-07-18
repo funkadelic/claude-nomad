@@ -106,6 +106,19 @@ describe('buildCrashReport: non-Error thrown values', () => {
     expect(report).toContain('error: NonErrorThrow: [object Object]');
   });
 
+  it('degrades to a placeholder when both JSON.stringify and String() throw', () => {
+    // Circular so JSON.stringify throws, plus a throwing toString so the
+    // String() fallback throws too: safeStringify must still not escape.
+    const evil: Record<string, unknown> = {
+      toString: () => {
+        throw new Error('no string');
+      },
+    };
+    evil.self = evil;
+    const report = buildCrashReport({ ...BASE_INPUT, err: evil });
+    expect(report).toContain('error: NonErrorThrow: (unstringifiable thrown value)');
+  });
+
   it('does not throw when a well-formed Error has its stack cleared', () => {
     const err = new Error('no-stack');
     err.stack = undefined;
@@ -155,6 +168,24 @@ describe('buildCrashReport: bounding', () => {
     const report = buildCrashReport({ ...BASE_INPUT, err });
     expect(Buffer.byteLength(report, 'utf8')).toBeLessThanOrEqual(CRASH_MAX_REPORT_BYTES);
     expect(report).toContain('[... truncated ...]');
+  });
+
+  it('scrubs homeDir occurrences that straddle the truncation boundary (scrub before truncate)', () => {
+    const homeDir = '/home/SECRETUSER';
+    // Repeat homeDir across more than twice the byte cap so at least one
+    // occurrence straddles the truncation boundary. If truncation ran BEFORE
+    // scrubbing, the straddling occurrence would be sliced into a partial the
+    // exact-match scrub cannot catch, leaking a '/home/...' fragment.
+    const chunk = homeDir + 'x'.repeat(64);
+    const err = new Error('boundary');
+    err.stack =
+      'Error: boundary\n' + chunk.repeat(Math.ceil((CRASH_MAX_REPORT_BYTES * 2) / chunk.length));
+    const report = buildCrashReport({ ...BASE_INPUT, err, homeDir, hostLabel: '' });
+    expect(Buffer.byteLength(report, 'utf8')).toBeLessThanOrEqual(CRASH_MAX_REPORT_BYTES);
+    // Every occurrence became '~' before truncation, so no home-path fragment
+    // (full or sliced) can survive.
+    expect(report).not.toContain('/home/');
+    expect(report).not.toContain('SECRET');
   });
 
   it('trims multi-byte characters down to the exact byte budget (not just character count)', () => {

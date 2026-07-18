@@ -43,26 +43,34 @@ const SCAN_UNAVAILABLE_ADVISORY =
  * gitleaks cannot hang the crash path), and applies `applyRedactions` to any
  * findings.
  *
- * On a scan failure (`scan` returns `null`, e.g. gitleaks is absent, crashed,
- * or timed out) returns `text` unchanged plus one appended advisory line;
- * never throws. The scratch directory is removed in a `finally` block on
- * every path (success, findings, or scan failure).
+ * Never throws: ANY failure degrades to the same advisory fallback. A `null`
+ * scan return (gitleaks absent, crashed, or timed out) OR an exception at any
+ * step (scratch-dir creation, temp-file write, the scan itself, or
+ * `applyRedactions`) returns the structurally-scrubbed `text` unchanged plus
+ * one appended advisory line, so a redaction failure can never withhold the
+ * crash report the way a re-throw into the fail-safe writer would. The
+ * scratch directory is removed in a `finally` block on every path.
  *
  * @param text Structurally-scrubbed crash-report text to redact.
  * @param scan Injectable scan function; defaults to the real `scanFile` so
  *   unit tests can supply a fake without invoking a real gitleaks binary.
  * @returns The value-redacted text, or `text` plus an advisory line when the
- *   scan itself failed.
+ *   scan returned null or any step failed.
  */
 export function redactWithGitleaks(text: string, scan: typeof scanFile = scanFile): string {
-  const dir = mkdtempSync(join(tmpdir(), 'nomad-crash-scan-'));
-  const tmp = join(dir, 'crash.txt');
+  let dir: string | undefined;
   try {
+    dir = mkdtempSync(join(tmpdir(), 'nomad-crash-scan-'));
+    const tmp = join(dir, 'crash.txt');
     writeFileSync(tmp, text, { mode: 0o600 });
     const findings = scan(tmp, false, CRASH_SCAN_TIMEOUT_MS);
     if (findings === null) return text + SCAN_UNAVAILABLE_ADVISORY;
     return applyRedactions(text, findings);
+  } catch {
+    // Any thrown failure degrades to structural-only text plus the advisory,
+    // matching the `null`-scan path: never withhold the report.
+    return text + SCAN_UNAVAILABLE_ADVISORY;
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
   }
 }
