@@ -10,9 +10,9 @@
 * **push:** handle shared/skills secrets at parity with sessions and memory ([#431](https://github.com/funkadelic/claude-nomad/issues/431)) ([759262c](https://github.com/funkadelic/claude-nomad/commit/759262c52aeaf4e2913fc1421ccd90260327c882))
 
 
-### Fixed
+### Dependencies
 
-* package.json & package-lock.json to reduce vulnerabilities ([#434](https://github.com/funkadelic/claude-nomad/issues/434)) ([68c6402](https://github.com/funkadelic/claude-nomad/commit/68c6402cea2dbc3a8f9c1eb8fd8db0a416005a53))
+* bump markdownlint-cli2 from 0.23.0 to 0.23.1 ([#434](https://github.com/funkadelic/claude-nomad/issues/434)) ([68c6402](https://github.com/funkadelic/claude-nomad/commit/68c6402cea2dbc3a8f9c1eb8fd8db0a416005a53))
 
 ## [0.61.0](https://github.com/funkadelic/claude-nomad/compare/v0.60.0...v0.61.0) (2026-07-17)
 
