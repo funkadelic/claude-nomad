@@ -46,49 +46,49 @@ describe('nomad.ts drop-session dispatcher', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects bare `nomad drop-session` (no id) with the canonical usage line and exitCode=1', async () => {
+  it('rejects bare `nomad drop-session` (no id) with the canonical usage line and exitCode=2', async () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad drop-session'),
     );
   });
 
-  it('rejects `nomad drop-session --bogus` (leading dash where id expected) with exitCode=1', async () => {
+  it('rejects `nomad drop-session --bogus` (leading dash where id expected) with exitCode=2', async () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', '--bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad drop-session'),
     );
   });
 
-  it('rejects `nomad drop-session sid-A extra-arg` (two positionals) with exitCode=1', async () => {
+  it('rejects `nomad drop-session sid-A extra-arg` (two positionals) with exitCode=2', async () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', 'sid-A', 'extra-arg'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad drop-session'),
     );
   });
 
-  it("rejects `nomad drop-session ''` (empty-string id) with exitCode=1", async () => {
+  it("rejects `nomad drop-session ''` (empty-string id) with exitCode=2", async () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', ''];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad drop-session'),
     );
@@ -104,9 +104,9 @@ describe('nomad.ts drop-session dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', 'foo/bar'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad drop-session'),
     );
@@ -119,9 +119,9 @@ describe('nomad.ts drop-session dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     process.argv = ['node', 'nomad.ts', 'drop-session', '..'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdDropSessionMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('usage: nomad drop-session'),
     );

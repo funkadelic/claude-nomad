@@ -34,6 +34,7 @@ import {
   findingKey,
   redactAllFindings,
 } from './commands.push.recovery.actions.ts';
+import { EXIT } from './exit-codes.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { buildSessionAwareFatal, partitionFindings } from './push-gitleaks.ts';
@@ -132,7 +133,7 @@ function applyThenRescan(
   const next = scanVerdict(repoHome);
   if (next.leak) {
     const { bySession, other } = partitionFindings(next.findings);
-    throw new NomadFatal(buildSessionAwareFatal(bySession, other));
+    throw new NomadFatal(buildSessionAwareFatal(bySession, other), { code: EXIT.LEAK_BLOCKED });
   }
   return next;
 }
@@ -259,7 +260,9 @@ export async function resolveLeakFindings(
     // Every leak:true verdict has a non-null recovery body. The fallback covers
     // the defensive unreachable case (scan-crash with leak=true).
     /* c8 ignore next */
-    throw new NomadFatal(current.recovery ?? 'gitleaks detected secrets');
+    throw new NomadFatal(current.recovery ?? 'gitleaks detected secrets', {
+      code: EXIT.LEAK_BLOCKED,
+    });
   }
 
   const prompt = makePromptFn();
@@ -273,7 +276,7 @@ export async function resolveLeakFindings(
       // returns undefined here; an explicit `=== 'skip'` needs no default.
       const unresolved = current.findings.filter((f) => actions.get(findingKey(f)) === 'skip');
       const { bySession, other } = partitionFindings(unresolved);
-      throw new NomadFatal(buildSessionAwareFatal(bySession, other));
+      throw new NomadFatal(buildSessionAwareFatal(bySession, other), { code: EXIT.LEAK_BLOCKED });
     }
 
     dispatchActions(current.findings, actions, { ts, map, nowMs, repo, scan });

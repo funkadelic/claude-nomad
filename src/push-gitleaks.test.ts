@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { EXIT } from './exit-codes.ts';
+
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
 
@@ -126,6 +128,15 @@ describe('runGitleaksScan (mocked child_process)', () => {
     const { runGitleaksScan } = await import('./push-gitleaks.ts');
     expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
     expect(() => runGitleaksScan()).toThrow(/git diff --cached/);
+    // A confirmed non-empty finding carries EXIT.LEAK_BLOCKED, not the default.
+    const { NomadFatal } = await import('./utils.ts');
+    try {
+      runGitleaksScan();
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(NomadFatal);
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.LEAK_BLOCKED);
+    }
     // Report parses to a findings array, so raw stderr must NOT be forwarded.
     const calls = stderrSpy.mock.calls.map((c: unknown[]) => c[0]);
     const leaked = calls.some(
@@ -215,6 +226,16 @@ describe('runGitleaksScan (mocked child_process)', () => {
     expect(() => runGitleaksScan()).toThrow(/gitleaks scan failed/);
     expect(() => runGitleaksScan()).toThrow(/no parseable JSON report/);
     expect(() => runGitleaksScan()).not.toThrow(/drop-session/);
+    // A scan-failed/no-parseable-report outcome is a dependency/environment
+    // problem, not a confirmed leak, so it stays GENERIC_FAILURE.
+    const { NomadFatal } = await import('./utils.ts');
+    try {
+      runGitleaksScan();
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(NomadFatal);
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.GENERIC_FAILURE);
+    }
   });
 
   it('runGitleaksScan throws scan-failed FATAL when the JSON report parses to a non-array shape', async () => {
@@ -370,6 +391,16 @@ describe('runGitleaksScan (mocked child_process)', () => {
     const { runGitleaksScan } = await import('./push-gitleaks.ts');
     expect(() => runGitleaksScan()).toThrow(/gitleaks not on PATH/);
     expect(() => runGitleaksScan()).toThrow(/Install:/);
+    // A missing binary is a dependency problem, not a confirmed leak: it must
+    // NOT be mistaken for EXIT.LEAK_BLOCKED.
+    const { NomadFatal } = await import('./utils.ts');
+    try {
+      runGitleaksScan();
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(NomadFatal);
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.GENERIC_FAILURE);
+    }
   });
 
   it('re-throws a non-ENOENT scanStagedTree error verbatim instead of the install-hint FATAL', async () => {

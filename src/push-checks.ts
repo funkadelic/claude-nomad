@@ -28,6 +28,7 @@ import {
   unmergedIndexRunbookText,
   wedgeMarkerRunbookText,
 } from './commands.pull.wedge.ts';
+import { EXIT } from './exit-codes.ts';
 import { NomadFatal } from './utils.ts';
 
 /**
@@ -199,7 +200,7 @@ function wedgePreflight(wedge: NonNullable<ReturnType<typeof classifyWedge>>): s
  */
 export function rebaseBeforePush(repo: string): void {
   const wedge = classifyWedge(repo);
-  if (wedge !== null) throw new NomadFatal(wedgePreflight(wedge));
+  if (wedge !== null) throw new NomadFatal(wedgePreflight(wedge), { code: EXIT.CONFLICT });
   try {
     execFileSync('git', ['pull', '--rebase', '--autostash'], {
       cwd: repo,

@@ -2,6 +2,7 @@ import { existsSync, lstatSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { backupBase as getBackupBase } from './config.ts';
+import { EXIT } from './exit-codes.ts';
 import { fail, item, log } from './utils.ts';
 
 /**
@@ -151,14 +152,14 @@ export function cmdClean(
   const { dryRun, olderThan, keep } = opts;
   if (olderThan !== undefined && keep !== undefined) {
     fail('--older-than and --keep are mutually exclusive');
-    process.exit(1);
+    process.exit(EXIT.USAGE);
   }
   let olderThanMs = CLEAN_DEFAULT_OLDER_THAN_MS;
   if (olderThan !== undefined) {
     const parsed = parseDuration(olderThan);
     if (parsed === null) {
       fail(`invalid --older-than duration: ${olderThan} (expected e.g. 14d, 24h, 30m)`);
-      process.exit(1);
+      process.exit(EXIT.USAGE);
     }
     olderThanMs = parsed;
   }

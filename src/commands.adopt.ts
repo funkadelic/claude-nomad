@@ -216,7 +216,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   } catch (err) {
     if (!(err instanceof NomadFatal)) throw err;
     fail(err.message);
-    process.exitCode = 1;
+    process.exitCode = err.code;
   }
   /* c8 ignore stop */
 }

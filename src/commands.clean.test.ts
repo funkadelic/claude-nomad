@@ -205,19 +205,19 @@ describe('cmdClean safety', () => {
 });
 
 describe('cmdClean validation', () => {
-  it('rejects --older-than and --keep together and exits 1', () => {
+  it('rejects --older-than and --keep together and exits 2 (usage)', () => {
     vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`exit:${String(code)}`);
     }) as never);
-    expect(() => cmdClean({ olderThan: '14d', keep: 3 }, testRoot)).toThrow('exit:1');
+    expect(() => cmdClean({ olderThan: '14d', keep: 3 }, testRoot)).toThrow('exit:2');
     expect(failSpy).toHaveBeenCalled();
   });
 
-  it('rejects an unparseable --older-than value and exits 1', () => {
+  it('rejects an unparseable --older-than value and exits 2 (usage)', () => {
     vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`exit:${String(code)}`);
     }) as never);
-    expect(() => cmdClean({ olderThan: 'soon' }, testRoot)).toThrow('exit:1');
+    expect(() => cmdClean({ olderThan: 'soon' }, testRoot)).toThrow('exit:2');
     expect(failSpy).toHaveBeenCalled();
   });
 });

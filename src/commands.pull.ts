@@ -21,6 +21,7 @@ import {
   wedgeMarkerRunbookText,
 } from './commands.pull.wedge.ts';
 import { recoverForceRemote, recoverUnmergedIndex } from './commands.pull.recovery.ts';
+import { EXIT } from './exit-codes.ts';
 import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -173,7 +174,7 @@ function handleWedge(repo: string, forceRemote: boolean): void {
     if (forceRemote) {
       recoverUnmergedIndex(repo);
     } else {
-      die(unmergedIndexRunbookText('nomad pull'));
+      die(unmergedIndexRunbookText('nomad pull'), { code: EXIT.CONFLICT });
     }
     return;
   }
@@ -183,7 +184,7 @@ function handleWedge(repo: string, forceRemote: boolean): void {
     return;
   }
   const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
-  die(wedgeMarkerRunbookText(state));
+  die(wedgeMarkerRunbookText(state), { code: EXIT.CONFLICT });
 }
 
 /**
@@ -421,7 +422,7 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
     // lock. Throwing through process.exit() would skip finally.
     if (err instanceof NomadFatal) {
       fail(err.message);
-      process.exitCode = 1;
+      process.exitCode = err.code;
     } else {
       throw err;
     }

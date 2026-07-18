@@ -77,20 +77,20 @@ describe('nomad.ts push dispatcher', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects unknown argv after `push` with a usage error and exitCode=1', async () => {
+  it('rejects unknown argv after `push` with a usage error and exitCode=2', async () => {
     const cmdPushMock = vi.fn();
     vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
     process.argv = ['node', 'nomad.ts', 'push', '--bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdPushMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     // The user-visible side of the error must include the canonical usage
     // line so a typo at the CLI prints actionable guidance instead of a
     // silent exit. console.error is already spied in beforeEach.
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad push'));
   });
 
-  it('prints the multi-line default help on bare `nomad` invocation with exitCode=1', async () => {
+  it('prints the multi-line default help on bare `nomad` invocation with exitCode=2', async () => {
     // All seven command modules are mocked so a misdispatch (any case arm
     // accidentally firing on an empty argv) would surface as a non-zero
     // call count, not a silent pass.
@@ -111,8 +111,8 @@ describe('nomad.ts push dispatcher', () => {
     vi.doMock('./diff.ts', () => ({ cmdDiff: cmdDiffMock }));
     vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdPullMock).not.toHaveBeenCalled();
     expect(cmdPushMock).not.toHaveBeenCalled();
     expect(cmdDoctorMock).not.toHaveBeenCalled();
@@ -193,10 +193,10 @@ describe('nomad.ts --version dispatcher', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects `nomad --version extra-arg` with the canonical usage line and exitCode=1', async () => {
+  it('rejects `nomad --version extra-arg` with the canonical usage line and exitCode=2', async () => {
     process.argv = ['node', 'nomad.ts', '--version', 'extra-arg'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad --version'));
   });
 });

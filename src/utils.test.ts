@@ -57,6 +57,46 @@ describe('HOST resolution', () => {
   });
 });
 
+describe('NomadFatal / die exit-code classification', () => {
+  it('NomadFatal without an explicit code defaults to EXIT.GENERIC_FAILURE', async () => {
+    const { NomadFatal } = await import('./utils.ts');
+    const { EXIT } = await import('./exit-codes.ts');
+    const err = new NomadFatal('boom');
+    expect(err.code).toBe(EXIT.GENERIC_FAILURE);
+  });
+
+  it('NomadFatal with an explicit code exposes exactly that code', async () => {
+    const { NomadFatal } = await import('./utils.ts');
+    const { EXIT } = await import('./exit-codes.ts');
+    const err = new NomadFatal('conflict', { code: EXIT.CONFLICT });
+    expect(err.code).toBe(EXIT.CONFLICT);
+  });
+
+  it('die without opts throws a NomadFatal defaulting to EXIT.GENERIC_FAILURE', async () => {
+    const { die, NomadFatal } = await import('./utils.ts');
+    const { EXIT } = await import('./exit-codes.ts');
+    try {
+      die('boom');
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(NomadFatal);
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.GENERIC_FAILURE);
+    }
+  });
+
+  it('die with an explicit code throws a NomadFatal carrying that code', async () => {
+    const { die, NomadFatal } = await import('./utils.ts');
+    const { EXIT } = await import('./exit-codes.ts');
+    try {
+      die('leak blocked', { code: EXIT.LEAK_BLOCKED });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(NomadFatal);
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.LEAK_BLOCKED);
+    }
+  });
+});
+
 describe('gitOrFatal (mocked child_process)', () => {
   let stderrSpy: MockInstance<(...args: unknown[]) => boolean>;
 

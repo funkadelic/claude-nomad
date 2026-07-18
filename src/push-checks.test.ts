@@ -13,6 +13,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { EXIT } from './exit-codes.ts';
+
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
 import type * as osModule from 'node:os';
@@ -677,6 +679,13 @@ describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
     expect(() => rebaseBeforePush(tmp)).toThrow(/git reset --mixed HEAD/);
     // Must point at the pull-side auto-recovery (push has no --force-remote).
     expect(() => rebaseBeforePush(tmp)).toThrow(/nomad pull --force-remote/);
+    // Preflight wedge detection carries EXIT.CONFLICT, not a generic failure.
+    try {
+      rebaseBeforePush(tmp);
+      expect.unreachable();
+    } catch (err) {
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.CONFLICT);
+    }
   });
 
   it('throws NomadFatal on a mid-rebase repo pointing at nomad pull --force-remote', async () => {
@@ -689,6 +698,12 @@ describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
     expect(() => rebaseBeforePush(tmp)).toThrow(NomadFatal);
     expect(() => rebaseBeforePush(tmp)).toThrow(/mid-rebase/);
     expect(() => rebaseBeforePush(tmp)).toThrow(/nomad pull --force-remote/);
+    try {
+      rebaseBeforePush(tmp);
+      expect.unreachable();
+    } catch (err) {
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.CONFLICT);
+    }
   });
 
   it('throws NomadFatal on a mid-merge repo pointing at nomad pull --force-remote', async () => {
@@ -701,6 +716,12 @@ describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
     expect(() => rebaseBeforePush(tmp)).toThrow(NomadFatal);
     expect(() => rebaseBeforePush(tmp)).toThrow(/mid-merge/);
     expect(() => rebaseBeforePush(tmp)).toThrow(/nomad pull --force-remote/);
+    try {
+      rebaseBeforePush(tmp);
+      expect.unreachable();
+    } catch (err) {
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.CONFLICT);
+    }
   });
 
   it('does not fire the wedge preflight on a clean committed repo (classifyWedge returns null)', async () => {
@@ -711,19 +732,23 @@ describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
     initPushTestRepo(tmp);
     makePushTestCommit(tmp, 'a.ts', 'x\n', 'init');
     const { rebaseBeforePush } = await import('./push-checks.ts');
+    const { NomadFatal } = await import('./utils.ts');
     // No remote: git pull --rebase fails after the preflight passes.
     // The error must be the generic post-rebase message, not the wedge message.
-    let thrown: Error | null = null;
+    let thrown: InstanceType<typeof NomadFatal> | null = null;
     try {
       rebaseBeforePush(tmp);
     } catch (err) {
-      thrown = err as Error;
+      thrown = err as InstanceType<typeof NomadFatal>;
     }
     expect(thrown).not.toBeNull();
+    expect(thrown).toBeInstanceOf(NomadFatal);
     // Must be the generic rebase-failed message (preflight passed).
     expect(thrown?.message).toMatch(/rebase failed/);
     // Must NOT be the wedge preflight messages.
     expect(thrown?.message).not.toMatch(/git reset --mixed HEAD/);
     expect(thrown?.message).not.toMatch(/mid-rebase|mid-merge/);
+    // Post-rebase generic failure stays GENERIC_FAILURE (no stderr string-sniffing).
+    expect(thrown?.code).toBe(EXIT.GENERIC_FAILURE);
   });
 });

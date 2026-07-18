@@ -91,7 +91,7 @@ describe('cmdAllow', () => {
     const ignPath = join(env.repoHome, '.gitleaksignore');
 
     expect(() => cmdAllow(['bad\nfingerprint'])).toThrow('process.exit called');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(existsSync(ignPath)).toBe(false);
 
     exitSpy.mockRestore();

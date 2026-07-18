@@ -48,43 +48,43 @@ describe('nomad.ts update dispatcher', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects `nomad update --dry-run` with usage line and exitCode=1', async () => {
+  it('rejects `nomad update --dry-run` with usage line and exitCode=2', async () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--dry-run'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
   });
 
-  it('rejects `nomad update --force` with usage line and exitCode=1', async () => {
+  it('rejects `nomad update --force` with usage line and exitCode=2', async () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--force'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
   });
 
-  it('rejects `nomad update --push-origin` with usage line and exitCode=1', async () => {
+  it('rejects `nomad update --push-origin` with usage line and exitCode=2', async () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--push-origin'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
   });
 
-  it('rejects `nomad update bogus` with usage line and exitCode=1', async () => {
+  it('rejects `nomad update bogus` with usage line and exitCode=2', async () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', 'bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
   });
 });
@@ -204,12 +204,12 @@ describe('nomad.ts init dispatcher', () => {
     });
   });
 
-  it('rejects `nomad init --unknown` with usage error and exit 1', async () => {
+  it('rejects `nomad init --unknown` with usage error and exit 2', async () => {
     const cmdInitMock = vi.fn();
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
     process.argv = ['node', 'nomad.ts', 'init', '--unknown'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad init'));
     expect(cmdInitMock).not.toHaveBeenCalled();
   });
@@ -218,8 +218,8 @@ describe('nomad.ts init dispatcher', () => {
     const cmdInitMock = vi.fn();
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
     process.argv = ['node', 'nomad.ts', 'init', '--snapshot', '--snapshot'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdInitMock).not.toHaveBeenCalled();
   });
 
@@ -227,8 +227,8 @@ describe('nomad.ts init dispatcher', () => {
     const cmdInitMock = vi.fn();
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
     process.argv = ['node', 'nomad.ts', 'init', '--repo', '--snapshot'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdInitMock).not.toHaveBeenCalled();
   });
 
@@ -236,8 +236,8 @@ describe('nomad.ts init dispatcher', () => {
     const cmdInitMock = vi.fn();
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
     process.argv = ['node', 'nomad.ts', 'init', '--repo'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:1');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdInitMock).not.toHaveBeenCalled();
   });
 });

@@ -194,9 +194,10 @@ describe.skipIf(!hasGit || !hasGitleaks)('multi-host sync flows (real git + real
 
     const before = gitOut(['rev-list', '--count', 'main'], origin);
 
-    // Non-TTY push: the leak verdict aborts (exit 1), nothing is committed or pushed.
+    // Non-TTY push: the leak verdict aborts (exit 5, EXIT.LEAK_BLOCKED), nothing
+    // is committed or pushed.
     const blocked = runNomad(a, ['push']);
-    expect(blocked.status, 'push should have blocked on the secret').toBe(1);
+    expect(blocked.status, 'push should have blocked on the secret').toBe(5);
     expect(gitOut(['rev-list', '--count', 'main'], origin)).toBe(before);
 
     // Non-interactive redaction rewrites the secret span in the local transcript.

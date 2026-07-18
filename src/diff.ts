@@ -56,7 +56,7 @@ export function cmdDiff(): void {
   } catch (err) {
     if (err instanceof NomadFatal) {
       fail(err.message);
-      process.exitCode = 1;
+      process.exitCode = err.code;
       return;
     }
     throw err;

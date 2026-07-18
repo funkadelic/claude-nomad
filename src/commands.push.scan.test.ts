@@ -84,7 +84,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     });
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush();
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(5);
     expect(existsSync(env.lockPath)).toBe(false);
     // The one-line ✗ verdict row renders in the tree (stdout)...
     expect(logOutput(env)).toContain('Leak scan');
