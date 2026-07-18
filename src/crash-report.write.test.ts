@@ -116,14 +116,19 @@ describe('writeCrashReport', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('creates the crash dir at 0o700 and the file at 0o600', () => {
-    const path = writeCrashReport('report text', dir);
-    expect(existsSync(path)).toBe(true);
+  // NTFS ignores POSIX mode bits, so statSync reports 0o666 on win32 and the
+  // 0o700/0o600 assertions cannot hold. The security intent applies to posix only.
+  it.skipIf(process.platform === 'win32')(
+    'creates the crash dir at 0o700 and the file at 0o600',
+    () => {
+      const path = writeCrashReport('report text', dir);
+      expect(existsSync(path)).toBe(true);
 
-    expect(statSync(dir).mode & 0o777).toBe(0o700);
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
 
-    expect(statSync(path).mode & 0o777).toBe(0o600);
-  });
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    },
+  );
 
   it('names the file crash-<timestamp>-<pid>.txt under dir', () => {
     const path = writeCrashReport('report text', dir);
