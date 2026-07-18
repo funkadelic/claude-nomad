@@ -119,6 +119,19 @@ describe('buildCrashReport: non-Error thrown values', () => {
     expect(report).toContain('error: NonErrorThrow: (unstringifiable thrown value)');
   });
 
+  it('degrades to a placeholder when an Error field getter throws', () => {
+    const err = new Error('boom');
+    // A hostile Error whose name getter throws must not abort report building;
+    // normalizeError catches the read and substitutes a fixed placeholder.
+    Object.defineProperty(err, 'name', {
+      get() {
+        throw new Error('trap');
+      },
+    });
+    const report = buildCrashReport({ ...BASE_INPUT, err });
+    expect(report).toContain('error: Error: (unreadable Error)');
+  });
+
   it('does not throw when a well-formed Error has its stack cleared', () => {
     const err = new Error('no-stack');
     err.stack = undefined;

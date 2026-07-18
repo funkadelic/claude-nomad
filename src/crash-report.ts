@@ -83,8 +83,12 @@ function safeStringify(value: unknown): string {
  * serialized via {@link safeStringify}. Never throws.
  */
 function normalizeError(err: unknown): NormalizedError {
-  if (err instanceof Error) {
-    return { name: err.name, message: err.message, stack: err.stack };
+  try {
+    if (err instanceof Error) {
+      return { name: err.name, message: err.message, stack: err.stack };
+    }
+  } catch {
+    return { name: 'Error', message: '(unreadable Error)', stack: undefined };
   }
   if (typeof err === 'string') {
     return { name: 'NonErrorThrow', message: err, stack: undefined };

@@ -5,6 +5,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -49,6 +50,21 @@ describe('listCrashFiles', () => {
     const files = listCrashFiles(dir);
     expect(files.map((f) => f.name)).toEqual(['b.txt', 'a.txt']);
   });
+
+  // NTFS symlink creation needs elevated privileges, so exercise the
+  // stat-failure skip on posix only.
+  it.skipIf(process.platform === 'win32')(
+    'skips an entry whose statSync fails during enumeration',
+    () => {
+      const dir = join(testRoot, 'crash');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'crash-real.txt'), 'x');
+      // A dangling symlink is listed by readdir but statSync (which follows the
+      // link) throws ENOENT, so the entry must be skipped, not abort the list.
+      symlinkSync(join(dir, 'does-not-exist'), join(dir, 'crash-broken.txt'));
+      expect(listCrashFiles(dir).map((f) => f.name)).toEqual(['crash-real.txt']);
+    },
+  );
 });
 
 describe('pruneCrashDir', () => {

@@ -40,7 +40,13 @@ export type CrashFile = { name: string; mtimeMs: number };
 export function listCrashFiles(dir: string = crashDir()): CrashFile[] {
   try {
     return readdirSync(dir)
-      .map((name) => ({ name, mtimeMs: statSync(join(dir, name)).mtimeMs }))
+      .flatMap((name) => {
+        try {
+          return [{ name, mtimeMs: statSync(join(dir, name)).mtimeMs }];
+        } catch {
+          return [];
+        }
+      })
       .sort((a, b) => b.mtimeMs - a.mtimeMs);
   } catch {
     return [];

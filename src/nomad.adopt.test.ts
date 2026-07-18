@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { ProcessExit } from './utils.ts';
+
 // Dispatcher smoke tests for the `adopt` arm. Each test sets process.argv,
 // doMocks ./commands.adopt.ts, stubs process.exit to throw, then dynamically
 // imports ./nomad.ts (the unchanged SUT path) to trigger the dispatch.
@@ -14,16 +16,11 @@ describe('nomad.ts adopt dispatcher', () => {
     originalArgv = process.argv;
     process.env.HOME = '/tmp';
     vi.resetModules();
-    // Real process.exit() terminates before any subsequent JS can run.
-    // Simulate that by pinning the thrown message to the FIRST exit code
-    // seen: the top-level crash funnel (handleTopLevelError) also calls the
-    // mocked process.exit on its own fallback path, and a naive per-call
-    // throw would let that second call overwrite the originally intended
-    // usage-error code.
-    let firstExitCode: string | number | null | undefined;
+    // A ProcessExit sentinel models real termination: the top-level crash
+    // funnel re-throws it untouched, so an expected usage exit never routes
+    // through crash handling (no throwaway crash report during the test).
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
-      if (firstExitCode === undefined) firstExitCode = code;
-      throw new Error(`exit:${String(firstExitCode)}`);
+      throw new ProcessExit(code);
     });
     vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */

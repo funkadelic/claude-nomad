@@ -71,6 +71,12 @@ export function redactWithGitleaks(text: string, scan: typeof scanFile = scanFil
     // matching the `null`-scan path: never withhold the report.
     return text + SCAN_UNAVAILABLE_ADVISORY;
   } finally {
-    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    if (dir !== undefined) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Cleanup is best-effort on the crash path.
+      }
+    }
   }
 }
