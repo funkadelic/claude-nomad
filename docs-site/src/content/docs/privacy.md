@@ -21,6 +21,12 @@ Your Claude Code configuration and session transcripts sync only between your ow
 private Git remote you configure (your `NOMAD_REPO` / GitHub repository). That remote is
 infrastructure you own and control. claude-nomad never copies your configuration anywhere else.
 
+If nomad hits an unexpected bug, it writes a crash report to `~/.cache/claude-nomad/crash/` on the
+local machine only. The report is created owner-readable-only (`0o600`), redacted before it is
+written (your home directory and hostname are replaced, and a best-effort gitleaks scan strips
+detectable secrets), and is never transmitted or auto-uploaded. It exists solely for you to
+optionally attach to a bug report.
+
 ## Outbound network requests
 
 `nomad doctor` makes at most two read-only outbound requests. Each is a plain `GET` that fetches

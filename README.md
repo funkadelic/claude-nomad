@@ -317,6 +317,31 @@ A run skipped because another nomad process already holds the lock also exits 0:
 intentional no-op skip, not a failure, so a backgrounded shell-rc or cron invocation never raises a
 false alarm from a concurrent run. Value `3` is reserved for future use.
 
+## Crash reports
+
+If `nomad` ever hits an unexpected bug, it no longer dumps a raw stack trace at you. Instead it
+prints a short "this looks like a bug" banner (with a link to the issue tracker) and writes a small
+report you can attach to a bug report if you choose. The exit code is unchanged: an unexpected crash
+exits `1`, and a documented failure still exits with its own code from the table above.
+
+What this means for you:
+
+- **The report stays on your machine.** It is written to `~/.cache/claude-nomad/crash/` and nothing
+  is ever uploaded anywhere. The file just sits there until you decide to share it or delete it.
+- **It is scrubbed twice before it touches disk.** First a structural pass rewrites your home
+  directory to `~` and your hostname to a placeholder (absolute paths are personal information a
+  secret scanner would not catch). Then a best-effort secret scan runs the same gitleaks-based
+  redaction nomad already uses for session transcripts.
+- **It degrades safely without gitleaks.** If gitleaks is not installed, the structural scrub still
+  runs and the report is still written, with a one-line note that the secret scan did not run, so
+  give it a glance before posting it publicly.
+- **It is small and bounded.** The report contains only the nomad version, the subcommand you ran,
+  the error name and message, a trimmed stack, your platform, and a timestamp. It never includes an
+  environment dump or the contents of any file.
+- **The directory manages itself.** Only the most recent reports are kept; older ones are pruned
+  automatically on the next crash. There is no `nomad clean` flag for the crash directory, by
+  design: it self-manages.
+
 ## Learn more
 
 - [How it works](https://funkadelic.github.io/claude-nomad/how-it-works/) -- path remapping,
