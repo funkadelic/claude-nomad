@@ -97,6 +97,32 @@ describe('NomadFatal / die exit-code classification', () => {
   });
 });
 
+describe('ProcessExit / isProcessExit', () => {
+  it('ProcessExit carries the code and embeds it in an exit:<code> message', async () => {
+    const { ProcessExit } = await import('./utils.ts');
+    const err = new ProcessExit(2);
+    expect(err.code).toBe(2);
+    expect(err.name).toBe('ProcessExit');
+    expect(err.message).toBe('exit:2');
+  });
+
+  it('isProcessExit is true for a ProcessExit instance', async () => {
+    const { ProcessExit, isProcessExit } = await import('./utils.ts');
+    expect(isProcessExit(new ProcessExit(1))).toBe(true);
+  });
+
+  it('isProcessExit is false for a plain Error and for a NomadFatal', async () => {
+    const { isProcessExit, NomadFatal } = await import('./utils.ts');
+    expect(isProcessExit(new Error('boom'))).toBe(false);
+    expect(isProcessExit(new NomadFatal('nope'))).toBe(false);
+  });
+
+  it('isProcessExit is false for a non-Error value', async () => {
+    const { isProcessExit } = await import('./utils.ts');
+    expect(isProcessExit('exit:2')).toBe(false);
+  });
+});
+
 describe('gitOrFatal (mocked child_process)', () => {
   let stderrSpy: MockInstance<(...args: unknown[]) => boolean>;
 

@@ -70,6 +70,39 @@ export class NomadFatal extends Error {
 }
 
 /**
+ * Termination boundary for tests. A real `process.exit()` ends the process
+ * before any surrounding `catch` can run; a test's `process.exit` mock cannot
+ * do that, so it throws this sentinel instead. The top-level crash funnel
+ * (`handleTopLevelError` in `nomad.ts`) re-throws a `ProcessExit` untouched
+ * rather than treating it as an unexpected error, so exit-path unit tests
+ * never route an expected usage exit through the crash-report writer. Real
+ * `process.exit` terminates, so this type is never constructed in production.
+ *
+ * Carries the exit `code` the mock was called with; the message embeds it as
+ * `exit:<code>` so tests can assert on the rejection.
+ */
+export class ProcessExit extends Error {
+  readonly code: string | number | null | undefined;
+
+  constructor(code: string | number | null | undefined) {
+    super(`exit:${String(code)}`);
+    this.name = 'ProcessExit';
+    this.code = code;
+  }
+}
+
+/**
+ * True when `err` is a {@link ProcessExit} sentinel. Brands on the `name`
+ * string rather than `instanceof` so detection survives the module-realm
+ * duplication `vi.resetModules()` introduces between a test (which imports
+ * `ProcessExit` once) and the dynamically re-imported `nomad.ts` (which sees a
+ * fresh `utils.ts` class object). No production error is named `ProcessExit`.
+ */
+export function isProcessExit(err: unknown): err is ProcessExit {
+  return err instanceof Error && err.name === 'ProcessExit';
+}
+
+/**
  * Throw a `NomadFatal` with the given message. Callers should `catch` it in
  * the cmdPull/cmdPush try/finally so the lock is released before exit.
  *

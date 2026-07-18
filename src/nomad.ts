@@ -42,7 +42,7 @@ import { parsePushArgs } from './nomad.dispatch.push.ts';
 import { parseSyncArgs } from './nomad.dispatch.sync.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
-import { fail, NomadFatal } from './utils.ts';
+import { fail, isProcessExit, NomadFatal } from './utils.ts';
 import { EXIT } from './exit-codes.ts';
 
 /**
@@ -58,15 +58,21 @@ import pkg from '../package.json' with { type: 'json' };
  * Single funnel for every unexpected top-level error: the dispatch `catch`,
  * `uncaughtException`, and `unhandledRejection` all route through this
  * function, so a `NomadFatal` can never reach the crash-report path from any
- * of the three call sites. A `NomadFatal` keeps its own clean message and
- * exit code with no crash report; anything else is handed to `handleCrash`
- * (writes a redacted crash report) and exits `EXIT.GENERIC_FAILURE`.
+ * of the three call sites. A test-only `ProcessExit` sentinel is re-thrown
+ * untouched (it models a real `process.exit`, not a crash). A `NomadFatal`
+ * keeps its own clean message and exit code with no crash report; anything
+ * else is handed to `handleCrash` (writes a redacted crash report) and exits
+ * `EXIT.GENERIC_FAILURE`.
  *
  * Typed `never`: registering an `uncaughtException` listener suppresses
  * Node's default auto-exit, so every branch here must call `process.exit`
  * explicitly or the process hangs.
  */
 function handleTopLevelError(err: unknown): never {
+  // A test's `process.exit` mock throws `ProcessExit` to model real
+  // termination; re-throw it untouched so an expected usage exit never routes
+  // through crash handling. Real exits terminate and never reach here.
+  if (isProcessExit(err)) throw err;
   if (err instanceof NomadFatal) {
     fail(err.message);
     process.exit(err.code);
