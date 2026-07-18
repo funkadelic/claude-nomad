@@ -193,9 +193,10 @@ type DispatchCtx = {
 function dispatchMemory(f: Finding, action: FindingAction, ctx: DispatchCtx): void {
   const parsed = memoryFileFromFinding(f);
   if (parsed === null) {
-    if (isMemoryFindingPath(f)) {
-      log(`memory path not auto-redactable: ${f.File}; scrub it by hand or choose Skip`);
-    }
+    // dispatchNonSession only routes memory-path findings here, so a null parse
+    // is always a memory path that is not auto-redactable (nested or non-.md),
+    // not a genuine non-memory finding (those no-op in dispatchNonSession).
+    log(`memory path not auto-redactable: ${f.File}; scrub it by hand or choose Skip`);
     return;
   }
   if (action === 'drop') {
