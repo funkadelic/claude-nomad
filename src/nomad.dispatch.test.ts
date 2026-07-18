@@ -53,7 +53,11 @@ describe('nomad.ts update dispatcher', () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--dry-run'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
@@ -63,7 +67,11 @@ describe('nomad.ts update dispatcher', () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--force'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
@@ -73,7 +81,11 @@ describe('nomad.ts update dispatcher', () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--push-origin'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
@@ -83,7 +95,11 @@ describe('nomad.ts update dispatcher', () => {
     const cmdUpdateMock = vi.fn();
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', 'bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdUpdateMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad update'));
@@ -212,7 +228,11 @@ describe('nomad.ts init dispatcher', () => {
     const cmdInitMock = vi.fn();
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
     process.argv = ['node', 'nomad.ts', 'init', '--unknown'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad init'));
     expect(cmdInitMock).not.toHaveBeenCalled();
@@ -222,7 +242,11 @@ describe('nomad.ts init dispatcher', () => {
     const cmdInitMock = vi.fn();
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
     process.argv = ['node', 'nomad.ts', 'init', '--snapshot', '--snapshot'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdInitMock).not.toHaveBeenCalled();
   });
@@ -231,7 +255,11 @@ describe('nomad.ts init dispatcher', () => {
     const cmdInitMock = vi.fn();
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
     process.argv = ['node', 'nomad.ts', 'init', '--repo', '--snapshot'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdInitMock).not.toHaveBeenCalled();
   });
@@ -240,7 +268,11 @@ describe('nomad.ts init dispatcher', () => {
     const cmdInitMock = vi.fn();
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
     process.argv = ['node', 'nomad.ts', 'init', '--repo'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdInitMock).not.toHaveBeenCalled();
   });

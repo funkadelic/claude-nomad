@@ -83,7 +83,11 @@ describe('nomad.ts push dispatcher', () => {
     const cmdPushMock = vi.fn();
     vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
     process.argv = ['node', 'nomad.ts', 'push', '--bogus'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(cmdPushMock).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(2);
     // The user-visible side of the error must include the canonical usage
@@ -113,7 +117,11 @@ describe('nomad.ts push dispatcher', () => {
     vi.doMock('./diff.ts', () => ({ cmdDiff: cmdDiffMock }));
     vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(cmdPullMock).not.toHaveBeenCalled();
     expect(cmdPushMock).not.toHaveBeenCalled();
@@ -200,7 +208,11 @@ describe('nomad.ts --version dispatcher', () => {
 
   it('rejects `nomad --version extra-arg` with the canonical usage line and exitCode=2', async () => {
     process.argv = ['node', 'nomad.ts', '--version', 'extra-arg'];
-    await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
+    const rejected = import('./nomad.ts');
+    // Assert the crash-boundary contract: the rejection is the ProcessExit
+    // sentinel (not merely something with an `exit:2` message).
+    await expect(rejected).rejects.toBeInstanceOf(ProcessExit);
+    await expect(rejected).rejects.toThrow('exit:2');
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('usage: nomad --version'));
   });
