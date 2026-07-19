@@ -3,7 +3,15 @@
 # only its generated/vendored output is excluded (gitignore already keeps
 # dist/node_modules/.astro out of diffs, these are defense-in-depth) plus the
 # lockfile to skip dep-bump noise.
+#
+# Snyk security-bump PRs (title "deps: [Snyk] ...") are pushed through the repo
+# owner's own account, not a bot account, so CodeRabbit does not auto-skip them
+# the way it skips release-please and Dependabot PRs. The title-keyword filter
+# below drops them to conserve the review-based quota.
 reviews:
+  auto_review:
+    ignore_title_keywords:
+      - '[Snyk]'
   path_filters:
     - '!docs-site/dist/**'
     - '!docs-site/node_modules/**'
