@@ -11,7 +11,7 @@
  * actions module), so the dependency direction stays acyclic: actions -> redact.
  */
 
-import { cpSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 import type { PathMap } from './config.ts';
@@ -20,10 +20,9 @@ import { assertSafeLogical } from './config.sharedDirs.guard.ts';
 import { resolveLiveTranscript } from './commands.redact.ts';
 import {
   applySubtreeRedactions,
+  isSubtreeActive,
   listSubtreeFiles,
-  newestSubtreeMtimeMs,
 } from './commands.redact.subtree.ts';
-import { isRecentlyModified } from './commands.redact.core.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { encodePath } from './utils.json.ts';
@@ -87,8 +86,7 @@ export function preflightRedactable(f: Finding, map: PathMap, nowMs: () => numbe
   if (localPath === null) return `session ${sid}: local transcript not found`;
   const sessionDir = join(dirname(localPath), sid);
   const subtreeFiles = listSubtreeFiles(sessionDir);
-  const subtreeMtime = newestSubtreeMtimeMs(localPath, subtreeFiles, (p) => statSync(p).mtimeMs);
-  if (isRecentlyModified(subtreeMtime, nowMs())) {
+  if (isSubtreeActive(localPath, subtreeFiles, nowMs())) {
     return `session ${sid}: looks active (modified within the last 5 minutes)`;
   }
   if (resolveStagedDir(localPath, map, claudeHome(), repoHome()) === null) {
@@ -165,8 +163,7 @@ export function applyRedact(
   const subtreeFiles = listSubtreeFiles(sessionDir);
 
   // Live-session guard: key on newest mtime across the whole subtree.
-  const subtreeMtime = newestSubtreeMtimeMs(localPath, subtreeFiles, (p) => statSync(p).mtimeMs);
-  if (isRecentlyModified(subtreeMtime, nowMs())) {
+  if (isSubtreeActive(localPath, subtreeFiles, nowMs())) {
     return refuse(
       `session ${sid} looks active (modified within the last 5 minutes); refusing to redact, no changes made.\n` +
         `  End the session and choose Redact again, or choose Drop session (holds this session back` +
