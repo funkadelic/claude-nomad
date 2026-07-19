@@ -61,7 +61,7 @@ function buildCurrentMap(map: PathMap | null): Record<string, { size: number; mt
  * @param fullScan - `true` when `--full-scan` was passed.
  * @returns `{ selection, newManifest }` ready for remapPush and writeManifest.
  */
-export function computePushSelection(
+function computePushSelection(
   map: PathMap | null,
   old: Manifest | null,
   scannerVersion: string,

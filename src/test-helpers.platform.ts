@@ -15,10 +15,3 @@
 export function stubPlatform(value: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', { value, configurable: true });
 }
-
-/**
- * `true` when the current process is running on win32, captured at module
- * load time. Convenience constant for `it.skipIf(IS_WIN)` guards shared
- * across test files that assert posix-only behavior.
- */
-export const IS_WIN = process.platform === 'win32';
