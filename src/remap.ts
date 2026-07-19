@@ -71,7 +71,7 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
  * @param dst - Host-side `~/.claude/projects/<encoded>/` dir; local-only
  *   entries survive unchanged after the overlay.
  */
-export function overlaySessionDir(src: string, dst: string): void {
+function overlaySessionDir(src: string, dst: string): void {
   stripCollidingDstSymlinks(src, dst, () => false);
   cpSyncGuarded(src, dst, undefined, 'overlaySessionDir');
 }
