@@ -177,6 +177,40 @@ describe('newestSubtreeMtimeMs', () => {
 });
 
 // ---------------------------------------------------------------------------
+// isSubtreeActive
+// ---------------------------------------------------------------------------
+
+describe('isSubtreeActive', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'nomad-active-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns true when the newest subtree file was modified within the window', async () => {
+    const { isSubtreeActive } = await import('./commands.redact.subtree.ts');
+    const mainPath = join(tmpDir, 'sid.jsonl');
+    const agentPath = join(tmpDir, 'agent-1.jsonl');
+    writeFileSync(mainPath, '{}');
+    writeFileSync(agentPath, '{}');
+    // now == just after the writes, so the delta is well under the 5-minute window.
+    expect(isSubtreeActive(mainPath, [agentPath], Date.now())).toBe(true);
+  });
+
+  it('returns false when the newest subtree mtime is older than the window', async () => {
+    const { isSubtreeActive } = await import('./commands.redact.subtree.ts');
+    const mainPath = join(tmpDir, 'sid.jsonl');
+    writeFileSync(mainPath, '{}');
+    // now is 6 minutes ahead of the just-written file, past the 5-minute window.
+    expect(isSubtreeActive(mainPath, [], Date.now() + 6 * 60 * 1000)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // applySubtreeRedactions
 // ---------------------------------------------------------------------------
 

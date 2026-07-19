@@ -13,7 +13,7 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { applyRedactions } from './commands.redact.core.ts';
+import { applyRedactions, isRecentlyModified } from './commands.redact.core.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
 import { log } from './utils.ts';
@@ -93,6 +93,26 @@ export function newestSubtreeMtimeMs(
     if (t > newest) newest = t;
   }
   return newest;
+}
+
+/**
+ * True when a session's subtree was modified within the live-session window,
+ * keyed on the newest mtime across `mainPath` and every file in `subtreeFiles`.
+ *
+ * The shared live-session guard for both `nomad redact` and push recovery: each
+ * refuses to rewrite a transcript that may still be actively written, because
+ * scrubbing a live session races the writer and can corrupt or lose data.
+ * Callers pass an already-enumerated `subtreeFiles` list so the subtree is
+ * walked once and the guard scope stays equal to the push-staging scope.
+ *
+ * @param mainPath Absolute path to the main `<sid>.jsonl` transcript.
+ * @param subtreeFiles Absolute paths of every file under the session subtree.
+ * @param now Current time in ms (injectable clock for the recency comparison).
+ * @returns True when the newest subtree mtime is within the recent window.
+ */
+export function isSubtreeActive(mainPath: string, subtreeFiles: string[], now: number): boolean {
+  const subtreeMtime = newestSubtreeMtimeMs(mainPath, subtreeFiles, (p) => statSync(p).mtimeMs);
+  return isRecentlyModified(subtreeMtime, now);
 }
 
 /** A file with at least one finding, ready for redaction. */

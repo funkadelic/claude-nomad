@@ -1,12 +1,11 @@
-import { existsSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { backupBase, claudeHome, HOST, repoHome, type PathMap } from './config.ts';
-import { isRecentlyModified } from './commands.redact.core.ts';
 import {
   applySubtreeRedactions,
+  isSubtreeActive,
   listSubtreeFiles,
-  newestSubtreeMtimeMs,
 } from './commands.redact.subtree.ts';
 import { warnIfSessionPushed } from './commands.pushed-history.ts';
 import { type Finding, scanFile } from './push-gitleaks.scan.ts';
@@ -124,8 +123,7 @@ export function cmdRedact(
     // Live-session guard: evaluate across the whole subtree (main + all files under <id>/).
     const sessionDir = join(dirname(localPath), id);
     const subtreeFiles = listSubtreeFiles(sessionDir);
-    const subtreeMtime = newestSubtreeMtimeMs(localPath, subtreeFiles, (p) => statSync(p).mtimeMs);
-    if (isRecentlyModified(subtreeMtime, nowMs())) {
+    if (isSubtreeActive(localPath, subtreeFiles, nowMs())) {
       log(
         `session ${id} was modified recently and may be active.\n` +
           '  Refusing to rewrite a potentially live transcript.\n' +
