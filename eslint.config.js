@@ -122,11 +122,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/**/*.test.ts'],
+    files: ['**/*.test.ts'],
     // These sonarjs rules stay ON for production src; they are low-value or
     // deliberately-ignored noise in test files (intentional helper duplication,
     // fixture unions, `void` on floating promises, comparator-less sorts whose
-    // order is asserted directly). The bug-catching value is in src.
+    // order is asserted directly). The bug-catching value is in src. Our tests
+    // are deliberately behavior-focused with explicit per-case assertions, so
+    // parameterized-tests (added in eslint-plugin-sonarjs 4.2.0) stays off too.
     rules: {
       'max-lines': 'off',
       'sonarjs/no-alphabetical-sort': 'off',
@@ -136,6 +138,7 @@ export default tseslint.config(
       'sonarjs/super-linear-regex': 'off',
       'sonarjs/no-misleading-array-reverse': 'off',
       'sonarjs/no-unused-collection': 'off',
+      'sonarjs/parameterized-tests': 'off',
     },
   },
   eslintConfigPrettier,
