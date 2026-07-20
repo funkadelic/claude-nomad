@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.62.1](https://github.com/funkadelic/claude-nomad/compare/v0.62.0...v0.62.1) (2026-07-20)
+
+
+### Changed
+
+* **coderabbit:** skip Snyk security-bump PRs ([#436](https://github.com/funkadelic/claude-nomad/issues/436)) ([10ded7c](https://github.com/funkadelic/claude-nomad/commit/10ded7cb5657b1180f8d33b1fbf73c3000fea6c3))
+* **deps:** refresh lockfile for brace-expansion and fast-uri patches ([#445](https://github.com/funkadelic/claude-nomad/issues/445)) ([d4ea973](https://github.com/funkadelic/claude-nomad/commit/d4ea9739a450c71763a98769f48a7deefb38eca5))
+* drop 3 dead exports flagged by knip ([#437](https://github.com/funkadelic/claude-nomad/issues/437)) ([51750d8](https://github.com/funkadelic/claude-nomad/commit/51750d8801f96b4bca8137ac863c851d63f7c074))
+* **redact:** extract shared live-session guard ([#438](https://github.com/funkadelic/claude-nomad/issues/438)) ([59d8208](https://github.com/funkadelic/claude-nomad/commit/59d82085aaf59a53d8341de6850240fdce4aa7ea))
+
+
+### Dependencies
+
+* bump actions/setup-node from 6.4.0 to 7.0.0 ([#441](https://github.com/funkadelic/claude-nomad/issues/441)) ([f24a847](https://github.com/funkadelic/claude-nomad/commit/f24a847476e6ec63c4e85715c2ebfc42cce138c3))
+* bump astro from 7.0.7 to 7.1.3 in /docs-site ([#444](https://github.com/funkadelic/claude-nomad/issues/444)) ([01d56b7](https://github.com/funkadelic/claude-nomad/commit/01d56b7f20e1ea71f1dd64b7076411abc4fe9c02))
+* bump SonarSource/sonarqube-scan-action from 8.2.0 to 8.2.1 ([#443](https://github.com/funkadelic/claude-nomad/issues/443)) ([2928f0f](https://github.com/funkadelic/claude-nomad/commit/2928f0f87e40147a17b068b0053486fee6cbd6e6))
+* bump the codeql-action group with 2 updates ([#440](https://github.com/funkadelic/claude-nomad/issues/440)) ([8d30319](https://github.com/funkadelic/claude-nomad/commit/8d303191e692128c5fdc9dfaab7ff1f16eb0780d))
+* bump the dev-dependencies group with 2 updates ([#442](https://github.com/funkadelic/claude-nomad/issues/442)) ([22427db](https://github.com/funkadelic/claude-nomad/commit/22427dbbe4fb3f455a6ec24f0d4105dee904ee17))
+
 ## [0.62.0](https://github.com/funkadelic/claude-nomad/compare/v0.61.0...v0.62.0) (2026-07-18)
 
 
