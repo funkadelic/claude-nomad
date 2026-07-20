@@ -6,7 +6,6 @@
 ### Changed
 
 * **coderabbit:** skip Snyk security-bump PRs ([#436](https://github.com/funkadelic/claude-nomad/issues/436)) ([10ded7c](https://github.com/funkadelic/claude-nomad/commit/10ded7cb5657b1180f8d33b1fbf73c3000fea6c3))
-* **coderabbit:** skip Snyk security-bump PRs to save review quota ([10ded7c](https://github.com/funkadelic/claude-nomad/commit/10ded7cb5657b1180f8d33b1fbf73c3000fea6c3))
 * **deps:** refresh lockfile for brace-expansion and fast-uri patches ([#445](https://github.com/funkadelic/claude-nomad/issues/445)) ([d4ea973](https://github.com/funkadelic/claude-nomad/commit/d4ea9739a450c71763a98769f48a7deefb38eca5))
 * drop 3 dead exports flagged by knip ([#437](https://github.com/funkadelic/claude-nomad/issues/437)) ([51750d8](https://github.com/funkadelic/claude-nomad/commit/51750d8801f96b4bca8137ac863c851d63f7c074))
 * **redact:** extract shared live-session guard ([#438](https://github.com/funkadelic/claude-nomad/issues/438)) ([59d8208](https://github.com/funkadelic/claude-nomad/commit/59d82085aaf59a53d8341de6850240fdce4aa7ea))
