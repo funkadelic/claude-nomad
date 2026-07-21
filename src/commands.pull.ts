@@ -161,7 +161,9 @@ function buildWetPullSections(
  * - `'unmerged-index'`: under `--force-remote`, delegates to
  *   `recoverUnmergedIndex` (reset --mixed HEAD + autostash surface only;
  *   deliberately not recoverForceRemote, which is scoped to rebase/merge
- *   wedges). Without `--force-remote`, dies with the non-destructive
+ *   wedges). That call repairs the index and then dies if any formerly-unmerged
+ *   file is still dirty, so conflict markers are never carried through into the
+ *   pull. Without `--force-remote`, dies with the non-destructive
  *   manual-recovery runbook.
  * - `null`: no-op (clean repo).
  *

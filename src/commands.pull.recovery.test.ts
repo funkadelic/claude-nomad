@@ -782,16 +782,28 @@ import { recoverUnmergedIndex } from './commands.pull.recovery.ts';
  *
  * Optionally adds an orphaned autostash stash entry (simulating the trigger
  * where git --autostash drops to the stash list during a torn-down
- * rebase).
+ * rebase), and optionally a second tracked file (`other.txt`) that stays out
+ * of the conflict.
  */
 function buildUnmergedIndexFixture(
   dir: string,
-  { withAutostash = false }: { withAutostash?: boolean } = {},
+  {
+    withAutostash = false,
+    withOtherTracked = false,
+  }: { withAutostash?: boolean; withOtherTracked?: boolean } = {},
 ): void {
   initRepo(dir);
   writeFileSync(join(dir, 'file.txt'), 'base\n');
   execFileSync('git', ['add', 'file.txt'], { cwd: dir });
   execFileSync('git', ['commit', '-q', '-m', 'base'], { cwd: dir });
+
+  if (withOtherTracked) {
+    // Committed before the conflict: once the index is unmerged, git refuses
+    // to commit anything.
+    writeFileSync(join(dir, 'other.txt'), 'other\n');
+    execFileSync('git', ['add', 'other.txt'], { cwd: dir });
+    execFileSync('git', ['commit', '-q', '-m', 'add other.txt'], { cwd: dir });
+  }
 
   if (withAutostash) {
     // Simulate the orphaned autostash: in the real scenario, git --autostash
@@ -834,6 +846,24 @@ function buildUnmergedIndexFixture(
   }
 }
 
+/**
+ * Run `recoverUnmergedIndex` and swallow the NomadFatal it throws when the
+ * fixture's conflict markers are still in the working tree. The index repair
+ * and the autostash hint both happen before that die, so tests asserting on
+ * those effects use this wrapper.
+ *
+ * @param dir Absolute path to the fixture repo.
+ * @returns The thrown value, or undefined if the call returned normally.
+ */
+function recoverSwallowingFatal(dir: string): unknown {
+  try {
+    recoverUnmergedIndex(dir);
+    return undefined;
+  } catch (e) {
+    return e;
+  }
+}
+
 describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () => {
   let tmp: string;
 
@@ -866,7 +896,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
       .filter(Boolean);
     expect(beforeU.length).toBeGreaterThan(0);
 
-    recoverUnmergedIndex(tmp);
+    recoverSwallowingFatal(tmp);
 
     // After recovery: no unmerged entries.
     const afterU = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
@@ -892,7 +922,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     // Write a working-tree file that would be destroyed by --hard but preserved by --mixed.
     writeFileSync(join(tmp, 'extra.txt'), 'preserved-by-mixed\n');
 
-    recoverUnmergedIndex(tmp);
+    recoverSwallowingFatal(tmp);
 
     // --mixed: index cleared, working-tree preserved.
     const afterU = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
@@ -915,7 +945,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
       logLines.push(args.join(' '));
     });
 
-    recoverUnmergedIndex(tmp);
+    recoverSwallowingFatal(tmp);
 
     const combined = logLines.join('\n');
     expect(combined).toMatch(/autostash/);
@@ -932,7 +962,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     }).toString();
     expect(before).toMatch(/autostash/);
 
-    recoverUnmergedIndex(tmp);
+    recoverSwallowingFatal(tmp);
 
     // Autostash must STILL be in the stash list after recovery (never popped).
     const after = execFileSync('git', ['stash', 'list'], {
@@ -950,31 +980,60 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
       logLines.push(args.join(' '));
     });
 
-    recoverUnmergedIndex(tmp);
+    recoverSwallowingFatal(tmp);
 
     const combined = logLines.join('\n');
     expect(combined).not.toMatch(/autostash/);
   });
 
-  it('emits a WARN naming conflict-markered files when dirty paths remain after reset', () => {
+  it('dies naming the conflict-markered files when dirty paths remain after reset', async () => {
     // buildUnmergedIndexFixture leaves file.txt with <<<<<<< conflict markers in
-    // the working tree. After git reset --mixed HEAD the markers persist; the
-    // post-reset git diff should surface them so the user is not misled.
+    // the working tree. After git reset --mixed HEAD the markers persist, so
+    // recovery must refuse rather than let the pull publish them to ~/.claude/.
     buildUnmergedIndexFixture(tmp);
 
-    const logLines: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-      logLines.push(args.join(' '));
-    });
+    const { NomadFatal } = await import('./utils.ts');
+    const thrown = recoverSwallowingFatal(tmp);
 
-    recoverUnmergedIndex(tmp);
-
-    const combined = logLines.join('\n');
-    expect(combined).toMatch(/conflict content/);
-    expect(combined).toMatch(/file\.txt/);
+    expect(thrown).toBeInstanceOf(NomadFatal);
+    expect((thrown as Error).message).toMatch(/conflict content/);
+    expect((thrown as Error).message).toMatch(/file\.txt/);
+    expect((thrown as Error).message).toMatch(/re-run "nomad pull"/);
   });
 
-  it('emits no dirty-file WARN when the working tree is clean after reset', () => {
+  it('repairs the index before dying so the repo is left unwedged', () => {
+    buildUnmergedIndexFixture(tmp);
+
+    recoverSwallowingFatal(tmp);
+
+    // The die must not short-circuit the reset: a still-unmerged index would
+    // leave the user wedged with no automated way out.
+    const afterU = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .split('\0')
+      .filter(Boolean);
+    expect(afterU).toHaveLength(0);
+  });
+
+  it('does not die over a dirty file that was never part of the conflict', () => {
+    buildUnmergedIndexFixture(tmp, { withOtherTracked: true });
+    // Resolve the conflicted file, then dirty an unrelated tracked file. Local
+    // edits elsewhere in the sync repo are normal and pull handles them, so they
+    // must not block the recovery.
+    const headContent = execFileSync('git', ['show', 'HEAD:file.txt'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    writeFileSync(join(tmp, 'file.txt'), headContent);
+    writeFileSync(join(tmp, 'other.txt'), 'local edit\n');
+
+    expect(recoverSwallowingFatal(tmp)).toBeUndefined();
+  });
+
+  it('returns normally when the working tree is clean after reset', () => {
     // Construct a repo where the index has staged-but-not-yet-committed edits
     // (no conflict markers in the working tree). Manually inject unmerged
     // stage entries by writing the index objects directly to avoid needing

@@ -253,9 +253,10 @@ operation, parks stranded commits on a `nomad/stranded-<ts>` branch, resets to `
 re-pulls; refuses if stranded or dirty tracked changes touch synced config), and a repo where the
 rebase was torn down but the git index still has unmerged entries with no active rebase or merge in
 progress (clears the stuck index via `git reset --mixed HEAD`, preserving working-tree edits,
-surfaces any orphaned autostash entry, then re-pulls). Run `nomad doctor` first if you are unsure
-which state you are in; the Repository section names the specific problem and points at the right
-fix.
+surfaces any orphaned autostash entry, then re-pulls; stops after the index repair if any conflicted
+file still carries conflict markers, so they are never copied into your live config). Run
+`nomad doctor` first if you are unsure which state you are in; the Repository section names the
+specific problem and points at the right fix.
 
 If an external tool (such as Claude Code or GSD) wrote new keys into your `~/.claude/settings.json`
 that are not yet in your shared repo, run `nomad capture-settings` to promote them before the next
