@@ -114,7 +114,7 @@ fatal: Exiting because of an unresolved conflict.
 ✗  git pull --rebase failed
 ```
 
-There are two distinct states that produce this error. Check which one you are in before
+There are three distinct states that produce this error. Check which one you are in before
 running any recovery command.
 
 ### State 1: stuck mid-rebase or mid-merge
@@ -204,6 +204,51 @@ $ nomad pull
 Use `git reset --mixed HEAD` here, not `git reset --hard`. The `--mixed` form clears only the
 index, leaving your working-tree files as-is, so any work in progress is not discarded. The
 `--hard` form would throw away working-tree edits too.
+
+### State 3: conflicted autostash pop
+
+`git pull --rebase --autostash` can exit **0** (success) even though it failed to fully apply
+your changes. This happens when the autostash step at the very end of the pull, the one that
+restores the local edits `--autostash` set aside before rebasing, hits a conflict while
+reapplying them. The pull reports success, but the index is left unmerged, `stash@{0}: autostash`
+is retained, and conflict markers are written into the affected file. HEAD is still on your
+branch, so `git rebase --abort` fails with "no rebase in progress": there is nothing to abort.
+
+nomad now catches this itself. Both `nomad pull` and `nomad push` re-check for this exact state
+right after the pull step and stop with exit code 4 before applying or pushing anything markered,
+so you will see nomad's own message rather than a silent success.
+
+This looks identical to State 2 under the unmerged-index check above (`git diff --diff-filter=U
+--name-only` is non-empty in both), but the two need different recoveries and should not be
+conflated. State 2's `git reset --mixed HEAD` is wrong here: it clears the index but leaves the
+conflict markers behind as ordinary unstaged modifications, which is exactly the state this guard
+exists to prevent. Confirm which state you are in with:
+
+```bash
+$ cd ~/claude-nomad
+$ git stash list   # a "stash@{0}: ...autostash" entry present = State 3, not State 2
+```
+
+No data is lost: the pre-conflict content is always retained in the stash entry and can be
+recovered without re-triggering the conflict.
+
+**Manual runbook:**
+
+```bash
+$ cd ~/claude-nomad
+$ git stash list                       # confirm stash@{0}: autostash is present
+$ git show 'stash@{0}:<path>'          # view the pre-conflict content; safe, does not re-pop
+
+$ git reset --hard HEAD                # discard the markered working tree
+# re-apply the content shown above into <path>, as needed
+$ git stash drop                       # once you are done with the stash entry
+
+$ nomad pull   # or: nomad push
+```
+
+`git reset --hard` is safe to use here specifically because the pre-conflict content is retained
+in the stash entry from the step above; it is the exact opposite of the State 2 recovery, where
+the `--hard` form is called out as unsafe because there is no such retained copy.
 
 ## A hook that worked before nomad now fails with "Cannot find module"
 
