@@ -236,26 +236,30 @@ code 4 and said the autostash pop conflicted. If you are looking at a wedged rep
 just seen that message, treat it as State 2 and use the non-destructive `--mixed` recovery above.
 
 If you are still unsure, inspect the stash content before discarding anything (the `git show`
-step below is read-only and does not re-trigger the conflict). In State 3 no data is lost: the
-pre-conflict content is always retained in the stash entry.
+step below is read-only and does not re-trigger the conflict). In State 3 nothing is lost **as
+long as the stash entry still exists**: the pre-conflict content of every stashed file is
+retained there until you drop it. An autostash can hold more than one file, so list its contents
+and restore all of them before dropping it.
 
 **Manual runbook:**
 
 ```bash
 $ cd ~/claude-nomad
 $ git stash list                       # confirm stash@{0}: autostash is present
+$ git stash show --name-only stash@{0} # list EVERY file the stash holds
 $ git show 'stash@{0}:<path>'          # view the pre-conflict content; safe, does not re-pop
 
 $ git reset --hard HEAD                # discard the marked-up working tree
-# re-apply the content shown above into <path>, as needed
-$ git stash drop                       # once you are done with the stash entry
+$ git checkout 'stash@{0}' -- <path>   # restore one file; repeat for every path listed above
+$ git stash drop                       # ONLY after every stashed path is restored
 
 $ nomad pull   # or: nomad push
 ```
 
 `git reset --hard` is safe to use here specifically because the pre-conflict content is retained
 in the stash entry from the step above; it is the exact opposite of the State 2 recovery, where
-the `--hard` form is called out as unsafe because there is no such retained copy.
+the `--hard` form is called out as unsafe because there is no such retained copy. That safety
+ends the moment you run `git stash drop`, which is why the drop is the last step.
 
 ## A hook that worked before nomad now fails with "Cannot find module"
 
