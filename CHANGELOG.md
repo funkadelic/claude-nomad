@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.62.3](https://github.com/funkadelic/claude-nomad/compare/v0.62.2...v0.62.3) (2026-07-21)
+
+
+### Fixed
+
+* abort when an autostash pop conflicts during rebase ([#448](https://github.com/funkadelic/claude-nomad/issues/448)) ([a22b3df](https://github.com/funkadelic/claude-nomad/commit/a22b3dfdc95478ba09a6cf6bf9994c9d8d9ac416))
+* **pull:** stop --force-remote applying conflict-markered config ([#452](https://github.com/funkadelic/claude-nomad/issues/452)) ([5612ac9](https://github.com/funkadelic/claude-nomad/commit/5612ac9c25e25118a73aaa465d2ccd9b16604e8a))
+* retain never-pushed local skills on pull ([#449](https://github.com/funkadelic/claude-nomad/issues/449)) ([0faf4f7](https://github.com/funkadelic/claude-nomad/commit/0faf4f726d2982ba9e4b6da9be58b17b838bcd37))
+
 ## [0.62.2](https://github.com/funkadelic/claude-nomad/compare/v0.62.1...v0.62.2) (2026-07-21)
 
 
