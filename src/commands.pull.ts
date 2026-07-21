@@ -374,8 +374,13 @@ export function runPullCore(
     // verb='pull'; no separate emitSummary call (it would duplicate the row).
     // dryRun deliberately omits remapExtrasPull to preserve the
     // zero-mutation contract; users still see the divergence WARN above.
+    //
+    // The closing 'dry-run complete' line is deliberately NOT emitted here.
+    // It belongs to the command entry point, the same way the wet path returns
+    // sections for cmdPull to render: a composing caller (cmdSync) continues
+    // with its own output afterwards, and a 'complete' line mid-stream reads
+    // as if the command had ended.
     computePreview(ts, map, 'pull');
-    log('dry-run complete; no mutation');
     return { tag: 'dry' };
   }
   const { sections, localOnly, settingsLabel, unmapped, extrasSkipped } = buildWetPullSections(
@@ -438,6 +443,7 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
   try {
     const result = runPullCore(opts);
     if (result.tag === 'wet') renderTree(result.sections);
+    else log('dry-run complete; no mutation');
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the
     // lock. Throwing through process.exit() would skip finally.

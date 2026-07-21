@@ -356,11 +356,17 @@ async function runSyncWet(verbose: boolean): Promise<void> {
  * `runPushCore`'s `rebaseBeforePush`), which is the documented
  * `pull --dry-run` / `push --dry-run` contract, not a mutation escape.
  * Neither half writes to `~/.claude/` or to the repo worktree.
+ *
+ * The single closing line is emitted here rather than by either half:
+ * `runPullCore` deliberately leaves it to its caller (see the dry branch
+ * there), so the only 'complete' line a user sees is the one that actually
+ * ends the command.
  */
 async function runSyncDryRun(): Promise<void> {
   runPullCore({ dryRun: true });
   log('push preview below is computed against pre-pull state (a real sync pushes after pull)');
   await runPushCore({ dryRun: true });
+  log('dry-run complete; no mutation');
 }
 
 /**

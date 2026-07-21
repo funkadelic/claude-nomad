@@ -946,6 +946,22 @@ describe('cmdSync --dry-run: real pull half', () => {
     expect(existsSync(env.lockPath)).toBe(false);
   });
 
+  it('closes with exactly one dry-run complete line, after the push preview', async () => {
+    mockDrySeams(env);
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ dryRun: true });
+
+    const lines = out(env).split('\n');
+    const completes = lines.filter((l) => l.includes('dry-run complete'));
+    // runPullCore leaves the closing line to its caller, so the pull half must
+    // not emit one mid-stream where it would read as the command ending.
+    expect(completes).toHaveLength(1);
+    const completeAt = lines.findIndex((l) => l.includes('dry-run complete'));
+    const pushNoticeAt = lines.findIndex((l) => l.includes('push preview below'));
+    expect(pushNoticeAt).toBeGreaterThanOrEqual(0);
+    expect(completeAt).toBeGreaterThan(pushNoticeAt);
+  });
+
   it('falls back to an empty path-map when path-map.json is absent', async () => {
     rmSync(join(env.repoUnderHome, 'path-map.json'), { force: true });
     const seams = mockDrySeams(env);
