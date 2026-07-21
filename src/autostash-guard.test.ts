@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { autostashConflictRunbookText, assertNoAutostashConflict } from './autostash-guard.ts';
 import { EXIT } from './exit-codes.ts';
+import {
+  buildUnmergedIndexNoMarker,
+  conflictThenStripMarkers,
+  gitInit,
+  makeCommit,
+} from './test-support/git.ts';
 
 /**
  * Tests for `autostashConflictRunbookText`. Pure string-building, so no git
@@ -47,58 +53,6 @@ describe('autostashConflictRunbookText', () => {
 // Real-git helpers for assertNoAutostashConflict
 // ---------------------------------------------------------------------------
 
-/** Create a real git repo at `dir` with user identity configured. */
-function initRepo(dir: string): void {
-  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
-  execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir });
-  execFileSync('git', ['config', 'user.name', 'test'], { cwd: dir });
-}
-
-/** Create a commit in `repo` with `content` written to `file`. */
-function makeCommit(repo: string, file: string, content: string, message: string): void {
-  writeFileSync(join(repo, file), content);
-  execFileSync('git', ['add', file], { cwd: repo });
-  execFileSync('git', ['commit', '-q', '-m', message], { cwd: repo });
-}
-
-/**
- * Tear down a merge's marker files but leave its unmerged index entries
- * behind: the exact state a conflicted autostash pop leaves.
- */
-function conflictThenStripMarkers(dir: string): void {
-  execFileSync('git', ['checkout', '-q', '-b', 'branch'], { cwd: dir });
-  makeCommit(dir, 'file.txt', 'branch-value\n', 'branch commit');
-  execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir });
-  makeCommit(dir, 'file.txt', 'main-value\n', 'main commit');
-  try {
-    execFileSync('git', ['merge', '--no-commit', 'branch'], {
-      cwd: dir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch {
-    // Expected conflict.
-  }
-  const gitDir = join(dir, '.git');
-  for (const marker of ['MERGE_HEAD', 'MERGE_MODE', 'MERGE_MSG']) {
-    try {
-      unlinkSync(join(gitDir, marker));
-    } catch {
-      // May not exist if merge exited differently.
-    }
-  }
-}
-
-/**
- * Build a repo with unmerged stage-2/3 index entries and no active
- * rebase/merge marker: the exact state a conflicted autostash pop leaves
- * behind. Mirrors `buildUnmergedIndexNoMarker` in `commands.pull.wedge.test.ts`.
- */
-function buildUnmergedIndexNoMarker(dir: string): void {
-  initRepo(dir);
-  makeCommit(dir, 'file.txt', 'base\n', 'base');
-  conflictThenStripMarkers(dir);
-}
-
 /**
  * Build the same unmerged-index state as `buildUnmergedIndexNoMarker`, but
  * with a real orphaned autostash entry created BEFORE the conflict (git
@@ -106,7 +60,7 @@ function buildUnmergedIndexNoMarker(dir: string): void {
  * must be created first, on an unrelated untracked path).
  */
 function buildUnmergedIndexWithOrphanedStash(dir: string): void {
-  initRepo(dir);
+  gitInit(dir);
   makeCommit(dir, 'file.txt', 'base\n', 'base');
   mkdirSync(join(dir, 'scratch'));
   writeFileSync(join(dir, 'scratch', 'dummy.txt'), 'unused\n');
@@ -126,7 +80,7 @@ describe('assertNoAutostashConflict', () => {
   });
 
   it('returns silently when the index is clean', () => {
-    initRepo(tmp);
+    gitInit(tmp);
     makeCommit(tmp, 'a.ts', 'x\n', 'initial');
     expect(() => assertNoAutostashConflict(tmp, 'nomad pull')).not.toThrow();
   });

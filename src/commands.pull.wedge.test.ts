@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { buildUnmergedIndexNoMarker, gitInit, makeCommit } from './test-support/git.ts';
 
 import {
   classifyWedge,
@@ -66,57 +68,6 @@ describe('detectWedge', () => {
 // Real-git helpers (mirrors commands.pull.recovery.test.ts style)
 // ---------------------------------------------------------------------------
 
-/** Create a real git repo at `dir` with user identity configured. */
-function initRepo(dir: string): void {
-  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
-  execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir });
-  execFileSync('git', ['config', 'user.name', 'test'], { cwd: dir });
-}
-
-/** Create a commit in `repo` with `content` written to `file`. */
-function makeCommit(repo: string, file: string, content: string, message: string): void {
-  writeFileSync(join(repo, file), content);
-  execFileSync('git', ['add', file], { cwd: repo });
-  execFileSync('git', ['commit', '-q', '-m', message], { cwd: repo });
-}
-
-/**
- * Build a repo that has unmerged stage-2/3 index entries but NO active
- * rebase/merge marker (the exact torn-down-rebase dead end this module is
- * built to detect).
- *
- * Approach: start a conflicting merge (which sets MERGE_HEAD), then remove
- * the MERGE_HEAD/MERGE_MODE/MERGE_MSG marker files. The index retains the
- * unmerged entries; `git diff --diff-filter=U` still reports them.
- */
-function buildUnmergedIndexNoMarker(dir: string): void {
-  initRepo(dir);
-  makeCommit(dir, 'file.txt', 'base\n', 'base');
-  // Create a branch that changes file.txt.
-  execFileSync('git', ['checkout', '-q', '-b', 'branch'], { cwd: dir });
-  makeCommit(dir, 'file.txt', 'branch-value\n', 'branch commit');
-  execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir });
-  makeCommit(dir, 'file.txt', 'main-value\n', 'main commit');
-  // Attempt merge -- will conflict.
-  try {
-    execFileSync('git', ['merge', '--no-commit', 'branch'], {
-      cwd: dir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch {
-    // Expected conflict.
-  }
-  // Tear down the marker files, leaving the unmerged index entries behind.
-  const gitDir = join(dir, '.git');
-  for (const marker of ['MERGE_HEAD', 'MERGE_MODE', 'MERGE_MSG']) {
-    try {
-      unlinkSync(join(gitDir, marker));
-    } catch {
-      // May not exist if merge exited differently.
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // unmergedIndexPresent
 // ---------------------------------------------------------------------------
@@ -138,7 +89,7 @@ describe('unmergedIndexPresent', () => {
   });
 
   it('returns false on a clean committed repo (no unmerged entries)', () => {
-    initRepo(tmp);
+    gitInit(tmp);
     makeCommit(tmp, 'a.ts', 'x\n', 'initial');
     expect(unmergedIndexPresent(tmp)).toBe(false);
   });
@@ -160,7 +111,7 @@ describe('classifyWedge', () => {
   });
 
   it('returns null on a clean committed repo', () => {
-    initRepo(tmp);
+    gitInit(tmp);
     makeCommit(tmp, 'a.ts', 'x\n', 'initial');
     expect(classifyWedge(tmp)).toBeNull();
   });
@@ -178,7 +129,7 @@ describe('classifyWedge', () => {
   });
 
   it('returns "merge" when MERGE_HEAD is present (marker precedence over index state)', () => {
-    initRepo(tmp);
+    gitInit(tmp);
     makeCommit(tmp, 'a.ts', 'x\n', 'initial');
     writeFileSync(join(tmp, '.git', 'MERGE_HEAD'), 'deadbeef\n');
     expect(classifyWedge(tmp)).toBe('merge');
@@ -194,7 +145,7 @@ describe('orphanedAutostashPresent', () => {
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'nomad-autostash-'));
-    initRepo(tmp);
+    gitInit(tmp);
     makeCommit(tmp, 'a.ts', 'initial\n', 'initial');
   });
 
@@ -241,7 +192,7 @@ describe('unmergedIndexPresent - non-git dir returns false', () => {
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'nomad-nonrepo-'));
-    // NOT a git repo: no initRepo call.
+    // NOT a git repo: no gitInit call.
   });
 
   afterEach(() => {
@@ -258,7 +209,7 @@ describe('orphanedAutostashPresent - non-git dir returns false', () => {
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'nomad-nonrepo-stash-'));
-    // NOT a git repo: no initRepo call.
+    // NOT a git repo: no gitInit call.
   });
 
   afterEach(() => {
