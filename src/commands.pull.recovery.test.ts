@@ -797,15 +797,23 @@ function buildUnmergedIndexFixture(
     withAutostash = false,
     withOtherTracked = false,
     withAbsentFromHead = false,
+    nestUnderDir = false,
   }: {
     withAutostash?: boolean;
     withOtherTracked?: boolean;
     withAbsentFromHead?: boolean;
+    nestUnderDir?: boolean;
   } = {},
 ): void {
+  // With nestUnderDir, the absent-from-HEAD path lives in its own directory, so
+  // deleting it on the HEAD side leaves that directory wholly untracked.
+  const doomed = nestUnderDir ? join('dir', 'doomed.txt') : 'doomed.txt';
   initRepo(dir);
   writeFileSync(join(dir, 'file.txt'), 'base\n');
-  if (withAbsentFromHead) writeFileSync(join(dir, 'doomed.txt'), 'orig\n');
+  if (withAbsentFromHead) {
+    if (nestUnderDir) mkdirSync(join(dir, 'dir'), { recursive: true });
+    writeFileSync(join(dir, doomed), 'orig\n');
+  }
   execFileSync('git', ['add', '.'], { cwd: dir });
   execFileSync('git', ['commit', '-q', '-m', 'base'], { cwd: dir });
 
@@ -835,8 +843,8 @@ function buildUnmergedIndexFixture(
   writeFileSync(join(dir, 'file.txt'), 'branch-value\n');
   execFileSync('git', ['add', 'file.txt'], { cwd: dir });
   if (withAbsentFromHead) {
-    writeFileSync(join(dir, 'doomed.txt'), 'branch-modified\n');
-    execFileSync('git', ['add', 'doomed.txt'], { cwd: dir });
+    writeFileSync(join(dir, doomed), 'branch-modified\n');
+    execFileSync('git', ['add', '--', doomed], { cwd: dir });
   }
   execFileSync('git', ['commit', '-q', '-m', 'branch commit'], { cwd: dir });
   execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir });
@@ -844,7 +852,7 @@ function buildUnmergedIndexFixture(
   execFileSync('git', ['add', 'file.txt'], { cwd: dir });
   // Delete on the HEAD side, so the merge produces a modify/delete conflict
   // whose path is absent from HEAD.
-  if (withAbsentFromHead) execFileSync('git', ['rm', '-q', 'doomed.txt'], { cwd: dir });
+  if (withAbsentFromHead) execFileSync('git', ['rm', '-q', '--', doomed], { cwd: dir });
   execFileSync('git', ['commit', '-q', '-m', 'main commit'], { cwd: dir });
   // Attempt conflicting merge (sets MERGE_HEAD and unmerged index entries).
   try {
@@ -1048,6 +1056,34 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     expect(porcelain).toMatch(/\?\?\s+doomed\.txt/);
     // And its unresolved content is still on disk.
     expect(existsSync(join(tmp, 'doomed.txt'))).toBe(true);
+  });
+
+  it('dies over a conflicted path inside a wholly untracked directory', async () => {
+    // Upstream deleted the whole directory while the branch modified a file in
+    // it. Default `git status --porcelain` collapses that to one `?? dir/`
+    // record, so an exact-path match against `dir/config.json` finds nothing
+    // unless the probe asks for every untracked file.
+    buildUnmergedIndexFixture(tmp, { withAbsentFromHead: true, nestUnderDir: true });
+    const headContent = execFileSync('git', ['show', 'HEAD:file.txt'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    writeFileSync(join(tmp, 'file.txt'), headContent);
+
+    const { NomadFatal } = await import('./utils.ts');
+    const thrown = recoverSwallowingFatal(tmp);
+
+    expect(thrown).toBeInstanceOf(NomadFatal);
+    expect((thrown as Error).message).toMatch(/dir\/doomed\.txt/);
+
+    // Collapsed default output is exactly what makes this case escape a
+    // naive probe: the directory, not the file, is what git reports.
+    const collapsed = execFileSync('git', ['status', '--porcelain'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    expect(collapsed).toMatch(/\?\?\s+dir\//);
+    expect(collapsed).not.toMatch(/doomed\.txt/);
   });
 
   it('repairs the index before dying so the repo is left unwedged', () => {

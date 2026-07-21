@@ -122,10 +122,17 @@ export function parsePorcelainZ(raw: string): { tracked: string[]; untracked: st
  * Read and parse the repo's dirty working-tree state via porcelain `-z`.
  *
  * @param repo Absolute path to the repository root.
+ * @param opts.untrackedAll When `true`, list every file inside a wholly
+ *   untracked directory instead of collapsing it to a single `dir/` entry.
+ *   Needed whenever the caller matches on exact paths; the default collapsed
+ *   form is kept for callers that only prefix-match.
  * @returns Object with `tracked` and `untracked` path arrays.
  */
-function parseDirtyPaths(repo: string): { tracked: string[]; untracked: string[] } {
-  return parsePorcelainZ(gitStatusPorcelainZ(repo));
+function parseDirtyPaths(
+  repo: string,
+  opts: { untrackedAll?: boolean } = {},
+): { tracked: string[]; untracked: string[] } {
+  return parsePorcelainZ(gitStatusPorcelainZ(repo, opts));
 }
 
 /**
@@ -230,14 +237,18 @@ export function recoverUnmergedIndex(repo: string): void {
   );
   // Step 2: clear the stuck index (--mixed preserves working-tree content).
   gitOrFatal(['reset', '--mixed', 'HEAD'], 'git reset --mixed HEAD', repo);
-  // Note: `git diff` (no --cached) is unstaged-only by design -- after
   // Porcelain, NOT `git diff --name-only`: a conflicted path that HEAD does not
   // contain (modify/delete, where the delete side won) becomes UNTRACKED after
   // the reset, and an unstaged-tracked-only diff cannot see it. Its unresolved
   // content is still on disk and would be published by the pull, so the probe
   // has to span both states. Porcelain also covers the staged corner (a file
   // `git add`-ed after a partial resolution).
-  const { tracked, untracked } = parseDirtyPaths(repo);
+  //
+  // untrackedAll is required because this matches EXACT paths: the default
+  // porcelain collapses a wholly untracked directory to one `dir/` record, so
+  // a conflicted `dir/config.json` (upstream deleted the whole directory) would
+  // never match and would slip through.
+  const { tracked, untracked } = parseDirtyPaths(repo, { untrackedAll: true });
   const present = new Set([...tracked, ...untracked]);
   const residual = [...conflicted].filter((p) => present.has(p));
   // Step 3: surface orphaned autostash if present, but never auto-pop. Emitted
@@ -253,7 +264,7 @@ export function recoverUnmergedIndex(repo: string): void {
   if (residual.length > 0) {
     die(
       'index cleared, but these files still carry unresolved conflict content ' +
-        'from the torn-down rebase:\n' +
+        'from the torn-down rebase or merge:\n' +
         residual.map((p) => `  ${p}`).join('\n') +
         '\n\nThe repo is no longer wedged, so nothing else is blocked. Nothing was ' +
         'applied to ~/.claude/: pulling now would publish that content to your ' +
