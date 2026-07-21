@@ -23,6 +23,7 @@ import { homedir, platform } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 import { resolveTomlConfig } from './push-gitleaks.config.ts';
+import { assertNoAutostashConflict } from './autostash-guard.ts';
 import {
   classifyWedge,
   unmergedIndexRunbookText,
@@ -194,6 +195,16 @@ function wedgePreflight(wedge: NonNullable<ReturnType<typeof classifyWedge>>): s
  * `--continue` / `--abort` automatically. Pointing the user at the stash
  * list would mislead them; the recovery commands are the actual fix.
  *
+ * After the pull call returns without throwing, a second probe
+ * (`assertNoAutostashConflict`) re-checks the index: `git pull --rebase
+ * --autostash` exits 0 even when the autostash POP conflicts, so a
+ * non-throwing return here does not by itself mean the repo is clean. This
+ * second probe is what closes that gap, and it must fire before the caller
+ * reaches `remapPush`: a markered worktree would otherwise get copied into
+ * and `git add -A` would resolve the unmerged entries by staging the
+ * marker text, silently pushing conflict markers into shared config that
+ * every other host parses.
+ *
  * `cmdPull` may adopt the same helper in a future refactor.
  *
  * @param repo Repo root resolved once by the calling command.
@@ -213,4 +224,5 @@ export function rebaseBeforePush(repo: string): void {
       `rebase failed; if a conflict was reported, resolve it in ${repo} and run "git rebase --continue" (or "git rebase --abort" to give up). Re-run nomad push after resolution.`,
     );
   }
+  assertNoAutostashConflict(repo, 'nomad push');
 }
