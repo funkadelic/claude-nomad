@@ -6,6 +6,7 @@ import {
   teardownPushEnv,
   type PushEnv,
 } from './commands.push.test-helpers.ts';
+import { EXIT } from './exit-codes.ts';
 
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './push-checks.ts';
@@ -16,6 +17,7 @@ import type * as recoveryModule from './commands.push.recovery.ts';
 import type * as utilsModule from './utils.ts';
 import type { PushState } from './commands.push.sections.ts';
 import type { Manifest } from './push-manifest.ts';
+import type { NomadFatal } from './utils.ts';
 
 /**
  * Behavior tests for `commitAndPush`'s `render` flag (the compose-mode seam
@@ -62,12 +64,13 @@ function mockCommitDeps(opts: {
   statusLine: string;
   verdict?: TestVerdict;
   resolveSpy?: ReturnType<typeof vi.fn>;
+  gitOrFatalSpy?: ReturnType<typeof vi.fn>;
 }): void {
   vi.doMock('./utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
     return {
       ...actual,
-      gitOrFatal: vi.fn(),
+      gitOrFatal: opts.gitOrFatalSpy ?? vi.fn(),
       gitStatusPorcelainZ: vi.fn(() => opts.statusLine),
     };
   });
@@ -256,6 +259,110 @@ describe('commitAndPush render flag', () => {
     expect(combined).toContain('✗ 1 leak found');
     // Standalone push already printed its own header; no extra context line.
     expect(combined).not.toContain('push (leak recovery)');
+  });
+
+  it('rejects and issues no commit or push git call when resolveLeakFindings resolves to a still-leaky verdict', async () => {
+    const leakVerdict: TestVerdict = {
+      leak: true,
+      verdictRow: '✗ scan failed, no parseable report',
+      recovery: 'gitleaks scan failed: no parseable JSON report. Review the gitleaks output above.',
+      findings: [],
+    };
+    // The exact shape the bug produced: resolveLeakFindings resolves (does not
+    // throw) but the verdict it hands back still reports leak: true.
+    const resolveSpy = vi.fn(() => leakVerdict);
+    const gitOrFatalSpy = vi.fn();
+    mockCommitDeps({
+      statusLine: 'M  shared/CLAUDE.md\0',
+      verdict: leakVerdict,
+      resolveSpy,
+      gitOrFatalSpy,
+    });
+    const { commitAndPush } = await import('./commands.push.steps.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    await expect(
+      commitAndPush(
+        makeState(),
+        'ts',
+        { projects: {} },
+        NO_RESOLUTION,
+        env.repoUnderHome,
+        EMPTY_MANIFEST,
+        false,
+      ),
+    ).rejects.toThrow(NomadFatal);
+
+    const commitOrPushCalls = gitOrFatalSpy.mock.calls.filter((call) => {
+      const argv = call[0] as string[];
+      return argv[0] === 'commit' || argv[0] === 'push';
+    });
+    expect(commitOrPushCalls).toHaveLength(0);
+  });
+
+  it('the still-leaky-verdict rejection carries the verdict recovery text and EXIT.LEAK_BLOCKED', async () => {
+    const leakVerdict: TestVerdict = {
+      leak: true,
+      verdictRow: '✗ scan failed, no parseable report',
+      recovery: 'gitleaks scan failed: no parseable JSON report. Review the gitleaks output above.',
+      findings: [],
+    };
+    const resolveSpy = vi.fn(() => leakVerdict);
+    mockCommitDeps({
+      statusLine: 'M  shared/CLAUDE.md\0',
+      verdict: leakVerdict,
+      resolveSpy,
+    });
+    const { commitAndPush } = await import('./commands.push.steps.ts');
+
+    expect.assertions(2);
+    try {
+      await commitAndPush(
+        makeState(),
+        'ts',
+        { projects: {} },
+        NO_RESOLUTION,
+        env.repoUnderHome,
+        EMPTY_MANIFEST,
+        false,
+      );
+    } catch (err) {
+      expect((err as InstanceType<typeof NomadFatal>).message).toBe(
+        'gitleaks scan failed: no parseable JSON report. Review the gitleaks output above.',
+      );
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.LEAK_BLOCKED);
+    }
+  });
+
+  it('does not write the push manifest when resolveLeakFindings resolves to a still-leaky verdict', async () => {
+    const leakVerdict: TestVerdict = {
+      leak: true,
+      verdictRow: '✗ scan failed, no parseable report',
+      recovery: 'gitleaks scan failed: no parseable JSON report. Review the gitleaks output above.',
+      findings: [],
+    };
+    const resolveSpy = vi.fn(() => leakVerdict);
+    mockCommitDeps({
+      statusLine: 'M  shared/CLAUDE.md\0',
+      verdict: leakVerdict,
+      resolveSpy,
+    });
+    const pushManifestModule = await import('./push-manifest.ts');
+    const { commitAndPush } = await import('./commands.push.steps.ts');
+
+    await expect(
+      commitAndPush(
+        makeState(),
+        'ts',
+        { projects: {} },
+        NO_RESOLUTION,
+        env.repoUnderHome,
+        EMPTY_MANIFEST,
+        false,
+      ),
+    ).rejects.toThrow();
+
+    expect(pushManifestModule.writeManifest).not.toHaveBeenCalled();
   });
 });
 

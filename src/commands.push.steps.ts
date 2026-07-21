@@ -1,7 +1,7 @@
 import { HOST, manifestPath, type PathMap } from './config.ts';
 import { type Manifest, type ManifestDiff, writeManifest } from './push-manifest.ts';
 import { isGsdDropped, parsePorcelainZ } from './commands.push.allowlist.ts';
-import { resolveLeakFindings } from './commands.push.recovery.ts';
+import { leakBlockedFatal, resolveLeakFindings } from './commands.push.recovery.ts';
 import {
   buildNoScanSections,
   buildPushTreeSections,
@@ -95,6 +95,12 @@ export async function commitAndPush(
     // recovery body needs the tree already visible before it prints.
     renderPushTree(st, verdict);
     verdict = await resolveLeakFindings(verdict, ts, map, resolution);
+    // Backstop: every recovery path is expected to throw on an unresolved
+    // leak, but the value being guarded here is the entire reason the push
+    // pipeline exists, so it is re-asserted at the one place that matters,
+    // the statement before `git commit`, rather than trusted on the strength
+    // of that expectation alone.
+    if (verdict.leak) throw leakBlockedFatal(verdict.recovery);
   }
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', repo);
   withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', repo));

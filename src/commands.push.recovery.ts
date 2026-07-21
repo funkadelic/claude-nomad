@@ -176,6 +176,22 @@ function allowThenRescan(
   }
 }
 
+/**
+ * Build the `NomadFatal` for an unresolved-leak abort. The single constructor
+ * for this abort, shared by the non-TTY arm, the empty-findings guard, and the
+ * `commitAndPush` backstop, so the `recovery ?? fallback` branch exists in
+ * exactly one covered place.
+ *
+ * @param recovery The verdict's `recovery` body, or `null` when the verdict
+ *   carries no recovery text.
+ * @returns A `NomadFatal` with `code: EXIT.LEAK_BLOCKED`. Callers must `throw`
+ *   the returned value themselves so TypeScript's control-flow analysis still
+ *   sees the throw at the call site.
+ */
+export function leakBlockedFatal(recovery: string | null): InstanceType<typeof NomadFatal> {
+  return new NomadFatal(recovery ?? 'gitleaks detected secrets', { code: EXIT.LEAK_BLOCKED });
+}
+
 /** Build the real-TTY readline-based prompt function (one interface per call). */
 function makeRealPrompt(): PromptFn {
   return async (prompt: string) => {
@@ -257,12 +273,18 @@ export async function resolveLeakFindings(
   }
 
   if (!isTTYCheck()) {
-    // Every leak:true verdict has a non-null recovery body. The fallback covers
-    // the defensive unreachable case (scan-crash with leak=true).
-    /* c8 ignore next */
-    throw new NomadFatal(current.recovery ?? 'gitleaks detected secrets', {
-      code: EXIT.LEAK_BLOCKED,
-    });
+    // A scan crash yields a leak verdict with no findings; every unresolved-leak
+    // path aborts here.
+    throw leakBlockedFatal(current.recovery);
+  }
+
+  // A leak:true verdict with zero findings means the scan did not complete
+  // (e.g. a crashed gitleaks subprocess or an unparseable report). There is
+  // nothing for the user to triage in that case, so abort before the prompt
+  // and legend are ever constructed rather than falling through to a caller
+  // that would treat the returned verdict as clean.
+  if (current.leak && current.findings.length === 0) {
+    throw leakBlockedFatal(current.recovery);
   }
 
   const prompt = makePromptFn();
@@ -283,5 +305,11 @@ export async function resolveLeakFindings(
     gitOrFatal(['add', '-A'], 'git add', repo);
     current = scanVerdict(repo);
   }
+  // The post-action re-scan above can itself crash, yielding another leak
+  // verdict with zero findings. That shape exits the loop condition rather
+  // than re-entering it, so without this the function would return a leaking
+  // verdict to a caller. Re-assert the invariant on the way out: this function
+  // never returns a verdict that still reports a leak.
+  if (current.leak) throw leakBlockedFatal(current.recovery);
   return current;
 }
