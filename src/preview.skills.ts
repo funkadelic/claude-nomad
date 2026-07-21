@@ -41,9 +41,12 @@ export function buildSkillsPreviewSection(): DoctorSection {
   const sharedSkills = join(repoHome(), 'shared', 'skills');
   if (!existsSync(sharedSkills)) return s;
 
-  const sharedNames = readdirSync(sharedSkills, { encoding: 'utf8' }).filter(
-    (name) => !isSkillExcluded(name),
-  );
+  // Sorted: readdirSync returns filesystem order, so an unsorted listing renders
+  // the same repo differently on different hosts. The locale is pinned because
+  // the default is the host's, which would reintroduce the variance.
+  const sharedNames = readdirSync(sharedSkills, { encoding: 'utf8' })
+    .filter((name) => !isSkillExcluded(name))
+    .sort((a, b) => a.localeCompare(b, 'en'));
   for (const name of sharedNames) addItem(s, name);
 
   const localSkills = join(claudeHome(), 'skills');

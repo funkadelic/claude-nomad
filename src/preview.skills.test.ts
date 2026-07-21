@@ -84,6 +84,17 @@ describe('buildSkillsPreviewSection', () => {
     expect(section.items).toEqual(['team-skill']);
   });
 
+  it('lists shared skills in sorted order regardless of filesystem order', async () => {
+    mkdirSync(join(sharedSkills, 'zeta-skill'), { recursive: true });
+    mkdirSync(join(sharedSkills, 'alpha-skill'), { recursive: true });
+    mkdirSync(join(sharedSkills, 'mid-skill'), { recursive: true });
+
+    const { buildSkillsPreviewSection } = await import('./preview.skills.ts');
+    const section = buildSkillsPreviewSection();
+
+    expect(section.items).toEqual(['alpha-skill', 'mid-skill', 'zeta-skill']);
+  });
+
   it('performs no filesystem mutation', async () => {
     mkdirSync(join(sharedSkills, 'team-skill'), { recursive: true });
     mkdirSync(join(localSkills, 'my-unpushed-skill'), { recursive: true });
