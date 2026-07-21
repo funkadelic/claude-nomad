@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.62.2](https://github.com/funkadelic/claude-nomad/compare/v0.62.1...v0.62.2) (2026-07-21)
+
+
+### Fixed
+
+* **push:** close the interactive-push secret-gate fail-open ([#446](https://github.com/funkadelic/claude-nomad/issues/446)) ([5de8975](https://github.com/funkadelic/claude-nomad/commit/5de8975f83f5e99711041ef6025fe69933b1ab15))
+
 ## [0.62.1](https://github.com/funkadelic/claude-nomad/compare/v0.62.0...v0.62.1) (2026-07-20)
 
 
