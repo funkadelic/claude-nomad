@@ -104,10 +104,18 @@ standing problem). If `nomad push`'s secret scan finds something mid-sync, the s
 Redact/Allow/Drop/Skip menu you would see from a plain `nomad push` opens; recovery behaves
 identically either way.
 
-`--dry-run` previews both halves without writing anything: the pull preview renders first, then a
-one-line note that the push preview below is computed against pre-pull state (a real sync runs the
-push half after the pull half has already applied, so its staging set can differ slightly), then
-the push preview.
+`--dry-run` previews both halves: the pull preview renders first, then a one-line note that the
+push preview below is computed against pre-pull state (a real sync runs the push half after the
+pull half has already applied, so its staging set can differ slightly), then the push preview.
+Both previews are the same ones `nomad pull --dry-run` and `nomad push --dry-run` render, so the
+pull preview also surfaces the wedged-repo check and the diverged-extras warnings.
+
+What this means for you: a dry run never touches `~/.claude/` and never commits or pushes
+anything, but it is not a completely offline, zero-effect command. Like `nomad pull --dry-run`
+and `nomad push --dry-run`, it contacts the remote and brings your sync repo
+(`~/claude-nomad/`) up to date with it first. That is deliberate: a preview computed before
+fetching would describe the state you are about to leave rather than the changes a real sync
+would apply.
 
 `nomad push` and `nomad pull` remain available as lower-level commands for cases `sync` does not
 cover, such as `--force-remote` wedge recovery or the non-interactive leak-resolution flags
@@ -115,7 +123,7 @@ cover, such as `--force-remote` wedge recovery or the non-interactive leak-resol
 
 | Flag                     | Description                                                                     |
 | ------------------------ | -------------------------------------------------------------------------------- |
-| `--dry-run`              | Stack the pull preview then the push preview; acquires the lock, writes nothing. |
+| `--dry-run`              | Stack the pull preview then the push preview; acquires the lock. Writes nothing to `~/.claude/` and commits/pushes nothing, but both halves fetch and rebase the sync repo first so each preview reflects the remote (same contract as `pull --dry-run` and `push --dry-run`). |
 | `--verbose`, `--all`, `-v` | Print the full merged status tree before the Sync summary; default output is the summary alone. |
 
 ## `drop-session`
