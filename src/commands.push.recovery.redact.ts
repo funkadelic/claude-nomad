@@ -7,8 +7,10 @@
  * staged tree.
  *
  * Split from `commands.push.recovery.actions.ts` to keep both modules under
- * the ~220-line cap. Depends only on lower-level helpers (no import of the
- * actions module), so the dependency direction stays acyclic: actions -> redact.
+ * the ~220-line cap; also depended on by `commands.push.recovery.redact-all.ts`
+ * for the `--redact-all` batch path. Depends only on lower-level helpers (no
+ * import of either caller), so the dependency direction stays acyclic:
+ * actions/redact-all -> redact.
  */
 
 import { cpSync, existsSync, mkdirSync } from 'node:fs';

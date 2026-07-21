@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXIT } from './exit-codes.ts';
 
 import type * as recoveryActionsModule from './commands.push.recovery.actions.ts';
+import type * as recoveryRedactAllModule from './commands.push.recovery.redact-all.ts';
 import type * as redactModule from './commands.redact.core.ts';
 import type * as utilsModule from './utils.ts';
 import type * as utilsFsModule from './utils.fs.ts';
@@ -636,14 +637,14 @@ describe('resolveLeakFindings - --redact-all non-interactive batch redact', () =
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.push.recovery.actions.ts');
+    vi.doUnmock('./commands.push.recovery.redact-all.ts');
     vi.doUnmock('./utils.ts');
   });
 
   it('calls redactAllFindings and does not invoke the prompt, returns on clean re-scan', async () => {
     const redactAllMock = vi.fn();
-    vi.doMock('./commands.push.recovery.actions.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof recoveryActionsModule>();
+    vi.doMock('./commands.push.recovery.redact-all.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryRedactAllModule>();
       return { ...actual, redactAllFindings: redactAllMock };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -676,8 +677,8 @@ describe('resolveLeakFindings - --redact-all non-interactive batch redact', () =
   });
 
   it('--redact-all throws NomadFatal when re-scan still finds leaks', async () => {
-    vi.doMock('./commands.push.recovery.actions.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof recoveryActionsModule>();
+    vi.doMock('./commands.push.recovery.redact-all.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryRedactAllModule>();
       return { ...actual, redactAllFindings: vi.fn() };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -1295,6 +1296,7 @@ describe('resolveLeakFindings - legend emission', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./utils.ts');
+    vi.doUnmock('./commands.push.recovery.redact-all.ts');
   });
 
   it('calls printLegend exactly once on the TTY interactive path', async () => {
@@ -1354,9 +1356,9 @@ describe('resolveLeakFindings - legend emission', () => {
     });
 
     const redactAllMock = vi.fn();
-    vi.doUnmock('./commands.push.recovery.actions.ts');
-    vi.doMock('./commands.push.recovery.actions.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof recoveryActionsModule>();
+    vi.doUnmock('./commands.push.recovery.redact-all.ts');
+    vi.doMock('./commands.push.recovery.redact-all.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryRedactAllModule>();
       return { ...actual, redactAllFindings: redactAllMock };
     });
 
@@ -1479,6 +1481,7 @@ describe('dispatchActions - drop wins at session level', () => {
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
     vi.doUnmock('./commands.push.recovery.actions.ts');
+    vi.doUnmock('./commands.push.recovery.redact-all.ts');
     vi.doUnmock('./utils.ts');
     vi.resetModules();
   });
@@ -1487,6 +1490,7 @@ describe('dispatchActions - drop wins at session level', () => {
     vi.restoreAllMocks();
     vi.doUnmock('./utils.fs.ts');
     vi.doUnmock('./commands.push.recovery.actions.ts');
+    vi.doUnmock('./commands.push.recovery.redact-all.ts');
     vi.doUnmock('./utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
@@ -2066,14 +2070,14 @@ describe('redactAllFindings - batch redaction branches', () => {
   });
 
   it('is a no-op on an empty findings list (default scan arg, never invoked)', async () => {
-    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { redactAllFindings } = await import('./commands.push.recovery.redact-all.ts');
     const map: PathMap = { projects: {} };
     // No scan argument: exercises the default-parameter path without touching gitleaks.
     expect(() => redactAllFindings([], 'ts-x', map, () => Date.now())).not.toThrow();
   });
 
   it('aborts the whole batch (no scan, no mutation) when a finding has no session id', async () => {
-    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { redactAllFindings } = await import('./commands.push.recovery.redact-all.ts');
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {} };
     const scanSpy = vi.fn().mockReturnValue([]);
@@ -2092,7 +2096,7 @@ describe('redactAllFindings - batch redaction branches', () => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
-    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { redactAllFindings } = await import('./commands.push.recovery.redact-all.ts');
     const { NomadFatal } = await import('./utils.ts');
     const original = readFileSync(transcriptPath, 'utf8');
     const scanSpy = vi.fn().mockReturnValue([]);
@@ -2115,7 +2119,7 @@ describe('redactAllFindings - batch redaction branches', () => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
-    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { redactAllFindings } = await import('./commands.push.recovery.redact-all.ts');
     const { NomadFatal } = await import('./utils.ts');
     const original = readFileSync(transcriptPath, 'utf8');
     const scanSpy = vi.fn().mockReturnValue([]);
@@ -2146,7 +2150,7 @@ describe('redactAllFindings - batch redaction branches', () => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
-    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { redactAllFindings } = await import('./commands.push.recovery.redact-all.ts');
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } };
     const farFuture = Date.now() + 10 * 60 * 1000;
@@ -2163,7 +2167,7 @@ describe('redactAllFindings - batch redaction branches', () => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
-    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { redactAllFindings } = await import('./commands.push.recovery.redact-all.ts');
     const scanSpy = vi.fn().mockReturnValue([
       {
         RuleID: 'test-rule',
@@ -2193,7 +2197,7 @@ describe('redactAllFindings - batch redaction branches', () => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
-    const { redactAllFindings } = await import('./commands.push.recovery.actions.ts');
+    const { redactAllFindings } = await import('./commands.push.recovery.redact-all.ts');
     const original = readFileSync(transcriptPath, 'utf8');
     // scan returns null on every call: applyRedact returns false each time, so
     // the session is never added to redactedSids and the second call retries.
