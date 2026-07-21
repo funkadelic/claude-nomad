@@ -371,9 +371,9 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull({ dryRun: true });
     // computePreview renders the Summary row via renderTree -> console.log
-    // (logOutput). `dry-run complete; no mutation` also goes through log().
+    // (logOutput). The closing dry-run line also goes through log().
     expect(logOutput()).toContain('1 unmapped on pull (run nomad doctor to list)');
-    expect(logOutput()).toContain('dry-run complete; no mutation');
+    expect(logOutput()).toContain('dry-run complete; nothing applied to ~/.claude/');
   });
 
   it('cmdPull does NOT emit the summary line when a NomadFatal fires mid-flight', async () => {

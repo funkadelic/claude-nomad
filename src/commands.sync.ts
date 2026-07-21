@@ -369,7 +369,7 @@ async function runSyncDryRun(): Promise<void> {
   runPullCore({ dryRun: true });
   log('push preview below is computed against pre-pull state (a real sync pushes after pull)');
   await runPushCore({ dryRun: true });
-  log('dry-run complete; no mutation');
+  log('dry-run complete; nothing applied to ~/.claude/, nothing pushed');
 }
 
 /**

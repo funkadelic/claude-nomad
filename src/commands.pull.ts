@@ -444,7 +444,10 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
   try {
     const result = runPullCore(opts);
     if (result.tag === 'wet') renderTree(result.sections);
-    else log('dry-run complete; no mutation');
+    // Scoped to ~/.claude/ rather than a blanket "no mutation": the dry path
+    // has already rebased REPO_HOME by this point (that is what makes the
+    // preview post-fetch), so the sync repo's git state can have changed.
+    else log('dry-run complete; nothing applied to ~/.claude/');
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the
     // lock. Throwing through process.exit() would skip finally.

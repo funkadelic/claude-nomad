@@ -169,7 +169,7 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  * diffJsonStrings), and projects (via remapPull onPreview). Renders a
  * glyph-free doctor-style grouped tree:
  *
- *   `would pull on host=<HOST> (dry-run; no mutation)`
+ *   `would pull on host=<HOST> (preview; nothing applied)`
  *   (blank line)
  *   Symlinks
  *     create  <from> -> <to>
@@ -237,7 +237,10 @@ export function computePreview(
 ): { unmapped: number; collisions: number; localOnly: number } {
   const repo = repoHome();
   const claude = claudeHome();
-  console.log(`would pull on host=${HOST} (dry-run; no mutation)`);
+  // "nothing applied", not "no mutation": this header is shared with the
+  // dry-run paths, which have already rebased REPO_HOME by the time it prints.
+  // What is true in every caller is that nothing reached ~/.claude/.
+  console.log(`would pull on host=${HOST} (preview; nothing applied)`);
   console.log('');
 
   // Symlinks section.
