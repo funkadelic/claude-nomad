@@ -20,34 +20,57 @@
 // emitted alongside it under the same `nomad.worker.mjs` name `resolveWorkerPath`
 // expects of a compiled bundle sibling.
 
-import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const OUT_DIR = '.test-bundle';
+import { build } from 'esbuild';
+import type { TestProject } from 'vitest/node';
+
+// Anchored to THIS file, not process.cwd(): esbuild resolves relative
+// entryPoints/outfile against the cwd, while `runNomad` resolves the bundle
+// against src/test-support/world.ts. Any vitest invocation whose cwd is not the
+// repo root would write the bundle somewhere the spawner never looks.
+const ROOT = fileURLToPath(new URL('.', import.meta.url));
+const OUT_DIR = join(ROOT, '.test-bundle');
 
 /**
  * esbuild-bundle the CLI and its worker entry point into `.test-bundle/`.
- * Runs once per vitest run, before any project's workers start.
+ * Mirrors the options in scripts/build.mjs so the spawned artifact matches the
+ * published one.
  */
-export default async function setup(): Promise<void> {
+async function buildBundles(): Promise<void> {
   await Promise.all([
     build({
-      entryPoints: ['src/nomad.ts'],
+      entryPoints: [join(ROOT, 'src', 'nomad.ts')],
       bundle: true,
       platform: 'node',
       format: 'esm',
       target: 'node22',
-      outfile: `${OUT_DIR}/nomad.test.mjs`,
+      outfile: join(OUT_DIR, 'nomad.test.mjs'),
       banner: { js: '#!/usr/bin/env node' },
       logLevel: 'silent',
     }),
     build({
-      entryPoints: ['src/spinner.worker.ts'],
+      entryPoints: [join(ROOT, 'src', 'spinner.worker.ts')],
       bundle: true,
       platform: 'node',
       format: 'esm',
       target: 'node22',
-      outfile: `${OUT_DIR}/nomad.worker.mjs`,
+      outfile: join(OUT_DIR, 'nomad.worker.mjs'),
       logLevel: 'silent',
     }),
   ]);
+}
+
+/**
+ * Build the bundles once before any project's workers start, then rebuild on
+ * every watch-mode rerun. Without the rerun hook a watching developer keeps
+ * spawning the bundle built at startup, so edits to src/ appear to have no
+ * effect on the integration suites.
+ *
+ * @param project - Vitest project handle, used to register the rerun hook.
+ */
+export default async function setup(project: TestProject): Promise<void> {
+  await buildBundles();
+  project.onTestsRerun(buildBundles);
 }
