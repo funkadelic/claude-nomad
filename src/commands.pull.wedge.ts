@@ -113,7 +113,7 @@ export function classifyWedge(repo: string): WedgeState {
 export function unmergedIndexRunbookText(resumeCmd: string): string {
   return (
     'repo has an unmerged index with no active rebase or merge in progress ' +
-    '(torn-down rebase left stage-2/3 entries behind).\n\n' +
+    '(torn-down rebase or merge left stage-2/3 entries behind).\n\n' +
     'Manual recovery:\n' +
     '  1. git reset --mixed HEAD   (clears the stuck index; preserves working-tree files)\n' +
     '  2. git stash list           (look for an orphaned autostash entry)\n' +

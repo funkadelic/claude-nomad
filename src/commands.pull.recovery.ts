@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 
 import { PUSH_ALLOWED_STATIC } from './config.ts';
 import { type WedgeMode, orphanedAutostashPresent } from './commands.pull.wedge.ts';
+import { EXIT } from './exit-codes.ts';
 import { die, gitOrFatal, gitStatusPorcelainZ, log } from './utils.ts';
 import { nowTimestamp } from './utils.fs.ts';
 
@@ -121,10 +122,17 @@ export function parsePorcelainZ(raw: string): { tracked: string[]; untracked: st
  * Read and parse the repo's dirty working-tree state via porcelain `-z`.
  *
  * @param repo Absolute path to the repository root.
+ * @param opts.untrackedAll When `true`, list every file inside a wholly
+ *   untracked directory instead of collapsing it to a single `dir/` entry.
+ *   Needed whenever the caller matches on exact paths; the default collapsed
+ *   form is kept for callers that only prefix-match.
  * @returns Object with `tracked` and `untracked` path arrays.
  */
-function parseDirtyPaths(repo: string): { tracked: string[]; untracked: string[] } {
-  return parsePorcelainZ(gitStatusPorcelainZ(repo));
+function parseDirtyPaths(
+  repo: string,
+  opts: { untrackedAll?: boolean } = {},
+): { tracked: string[]; untracked: string[] } {
+  return parsePorcelainZ(gitStatusPorcelainZ(repo, opts));
 }
 
 /**
@@ -189,45 +197,83 @@ export function freshStrandedBranch(repo: string): string {
  * commits to park. The stuck index is the only problem.
  *
  * Steps:
- * 1. `git reset --mixed HEAD` - clears the unmerged stage-2/3 entries while
+ * 1. Record which paths the index reports as unmerged, BEFORE clearing it.
+ *    After the reset they are indistinguishable from ordinary unstaged edits,
+ *    so this is the only point at which they can be identified.
+ * 2. `git reset --mixed HEAD` - clears the unmerged stage-2/3 entries while
  *    preserving working-tree content. NOT `--hard` (would discard edits) and
  *    NOT `--merge` (unpredictable for the pure stuck-index case).
- * 2. If an orphaned autostash entry is present in `git stash list`, emit a
+ * 3. If an orphaned autostash entry is present in `git stash list`, emit a
  *    note with `git stash pop` (restore) / `git stash drop` (discard) hints.
  *    Never auto-pop: auto-popping risks re-introducing the original
  *    conflict mid-recovery.
- * 3. Return void; control falls back to cmdPull, whose subsequent
+ * 4. If any formerly-unmerged path is still present as a dirty or untracked
+ *    working-tree entry, die. The index is already repaired at this point, so
+ *    the repo is unwedged and the user is free to resolve at the git level;
+ *    nothing is applied to `~/.claude/`.
+ * 5. Otherwise return void; control falls back to cmdPull, whose subsequent
  *    `git pull --rebase --autostash` now runs cleanly.
+ *
+ * Step 4 is what stops `--force-remote` from applying unresolved conflict
+ * content. The reset clears the index but cannot remove `<<<<<<<` / `=======` /
+ * `>>>>>>>` markers already written into the working tree, and the follow-up
+ * `git pull --rebase --autostash` stashes those bytes, pulls over them, and
+ * pops them back cleanly, so nothing downstream would notice before
+ * `applySharedLinks` published them to the live config.
+ *
+ * The residual probe spans BOTH tracked and untracked entries. A conflicted
+ * path that HEAD does not contain (modify/delete, delete side won) is left
+ * untracked by the reset, so a tracked-only probe reports a clean tree while
+ * the unresolved file sits on disk waiting to be published.
  *
  * @param repo Absolute path to REPO_HOME.
  */
 export function recoverUnmergedIndex(repo: string): void {
-  // Step 1: clear the stuck index (--mixed preserves working-tree content).
+  // Step 1: the unmerged set is only observable while the index is still stuck.
+  // Scoping the residual check to these paths keeps unrelated local edits in
+  // the sync repo (which pull handles fine) from blocking the recovery.
+  const conflicted = new Set(
+    gitCapture(['diff', '--diff-filter=U', '--name-only', '-z'], repo).split('\0').filter(Boolean),
+  );
+  // Step 2: clear the stuck index (--mixed preserves working-tree content).
   gitOrFatal(['reset', '--mixed', 'HEAD'], 'git reset --mixed HEAD', repo);
-  // Step 1b: probe for residual dirty tracked paths. The --mixed reset clears
-  // the unmerged index entries but cannot remove conflict markers that were
-  // already written into the working-tree files. A subsequent git pull
-  // --rebase --autostash may succeed without touching those files, leaving
-  // <<<<<<< / ======= / >>>>>>> markers permanently in tracked content.
-  // Note: `git diff` (no --cached) is unstaged-only by design -- after
-  // --mixed HEAD the formerly-unmerged entries land as unstaged modifications,
-  // which is the scope this probe needs. Any file that was `git add`-ed after
-  // a partial conflict resolution would be staged, not unstaged, and would not
-  // be surfaced here; that corner is unlikely in the torn-down-rebase scenario.
-  const dirty = gitCapture(['diff', '--name-only', '-z'], repo).split('\0').filter(Boolean);
-  if (dirty.length > 0) {
-    log(
-      'index cleared, but these files still carry conflict content from the torn-down ' +
-        'rebase; review and resolve before the next pull:\n' +
-        dirty.map((p) => `  ${p}`).join('\n'),
-    );
-  }
-  // Step 2: surface orphaned autostash if present, but never auto-pop.
+  // Porcelain, NOT `git diff --name-only`: a conflicted path that HEAD does not
+  // contain (modify/delete, where the delete side won) becomes UNTRACKED after
+  // the reset, and an unstaged-tracked-only diff cannot see it. Its unresolved
+  // content is still on disk and would be published by the pull, so the probe
+  // has to span both states. Porcelain also covers the staged corner (a file
+  // `git add`-ed after a partial resolution).
+  //
+  // untrackedAll is required because this matches EXACT paths: the default
+  // porcelain collapses a wholly untracked directory to one `dir/` record, so
+  // a conflicted `dir/config.json` (upstream deleted the whole directory) would
+  // never match and would slip through.
+  const { tracked, untracked } = parseDirtyPaths(repo, { untrackedAll: true });
+  const present = new Set([...tracked, ...untracked]);
+  const residual = [...conflicted].filter((p) => present.has(p));
+  // Step 3: surface orphaned autostash if present, but never auto-pop. Emitted
+  // before the step-4 die so the hint is visible alongside the refusal.
   if (orphanedAutostashPresent(repo)) {
     log(
       'orphaned autostash preserved in the stash list; ' +
         'run "git stash pop" to restore or "git stash drop" to discard it, ' +
         'then re-run "nomad pull"',
+    );
+  }
+  // Step 4: fail closed rather than publish conflict content to ~/.claude/.
+  if (residual.length > 0) {
+    die(
+      'index cleared, but these files still carry unresolved conflict content ' +
+        'from the torn-down rebase or merge:\n' +
+        residual.map((p) => `  ${p}`).join('\n') +
+        '\n\nThe repo is no longer wedged, so nothing else is blocked. Nothing was ' +
+        'applied to ~/.claude/: pulling now would publish that content to your ' +
+        'live config.\n\n' +
+        'Resolve each file above (remove any <<<<<<< / ======= / >>>>>>> markers ' +
+        'and keep the content you want; a file left untracked was deleted upstream, ' +
+        'so keep or delete it deliberately), commit or checkout the result, then ' +
+        're-run "nomad pull".',
+      { code: EXIT.CONFLICT },
     );
   }
 }

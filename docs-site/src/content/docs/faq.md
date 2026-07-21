@@ -185,6 +185,13 @@ clears the stuck index via `git reset --mixed HEAD` (preserving your working-tre
 any orphaned autostash entry with a hint so you can decide what to do with it, then re-pulls.
 Unlike State 1, there is nothing to abort and no stranded commits to park, so recovery is simpler.
 
+Clearing the index does not remove conflict markers that were already written into your files. If
+any of the conflicted files still carry `<<<<<<<` / `=======` / `>>>>>>>` after the reset,
+`--force-remote` stops there rather than continuing: a pull at that point would copy the markers
+into your live `~/.claude/` config. The index is already repaired when it stops, so the repo is no
+longer wedged. Clean up the files it names (keep the content you want), then re-run `nomad pull`.
+Local edits to files that were not part of the conflict do not trigger this stop.
+
 **Manual runbook:**
 
 ```bash
