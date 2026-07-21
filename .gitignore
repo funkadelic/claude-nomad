@@ -21,3 +21,9 @@ docs-site/.astro/
 .stryker-tmp/
 reports/
 .test-bundle/
+
+# Local dev-loop caches (speed only; never restored in CI, so CI always runs
+# cold/full). tsc --incremental buildinfo and ESLint's --cache file. Prettier's
+# cache lives under node_modules/.cache and is already ignored via node_modules.
+.tsbuildinfo
+.eslintcache
