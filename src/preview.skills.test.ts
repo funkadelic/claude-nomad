@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -92,8 +92,10 @@ describe('buildSkillsPreviewSection', () => {
     buildSkillsPreviewSection();
 
     // Both trees are exactly as seeded: no copy, no prune, no backup dir.
-    expect(existsSync(join(sharedSkills, 'team-skill'))).toBe(true);
-    expect(existsSync(join(localSkills, 'my-unpushed-skill'))).toBe(true);
+    // Exact directory contents, not existsSync: a preview that overlaid
+    // team-skill onto the local tree would still satisfy a presence check.
+    expect(readdirSync(sharedSkills).sort()).toEqual(['team-skill']);
+    expect(readdirSync(localSkills).sort()).toEqual(['my-unpushed-skill']);
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 });
