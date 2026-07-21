@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
@@ -14,6 +15,22 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copySkillsPull, copySkillsPush, isGsdOwned, isSkillExcluded } from './skills-sync.ts';
+
+/**
+ * Run a git command with an explicit cwd; throws on non-zero exit.
+ */
+function git(args: string[], cwd: string): void {
+  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+/**
+ * Capture trimmed stdout of a git command.
+ */
+function gitOut(args: string[], cwd: string): string {
+  return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    .toString()
+    .trim();
+}
 
 describe('isGsdOwned', () => {
   it('returns true for a gsd-prefixed name', () => {
@@ -224,6 +241,34 @@ describe('copySkillsPull', () => {
     expect(existsSync(join(dst, 'graphify', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(dst, 'graphify', 'settings.local.json'))).toBe(false);
   });
+
+  it('with isRootPreserved true for a name, retains a dst-only non-gsd root entry', () => {
+    // A never-pushed user skill: absent from src, and the caller's predicate
+    // marks it preserved (simulates "absent from the pre-HEAD tracked set").
+    mkdirSync(join(dst, 'my-unpushed-skill'), { recursive: true });
+    writeFileSync(join(dst, 'my-unpushed-skill', 'SKILL.md'), '# mine\n');
+    mkdirSync(join(src, 'team-skill'), { recursive: true });
+    writeFileSync(join(src, 'team-skill', 'SKILL.md'), '# team\n');
+
+    copySkillsPull(src, dst, (name) => name === 'my-unpushed-skill');
+
+    expect(existsSync(join(dst, 'my-unpushed-skill'))).toBe(true);
+    expect(existsSync(join(dst, 'team-skill'))).toBe(true);
+  });
+
+  it('with isRootPreserved returning false for a name, still prunes that dst-only root entry', () => {
+    // The predicate is consulted but declines to preserve this name, so the
+    // normal prune rule applies (mirrors a skill genuinely deleted upstream).
+    mkdirSync(join(dst, 'stale-skill'), { recursive: true });
+    writeFileSync(join(dst, 'stale-skill', 'SKILL.md'), '# stale\n');
+    mkdirSync(join(src, 'team-skill'), { recursive: true });
+    writeFileSync(join(src, 'team-skill', 'SKILL.md'), '# team\n');
+
+    copySkillsPull(src, dst, () => false);
+
+    expect(existsSync(join(dst, 'stale-skill'))).toBe(false);
+    expect(existsSync(join(dst, 'team-skill'))).toBe(true);
+  });
 });
 
 describe('syncSkillsPull', () => {
@@ -232,11 +277,16 @@ describe('syncSkillsPull', () => {
   let sharedSkills: string;
   let localSkills: string;
   let originalHome: string | undefined;
+  let originalNomadRepo: string | undefined;
 
   beforeEach(() => {
     testHome = mkdtempSync(join(tmpdir(), 'nomad-sync-skills-pull-'));
     originalHome = process.env.HOME;
     process.env.HOME = testHome;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    // A developer-exported NOMAD_REPO would otherwise win over the fixture
+    // repo under the temp HOME; clear it so the fixtures are authoritative.
+    delete process.env.NOMAD_REPO;
     repoUnderHome = join(testHome, 'claude-nomad');
     sharedSkills = join(repoUnderHome, 'shared', 'skills');
     localSkills = join(testHome, '.claude', 'skills');
@@ -248,6 +298,8 @@ describe('syncSkillsPull', () => {
   afterEach(() => {
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     rmSync(testHome, { recursive: true, force: true });
   });
 
@@ -294,7 +346,7 @@ describe('syncSkillsPull', () => {
     expect(existsSync(backupEntry)).toBe(true);
   });
 
-  it('is idempotent: a second call with localSkills already a real dir does not re-backup', async () => {
+  it('is idempotent: a second call with localSkills already a real dir does not throw', async () => {
     mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
     writeFileSync(join(sharedSkills, 'graphify', 'SKILL.md'), '# graphify\n');
     mkdirSync(localSkills, { recursive: true });
@@ -302,11 +354,26 @@ describe('syncSkillsPull', () => {
     mkdirSync(backupBase, { recursive: true });
     const { syncSkillsPull } = await import('./skills-sync.ts');
     const ts = '20260101-120001';
+    expect(() => {
+      syncSkillsPull(ts);
+      syncSkillsPull(ts);
+    }).not.toThrow();
+    expect(existsSync(join(localSkills, 'graphify'))).toBe(true);
+  });
+
+  it('backs up ~/.claude/skills on the steady-state real-directory path (no symlink involved)', async () => {
+    mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    mkdirSync(localSkills, { recursive: true });
+    writeFileSync(join(localSkills, 'marker.txt'), 'pre-pull\n');
+    const backupBase = join(testHome, '.cache', 'claude-nomad', 'backup');
+    mkdirSync(backupBase, { recursive: true });
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    const ts = '20260101-120002';
     syncSkillsPull(ts);
-    syncSkillsPull(ts);
-    // A real dir was never a symlink, so no backup entry for it.
-    const backupEntry = join(backupBase, ts, '.claude', 'skills');
-    expect(existsSync(backupEntry)).toBe(false);
+    // backupBeforeWrite stores at backupBase/<ts>/<rel>, rel = relative(claudeHome(), localSkills) = 'skills'.
+    const backupEntry = join(backupBase, ts, 'skills', 'marker.txt');
+    expect(existsSync(backupEntry)).toBe(true);
   });
 
   it('is a no-op when shared/skills does not exist', async () => {
@@ -316,6 +383,120 @@ describe('syncSkillsPull', () => {
     // Must not throw and must not create localSkills.
     syncSkillsPull('20260101-120000');
     expect(existsSync(localSkills)).toBe(false);
+  });
+
+  it('empirical regression: a never-pushed local skill survives pull and is backed up', async () => {
+    // Reproduces the reported shape exactly:
+    //   BEFORE: gsd-thing  my-unpushed-skill  team-skill
+    //   AFTER:  gsd-thing  team-skill               (bug: my-unpushed-skill gone, no backup)
+    // After the fix: all three survive and a backup exists for my-unpushed-skill.
+    git(['init', '-q', '-b', 'main'], repoUnderHome);
+    git(['config', 'user.email', 'test@example.invalid'], repoUnderHome);
+    git(['config', 'user.name', 'test'], repoUnderHome);
+    mkdirSync(join(sharedSkills, 'team-skill'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'team-skill', 'SKILL.md'), '# team\n');
+    git(['add', '.'], repoUnderHome);
+    git(['commit', '-q', '-m', 'add team-skill'], repoUnderHome);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoUnderHome);
+    const post = pre; // no upstream change between pre and post for this test
+
+    mkdirSync(join(localSkills, 'gsd-thing'), { recursive: true });
+    writeFileSync(join(localSkills, 'gsd-thing', 'SKILL.md'), '# gsd-thing\n');
+    mkdirSync(join(localSkills, 'my-unpushed-skill'), { recursive: true });
+    writeFileSync(join(localSkills, 'my-unpushed-skill', 'SKILL.md'), '# mine\n');
+    mkdirSync(join(localSkills, 'team-skill'), { recursive: true });
+    writeFileSync(join(localSkills, 'team-skill', 'SKILL.md'), '# team (stale local copy)\n');
+
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    const ts = '20260720-empirical';
+    syncSkillsPull(ts, { pre, post });
+
+    // AFTER: all three still present.
+    expect(existsSync(join(localSkills, 'gsd-thing'))).toBe(true);
+    expect(existsSync(join(localSkills, 'my-unpushed-skill'))).toBe(true);
+    expect(existsSync(join(localSkills, 'team-skill'))).toBe(true);
+
+    // BACKUP DIR: present, containing skills/my-unpushed-skill.
+    const backupBase = join(testHome, '.cache', 'claude-nomad', 'backup');
+    const backupEntry = join(backupBase, ts, 'skills', 'my-unpushed-skill', 'SKILL.md');
+    expect(existsSync(backupEntry)).toBe(true);
+  });
+
+  it('removes a skill tracked at the pre-rebase HEAD but absent from post-rebase shared/skills', async () => {
+    // Genuine upstream deletion: old-thing was tracked at pre, another host
+    // deleted and pushed it, so the post-rebase shared/skills/ no longer has it.
+    git(['init', '-q', '-b', 'main'], repoUnderHome);
+    git(['config', 'user.email', 'test@example.invalid'], repoUnderHome);
+    git(['config', 'user.name', 'test'], repoUnderHome);
+    mkdirSync(join(sharedSkills, 'old-thing'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'old-thing', 'SKILL.md'), '# old\n');
+    mkdirSync(join(sharedSkills, 'team-skill'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'team-skill', 'SKILL.md'), '# team\n');
+    git(['add', '.'], repoUnderHome);
+    git(['commit', '-q', '-m', 'add old-thing and team-skill'], repoUnderHome);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoUnderHome);
+
+    // Simulate the upstream deletion: git rm old-thing and commit.
+    git(['rm', '-q', '-r', join('shared', 'skills', 'old-thing')], repoUnderHome);
+    git(['commit', '-q', '-m', 'delete old-thing'], repoUnderHome);
+    const post = gitOut(['rev-parse', 'HEAD'], repoUnderHome);
+
+    // The host still has old-thing locally from its last sync, plus a
+    // never-pushed sibling that must survive regardless.
+    mkdirSync(join(localSkills, 'old-thing'), { recursive: true });
+    writeFileSync(join(localSkills, 'old-thing', 'SKILL.md'), '# old\n');
+    mkdirSync(join(localSkills, 'my-unpushed-skill'), { recursive: true });
+    writeFileSync(join(localSkills, 'my-unpushed-skill', 'SKILL.md'), '# mine\n');
+
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    syncSkillsPull('20260720-deleted-upstream', { pre, post });
+
+    // Genuinely deleted-upstream skill is removed.
+    expect(existsSync(join(localSkills, 'old-thing'))).toBe(false);
+    // Never-pushed sibling survives.
+    expect(existsSync(join(localSkills, 'my-unpushed-skill'))).toBe(true);
+    // Still-tracked skill is overlaid.
+    expect(existsSync(join(localSkills, 'team-skill'))).toBe(true);
+  });
+
+  it('retains every root entry when no prePostHeads is provided (fail-safe)', async () => {
+    mkdirSync(join(sharedSkills, 'team-skill'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'team-skill', 'SKILL.md'), '# team\n');
+    mkdirSync(join(localSkills, 'my-unpushed-skill'), { recursive: true });
+    writeFileSync(join(localSkills, 'my-unpushed-skill', 'SKILL.md'), '# mine\n');
+
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    // No prePostHeads at all: fail-safe retains everything at the root.
+    syncSkillsPull('20260720-no-heads');
+
+    expect(existsSync(join(localSkills, 'my-unpushed-skill'))).toBe(true);
+    expect(existsSync(join(localSkills, 'team-skill'))).toBe(true);
+  });
+
+  it('composite (nomad sync order): a retained never-pushed skill reaches shared/skills on the follow-on push', async () => {
+    // Mirrors runSyncWet's pull-then-push ordering. Before the fix, the pull
+    // half deleted the never-pushed skill before the push half ever saw it.
+    git(['init', '-q', '-b', 'main'], repoUnderHome);
+    git(['config', 'user.email', 'test@example.invalid'], repoUnderHome);
+    git(['config', 'user.name', 'test'], repoUnderHome);
+    mkdirSync(join(sharedSkills, 'team-skill'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'team-skill', 'SKILL.md'), '# team\n');
+    git(['add', '.'], repoUnderHome);
+    git(['commit', '-q', '-m', 'add team-skill'], repoUnderHome);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoUnderHome);
+    const post = pre;
+
+    mkdirSync(join(localSkills, 'my-unpushed-skill'), { recursive: true });
+    writeFileSync(join(localSkills, 'my-unpushed-skill', 'SKILL.md'), '# mine\n');
+
+    const { syncSkillsPull, syncSkillsPush } = await import('./skills-sync.ts');
+    syncSkillsPull('20260720-sync-pull', { pre, post });
+    syncSkillsPush();
+
+    // Present in BOTH the local tree and the repo after the pull-then-push
+    // sequence: nomad sync no longer loses the never-pushed skill.
+    expect(existsSync(join(localSkills, 'my-unpushed-skill'))).toBe(true);
+    expect(existsSync(join(sharedSkills, 'my-unpushed-skill'))).toBe(true);
   });
 });
 

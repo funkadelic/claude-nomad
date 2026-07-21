@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { ALWAYS_NEVER_SYNC, claudeHome, GSD_PREFIX, isDeniedName, repoHome } from './config.ts';
 import { copyExtrasFiltered, copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
+import { trackedRootSkillsAt } from './skills-sync.tracked.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
 
 /**
@@ -111,45 +112,78 @@ export function copySkillsPush(src: string, dst: string): void {
  * with `ALWAYS_NEVER_SYNC`), mirroring the push-side boundary so a poisoned repo
  * cannot overlay a sensitive host-config name into `~/.claude/skills/`.
  *
+ * `isRootPreserved`, when provided, is an additional root-depth-only preserve
+ * predicate (see `copyExtrasFilteredPreservingBy`): a dst-only root entry it
+ * marks preserved survives the prune even though it is not gsd-owned. This is
+ * how a never-pushed user skill survives a pull while a skill genuinely
+ * deleted upstream since the host's last sync is still removed. Optional so
+ * every existing direct caller of this function compiles and behaves
+ * unchanged.
+ *
  * @param src - Source skills directory (`shared/skills/` on pull).
  * @param dst - Destination skills directory (`~/.claude/skills/` on pull).
+ * @param isRootPreserved - Optional root-depth-only preserve predicate.
  */
-export function copySkillsPull(src: string, dst: string): void {
-  copyExtrasFilteredPreservingBy(src, dst, isSkillExcluded);
+export function copySkillsPull(
+  src: string,
+  dst: string,
+  isRootPreserved?: (name: string) => boolean,
+): void {
+  copyExtrasFilteredPreservingBy(src, dst, isSkillExcluded, isRootPreserved);
 }
 
 /**
  * Pull-side path-resolving wrapper for `skills/` copy-sync. Resolves
  * `repoHome()`/`claudeHome()` at call time (the lazy-resolution convention),
  * then:
- *   1. Migration: if `~/.claude/skills` is a symlink (left over from the
- *      whole-dir-symlink era), back it up via `backupBeforeWrite(linkPath, ts)`
- *      and replace it with a real directory before calling `copySkillsPull`.
- *      This ensures gsd's locally-reinstalled `gsd-*` skills and the user
- *      skills can coexist in a real directory tree. The migration is idempotent:
- *      if `~/.claude/skills` is already a real directory (or absent), the
- *      backup-and-replace step is skipped.
- *   2. Overlay: calls `copySkillsPull(sharedSkills, localSkills)` to overlay
- *      non-gsd skills from `shared/skills/` into `~/.claude/skills/`,
- *      preserving local `gsd-*` skills.
+ *   1. Backup: snapshots `~/.claude/skills/` via `backupBeforeWrite`
+ *      UNCONDITIONALLY (not only on the symlink-migration path below), so any
+ *      destructive change this function makes -- including the retained-skill
+ *      prune inside a still-tracked skill directory -- is recoverable from
+ *      `~/.cache/claude-nomad/backup/<ts>/skills/`. `backupBeforeWrite`
+ *      no-ops on a missing source and is idempotent per `ts` (`cpSync` with
+ *      `force:false`), so this is safe to call every pull.
+ *   2. Migration: if `~/.claude/skills` is a symlink (left over from the
+ *      whole-dir-symlink era), replace it with a real directory before
+ *      calling `copySkillsPull`. This ensures gsd's locally-reinstalled
+ *      `gsd-*` skills and the user skills can coexist in a real directory
+ *      tree. The migration is idempotent: if `~/.claude/skills` is already a
+ *      real directory (or absent), the replace step is skipped.
+ *   3. Overlay: calls `copySkillsPull(sharedSkills, localSkills, isRootPreserved)`
+ *      to overlay non-gsd skills from `shared/skills/` into
+ *      `~/.claude/skills/`, preserving local `gsd-*` skills AND any
+ *      never-pushed local skill (a top-level dst entry absent from the
+ *      pre-rebase `shared/skills/` tree, per `trackedRootSkillsAt`). A root
+ *      entry that WAS tracked at the pre-rebase HEAD but is now absent from
+ *      `shared/skills/` (a genuine upstream deletion) is still pruned.
  *
  * No-op when `shared/skills/` does not exist (nothing to overlay; mirrors
  * `applySharedLinks`'s skip when the repo has no `shared/<name>` counterpart).
  *
- * @param ts - Backup timestamp passed to `backupBeforeWrite` for the symlink
- *   migration. Use the pull invocation's `freshBackupTs` result.
+ * @param ts - Backup timestamp passed to `backupBeforeWrite`. Use the pull
+ *   invocation's `freshBackupTs` result.
+ * @param prePostHeads - Pre/post-rebase HEADs captured by `cmdPull`. When
+ *   provided, `trackedRootSkillsAt(prePostHeads.pre, repoHome())` drives the
+ *   root-retention decision above. `undefined` (fresh clone / unborn HEAD, or
+ *   any caller that has not captured heads) is fail-safe: every root entry is
+ *   retained and nothing is pruned, mirroring `remapExtrasPull`'s contract
+ *   that without `prePostHeads` only the overlay runs and nothing is deleted.
  */
-export function syncSkillsPull(ts: string): void {
+export function syncSkillsPull(ts: string, prePostHeads?: { pre: string; post: string }): void {
   const sharedSkills = join(repoHome(), 'shared', 'skills');
   if (!existsSync(sharedSkills)) return;
   const localSkills = join(claudeHome(), 'skills');
+  backupBeforeWrite(localSkills, ts);
   const dstStat = lstatSync(localSkills, { throwIfNoEntry: false });
   if (dstStat?.isSymbolicLink() === true) {
-    backupBeforeWrite(localSkills, ts);
     rmSync(localSkills, { recursive: true, force: true });
     mkdirSync(localSkills, { recursive: true });
   }
-  copySkillsPull(sharedSkills, localSkills);
+  const tracked =
+    prePostHeads === undefined
+      ? new Set<string>()
+      : trackedRootSkillsAt(prePostHeads.pre, repoHome());
+  copySkillsPull(sharedSkills, localSkills, (name) => !tracked.has(name));
 }
 
 /**

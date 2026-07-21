@@ -7,6 +7,7 @@ import { remapExtrasPull } from './extras-sync.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
 import { addItem, renderTree, section } from './output-tree.ts';
+import { buildSkillsPreviewSection } from './preview.skills.ts';
 import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from './remap.ts';
 import { summaryRow } from './summary.ts';
 import { deepMerge, readJson, sortKeysDeep } from './utils.json.ts';
@@ -181,6 +182,10 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *     overwrite  <dst> (from <src>)
  *     <N> local-only present, not in repo (push to reconcile)   <- when N > 0
  *     ...
+ *   Skills                 <- omitted when no shared/skills/ dir
+ *     <name>
+ *     ...
+ *     <N> local-only present, not in repo (push to reconcile)   <- when N > 0
  *   Extras                <- omitted when path-map has no extras key
  *     <logical>/<dirname>
  *     ...
@@ -264,6 +269,12 @@ export function computePreview(
     addItem(sessions, `${localOnly} local-only present, not in repo (push to reconcile)`);
   }
 
+  // Skills section: one glyph-free row per shared/skills/ entry a wet pull
+  // would overlay, plus a retained local-only count when non-zero. See
+  // buildSkillsPreviewSection's JSDoc for why this section cannot forecast an
+  // upstream skill deletion. Read-only; no mutation.
+  const skills = buildSkillsPreviewSection();
+
   // Extras section: one glyph-free row per <logical>/<dirname> a wet pull
   // would copy, sourced from remapExtrasPull's dry-run detail (no backup, no
   // copy, delete pass skipped -- the zero-mutation source for this preview).
@@ -295,7 +306,7 @@ export function computePreview(
     summaryRow(verb, remapResult.unmapped + extrasUnmapped, 0, extrasSkipped, localOnly),
   );
 
-  renderTree([links, settingsSection, sessions, extras, summary]);
+  renderTree([links, settingsSection, sessions, skills, extras, summary]);
 
   return { unmapped: remapResult.unmapped, collisions: 0, localOnly };
 }
