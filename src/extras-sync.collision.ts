@@ -123,10 +123,20 @@ export function cpSyncGuarded(
  * @param dst - Destination directory (host side on pull); assumed to exist.
  * @param isPreserved - Returns `true` for a basename that must not be removed
  *   from dst even when absent from src.
+ * @param isRootPreserved - Optional second preserve predicate applied ONLY at
+ *   the root call depth (not passed into the recursive call below), so a
+ *   caller can retain a top-level entry (e.g. a never-pushed skill directory)
+ *   without also preserving same-named entries nested inside a synced tree.
+ *   `undefined` leaves every existing caller's behavior byte-identical.
  */
-function prunePreservingBy(src: string, dst: string, isPreserved: (name: string) => boolean): void {
+function prunePreservingBy(
+  src: string,
+  dst: string,
+  isPreserved: (name: string) => boolean,
+  isRootPreserved?: (name: string) => boolean,
+): void {
   for (const name of readdirSync(dst)) {
-    if (isPreserved(name)) continue;
+    if (isPreserved(name) || isRootPreserved?.(name) === true) continue;
     const dstPath = join(dst, name);
     const srcStat = lstatSync(join(src, name), { throwIfNoEntry: false });
     if (srcStat === undefined) {
@@ -172,11 +182,17 @@ function prunePreservingBy(src: string, dst: string, isPreserved: (name: string)
  * @param dst - Destination path (host-side dir on pull).
  * @param isPreserved - Returns `true` for a basename that must be preserved in
  *   dst and excluded from the src copy.
+ * @param isRootPreserved - Optional root-depth-only preserve predicate,
+ *   forwarded to `prunePreservingBy`'s top-level call only. Lets the skills
+ *   pull retain a never-pushed top-level skill directory while still honouring
+ *   a genuine upstream deletion of a tracked one. `undefined` (the default)
+ *   leaves every current caller's behavior byte-identical.
  */
 export function copyExtrasFilteredPreservingBy(
   src: string,
   dst: string,
   isPreserved: (name: string) => boolean,
+  isRootPreserved?: (name: string) => boolean,
 ): void {
   const dstStat = lstatSync(dst, { throwIfNoEntry: false });
   if (dstStat !== undefined) {
@@ -189,7 +205,7 @@ export function copyExtrasFilteredPreservingBy(
             `directory; run nomad pull --force-remote to recover`,
         );
       }
-      prunePreservingBy(src, dst, isPreserved);
+      prunePreservingBy(src, dst, isPreserved, isRootPreserved);
     } else {
       rmSync(dst, { recursive: true, force: true });
     }

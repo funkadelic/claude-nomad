@@ -99,7 +99,10 @@ function capturePrePostHeads(
  * @param ts - backup timestamp namespace shared by every WET side effect.
  * @param prePostHeads - pre/post-rebase HEADs captured by `cmdPull`; threads
  *   into `remapExtrasPull` to drive upstream-deletion propagation for .planning
- *   extras. `undefined` when the pre-rebase capture failed (fresh clone).
+ *   extras, and into `syncSkillsPull` to drive the skills root-retention
+ *   decision (a never-pushed local skill survives; a skill tracked at the
+ *   pre-rebase HEAD but genuinely deleted upstream is still pruned).
+ *   `undefined` when the pre-rebase capture failed (fresh clone).
  * @returns The ordered `Settings`/`Sessions`/`Extras`/`Pull summary` sections
  *   plus `localOnly` (retained local-only session files), `settingsLabel` (the
  *   `regenerateSettings` override-source tag), the combined session+extras
@@ -120,7 +123,7 @@ function buildWetPullSections(
 } {
   applySharedLinks(ts, map);
   const { label } = regenerateSettings(ts);
-  syncSkillsPull(ts);
+  syncSkillsPull(ts, prePostHeads);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
   const extrasResult = remapExtrasPull(ts, { prePostHeads });
   // Read-only count of local-only session files retained by the overlay.
