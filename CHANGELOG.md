@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.62.4](https://github.com/funkadelic/claude-nomad/compare/v0.62.3...v0.62.4) (2026-07-21)
+
+
+### Fixed
+
+* **sync:** compute the dry-run pull preview after the fetch ([#451](https://github.com/funkadelic/claude-nomad/issues/451)) ([8118625](https://github.com/funkadelic/claude-nomad/commit/81186258896081a7b2a2585f40eed67bd3e5c6b6))
+
+
+### Changed
+
+* **pull:** split commands.pull.recovery.ts on the force-remote seam ([#456](https://github.com/funkadelic/claude-nomad/issues/456)) ([1c1875b](https://github.com/funkadelic/claude-nomad/commit/1c1875b40e67512329e9a2d1215afa7667c29d1c))
+* **push:** split redact-all batch from recovery actions ([#457](https://github.com/funkadelic/claude-nomad/issues/457)) ([b104472](https://github.com/funkadelic/claude-nomad/commit/b104472b87d3f847546ee938900bcaa4ea1abdd8))
+
+
+### Testing
+
+* precompile the CLI once per vitest run ([#453](https://github.com/funkadelic/claude-nomad/issues/453)) ([e0b043b](https://github.com/funkadelic/claude-nomad/commit/e0b043b851ae9bd89da026199f70d723e213aed9))
+* **pull:** reset process.exitCode in beforeEach as well as afterEach ([#450](https://github.com/funkadelic/claude-nomad/issues/450)) ([78943e7](https://github.com/funkadelic/claude-nomad/commit/78943e72a41d4a542a4d6528d995ae9f8a8452cc))
+
 ## [0.62.3](https://github.com/funkadelic/claude-nomad/compare/v0.62.2...v0.62.3) (2026-07-21)
 
 
