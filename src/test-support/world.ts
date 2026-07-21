@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -90,17 +90,25 @@ export function makeWorld(tmp: string): {
 }
 
 /**
- * Spawn the real nomad dev entrypoint (`node src/nomad.ts`) as a subprocess
- * with the given host's environment. This is the integration-test subprocess
- * driver: argv parsing, command dispatch, and process exit codes are all
- * exercised in the child process, so nothing runs in-process.
+ * Spawn the real nomad CLI as a subprocess with the given host's environment.
+ * This is the integration-test subprocess driver: argv parsing, command
+ * dispatch, and process exit codes are all exercised in the child process, so
+ * nothing runs in-process.
  *
- * The entry path is resolved relative to THIS file (`src/test-support/world.ts`)
- * so `../nomad.ts` always points at `src/nomad.ts` independent of the process
+ * The entry point is the precompiled `.test-bundle/nomad.test.mjs` produced once
+ * per run by the vitest `globalSetup` (see `vitest.globalSetup.ts`), not raw
+ * `src/nomad.ts`: type-stripping the whole import graph on every spawn cost
+ * seconds of CPU per child. The bundle is also closer to the published
+ * `dist/nomad.mjs` than raw TypeScript is. The path is resolved relative to
+ * THIS file (`src/test-support/world.ts`) so it is independent of the process
  * working directory.
  *
- * `--disable-warning=ExperimentalWarning` suppresses the TypeScript type-strip
- * banner that Node emits to stderr, keeping stderr clean for assertion purposes.
+ * There is deliberately no fallback to `src/nomad.ts`: a silent fallback would
+ * hide a broken or skipped globalSetup behind a merely slow suite, so a missing
+ * bundle throws instead.
+ *
+ * `--disable-warning=ExperimentalWarning` is retained so any experimental-feature
+ * banner Node emits stays out of stderr, keeping it clean for assertions.
  *
  * @param host - Host whose env is forwarded to the subprocess.
  * @param args - nomad subcommand and flags (e.g. `['push']`, `['init', '--snapshot']`).
@@ -110,7 +118,15 @@ export function runNomad(
   host: Host,
   args: string[],
 ): { status: number; stdout: string; stderr: string } {
-  const entry = fileURLToPath(new URL('../nomad.ts', import.meta.url));
+  const entry = fileURLToPath(new URL('../../.test-bundle/nomad.test.mjs', import.meta.url));
+  /* c8 ignore start */
+  if (!existsSync(entry)) {
+    throw new Error(
+      `nomad test bundle missing at ${entry}. It is built by the vitest globalSetup ` +
+        `(vitest.globalSetup.ts); run the suite through the project vitest config.`,
+    );
+  }
+  /* c8 ignore stop */
   const result = spawnSync(
     process.execPath,
     ['--disable-warning=ExperimentalWarning', entry, ...args],

@@ -14,6 +14,7 @@ export default tseslint.config(
       '.claude/**',
       'docs-site/**',
       '.stryker-tmp/**',
+      '.test-bundle/**',
     ],
   },
   js.configs.recommended,

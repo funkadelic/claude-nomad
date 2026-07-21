@@ -11,3 +11,4 @@ package-lock.json
 CHANGELOG.md
 docs-site/
 reports/
+.test-bundle
