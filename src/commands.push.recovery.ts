@@ -305,5 +305,11 @@ export async function resolveLeakFindings(
     gitOrFatal(['add', '-A'], 'git add', repo);
     current = scanVerdict(repo);
   }
+  // The post-action re-scan above can itself crash, yielding another leak
+  // verdict with zero findings. That shape exits the loop condition rather
+  // than re-entering it, so without this the function would return a leaking
+  // verdict to a caller. Re-assert the invariant on the way out: this function
+  // never returns a verdict that still reports a leak.
+  if (current.leak) throw leakBlockedFatal(current.recovery);
   return current;
 }

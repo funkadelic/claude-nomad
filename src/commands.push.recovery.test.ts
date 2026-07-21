@@ -480,6 +480,49 @@ describe('resolveLeakFindings - while loop exits when leak=false regardless of f
     expect(scanVerdictMock).toHaveBeenCalledTimes(1);
     expect(result.leak).toBe(false);
   });
+
+  it('throws when the post-action re-scan crashes instead of returning a leaking verdict', async () => {
+    // A crashed re-scan yields leak=true with zero findings, which exits the loop
+    // condition rather than re-entering it. Without the post-loop assertion that
+    // verdict would be returned to the caller as if the tree were clean.
+    vi.doMock('./commands.redact.core.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof redactModule>();
+      return { ...actual, appendGitleaksIgnore: vi.fn() };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+
+    const { resolveLeakFindings } = await import('./commands.push.recovery.ts');
+    const finding = makeFinding({
+      Fingerprint: 'shared/projects/my-proj/abc123.jsonl:github-pat:1',
+    });
+    const verdict = {
+      leak: true,
+      verdictRow: '✗ leak',
+      recovery: 'session-aware fatal',
+      findings: [finding],
+    };
+    const map: PathMap = { projects: {} };
+
+    let callCount = 0;
+    await expect(
+      resolveLeakFindings(verdict, 'ts-001', map, {
+        isTTYCheck: () => true,
+        makePrompt: () => () => {
+          callCount++;
+          return Promise.resolve(callCount === 1 ? 'a' : '');
+        },
+        scanVerdict: () => ({
+          leak: true,
+          verdictRow: '✗ scan failed, no parseable report',
+          recovery: 'gitleaks scan failed: no parseable JSON report.',
+          findings: [],
+        }),
+      }),
+    ).rejects.toThrow('gitleaks scan failed: no parseable JSON report.');
+  });
 });
 
 describe('resolveLeakFindings - TTY Allow action -> re-scan clean -> returns', () => {
