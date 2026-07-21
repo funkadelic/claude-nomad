@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,8 +10,12 @@ import type * as pushGlobalConfigModule from './push-global-config.ts';
 import type * as leakVerdictModule from './push-leak-verdict.ts';
 import type * as recoveryModule from './commands.push.recovery.ts';
 import type * as previewModule from './preview.ts';
+import type * as wedgeModule from './commands.pull.wedge.ts';
+import type * as extrasSyncModule from './extras-sync.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 import type * as utilsModule from './utils.ts';
+
+import { EXIT } from './exit-codes.ts';
 
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
@@ -744,13 +748,15 @@ describe('cmdSync: dry-run composition', () => {
     teardownSyncEnv(env);
   });
 
-  it('stacks the pull preview then the push preview with a pre-pull caveat, and never touches the wet cores', async () => {
-    const pullPreviewSpy = vi.fn(() => ({ unmapped: 0, collisions: 0, localOnly: 0 }));
-    const runPullCoreSpy = vi.fn();
-    const runPushCoreSpy = vi.fn(() => ({ tag: 'dry' }));
-    vi.doMock('./preview.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof previewModule>();
-      return { ...actual, computePreview: pullPreviewSpy };
+  it('delegates the pull half to runPullCore dry mode before the push half, with a pre-pull caveat between them', async () => {
+    const order: string[] = [];
+    const runPullCoreSpy = vi.fn(() => {
+      order.push('pull');
+      return { tag: 'dry' };
+    });
+    const runPushCoreSpy = vi.fn(() => {
+      order.push('push');
+      return { tag: 'dry' };
     });
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
@@ -759,16 +765,15 @@ describe('cmdSync: dry-run composition', () => {
     vi.doMock('./commands.push.ts', () => ({ runPushCore: runPushCoreSpy }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync({ dryRun: true });
-    expect(pullPreviewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull');
-    expect(runPullCoreSpy).not.toHaveBeenCalled();
+    expect(runPullCoreSpy).toHaveBeenCalledWith({ dryRun: true });
     expect(runPushCoreSpy).toHaveBeenCalledWith({ dryRun: true });
+    expect(order).toEqual(['pull', 'push']);
     expect(out(env)).toContain('computed against pre-pull state');
     expect(process.exitCode).not.toBe(1);
     expect(existsSync(env.lockPath)).toBe(false);
   });
 
-  it('falls back to an empty path-map when path-map.json is absent', async () => {
-    rmSync(join(env.repoUnderHome, 'path-map.json'), { force: true });
+  it('never calls computePreview itself: the pull preview is the pull half preview, not a second one', async () => {
     const pullPreviewSpy = vi.fn(() => ({ unmapped: 0, collisions: 0, localOnly: 0 }));
     vi.doMock('./preview.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof previewModule>();
@@ -776,22 +781,15 @@ describe('cmdSync: dry-run composition', () => {
     });
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(),
+      runPullCore: vi.fn(() => ({ tag: 'dry' })),
     }));
     vi.doMock('./commands.push.ts', () => ({ runPushCore: vi.fn(() => ({ tag: 'dry' })) }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync({ dryRun: true });
-    expect(pullPreviewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull');
+    expect(pullPreviewSpy).not.toHaveBeenCalled();
   });
 
   it('acquires the sync lock for the dry-run path too', async () => {
-    vi.doMock('./preview.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof previewModule>();
-      return {
-        ...actual,
-        computePreview: vi.fn(() => ({ unmapped: 0, collisions: 0, localOnly: 0 })),
-      };
-    });
     vi.doMock('./commands.pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(),
@@ -809,6 +807,167 @@ describe('cmdSync: dry-run composition', () => {
     await expect(cmdSync({ dryRun: true })).rejects.toThrow(/process\.exit:0/);
     expect(acquireSpy).toHaveBeenCalledWith('sync');
     expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cmdSync: dry-run runs the real pull half (post-fetch preview + both checks)
+// ---------------------------------------------------------------------------
+
+/** Recorded seam calls plus the spies a post-fetch dry-run test asserts on. */
+type DrySeams = {
+  order: string[];
+  classifyWedgeSpy: MockInstance<(repo: string) => unknown>;
+  divergenceSpy: MockInstance<(...args: unknown[]) => number>;
+  previewSpy: MockInstance<(...args: unknown[]) => unknown>;
+  pushSpy: MockInstance<(...args: unknown[]) => unknown>;
+  /** Repo-state string `computePreview` observed at the moment it ran. */
+  seenAtPreview: { value: string };
+};
+
+/**
+ * Mock the seams the REAL `runPullCore` dry path reaches, recording the order
+ * they fire in. `onFetch` runs inside the mocked `git pull --rebase` so a test
+ * can mutate repo state mid-run and prove the preview observed the post-fetch
+ * value. `classifyWedge` returns `wedge` (default `null`, a clean repo).
+ *
+ * @param env - The active sandbox.
+ * @param opts.wedge - `classifyWedge`'s return value.
+ * @param opts.onFetch - Side effect performed by the mocked fetch.
+ * @returns The recorded order array and the individual spies.
+ */
+function mockDrySeams(
+  env: SyncEnv,
+  opts: { wedge?: unknown; onFetch?: () => void } = {},
+): DrySeams {
+  const order: string[] = [];
+  const statePath = join(env.repoUnderHome, 'upstream-state.txt');
+  const seenAtPreview = { value: '' };
+  const classifyWedgeSpy = vi.fn(() => {
+    order.push('classifyWedge');
+    return opts.wedge ?? null;
+  });
+  const divergenceSpy = vi.fn(() => {
+    order.push('divergenceCheckExtras');
+    return 0;
+  });
+  const previewSpy = vi.fn(() => {
+    order.push('computePreview');
+    seenAtPreview.value = existsSync(statePath) ? readFileSync(statePath, 'utf8') : '';
+    return { unmapped: 0, collisions: 0, localOnly: 0 };
+  });
+  const pushSpy = vi.fn(() => {
+    order.push('runPushCore');
+    return { tag: 'dry' };
+  });
+  vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof wedgeModule>();
+    return { ...actual, classifyWedge: classifyWedgeSpy };
+  });
+  vi.doMock('./utils.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof utilsModule>();
+    return {
+      ...actual,
+      gitCaptureRaw: vi.fn(() => 'deadbeef\n'),
+      gitOrFatal: vi.fn(() => {
+        order.push('fetch');
+        opts.onFetch?.();
+      }),
+    };
+  });
+  vi.doMock('./extras-sync.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof extrasSyncModule>();
+    return { ...actual, divergenceCheckExtras: divergenceSpy };
+  });
+  vi.doMock('./preview.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof previewModule>();
+    return { ...actual, computePreview: previewSpy };
+  });
+  vi.doMock('./commands.push.ts', () => ({ runPushCore: pushSpy }));
+  return { order, classifyWedgeSpy, divergenceSpy, previewSpy, pushSpy, seenAtPreview };
+}
+
+describe('cmdSync --dry-run: real pull half', () => {
+  let env: SyncEnv;
+
+  beforeEach(() => {
+    env = makeSyncEnv();
+  });
+
+  afterEach(() => {
+    teardownSyncEnv(env);
+    vi.doUnmock('./commands.pull.wedge.ts');
+  });
+
+  it('computes the pull preview AFTER the fetch, not against pre-fetch repo state', async () => {
+    const statePath = join(env.repoUnderHome, 'upstream-state.txt');
+    writeFileSync(statePath, 'before');
+    const seams = mockDrySeams(env, {
+      onFetch: () => {
+        writeFileSync(statePath, 'after');
+      },
+    });
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ dryRun: true });
+    expect(seams.seenAtPreview.value).toBe('after');
+    expect(seams.order).toEqual([
+      'classifyWedge',
+      'fetch',
+      'divergenceCheckExtras',
+      'computePreview',
+      'runPushCore',
+    ]);
+  });
+
+  it('runs the divergenceCheckExtras preview check the wet sync and nomad diff both run', async () => {
+    const seams = mockDrySeams(env);
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ dryRun: true });
+    expect(seams.divergenceSpy).toHaveBeenCalledTimes(1);
+    // Dry mode threads the pre/post-rebase HEAD pair through so the
+    // delete-vs-edit keep-local WARN can render in the preview.
+    expect(seams.divergenceSpy).toHaveBeenCalledWith(expect.any(String), {
+      pre: 'deadbeef',
+      post: 'deadbeef',
+    });
+  });
+
+  it('runs the handleWedge preflight: a mid-rebase repo dies before any preview renders', async () => {
+    const seams = mockDrySeams(env, { wedge: 'rebase' });
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ dryRun: true });
+    expect(seams.classifyWedgeSpy).toHaveBeenCalledTimes(1);
+    expect(seams.previewSpy).not.toHaveBeenCalled();
+    expect(seams.divergenceSpy).not.toHaveBeenCalled();
+    expect(seams.pushSpy).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(EXIT.CONFLICT);
+    expect(errOut(env)).toMatch(/rebase/i);
+    // The lock is still released on the fatal path.
+    expect(existsSync(env.lockPath)).toBe(false);
+  });
+
+  it('closes with exactly one dry-run complete line, after the push preview', async () => {
+    mockDrySeams(env);
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ dryRun: true });
+
+    const lines = out(env).split('\n');
+    const completes = lines.filter((l) => l.includes('dry-run complete'));
+    // runPullCore leaves the closing line to its caller, so the pull half must
+    // not emit one mid-stream where it would read as the command ending.
+    expect(completes).toHaveLength(1);
+    const completeAt = lines.findIndex((l) => l.includes('dry-run complete'));
+    const pushNoticeAt = lines.findIndex((l) => l.includes('push preview below'));
+    expect(pushNoticeAt).toBeGreaterThanOrEqual(0);
+    expect(completeAt).toBeGreaterThan(pushNoticeAt);
+  });
+
+  it('falls back to an empty path-map when path-map.json is absent', async () => {
+    rmSync(join(env.repoUnderHome, 'path-map.json'), { force: true });
+    const seams = mockDrySeams(env);
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ dryRun: true });
+    expect(seams.previewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull');
   });
 });
 

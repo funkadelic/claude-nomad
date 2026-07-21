@@ -18,13 +18,10 @@ import { join } from 'node:path';
 
 import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './commands.pull.ts';
 import { runPushCore, type PushCoreResult } from './commands.push.ts';
-import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
+import { HOST, repoHome } from './config.ts';
 import { dim, infoGlyph, warnGlyph, yellow } from './color.ts';
-import { computePreview } from './preview.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
 import { die, fail, log, ok, NomadFatal } from './utils.ts';
-import { freshBackupTs } from './utils.fs.ts';
-import { readPathMap } from './utils.json.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
 /** The wet pull result shape carrying the sections a composing caller renders. */
@@ -333,22 +330,46 @@ async function runSyncWet(verbose: boolean): Promise<void> {
 }
 
 /**
- * Run the dry-run preview: the pull-side preview first (matching `nomad pull
- * --dry-run`'s own rendering), then a one-line caveat that the push preview
- * below is computed against pre-pull state (a real sync pushes after the
- * pull half applies), then the push half's own preview. Neither half mutates
- * anything.
+ * Run the dry-run preview: the pull half's own dry path first, then a
+ * one-line caveat that the push preview below is computed against pre-pull
+ * state (a real sync pushes after the pull half applies), then the push
+ * half's own preview.
  *
- * @param repo - Resolved repository root.
- * @param backup - Resolved backup cache root.
+ * Delegating to `runPullCore({ dryRun: true })` rather than calling
+ * `computePreview` directly is load-bearing, not a tidy-up. It gives the pull
+ * preview the three properties standalone `nomad pull --dry-run` has and the
+ * direct-`computePreview` version lacked:
+ *
+ * 1. the preview is computed AFTER `runPullCore`'s own `git pull --rebase
+ *    --autostash`, so it describes what a real sync would apply instead of
+ *    the pre-fetch repo state (the push half fetches too, so the old order
+ *    rendered a preview of commits it was about to pull in anyway);
+ * 2. `handleWedge` runs as a preflight, so a repo stuck mid-rebase or
+ *    mid-merge dies with the runbook instead of rendering a tree derived
+ *    from a conflicted working tree;
+ * 3. `divergenceCheckExtras` runs, so the both-sides-modified and
+ *    delete-vs-edit keep-local WARNs a wet `nomad sync` emits are present in
+ *    the preview too (the same preview/wet gap already closed for
+ *    `nomad diff`).
+ *
+ * Both halves still perform a network round-trip (`runPullCore`'s rebase and
+ * `runPushCore`'s `rebaseBeforePush`), which is the documented
+ * `pull --dry-run` / `push --dry-run` contract, not a mutation escape.
+ * Neither half writes to `~/.claude/`, and neither stages, commits, or
+ * pushes. `REPO_HOME` is NOT untouched, though: both rebases advance it onto
+ * its upstream, so the worktree there can change. "Dry" scopes to the live
+ * config and to publishing, not to the sync repo's git state.
+ *
+ * The single closing line is emitted here rather than by either half:
+ * `runPullCore` deliberately leaves it to its caller (see the dry branch
+ * there), so the only 'complete' line a user sees is the one that actually
+ * ends the command.
  */
-async function runSyncDryRun(repo: string, backup: string): Promise<void> {
-  const ts = freshBackupTs(backup);
-  const mapPath = join(repo, 'path-map.json');
-  const map: PathMap = existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
-  computePreview(ts, map, 'pull');
+async function runSyncDryRun(): Promise<void> {
+  runPullCore({ dryRun: true });
   log('push preview below is computed against pre-pull state (a real sync pushes after pull)');
   await runPushCore({ dryRun: true });
+  log('dry-run complete; nothing applied to ~/.claude/, nothing pushed');
 }
 
 /**
@@ -358,7 +379,14 @@ async function runSyncDryRun(repo: string, backup: string): Promise<void> {
  * `process.exitCode = 1`; the `finally` block guarantees the lock is
  * released even when a half throws.
  *
- * @param opts.dryRun - Preview mode: stacks both previews, mutates nothing.
+ * @param opts.dryRun - Preview mode: stacks the pull preview then the push
+ *   preview. It writes nothing to `~/.claude/` and stages/commits/pushes
+ *   nothing, but it is NOT a zero-side-effect run: both halves perform a
+ *   real network round-trip and rebase `REPO_HOME` onto its upstream
+ *   (`runPullCore`'s `git pull --rebase --autostash` and `runPushCore`'s
+ *   `rebaseBeforePush`). That is the deliberate, documented
+ *   `pull --dry-run` / `push --dry-run` contract: a preview computed against
+ *   pre-fetch state would describe a sync nobody is about to run.
  * @param opts.verbose - Wet-path only: render the full merged tree before
  *   the Sync summary (default renders the Sync summary alone).
  */
@@ -368,7 +396,6 @@ export async function cmdSync(opts: { dryRun?: boolean; verbose?: boolean } = {}
   // Resolve roots once per command invocation (TOCTOU mitigation, mirrors
   // cmdPull/cmdPush).
   const repo = repoHome();
-  const backup = backupBase();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
   if (!existsSync(join(repo, 'shared', 'settings.base.json'))) {
     die("repo not initialized; run 'nomad init' to scaffold");
@@ -377,7 +404,7 @@ export async function cmdSync(opts: { dryRun?: boolean; verbose?: boolean } = {}
   if (handle === null) process.exit(0);
   try {
     if (dryRun) {
-      await runSyncDryRun(repo, backup);
+      await runSyncDryRun();
     } else {
       await runSyncWet(verbose);
     }

@@ -278,9 +278,14 @@ export type PullCoreResult =
  * `nomad/stranded-<ts>` and resets hard to `origin/main`, then falls through
  * to the normal pull. Cannot combine with `--dry-run`.
  *
- * `opts.compose` (default `false`, wet-only; `nomad sync`'s dry-run path
- * never calls this function): when `true`, a composing caller owns the
- * header, so the `pull on host=... (backup=<ts>)` line is suppressed. Every
+ * `opts.compose` (default `false`): when `true`, a composing caller owns the
+ * header, so the `pull on host=... (backup=<ts>)` line is suppressed. The
+ * suppression applies in BOTH modes, though only the wet composing caller
+ * (`runSyncWet`) sets it today. `nomad sync --dry-run` DOES call this function (it delegates
+ * its whole pull half here so the preview is post-fetch and runs the wedge
+ * and extras-divergence checks), but without `compose`: the dry path renders
+ * its own preview tree inline, so there is nothing for a caller to compose
+ * and the `pulling on host=...` header labels it. Every
  * side effect and the returned sections are unchanged; standalone `cmdPull`
  * never sets it, so its output is byte-identical.
  *
@@ -370,8 +375,13 @@ export function runPullCore(
     // verb='pull'; no separate emitSummary call (it would duplicate the row).
     // dryRun deliberately omits remapExtrasPull to preserve the
     // zero-mutation contract; users still see the divergence WARN above.
+    //
+    // The closing 'dry-run complete' line is deliberately NOT emitted here.
+    // It belongs to the command entry point, the same way the wet path returns
+    // sections for cmdPull to render: a composing caller (cmdSync) continues
+    // with its own output afterwards, and a 'complete' line mid-stream reads
+    // as if the command had ended.
     computePreview(ts, map, 'pull');
-    log('dry-run complete; no mutation');
     return { tag: 'dry' };
   }
   const { sections, localOnly, settingsLabel, unmapped, extrasSkipped } = buildWetPullSections(
@@ -434,6 +444,10 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
   try {
     const result = runPullCore(opts);
     if (result.tag === 'wet') renderTree(result.sections);
+    // Scoped to ~/.claude/ rather than a blanket "no mutation": the dry path
+    // has already rebased REPO_HOME by this point (that is what makes the
+    // preview post-fetch), so the sync repo's git state can have changed.
+    else log('dry-run complete; nothing applied to ~/.claude/');
   } catch (err) {
     // Catch fatal errors here so the finally block runs and releases the
     // lock. Throwing through process.exit() would skip finally.
