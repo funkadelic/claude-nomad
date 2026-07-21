@@ -278,9 +278,10 @@ export type PullCoreResult =
  * `nomad/stranded-<ts>` and resets hard to `origin/main`, then falls through
  * to the normal pull. Cannot combine with `--dry-run`.
  *
- * `opts.compose` (default `false`, wet-only): when `true`, a composing caller
- * owns the header, so the `pull on host=... (backup=<ts>)` line is
- * suppressed. `nomad sync --dry-run` DOES call this function (it delegates
+ * `opts.compose` (default `false`): when `true`, a composing caller owns the
+ * header, so the `pull on host=... (backup=<ts>)` line is suppressed. The
+ * suppression applies in BOTH modes, though only the wet composing caller
+ * (`runSyncWet`) sets it today. `nomad sync --dry-run` DOES call this function (it delegates
  * its whole pull half here so the preview is post-fetch and runs the wedge
  * and extras-divergence checks), but without `compose`: the dry path renders
  * its own preview tree inline, so there is nothing for a caller to compose

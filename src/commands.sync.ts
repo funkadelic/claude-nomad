@@ -355,7 +355,10 @@ async function runSyncWet(verbose: boolean): Promise<void> {
  * Both halves still perform a network round-trip (`runPullCore`'s rebase and
  * `runPushCore`'s `rebaseBeforePush`), which is the documented
  * `pull --dry-run` / `push --dry-run` contract, not a mutation escape.
- * Neither half writes to `~/.claude/` or to the repo worktree.
+ * Neither half writes to `~/.claude/`, and neither stages, commits, or
+ * pushes. `REPO_HOME` is NOT untouched, though: both rebases advance it onto
+ * its upstream, so the worktree there can change. "Dry" scopes to the live
+ * config and to publishing, not to the sync repo's git state.
  *
  * The single closing line is emitted here rather than by either half:
  * `runPullCore` deliberately leaves it to its caller (see the dry branch
