@@ -215,22 +215,29 @@ is retained, and conflict markers are written into the affected file. HEAD is st
 branch, so `git rebase --abort` fails with "no rebase in progress": there is nothing to abort.
 
 nomad now catches this itself. Both `nomad pull` and `nomad push` re-check for this exact state
-right after the pull step and stop with exit code 4 before applying or pushing anything markered,
-so you will see nomad's own message rather than a silent success.
+right after the pull step and stop with exit code 4 before applying or pushing anything that
+carries conflict markers, so you will see nomad's own message rather than a silent success.
 
 This looks identical to State 2 under the unmerged-index check above (`git diff --diff-filter=U
 --name-only` is non-empty in both), but the two need different recoveries and should not be
 conflated. State 2's `git reset --mixed HEAD` is wrong here: it clears the index but leaves the
-conflict markers behind as ordinary unstaged modifications, which is exactly the state this guard
-exists to prevent. Confirm which state you are in with:
+conflict markers behind as ordinary unstaged modifications, which is the state this guard exists
+to prevent.
 
-```bash
-$ cd ~/claude-nomad
-$ git stash list   # a "stash@{0}: ...autostash" entry present = State 3, not State 2
-```
+:::caution[An autostash entry does not tell the two states apart]
+State 2 can leave an orphaned autostash too, so `git stash list` cannot be used to choose between
+these recoveries. Picking the wrong one matters: State 3's runbook ends in `git reset --hard`,
+which discards working-tree edits.
+:::
 
-No data is lost: the pre-conflict content is always retained in the stash entry and can be
-recovered without re-triggering the conflict.
+The reliable signal is **nomad's own message**. The guard only fires immediately after a pull
+step, so State 3 is what you are in when `nomad pull` or `nomad push` just stopped with exit
+code 4 and said the autostash pop conflicted. If you are looking at a wedged repo without having
+just seen that message, treat it as State 2 and use the non-destructive `--mixed` recovery above.
+
+If you are still unsure, inspect the stash content before discarding anything (the `git show`
+step below is read-only and does not re-trigger the conflict). In State 3 no data is lost: the
+pre-conflict content is always retained in the stash entry.
 
 **Manual runbook:**
 
@@ -239,7 +246,7 @@ $ cd ~/claude-nomad
 $ git stash list                       # confirm stash@{0}: autostash is present
 $ git show 'stash@{0}:<path>'          # view the pre-conflict content; safe, does not re-pop
 
-$ git reset --hard HEAD                # discard the markered working tree
+$ git reset --hard HEAD                # discard the marked-up working tree
 # re-apply the content shown above into <path>, as needed
 $ git stash drop                       # once you are done with the stash entry
 
