@@ -11,5 +11,5 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "vitest.config.ts", "vitest.setup.ts"]
+  "include": ["src/**/*.ts", "vitest.config.ts", "vitest.globalSetup.ts", "vitest.setup.ts"]
 }

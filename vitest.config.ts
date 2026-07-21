@@ -40,6 +40,9 @@ const SHARED_EXCLUDE = ['**/node_modules/**', '**/dist/**', '.stryker-tmp/**'];
 export default defineConfig({
   test: {
     exclude: SHARED_EXCLUDE,
+    // Declared at the root (not per project) so the CLI is bundled exactly once
+    // for the whole run and both projects spawn the same artifact.
+    globalSetup: ['./vitest.globalSetup.ts'],
     projects: [
       {
         test: {

@@ -20,3 +20,4 @@ docs-site/.astro/
 .fallow/
 .stryker-tmp/
 reports/
+.test-bundle/
