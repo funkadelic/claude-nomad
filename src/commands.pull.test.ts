@@ -32,6 +32,10 @@ describe('cmdPull precondition and lock-contention branches', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    // process.exitCode is process-global. A timed-out test's detached work can
+    // set it AFTER its own afterEach reset has run, so clear it on entry too or
+    // one flake fails the next test on state it never created.
+    process.exitCode = 0;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-test-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
@@ -122,6 +126,7 @@ describe('cmdPull: extras integration', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-extras-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
@@ -550,6 +555,7 @@ describe('cmdPull wedge preflight', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-wedge-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
@@ -772,6 +778,7 @@ describe('cmdPull forceRemote routing', () => {
     originalHome = process.env.HOME;
     originalNomadRepo = process.env.NOMAD_REPO;
     originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
     tmp = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-force-'));
     process.env.NOMAD_HOST = 'test-host';
     vi.resetModules();
@@ -909,6 +916,7 @@ describe('handleWedge unmerged-index dispatch', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-index-wedge-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
@@ -1149,6 +1157,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     originalHome = process.env.HOME;
     originalNomadRepo = process.env.NOMAD_REPO;
     originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
     tmp = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-heads-'));
     process.env.NOMAD_HOST = 'test-host';
     vi.resetModules();
@@ -1455,6 +1464,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-runpullcore-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
