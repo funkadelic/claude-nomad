@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { encodePath } from '../utils.json.ts';
@@ -143,4 +143,59 @@ export function plantLocalSession(home: string, projectRoot: string, content: st
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${sid}.jsonl`), content);
   return sid;
+}
+
+/**
+ * Create a commit in `repo` with `content` written to `file`.
+ *
+ * @param repo - Repository working directory.
+ * @param file - Repo-relative path to write.
+ * @param content - File contents.
+ * @param message - Commit message.
+ */
+export function makeCommit(repo: string, file: string, content: string, message: string): void {
+  writeFileSync(join(repo, file), content);
+  g(['add', file], repo);
+  g(['commit', '-q', '-m', message], repo);
+}
+
+/**
+ * Start a conflicting merge in `dir`, then delete its marker files, leaving
+ * the unmerged stage-2/3 index entries behind with no active merge. This is
+ * the exact state a conflicted autostash pop leaves: `git diff
+ * --diff-filter=U` still reports the paths, but `MERGE_HEAD` and the rebase
+ * directories are all absent.
+ *
+ * Assumes `dir` is an initialized repo with at least one commit touching
+ * `file.txt`.
+ *
+ * @param dir - Repository working directory.
+ */
+export function conflictThenStripMarkers(dir: string): void {
+  g(['checkout', '-q', '-b', 'branch'], dir);
+  makeCommit(dir, 'file.txt', 'branch-value\n', 'branch commit');
+  g(['checkout', '-q', 'main'], dir);
+  makeCommit(dir, 'file.txt', 'main-value\n', 'main commit');
+  try {
+    g(['merge', '--no-commit', 'branch'], dir);
+  } catch {
+    // Expected conflict: the merge is the whole point of this fixture.
+  }
+  const gitDir = join(dir, '.git');
+  for (const marker of ['MERGE_HEAD', 'MERGE_MODE', 'MERGE_MSG']) {
+    rmSync(join(gitDir, marker), { force: true });
+  }
+}
+
+/**
+ * Build a repo whose index has unmerged stage-2/3 entries and no active
+ * rebase or merge marker, the torn-down state both the wedge classifier and
+ * the autostash-pop guard are built to detect.
+ *
+ * @param dir - Directory to initialize. Must already exist.
+ */
+export function buildUnmergedIndexNoMarker(dir: string): void {
+  gitInit(dir);
+  makeCommit(dir, 'file.txt', 'base\n', 'base');
+  conflictThenStripMarkers(dir);
 }

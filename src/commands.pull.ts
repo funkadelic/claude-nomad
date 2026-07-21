@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { assertNoAutostashConflict } from './autostash-guard.ts';
 import {
   buildExtrasSection,
   buildSessionsSection,
@@ -223,8 +224,10 @@ export type PullCoreResult =
 
 /**
  * Lock-free core of `nomad pull`: takes a backup timestamp, runs
- * `git pull --rebase --autostash` in `REPO_HOME`, then applies the
- * side-effecting sync steps in order:
+ * `git pull --rebase --autostash` in `REPO_HOME`, re-probes for a
+ * conflicted autostash pop (`assertNoAutostashConflict`; the pull call
+ * itself exits 0 even when that pop conflicts, so the re-probe is the only
+ * signal), then applies the side-effecting sync steps in order:
  *   1. `divergenceCheckExtras` (read-only WARN naming local files that
  *      diverge from origin; fires in BOTH wet and dry modes)
  *   2. `applySharedLinks` (symlink shared/* into ~/.claude/)
@@ -333,6 +336,15 @@ export function runPullCore(
   const prePostHeads = capturePrePostHeads(repo, () => {
     gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', repo);
   });
+  // Re-probe immediately after the pull returns: git pull --rebase
+  // --autostash exits 0 even when the autostash POP itself conflicts, so a
+  // non-throwing gitOrFatal call above does not by itself mean the repo is
+  // clean. This must fire before applySharedLinks (inside
+  // buildWetPullSections below) ever runs, on BOTH the wet and dry-run
+  // paths (dry-run still runs the real pull, so it can leave the repo just
+  // as wedged). Deliberately not folded into handleWedge: that helper's
+  // --force-remote recovery dispatch must not run at this seam.
+  assertNoAutostashConflict(repo, 'nomad pull');
   // Read path-map.json for sharedDirs/symlink threading. Falls back to a
   // no-sharedDirs map when the file is absent (fresh-clone before init).
   // A parse failure dies fatally, which propagates to the caller's
