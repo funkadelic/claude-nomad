@@ -784,17 +784,29 @@ import { recoverUnmergedIndex } from './commands.pull.recovery.ts';
  * where git --autostash drops to the stash list during a torn-down
  * rebase), and optionally a second tracked file (`other.txt`) that stays out
  * of the conflict.
+ *
+ * `withAbsentFromHead` additionally stages a modify/delete conflict on
+ * `doomed.txt`: main deletes it, the branch modifies it. HEAD therefore does
+ * NOT contain the path, so `git reset --mixed HEAD` leaves the conflicted file
+ * UNTRACKED rather than dirty-tracked, which a tracked-only residual probe
+ * cannot see.
  */
 function buildUnmergedIndexFixture(
   dir: string,
   {
     withAutostash = false,
     withOtherTracked = false,
-  }: { withAutostash?: boolean; withOtherTracked?: boolean } = {},
+    withAbsentFromHead = false,
+  }: {
+    withAutostash?: boolean;
+    withOtherTracked?: boolean;
+    withAbsentFromHead?: boolean;
+  } = {},
 ): void {
   initRepo(dir);
   writeFileSync(join(dir, 'file.txt'), 'base\n');
-  execFileSync('git', ['add', 'file.txt'], { cwd: dir });
+  if (withAbsentFromHead) writeFileSync(join(dir, 'doomed.txt'), 'orig\n');
+  execFileSync('git', ['add', '.'], { cwd: dir });
   execFileSync('git', ['commit', '-q', '-m', 'base'], { cwd: dir });
 
   if (withOtherTracked) {
@@ -822,10 +834,17 @@ function buildUnmergedIndexFixture(
   execFileSync('git', ['checkout', '-q', '-b', 'branch'], { cwd: dir });
   writeFileSync(join(dir, 'file.txt'), 'branch-value\n');
   execFileSync('git', ['add', 'file.txt'], { cwd: dir });
+  if (withAbsentFromHead) {
+    writeFileSync(join(dir, 'doomed.txt'), 'branch-modified\n');
+    execFileSync('git', ['add', 'doomed.txt'], { cwd: dir });
+  }
   execFileSync('git', ['commit', '-q', '-m', 'branch commit'], { cwd: dir });
   execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir });
   writeFileSync(join(dir, 'file.txt'), 'main-value\n');
   execFileSync('git', ['add', 'file.txt'], { cwd: dir });
+  // Delete on the HEAD side, so the merge produces a modify/delete conflict
+  // whose path is absent from HEAD.
+  if (withAbsentFromHead) execFileSync('git', ['rm', '-q', 'doomed.txt'], { cwd: dir });
   execFileSync('git', ['commit', '-q', '-m', 'main commit'], { cwd: dir });
   // Attempt conflicting merge (sets MERGE_HEAD and unmerged index entries).
   try {
@@ -999,6 +1018,36 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     expect((thrown as Error).message).toMatch(/conflict content/);
     expect((thrown as Error).message).toMatch(/file\.txt/);
     expect((thrown as Error).message).toMatch(/re-run "nomad pull"/);
+  });
+
+  it('dies over a conflicted path that HEAD does not contain (untracked after reset)', async () => {
+    // modify/delete: main deleted doomed.txt, the branch modified it. The reset
+    // therefore leaves doomed.txt UNTRACKED, not dirty-tracked, so a
+    // tracked-only probe would report a clean tree and let the pull publish it.
+    buildUnmergedIndexFixture(tmp, { withAbsentFromHead: true });
+    // Resolve the ordinary conflict so doomed.txt is the only residual left.
+    const headContent = execFileSync('git', ['show', 'HEAD:file.txt'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    writeFileSync(join(tmp, 'file.txt'), headContent);
+
+    const { NomadFatal } = await import('./utils.ts');
+    const thrown = recoverSwallowingFatal(tmp);
+
+    expect(thrown).toBeInstanceOf(NomadFatal);
+    expect((thrown as Error).message).toMatch(/doomed\.txt/);
+    expect((thrown as Error).message).toMatch(/re-run "nomad pull"/);
+
+    // The path really is untracked at this point, which is what makes the
+    // tracked-only probe insufficient.
+    const porcelain = execFileSync('git', ['status', '--porcelain'], {
+      cwd: tmp,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    expect(porcelain).toMatch(/\?\?\s+doomed\.txt/);
+    // And its unresolved content is still on disk.
+    expect(existsSync(join(tmp, 'doomed.txt'))).toBe(true);
   });
 
   it('repairs the index before dying so the repo is left unwedged', () => {
