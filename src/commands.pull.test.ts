@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as wedgeModule from './commands.pull.wedge.ts';
 import type * as recoveryModule from './commands.pull.recovery.ts';
+import type * as recoveryUnmergedModule from './commands.pull.recovery.unmerged.ts';
 
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
@@ -578,6 +579,7 @@ describe('cmdPull wedge preflight', () => {
     vi.restoreAllMocks();
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./commands.pull.recovery.ts');
+    vi.doUnmock('./commands.pull.recovery.unmerged.ts');
     vi.doUnmock('./utils.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
@@ -937,6 +939,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.restoreAllMocks();
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./commands.pull.recovery.ts');
+    vi.doUnmock('./commands.pull.recovery.unmerged.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./remap.ts');
@@ -975,8 +978,8 @@ describe('handleWedge unmerged-index dispatch', () => {
       return { ...actual, classifyWedge: vi.fn(() => 'unmerged-index') };
     });
     const recoverUnmergedIndexSpy = vi.fn();
-    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof recoveryModule>();
+    vi.doMock('./commands.pull.recovery.unmerged.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryUnmergedModule>();
       return { ...actual, recoverUnmergedIndex: recoverUnmergedIndexSpy };
     });
     const { cmdPull } = await import('./commands.pull.ts');
@@ -991,13 +994,13 @@ describe('handleWedge unmerged-index dispatch', () => {
     });
     const recoverUnmergedIndexSpy = vi.fn();
     const recoverForceRemoteSpy = vi.fn();
+    vi.doMock('./commands.pull.recovery.unmerged.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryUnmergedModule>();
+      return { ...actual, recoverUnmergedIndex: recoverUnmergedIndexSpy };
+    });
     vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof recoveryModule>();
-      return {
-        ...actual,
-        recoverUnmergedIndex: recoverUnmergedIndexSpy,
-        recoverForceRemote: recoverForceRemoteSpy,
-      };
+      return { ...actual, recoverForceRemote: recoverForceRemoteSpy };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -1030,13 +1033,13 @@ describe('handleWedge unmerged-index dispatch', () => {
     });
     const recoverUnmergedIndexSpy = vi.fn();
     const recoverForceRemoteSpy = vi.fn();
+    vi.doMock('./commands.pull.recovery.unmerged.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryUnmergedModule>();
+      return { ...actual, recoverUnmergedIndex: recoverUnmergedIndexSpy };
+    });
     vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof recoveryModule>();
-      return {
-        ...actual,
-        recoverUnmergedIndex: recoverUnmergedIndexSpy,
-        recoverForceRemote: recoverForceRemoteSpy,
-      };
+      return { ...actual, recoverForceRemote: recoverForceRemoteSpy };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
