@@ -21,7 +21,8 @@ import {
   unmergedIndexRunbookText,
   wedgeMarkerRunbookText,
 } from './commands.pull.wedge.ts';
-import { recoverForceRemote, recoverUnmergedIndex } from './commands.pull.recovery.ts';
+import { recoverForceRemote } from './commands.pull.recovery.ts';
+import { recoverUnmergedIndex } from './commands.pull.recovery.unmerged.ts';
 import { EXIT } from './exit-codes.ts';
 import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
