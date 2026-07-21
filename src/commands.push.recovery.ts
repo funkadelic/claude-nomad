@@ -14,8 +14,9 @@
  * without requiring a TTY.
  *
  * Action helpers and per-finding dispatch live in
- * `commands.push.recovery.actions.ts` to keep both modules under the 220-line
- * advisory cap.
+ * `commands.push.recovery.actions.ts`; the `--redact-all` batch half lives in
+ * `commands.push.recovery.redact-all.ts`, keeping all three modules under the
+ * 220-line advisory cap.
  */
 
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -32,8 +33,8 @@ import {
   collectActions,
   dispatchActions,
   findingKey,
-  redactAllFindings,
 } from './commands.push.recovery.actions.ts';
+import { redactAllFindings } from './commands.push.recovery.redact-all.ts';
 import { EXIT } from './exit-codes.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';

@@ -1,8 +1,9 @@
 /**
  * Pure, side-effect-free seams for the push-time recovery menu: key
  * derivation, session-id extraction, prompt-answer parsing, and finding-context
- * masking. Extracted from `commands.push.recovery.actions.ts` so both modules
- * stay under the 220-line advisory cap.
+ * masking. Extracted from `commands.push.recovery.actions.ts` so it, its
+ * `--redact-all` sibling `commands.push.recovery.redact-all.ts`, and this
+ * module all stay under the 220-line advisory cap.
  */
 
 import type { Finding } from './push-gitleaks.scan.ts';

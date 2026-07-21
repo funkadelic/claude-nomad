@@ -20,8 +20,9 @@
  * the finding-path parser captures a multi-segment relative path and the
  * traversal guard validates every segment, not a single filename pattern.
  *
- * Wired into the recovery menu via `dispatchSkill`/`dispatchNonSession` and
- * into `--redact-all` in `commands.push.recovery.actions.ts`.
+ * Wired into the recovery menu via `dispatchSkill`/`dispatchNonSession` in
+ * `commands.push.recovery.actions.ts` and into `--redact-all` in
+ * `commands.push.recovery.redact-all.ts`.
  */
 
 import {
