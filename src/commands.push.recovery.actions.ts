@@ -148,7 +148,11 @@ export async function collectActions(
       `\nFinding: ${f.RuleID} in ${f.File} line ${f.StartLine}` +
       (sid === null ? '' : ` (session: ${sid})`) +
       (ctx === null ? '' : `\n  context: ${ctx}`) +
-      '\n  [R]edact  [A]llow  [D]rop session  [S]kip (default)\n';
+      // [D]rop applies only to session findings; a null sid (memory/skill
+      // finding) has no session to drop, so omit the dead affordance.
+      (sid === null
+        ? '\n  [R]edact  [A]llow  [S]kip (default)\n'
+        : '\n  [R]edact  [A]llow  [D]rop session  [S]kip (default)\n');
     actions.set(findingKey(f), parseAction(await prompt(header + '> ')));
   }
   return actions;

@@ -156,8 +156,9 @@ export function resolveSkillLocalPath(name: string, relPath: string): string | n
  * No-scan, no-mutation redactability preflight for one finding, parallel to
  * `preflightMemoryRedactable`. Returns a human-readable refusal reason when
  * the finding is not a skill file or the local file cannot be resolved
- * (unsafe name/path, gsd-owned, missing), else null. Intended for
- * `--redact-all`'s all-or-nothing gate (wired in a later plan).
+ * (unsafe name/path, gsd-owned, missing), else null. Consumed by
+ * `--redact-all`'s all-or-nothing preflight gate in
+ * `commands.push.recovery.redact-all.ts`.
  *
  * @param f Finding to preflight.
  * @returns A refusal reason string, or null when the finding would proceed.

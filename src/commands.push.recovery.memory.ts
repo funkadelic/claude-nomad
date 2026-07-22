@@ -158,7 +158,8 @@ export function resolveMemoryLocalPath(
  * `preflightRedactable` in `commands.push.recovery.redact.ts`. Returns a
  * human-readable refusal reason when the finding is not a memory file or the
  * local file cannot be resolved (unmapped host, missing file), else null.
- * Intended for `--redact-all`'s all-or-nothing gate (wired in a later plan).
+ * Consumed by `--redact-all`'s all-or-nothing preflight gate in
+ * `commands.push.recovery.redact-all.ts`.
  *
  * @param f Finding to preflight.
  * @param map Parsed path-map for the host-mapping lookup.

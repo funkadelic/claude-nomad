@@ -162,6 +162,10 @@ function stageExtras(tmpRoot: string, map: PathMap): number {
 function stageSkills(tmpRoot: string): number {
   const localSkills = join(claudeHome(), 'skills');
   const stat = lstatSync(localSkills, { throwIfNoEntry: false });
+  // Symlink-era host (skills not yet copy-migrated): the preview stages nothing,
+  // so it does not re-scan any skill content already committed to shared/skills/
+  // that a real push would still cover. Transient (one `nomad pull` migrates the
+  // link) and no new leak (that content was scanned when first pushed).
   if (stat === undefined || stat.isSymbolicLink()) return 0;
   const names = readdirSync(localSkills, { encoding: 'utf8' }).filter((n) => !isSkillExcluded(n));
   if (names.length === 0) return 0;

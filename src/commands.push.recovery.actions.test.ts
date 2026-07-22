@@ -643,6 +643,29 @@ describe('collectActions - masked context line in prompt', () => {
     expect(action).toBe('skip');
   });
 
+  it('omits the [D]rop affordance for a memory finding with no resolvable session', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFullFinding({
+      File: 'shared/memory/notes.md',
+      Fingerprint: 'shared/memory/notes.md:github-pat:1',
+    });
+
+    let capturedPrompt = '';
+    const prompt = (p: string): Promise<string> => {
+      capturedPrompt = p;
+      return Promise.resolve('s');
+    };
+    const readLine = (_file: string, _line: number): string | null => null;
+
+    await collectActions([f], prompt, readLine);
+
+    expect(capturedPrompt).toContain('[R]edact');
+    expect(capturedPrompt).toContain('[A]llow');
+    expect(capturedPrompt).toContain('[S]kip (default)');
+    expect(capturedPrompt).not.toContain('[D]rop');
+    expect(capturedPrompt).not.toContain('session:');
+  });
+
   it('default real readLine reads from a fixture file under NOMAD_REPO', async () => {
     const originalNomadRepo = process.env.NOMAD_REPO;
     const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-reader-'));
