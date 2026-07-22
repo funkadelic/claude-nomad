@@ -1010,6 +1010,38 @@ describe('dispatchActions - memory finding dispatch', () => {
     expect(appendMock).toHaveBeenCalledWith('fp-mem', '/repo');
   });
 
+  it('a bare memory/ prefix with no filename logs a manual-scrub hint and does not redact', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(true);
+    const logMock = vi.fn();
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    // Under memory/ (so isMemoryFindingPath routes it to dispatchMemory) but with
+    // no trailing filename, so memoryFileFromFinding returns null: the defensive
+    // null-parse branch logs a manual-scrub hint instead of redacting.
+    const f = makeFinding({ File: 'shared/projects/myproj/memory/' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applyMemoryRedactMock).not.toHaveBeenCalled();
+    const msgs = logMock.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => m.includes('not auto-redactable'))).toBe(true);
+  });
+
   it('a non-memory non-session finding is still a no-op for redact (dispatchMemory does not act)', async () => {
     const applyMemoryRedactMock = vi.fn();
     vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
