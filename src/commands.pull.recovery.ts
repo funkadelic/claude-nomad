@@ -10,8 +10,14 @@
  *   5. Reset hard to origin/main; control returns to cmdPull for the re-pull.
  *
  * The single safety gate: any touch of a synced-config path (PUSH_ALLOWED_STATIC)
- * is a hard refusal; every other discard is reversible via the parking branch
- * (and git reflog as a further backstop).
+ * is a hard refusal. Committed stranded work is preserved on the parking branch
+ * (recoverable there and via git reflog), and untracked files survive the reset
+ * entirely. The one discard that is NOT recoverable is an UNCOMMITTED change to a
+ * tracked, non-synced-config path (tool-source under `shared/projects/**` or
+ * `shared/extras/**`): `git branch <name> HEAD` captures only committed state, so
+ * `git reset --hard` drops it. That is acceptable because those trees are
+ * regenerable from `~/.claude/` on the next push, but the discard is real, not
+ * reversible.
  */
 
 import { PUSH_ALLOWED_STATIC } from './config.ts';
