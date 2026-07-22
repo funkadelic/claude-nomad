@@ -144,7 +144,14 @@ describe('cmdPull: extras integration', () => {
     // extras integration tests focus on their own scope.
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => null) };
+      // classifyWedge null = not wedged. probeUnmergedIndex 'clean' keeps the
+      // post-pull autostash guard from failing closed on the non-git fixture
+      // (the real flow probes a real repo here; this test mocks git pull away).
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
     });
     vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
@@ -655,7 +662,14 @@ describe('cmdPull wedge preflight', () => {
   it('proceeds normally (no die) on a clean repo', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => null) };
+      // classifyWedge null = not wedged. probeUnmergedIndex 'clean' keeps the
+      // post-pull autostash guard from failing closed on the non-git fixture
+      // (the real flow probes a real repo here; this test mocks git pull away).
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
     });
     // Mock gitOrFatal so git pull does not actually run (no real repo).
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -869,7 +883,14 @@ describe('cmdPull forceRemote routing', () => {
     writeFileSync(join(repoHome, 'shared', 'settings.base.json'), '{}\n');
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => null) };
+      // classifyWedge null = not wedged. probeUnmergedIndex 'clean' keeps the
+      // post-pull autostash guard from failing closed on the non-git fixture
+      // (the real flow probes a real repo here; this test mocks git pull away).
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -1068,7 +1089,14 @@ describe('handleWedge unmerged-index dispatch', () => {
   it('classifyWedge returning null is a no-op (no die, no recovery)', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => null) };
+      // classifyWedge null = not wedged. probeUnmergedIndex 'clean' keeps the
+      // post-pull autostash guard from failing closed on the non-git fixture
+      // (the real flow probes a real repo here; this test mocks git pull away).
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
     });
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -1170,7 +1198,14 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     // are always clean and would return null anyway.
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => null) };
+      // classifyWedge null = not wedged. probeUnmergedIndex 'clean' keeps the
+      // post-pull autostash guard from failing closed on the non-git fixture
+      // (the real flow probes a real repo here; this test mocks git pull away).
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
     });
     vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
@@ -1479,7 +1514,14 @@ describe('runPullCore: return shape and lock-free contract', () => {
     vi.resetModules();
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => null) };
+      // classifyWedge null = not wedged. probeUnmergedIndex 'clean' keeps the
+      // post-pull autostash guard from failing closed on the non-git fixture
+      // (the real flow probes a real repo here; this test mocks git pull away).
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
     });
     gitCaptureRawMock = vi.fn(() => '');
     vi.doMock('./utils.ts', async (importOriginal) => {

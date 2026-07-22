@@ -49,20 +49,32 @@ export function detectWedge(repo: string): WedgeMode {
 }
 
 /**
+ * The outcome of probing the git index for unmerged entries.
+ *
+ * - `'unmerged'`: the index has stage-2/3 blobs (a conflict is materialized).
+ * - `'clean'`: the probe ran and found no unmerged entries.
+ * - `'error'`: the probe itself failed (git absent, non-git dir, timeout).
+ *   "Clean" and "cannot determine" are DISTINCT so callers can choose their
+ *   own bias: wedge detection treats `'error'` as clean (fail-open, deferring
+ *   to `gitOrFatal`), the autostash guard treats it as unmerged (fail-closed).
+ */
+export type IndexProbe = 'unmerged' | 'clean' | 'error';
+
+/**
  * Probe the git index for unmerged entries (stage-2/3 blobs). Shell-free
  * argv-array invocation mirroring the `gitCapture`/`gitStatusPorcelainZ`
  * convention in `commands.pull.recovery.ts`.
  *
- * Returns `true` when `git diff --diff-filter=U --name-only -z` produces
- * non-empty output (at least one NUL-terminated path), `false` otherwise.
- * Returns `false` on any exec failure (git absent, non-git dir): the caller
- * treats "can't tell" as "not wedged" and lets the downstream `gitOrFatal`
- * produce the real error.
+ * Returns `'unmerged'` when `git diff --diff-filter=U --name-only -z` produces
+ * non-empty output (at least one NUL-terminated path), `'clean'` when it runs
+ * with no unmerged paths, and `'error'` on any exec failure (git absent,
+ * non-git dir). The three-state result lets each caller pick its own bias for
+ * the undeterminable case; see {@link IndexProbe}.
  *
  * @param repo Absolute path to the repository root.
- * @returns `true` if the index contains unmerged entries, `false` if clean.
+ * @returns The probe outcome; see {@link IndexProbe}.
  */
-export function unmergedIndexPresent(repo: string): boolean {
+export function probeUnmergedIndex(repo: string): IndexProbe {
   let raw: string;
   try {
     raw = execFileSync('git', ['diff', '--diff-filter=U', '--name-only', '-z'], {
@@ -71,9 +83,22 @@ export function unmergedIndexPresent(repo: string): boolean {
       maxBuffer: 64 * 1024 * 1024,
     }).toString();
   } catch {
-    return false; // non-git dir or git absent: defer to gitOrFatal for the real error
+    return 'error'; // non-git dir or git absent: caller decides how to bias
   }
-  return raw.split('\0').some(Boolean);
+  return raw.split('\0').some(Boolean) ? 'unmerged' : 'clean';
+}
+
+/**
+ * Fail-open boolean view of {@link probeUnmergedIndex} for the wedge-detection
+ * callers (`classifyWedge`, push-checks preflight) that intentionally treat
+ * "can't tell" as "not wedged" and let the downstream `gitOrFatal` produce the
+ * real error. Both `'clean'` and `'error'` map to `false`.
+ *
+ * @param repo Absolute path to the repository root.
+ * @returns `true` only if the index definitively contains unmerged entries.
+ */
+export function unmergedIndexPresent(repo: string): boolean {
+  return probeUnmergedIndex(repo) === 'unmerged';
 }
 
 /**

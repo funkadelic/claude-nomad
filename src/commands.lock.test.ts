@@ -34,11 +34,17 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     mkdirSync(join(testHome, '.claude'), { recursive: true });
     vi.resetModules();
     // classifyWedge calls execFileSync (git diff --diff-filter=U) which fails
-    // on non-git temp dirs. Return null (clean) so lock tests focus on their
-    // own scope (lock acquire/release and backup-dir error paths).
+    // on non-git temp dirs. Return null (clean), and stub probeUnmergedIndex to
+    // 'clean' so the post-pull autostash guard does not fail closed on the
+    // non-git fixture, so lock tests focus on their own scope (lock
+    // acquire/release and backup-dir error paths).
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => null) };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
     });
     // Suppress noisy fatal output during the test.
     vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {

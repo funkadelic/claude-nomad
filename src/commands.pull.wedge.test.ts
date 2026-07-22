@@ -11,6 +11,7 @@ import {
   classifyWedge,
   detectWedge,
   orphanedAutostashPresent,
+  probeUnmergedIndex,
   unmergedIndexPresent,
 } from './commands.pull.wedge.ts';
 
@@ -92,6 +93,33 @@ describe('unmergedIndexPresent', () => {
     gitInit(tmp);
     makeCommit(tmp, 'a.ts', 'x\n', 'initial');
     expect(unmergedIndexPresent(tmp)).toBe(false);
+  });
+});
+
+describe('probeUnmergedIndex', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-probe-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("returns 'unmerged' when the index has stage-2/3 entries", () => {
+    buildUnmergedIndexNoMarker(tmp);
+    expect(probeUnmergedIndex(tmp)).toBe('unmerged');
+  });
+
+  it("returns 'clean' on a clean committed repo", () => {
+    gitInit(tmp);
+    makeCommit(tmp, 'a.ts', 'x\n', 'initial');
+    expect(probeUnmergedIndex(tmp)).toBe('clean');
+  });
+
+  it("returns 'error' in a non-git directory (probe cannot run)", () => {
+    expect(probeUnmergedIndex(tmp)).toBe('error');
   });
 });
 

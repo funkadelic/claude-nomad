@@ -14,15 +14,17 @@
  * re-probed after the pull returned. This module is the missing re-probe,
  * shared by both call sites so the runbook text has one source of truth.
  *
- * This module probes `unmergedIndexPresent` directly rather than
+ * This module probes `probeUnmergedIndex` directly rather than
  * `classifyWedge`: at this call site the pull has just returned, so no
  * rebase/merge marker can be present (a conflicted autostash pop happens
  * after the rebase itself already finished and tore its markers down), and
  * the message here is specific to the autostash-pop case rather than the
- * generic torn-down-rebase wording `unmergedIndexRunbookText` uses.
+ * generic torn-down-rebase wording `unmergedIndexRunbookText` uses. It uses
+ * the three-state probe (not the fail-open `unmergedIndexPresent`) so a probe
+ * error aborts fail-closed instead of waving conflict markers through.
  */
 
-import { orphanedAutostashPresent, unmergedIndexPresent } from './commands.pull.wedge.ts';
+import { orphanedAutostashPresent, probeUnmergedIndex } from './commands.pull.wedge.ts';
 import { EXIT } from './exit-codes.ts';
 import { NomadFatal } from './utils.ts';
 
@@ -76,21 +78,30 @@ export function autostashConflictRunbookText(resumeCmd: string, stashRetained: b
 
 /**
  * Re-probe `repo` for a conflicted autostash pop immediately after a
- * `git pull --rebase --autostash` call returns. Returns silently when the
- * index is clean. Throws `NomadFatal` with `code` `EXIT.CONFLICT` and the
- * {@link autostashConflictRunbookText} message when the index has unmerged
- * entries.
+ * `git pull --rebase --autostash` call returns. Returns silently ONLY when the
+ * probe definitively reports a clean index. Throws `NomadFatal` with `code`
+ * `EXIT.CONFLICT` and the {@link autostashConflictRunbookText} message when the
+ * index has unmerged entries.
+ *
+ * Fail-closed: unlike the wedge-detection callers, an `'error'` probe outcome
+ * (git absent, index unreadable) is treated as "assume conflict, abort" rather
+ * than "assume clean". This guard is the sole barrier stopping conflict-markered
+ * config from being deep-merged into the live `~/.claude/settings.json` after a
+ * silently-conflicted autostash pop, so it must never wave through an
+ * undeterminable index.
  *
  * `orphanedAutostashPresent` is called unconditionally inside the throw
  * expression (rather than branched separately) so the function stays
- * single-branch at the call site.
+ * single-branch at the call site. In the `'error'` case it too fails safe
+ * (returns `false`), selecting the no-stash runbook that withholds the
+ * destructive hard reset.
  *
  * @param repo Absolute path to the repository root just pulled.
  * @param resumeCmd The `nomad <subcommand>` the caller is running, threaded
  *   into the runbook text.
  */
 export function assertNoAutostashConflict(repo: string, resumeCmd: string): void {
-  if (!unmergedIndexPresent(repo)) return;
+  if (probeUnmergedIndex(repo) === 'clean') return;
   throw new NomadFatal(autostashConflictRunbookText(resumeCmd, orphanedAutostashPresent(repo)), {
     code: EXIT.CONFLICT,
   });

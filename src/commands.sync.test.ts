@@ -862,7 +862,9 @@ function mockDrySeams(
   });
   vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof wedgeModule>();
-    return { ...actual, classifyWedge: classifyWedgeSpy };
+    // probeUnmergedIndex 'clean' keeps the post-pull autostash guard from
+    // failing closed on the non-git fixture (git pull is mocked away here).
+    return { ...actual, classifyWedge: classifyWedgeSpy, probeUnmergedIndex: vi.fn(() => 'clean') };
   });
   vi.doMock('./utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
