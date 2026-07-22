@@ -360,7 +360,7 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     teardownPreviewEnv(env);
   });
 
-  it('returns a scan-failed verdict (not a leak) and sets exitCode 1 when scanStagedTree returns null', async () => {
+  it('fails closed to LEAK_BLOCKED (not a leak) when scanStagedTree returns null', async () => {
     // Plant a session so staged > 0 (otherwise we never reach scanStagedTree).
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
@@ -376,9 +376,11 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     const { previewPushLeaks } = await import('./push-preview.ts');
     const map = { projects: { [logical]: { 'test-host': localPath } } };
     const verdict = previewPushLeaks(map);
-    expect(process.exitCode).toBe(1);
-    // A scan crash is surfaced as a ✗ row but is NOT a leak (no throw, no
-    // phantom drop-session recovery).
+    // An unparseable report fails closed to the same LEAK_BLOCKED (5) the real
+    // push uses, so `$?` parity holds for an unscannable tree.
+    expect(process.exitCode).toBe(EXIT.LEAK_BLOCKED);
+    // Still surfaced as a ✗ row but NOT a leak (no throw, no phantom
+    // drop-session recovery).
     expect(verdict.leak).toBe(false);
     expect(verdict.recovery).toBeNull();
     expect(verdict.verdictRow).toMatch(/scan failed/i);

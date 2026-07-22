@@ -10,9 +10,12 @@
  * the ✗ verdict row, then throws a `NomadFatal` carrying `recovery` so the
  * existing catch prints the recovery block and sets a non-zero exit. The
  * dry-run path never throws; it sets `process.exitCode` directly, using
- * `EXIT.LEAK_BLOCKED` (5) on a confirmed leak (matching the real-push code) and
- * `EXIT.GENERIC_FAILURE` (1) on a scan that could not run. See
- * `verdictFromFindings`.
+ * `EXIT.LEAK_BLOCKED` (5) on a confirmed leak AND on a scan that ran but
+ * produced no parseable report (fail-closed, matching the real push, so a
+ * scripted pre-flight branching on `$?` buckets an unscannable tree the same
+ * way both paths do), and `EXIT.GENERIC_FAILURE` (1) only when the scan itself
+ * threw before producing a report (gitleaks/git absent). See
+ * `verdictFromFindings` and `verdictScanError`.
  */
 
 import { failGlyph, green, okGlyph, red } from './color.ts';
@@ -90,25 +93,28 @@ function leakFound(findings: Finding[]): LeakVerdict {
 
 /**
  * Map a `scanStagedTree` result to a structured `LeakVerdict`, applying the
- * shared exit-code side effect. The leak and scan-failure cases map to
- * DISTINCT codes so a scripted `push --dry-run` pre-flight can branch on `$?`
- * the same way it would on a real push:
+ * shared exit-code side effect so a scripted `push --dry-run` pre-flight can
+ * branch on `$?` the same way it would on a real push:
  *
  * - Non-empty findings (a real leak): `process.exitCode = EXIT.LEAK_BLOCKED`
  *   (5), matching the `leakBlockedFatal` a real push throws, so a wrapper
  *   branching on `$? == 5` buckets a dry-run leak identically to a real one.
- * - `null` report (scan crash): `process.exitCode = 1` (GENERIC_FAILURE). A
- *   scan that could not run is a setup/tooling failure, NOT a confirmed leak,
- *   so it is NOT classified as a `leak` (the dry-run path neither throws nor
- *   offers a phantom drop-session hint) and keeps the generic code.
+ * - `null` report (scan ran but emitted no parseable report): fail closed with
+ *   `process.exitCode = EXIT.LEAK_BLOCKED` (5) too, matching the real push,
+ *   whose `scanPushVerdict` treats an unparseable report as leak-blocked. An
+ *   unscannable tree is NOT let through as a permissive generic code. It is
+ *   still not classified as a `leak` (the dry-run path neither throws nor
+ *   offers a phantom drop-session hint; the ✗ row says the scan failed), only
+ *   the exit code is aligned. A scan that THREW before producing a report
+ *   (gitleaks/git absent) keeps the generic code via `verdictScanError`.
  * - Empty array: the clean `✓ no leaks` row, exit code untouched.
  *
- * @param findings - Output of `scanStagedTree`, or `null` on scan crash.
+ * @param findings - Output of `scanStagedTree`, or `null` on an unparseable report.
  * @returns The structured verdict for the Leak scan section.
  */
 export function verdictFromFindings(findings: Finding[] | null): LeakVerdict {
   if (findings === null) {
-    process.exitCode = 1;
+    process.exitCode = EXIT.LEAK_BLOCKED;
     return {
       leak: false,
       verdictRow: failRow('scan failed, no parseable report'),

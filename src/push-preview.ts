@@ -7,8 +7,10 @@
  * `{ leak, verdictRow, recovery }` (rather than logged) so `cmdPush` can place
  * `verdictRow` in the grouped tree's Leak scan section and print `recovery`
  * (the `buildSessionAwareFatal` body) below the tree. On findings it sets
- * `process.exitCode = EXIT.LEAK_BLOCKED` (5, matching a real push); on a scan
- * crash/error it sets `1` (see `verdictFromFindings`/`verdictScanError`).
+ * `process.exitCode = EXIT.LEAK_BLOCKED` (5, matching a real push); a scan that
+ * ran but produced no parseable report also fails closed to `5` (matching the
+ * real push); only a scan that threw before any report (gitleaks/git absent)
+ * sets `1` (see `verdictFromFindings`/`verdictScanError`).
  *
  * This module is the push-dry-run-only path. The `nomad doctor --check-shared`
  * preflight (session-only scan, no extras) is unchanged and lives in

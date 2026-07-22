@@ -402,8 +402,18 @@ export async function cmdPush(
     fullScan?: boolean;
   } = {},
 ): Promise<void> {
-  // Resolution-mode conflicts are guarded inside `runPushCore` (so the
-  // `cmdSync` compose seam is covered too); no separate check is needed here.
+  // Defense-in-depth: guard resolution-mode conflicts here too, BEFORE the repo
+  // check and lock acquisition, so a conflicting flag combination is reported
+  // even when the repo is missing or another push holds the lock (in which case
+  // `runPushCore`, which carries the same guard for the `cmdSync` compose seam,
+  // is never reached). The guard is pure and idempotent, so running it twice on
+  // the standalone path is harmless.
+  guardResolutionModeConflicts(
+    opts.dryRun === true,
+    opts.redactAll === true,
+    opts.allowAll === true,
+    opts.allowRule,
+  );
   // Resolve roots once per command invocation (TOCTOU mitigation).
   const repo = repoHome();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);

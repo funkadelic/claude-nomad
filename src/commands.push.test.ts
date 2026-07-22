@@ -58,7 +58,9 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    await expect(cmdPush({ redactAll: true, allowAll: true })).rejects.toThrow(DieError);
+    await expect(cmdPush({ redactAll: true, allowAll: true })).rejects.toThrow(
+      /mutually exclusive resolution modes/,
+    );
   });
 
   it('throws (via die) when --redact-all and --allow <rule> are both set', async () => {
@@ -72,7 +74,9 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    await expect(cmdPush({ redactAll: true, allowRule: 'github-pat' })).rejects.toThrow(DieError);
+    await expect(cmdPush({ redactAll: true, allowRule: 'github-pat' })).rejects.toThrow(
+      /mutually exclusive resolution modes/,
+    );
   });
 
   it('throws (via die) when --allow-all and --allow <rule> are both set', async () => {
@@ -86,7 +90,9 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    await expect(cmdPush({ allowAll: true, allowRule: 'github-pat' })).rejects.toThrow(DieError);
+    await expect(cmdPush({ allowAll: true, allowRule: 'github-pat' })).rejects.toThrow(
+      /mutually exclusive resolution modes/,
+    );
   });
 
   it('throws (via die) when --dry-run and --allow-all are both set', async () => {
@@ -100,7 +106,9 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    await expect(cmdPush({ dryRun: true, allowAll: true })).rejects.toThrow(DieError);
+    await expect(cmdPush({ dryRun: true, allowAll: true })).rejects.toThrow(
+      /cannot be combined with --dry-run/,
+    );
   });
 
   it('throws (via die) when --dry-run and --allow <rule> are both set', async () => {
@@ -114,7 +122,9 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    await expect(cmdPush({ dryRun: true, allowRule: 'github-pat' })).rejects.toThrow(DieError);
+    await expect(cmdPush({ dryRun: true, allowRule: 'github-pat' })).rejects.toThrow(
+      /cannot be combined with --dry-run/,
+    );
   });
 
   it('throws (via die) when --dry-run and --redact-all are both set', async () => {
@@ -128,7 +138,9 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
       };
     });
     const { cmdPush } = await import('./commands.push.ts');
-    await expect(cmdPush({ dryRun: true, redactAll: true })).rejects.toThrow(DieError);
+    await expect(cmdPush({ dryRun: true, redactAll: true })).rejects.toThrow(
+      /cannot be combined with --dry-run/,
+    );
   });
 
   it('runPushCore itself enforces the guard, so the compose seam cannot bypass it', async () => {
