@@ -16,9 +16,11 @@
  *
  * WARN-only, never FAIL: a finding here is retroactive (it already left in a
  * prior push), not blocking, so `process.exitCode` is never set by this
- * module on any path. Never throws: a scan failure or an unparseable report
- * both collapse to a single WARN-skip row rather than aborting the doctor
- * run mid-output.
+ * module on any path. Never throws: a scan failure, an unparseable report, or
+ * an incomplete blob materialization all collapse to a single WARN-skip row
+ * rather than aborting the doctor run mid-output. The incomplete-materialization
+ * case fails safe (WARN-skip, never a clean pass), because a blob that could
+ * not be read might be the only leaking file.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -43,6 +45,16 @@ import { nowTimestamp } from './utils.fs.ts';
 const MEMORY_MD_PATH = /^shared\/projects\/([^/]+)\/memory\/[^/]+\.md$/;
 
 /**
+ * Result of a scan-tree build: how many distinct logicals were staged, and
+ * whether the build was incomplete (at least one committed blob could not be
+ * materialized). `incomplete` is the fail-safe signal for a security advisory:
+ * a partial tree must never be scanned and reported clean, because the one blob
+ * that failed to read could be the only leaking file. Mirrors the sibling
+ * skills advisory's `SkillScanBuild`.
+ */
+export type MemoryScanBuild = { staged: number; incomplete: boolean };
+
+/**
  * Materialize every committed, flat `memory/*.md` blob from the sync repo's
  * `HEAD` into `tmpRoot/shared/projects/<logical>/memory/<file>`, mirroring
  * the `buildScanTree` temp-copy pattern in the sibling `check-shared.ts` but
@@ -52,17 +64,21 @@ const MEMORY_MD_PATH = /^shared\/projects\/([^/]+)\/memory\/[^/]+\.md$/;
  * uncommitted local deletion hide a secret that is still committed and
  * reachable by anyone who clones the repo, and would recursively copy
  * anything nested under `memory/` rather than enforcing the documented flat
- * `memory/*.md` scope. Returns the count of distinct logicals staged; returns
- * 0 (no crash) on any git failure (empty repo, not a git repo, `git` missing,
- * or `shared/projects` absent from `HEAD`). Copying into a fresh temp dir
- * first is load-bearing for a separate reason: `scanStagedTree` internally
- * runs `git add -A`, and running that against the real `repoHome()` would
- * mutate the actual repo's index as a side effect of a read-only check.
+ * `memory/*.md` scope. Copying into a fresh temp dir first is load-bearing for
+ * a separate reason: `scanStagedTree` internally runs `git add -A`, and running
+ * that against the real `repoHome()` would mutate the actual repo's index as a
+ * side effect of a read-only check.
+ *
+ * Returns `{ staged, incomplete }`. `staged` is 0 with `incomplete: false` on
+ * any git failure that prevents listing at all (empty repo, not a git repo,
+ * `git` missing, `shared/projects` absent from `HEAD`): legitimately "nothing
+ * to check". `incomplete` is true when a listed blob's `git cat-file` failed,
+ * so the caller fails safe and emits a WARN-skip instead of scanning a subset.
  *
  * @param tmpRoot Absolute path to the (not-yet-existing) temp scan tree.
- * @returns The number of distinct `<logical>` memory dirs staged.
+ * @returns The staged distinct-logical count and an incomplete-materialization flag.
  */
-export function buildMemoryScanTree(tmpRoot: string): number {
+export function buildMemoryScanTree(tmpRoot: string): MemoryScanBuild {
   let paths: string[];
   try {
     const out = execFileSync(
@@ -72,10 +88,11 @@ export function buildMemoryScanTree(tmpRoot: string): number {
     );
     paths = out.split('\0').filter((p) => p.length > 0);
   } catch {
-    return 0;
+    return { staged: 0, incomplete: false };
   }
 
   const logicals = new Set<string>();
+  let incomplete = false;
   for (const rel of paths) {
     const m = MEMORY_MD_PATH.exec(rel);
     if (m?.[1] === undefined) continue;
@@ -87,6 +104,9 @@ export function buildMemoryScanTree(tmpRoot: string): number {
         timeout: 10000,
       });
     } catch {
+      // Fail safe: a blob we could not read might be the only leaking file, so
+      // flag the whole build incomplete rather than silently scanning a subset.
+      incomplete = true;
       continue;
     }
     const dest = join(tmpRoot, rel);
@@ -94,7 +114,7 @@ export function buildMemoryScanTree(tmpRoot: string): number {
     writeFileSync(dest, blob);
     logicals.add(m[1]);
   }
-  return logicals.size;
+  return { staged: logicals.size, incomplete };
 }
 
 /**
@@ -155,7 +175,17 @@ export function reportCommittedMemory(section: DoctorSection): void {
     // contain the very secrets this advisory scans for, so a 0o700 root keeps
     // another local user from reading them out of the temp tree mid-scan.
     mkdirSync(tmpRoot, { recursive: true, mode: 0o700 });
-    const staged = buildMemoryScanTree(tmpRoot);
+    const { staged, incomplete } = buildMemoryScanTree(tmpRoot);
+    // Fail safe: an incomplete materialization must never scan-and-report
+    // clean, since the unreadable blob could be the only leaking file. Emit
+    // the same WARN-skip shape used when the scan itself cannot complete.
+    if (incomplete) {
+      addItem(
+        section,
+        `${yellow(warnGlyph)} committed-memory scan skipped: could not read every committed memory blob`,
+      );
+      return;
+    }
     if (staged === 0) return;
 
     let findings: Finding[] | null;

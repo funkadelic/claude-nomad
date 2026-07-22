@@ -42,7 +42,7 @@ import { applyRedactions } from './commands.redact.core.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
-import { log } from './utils.ts';
+import { log, warn } from './utils.ts';
 
 /**
  * Matches a repo-relative POSIX finding path of the form
@@ -198,6 +198,12 @@ export function preflightSkillRedactable(f: Finding): string | null {
  * itself fails (gitleaks error, `scan` returns null), or the scan finds
  * nothing to redact; no local write occurs in those cases.
  *
+ * When `applyRedactions` produces byte-identical output (the finding's `Match`
+ * value could not be located in the file, e.g. a truncated/normalized span),
+ * emits a no-op warning on the warning channel (`warn`) before writing, so the
+ * operator is not misled by a silent "success"; the push re-scan still blocks a
+ * leak that slipped through.
+ *
  * Reuses `applyRedactions` and `scanFile` unchanged -- both primitives are
  * content-agnostic and already correct regardless of file extension
  * (`.md`, `.py`, `.json`, ...), so no extension special-casing is applied
@@ -240,6 +246,19 @@ export function applySkillRedact(
   backupBeforeWrite(localPath, ts);
   const before = readFileSync(localPath, 'utf8');
   const after = applyRedactions(before, findings);
+  // applyRedactions locates secrets by their `Match` value, not by column. If a
+  // finding's Match cannot be found in the file (a truncated or normalized span
+  // from the scanner), the file is unchanged despite a non-empty scan, so a
+  // silent "redacted" return would mislead the operator into thinking Redact
+  // worked. Surface it, mirroring the session-subtree path
+  // (`commands.redact.subtree.ts`); the staged-tree re-scan still blocks a real
+  // leak that slipped through.
+  if (after === before) {
+    warn(
+      `no redaction applied to ${name}/${relPath}: finding match values were not located in ` +
+        `the file. Inspect it manually; the push re-scan still blocks a real leak.`,
+    );
+  }
   writeFileSync(localPath, after, 'utf8');
 
   const dest = join(repoHome(), 'shared', 'skills', name, ...relPath.split('/'));
