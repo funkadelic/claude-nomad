@@ -13,7 +13,7 @@
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -142,10 +142,14 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
  * Intentionally does NOT pass `--redact` so that `Finding.Match` and
  * `Finding.Secret` carry the real secret value. Callers that need to perform
  * value-based redaction (e.g. the push recovery `applyRedact` and `cmdRedact`)
- * require the literal match to replace it in the transcript. The temp report
- * file (which contains the real value) is deleted in a `finally` block on every
- * path, and the process streams are never written on the findings path, so the
- * real secret is never emitted to stdout/stderr.
+ * require the literal match to replace it in the transcript. Because this report
+ * holds real secret values (unlike `scanStagedTree`, which passes `--redact`),
+ * it is written into an owner-only (`0o700`) `mkdtempSync` scratch dir rather
+ * than the shared `~/.cache/claude-nomad/` (mode ~`0o755`), so the transient
+ * report is never world-readable while it exists. The whole scratch dir is
+ * removed in a `finally` block on every path, and the process streams are never
+ * written on the findings path, so the real secret is never emitted to
+ * stdout/stderr.
  *
  * Error model mirrors `scanStagedTree`: gitleaks exits non-zero when findings
  * exist (exit 1) or on an internal error (exit 2+). Exit 1 with a parseable
@@ -183,7 +187,11 @@ export function scanFile(
 ): Finding[] | null {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
-  const reportPath = join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}.json`);
+  // The unredacted report goes in an owner-only (0o700) scratch dir, not the
+  // shared cache dir; mkdtempSync creates the dir 0o700 so the transient report
+  // is never world-readable. The nowTimestamp/pid prefix keeps it recognizable.
+  const reportDir = mkdtempSync(join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}-`));
+  const reportPath = join(reportDir, 'report.json');
   const { path: toml, tempPath } = resolveTomlConfig();
   const args: string[] = [
     'detect',
@@ -212,6 +220,6 @@ export function scanFile(
     return report;
   } finally {
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
-    rmSync(reportPath, { force: true });
+    rmSync(reportDir, { recursive: true, force: true });
   }
 }

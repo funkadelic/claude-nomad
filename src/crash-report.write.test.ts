@@ -146,10 +146,20 @@ describe('writeCrashReport', () => {
     },
   );
 
-  it('names the file crash-<timestamp>-<pid>.txt under dir', () => {
+  it('names the file crash-<timestamp>-<pid>-<rand>.txt under dir', () => {
     const path = writeCrashReport('report text', dir);
     expect(path.startsWith(dir)).toBe(true);
-    expect(path).toMatch(/crash-\d{8}-\d{6}-\d+\.txt$/);
+    // Trailing 8-hex-char random suffix (4 bytes) makes same-second crashes
+    // collision-resistant.
+    expect(path).toMatch(/crash-\d{8}-\d{6}-\d+-[0-9a-f]{8}\.txt$/);
+  });
+
+  it('generates a distinct filename for two crashes in the same process-second', () => {
+    const p1 = writeCrashReport('report one', dir);
+    const p2 = writeCrashReport('report two', dir);
+    // Same timestamp + pid, but the random suffix differs, so neither report
+    // overwrites the other.
+    expect(p1).not.toBe(p2);
   });
 
   it('writes the exact given text', () => {
@@ -203,9 +213,11 @@ describe('handleCrash', () => {
     vi.restoreAllMocks();
   });
 
-  it('prints the crash file path and the issues URL on the happy path', () => {
+  it('prints the crash file path, issues URL, and an unconditional review caveat on the happy path', () => {
     handleCrash(new Error('boom'), ['nomad', 'push'], {
       ...baseOpts,
+      // Redact seam returns the text unchanged (scan ran, no advisory), so the
+      // caveat must come from the banner, not the in-file scan-unavailable path.
       redact: (text) => text,
       write: () => '/fake/crash/path.txt',
       now: () => '2026-07-17T00:00:00.000Z',
@@ -215,6 +227,7 @@ describe('handleCrash', () => {
     expect(errCalls.some((l: string) => l.includes('This looks like a bug'))).toBe(true);
     expect(logCalls.some((l: string) => l.includes('/fake/crash/path.txt'))).toBe(true);
     expect(logCalls.some((l: string) => l.includes(baseOpts.issuesUrl))).toBe(true);
+    expect(logCalls.some((l: string) => l.includes('Review it for anything sensitive'))).toBe(true);
   });
 
   it('passes the composed report through the redact seam', () => {

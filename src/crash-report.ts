@@ -158,6 +158,39 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
 }
 
 /**
+ * Structural credential scrub applied to the composed report BEFORE the
+ * gitleaks value-based pass. It is a fail-safe backstop for the gitleaks-less
+ * host: when `scanFile` returns null (binary absent, common on a fresh host's
+ * first pull), `redactWithGitleaks` applies no token scrubbing, so a raw
+ * `execFileSync` error whose `.message` embeds a credential (most commonly a
+ * git remote URL like `https://x-access-token:ghp_...@github.com`) would
+ * otherwise reach disk unredacted. Two high-signal, low-false-positive
+ * patterns:
+ *
+ * 1. URL userinfo: the `user[:pass]@` segment of any `scheme://...@host` URL is
+ *    replaced with `<redacted>@`, so an embedded token in a remote URL is
+ *    scrubbed whether or not gitleaks recognizes it.
+ * 2. GitHub token literals: `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_` classic PATs and
+ *    `github_pat_` fine-grained tokens (20+ trailing chars) are replaced with
+ *    `<redacted-token>`, covering a token that appears outside a URL (e.g. an
+ *    `Authorization: token ...` header echoed into an error).
+ *
+ * Not a replacement for the gitleaks pass (which catches far more): this only
+ * closes the specific error-text leak surface on hosts where that pass cannot
+ * run. Applied to the whole report (not just the error line) so a credential in
+ * a stack frame or argv token is covered too.
+ *
+ * @param text Text to scrub.
+ * @returns The text with credential-shaped substrings replaced.
+ */
+export function scrubCredentials(text: string): string {
+  return text
+    .replace(/:\/\/[^\s/@]+@/g, '://<redacted>@')
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, '<redacted-token>')
+    .replace(/\bgithub_pat_\w{20,}\b/g, '<redacted-token>');
+}
+
+/**
  * Compose one bounded, plain-text crash report from an unexpected error and
  * process metadata. Pure: no filesystem or network access. The report
  * includes the nomad version, the (capped) invoking command, the error name
@@ -165,15 +198,17 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
  * and a timestamp. It deliberately excludes any environment variable dump
  * and any file contents.
  *
- * The composed text is passed through {@link scrubStructural} FIRST, then
- * byte-capped to `CRASH_MAX_REPORT_BYTES` (with a truncation marker on
- * overflow) as the final step. Scrubbing before truncating is load-bearing:
- * it prevents truncation from cutting through a `homeDir`/`hostLabel`
- * occurrence and leaving a partial (undetectable) fragment, and it keeps the
- * scrub (which can expand short labels into `<host>`) from pushing the output
- * back over the byte cap. The returned string is therefore always both
- * structurally scrubbed and within budget before any caller writes it to disk
- * or hands it to the gitleaks-based redactor.
+ * The composed text is passed through {@link scrubStructural} and
+ * {@link scrubCredentials} FIRST, then byte-capped to `CRASH_MAX_REPORT_BYTES`
+ * (with a truncation marker on overflow) as the final step. Scrubbing before
+ * truncating is load-bearing: it prevents truncation from cutting through a
+ * `homeDir`/`hostLabel` occurrence (or a credential span) and leaving a partial
+ * (undetectable) fragment, and it keeps the scrub (which can expand short labels
+ * into `<host>`) from pushing the output back over the byte cap. The credential
+ * scrub is a structural backstop for the gitleaks-less host, where the later
+ * value-based pass cannot run; see {@link scrubCredentials}. The returned string
+ * is therefore always both scrubbed and within budget before any caller writes
+ * it to disk or hands it to the gitleaks-based redactor.
  *
  * @param input See {@link CrashReportInput}.
  * @returns The bounded, structurally-scrubbed crash report text.
@@ -193,6 +228,6 @@ export function buildCrashReport(input: CrashReportInput): string {
     `platform: ${platform} (node ${process.version})`,
     `timestamp: ${timestamp}`,
   ].join('\n');
-  const scrubbed = scrubStructural(composed, homeDir, hostLabel);
+  const scrubbed = scrubCredentials(scrubStructural(composed, homeDir, hostLabel));
   return truncateToBytes(scrubbed, CRASH_MAX_REPORT_BYTES);
 }

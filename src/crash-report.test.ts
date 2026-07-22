@@ -6,6 +6,7 @@ import {
   CRASH_MAX_ARGV_TOKEN_LENGTH,
   CRASH_MAX_REPORT_BYTES,
   CRASH_MAX_STACK_LINES,
+  scrubCredentials,
   scrubStructural,
   type CrashReportInput,
 } from './crash-report.ts';
@@ -48,6 +49,32 @@ describe('scrubStructural', () => {
   });
 });
 
+describe('scrubCredentials', () => {
+  it('redacts the userinfo of a git remote URL that embeds a token', () => {
+    const out = scrubCredentials(
+      'fatal: unable to access https://x-access-token:ghp_abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r.git/',
+    );
+    expect(out).toContain('https://<redacted>@github.com/o/r.git/');
+    expect(out).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(out).not.toContain('x-access-token');
+  });
+
+  it('redacts a bare GitHub PAT literal outside a URL', () => {
+    const out = scrubCredentials('Authorization: token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab');
+    expect(out).toBe('Authorization: token <redacted-token>');
+  });
+
+  it('redacts a github_pat_ fine-grained token', () => {
+    const out = scrubCredentials('using github_pat_11ABCDEFG0aBcDeFgHiJkLmNoPqRsTuVwXyZ here');
+    expect(out).toBe('using <redacted-token> here');
+  });
+
+  it('leaves credential-free text unchanged (no false positives on plain URLs)', () => {
+    const text = 'cloned https://github.com/owner/repo.git into ~/work at 12:00';
+    expect(scrubCredentials(text)).toBe(text);
+  });
+});
+
 describe('buildCrashReport: basic shape', () => {
   it('includes version, command, error name/message, stack, platform, timestamp', () => {
     const report = buildCrashReport(BASE_INPUT);
@@ -78,6 +105,15 @@ describe('buildCrashReport: basic shape', () => {
     const report = buildCrashReport({ ...BASE_INPUT, err });
     expect(report).not.toContain('test-host machine');
     expect(report).toContain('<host> machine');
+  });
+
+  it('scrubs a credential embedded in the error message (gitleaks-less backstop)', () => {
+    const err = new Error(
+      'fatal: unable to access https://x-access-token:ghp_abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r.git/',
+    );
+    const report = buildCrashReport({ ...BASE_INPUT, err });
+    expect(report).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(report).toContain('https://<redacted>@github.com');
   });
 });
 

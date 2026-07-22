@@ -8,6 +8,7 @@
  * risk of re-throwing back into the process.
  */
 
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -79,8 +80,14 @@ export function pruneCrashDir(dir: string, keep: number = CRASH_RETENTION_KEEP):
 /**
  * Persist `text` as a new crash report file. Creates `dir` (default
  * `crashDir()`) at `0o700` if missing, writes the report at `0o600` under a
- * `crash-<timestamp>-<pid>.txt` filename, then prunes `dir` down to the
+ * `crash-<timestamp>-<pid>-<rand>.txt` filename, then prunes `dir` down to the
  * newest `CRASH_RETENTION_KEEP` files.
+ *
+ * The `<rand>` suffix (4 random bytes, mirroring the doctor temp-dir stamp)
+ * makes the filename collision-resistant: `nowTimestamp()` is second-resolution
+ * and the pid is stable within one process, so two crashes in the same
+ * process-second would otherwise write the same path and the first report would
+ * be lost.
  *
  * @param text The (already redacted) crash report text.
  * @param dir Absolute path to the crash directory; defaults to `crashDir()`.
@@ -88,7 +95,8 @@ export function pruneCrashDir(dir: string, keep: number = CRASH_RETENTION_KEEP):
  */
 export function writeCrashReport(text: string, dir: string = crashDir()): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const path = join(dir, `crash-${nowTimestamp()}-${process.pid}.txt`);
+  const stamp = `${nowTimestamp()}-${process.pid}-${randomBytes(4).toString('hex')}`;
+  const path = join(dir, `crash-${stamp}.txt`);
   writeFileSync(path, text, { mode: 0o600 });
   pruneCrashDir(dir);
   return path;
@@ -146,6 +154,11 @@ export function handleCrash(err: unknown, argv: readonly string[], opts: HandleC
     fail('nomad hit an unexpected error. This looks like a bug, not something you did wrong.');
     item(`Crash report written to: ${path}`);
     item(`Please consider reporting it at: ${opts.issuesUrl}`);
+    // Unconditional caveat: the report is best-effort redacted (the gitleaks
+    // value pass is pattern/entropy-gated and can be skipped entirely on a
+    // gitleaks-less host), so the user should eyeball it before sharing on
+    // EVERY path, not only when the in-file scan-unavailable advisory fires.
+    item('Review it for anything sensitive before sharing it publicly.');
   } catch {
     fail('nomad hit an unexpected error and could not write a crash report.');
   }
