@@ -38,7 +38,7 @@ function redactAllDedupeKey(f: Finding): string {
   const sid = sessionIdFromFinding(f);
   if (sid !== null) return sid;
   const memParsed = memoryFileFromFinding(f);
-  if (memParsed !== null) return `${memParsed.logical}/${memParsed.filename}`;
+  if (memParsed !== null) return `${memParsed.logical}/${memParsed.relPath}`;
   const skillParsed = skillFileFromFinding(f);
   if (skillParsed !== null) return `skill:${skillParsed.name}/${skillParsed.relPath}`;
   return findingKey(f);
@@ -105,7 +105,7 @@ function redactAllOne(
   }
   const memParsed = memoryFileFromFinding(f);
   if (memParsed !== null) {
-    const memKey = `${memParsed.logical}/${memParsed.filename}`;
+    const memKey = `${memParsed.logical}/${memParsed.relPath}`;
     if (dedupe.redactedMemory.has(memKey)) return;
     if (applyMemoryRedact(f, ts, map, scan)) dedupe.redactedMemory.add(memKey);
     return;

@@ -643,6 +643,29 @@ describe('collectActions - masked context line in prompt', () => {
     expect(action).toBe('skip');
   });
 
+  it('omits the [D]rop affordance for a memory finding with no resolvable session', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFullFinding({
+      File: 'shared/memory/notes.md',
+      Fingerprint: 'shared/memory/notes.md:github-pat:1',
+    });
+
+    let capturedPrompt = '';
+    const prompt = (p: string): Promise<string> => {
+      capturedPrompt = p;
+      return Promise.resolve('s');
+    };
+    const readLine = (_file: string, _line: number): string | null => null;
+
+    await collectActions([f], prompt, readLine);
+
+    expect(capturedPrompt).toContain('[R]edact');
+    expect(capturedPrompt).toContain('[A]llow');
+    expect(capturedPrompt).toContain('[S]kip (default)');
+    expect(capturedPrompt).not.toContain('[D]rop');
+    expect(capturedPrompt).not.toContain('session:');
+  });
+
   it('default real readLine reads from a fixture file under NOMAD_REPO', async () => {
     const originalNomadRepo = process.env.NOMAD_REPO;
     const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-reader-'));
@@ -987,6 +1010,38 @@ describe('dispatchActions - memory finding dispatch', () => {
     expect(appendMock).toHaveBeenCalledWith('fp-mem', '/repo');
   });
 
+  it('a bare memory/ prefix with no filename logs a manual-scrub hint and does not redact', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(true);
+    const logMock = vi.fn();
+    vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof memoryModule>();
+      return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logMock };
+    });
+
+    const { dispatchActions, findingKey } = await import('./commands.push.recovery.actions.ts');
+    // Under memory/ (so isMemoryFindingPath routes it to dispatchMemory) but with
+    // no trailing filename, so memoryFileFromFinding returns null: the defensive
+    // null-parse branch logs a manual-scrub hint instead of redacting.
+    const f = makeFinding({ File: 'shared/projects/myproj/memory/' });
+    const actions = new Map([[findingKey(f), 'redact' as const]]);
+    const map: PathMap = { projects: {} };
+
+    dispatchActions([f], actions, {
+      ts: 'ts-x',
+      map,
+      nowMs: Date.now,
+      repo: '/repo',
+    });
+
+    expect(applyMemoryRedactMock).not.toHaveBeenCalled();
+    const msgs = logMock.mock.calls.map((c) => c[0] as string);
+    expect(msgs.some((m) => m.includes('not auto-redactable'))).toBe(true);
+  });
+
   it('a non-memory non-session finding is still a no-op for redact (dispatchMemory does not act)', async () => {
     const applyMemoryRedactMock = vi.fn();
     vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
@@ -1034,13 +1089,8 @@ describe('dispatchActions - memory finding dispatch', () => {
     expect(logMock).not.toHaveBeenCalled();
   });
 
-  it('a nested memory finding logs a not-auto-redactable message and does not redact', async () => {
-    const logMock = vi.fn();
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return { ...actual, log: logMock };
-    });
-    const applyMemoryRedactMock = vi.fn();
+  it('a nested memory finding is now auto-redactable and routes to applyMemoryRedact', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(true);
     vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof memoryModule>();
       return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
@@ -1058,10 +1108,10 @@ describe('dispatchActions - memory finding dispatch', () => {
       repo: '/repo',
     });
 
-    expect(applyMemoryRedactMock).not.toHaveBeenCalled();
-    const msgs = logMock.mock.calls.map((c) => c[0] as string);
-    expect(msgs.some((m) => m.includes('not auto-redactable'))).toBe(true);
-    expect(msgs.some((m) => m.includes('shared/projects/myproj/memory/sub/x.md'))).toBe(true);
+    // Nested and non-.md memory files now parse (multi-segment relPath), so a
+    // nested finding is dispatched to applyMemoryRedact rather than logged as
+    // not-auto-redactable.
+    expect(applyMemoryRedactMock).toHaveBeenCalledOnce();
   });
 });
 

@@ -199,19 +199,19 @@ function toPushCoreResult(
  * and `remapPush` / `remapExtrasPush` run with `dryRun: true` (no copies
  * into `shared/`). The `git add` / `git commit` / `git push` steps are
  * skipped. Instead, `previewPushLeaks` runs a READ-ONLY gitleaks leak
- * preview against a temp copy of the would-be-staged sessions AND extras
- * (no `REPO_HOME/shared` mutation), returning a structured verdict whose
- * `verdictRow` lands in the Leak scan section and whose `recovery` (if any)
- * prints below the tree; `process.exitCode = 1` is set on findings.
+ * preview against a temp copy of the would-be-staged sessions, extras, AND
+ * user skills (no `REPO_HOME/shared` mutation), returning a structured verdict
+ * whose `verdictRow` lands in the Leak scan section and whose `recovery` (if
+ * any) prints below the tree; `process.exitCode = 1` is set on findings.
  *
- * Dry-run skills gap (intentional): `syncSkillsPush()` is gated behind
- * `if (!dryRun)`, so a dry-run mutates nothing under `shared/skills/`. As a
- * result the dry-run "Global config" section (which now treats `shared/skills`
- * as a global-config prefix) does NOT list pending skills edits, and the
- * dry-run leak preview does not scan skills (see `previewPushLeaks`). A real
- * push copies and stages skills, so they appear under Global config and are
- * scanned then. Preserving the zero-mutation dry-run contract is why skills are
- * not surfaced in the preview.
+ * Dry-run skills leak parity: `previewPushLeaks` stages non-gsd user skills
+ * into its throwaway tree (`stageSkills`, mirroring `syncSkillsPush`) and scans
+ * them, so a secret in a skill file is caught by `nomad push --dry-run` at the
+ * same fidelity as a real push, without any `shared/skills/` mutation. The
+ * zero-mutation dry-run contract still holds: `syncSkillsPush()` (the real
+ * `shared/skills/` write) remains gated behind `if (!dryRun)`, so the dry-run
+ * "Global config" section still does NOT list pending skills edits (a
+ * presentation gap, not a scan gap).
  *
  * The dry-run preview runs REGARDLESS of `REPO_HOME` `git status`: in dry-run
  * nothing is copied into `shared/`, so an empty status is the normal case for

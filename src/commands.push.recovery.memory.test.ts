@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -42,6 +50,7 @@ function makeMemoryFixture(testHome: string): {
   projectsDir: string;
   memoryDir: string;
   memoryPath: string;
+  nestedPath: string;
   map: PathMap;
 } {
   const claudeHomeDir = join(testHome, '.claude');
@@ -50,10 +59,16 @@ function makeMemoryFixture(testHome: string): {
   mkdirSync(memoryDir, { recursive: true });
   const memoryPath = join(memoryDir, 'notes.md');
   writeFileSync(memoryPath, 'some prose containing real-secret-value inline\n');
+  // A nested memory file under a real subdir, exercising the multi-segment
+  // relPath resolution (and giving the directory-target guard a real dir).
+  const subDir = join(memoryDir, 'sub');
+  mkdirSync(subDir, { recursive: true });
+  const nestedPath = join(subDir, 'deep.md');
+  writeFileSync(nestedPath, 'nested prose containing real-secret-value inline\n');
   const map: PathMap = {
     projects: { myproject: { 'test-host': '/home/norm/git/myproject' } },
   };
-  return { projectsDir, memoryDir, memoryPath, map };
+  return { projectsDir, memoryDir, memoryPath, nestedPath, map };
 }
 
 // ---------------------------------------------------------------------------
@@ -61,10 +76,10 @@ function makeMemoryFixture(testHome: string): {
 // ---------------------------------------------------------------------------
 
 describe('memoryFileFromFinding (pure)', () => {
-  it('returns {logical, filename} for a flat memory path', async () => {
+  it('returns {logical, relPath} for a flat memory path', async () => {
     const { memoryFileFromFinding } = await import('./commands.push.recovery.memory.ts');
     const f = makeFinding({ File: 'shared/projects/foo/memory/a.md' });
-    expect(memoryFileFromFinding(f)).toEqual({ logical: 'foo', filename: 'a.md' });
+    expect(memoryFileFromFinding(f)).toEqual({ logical: 'foo', relPath: 'a.md' });
   });
 
   it('returns null for a non-memory path', async () => {
@@ -73,15 +88,21 @@ describe('memoryFileFromFinding (pure)', () => {
     expect(memoryFileFromFinding(f)).toBeNull();
   });
 
-  it('returns null for a nested memory/sub/a.md path', async () => {
+  it('captures the multi-segment relPath for a nested memory/sub/a.md path', async () => {
     const { memoryFileFromFinding } = await import('./commands.push.recovery.memory.ts');
     const f = makeFinding({ File: 'shared/projects/foo/memory/sub/a.md' });
-    expect(memoryFileFromFinding(f)).toBeNull();
+    expect(memoryFileFromFinding(f)).toEqual({ logical: 'foo', relPath: 'sub/a.md' });
   });
 
-  it('returns null for a non-.md file under memory/', async () => {
+  it('captures a non-.md file under memory/ (any extension)', async () => {
     const { memoryFileFromFinding } = await import('./commands.push.recovery.memory.ts');
     const f = makeFinding({ File: 'shared/projects/foo/memory/notes.txt' });
+    expect(memoryFileFromFinding(f)).toEqual({ logical: 'foo', relPath: 'notes.txt' });
+  });
+
+  it('returns null for a bare memory/ prefix with no trailing file', async () => {
+    const { memoryFileFromFinding } = await import('./commands.push.recovery.memory.ts');
+    const f = makeFinding({ File: 'shared/projects/foo/memory/' });
     expect(memoryFileFromFinding(f)).toBeNull();
   });
 });
@@ -153,6 +174,22 @@ describe('resolveMemoryLocalPath', () => {
     expect(resolveMemoryLocalPath('myproject', 'notes.md', map)).toBe(memoryPath);
   });
 
+  it('returns the local path for a nested relPath, staying under the memory root', async () => {
+    const { memoryDir, nestedPath, map } = makeMemoryFixture(testHome);
+    const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+    const resolved = resolveMemoryLocalPath('myproject', 'sub/deep.md', map);
+    expect(resolved).toBe(nestedPath);
+    expect((resolved ?? '').startsWith(memoryDir)).toBe(true);
+  });
+
+  it('returns the local path for a non-.md memory file that exists', async () => {
+    const { memoryDir, map } = makeMemoryFixture(testHome);
+    const txtPath = join(memoryDir, 'notes.txt');
+    writeFileSync(txtPath, 'some prose\n');
+    const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+    expect(resolveMemoryLocalPath('myproject', 'notes.txt', map)).toBe(txtPath);
+  });
+
   it('returns null when the project has no entry for the current host', async () => {
     makeMemoryFixture(testHome);
     const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
@@ -168,19 +205,78 @@ describe('resolveMemoryLocalPath', () => {
     expect(resolveMemoryLocalPath('myproject', 'missing.md', map)).toBeNull();
   });
 
-  it('returns null when the filename fails the SAFE_MEMORY_FILENAME shape (contains a separator)', async () => {
+  it('returns null when relPath is empty', async () => {
     const { map } = makeMemoryFixture(testHome);
     const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
-    expect(resolveMemoryLocalPath('myproject', 'a/b.md', map)).toBeNull();
+    expect(resolveMemoryLocalPath('myproject', '', map)).toBeNull();
   });
 
-  it('returns null when the filename contains ".." even though it matches the .md shape', async () => {
+  it('returns null when relPath has a leading /', async () => {
     const { map } = makeMemoryFixture(testHome);
     const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
-    // "..md" has no separator and ends in ".md", so it passes SAFE_MEMORY_FILENAME;
-    // the explicit .includes('..') guard must still reject it.
-    expect(resolveMemoryLocalPath('myproject', '..md', map)).toBeNull();
+    expect(resolveMemoryLocalPath('myproject', '/notes.md', map)).toBeNull();
   });
+
+  it('returns null when relPath contains a backslash', async () => {
+    const { map } = makeMemoryFixture(testHome);
+    const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+    expect(resolveMemoryLocalPath('myproject', 'sub\\deep.md', map)).toBeNull();
+  });
+
+  it('returns null when relPath has a ".." segment', async () => {
+    const { map } = makeMemoryFixture(testHome);
+    const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+    expect(resolveMemoryLocalPath('myproject', '../escape.md', map)).toBeNull();
+  });
+
+  it('returns null when relPath has a "." segment', async () => {
+    const { map } = makeMemoryFixture(testHome);
+    const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+    expect(resolveMemoryLocalPath('myproject', './notes.md', map)).toBeNull();
+  });
+
+  it('returns null when relPath has an empty segment (double slash)', async () => {
+    const { map } = makeMemoryFixture(testHome);
+    const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+    expect(resolveMemoryLocalPath('myproject', 'sub//deep.md', map)).toBeNull();
+  });
+
+  it('returns null when the target path is a directory, not a regular file', async () => {
+    // makeMemoryFixture creates a real `sub/` subdir under memory/.
+    const { map } = makeMemoryFixture(testHome);
+    const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+    expect(resolveMemoryLocalPath('myproject', 'sub', map)).toBeNull();
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'returns null for a leaf symlink under memory/ that resolves outside the memory root',
+    async () => {
+      const { memoryDir, map } = makeMemoryFixture(testHome);
+      const outsideDir = join(testHome, 'outside');
+      mkdirSync(outsideDir, { recursive: true });
+      const outsideFile = join(outsideDir, 'secret.md');
+      writeFileSync(outsideFile, 'outside secret\n');
+      symlinkSync(outsideFile, join(memoryDir, 'evil.md'));
+      const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+      expect(resolveMemoryLocalPath('myproject', 'evil.md', map)).toBeNull();
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'returns null when an intermediate directory is a symlink escaping the memory root',
+    async () => {
+      const { memoryDir, map } = makeMemoryFixture(testHome);
+      const outsideDir = join(testHome, 'outside');
+      mkdirSync(outsideDir, { recursive: true });
+      const outsideFile = join(outsideDir, 'notes.md');
+      writeFileSync(outsideFile, 'outside secret\n');
+      // `refs` is a symlinked directory pointing outside the memory root, so a
+      // lexically-contained `refs/notes.md` physically resolves outside.
+      symlinkSync(outsideDir, join(memoryDir, 'refs'));
+      const { resolveMemoryLocalPath } = await import('./commands.push.recovery.memory.ts');
+      expect(resolveMemoryLocalPath('myproject', 'refs/notes.md', map)).toBeNull();
+    },
+  );
 
   it('throws NomadFatal (via assertSafeLogical) for a poisoned logical name before any join', async () => {
     const { map } = makeMemoryFixture(testHome);
@@ -310,6 +406,32 @@ describe('applyMemoryRedact', () => {
     expect(localAfter).not.toContain('real-secret-value');
     // Staged copy exists and is also scrubbed.
     const stagedPath = join(testHome, 'shared', 'projects', 'myproject', 'memory', 'notes.md');
+    expect(existsSync(stagedPath)).toBe(true);
+    const stagedContent = readFileSync(stagedPath, 'utf8');
+    expect(stagedContent).toContain('[REDACTED:generic-api-key]');
+    expect(stagedContent).not.toContain('real-secret-value');
+  });
+
+  it('redacts a nested memory file and preserves the relPath in the staged copy', async () => {
+    const { nestedPath, map } = makeMemoryFixture(testHome);
+    const { applyMemoryRedact } = await import('./commands.push.recovery.memory.ts');
+    const trigger = makeFinding({ File: 'shared/projects/myproject/memory/sub/deep.md' });
+    const fakeScan = (p: string): Finding[] =>
+      p === nestedPath ? [makeFinding({ File: p, Match: 'real-secret-value' })] : [];
+
+    const result = applyMemoryRedact(trigger, 'ts-x', map, fakeScan);
+
+    expect(result).toBe(true);
+    // The staged copy is created under the same nested relPath.
+    const stagedPath = join(
+      testHome,
+      'shared',
+      'projects',
+      'myproject',
+      'memory',
+      'sub',
+      'deep.md',
+    );
     expect(existsSync(stagedPath)).toBe(true);
     const stagedContent = readFileSync(stagedPath, 'utf8');
     expect(stagedContent).toContain('[REDACTED:generic-api-key]');
