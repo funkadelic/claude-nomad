@@ -286,7 +286,13 @@ describe('previewPushLeaks: skills staging', () => {
   });
 
   it('stages a non-gsd user skill and scans it (no mapped sessions or extras)', async () => {
-    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    const scanMock = vi.fn((tmpRoot: string): scanModule.Finding[] | null => {
+      // Assert the skill was actually copied into the throwaway scan tree while
+      // tmpRoot still exists (the finally cleanup removes it after this returns);
+      // a nonzero staged count alone would not prove the copy happened.
+      expect(existsSync(join(tmpRoot, 'shared', 'skills', 'my-skill', 'SKILL.md'))).toBe(true);
+      return [];
+    });
     vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof scanModule>();
       return { ...actual, scanStagedTree: scanMock };
@@ -297,9 +303,8 @@ describe('previewPushLeaks: skills staging', () => {
     // The skill alone lifts staged count above zero, so the scan runs.
     expect(scanMock).toHaveBeenCalledOnce();
     expect(verdict.verdictRow).not.toMatch(/nothing to scan/);
-    // The staged tree carries the user skill under shared/skills/.
-    const stagedSkill = join(env.repoUnderHome, 'shared', 'skills');
     // shared/skills is written into the throwaway tree, never REPO_HOME/shared.
+    const stagedSkill = join(env.repoUnderHome, 'shared', 'skills');
     expect(existsSync(stagedSkill)).toBe(false);
   });
 
