@@ -108,4 +108,24 @@ describe('assertNoAutostashConflict', () => {
     }
     expect((caught as Error).message).toContain('stash@{0}: autostash');
   });
+
+  it('fails closed: aborts with EXIT.CONFLICT when the index probe itself errors (non-git dir)', () => {
+    // No gitInit: `git diff` exits 128 in a non-repo, forcing the probe's
+    // 'error' outcome. A fail-open guard would return silently here and let
+    // conflict-markered config through; the fail-closed guard must abort.
+    let caught: unknown;
+    try {
+      assertNoAutostashConflict(tmp, 'nomad pull');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as { code?: number }).code).toBe(EXIT.CONFLICT);
+    expect((caught as Error).message).toContain('nomad pull');
+    // On 'error' the stash probe is skipped (it would run another unbounded
+    // git command and could hang), so stashRetained defaults to false: the
+    // message selects the safe no-stash runbook and never claims a stash entry.
+    expect((caught as Error).message).toContain('the working tree is the only copy');
+    expect((caught as Error).message).not.toContain('stash@{0}: autostash');
+  });
 });
