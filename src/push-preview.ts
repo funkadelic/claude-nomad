@@ -6,8 +6,9 @@
  * that temp tree. The verdict is RETURNED as a structured
  * `{ leak, verdictRow, recovery }` (rather than logged) so `cmdPush` can place
  * `verdictRow` in the grouped tree's Leak scan section and print `recovery`
- * (the `buildSessionAwareFatal` body) below the tree. On findings it still sets
- * `process.exitCode = 1`.
+ * (the `buildSessionAwareFatal` body) below the tree. On findings it sets
+ * `process.exitCode = EXIT.LEAK_BLOCKED` (5, matching a real push); on a scan
+ * crash/error it sets `1` (see `verdictFromFindings`/`verdictScanError`).
  *
  * This module is the push-dry-run-only path. The `nomad doctor --check-shared`
  * preflight (session-only scan, no extras) is unchanged and lives in
@@ -195,11 +196,12 @@ function stageSkills(tmpRoot: string): number {
  *
  * Returns a structured `LeakVerdict` rather than logging the verdict line so
  * `cmdPush` can render `verdictRow` in the Leak scan section and print
- * `recovery` below the tree. Side effects preserved: `process.exitCode = 1` on
- * findings AND on a scan crash. A scan that throws maps to a ✗ scan-error row
- * with `exitCode = 1`: ENOENT (gitleaks/git absent) keeps the "not on PATH"
- * wording, any other error (e.g. EACCES) surfaces its real message so the
- * cause is not mislabeled. Nothing-to-scan maps to a neutral ℹ︎ row.
+ * `recovery` below the tree. Side effects preserved: `process.exitCode` is set
+ * on a leak (`EXIT.LEAK_BLOCKED` 5, matching a real push) and on a scan
+ * crash/error (`1`, a generic failure). A scan that throws maps to a ✗
+ * scan-error row with `exitCode = 1`: ENOENT (gitleaks/git absent) keeps the
+ * "not on PATH" wording, any other error (e.g. EACCES) surfaces its real
+ * message so the cause is not mislabeled. Nothing-to-scan maps to a neutral ℹ︎ row.
  *
  * Fails closed before any copy: an unsafe `logical` key (path separator or
  * `..`) raised by `assertSafeLogical` in the staging step propagates out as a

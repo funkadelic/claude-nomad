@@ -130,6 +130,24 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
     const { cmdPush } = await import('./commands.push.ts');
     await expect(cmdPush({ dryRun: true, redactAll: true })).rejects.toThrow(DieError);
   });
+
+  it('runPushCore itself enforces the guard, so the compose seam cannot bypass it', async () => {
+    // The guard lives in runPushCore (not just cmdPush), so a caller that
+    // reaches runPushCore directly (the cmdSync compose seam) is still checked.
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        die: (msg: string) => {
+          throw new DieError(msg);
+        },
+      };
+    });
+    const { runPushCore } = await import('./commands.push.ts');
+    await expect(runPushCore({ redactAll: true, allowAll: true, compose: true })).rejects.toThrow(
+      DieError,
+    );
+  });
 });
 
 // cmdPush integration: the `remapExtrasPush` call lands between `remapPush`

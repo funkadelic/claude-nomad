@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './push-gitleaks.ts';
+import { EXIT } from './exit-codes.ts';
 import { encodePath } from './utils.json.ts';
 
 /**
@@ -1118,7 +1119,7 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
     teardownPreviewEnv(env);
   });
 
-  it('planted leak produces buildSessionAwareFatal body and sets exitCode 1', async () => {
+  it('planted leak produces buildSessionAwareFatal body and sets exitCode LEAK_BLOCKED', async () => {
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
     // Assemble a real-looking PAT from split fragments so no contiguous
@@ -1135,7 +1136,8 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
     const map = { projects: { [logical]: { 'test-host': localPath } } };
     const verdict = previewPushLeaks(map);
 
-    expect(process.exitCode).toBe(1);
+    // A confirmed dry-run leak exits LEAK_BLOCKED (5), matching a real push.
+    expect(process.exitCode).toBe(EXIT.LEAK_BLOCKED);
     expect(verdict.leak).toBe(true);
     // The one-line verdict row names the affected session count.
     expect(verdict.verdictRow).toMatch(/gitleaks detected secrets in \d+ session transcript/);

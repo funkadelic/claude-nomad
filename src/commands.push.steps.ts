@@ -132,9 +132,10 @@ export async function commitAndPush(
  * with the `noMapHint` row and returns. Otherwise it runs `previewPushLeaks`
  * (which stages its OWN temp
  * tree from the map, independent of `REPO_HOME` status, and sets
- * `process.exitCode = 1` on findings), renders the push tree with the verdict
- * row in the Leak scan section, and prints the recovery body BELOW the tree via
- * `fail` (stderr) when one is present.
+ * `process.exitCode` to `EXIT.LEAK_BLOCKED` (5) on a leak or `1` on a scan
+ * failure), renders the push tree with the verdict row in the Leak scan
+ * section, and prints the recovery body BELOW the tree via `fail` (stderr) when
+ * one is present.
  *
  * Extracted from `cmdPush` so the command body and this helper each stay under
  * the sonarjs cognitive-complexity threshold.

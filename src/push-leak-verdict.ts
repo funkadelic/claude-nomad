@@ -9,10 +9,14 @@
  * On a real push the scan still aborts the run: `cmdPush` renders the tree with
  * the ✗ verdict row, then throws a `NomadFatal` carrying `recovery` so the
  * existing catch prints the recovery block and sets a non-zero exit. The
- * dry-run path never throws; it only sets `process.exitCode = 1`.
+ * dry-run path never throws; it sets `process.exitCode` directly, using
+ * `EXIT.LEAK_BLOCKED` (5) on a confirmed leak (matching the real-push code) and
+ * `EXIT.GENERIC_FAILURE` (1) on a scan that could not run. See
+ * `verdictFromFindings`.
  */
 
 import { failGlyph, green, okGlyph, red } from './color.ts';
+import { EXIT } from './exit-codes.ts';
 import { gitleaksInstallHint } from './push-checks.ts';
 import {
   type Finding,
@@ -86,12 +90,18 @@ function leakFound(findings: Finding[]): LeakVerdict {
 
 /**
  * Map a `scanStagedTree` result to a structured `LeakVerdict`, applying the
- * shared side effect (`process.exitCode = 1` on findings or a scan crash). A
- * `null` report (scan crash) yields a ✗ scan-failed row with `recovery=null`
- * and is NOT classified as a `leak` (so the dry-run path neither throws nor
- * offers a phantom drop-session hint). An empty array yields the clean
- * `✓ no leaks` row. Non-empty findings yield the ✗ verdict row plus the
- * `buildSessionAwareFatal` recovery body.
+ * shared exit-code side effect. The leak and scan-failure cases map to
+ * DISTINCT codes so a scripted `push --dry-run` pre-flight can branch on `$?`
+ * the same way it would on a real push:
+ *
+ * - Non-empty findings (a real leak): `process.exitCode = EXIT.LEAK_BLOCKED`
+ *   (5), matching the `leakBlockedFatal` a real push throws, so a wrapper
+ *   branching on `$? == 5` buckets a dry-run leak identically to a real one.
+ * - `null` report (scan crash): `process.exitCode = 1` (GENERIC_FAILURE). A
+ *   scan that could not run is a setup/tooling failure, NOT a confirmed leak,
+ *   so it is NOT classified as a `leak` (the dry-run path neither throws nor
+ *   offers a phantom drop-session hint) and keeps the generic code.
+ * - Empty array: the clean `✓ no leaks` row, exit code untouched.
  *
  * @param findings - Output of `scanStagedTree`, or `null` on scan crash.
  * @returns The structured verdict for the Leak scan section.
@@ -109,7 +119,7 @@ export function verdictFromFindings(findings: Finding[] | null): LeakVerdict {
   if (findings.length === 0) {
     return { leak: false, verdictRow: noLeaksRow(), recovery: null, findings: [] };
   }
-  process.exitCode = 1;
+  process.exitCode = EXIT.LEAK_BLOCKED;
   return leakFound(findings);
 }
 

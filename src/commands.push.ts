@@ -257,6 +257,11 @@ export async function runPushCore(
   const allowRule = opts.allowRule;
   const fullScan = opts.fullScan === true;
   const compose = opts.compose === true;
+  // Resolution-mode mutual-exclusion guard lives HERE, not in `cmdPush`, so the
+  // `cmdSync` compose seam (which calls `runPushCore` directly, bypassing
+  // `cmdPush`) cannot forward a conflicting flag combination past the check.
+  // Runs before any mutation.
+  guardResolutionModeConflicts(dryRun, redactAll, allowAll, allowRule);
   // Standalone push renders inline; a composing caller renders the returned
   // sections itself.
   const render = !compose;
@@ -397,11 +402,8 @@ export async function cmdPush(
     fullScan?: boolean;
   } = {},
 ): Promise<void> {
-  const dryRun = opts.dryRun === true;
-  const redactAll = opts.redactAll === true;
-  const allowAll = opts.allowAll === true;
-  const allowRule = opts.allowRule;
-  guardResolutionModeConflicts(dryRun, redactAll, allowAll, allowRule);
+  // Resolution-mode conflicts are guarded inside `runPushCore` (so the
+  // `cmdSync` compose seam is covered too); no separate check is needed here.
   // Resolve roots once per command invocation (TOCTOU mitigation).
   const repo = repoHome();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
