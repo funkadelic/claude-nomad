@@ -459,12 +459,12 @@ describe('applySkillRedact', () => {
     expect(result).toBe(false);
   });
 
-  it('logs a no-op warning (no raw secret) when the finding Match is not located in the file', async () => {
+  it('warns (no raw secret) via the warning channel when the finding Match is not located in the file', async () => {
     const { skillPath } = makeSkillFixture(testHome);
-    const logSpy = vi.fn();
+    const warnSpy = vi.fn();
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
-      return { ...actual, log: logSpy };
+      return { ...actual, warn: warnSpy };
     });
     const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
     const trigger = makeFinding({ File: 'shared/skills/foo/SKILL.md' });
@@ -476,11 +476,11 @@ describe('applySkillRedact', () => {
     const result = applySkillRedact(trigger, 'ts-x', fakeScan);
 
     expect(result).toBe(true);
-    const warned = logSpy.mock.calls.some((c) =>
+    const warned = warnSpy.mock.calls.some((c) =>
       String(c[0]).includes('no redaction applied to foo/SKILL.md'),
     );
     expect(warned).toBe(true);
-    for (const c of logSpy.mock.calls) {
+    for (const c of warnSpy.mock.calls) {
       expect(String(c[0])).not.toContain('value-not-present-in-file');
     }
     // File is left untouched (the original secret still present, unredacted).
