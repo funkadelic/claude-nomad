@@ -194,7 +194,9 @@ What the actions do:
 - **Redact** rewrites the secret span in the LOCAL source transcript in place (same flow as
   `nomad redact`), backs up first, then re-copies the file to the staged tree. Refuses if the
   session was modified in the last 5 minutes (potential active session): choose Drop or Skip
-  instead and wait for the session to end.
+  instead and wait for the session to end. Redact also handles a non-session finding, a
+  project-level `memory/*.md` note or a user skill file under `shared/skills/<name>/`, rewriting
+  that local file in place the same way (the 5-minute active-session guard does not apply to those).
 - **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root. Use this for
   confirmed false positives. The fingerprint format (`file:rule:line`) is tied to the current
   line, so if the content moves gitleaks re-prompts rather than silently suppressing a new hit.
@@ -204,8 +206,10 @@ What the actions do:
 - **Drop session** excludes this session from the current push by unstaging it from the repo's git
   index (same as `nomad drop-session <id>`). The local `~/.claude/projects/.../` transcript is
   kept intact and any running Claude session is not stopped. Not durable: the next push re-copies
-  from local unless you also redact or remove the local transcript. Drop is refused for a
-  `memory/*.md` finding (a memory note is not a session): choose Redact or Skip instead.
+  from local unless you also redact or remove the local transcript. `[D]rop` is offered only for
+  session findings; a finding with no session to drop (a project `memory/*.md` note or a user
+  skill under `shared/skills/`) shows a reduced `[R]edact  [A]llow  [S]kip` menu with no Drop
+  option, so choose Redact or Skip for those.
 - **Skip** (default on bare Enter) leaves the finding unresolved for now.
 
 After you respond to every finding, the menu applies your choices. If any finding was Skipped, the
