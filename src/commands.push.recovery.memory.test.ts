@@ -365,4 +365,32 @@ describe('applyMemoryRedact', () => {
 
     expect(result).toBe(false);
   });
+
+  it('logs a no-op warning (no raw secret) when the finding Match is not located in the file', async () => {
+    const { memoryPath, map } = makeMemoryFixture(testHome);
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+    const { applyMemoryRedact } = await import('./commands.push.recovery.memory.ts');
+    const trigger = makeFinding({ File: 'shared/projects/myproject/memory/notes.md' });
+    // Non-empty scan whose Match value is absent from the file, so applyRedactions
+    // returns byte-identical output (after === before).
+    const fakeScan = (p: string): Finding[] =>
+      p === memoryPath ? [makeFinding({ File: p, Match: 'value-not-present-in-file' })] : [];
+
+    const result = applyMemoryRedact(trigger, 'ts-x', map, fakeScan);
+
+    expect(result).toBe(true);
+    const warned = logSpy.mock.calls.some((c) =>
+      String(c[0]).includes('no redaction applied to myproject/memory/notes.md'),
+    );
+    expect(warned).toBe(true);
+    // The warning text never embeds the secret value.
+    for (const c of logSpy.mock.calls)
+      expect(String(c[0])).not.toContain('value-not-present-in-file');
+    // File is left untouched (the original secret still present, unredacted).
+    expect(readFileSync(memoryPath, 'utf8')).toContain('real-secret-value');
+  });
 });

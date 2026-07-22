@@ -459,6 +459,34 @@ describe('applySkillRedact', () => {
     expect(result).toBe(false);
   });
 
+  it('logs a no-op warning (no raw secret) when the finding Match is not located in the file', async () => {
+    const { skillPath } = makeSkillFixture(testHome);
+    const logSpy = vi.fn();
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, log: logSpy };
+    });
+    const { applySkillRedact } = await import('./commands.push.recovery.skills.ts');
+    const trigger = makeFinding({ File: 'shared/skills/foo/SKILL.md' });
+    // Non-empty scan whose Match value is absent from the file, so applyRedactions
+    // returns byte-identical output (after === before).
+    const fakeScan = (p: string): Finding[] =>
+      p === skillPath ? [makeFinding({ File: p, Match: 'value-not-present-in-file' })] : [];
+
+    const result = applySkillRedact(trigger, 'ts-x', fakeScan);
+
+    expect(result).toBe(true);
+    const warned = logSpy.mock.calls.some((c) =>
+      String(c[0]).includes('no redaction applied to foo/SKILL.md'),
+    );
+    expect(warned).toBe(true);
+    for (const c of logSpy.mock.calls) {
+      expect(String(c[0])).not.toContain('value-not-present-in-file');
+    }
+    // File is left untouched (the original secret still present, unredacted).
+    expect(readFileSync(skillPath, 'utf8')).toContain('real-secret-value');
+  });
+
   it.skipIf(process.platform === 'win32')(
     'refuses a leaf symlink escaping the skills root and never writes the outside target',
     async () => {

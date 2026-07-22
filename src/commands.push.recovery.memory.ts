@@ -137,6 +137,12 @@ export function preflightMemoryRedactable(f: Finding, map: PathMap): string | nu
  * scan itself fails (gitleaks error, `scan` returns null), or the scan finds
  * nothing to redact.
  *
+ * When `applyRedactions` produces byte-identical output (the finding's `Match`
+ * value could not be located in the file, e.g. a truncated/normalized span),
+ * logs a no-op warning before writing, mirroring the session-subtree path, so
+ * the operator is not misled by a silent "success"; the push re-scan still
+ * blocks a leak that slipped through.
+ *
  * No live-session mtime guard: unlike a session transcript, a memory file is
  * not actively appended to by a running Claude Code session, so the
  * recently-modified heuristic used for `.jsonl` redaction does not apply here.
@@ -182,6 +188,19 @@ export function applyMemoryRedact(
   backupBeforeWrite(localPath, ts);
   const before = readFileSync(localPath, 'utf8');
   const after = applyRedactions(before, findings);
+  // applyRedactions locates secrets by their `Match` value, not by column. If a
+  // finding's Match cannot be found in the file (a truncated or normalized span
+  // from the scanner), the file is unchanged despite a non-empty scan, so a
+  // silent "redacted" return would mislead the operator into thinking Redact
+  // worked. Surface it, mirroring the session-subtree path
+  // (`commands.redact.subtree.ts`); the staged-tree re-scan still blocks a real
+  // leak that slipped through.
+  if (after === before) {
+    log(
+      `warning: no redaction applied to ${logical}/memory/${filename}: finding match values ` +
+        `were not located in the file. Inspect it manually; the push re-scan still blocks a real leak.`,
+    );
+  }
   writeFileSync(localPath, after, 'utf8');
 
   const stagedMemoryDir = join(repoHome(), 'shared', 'projects', logical, 'memory');
