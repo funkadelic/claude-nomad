@@ -96,24 +96,33 @@ describe('commands.doctor.check-shared.memory', () => {
     writeFileSync(join(dir, filename), content);
   }
 
-  it('buildMemoryScanTree returns 0 when repoHome is not a git repo', async () => {
+  it('buildMemoryScanTree returns staged 0 (not incomplete) when repoHome is not a git repo', async () => {
     mkdirSync(repo, { recursive: true });
     const { buildMemoryScanTree } = await import('./commands.doctor.check-shared.memory.ts');
-    expect(buildMemoryScanTree(join(testHome, 'tmp-scan'))).toBe(0);
+    expect(buildMemoryScanTree(join(testHome, 'tmp-scan'))).toEqual({
+      staged: 0,
+      incomplete: false,
+    });
   });
 
-  it('buildMemoryScanTree returns 0 when the repo is a git repo with no HEAD (no commits)', async () => {
+  it('buildMemoryScanTree returns staged 0 (not incomplete) when the repo is a git repo with no HEAD (no commits)', async () => {
     gitInit(repo);
     const { buildMemoryScanTree } = await import('./commands.doctor.check-shared.memory.ts');
-    expect(buildMemoryScanTree(join(testHome, 'tmp-scan'))).toBe(0);
+    expect(buildMemoryScanTree(join(testHome, 'tmp-scan'))).toEqual({
+      staged: 0,
+      incomplete: false,
+    });
   });
 
-  it('buildMemoryScanTree returns 0 when shared/projects is absent from HEAD', async () => {
+  it('buildMemoryScanTree returns staged 0 (not incomplete) when shared/projects is absent from HEAD', async () => {
     gitInit(repo);
     writeFileSync(join(repo, 'README.md'), 'hello\n');
     commitAll(repo);
     const { buildMemoryScanTree } = await import('./commands.doctor.check-shared.memory.ts');
-    expect(buildMemoryScanTree(join(testHome, 'tmp-scan'))).toBe(0);
+    expect(buildMemoryScanTree(join(testHome, 'tmp-scan'))).toEqual({
+      staged: 0,
+      incomplete: false,
+    });
   });
 
   it('buildMemoryScanTree copies each committed logical memory/*.md and returns the distinct logical count', async () => {
@@ -123,7 +132,7 @@ describe('commands.doctor.check-shared.memory', () => {
     commitAll(repo);
     const { buildMemoryScanTree } = await import('./commands.doctor.check-shared.memory.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildMemoryScanTree(tmpRoot)).toBe(2);
+    expect(buildMemoryScanTree(tmpRoot)).toEqual({ staged: 2, incomplete: false });
     const fooCopy = join(tmpRoot, 'shared', 'projects', 'foo', 'memory', 'notes.md');
     const barCopy = join(tmpRoot, 'shared', 'projects', 'bar', 'memory', 'notes.md');
     expect(readFileSync(fooCopy, 'utf8')).toBe('hello\n');
@@ -139,7 +148,7 @@ describe('commands.doctor.check-shared.memory', () => {
     commitAll(repo);
     const { buildMemoryScanTree } = await import('./commands.doctor.check-shared.memory.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildMemoryScanTree(tmpRoot)).toBe(1);
+    expect(buildMemoryScanTree(tmpRoot)).toEqual({ staged: 1, incomplete: false });
     expect(existsSync(join(tmpRoot, 'shared', 'projects', 'foo', 'memory', 'notes.md'))).toBe(true);
     expect(
       existsSync(join(tmpRoot, 'shared', 'projects', 'foo', 'memory', 'sub', 'nested.md')),
@@ -162,14 +171,14 @@ describe('commands.doctor.check-shared.memory', () => {
 
     const { buildMemoryScanTree } = await import('./commands.doctor.check-shared.memory.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildMemoryScanTree(tmpRoot)).toBe(1);
+    expect(buildMemoryScanTree(tmpRoot)).toEqual({ staged: 1, incomplete: false });
     const aCopy = join(tmpRoot, 'shared', 'projects', 'foo', 'memory', 'a.md');
     const bCopy = join(tmpRoot, 'shared', 'projects', 'foo', 'memory', 'b.md');
     expect(readFileSync(aCopy, 'utf8')).toBe('A1\n');
     expect(readFileSync(bCopy, 'utf8')).toBe('B1\n');
   });
 
-  it('skips a file whose git cat-file blob read fails, continuing with the rest', async () => {
+  it('flags the build incomplete (fail-safe) when a git cat-file blob read fails, staging the rest', async () => {
     writeMemoryFile('foo', 'a.md', 'aaa\n');
     writeMemoryFile('foo', 'b.md', 'bbb\n');
     gitInit(repo);
@@ -201,7 +210,7 @@ describe('commands.doctor.check-shared.memory', () => {
     vi.resetModules();
     const { buildMemoryScanTree } = await import('./commands.doctor.check-shared.memory.ts');
     const tmpRoot = join(testHome, 'tmp-scan');
-    expect(buildMemoryScanTree(tmpRoot)).toBe(1);
+    expect(buildMemoryScanTree(tmpRoot)).toEqual({ staged: 1, incomplete: true });
     expect(existsSync(join(tmpRoot, 'shared', 'projects', 'foo', 'memory', 'b.md'))).toBe(true);
     expect(existsSync(join(tmpRoot, 'shared', 'projects', 'foo', 'memory', 'a.md'))).toBe(false);
   });
@@ -211,6 +220,58 @@ describe('commands.doctor.check-shared.memory', () => {
     const section: Section = { header: 'Shared scan', items: [] };
     reportCommittedMemory(section);
     expect(section.items).toEqual([]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a WARN-skip (never a clean pass) when blob materialization is incomplete', async () => {
+    // A committed blob that cannot be read might be the only leaking file, so
+    // the advisory must fail safe: WARN-skip, not silently scan a subset.
+    writeMemoryFile('foo', 'a.md', 'aaa\n');
+    writeMemoryFile('foo', 'b.md', 'bbb\n');
+    gitInit(repo);
+    commitAll(repo);
+    let scanCalled = false;
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<PushGitleaksModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn(() => {
+          scanCalled = true;
+          return [];
+        }),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (
+            bin: string,
+            args?: readonly string[],
+            opts?: Parameters<typeof cpModule.execFileSync>[2],
+          ) => {
+            const a = args ?? [];
+            if (
+              bin === 'git' &&
+              a.includes('cat-file') &&
+              a.some((x) => String(x).includes('a.md'))
+            ) {
+              throw new Error('cat-file boom');
+            }
+            return actual.execFileSync(bin, a as string[], opts);
+          },
+        ),
+      };
+    });
+    vi.resetModules();
+    const { reportCommittedMemory } = await import('./commands.doctor.check-shared.memory.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCommittedMemory(section);
+    expect(scanCalled).toBe(false);
+    expect(section.items).toHaveLength(1);
+    expect(section.items[0]).toContain(warnGlyph);
+    expect(section.items[0]).toContain('could not read every committed memory blob');
     expect(process.exitCode).toBe(0);
   });
 
