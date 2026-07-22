@@ -69,6 +69,30 @@ describe('scrubCredentials', () => {
     expect(out).toBe('using <redacted-token> here');
   });
 
+  it('redacts a GitHub token glued to an adjacent word char (no trailing boundary)', () => {
+    const out = scrubCredentials('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_trailing');
+    expect(out).toBe('<redacted-token>_trailing');
+    expect(out).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
+  });
+
+  it('redacts an AWS access key ID', () => {
+    const out = scrubCredentials('AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE in argv');
+    expect(out).toBe('AWS_ACCESS_KEY_ID=<redacted-token> in argv');
+  });
+
+  it('redacts a GitLab personal access token', () => {
+    const out = scrubCredentials('token glpat-ABCdef1234567890ABCde was used');
+    expect(out).toBe('token <redacted-token> was used');
+  });
+
+  it('redacts a Slack bot token', () => {
+    // Assembled at runtime so no contiguous xoxb- literal sits in source and
+    // trips GitHub push protection / secret scanners on a test fixture.
+    const token = ['xoxb', '123456789012', 'abcdefghijklmnop'].join('-');
+    const out = scrubCredentials(`slack ${token} failed`);
+    expect(out).toBe('slack <redacted-token> failed');
+  });
+
   it('leaves credential-free text unchanged (no false positives on plain URLs)', () => {
     const text = 'cloned https://github.com/owner/repo.git into ~/work at 12:00';
     expect(scrubCredentials(text)).toBe(text);

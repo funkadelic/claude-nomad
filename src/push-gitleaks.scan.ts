@@ -187,12 +187,15 @@ export function scanFile(
 ): Finding[] | null {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
+  // Resolve the config (which may generate its own temp file) BEFORE creating
+  // the scratch dir: if resolveTomlConfig throws, no reportDir exists yet, so
+  // the finally below cannot orphan an empty scratch dir under the cache.
+  const { path: toml, tempPath } = resolveTomlConfig();
   // The unredacted report goes in an owner-only (0o700) scratch dir, not the
   // shared cache dir; mkdtempSync creates the dir 0o700 so the transient report
   // is never world-readable. The nowTimestamp/pid prefix keeps it recognizable.
   const reportDir = mkdtempSync(join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}-`));
   const reportPath = join(reportDir, 'report.json');
-  const { path: toml, tempPath } = resolveTomlConfig();
   const args: string[] = [
     'detect',
     '--no-git',

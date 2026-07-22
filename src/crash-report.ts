@@ -170,15 +170,26 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
  * 1. URL userinfo: the `user[:pass]@` segment of any `scheme://...@host` URL is
  *    replaced with `<redacted>@`, so an embedded token in a remote URL is
  *    scrubbed whether or not gitleaks recognizes it.
- * 2. GitHub token literals: `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_` classic PATs and
- *    `github_pat_` fine-grained tokens (20+ trailing chars) are replaced with
- *    `<redacted-token>`, covering a token that appears outside a URL (e.g. an
- *    `Authorization: token ...` header echoed into an error).
+ * 2. High-signal token literals with a distinctive fixed prefix and enough
+ *    trailing entropy to be false-positive-resistant: GitHub `ghp_`/`gho_`/
+ *    `ghu_`/`ghs_`/`ghr_` classic PATs and `github_pat_` fine-grained tokens,
+ *    GitLab `glpat-` PATs, Slack `xox[baprs]-` tokens, and AWS `AKIA...` access
+ *    key IDs are replaced with `<redacted-token>`. These cover a token that
+ *    appears outside a URL (e.g. an `Authorization: token ...` header, an
+ *    `AWS_SECRET_ACCESS_KEY=...` fragment, or a token in an argv value echoed
+ *    into an error).
+ *
+ * The token patterns intentionally omit a trailing `\b` anchor: a token glued
+ * to an adjacent word char (`ghp_...<more>`) has no boundary in the trailing
+ * run and would otherwise escape redaction. The greedy quantifier already
+ * bounds each match.
  *
  * Not a replacement for the gitleaks pass (which catches far more): this only
- * closes the specific error-text leak surface on hosts where that pass cannot
- * run. Applied to the whole report (not just the error line) so a credential in
- * a stack frame or argv token is covered too.
+ * closes a specific set of high-signal token families on the error-text leak
+ * surface for hosts where that pass cannot run; a credential with no
+ * recognizable prefix still relies on the gitleaks pass. Applied to the whole
+ * report (not just the error line) so a credential in a stack frame or argv
+ * token is covered too.
  *
  * @param text Text to scrub.
  * @returns The text with credential-shaped substrings replaced.
@@ -186,8 +197,11 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
 export function scrubCredentials(text: string): string {
   return text
     .replace(/:\/\/[^\s/@]+@/g, '://<redacted>@')
-    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, '<redacted-token>')
-    .replace(/\bgithub_pat_\w{20,}\b/g, '<redacted-token>');
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}/g, '<redacted-token>')
+    .replace(/\bgithub_pat_\w{20,}/g, '<redacted-token>')
+    .replace(/\bglpat-[A-Za-z0-9_-]{20,}/g, '<redacted-token>')
+    .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, '<redacted-token>')
+    .replace(/\bAKIA[0-9A-Z]{16}/g, '<redacted-token>');
 }
 
 /**
@@ -198,11 +212,14 @@ export function scrubCredentials(text: string): string {
  * and a timestamp. It deliberately excludes any environment variable dump
  * and any file contents.
  *
- * The composed text is passed through {@link scrubStructural} and
- * {@link scrubCredentials} FIRST, then byte-capped to `CRASH_MAX_REPORT_BYTES`
- * (with a truncation marker on overflow) as the final step. Scrubbing before
- * truncating is load-bearing: it prevents truncation from cutting through a
- * `homeDir`/`hostLabel` occurrence (or a credential span) and leaving a partial
+ * The composed text is passed through {@link scrubCredentials} and
+ * {@link scrubStructural} FIRST, then byte-capped to `CRASH_MAX_REPORT_BYTES`
+ * (with a truncation marker on overflow) as the final step. Credential scrubbing
+ * runs BEFORE structural scrubbing so a `homeDir`/`hostLabel` label that happens
+ * to appear as a substring inside a token body cannot break the token's
+ * high-entropy run and defeat its redaction. Scrubbing before truncating is
+ * load-bearing: it prevents truncation from cutting through a `homeDir`/
+ * `hostLabel` occurrence (or a credential span) and leaving a partial
  * (undetectable) fragment, and it keeps the scrub (which can expand short labels
  * into `<host>`) from pushing the output back over the byte cap. The credential
  * scrub is a structural backstop for the gitleaks-less host, where the later
@@ -228,6 +245,6 @@ export function buildCrashReport(input: CrashReportInput): string {
     `platform: ${platform} (node ${process.version})`,
     `timestamp: ${timestamp}`,
   ].join('\n');
-  const scrubbed = scrubCredentials(scrubStructural(composed, homeDir, hostLabel));
+  const scrubbed = scrubStructural(scrubCredentials(composed), homeDir, hostLabel);
   return truncateToBytes(scrubbed, CRASH_MAX_REPORT_BYTES);
 }
