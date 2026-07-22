@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -245,6 +253,88 @@ describe('previewPushLeaks: nothing staged (no mapped sessions, no extras)', () 
     expect(verdict.verdictRow).not.toMatch(/nothing to scan/);
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Skills staging (dry-run leak parity with a real push)
+// ---------------------------------------------------------------------------
+
+/** Plant a `~/.claude/skills/<name>/SKILL.md` fixture; returns its path. */
+function plantSkill(env: PreviewEnv, name: string, body = 'skill body\n'): string {
+  const skillDir = join(env.claudeHome, 'skills', name);
+  mkdirSync(skillDir, { recursive: true });
+  const skillPath = join(skillDir, 'SKILL.md');
+  writeFileSync(skillPath, body);
+  return skillPath;
+}
+
+describe('previewPushLeaks: skills staging', () => {
+  let env: PreviewEnv;
+
+  beforeEach(() => {
+    env = makePreviEnv();
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    teardownPreviewEnv(env);
+  });
+
+  it('stages a non-gsd user skill and scans it (no mapped sessions or extras)', async () => {
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    plantSkill(env, 'my-skill');
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const verdict = previewPushLeaks({ projects: {} });
+    // The skill alone lifts staged count above zero, so the scan runs.
+    expect(scanMock).toHaveBeenCalledOnce();
+    expect(verdict.verdictRow).not.toMatch(/nothing to scan/);
+    // The staged tree carries the user skill under shared/skills/.
+    const stagedSkill = join(env.repoUnderHome, 'shared', 'skills');
+    // shared/skills is written into the throwaway tree, never REPO_HOME/shared.
+    expect(existsSync(stagedSkill)).toBe(false);
+  });
+
+  it('does not stage a gsd-owned skill (nothing to scan)', async () => {
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    plantSkill(env, 'gsd-owned-skill');
+    const { previewPushLeaks } = await import('./push-preview.ts');
+    const verdict = previewPushLeaks({ projects: {} });
+    expect(scanMock).not.toHaveBeenCalled();
+    expect(verdict.verdictRow).toMatch(/nothing to scan/);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'skips a symlinked ~/.claude/skills (symlink-era live link)',
+    async () => {
+      const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+      vi.doMock('./push-gitleaks.ts', async (importOriginal) => {
+        const actual = await importOriginal<typeof scanModule>();
+        return { ...actual, scanStagedTree: scanMock };
+      });
+      // Point ~/.claude/skills at a real dir elsewhere via a symlink.
+      const realSkills = join(env.testHome, 'real-skills');
+      mkdirSync(join(realSkills, 'my-skill'), { recursive: true });
+      writeFileSync(join(realSkills, 'my-skill', 'SKILL.md'), 'body\n');
+      symlinkSync(realSkills, join(env.claudeHome, 'skills'));
+      const { previewPushLeaks } = await import('./push-preview.ts');
+      const verdict = previewPushLeaks({ projects: {} });
+      expect(scanMock).not.toHaveBeenCalled();
+      expect(verdict.verdictRow).toMatch(/nothing to scan/);
+    },
+  );
 });
 
 describe('previewPushLeaks: scan crash (null findings)', () => {

@@ -1034,13 +1034,8 @@ describe('dispatchActions - memory finding dispatch', () => {
     expect(logMock).not.toHaveBeenCalled();
   });
 
-  it('a nested memory finding logs a not-auto-redactable message and does not redact', async () => {
-    const logMock = vi.fn();
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return { ...actual, log: logMock };
-    });
-    const applyMemoryRedactMock = vi.fn();
+  it('a nested memory finding is now auto-redactable and routes to applyMemoryRedact', async () => {
+    const applyMemoryRedactMock = vi.fn().mockReturnValue(true);
     vi.doMock('./commands.push.recovery.memory.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof memoryModule>();
       return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
@@ -1058,10 +1053,10 @@ describe('dispatchActions - memory finding dispatch', () => {
       repo: '/repo',
     });
 
-    expect(applyMemoryRedactMock).not.toHaveBeenCalled();
-    const msgs = logMock.mock.calls.map((c) => c[0] as string);
-    expect(msgs.some((m) => m.includes('not auto-redactable'))).toBe(true);
-    expect(msgs.some((m) => m.includes('shared/projects/myproj/memory/sub/x.md'))).toBe(true);
+    // Nested and non-.md memory files now parse (multi-segment relPath), so a
+    // nested finding is dispatched to applyMemoryRedact rather than logged as
+    // not-auto-redactable.
+    expect(applyMemoryRedactMock).toHaveBeenCalledOnce();
   });
 });
 

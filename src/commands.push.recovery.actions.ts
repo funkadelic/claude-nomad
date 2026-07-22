@@ -175,15 +175,15 @@ type DispatchCtx = {
 };
 
 /**
- * Apply one finding's triaged action for a project-level `memory/*.md`
- * finding, reached from `dispatchOne` when `sessionIdFromFinding` returns
- * null (a session id cannot be resolved). `'allow'` and `'skip'` are handled
- * by the caller before this function is reached, so only `'redact'` and
- * `'drop'` are meaningful here. `memoryFileFromFinding` returns null for
- * both a genuine non-memory finding and a memory finding it cannot
- * auto-redact (nested `memory/<sub>/x.md`, non-`.md`): `isMemoryFindingPath`
- * distinguishes the two so the latter logs a message pointing the operator at
- * a manual scrub or Skip, rather than silently no-oping like the former.
+ * Apply one finding's triaged action for a project-level `memory/` finding
+ * (any file type, arbitrarily nested), reached from `dispatchOne` when
+ * `sessionIdFromFinding` returns null (a session id cannot be resolved).
+ * `'allow'` and `'skip'` are handled by the caller before this function is
+ * reached, so only `'redact'` and `'drop'` are meaningful here.
+ * `memoryFileFromFinding` matches any file under `memory/` (flat or nested,
+ * `.md` or not), so a null parse here is a bare `memory/` prefix with no
+ * trailing file (not a real finding path); it logs a manual-scrub hint rather
+ * than silently no-oping.
  *
  * @param f The finding to act on.
  * @param action The triaged action.
@@ -193,8 +193,8 @@ function dispatchMemory(f: Finding, action: FindingAction, ctx: DispatchCtx): vo
   const parsed = memoryFileFromFinding(f);
   if (parsed === null) {
     // dispatchNonSession only routes memory-path findings here, so a null parse
-    // is always a memory path that is not auto-redactable (nested or non-.md),
-    // not a genuine non-memory finding (those no-op in dispatchNonSession).
+    // is a bare `memory/` prefix with no trailing file, not a genuine
+    // non-memory finding (those no-op in dispatchNonSession).
     log(`memory path not auto-redactable: ${f.File}; scrub it by hand or choose Skip`);
     return;
   }
@@ -204,7 +204,7 @@ function dispatchMemory(f: Finding, action: FindingAction, ctx: DispatchCtx): vo
   }
   // Only 'redact' can reach here: dispatchOne handles 'skip' and 'allow'
   // before calling this function, and 'drop' returned just above.
-  const memKey = `${parsed.logical}/${parsed.filename}`;
+  const memKey = `${parsed.logical}/${parsed.relPath}`;
   if (ctx.redactedMemory.has(memKey)) return;
   if (applyMemoryRedact(f, ctx.ts, ctx.map, ctx.scan)) ctx.redactedMemory.add(memKey);
 }

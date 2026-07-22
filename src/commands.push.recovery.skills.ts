@@ -15,10 +15,11 @@
  * (`commands.redact.core.ts`) and `scanFile` (`push-gitleaks.scan.ts`)
  * unchanged; the `.jsonl` session-subtree and memory paths are untouched.
  *
- * Unlike memory's flat `memory/<file>.md`, a skill is an arbitrarily nested
- * tree (`SKILL.md`, `references/*.md`, `scripts/*.py`, dotfiles, ...), so
- * the finding-path parser captures a multi-segment relative path and the
- * traversal guard validates every segment, not a single filename pattern.
+ * A skill is an arbitrarily nested tree (`SKILL.md`, `references/*.md`,
+ * `scripts/*.py`, dotfiles, ...), so the finding-path parser captures a
+ * multi-segment relative path and the shared `isSafeRelPath` guard
+ * (`rel-path-guard.ts`) validates every segment, not a single filename
+ * pattern. The memory resolver mirrors the same multi-segment shape.
  *
  * Wired into the recovery menu via `dispatchSkill`/`dispatchNonSession` in
  * `commands.push.recovery.actions.ts` and into `--redact-all` in
@@ -41,6 +42,7 @@ import { isGsdOwned } from './skills-sync.ts';
 import { applyRedactions } from './commands.redact.core.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
+import { isSafeRelPath } from './rel-path-guard.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
 import { log, warn } from './utils.ts';
 
@@ -89,22 +91,6 @@ export function skillFileFromFinding(f: Finding): { name: string; relPath: strin
  */
 export function isSkillFindingPath(f: Finding): boolean {
   return SKILL_DIR_PATH.test(f.File);
-}
-
-/**
- * Per-segment traversal guard for a skill's relative path. Rejects an empty
- * path, a leading `/`, any backslash, then splits on `/` and requires every
- * segment be non-empty and not `.` or `..`. A flat single-filename pattern
- * (memory's approach) would incorrectly reject legitimately nested skill
- * files, so every segment is validated independently.
- *
- * @param relPath Candidate relative path extracted from a finding.
- * @returns true when every segment of `relPath` is safe.
- */
-function isSafeRelPath(relPath: string): boolean {
-  if (relPath.length === 0 || relPath.startsWith('/') || relPath.includes('\\')) return false;
-  const segments = relPath.split('/');
-  return segments.every((s) => s.length > 0 && s !== '.' && s !== '..');
 }
 
 /**

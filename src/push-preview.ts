@@ -16,7 +16,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 
@@ -28,6 +28,7 @@ import { type ManifestDiff } from './push-manifest.ts';
 import { copyDirJsonlOnly, copyFileAtomic } from './remap.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './push-leak-verdict.ts';
 import { scanStagedTree } from './push-gitleaks.ts';
+import { copySkillsPush, isSkillExcluded } from './skills-sync.ts';
 import { nowTimestamp } from './utils.fs.ts';
 import { encodePath } from './utils.json.ts';
 
@@ -142,18 +143,44 @@ function stageExtras(tmpRoot: string, map: PathMap): number {
 }
 
 /**
- * Run a read-only gitleaks leak preview of what `nomad push` would stage for
- * this host: both mapped session transcripts
- * (`shared/projects/<logical>/*.jsonl`) and opted-in extras
- * (`shared/extras/<logical>/<dirname>`).
+ * Stage non-gsd user skills for the preview scan into
+ * `<tmpRoot>/shared/skills/<name>/...`, mirroring `syncSkillsPush`'s copy: the
+ * same symlink guard (a symlinked `~/.claude/skills` is the symlink-era live
+ * link, skipped) and the same `copySkillsPush` filter (gsd-owned names and
+ * `ALWAYS_NEVER_SYNC` denylist excluded at every depth). Writes only into the
+ * throwaway `tmpRoot`, never `REPO_HOME/shared`.
  *
- * Scope gap (intentional): user skills under `shared/skills/` are NOT staged
- * into this preview tree, so a secret in a user skill file is not surfaced by
- * `nomad push --dry-run`. A real push DOES scan skills: `syncSkillsPush`
- * copies them and the post-`git add -A` `scanPushVerdict` covers the full staged
- * tree, so the gate is not bypassed, only the preview fidelity is reduced. The
- * dry-run deliberately mutates nothing (no `shared/skills/` write), which is why
- * the skills surface is absent here; treat the real-push scan as authoritative.
+ * The returned count is the number of top-level user-skill names that will be
+ * copied (`isSkillExcluded` false), used only for the nothing-to-scan gate. It
+ * is a lower bound on real coverage, never a false zero: any name it counts is
+ * definitely copied by `copySkillsPush`, whose block set is a subset of the
+ * exclusion `isSkillExcluded` applies.
+ *
+ * @param tmpRoot - Root of the throwaway staging tree.
+ * @returns Number of top-level user skills staged.
+ */
+function stageSkills(tmpRoot: string): number {
+  const localSkills = join(claudeHome(), 'skills');
+  const stat = lstatSync(localSkills, { throwIfNoEntry: false });
+  if (stat === undefined || stat.isSymbolicLink()) return 0;
+  const names = readdirSync(localSkills, { encoding: 'utf8' }).filter((n) => !isSkillExcluded(n));
+  if (names.length === 0) return 0;
+  copySkillsPush(localSkills, join(tmpRoot, 'shared', 'skills'));
+  return names.length;
+}
+
+/**
+ * Run a read-only gitleaks leak preview of what `nomad push` would stage for
+ * this host: mapped session transcripts
+ * (`shared/projects/<logical>/*.jsonl`), opted-in extras
+ * (`shared/extras/<logical>/<dirname>`), and non-gsd user skills
+ * (`shared/skills/<name>/...`).
+ *
+ * Skills parity: `stageSkills` mirrors `syncSkillsPush` so a secret in a user
+ * skill file is surfaced by `nomad push --dry-run` at the same fidelity as a
+ * real push (which scans skills via the post-`git add -A` staged-tree scan).
+ * The preview stages into the throwaway tree only; `REPO_HOME/shared/skills` is
+ * never written.
  *
  * Stages the content into a throwaway tree under
  * `~/.cache/claude-nomad/push-preview-tree-<stamp>` and runs `scanStagedTree`
@@ -193,7 +220,8 @@ export function previewPushLeaks(
   try {
     const sessionCount = stageSessions(tmpRoot, map, opts.selection?.changed);
     const extrasCount = stageExtras(tmpRoot, map);
-    if (sessionCount + extrasCount === 0) {
+    const skillCount = stageSkills(tmpRoot);
+    if (sessionCount + extrasCount + skillCount === 0) {
       return { leak: false, verdictRow: NOTHING_TO_SCAN_ROW, recovery: null, findings: [] };
     }
     const ignoreFile = join(repoHome(), '.gitleaksignore');
