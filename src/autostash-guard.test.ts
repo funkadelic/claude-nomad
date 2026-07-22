@@ -122,5 +122,10 @@ describe('assertNoAutostashConflict', () => {
     expect(caught).toBeInstanceOf(Error);
     expect((caught as { code?: number }).code).toBe(EXIT.CONFLICT);
     expect((caught as Error).message).toContain('nomad pull');
+    // On 'error' the stash probe is skipped (it would run another unbounded
+    // git command and could hang), so stashRetained defaults to false: the
+    // message selects the safe no-stash runbook and never claims a stash entry.
+    expect((caught as Error).message).toContain('the working tree is the only copy');
+    expect((caught as Error).message).not.toContain('stash@{0}: autostash');
   });
 });

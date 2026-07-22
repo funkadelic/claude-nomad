@@ -90,19 +90,23 @@ export function autostashConflictRunbookText(resumeCmd: string, stashRetained: b
  * silently-conflicted autostash pop, so it must never wave through an
  * undeterminable index.
  *
- * `orphanedAutostashPresent` is called unconditionally inside the throw
- * expression (rather than branched separately) so the function stays
- * single-branch at the call site. In the `'error'` case it too fails safe
- * (returns `false`), selecting the no-stash runbook that withholds the
- * destructive hard reset.
+ * `orphanedAutostashPresent` is consulted ONLY when the index is definitively
+ * `'unmerged'`. On an `'error'` outcome it is deliberately NOT called: it runs
+ * its own `git stash list`, which would hang the same way the index probe just
+ * did (the probe's timeout would be defeated by a second unbounded git call on
+ * the very path meant to handle a wedged git). In the `'error'` case
+ * `stashRetained` therefore defaults to `false`, selecting the no-stash runbook
+ * that withholds the destructive hard reset.
  *
  * @param repo Absolute path to the repository root just pulled.
  * @param resumeCmd The `nomad <subcommand>` the caller is running, threaded
  *   into the runbook text.
  */
 export function assertNoAutostashConflict(repo: string, resumeCmd: string): void {
-  if (probeUnmergedIndex(repo) === 'clean') return;
-  throw new NomadFatal(autostashConflictRunbookText(resumeCmd, orphanedAutostashPresent(repo)), {
+  const probe = probeUnmergedIndex(repo);
+  if (probe === 'clean') return;
+  const stashRetained = probe === 'unmerged' && orphanedAutostashPresent(repo);
+  throw new NomadFatal(autostashConflictRunbookText(resumeCmd, stashRetained), {
     code: EXIT.CONFLICT,
   });
 }
