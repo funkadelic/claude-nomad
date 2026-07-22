@@ -61,6 +61,16 @@ export function detectWedge(repo: string): WedgeMode {
 export type IndexProbe = 'unmerged' | 'clean' | 'error';
 
 /**
+ * Upper bound on the index probe subprocess. A `git diff` against the local
+ * index is normally instant, but this probe is now a hard fail-closed barrier
+ * for the autostash guard, so a hung git (e.g. a stuck `.git/index.lock`) must
+ * not block the pull/push indefinitely. A timeout throws, is caught, and maps
+ * to `'error'` (fail-closed abort), which is the desired outcome. The ceiling
+ * is generous so a large-but-healthy repo is never falsely aborted.
+ */
+const INDEX_PROBE_TIMEOUT_MS = 30_000;
+
+/**
  * Probe the git index for unmerged entries (stage-2/3 blobs). Shell-free
  * argv-array invocation mirroring the `gitCapture`/`gitStatusPorcelainZ`
  * convention in `commands.pull.recovery.ts`.
@@ -68,8 +78,9 @@ export type IndexProbe = 'unmerged' | 'clean' | 'error';
  * Returns `'unmerged'` when `git diff --diff-filter=U --name-only -z` produces
  * non-empty output (at least one NUL-terminated path), `'clean'` when it runs
  * with no unmerged paths, and `'error'` on any exec failure (git absent,
- * non-git dir). The three-state result lets each caller pick its own bias for
- * the undeterminable case; see {@link IndexProbe}.
+ * non-git dir, or {@link INDEX_PROBE_TIMEOUT_MS} timeout). The three-state
+ * result lets each caller pick its own bias for the undeterminable case; see
+ * {@link IndexProbe}.
  *
  * @param repo Absolute path to the repository root.
  * @returns The probe outcome; see {@link IndexProbe}.
@@ -81,9 +92,10 @@ export function probeUnmergedIndex(repo: string): IndexProbe {
       cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
       maxBuffer: 64 * 1024 * 1024,
+      timeout: INDEX_PROBE_TIMEOUT_MS,
     }).toString();
   } catch {
-    return 'error'; // non-git dir or git absent: caller decides how to bias
+    return 'error'; // non-git dir, git absent, or timeout: caller decides how to bias
   }
   return raw.split('\0').some(Boolean) ? 'unmerged' : 'clean';
 }
