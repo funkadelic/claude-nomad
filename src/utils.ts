@@ -57,12 +57,16 @@ export const item = (msg: string): void => console.log(dim(`  ${msg}`));
  *
  * Carries an optional `code` classifying which {@link EXIT} value the process
  * should exit with; defaults to `EXIT.GENERIC_FAILURE` so every existing
- * single-argument caller keeps its current exit-1 behavior unchanged.
+ * single-argument caller keeps its current exit-1 behavior unchanged. The
+ * constructor excludes `EXIT.SUCCESS` (0): a fatal that exits 0 would report
+ * success on failure, so the zero code is a type error at the call site rather
+ * than a latent footgun. The field itself stays `ExitCode` for consumers that
+ * forward it to `process.exit`.
  */
 export class NomadFatal extends Error {
   readonly code: ExitCode;
 
-  constructor(message: string, opts: { code?: ExitCode } = {}) {
+  constructor(message: string, opts: { code?: Exclude<ExitCode, typeof EXIT.SUCCESS> } = {}) {
     super(message);
     this.name = 'NomadFatal';
     this.code = opts.code ?? EXIT.GENERIC_FAILURE;
@@ -127,7 +131,10 @@ export function isProcessExit(err: unknown): err is ProcessExit {
  * @param opts - Optional `code` classifying the {@link EXIT} value to exit
  *   with; defaults to `EXIT.GENERIC_FAILURE` when omitted.
  */
-export const die = (msg: string, opts: { code?: ExitCode } = {}): never => {
+export const die = (
+  msg: string,
+  opts: { code?: Exclude<ExitCode, typeof EXIT.SUCCESS> } = {},
+): never => {
   throw new NomadFatal(msg, opts);
 };
 
