@@ -164,7 +164,7 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
  * first pull), `redactWithGitleaks` applies no token scrubbing, so a raw
  * `execFileSync` error whose `.message` embeds a credential (most commonly a
  * git remote URL like `https://x-access-token:ghp_...@github.com`) would
- * otherwise reach disk unredacted. Two high-signal, low-false-positive
+ * otherwise reach disk unredacted. Three high-signal, low-false-positive
  * patterns:
  *
  * 1. URL userinfo: the `user[:pass]@` segment of any `scheme://...@host` URL is
@@ -175,9 +175,13 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
  *    `ghu_`/`ghs_`/`ghr_` classic PATs and `github_pat_` fine-grained tokens,
  *    GitLab `glpat-` PATs, Slack `xox[baprs]-` tokens, and AWS `AKIA...` access
  *    key IDs are replaced with `<redacted-token>`. These cover a token that
- *    appears outside a URL (e.g. an `Authorization: token ...` header, an
- *    `AWS_SECRET_ACCESS_KEY=...` fragment, or a token in an argv value echoed
- *    into an error).
+ *    appears outside a URL (e.g. an `Authorization: token ...` header or a
+ *    token in an argv value echoed into an error).
+ * 3. AWS secret access key in the `AWS_SECRET_ACCESS_KEY=<value>` assignment
+ *    form: the 40-char base64 secret itself has no fixed prefix, so only the
+ *    surrounding `AWS_SECRET_ACCESS_KEY=` key identifies it. The value (bare,
+ *    single-, or double-quoted) is replaced with `<redacted-token>`, completing
+ *    the pair alongside the `AKIA...` ID pattern above.
  *
  * The token patterns intentionally omit a trailing `\b` anchor: a token glued
  * to an adjacent word char (`ghp_...<more>`) has no boundary in the trailing
@@ -201,6 +205,10 @@ export function scrubCredentials(text: string): string {
     .replace(/\bgithub_pat_\w{20,}/g, '<redacted-token>')
     .replace(/\bglpat-[A-Za-z0-9_-]{20,}/g, '<redacted-token>')
     .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, '<redacted-token>')
+    .replace(
+      /\bAWS_SECRET_ACCESS_KEY\s*=\s*(?:"[^"]*"|'[^']*'|\S+)/g,
+      'AWS_SECRET_ACCESS_KEY=<redacted-token>',
+    )
     .replace(/\bAKIA[0-9A-Z]{16}/g, '<redacted-token>');
 }
 

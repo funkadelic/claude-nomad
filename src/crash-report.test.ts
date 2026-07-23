@@ -80,6 +80,18 @@ describe('scrubCredentials', () => {
     expect(out).toBe('AWS_ACCESS_KEY_ID=<redacted-token> in argv');
   });
 
+  it('redacts an AWS secret access key value (bare, quoted)', () => {
+    // The 40-char secret has no fixed prefix; only the assignment key marks it.
+    const secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
+    expect(scrubCredentials(`AWS_SECRET_ACCESS_KEY=${secret} in argv`)).toBe(
+      'AWS_SECRET_ACCESS_KEY=<redacted-token> in argv',
+    );
+    expect(scrubCredentials(`export AWS_SECRET_ACCESS_KEY="${secret}"`)).toBe(
+      'export AWS_SECRET_ACCESS_KEY=<redacted-token>',
+    );
+    expect(scrubCredentials(`AWS_SECRET_ACCESS_KEY='${secret}'`)).not.toContain(secret);
+  });
+
   it('redacts a GitLab personal access token', () => {
     // Assembled at runtime so no contiguous glpat- literal sits in source and
     // trips the repo gitleaks gitlab-pat rule / secret scanners on a fixture.

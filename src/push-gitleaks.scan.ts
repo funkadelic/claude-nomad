@@ -64,6 +64,27 @@ function readGitleaksReport(reportPath: string): Finding[] | null {
 }
 
 /**
+ * Shared failure-path handler for the two scan sites. On a gitleaks non-ENOENT
+ * error, reads the JSON report (`null` when it is missing/unparseable, or when
+ * `reportPath` is `undefined` because the scratch dir was never created), and
+ * when `forwardStreams` is set and there is no parseable report, writes the
+ * captured stderr/stdout to the process streams so the caller can surface the
+ * diagnostic. Returns the parsed findings, or `null` on a hard scan failure.
+ */
+function resolveScanFailure(
+  reportPath: string | undefined,
+  e: { stderr?: Buffer; stdout?: Buffer },
+  forwardStreams: boolean,
+): Finding[] | null {
+  const report = reportPath === undefined ? null : readGitleaksReport(reportPath);
+  if (forwardStreams && report === null) {
+    if (e.stderr) process.stderr.write(e.stderr);
+    if (e.stdout) process.stdout.write(e.stdout);
+  }
+  return report;
+}
+
+/**
  * Scan the staged tree of a git repo with `gitleaks protect --staged`, the
  * single staged-scan mechanism shared by `nomad push` and the
  * `nomad doctor --check-shared` preflight. Routing both through one helper
@@ -121,12 +142,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') throw err;
-    const report = readGitleaksReport(reportPath);
-    if (forwardStreams && report === null) {
-      if (e.stderr) process.stderr.write(e.stderr);
-      if (e.stdout) process.stdout.write(e.stdout);
-    }
-    return report;
+    return resolveScanFailure(reportPath, e, forwardStreams);
   } finally {
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
     rmSync(reportPath, { force: true });
@@ -191,38 +207,41 @@ export function scanFile(
   // the scratch dir: if resolveTomlConfig throws, no reportDir exists yet, so
   // the finally below cannot orphan an empty scratch dir under the cache.
   const { path: toml, tempPath } = resolveTomlConfig();
-  // The unredacted report goes in an owner-only (0o700) scratch dir, not the
-  // shared cache dir; mkdtempSync creates the dir 0o700 so the transient report
-  // is never world-readable. The nowTimestamp/pid prefix keeps it recognizable.
-  const reportDir = mkdtempSync(join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}-`));
-  const reportPath = join(reportDir, 'report.json');
-  const args: string[] = [
-    'detect',
-    '--no-git',
-    '--source',
-    filePath,
-    '--report-format=json',
-    `--report-path=${reportPath}`,
-  ];
-  if (toml !== null) args.push('--config', toml);
-  const opts: ExecFileSyncOptions = {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: timeoutMs,
-  };
+  // Create the scratch report dir INSIDE the try so a mkdtempSync failure still
+  // runs the finally and cleans up the temp config resolveTomlConfig may have
+  // generated (tempPath); otherwise that artifact would be orphaned. reportDir/
+  // reportPath stay `undefined` until the dir exists, so the finally and the
+  // catch's report read both guard on that.
+  let reportDir: string | undefined;
+  let reportPath: string | undefined;
   try {
+    // The unredacted report goes in an owner-only (0o700) scratch dir, not the
+    // shared cache dir; mkdtempSync creates the dir 0o700 so the transient
+    // report is never world-readable. The nowTimestamp/pid prefix keeps it
+    // recognizable.
+    reportDir = mkdtempSync(join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}-`));
+    reportPath = join(reportDir, 'report.json');
+    const args: string[] = [
+      'detect',
+      '--no-git',
+      '--source',
+      filePath,
+      '--report-format=json',
+      `--report-path=${reportPath}`,
+    ];
+    if (toml !== null) args.push('--config', toml);
+    const opts: ExecFileSyncOptions = {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeoutMs,
+    };
     execFileSync('gitleaks', args, opts);
     return [];
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') return null;
-    const report = readGitleaksReport(reportPath);
-    if (forwardStreams && report === null) {
-      if (e.stderr) process.stderr.write(e.stderr);
-      if (e.stdout) process.stdout.write(e.stdout);
-    }
-    return report;
+    return resolveScanFailure(reportPath, e, forwardStreams);
   } finally {
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
-    rmSync(reportDir, { recursive: true, force: true });
+    if (reportDir !== undefined) rmSync(reportDir, { recursive: true, force: true });
   }
 }
