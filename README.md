@@ -331,16 +331,16 @@ What this means for you:
   is ever uploaded anywhere. The file just sits there until you decide to share it or delete it.
 - **The saved report is scrubbed twice.** First a structural pass rewrites your home directory to
   `~` and your hostname to a placeholder (absolute paths are personal information a secret scanner
-  would not catch), and redacts credential-shaped tokens it recognizes by their prefix (GitHub,
-  GitLab, Slack, and AWS keys, plus any credentials embedded in a URL); this pass needs no external
-  tools. Then a best-effort secret scan runs the same gitleaks-based redaction nomad already uses
-  for session transcripts. The secret scan works on a temporary, owner-only (`0o600`) copy that
-  already has the structural scrub applied; that scratch file is deleted immediately after the scan,
-  and only the fully-redacted report is kept.
+  would not catch), and redacts credential-shaped tokens it recognizes (GitHub, GitLab, Slack, and
+  AWS keys, plus any credentials embedded in a URL); this pass needs no external tools. Then a
+  best-effort secret scan runs the same gitleaks-based redaction nomad already uses for session
+  transcripts. The secret scan works on a temporary, owner-only (`0o600`) copy that already has the
+  structural scrub applied; that scratch file is deleted immediately after the scan, and only the
+  fully-redacted report is kept.
 - **It degrades safely without gitleaks.** If gitleaks is not installed, the structural scrub and
-  the credential-prefix backstop still run and the report is still written, with a one-line note
-  that the deeper secret scan did not run. The backstop catches common token shapes but not
-  everything, so still give the report a glance before posting it publicly.
+  the credential-shape backstop still run and the report is still written, with a one-line note that
+  the deeper secret scan did not run. The backstop catches common token shapes but not everything,
+  so still give the report a glance before posting it publicly.
 - **It is small and bounded.** The report contains only the nomad version, the command you ran
   (bounded, and including any flag values you typed), the error name and message, a trimmed stack,
   your platform, the Node.js version, and a timestamp. It never includes an environment dump or the
