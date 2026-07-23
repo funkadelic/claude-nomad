@@ -132,8 +132,11 @@ export async function commitAndPush(
  * with the `noMapHint` row and returns. Otherwise it runs `previewPushLeaks`
  * (which stages its OWN temp
  * tree from the map, independent of `REPO_HOME` status, and sets
- * `process.exitCode` to `EXIT.LEAK_BLOCKED` (5) on a leak or `1` on a scan
- * failure), renders the push tree with the verdict row in the Leak scan
+ * `process.exitCode` to `EXIT.LEAK_BLOCKED` (5) on a leak OR an unscannable
+ * staged tree, the scan ran but produced no parseable report, both failing
+ * closed like a real push; only a scan that could not run at all, gitleaks or
+ * git missing, exits `1`), renders the push tree with the verdict row in the
+ * Leak scan
  * section, and prints the recovery body BELOW the tree via `fail` (stderr) when
  * one is present.
  *
