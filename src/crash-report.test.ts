@@ -6,6 +6,7 @@ import {
   CRASH_MAX_ARGV_TOKEN_LENGTH,
   CRASH_MAX_REPORT_BYTES,
   CRASH_MAX_STACK_LINES,
+  scrubCredentials,
   scrubStructural,
   type CrashReportInput,
 } from './crash-report.ts';
@@ -48,6 +49,71 @@ describe('scrubStructural', () => {
   });
 });
 
+describe('scrubCredentials', () => {
+  it('redacts the userinfo of a git remote URL that embeds a token', () => {
+    const out = scrubCredentials(
+      'fatal: unable to access https://x-access-token:ghp_abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r.git/',
+    );
+    expect(out).toContain('https://<redacted>@github.com/o/r.git/');
+    expect(out).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(out).not.toContain('x-access-token');
+  });
+
+  it('redacts a bare GitHub PAT literal outside a URL', () => {
+    const out = scrubCredentials('Authorization: token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab');
+    expect(out).toBe('Authorization: token <redacted-token>');
+  });
+
+  it('redacts a github_pat_ fine-grained token', () => {
+    const out = scrubCredentials('using github_pat_11ABCDEFG0aBcDeFgHiJkLmNoPqRsTuVwXyZ here');
+    expect(out).toBe('using <redacted-token> here');
+  });
+
+  it('redacts a GitHub token glued to an adjacent word char (no trailing boundary)', () => {
+    const out = scrubCredentials('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_trailing');
+    expect(out).toBe('<redacted-token>_trailing');
+    expect(out).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
+  });
+
+  it('redacts an AWS access key ID', () => {
+    const out = scrubCredentials('AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE in argv');
+    expect(out).toBe('AWS_ACCESS_KEY_ID=<redacted-token> in argv');
+  });
+
+  it('redacts an AWS secret access key value (bare, quoted)', () => {
+    // The 40-char secret has no fixed prefix; only the assignment key marks it.
+    const secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
+    expect(scrubCredentials(`AWS_SECRET_ACCESS_KEY=${secret} in argv`)).toBe(
+      'AWS_SECRET_ACCESS_KEY=<redacted-token> in argv',
+    );
+    expect(scrubCredentials(`export AWS_SECRET_ACCESS_KEY="${secret}"`)).toBe(
+      'export AWS_SECRET_ACCESS_KEY=<redacted-token>',
+    );
+    expect(scrubCredentials(`AWS_SECRET_ACCESS_KEY='${secret}'`)).not.toContain(secret);
+  });
+
+  it('redacts a GitLab personal access token', () => {
+    // Assembled at runtime so no contiguous glpat- literal sits in source and
+    // trips the repo gitleaks gitlab-pat rule / secret scanners on a fixture.
+    const token = ['glpat', 'ABCdef1234567890ABCde'].join('-');
+    const out = scrubCredentials(`token ${token} was used`);
+    expect(out).toBe('token <redacted-token> was used');
+  });
+
+  it('redacts a Slack bot token', () => {
+    // Assembled at runtime so no contiguous xoxb- literal sits in source and
+    // trips GitHub push protection / secret scanners on a test fixture.
+    const token = ['xoxb', '123456789012', 'abcdefghijklmnop'].join('-');
+    const out = scrubCredentials(`slack ${token} failed`);
+    expect(out).toBe('slack <redacted-token> failed');
+  });
+
+  it('leaves credential-free text unchanged (no false positives on plain URLs)', () => {
+    const text = 'cloned https://github.com/owner/repo.git into ~/work at 12:00';
+    expect(scrubCredentials(text)).toBe(text);
+  });
+});
+
 describe('buildCrashReport: basic shape', () => {
   it('includes version, command, error name/message, stack, platform, timestamp', () => {
     const report = buildCrashReport(BASE_INPUT);
@@ -78,6 +144,15 @@ describe('buildCrashReport: basic shape', () => {
     const report = buildCrashReport({ ...BASE_INPUT, err });
     expect(report).not.toContain('test-host machine');
     expect(report).toContain('<host> machine');
+  });
+
+  it('scrubs a credential embedded in the error message (gitleaks-less backstop)', () => {
+    const err = new Error(
+      'fatal: unable to access https://x-access-token:ghp_abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r.git/',
+    );
+    const report = buildCrashReport({ ...BASE_INPUT, err });
+    expect(report).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(report).toContain('https://<redacted>@github.com');
   });
 });
 

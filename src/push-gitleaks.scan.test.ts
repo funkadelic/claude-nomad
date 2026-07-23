@@ -812,6 +812,43 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     });
   });
 
+  it('scanFile cleans the temp config when the scratch-dir mkdtempSync throws', async () => {
+    // resolveTomlConfig generates the overlay temp (nomad-gitleaks-cfg-), then the
+    // scratch report-dir mkdtempSync (gitleaks-file-) fails. The finally must still
+    // rmSync the temp config so it is not orphaned, and scanFile returns null.
+    const rmSyncSpy = vi.fn();
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn((p: unknown) => {
+          const s = String(p);
+          if (s === join(repoHome, '.gitleaks.toml')) return false;
+          if (s.endsWith('.gitleaks.overlay.toml')) return true;
+          return true;
+        }),
+        readFileSync: vi.fn((p: unknown, enc?: unknown) => {
+          if (String(p).endsWith('.gitleaks.overlay.toml')) {
+            return '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\n';
+          }
+          return actual.readFileSync(p as fsModule.PathOrFileDescriptor, enc as never);
+        }),
+        mkdtempSync: vi.fn((p: unknown) => {
+          if (String(p).includes('gitleaks-file-')) throw new Error('scratch mkdtemp boom');
+          return actual.mkdtempSync(p as string);
+        }),
+        rmSync: rmSyncSpy.mockImplementation(actual.rmSync),
+      };
+    });
+    mockExecOk();
+    const { scanFile } = await import('./push-gitleaks.scan.ts');
+    expect(scanFile('/some/file.jsonl')).toBeNull();
+    expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
+      recursive: true,
+      force: true,
+    });
+  });
+
   it('no-overlay path does NOT rmSync a temp config (tempPath null)', async () => {
     // No overlay file; only the report file is removed, never a nomad-gitleaks-cfg temp.
     const rmSyncSpy = vi.fn();

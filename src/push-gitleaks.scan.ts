@@ -13,7 +13,7 @@
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -61,6 +61,27 @@ function readGitleaksReport(reportPath: string): Finding[] | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Shared failure-path handler for the two scan sites. On a gitleaks non-ENOENT
+ * error, reads the JSON report (`null` when it is missing/unparseable, or when
+ * `reportPath` is `undefined` because the scratch dir was never created), and
+ * when `forwardStreams` is set and there is no parseable report, writes the
+ * captured stderr/stdout to the process streams so the caller can surface the
+ * diagnostic. Returns the parsed findings, or `null` on a hard scan failure.
+ */
+function resolveScanFailure(
+  reportPath: string | undefined,
+  e: { stderr?: Buffer; stdout?: Buffer },
+  forwardStreams: boolean,
+): Finding[] | null {
+  const report = reportPath === undefined ? null : readGitleaksReport(reportPath);
+  if (forwardStreams && report === null) {
+    if (e.stderr) process.stderr.write(e.stderr);
+    if (e.stdout) process.stdout.write(e.stdout);
+  }
+  return report;
 }
 
 /**
@@ -121,12 +142,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') throw err;
-    const report = readGitleaksReport(reportPath);
-    if (forwardStreams && report === null) {
-      if (e.stderr) process.stderr.write(e.stderr);
-      if (e.stdout) process.stdout.write(e.stdout);
-    }
-    return report;
+    return resolveScanFailure(reportPath, e, forwardStreams);
   } finally {
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
     rmSync(reportPath, { force: true });
@@ -142,10 +158,14 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
  * Intentionally does NOT pass `--redact` so that `Finding.Match` and
  * `Finding.Secret` carry the real secret value. Callers that need to perform
  * value-based redaction (e.g. the push recovery `applyRedact` and `cmdRedact`)
- * require the literal match to replace it in the transcript. The temp report
- * file (which contains the real value) is deleted in a `finally` block on every
- * path, and the process streams are never written on the findings path, so the
- * real secret is never emitted to stdout/stderr.
+ * require the literal match to replace it in the transcript. Because this report
+ * holds real secret values (unlike `scanStagedTree`, which passes `--redact`),
+ * it is written into an owner-only (`0o700`) `mkdtempSync` scratch dir rather
+ * than the shared `~/.cache/claude-nomad/` (mode ~`0o755`), so the transient
+ * report is never world-readable while it exists. The whole scratch dir is
+ * removed in a `finally` block on every path, and the process streams are never
+ * written on the findings path, so the real secret is never emitted to
+ * stdout/stderr.
  *
  * Error model mirrors `scanStagedTree`: gitleaks exits non-zero when findings
  * exist (exit 1) or on an internal error (exit 2+). Exit 1 with a parseable
@@ -183,35 +203,45 @@ export function scanFile(
 ): Finding[] | null {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
-  const reportPath = join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}.json`);
+  // Resolve the config (which may generate its own temp file) BEFORE creating
+  // the scratch dir: if resolveTomlConfig throws, no reportDir exists yet, so
+  // the finally below cannot orphan an empty scratch dir under the cache.
   const { path: toml, tempPath } = resolveTomlConfig();
-  const args: string[] = [
-    'detect',
-    '--no-git',
-    '--source',
-    filePath,
-    '--report-format=json',
-    `--report-path=${reportPath}`,
-  ];
-  if (toml !== null) args.push('--config', toml);
-  const opts: ExecFileSyncOptions = {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: timeoutMs,
-  };
+  // Create the scratch report dir INSIDE the try so a mkdtempSync failure still
+  // runs the finally and cleans up the temp config resolveTomlConfig may have
+  // generated (tempPath); otherwise that artifact would be orphaned. reportDir/
+  // reportPath stay `undefined` until the dir exists, so the finally and the
+  // catch's report read both guard on that.
+  let reportDir: string | undefined;
+  let reportPath: string | undefined;
   try {
+    // The unredacted report goes in an owner-only (0o700) scratch dir, not the
+    // shared cache dir; mkdtempSync creates the dir 0o700 so the transient
+    // report is never world-readable. The nowTimestamp/pid prefix keeps it
+    // recognizable.
+    reportDir = mkdtempSync(join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}-`));
+    reportPath = join(reportDir, 'report.json');
+    const args: string[] = [
+      'detect',
+      '--no-git',
+      '--source',
+      filePath,
+      '--report-format=json',
+      `--report-path=${reportPath}`,
+    ];
+    if (toml !== null) args.push('--config', toml);
+    const opts: ExecFileSyncOptions = {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeoutMs,
+    };
     execFileSync('gitleaks', args, opts);
     return [];
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') return null;
-    const report = readGitleaksReport(reportPath);
-    if (forwardStreams && report === null) {
-      if (e.stderr) process.stderr.write(e.stderr);
-      if (e.stdout) process.stdout.write(e.stdout);
-    }
-    return report;
+    return resolveScanFailure(reportPath, e, forwardStreams);
   } finally {
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
-    rmSync(reportPath, { force: true });
+    if (reportDir !== undefined) rmSync(reportDir, { recursive: true, force: true });
   }
 }

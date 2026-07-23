@@ -158,6 +158,61 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
 }
 
 /**
+ * Structural credential scrub applied to the composed report BEFORE the
+ * gitleaks value-based pass. It is a fail-safe backstop for the gitleaks-less
+ * host: when `scanFile` returns null (binary absent, common on a fresh host's
+ * first pull), `redactWithGitleaks` applies no token scrubbing, so a raw
+ * `execFileSync` error whose `.message` embeds a credential (most commonly a
+ * git remote URL like `https://x-access-token:ghp_...@github.com`) would
+ * otherwise reach disk unredacted. Three high-signal, low-false-positive
+ * patterns:
+ *
+ * 1. URL userinfo: the `user[:pass]@` segment of any `scheme://...@host` URL is
+ *    replaced with `<redacted>@`, so an embedded token in a remote URL is
+ *    scrubbed whether or not gitleaks recognizes it.
+ * 2. High-signal token literals with a distinctive fixed prefix and enough
+ *    trailing entropy to be false-positive-resistant: GitHub `ghp_`/`gho_`/
+ *    `ghu_`/`ghs_`/`ghr_` classic PATs and `github_pat_` fine-grained tokens,
+ *    GitLab `glpat-` PATs, Slack `xox[baprs]-` tokens, and AWS `AKIA...` access
+ *    key IDs are replaced with `<redacted-token>`. These cover a token that
+ *    appears outside a URL (e.g. an `Authorization: token ...` header or a
+ *    token in an argv value echoed into an error).
+ * 3. AWS secret access key in the `AWS_SECRET_ACCESS_KEY=<value>` assignment
+ *    form: the 40-char base64 secret itself has no fixed prefix, so only the
+ *    surrounding `AWS_SECRET_ACCESS_KEY=` key identifies it. The value (bare,
+ *    single-, or double-quoted) is replaced with `<redacted-token>`, completing
+ *    the pair alongside the `AKIA...` ID pattern above.
+ *
+ * The token patterns intentionally omit a trailing `\b` anchor: a token glued
+ * to an adjacent word char (`ghp_...<more>`) has no boundary in the trailing
+ * run and would otherwise escape redaction. The greedy quantifier already
+ * bounds each match.
+ *
+ * Not a replacement for the gitleaks pass (which catches far more): this only
+ * closes a specific set of high-signal token families on the error-text leak
+ * surface for hosts where that pass cannot run; a credential with no
+ * recognizable prefix still relies on the gitleaks pass. Applied to the whole
+ * report (not just the error line) so a credential in a stack frame or argv
+ * token is covered too.
+ *
+ * @param text Text to scrub.
+ * @returns The text with credential-shaped substrings replaced.
+ */
+export function scrubCredentials(text: string): string {
+  return text
+    .replace(/:\/\/[^\s/@]+@/g, '://<redacted>@')
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}/g, '<redacted-token>')
+    .replace(/\bgithub_pat_\w{20,}/g, '<redacted-token>')
+    .replace(/\bglpat-[A-Za-z0-9_-]{20,}/g, '<redacted-token>')
+    .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, '<redacted-token>')
+    .replace(
+      /\bAWS_SECRET_ACCESS_KEY\s*=\s*(?:"[^"]*"|'[^']*'|\S+)/g,
+      'AWS_SECRET_ACCESS_KEY=<redacted-token>',
+    )
+    .replace(/\bAKIA[0-9A-Z]{16}/g, '<redacted-token>');
+}
+
+/**
  * Compose one bounded, plain-text crash report from an unexpected error and
  * process metadata. Pure: no filesystem or network access. The report
  * includes the nomad version, the (capped) invoking command, the error name
@@ -165,15 +220,20 @@ export function scrubStructural(text: string, homeDir: string, hostLabel: string
  * and a timestamp. It deliberately excludes any environment variable dump
  * and any file contents.
  *
- * The composed text is passed through {@link scrubStructural} FIRST, then
- * byte-capped to `CRASH_MAX_REPORT_BYTES` (with a truncation marker on
- * overflow) as the final step. Scrubbing before truncating is load-bearing:
- * it prevents truncation from cutting through a `homeDir`/`hostLabel`
- * occurrence and leaving a partial (undetectable) fragment, and it keeps the
- * scrub (which can expand short labels into `<host>`) from pushing the output
- * back over the byte cap. The returned string is therefore always both
- * structurally scrubbed and within budget before any caller writes it to disk
- * or hands it to the gitleaks-based redactor.
+ * The composed text is passed through {@link scrubCredentials} and
+ * {@link scrubStructural} FIRST, then byte-capped to `CRASH_MAX_REPORT_BYTES`
+ * (with a truncation marker on overflow) as the final step. Credential scrubbing
+ * runs BEFORE structural scrubbing so a `homeDir`/`hostLabel` label that happens
+ * to appear as a substring inside a token body cannot break the token's
+ * high-entropy run and defeat its redaction. Scrubbing before truncating is
+ * load-bearing: it prevents truncation from cutting through a `homeDir`/
+ * `hostLabel` occurrence (or a credential span) and leaving a partial
+ * (undetectable) fragment, and it keeps the scrub (which can expand short labels
+ * into `<host>`) from pushing the output back over the byte cap. The credential
+ * scrub is a structural backstop for the gitleaks-less host, where the later
+ * value-based pass cannot run; see {@link scrubCredentials}. The returned string
+ * is therefore always both scrubbed and within budget before any caller writes
+ * it to disk or hands it to the gitleaks-based redactor.
  *
  * @param input See {@link CrashReportInput}.
  * @returns The bounded, structurally-scrubbed crash report text.
@@ -193,6 +253,6 @@ export function buildCrashReport(input: CrashReportInput): string {
     `platform: ${platform} (node ${process.version})`,
     `timestamp: ${timestamp}`,
   ].join('\n');
-  const scrubbed = scrubStructural(composed, homeDir, hostLabel);
+  const scrubbed = scrubStructural(scrubCredentials(composed), homeDir, hostLabel);
   return truncateToBytes(scrubbed, CRASH_MAX_REPORT_BYTES);
 }
