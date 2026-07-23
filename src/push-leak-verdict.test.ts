@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { failGlyph, okGlyph } from './color.ts';
+import { EXIT } from './exit-codes.ts';
 
 import type * as scanModule from './push-gitleaks.ts';
 import type * as checksModule from './push-checks.ts';
@@ -92,14 +93,17 @@ describe('push-leak-verdict: pure row + verdict builders', () => {
     expect(row).toContain('gitleaks detected secrets in 1 session transcript(s)');
   });
 
-  it('verdictFromFindings(null) is a non-leak scan-failed verdict and sets exitCode 1', async () => {
+  it('verdictFromFindings(null) is a non-leak scan-failed verdict that fails closed to LEAK_BLOCKED', async () => {
     const { verdictFromFindings } = await import('./push-leak-verdict.ts');
     const v = verdictFromFindings(null);
     expect(v.leak).toBe(false);
     expect(v.recovery).toBeNull();
     expect(v.verdictRow).toContain('scan failed, no parseable report');
     expect(v.findings).toEqual([]);
-    expect(process.exitCode).toBe(1);
+    // An unparseable report fails closed with the same LEAK_BLOCKED (5) code the
+    // real push uses for an unscannable tree, so `$?` parity holds; it stays
+    // leak=false so the dry-run neither throws nor offers a phantom drop hint.
+    expect(process.exitCode).toBe(EXIT.LEAK_BLOCKED);
   });
 
   it('verdictFromFindings([]) is a clean no-leaks verdict and does not set exitCode 1', async () => {
@@ -112,7 +116,7 @@ describe('push-leak-verdict: pure row + verdict builders', () => {
     expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
   });
 
-  it('verdictFromFindings(findings) is a leak verdict with recovery and sets exitCode 1', async () => {
+  it('verdictFromFindings(findings) is a leak verdict with recovery and sets exitCode LEAK_BLOCKED', async () => {
     const { verdictFromFindings } = await import('./push-leak-verdict.ts');
     const f = sessionFinding('abc');
     const v = verdictFromFindings([f]);
@@ -120,7 +124,9 @@ describe('push-leak-verdict: pure row + verdict builders', () => {
     expect(v.verdictRow).toContain('gitleaks detected secrets in 1 session transcript(s)');
     expect(v.recovery ?? '').toContain('nomad drop-session abc');
     expect(v.findings).toEqual([f]);
-    expect(process.exitCode).toBe(1);
+    // A confirmed dry-run leak now exits with the same LEAK_BLOCKED (5) code a
+    // real push throws, so a scripted `$? == 5` pre-flight buckets it correctly.
+    expect(process.exitCode).toBe(EXIT.LEAK_BLOCKED);
   });
 
   it('verdictScanError is a non-leak ✗ verdict that sets exitCode 1', async () => {

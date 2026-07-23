@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './push-gitleaks.ts';
+import { EXIT } from './exit-codes.ts';
 import { encodePath } from './utils.json.ts';
 
 /**
@@ -359,7 +360,7 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     teardownPreviewEnv(env);
   });
 
-  it('returns a scan-failed verdict (not a leak) and sets exitCode 1 when scanStagedTree returns null', async () => {
+  it('fails closed to LEAK_BLOCKED (not a leak) when scanStagedTree returns null', async () => {
     // Plant a session so staged > 0 (otherwise we never reach scanStagedTree).
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
@@ -375,9 +376,11 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     const { previewPushLeaks } = await import('./push-preview.ts');
     const map = { projects: { [logical]: { 'test-host': localPath } } };
     const verdict = previewPushLeaks(map);
-    expect(process.exitCode).toBe(1);
-    // A scan crash is surfaced as a ✗ row but is NOT a leak (no throw, no
-    // phantom drop-session recovery).
+    // An unparseable report fails closed to the same LEAK_BLOCKED (5) the real
+    // push uses, so `$?` parity holds for an unscannable tree.
+    expect(process.exitCode).toBe(EXIT.LEAK_BLOCKED);
+    // Still surfaced as a ✗ row but NOT a leak (no throw, no phantom
+    // drop-session recovery).
     expect(verdict.leak).toBe(false);
     expect(verdict.recovery).toBeNull();
     expect(verdict.verdictRow).toMatch(/scan failed/i);
@@ -1118,7 +1121,7 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
     teardownPreviewEnv(env);
   });
 
-  it('planted leak produces buildSessionAwareFatal body and sets exitCode 1', async () => {
+  it('planted leak produces buildSessionAwareFatal body and sets exitCode LEAK_BLOCKED', async () => {
     const logical = 'my-project';
     const localPath = join(env.testHome, 'my-project');
     // Assemble a real-looking PAT from split fragments so no contiguous
@@ -1135,7 +1138,8 @@ describe.skipIf(!hasGitleaks)('previewPushLeaks: real gitleaks integration', () 
     const map = { projects: { [logical]: { 'test-host': localPath } } };
     const verdict = previewPushLeaks(map);
 
-    expect(process.exitCode).toBe(1);
+    // A confirmed dry-run leak exits LEAK_BLOCKED (5), matching a real push.
+    expect(process.exitCode).toBe(EXIT.LEAK_BLOCKED);
     expect(verdict.leak).toBe(true);
     // The one-line verdict row names the affected session count.
     expect(verdict.verdictRow).toMatch(/gitleaks detected secrets in \d+ session transcript/);

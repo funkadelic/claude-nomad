@@ -594,6 +594,34 @@ describe('collectActions - masked context line in prompt', () => {
     expect(capturedPrompt).not.toContain(SECRET);
   });
 
+  it('offers [D]rop session in the menu header for a session finding', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFullFinding({ File: 'shared/projects/my-proj/abc123.jsonl' });
+    let capturedPrompt = '';
+    const prompt = (p: string): Promise<string> => {
+      capturedPrompt = p;
+      return Promise.resolve('s');
+    };
+    await collectActions([f], prompt, () => null);
+    expect(capturedPrompt).toContain('[D]rop session');
+    expect(capturedPrompt).toContain('(session:');
+  });
+
+  it('omits [D]rop session in the menu header for a non-session (skill) finding', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const f = makeFullFinding({ File: 'shared/skills/my-skill/SKILL.md' });
+    let capturedPrompt = '';
+    const prompt = (p: string): Promise<string> => {
+      capturedPrompt = p;
+      return Promise.resolve('s');
+    };
+    await collectActions([f], prompt, () => null);
+    // Drop is a no-op for a skill/memory finding, so the menu never offers it.
+    expect(capturedPrompt).not.toContain('[D]rop');
+    expect(capturedPrompt).toContain('[R]edact  [A]llow  [S]kip');
+    expect(capturedPrompt).not.toContain('(session:');
+  });
+
   it('emits a masked-Match context line when readLine returns null and Match is non-empty', async () => {
     const { collectActions } = await import('./commands.push.recovery.actions.ts');
     const f = makeFullFinding({ Match: SECRET });

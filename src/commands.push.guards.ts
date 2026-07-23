@@ -30,11 +30,13 @@ export function guardGitlinks(repo: string): void {
 
 /**
  * Defense-in-depth guard for push resolution-mode mutual exclusivity.
- * The argv parser already enforces these, but `cmdPush` re-checks as a
- * second gate (mirroring `cmdClean`'s `--older-than`/`--keep` precedent).
- * Calls `die()` on any conflicting combination: two resolution modes together,
- * or any resolution mode (including `--redact-all`) combined with `--dry-run`
- * (a dry-run resolves nothing).
+ * The argv parser already enforces these, but `runPushCore` re-checks as a
+ * second gate (mirroring `cmdClean`'s `--older-than`/`--keep` precedent). It
+ * lives in `runPushCore` rather than `cmdPush` so the `cmdSync` compose seam,
+ * which calls `runPushCore` directly, is covered too. Calls `die()` on any
+ * conflicting combination: two resolution modes together, or any resolution
+ * mode (including `--redact-all`) combined with `--dry-run` (a dry-run resolves
+ * nothing).
  *
  * @param dryRun True when `--dry-run` was passed.
  * @param redactAll True when `--redact-all` was passed.
