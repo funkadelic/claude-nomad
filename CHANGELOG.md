@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.62.5](https://github.com/funkadelic/claude-nomad/compare/v0.62.4...v0.62.5) (2026-07-24)
+
+
+### Fixed
+
+* close secret-scan parity and safety gaps ([#460](https://github.com/funkadelic/claude-nomad/issues/460)) ([02b8b3b](https://github.com/funkadelic/claude-nomad/commit/02b8b3bc91a4bf2a3cbbd483836ddede7c8bcc7e))
+* close skill/memory redaction and dry-run scan parity gaps ([#462](https://github.com/funkadelic/claude-nomad/issues/462)) ([ae281de](https://github.com/funkadelic/claude-nomad/commit/ae281def35618bde81adecd9ab39f2ed16f19b42))
+* harden crash-report redactor against best-effort-scan gaps ([#463](https://github.com/funkadelic/claude-nomad/issues/463)) ([703c538](https://github.com/funkadelic/claude-nomad/commit/703c538a6b9c64e941ec70f4281d83c3f5d65ab2))
+* **pull:** fail closed when the autostash guard cannot probe the index ([#461](https://github.com/funkadelic/claude-nomad/issues/461)) ([224e10d](https://github.com/funkadelic/claude-nomad/commit/224e10d1e688d47f6ae105fc3ceeb83782445b40))
+* **push:** reconcile dry-run leak exit code and recovery-menu UX ([#464](https://github.com/funkadelic/claude-nomad/issues/464)) ([a9fcf8b](https://github.com/funkadelic/claude-nomad/commit/a9fcf8badbcf7358a9fe2a3be32449243ad048f3))
+* **update:** report a no-op when already on the latest version ([#465](https://github.com/funkadelic/claude-nomad/issues/465)) ([6066124](https://github.com/funkadelic/claude-nomad/commit/60661244f875699dc75a5bb5357979336032b1b0))
+
+
+### Changed
+
+* add staged gate runner and local dev-loop caches ([#458](https://github.com/funkadelic/claude-nomad/issues/458)) ([81da5e7](https://github.com/funkadelic/claude-nomad/commit/81da5e7db0db90e7b66d053383daf8d033a5869d))
+
 ## [0.62.4](https://github.com/funkadelic/claude-nomad/compare/v0.62.3...v0.62.4) (2026-07-21)
 
 
