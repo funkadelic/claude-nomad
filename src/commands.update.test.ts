@@ -57,6 +57,17 @@ describe('cmdUpdate', () => {
     expect(logSpy.mock.calls[1][0]).toContain('now at v0.47.1');
   });
 
+  it('reports no-op when the installed version already matches the running one', () => {
+    const logSpy = vi.spyOn(console, 'log');
+    const { run } = makeFakeRun('0.46.0\n');
+
+    cmdUpdate('0.46.0', run);
+
+    const lines = logSpy.mock.calls.map((c) => c[0] as string);
+    expect(lines.some((l) => l.includes('already at the latest version (v0.46.0)'))).toBe(true);
+    expect(lines.some((l) => l.includes('now at'))).toBe(false);
+  });
+
   it('prints fallback line when version query fails, does not throw', () => {
     const logSpy = vi.spyOn(console, 'log');
     const { run } = makeFakeRun(new Error('spawn failed'));

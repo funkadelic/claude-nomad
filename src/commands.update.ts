@@ -49,9 +49,11 @@ export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | 
  * stays quiet, leaving only the final version line. After a successful npm
  * update, reads the newly-installed version by spawning the fresh `nomad
  * --version` binary (not the stale in-process `currentVersion`, which reflects
- * the OLD dist). Prints the version on success, or a graceful fallback line
- * if the version query fails. On npm failure the captured stderr is folded
- * into the error so the cause stays diagnosable despite the silenced output.
+ * the OLD dist). Prints the version on success, a no-op line when npm left the
+ * host on the version it already had (nothing to update to), or a graceful
+ * fallback line if the version query fails. On npm failure the captured stderr
+ * is folded into the error so the cause stays diagnosable despite the silenced
+ * output.
  *
  * Self-update and data sync are separate concerns. This
  * command only updates the CLI binary; it does NOT run `nomad pull`, `nomad
@@ -96,9 +98,11 @@ export function cmdUpdate(currentVersion: string, run: SpawnSyncFn = execFileSyn
     throw new NomadFatal(`npm update -g claude-nomad failed: ${e.message}${suffix}`);
   }
   const version = readInstalledVersion(run);
-  if (version) {
-    console.log(`claude-nomad is now at v${version}`);
-  } else {
+  if (!version) {
     console.log('Update complete. Run "nomad --version" to confirm the new version.');
+  } else if (version === currentVersion) {
+    console.log(`claude-nomad is already at the latest version (v${version}).`);
+  } else {
+    console.log(`claude-nomad is now at v${version}`);
   }
 }
