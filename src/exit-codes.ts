@@ -24,6 +24,11 @@ export const EXIT = {
   CONFLICT: 4,
   /** gitleaks confirmed a secret in the staged tree and the push was aborted. */
   LEAK_BLOCKED: 5,
+  /**
+   * The user interrupted an interactive prompt with Ctrl+C and nothing was
+   * left half-written. The conventional 128 + SIGINT(2) value.
+   */
+  INTERRUPTED: 130,
 } as const;
 
 /** Union of every value in {@link EXIT}. */

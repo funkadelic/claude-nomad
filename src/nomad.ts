@@ -42,7 +42,8 @@ import { parsePushArgs } from './nomad.dispatch.push.ts';
 import { parseSyncArgs } from './nomad.dispatch.sync.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './resume.ts';
-import { fail, isProcessExit, NomadFatal } from './utils.ts';
+import { isUserAbort } from './user-abort.ts';
+import { fail, isProcessExit, NomadFatal, warn } from './utils.ts';
 import { EXIT } from './exit-codes.ts';
 
 /**
@@ -60,8 +61,10 @@ import pkg from '../package.json' with { type: 'json' };
  * function, so a `NomadFatal` can never reach the crash-report path from any
  * of the three call sites. A test-only `ProcessExit` sentinel is re-thrown
  * untouched (it models a real `process.exit`, not a crash). A `NomadFatal`
- * keeps its own clean message and exit code with no crash report; anything
- * else is handed to `handleCrash` (writes a redacted crash report) and exits
+ * keeps its own clean message and exit code with no crash report. A
+ * deliberate Ctrl+C prompt cancel (`isUserAbort`) exits quietly with
+ * `EXIT.INTERRUPTED` and also writes no crash report; anything else is
+ * handed to `handleCrash` (writes a redacted crash report) and exits
  * `EXIT.GENERIC_FAILURE`.
  *
  * Typed `never`: registering an `uncaughtException` listener suppresses
@@ -76,6 +79,10 @@ function handleTopLevelError(err: unknown): never {
   if (err instanceof NomadFatal) {
     fail(err.message);
     process.exit(err.code);
+  }
+  if (isUserAbort(err)) {
+    warn('cancelled.');
+    process.exit(EXIT.INTERRUPTED);
   }
   const issuesUrl = pkg.bugs?.url ?? 'https://github.com/funkadelic/claude-nomad/issues';
   handleCrash(err, process.argv, {
