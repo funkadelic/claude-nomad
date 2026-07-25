@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.62.6](https://github.com/funkadelic/claude-nomad/compare/v0.62.5...v0.62.6) (2026-07-25)
+
+
+### Fixed
+
+* **nomad:** treat a Ctrl+C prompt abort as a user cancel ([#466](https://github.com/funkadelic/claude-nomad/issues/466)) ([6250627](https://github.com/funkadelic/claude-nomad/commit/62506279155fe02c067675271fa9bc02f341a14b))
+
 ## [0.62.5](https://github.com/funkadelic/claude-nomad/compare/v0.62.4...v0.62.5) (2026-07-24)
 
 
