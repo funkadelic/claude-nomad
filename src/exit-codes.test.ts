@@ -23,6 +23,10 @@ describe('EXIT', () => {
     expect(EXIT.LEAK_BLOCKED).toBe(5);
   });
 
+  it('resolves INTERRUPTED to 130', () => {
+    expect(EXIT.INTERRUPTED).toBe(130);
+  });
+
   it('has no member equal to the reserved value 3', () => {
     expect(Object.values(EXIT)).not.toContain(3);
   });
@@ -30,7 +34,7 @@ describe('EXIT', () => {
   it('is a flat object of numeric values only', () => {
     expect(Object.values(EXIT).every((v) => typeof v === 'number')).toBe(true);
     expect(Object.keys(EXIT).sort()).toEqual(
-      ['SUCCESS', 'GENERIC_FAILURE', 'USAGE', 'CONFLICT', 'LEAK_BLOCKED'].sort(),
+      ['SUCCESS', 'GENERIC_FAILURE', 'USAGE', 'CONFLICT', 'LEAK_BLOCKED', 'INTERRUPTED'].sort(),
     );
   });
 });

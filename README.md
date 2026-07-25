@@ -313,6 +313,7 @@ branch on `$?` without parsing stderr text.
 | 2    | Usage           | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.         |
 | 4    | Conflict        | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution. |
 | 5    | Leak blocked    | gitleaks confirmed a secret in the staged tree and the push was aborted.             |
+| 130  | Interrupted     | You pressed Ctrl+C at an interactive prompt, so nomad stopped without finishing.     |
 
 A run skipped because another nomad process already holds the lock also exits 0: this is an
 intentional no-op skip, not a failure, so a backgrounded shell-rc or cron invocation never raises a
@@ -323,7 +324,8 @@ false alarm from a concurrent run. Value `3` is reserved for future use.
 If `nomad` ever hits an unexpected bug, it no longer dumps a raw stack trace at you. Instead it
 prints a short "this looks like a bug" banner (with a link to the issue tracker) and writes a small
 report you can attach to a bug report if you choose. The exit code is unchanged: an unexpected crash
-exits `1`, and a documented failure still exits with its own code from the table above.
+exits `1`, and a documented failure still exits with its own code from the table above. A prompt you
+cancel yourself is not a crash: it exits `130` and writes no report.
 
 What this means for you:
 

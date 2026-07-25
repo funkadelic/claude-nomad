@@ -384,6 +384,7 @@ branch on `$?` without parsing stderr text.
 | 2    | Usage           | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                            |
 | 4    | Conflict        | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution. |
 | 5    | Leak blocked    | gitleaks confirmed a secret in the staged tree and the push was aborted.                                               |
+| 130  | Interrupted     | You pressed Ctrl+C at an interactive prompt, so nomad stopped without finishing.                                        |
 
 A run skipped because another nomad process already holds the lock also exits 0: this is an
 intentional no-op skip, not a failure, so a backgrounded shell-rc or cron invocation never raises a
@@ -394,7 +395,8 @@ false alarm from a concurrent run. Value `3` is reserved for future use.
 When `nomad` hits an unexpected bug it prints a short "this looks like a bug" banner (with a link to
 the issue tracker) instead of a raw stack trace, and writes a bounded, redacted report to
 `~/.cache/claude-nomad/crash/`. The exit code contract is unchanged: an unexpected crash exits `1`,
-a documented failure keeps its own code.
+a documented failure keeps its own code. A prompt you cancel yourself is not a crash: it exits `130`
+and writes no report.
 
 - **Local only, never uploaded.** The report is written owner-readable-only under your cache dir and
   nothing is transmitted anywhere; you choose whether to attach it to an issue.
