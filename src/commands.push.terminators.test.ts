@@ -152,6 +152,5 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toContain('✗ ');
     expect(out).toContain('abc12345-test-fixture');
     expect(out).toContain('nomad drop-session');
-    vi.doUnmock('./push-leak-verdict.ts');
   });
 });

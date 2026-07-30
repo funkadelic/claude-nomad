@@ -94,13 +94,6 @@ function mockCommitDeps(opts: {
   }
 }
 
-/** Unmock the modules `mockCommitDeps` mocks beyond `teardownPushEnv`'s list. */
-function unmockCommitDeps(): void {
-  vi.doUnmock('./push-manifest.ts');
-  vi.doUnmock('./push-global-config.ts');
-  vi.doUnmock('./commands.push.recovery.ts');
-}
-
 describe('commitAndPush render flag', () => {
   let env: PushEnv;
 
@@ -110,7 +103,6 @@ describe('commitAndPush render flag', () => {
 
   afterEach(() => {
     teardownPushEnv(env);
-    unmockCommitDeps();
   });
 
   it('render: false on a clean push renders nothing and returns the push tree sections', async () => {
@@ -454,7 +446,6 @@ describe('runPushCore compose mode', () => {
 
   afterEach(() => {
     teardownPushEnv(env);
-    unmockCommitDeps();
   });
 
   it('compose: true on a clean "nothing to commit" run suppresses the header and log, renders nothing, and returns sections', async () => {

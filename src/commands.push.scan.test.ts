@@ -91,7 +91,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(logOutput(env)).toMatch(/gitleaks detected secrets in 1 session transcript/);
     // ...and the recovery block prints below the tree via fail() (stderr).
     expect(errOutput(env)).toMatch(/gitleaks detected secrets/);
-    vi.doUnmock('./push-leak-verdict.ts');
   });
 
   it('Test 8a: cmdPush({ dryRun: true }) skips git add / commit / push, runs leak preview, and renders the dry-run tree', async () => {
@@ -187,10 +186,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toContain('Push summary');
     expect(out).toContain('2 unmapped on push, 0 collisions (run nomad doctor to list)');
     expect(out).not.toContain('push complete');
-    vi.doUnmock('./spinner.ts');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./push-leak-verdict.ts');
-    vi.doUnmock('./push-global-config.ts');
   });
 
   it('Test 8b: dry-run preview leak renders the ✗ Leak scan row and prints the recovery block below the tree', async () => {
@@ -240,9 +235,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(logOutput(env)).toMatch(/gitleaks detected secrets in 1 session transcript/);
     // The recovery block prints below the tree via fail() (stderr).
     expect(errOutput(env)).toContain('nomad drop-session abc12345');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./push-preview.ts');
-    vi.doUnmock('./push-global-config.ts');
   });
 
   it('Test 8c: dry-run on a CLEAN repo (empty status) with a planted leak runs the preview, renders ✗, and sets exitCode 1', async () => {
@@ -299,9 +291,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(errOutput(env)).toContain('nomad drop-session abc12345');
     // The clean-repo real-push terminator must NOT appear on the dry-run path.
     expect(logOutput(env)).not.toContain('nothing to commit');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./push-preview.ts');
-    vi.doUnmock('./push-global-config.ts');
   });
 
   it('Test 8d: dry-run on a CLEAN repo with a clean mapped session shows the ✓ no-leaks verdict and leaves exitCode unset', async () => {
@@ -348,9 +337,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toMatch(/no leaks/);
     // No recovery body on a clean preview.
     expect(errOutput(env)).not.toContain('nomad drop-session');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./push-preview.ts');
-    vi.doUnmock('./push-global-config.ts');
   });
 
   it('Test 8e: dry-run with NO path-map on a clean repo renders the no-scan tree, does not die, and never calls previewPushLeaks', async () => {
@@ -407,8 +393,5 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toContain('no path-map.json');
     // The missing-map FATAL did NOT fire.
     expect(errOutput(env)).not.toContain('path-map.json missing');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./push-preview.ts');
-    vi.doUnmock('./push-global-config.ts');
   });
 });
