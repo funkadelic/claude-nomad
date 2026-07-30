@@ -94,6 +94,8 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('./push-gitleaks.ts');
   vi.doUnmock('./push-leak-verdict.ts');
   vi.doUnmock('./push-preview.ts');
+  vi.doUnmock('./push-manifest.ts');
+  vi.doUnmock('./push-global-config.ts');
   vi.doUnmock('./remap.ts');
   vi.doUnmock('./extras-sync.ts');
   vi.doUnmock('./skills-sync.ts');
@@ -101,6 +103,8 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('./utils.ts');
   vi.doUnmock('./utils.lockfile.ts');
   vi.doUnmock('./commands.push.allowlist.ts');
+  vi.doUnmock('./commands.push.recovery.ts');
+  vi.doUnmock('./spinner.ts');
   vi.doUnmock('node:child_process');
   process.exitCode = env.originalExitCode;
   if (env.originalHome === undefined) delete process.env.HOME;

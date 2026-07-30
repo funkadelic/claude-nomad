@@ -457,6 +457,13 @@ describe('cmdPush: status-based allow-list guard (L240/L260)', () => {
       };
     });
     vi.doMock('./push-gitleaks.ts', () => ({ runGitleaksScan: vi.fn() }));
+    // Stub collectGlobalConfigChanges so the dry-run preview does not invoke
+    // real git diff against the temp repo (which has no HEAD commit). Was
+    // previously masked by a mock leaked forward from an earlier describe.
+    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushGlobalConfigModule>();
+      return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
+    });
     const { cmdPush } = await import('./commands.push.ts');
     await cmdPush({ dryRun: true });
     expect(capturedOpts).toEqual({ untrackedAll: true });
