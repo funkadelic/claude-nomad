@@ -87,9 +87,6 @@ describe('cmdPush: extras pipeline integration', () => {
     expect(out).toContain('Push summary');
     expect(out).toContain('5 unmapped on push');
     expect(out).toMatch(/no leaks/);
-    vi.doUnmock('./push-leak-verdict.ts');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./extras-sync.ts');
   });
 
   it('surfaces extrasResult.skipped to emitSummary on the clean push success path', async () => {
@@ -144,8 +141,5 @@ describe('cmdPush: extras pipeline integration', () => {
     expect(() => cmdPush()).not.toThrow();
     // The "2 extras skipped" suffix now appears in the in-tree Summary row.
     expect(logOutput(env)).toContain('2 extras skipped');
-    vi.doUnmock('./push-leak-verdict.ts');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./extras-sync.ts');
   });
 });

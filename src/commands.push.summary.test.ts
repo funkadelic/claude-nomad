@@ -75,8 +75,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toContain('Leak scan');
     expect(out).toMatch(/no leaks/);
     expect(out).not.toContain('push complete');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./push-leak-verdict.ts');
   });
 
   it('Test 7: cmdPush renders the clean summary row in the tree on a zero-unmapped, zero-collision push', async () => {
@@ -129,8 +127,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // The pushed session shows as a ✓ row under the Sessions section.
     expect(out).toContain('Sessions');
     expect(out).toMatch(/✓ +my-project/);
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./push-leak-verdict.ts');
   });
 
   it('Test 8: cmdPush renders the nothing-to-commit tree (Summary row, no Leak scan section)', async () => {
@@ -173,7 +169,6 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).toContain('3 not in path-map (run nomad doctor to list)');
     // No staging happened, so there is no Leak scan section.
     expect(out).not.toContain('Leak scan');
-    vi.doUnmock('./remap.ts');
   });
 
   it('Test 8b: nothing-to-commit with zero pushed AND zero unmapped omits the Sessions header', async () => {
@@ -216,7 +211,5 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     expect(out).not.toContain('Extras');
     // Only the clean Summary row remains, rendered as plain text.
     expect(out).toContain('clean');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./extras-sync.ts');
   });
 });
