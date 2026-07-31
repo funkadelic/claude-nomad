@@ -180,14 +180,26 @@ sessions writing to the local file are not disturbed.
 ## Recovery flow: push-time interactive menu
 
 When `nomad push` detects a secret and the process is running on an interactive TTY, it presents a
-per-finding menu instead of aborting immediately. Each finding is shown with its rule id, file, and
-line number (the secret value is never printed: the scan uses `--redact`).
+menu instead of aborting immediately, with one prompt per distinct gitleaks fingerprint rather than
+one per finding: several occurrences of the same secret on one line ask a single question, and
+Allow writes exactly one `.gitleaksignore` entry for them. Each prompt shows a `file:` / `value:` /
+`near:` block: `file:` names the location, `value:` describes the secret's shape (a short head/tail
+fragment plus its character count, character class, and entropy) without ever printing it in full,
+and `near:` shows the label text immediately preceding it, unmasked, since the secret span itself
+is excised rather than masked. The scan uses `--redact`, so the raw secret value is never printed.
 
 ```text
-Finding: github-pat in shared/projects/my-proj/abc123.jsonl line 42 (session: abc123)
+Finding 3/3: generic-api-key           2 occurrences, 1 ignore entry
+  file:  shared/projects/my-proj/abc123.jsonl:42
+  value: 5857...a4d6       40 chars, hex, entropy 3.62
+  near:  create-github-app-token  v3 ->
   [R]edact  [A]llow  [D]rop session  [S]kip (default)
 >
 ```
+
+The `(session: <id>)` suffix on the `file:` line appears only when the session id is not already
+the file's own name: a flat `<id>.jsonl` transcript omits it as redundant, while a nested subagent
+file (whose name differs from its session id) shows it.
 
 What the actions do:
 

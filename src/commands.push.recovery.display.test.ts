@@ -180,6 +180,24 @@ describe('resolveSecretContext - readLine null and Match empty', () => {
   });
 });
 
+describe('resolveSecretContext - final fallback with a readable line, no REDACTED template, no Secret', () => {
+  it('treats the whole clamped raw span as the secret', () => {
+    const prefix = 'label: ';
+    const line = `${prefix}${HEX_FIXTURE}`;
+    const startCol = prefix.length + 1;
+    const endCol = prefix.length + HEX_FIXTURE.length;
+    // Match carries no REDACTED literal and no Secret field is set, so
+    // neither alignRedactedMatch nor the unredacted-Secret step applies.
+    const finding = makeFinding({ Match: HEX_FIXTURE, StartColumn: startCol, EndColumn: endCol });
+    const reader = (_file: string, _line: number): string | null => line;
+
+    const result = resolveSecretContext(finding, reader);
+
+    expect(result.value).toBe(HEX_FIXTURE);
+    expect(result.near).toBe(prefix);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // formatNear
 // ---------------------------------------------------------------------------
@@ -260,6 +278,15 @@ describe('renderFindingBlock', () => {
     const lines = renderFindingBlock(finding, nullReader);
     expect(lines[0]).toContain('(session: abc123)');
   });
+
+  it('keeps the session suffix for a non-.jsonl subtree file, whose basename is not the session id', () => {
+    const finding = makeFinding({
+      File: 'shared/projects/p/abc123/tool-results/x.txt',
+      Match: '',
+    });
+    const lines = renderFindingBlock(finding, nullReader);
+    expect(lines[0]).toContain('(session: abc123)');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -322,5 +349,77 @@ describe('buildPromptHeader', () => {
     const withoutSession = buildPromptHeader([skillFinding], 1, 1, nullReader);
     expect(withoutSession).not.toContain('[D]rop');
     expect(withoutSession).toContain('[R]edact  [A]llow  [S]kip (default)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Disclosure guard: the raw secret never survives into rendered output
+// ---------------------------------------------------------------------------
+
+/**
+ * Assert that `text` contains no contiguous substring of `secret` longer
+ * than 4 characters (the head/tail fragment length). A head/tail fragment
+ * built from 4-char pieces separated by a non-class separator cannot itself
+ * carry a longer contiguous run of the original secret, so this is a
+ * structural proof, not a spot check on one fragment shape.
+ */
+function assertNoLongContiguousRun(text: string, secret: string): void {
+  for (let i = 0; i <= secret.length - 5; i++) {
+    expect(text).not.toContain(secret.slice(i, i + 5));
+  }
+}
+
+describe('disclosure guard - the full secret and long contiguous runs never appear in rendered output', () => {
+  it('redacted-report fixture: no full secret, no run longer than 4 chars', () => {
+    const prefix = 'create-github-app-token  v3 -> ';
+    const line = `${prefix}${HEX_FIXTURE} `;
+    const finding = makeFinding({
+      Match: `${prefix}REDACTED `,
+      StartColumn: 1,
+      EndColumn: line.length,
+    });
+    const reader = (_file: string, _line: number): string | null => line;
+
+    const rendered = renderFindingBlock(finding, reader).join('\n');
+
+    expect(rendered).not.toContain(HEX_FIXTURE);
+    assertNoLongContiguousRun(rendered, HEX_FIXTURE);
+  });
+
+  it('unredacted-Secret fixture: no full secret, no run longer than 4 chars', () => {
+    const prefix = 'label: ';
+    const line = `${prefix}${HEX_FIXTURE}`;
+    const finding = makeFinding({
+      Match: `${prefix}${HEX_FIXTURE}`,
+      Secret: HEX_FIXTURE,
+      StartColumn: 1,
+      EndColumn: line.length,
+    });
+    const reader = (_file: string, _line: number): string | null => line;
+
+    const rendered = renderFindingBlock(finding, reader).join('\n');
+
+    expect(rendered).not.toContain(HEX_FIXTURE);
+    assertNoLongContiguousRun(rendered, HEX_FIXTURE);
+  });
+
+  it('a sub-16-character secret renders the value: line with no fragment at all', () => {
+    const secret = 'abcXYZ789012'; // 12 chars, below MIN_ELIDE_LEN
+    const prefix = 'label: ';
+    const line = `${prefix}${secret}`;
+    const finding = makeFinding({
+      Match: `${prefix}${secret}`,
+      Secret: secret,
+      StartColumn: 1,
+      EndColumn: line.length,
+    });
+    const reader = (_file: string, _line: number): string | null => line;
+
+    const lines = renderFindingBlock(finding, reader);
+    const valueLine = lines.find((l) => l.startsWith('  value: '));
+
+    expect(valueLine).toBeDefined();
+    expect(valueLine).not.toContain('...');
+    expect(valueLine).toContain('12 chars');
   });
 });
