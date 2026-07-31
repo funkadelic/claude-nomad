@@ -11,6 +11,12 @@
  * ending in the two-phase Sync summary. The push half's full safety pipeline
  * (secret scan, interactive recovery on a leak) runs unchanged inside
  * `runPushCore`; this module never re-implements or bypasses it.
+ *
+ * On win32, pull-first is only safe for shared config because `runPullCore`
+ * mirrors the host-side copies into the repo before its own rebase (see
+ * `mirrorSharedLinksBeforePull` in `commands.pull.ts`). That lives in the pull
+ * half deliberately, so a bare `nomad pull` gets the same protection this
+ * command does; nothing platform-specific is needed here.
  */
 
 import { existsSync } from 'node:fs';
@@ -313,6 +319,16 @@ async function runSyncPushHalf(): Promise<PushOutcome> {
   }
 }
 
+/**
+ * Run the wet (real) sync: the pull half first, then the push half, both in
+ * compose mode so neither renders anything itself and `renderWetSync` owns
+ * the single merged tree. A pull-half fatal error is NOT caught here, so it
+ * propagates to `cmdSync`'s own catch and the push half never runs. The pull
+ * half always returns the `wet` tag when run without a preview flag, so the
+ * cast below carries no risk.
+ *
+ * @param verbose - Threaded into `renderWetSync`; see its JSDoc.
+ */
 /**
  * Run the wet (real) sync: the pull half first, then the push half, both in
  * compose mode so neither renders anything itself and `renderWetSync` owns

@@ -12,6 +12,8 @@ import type * as recoveryUnmergedModule from './commands.pull.recovery.unmerged.
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 
+import { stubPlatform } from './test-helpers.platform.ts';
+
 /**
  * Covers the two scattered branches in cmdPull that the existing
  * commands.lock.test.ts does not hit directly:
@@ -1656,5 +1658,169 @@ describe('runPullCore: return shape and lock-free contract', () => {
     expect(() => runPullCore()).toThrow(/could not create backup dir/);
     // Fatal fired before acquireLock could ever be reached (core is lock-free).
     expect(existsSync(lockPath)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runPullCore: win32 pre-pull shared-link mirror
+// ---------------------------------------------------------------------------
+
+// On posix a shared name is a symlink, so an edit to ~/.claude/CLAUDE.md is
+// already an uncommitted change in the sync repo when a pull starts and the
+// autostash carries it through the rebase. On win32 it is a real copy that
+// applySharedLinksWin32 would overwrite from the repo, so the mirror has to run
+// BEFORE `git pull --rebase` for the same edit to survive.
+describe('runPullCore: win32 pre-pull shared-link mirror', () => {
+  const realPlatform = process.platform;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-pull-mirror-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    repoUnderHome = join(testHome, 'claude-nomad');
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.resetModules();
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('./preview.ts');
+    process.exitCode = 0;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Mock the pull pipeline, recording the mirror and the `git pull --rebase`
+   * into one shared ordering log.
+   *
+   * @param order - Array appended to on each mocked call.
+   * @returns The `syncSharedLinksPush` spy, for argument assertions.
+   */
+  function mockPipelineRecording(order: string[]): ReturnType<typeof vi.fn> {
+    const mirrorSpy = vi.fn(() => {
+      order.push('mirror');
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      syncSharedLinksPush: mirrorSpy,
+    }));
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(() => 0),
+    }));
+    vi.doMock('./preview.ts', () => ({ computePreview: vi.fn() }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: vi.fn(() => {
+          order.push('gitOrFatal');
+        }),
+      };
+    });
+    return mirrorSpy;
+  }
+
+  it('mirrors the host-side copies into the repo BEFORE git pull --rebase on win32', async () => {
+    stubPlatform('win32');
+    const order: string[] = [];
+    const mirrorSpy = mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+    expect(order).toEqual(['mirror', 'gitOrFatal']);
+    expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} });
+  });
+
+  it('does not mirror on a posix platform, where the symlink already made the edit live', async () => {
+    stubPlatform('linux');
+    const order: string[] = [];
+    const mirrorSpy = mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+    expect(order).toEqual(['gitOrFatal']);
+    expect(mirrorSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not mirror under dryRun on win32 (zero-mutation preview contract)', async () => {
+    stubPlatform('win32');
+    const order: string[] = [];
+    const mirrorSpy = mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ dryRun: true });
+    expect(mirrorSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not mirror under forceRemote on win32 (that flag means take the remote)', async () => {
+    stubPlatform('win32');
+    const order: string[] = [];
+    const mirrorSpy = mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ forceRemote: true });
+    expect(mirrorSpy).not.toHaveBeenCalled();
+  });
+
+  it('passes null when path-map.json is absent on win32', async () => {
+    stubPlatform('win32');
+    rmSync(join(repoUnderHome, 'path-map.json'), { force: true });
+    const order: string[] = [];
+    const mirrorSpy = mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+    expect(mirrorSpy).toHaveBeenCalledWith(null);
+    expect(order).toEqual(['mirror', 'gitOrFatal']);
+  });
+
+  it('passes null on a malformed path-map.json, leaving the fatal to the pull proper', async () => {
+    stubPlatform('win32');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), '{ not json\n');
+    const order: string[] = [];
+    const mirrorSpy = mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    // The mirror degrades to null rather than throwing, so it is never what
+    // fails a pull; the post-rebase readPathMap still dies loudly as before.
+    expect(() => runPullCore()).toThrow();
+    expect(mirrorSpy).toHaveBeenCalledWith(null);
   });
 });
