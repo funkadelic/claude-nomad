@@ -38,13 +38,26 @@ function isRepoStateLine(item: string): boolean {
 }
 
 /**
+ * True for the Environment sync-modality row on native Windows only. Copy-sync
+ * is the one modality where the host-side file and the repo-side file are
+ * distinct, so the row is worth surfacing without `--verbose` on that platform.
+ * On posix the symlink modality is the unsurprising default, so that row stays
+ * verbose-only and the compact view is unchanged there. Matches the stable
+ * `sync modality:` label emitted by `reportSyncModality`.
+ */
+function isWin32ModalityLine(item: string): boolean {
+  return process.platform === 'win32' && item.includes('sync modality:');
+}
+
+/**
  * Collapse the full doctor section list to the compact default view: only what
  * needs action plus minimal orientation. Pure transform over the rendered
  * section objects, so reporters and the `process.exitCode` contract are
  * untouched (this never inspects or mutates exit state).
  *
  * - `ALWAYS_FULL` sections pass through unchanged.
- * - `Environment` keeps the repo-state row plus any WARN/FAIL rows.
+ * - `Environment` keeps the repo-state row, the sync-modality row on win32
+ *   (see `isWin32ModalityLine`), plus any WARN/FAIL rows.
  * - every other section keeps only its WARN/FAIL rows; an emptied section is
  *   skipped by `renderTree` (it renders no zero-item sections).
  *
@@ -55,7 +68,12 @@ export function compactSections(sections: DoctorSection[]): DoctorSection[] {
   return sections.map((s) => {
     if (ALWAYS_FULL.has(s.header)) return s;
     if (s.header === 'Environment') {
-      return { ...s, items: s.items.filter((it) => isRepoStateLine(it) || isProblem(it)) };
+      return {
+        ...s,
+        items: s.items.filter(
+          (it) => isRepoStateLine(it) || isWin32ModalityLine(it) || isProblem(it),
+        ),
+      };
     }
     return { ...s, items: s.items.filter(isProblem) };
   });

@@ -134,9 +134,23 @@ export function reportLongPathsCheck(
  * else. Mirrors the `dim(infoGlyph)` informational-row style `reportHostAndPaths`
  * uses. Never sets `process.exitCode`.
  *
+ * The win32 row names when a local edit reaches the repo, because copy-sync is
+ * the one modality where the host-side file and the repo-side file are distinct:
+ * an edit is transcribed by the next `nomad pull` or `nomad push`, not the
+ * instant it is saved. It is deliberately NOT phrased as advice (there is no
+ * ordering for the user to get right; see `mirrorSharedLinksBeforePull` in
+ * `commands.pull.ts`), only as orientation for behavior that differs from
+ * posix. WSL2 reports as posix (Node sees it as linux), so a WSL2 host
+ * correctly shows the symlink row. `compactSections` keeps this row in the
+ * default view on win32 only, so the difference is visible without `--verbose`
+ * on the platform where it applies.
+ *
  * @param section - The Environment section to append the row to.
  */
 export function reportSyncModality(section: DoctorSection): void {
-  const modality = process.platform === 'win32' ? 'copy-sync (win32)' : 'symlink (posix)';
+  const modality =
+    process.platform === 'win32'
+      ? 'copy-sync (native Windows; local edits reach the repo on the next pull or push)'
+      : 'symlink (posix)';
   addItem(section, `${dim(infoGlyph)} sync modality: ${modality}`);
 }
