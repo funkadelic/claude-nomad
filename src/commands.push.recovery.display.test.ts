@@ -369,8 +369,10 @@ describe('groupFindingsForPrompt', () => {
 
   it('groups two findings sharing a fingerprint AND a value, even at different columns', () => {
     // Match carries the redaction token, the shape a real `--redact` report
-    // has: an empty Match offers nothing to verify the span against, so it
-    // resolves to no value and keys off findingKey instead.
+    // has, so alignment recovers the same value at both columns and the two
+    // key on fingerprint plus value. (An empty Match offers nothing to verify
+    // against, resolves to no value, and would key off findingKey instead,
+    // which is the case the unresolvable-value test below covers.)
     const at = (col: number) =>
       makeFinding({
         Fingerprint: 'fp-a',
@@ -784,9 +786,12 @@ describe('neighbouring secret excision', () => {
 // ---------------------------------------------------------------------------
 
 describe('multi-line matches', () => {
-  it('omits entropy when the match spans more than one line', () => {
-    // Only part of a PEM block is on this line, so the recovered span is a
-    // fragment while gitleaks' entropy describes the whole secret.
+  it('describes no value at all when the match spans more than one line', () => {
+    // Only part of a PEM block is on this line, and gitleaks reports EndColumn
+    // on the block's LAST line, so the reported width describes neither the
+    // fragment here nor the whole key. Reporting a length and a head/tail
+    // fragment from it would misdescribe the secret, which is the failure this
+    // whole path exists to avoid, so location and rule are all that is offered.
     // Assembled, not written contiguously: a literal PEM header in the source
     // trips this repo's own gitleaks gate.
     const line = `-----BEGIN ${'PRIVATE'} KEY-----`;
@@ -794,13 +799,14 @@ describe('multi-line matches', () => {
       RuleID: 'private-key',
       Match: 'REDACTED',
       StartColumn: 1,
-      EndColumn: line.length,
+      EndColumn: 25,
       StartLine: 1,
       EndLine: 9,
       Entropy: 5.1,
     });
     const rendered = renderFindingBlock(finding, () => line).join('\n');
-    expect(rendered).toContain('value:');
+    expect(rendered).toContain('  file:  ');
+    expect(rendered).not.toContain('value:');
     expect(rendered).not.toContain('entropy');
   });
 });

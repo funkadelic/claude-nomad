@@ -242,9 +242,8 @@ function locateSecretLiteral(finding: Finding, buf: Buffer): AlignedSpan | null 
  * ONLY as a tiebreaker: it is too weak to gate the main path (a swap of two
  * characters each occurring once leaves entropy unchanged) and float32
  * round-tripping makes an equality test brittle. Declines whenever the reported
- * entropy cannot describe a candidate's value: no entropy in the report, an
- * unredacted match whose value is wider than the secret, or a multi-line match
- * whose entropy covers lines this one cannot see.
+ * entropy cannot describe a candidate's value: no entropy in the report, or an
+ * unredacted match whose value is wider than the secret.
  *
  * @param hits The candidates that survived the other oracles.
  * @param finding The finding being aligned.
@@ -253,7 +252,6 @@ function locateSecretLiteral(finding: Finding, buf: Buffer): AlignedSpan | null 
 function breakTie(hits: AlignedSpan[], finding: Finding): AlignedSpan | null {
   const reported = finding.Entropy;
   if (typeof reported !== 'number' || !Number.isFinite(reported) || reported <= 0) return null;
-  if (typeof finding.EndLine === 'number' && finding.EndLine > finding.StartLine) return null;
   const agreeing = hits.filter(
     (h) => h.exact && Math.abs(shannonEntropy(h.value) - reported) <= ENTROPY_TOLERANCE,
   );
@@ -273,6 +271,13 @@ function breakTie(hits: AlignedSpan[], finding: Finding): AlignedSpan | null {
 export function alignFindingSpan(finding: Finding, buf: Buffer): AlignedSpan | null {
   const literal = locateSecretLiteral(finding, buf);
   if (literal !== null) return literal;
+  // A multi-line match reports EndColumn on its END line, so the reported width
+  // describes neither this line's fragment nor the whole secret. A bare
+  // `REDACTED` match has an empty template, which verifies vacuously, so an
+  // arbitrary-width candidate could win uniquely and be described as if it were
+  // the whole secret: the exact class of misreport this module exists to
+  // prevent. Decline instead, and let the caller render location and rule only.
+  if (typeof finding.EndLine === 'number' && finding.EndLine > finding.StartLine) return null;
   const template = matchTemplate(finding);
   if (template === null) return null;
   const hits: AlignedSpan[] = [];

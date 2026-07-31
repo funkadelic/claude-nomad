@@ -38,6 +38,13 @@ const NEAR_WINDOW = 40;
 /** Fragment column width when a structural summary follows on the value line. */
 const VALUE_PAD = 16;
 
+/**
+ * Bytes of headroom added on both sides of a sibling's reported range when it
+ * will not align. Covers the gitleaks column error in either direction, so no
+ * byte of the sibling secret survives masking.
+ */
+const SIBLING_PAD = 2;
+
 /** Control-character regex: C0 range (U+0000-U+001F) and DEL (U+007F). */
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/g;
@@ -143,6 +150,13 @@ function templateLead(finding: Finding): string | null {
  * range when the sibling will not align, which masks approximately the right
  * bytes rather than none at all.
  *
+ * When it will not align, the reported range is used PADDED on both sides,
+ * because that range is exactly the one known to be off by a byte: masking it
+ * verbatim would leave the sibling secret's first byte on the label line, which
+ * is the hazard this function exists to close. The padding costs a couple of
+ * bytes of neighbouring label text, which the prompt does not need. A sibling
+ * reporting no span at all is left alone rather than padded into one.
+ *
  * @param sibling The other finding sharing this line.
  * @param buf The raw source line as UTF-8 bytes.
  * @returns The 0-indexed byte range to blank, `end` exclusive.
@@ -150,8 +164,10 @@ function templateLead(finding: Finding): string | null {
 function siblingBounds(sibling: Finding, buf: Buffer): { start: number; end: number } {
   const aligned = alignFindingSpan(sibling, buf);
   if (aligned !== null) return { start: aligned.start, end: aligned.end };
-  const start = Math.max(1, Math.min(sibling.StartColumn, buf.length + 1)) - 1;
-  return { start, end: Math.max(start, Math.min(sibling.EndColumn, buf.length)) };
+  const reportedStart = sibling.StartColumn - 1;
+  if (sibling.EndColumn <= reportedStart) return { start: 0, end: 0 };
+  const start = Math.max(0, Math.min(reportedStart, buf.length) - SIBLING_PAD);
+  return { start, end: Math.max(start, Math.min(sibling.EndColumn + SIBLING_PAD, buf.length)) };
 }
 
 /**
@@ -217,15 +233,13 @@ export function resolveSecretContext(
   siblings: Finding[] = [],
 ): { value: string | null; near: string | null; exact: boolean } {
   const resolved = resolveSpanContext(finding, readLine, siblings);
-  const ownStripped = withoutValue(resolved.near, resolved.value);
-  // A multi-line match (a PEM block, say) is only partly on this line, so the
-  // recovered span is a fragment of the real secret and gitleaks' entropy
-  // describes the whole. Never call that exact.
-  const multiLine = typeof finding.EndLine === 'number' && finding.EndLine > finding.StartLine;
+  // A multi-line match needs no special case here: `alignFindingSpan` declines
+  // it outright rather than describing a fragment of a PEM block as if it were
+  // the whole key, so a resolved value is always wholly on this line.
   return {
     value: resolved.value,
-    near: ownStripped,
-    exact: resolved.exact && !multiLine,
+    near: withoutValue(resolved.near, resolved.value),
+    exact: resolved.exact,
   };
 }
 

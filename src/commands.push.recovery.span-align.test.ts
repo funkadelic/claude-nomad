@@ -256,6 +256,42 @@ describe('alignFindingSpan - Secret literal', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Multi-line matches
+// ---------------------------------------------------------------------------
+
+describe('alignFindingSpan - multi-line matches', () => {
+  it('declines a multi-line match, whose EndColumn belongs to another line', () => {
+    // The reported width describes neither this line's fragment nor the whole
+    // secret, and a bare REDACTED match verifies vacuously, so an arbitrary
+    // window could win uniquely and be described as if it were the secret.
+    const line = `  key: ${HEX_FIXTURE}`;
+    const finding = makeFinding({
+      Match: 'REDACTED',
+      StartColumn: 8,
+      EndColumn: 25,
+      StartLine: 1,
+      EndLine: 9,
+    });
+    expect(align(finding, line)).toBeNull();
+  });
+
+  it('still locates a Secret literal that is wholly on this line', () => {
+    // A value found verbatim needs no width, so the multi-line guard does not
+    // apply to it.
+    const line = `  key: ${HEX_FIXTURE}`;
+    const finding = makeFinding({
+      Match: HEX_FIXTURE,
+      Secret: HEX_FIXTURE,
+      StartColumn: 8,
+      EndColumn: 25,
+      StartLine: 1,
+      EndLine: 9,
+    });
+    expect(align(finding, line)?.value).toBe(HEX_FIXTURE);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Entropy tiebreaker
 // ---------------------------------------------------------------------------
 
@@ -289,16 +325,6 @@ describe('alignFindingSpan - entropy tiebreaker', () => {
 
   it('returns null when the reported entropy is zero', () => {
     expect(align(windowFinding({ Entropy: 0 }), ambiguous)).toBeNull();
-  });
-
-  it('declines to break a tie on a multi-line match', () => {
-    // The reported entropy covers lines this one cannot see.
-    const finding = windowFinding({
-      Entropy: shannonEntropy('-b-'),
-      StartLine: 1,
-      EndLine: 4,
-    });
-    expect(align(finding, ambiguous)).toBeNull();
   });
 
   it('declines to break a tie between unredacted matches, whose values are wider than the secret', () => {
