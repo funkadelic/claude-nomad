@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.63.1](https://github.com/funkadelic/claude-nomad/compare/v0.63.0...v0.63.1) (2026-07-31)
+
+
+### Fixed
+
+* **push:** correct gitleaks column offsets in recovery prompts ([#478](https://github.com/funkadelic/claude-nomad/issues/478)) ([e230993](https://github.com/funkadelic/claude-nomad/commit/e2309932456f5646694685dd0c3b6b6e1007059f))
+
 ## [0.63.0](https://github.com/funkadelic/claude-nomad/compare/v0.62.6...v0.63.0) (2026-07-31)
 
 ### What's new
