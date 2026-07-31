@@ -136,6 +136,9 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
         throw new TypeError('synthetic non-NomadFatal');
       }),
       regenerateSettings: vi.fn(),
+      // See the note in commands.pull.test.ts: omitting this passes on posix
+      // and throws on a real Windows runner.
+      stageLocalSharedEdits: vi.fn(),
     }));
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull()).toThrow(TypeError);
