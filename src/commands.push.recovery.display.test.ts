@@ -203,6 +203,71 @@ describe('resolveSecretContext - final fallback with a readable line, no REDACTE
   });
 });
 
+describe('resolveSecretContext - reported columns are one byte high', () => {
+  // gitleaks reports its columns one higher than the true byte position for
+  // any finding after the first line of a file. Slicing at the reported column
+  // dropped the secret's first character into the label text, so the value
+  // rendered a character short and the label gained a doubled character at the
+  // seam.
+  const shifted = (line: string, secret: string, match: string) => {
+    const full = match.replace('REDACTED', secret);
+    const start = line.indexOf(full);
+    return makeFinding({
+      Match: match,
+      StartLine: 2,
+      // Both columns one higher than the truth, exactly as gitleaks reports
+      // them after the first line of a file.
+      StartColumn: start + 2,
+      EndColumn: start + full.length + 1,
+    });
+  };
+
+  it('reports the full secret length rather than one character short', () => {
+    const line = `  near:  ...${HEX_FIXTURE}`;
+    const result = resolveSecretContext(shifted(line, HEX_FIXTURE, 'REDACTED'), () => line);
+    expect(result.value).toBe(HEX_FIXTURE);
+  });
+
+  it('does not double the character at the label seam', () => {
+    const label = `    const secret = '`;
+    const line = `${label}${HEX_FIXTURE}'`;
+    const finding = shifted(line, HEX_FIXTURE, `secret = 'REDACTED'`);
+    const result = resolveSecretContext(finding, () => line);
+    expect(result.value).toBe(HEX_FIXTURE);
+    expect(result.near).toBe(label);
+    expect(result.near).not.toContain('ssecret');
+  });
+});
+
+describe('resolveSecretContext - the span cannot be verified against the line', () => {
+  it('emits no value and falls back to the template label, never a line-derived lead', () => {
+    // The template says the match opens with `token=`, the line says otherwise,
+    // so the reported columns are not trusted for either field. `near` comes
+    // from the finding's own Match, which needs no column arithmetic.
+    const line = `some other text ${HEX_FIXTURE}`;
+    const finding = makeFinding({
+      Match: 'token=REDACTED',
+      StartColumn: 1,
+      EndColumn: 6 + HEX_FIXTURE.length,
+    });
+
+    const result = resolveSecretContext(finding, () => line);
+
+    expect(result.value).toBeNull();
+    expect(result.near).toBe('token=');
+  });
+
+  it('renders neither a value: nor a near: line when the template carries no label', () => {
+    const line = `some other text ${HEX_FIXTURE}`;
+    const finding = makeFinding({ Match: 'REDACTED', StartColumn: 400, EndColumn: 500 });
+
+    const lines = renderFindingBlock(finding, () => line);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('  file:  ');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // formatNear
 // ---------------------------------------------------------------------------
@@ -303,8 +368,18 @@ describe('groupFindingsForPrompt', () => {
   const twiceLine = `${HEX_FIXTURE} padding padding ${HEX_FIXTURE}`;
 
   it('groups two findings sharing a fingerprint AND a value, even at different columns', () => {
+    // Match carries the redaction token, the shape a real `--redact` report
+    // has, so alignment recovers the same value at both columns and the two
+    // key on fingerprint plus value. (An empty Match offers nothing to verify
+    // against, resolves to no value, and would key off findingKey instead,
+    // which is the case the unresolvable-value test below covers.)
     const at = (col: number) =>
-      makeFinding({ Fingerprint: 'fp-a', StartColumn: col, EndColumn: col + 39 });
+      makeFinding({
+        Fingerprint: 'fp-a',
+        StartColumn: col,
+        EndColumn: col + 39,
+        Match: 'REDACTED',
+      });
     const groups = groupFindingsForPrompt(
       [at(1), at(twiceLine.indexOf(HEX_FIXTURE, 1) + 1)],
       () => twiceLine,
@@ -319,8 +394,18 @@ describe('groupFindingsForPrompt', () => {
     // second and apply one answer to both.
     const other = 'a'.repeat(40);
     const line = `${HEX_FIXTURE} and also ${other}`;
-    const f1 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 1, EndColumn: 40 });
-    const f2 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 51, EndColumn: 90 });
+    const f1 = makeFinding({
+      Fingerprint: 'fp-a',
+      StartColumn: 1,
+      EndColumn: 40,
+      Match: 'REDACTED',
+    });
+    const f2 = makeFinding({
+      Fingerprint: 'fp-a',
+      StartColumn: 51,
+      EndColumn: 90,
+      Match: 'REDACTED',
+    });
     const groups = groupFindingsForPrompt([f1, f2], () => line);
     expect(groups).toHaveLength(2);
   });
@@ -701,9 +786,12 @@ describe('neighbouring secret excision', () => {
 // ---------------------------------------------------------------------------
 
 describe('multi-line matches', () => {
-  it('omits entropy when the match spans more than one line', () => {
-    // Only part of a PEM block is on this line, so the recovered span is a
-    // fragment while gitleaks' entropy describes the whole secret.
+  it('describes no value at all when the match spans more than one line', () => {
+    // Only part of a PEM block is on this line, and gitleaks reports EndColumn
+    // on the block's LAST line, so the reported width describes neither the
+    // fragment here nor the whole key. Reporting a length and a head/tail
+    // fragment from it would misdescribe the secret, which is the failure this
+    // whole path exists to avoid, so location and rule are all that is offered.
     // Assembled, not written contiguously: a literal PEM header in the source
     // trips this repo's own gitleaks gate.
     const line = `-----BEGIN ${'PRIVATE'} KEY-----`;
@@ -711,13 +799,14 @@ describe('multi-line matches', () => {
       RuleID: 'private-key',
       Match: 'REDACTED',
       StartColumn: 1,
-      EndColumn: line.length,
+      EndColumn: 25,
       StartLine: 1,
       EndLine: 9,
       Entropy: 5.1,
     });
     const rendered = renderFindingBlock(finding, () => line).join('\n');
-    expect(rendered).toContain('value:');
+    expect(rendered).toContain('  file:  ');
+    expect(rendered).not.toContain('value:');
     expect(rendered).not.toContain('entropy');
   });
 });

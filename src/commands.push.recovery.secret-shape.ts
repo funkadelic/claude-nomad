@@ -4,11 +4,17 @@
  * precedes the secret with every other finding's span blanked out.
  *
  * Split from `commands.push.recovery.display.ts`, which now owns only prompt
- * and block assembly. This half depends on nothing but the `Finding` shape, so
- * the dependency runs display -> this module, never the reverse.
+ * and block assembly. Depends on the `Finding` shape and on
+ * `commands.push.recovery.span-align.ts` for the byte arithmetic, so the
+ * dependency runs display -> this module -> span-align, never the reverse.
  */
 
 import type { Finding } from './push-gitleaks.scan.ts';
+import {
+  REDACTED_TOKEN,
+  alignFindingSpan,
+  type AlignedSpan,
+} from './commands.push.recovery.span-align.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -32,8 +38,12 @@ const NEAR_WINDOW = 40;
 /** Fragment column width when a structural summary follows on the value line. */
 const VALUE_PAD = 16;
 
-/** Literal token gitleaks substitutes for a real secret when `--redact` is passed. */
-const REDACTED_TOKEN = 'REDACTED';
+/**
+ * Bytes of headroom added on both sides of a sibling's reported range when it
+ * will not align. Covers the gitleaks column error in either direction, so no
+ * byte of the sibling secret survives masking.
+ */
+const SIBLING_PAD = 2;
 
 /** Control-character regex: C0 range (U+0000-U+001F) and DEL (U+007F). */
 // eslint-disable-next-line no-control-regex
@@ -113,40 +123,51 @@ function withoutValue(near: string | null, value: string | null): string | null 
 }
 
 /**
- * Attempt to recover the secret by aligning the finding's (possibly redacted)
- * `Match` template against the raw source span. Returns null when `Match`
- * does not contain the `REDACTED` literal at all (the unredacted-report or
- * final-fallback paths in `resolveSecretContext` apply instead); otherwise
- * always returns a result, with `value: null` when alignment fails (no
- * readable line, or the raw span does not bracket a `REDACTED`-shaped hole).
+ * The label text the finding carries INSIDE its own redaction template, i.e.
+ * the part of `Match` before the `REDACTED` hole. This is the `near:` fallback
+ * whenever the span could not be verified against the line.
  *
- * @param finding The gitleaks finding, whose `Match` may carry the literal `REDACTED`.
- * @param span The raw source span at the finding's column range, or `finding.Match` when no line was readable.
- * @param lead The raw source text preceding `span` on its line, or `''` when no line was readable.
- * @returns `{ value, near }` when `Match` contains `REDACTED`, else null.
+ * It is deliberately NOT spliced onto the line-derived lead. When alignment
+ * fails the reported column is untrustworthy, so the lead runs to the wrong
+ * offset and overlaps the template text: joining the two doubled the character
+ * at the seam (`ssecret`, `ccreate`) and printed it to the user. The template
+ * text alone is self-consistent, contains no secret by construction, and needs
+ * no column arithmetic to be correct.
+ *
+ * @param finding The finding whose `Match` may carry a redaction template.
+ * @returns The label text preceding the secret, or null when there is none.
  */
-function alignRedactedMatch(
-  finding: Finding,
-  span: string,
-  lead: string,
-): { value: string | null; near: string | null; exact: boolean } | null {
+function templateLead(finding: Finding): string | null {
   const idx = finding.Match.indexOf(REDACTED_TOKEN);
-  if (idx < 0) return null;
-  const pre = finding.Match.slice(0, idx);
-  const post = finding.Match.slice(idx + REDACTED_TOKEN.length);
-  if (
-    span !== finding.Match &&
-    span.startsWith(pre) &&
-    span.endsWith(post) &&
-    span.length > pre.length + post.length
-  ) {
-    return {
-      value: span.slice(pre.length, span.length - post.length),
-      near: emptyToNull(lead + pre),
-      exact: true,
-    };
-  }
-  return { value: null, near: emptyToNull(lead + pre), exact: false };
+  return idx > 0 ? finding.Match.slice(0, idx) : null;
+}
+
+/**
+ * Byte range to blank for one sibling finding. Runs the same alignment as the
+ * finding under triage, because a sibling's reported columns carry the same
+ * offset error: masking the reported range would leave the sibling secret's
+ * first byte exposed on the label line. Falls back to the clamped reported
+ * range when the sibling will not align, which masks approximately the right
+ * bytes rather than none at all.
+ *
+ * When it will not align, the reported range is used PADDED on both sides,
+ * because that range is exactly the one known to be off by a byte: masking it
+ * verbatim would leave the sibling secret's first byte on the label line, which
+ * is the hazard this function exists to close. The padding costs a couple of
+ * bytes of neighbouring label text, which the prompt does not need. A sibling
+ * reporting no span at all is left alone rather than padded into one.
+ *
+ * @param sibling The other finding sharing this line.
+ * @param buf The raw source line as UTF-8 bytes.
+ * @returns The 0-indexed byte range to blank, `end` exclusive.
+ */
+function siblingBounds(sibling: Finding, buf: Buffer): { start: number; end: number } {
+  const aligned = alignFindingSpan(sibling, buf);
+  if (aligned !== null) return { start: aligned.start, end: aligned.end };
+  const reportedStart = sibling.StartColumn - 1;
+  if (sibling.EndColumn <= reportedStart) return { start: 0, end: 0 };
+  const start = Math.max(0, Math.min(reportedStart, buf.length) - SIBLING_PAD);
+  return { start, end: Math.max(start, Math.min(sibling.EndColumn + SIBLING_PAD, buf.length)) };
 }
 
 /**
@@ -180,8 +201,7 @@ function maskSiblingSpans(
   if (siblings.length === 0) return buf;
   const copy = Buffer.from(buf);
   for (const sibling of siblings) {
-    const start = Math.max(1, Math.min(sibling.StartColumn, copy.length + 1)) - 1;
-    const end = Math.max(start, Math.min(sibling.EndColumn, copy.length));
+    const { start, end } = siblingBounds(sibling, buf);
     // Mask everything outside the finding's own span. Skipping an overlapping
     // sibling wholesale used to leave its protruding head in the label: two
     // rules can match nested spans on one line, so a broad rule enclosing a
@@ -198,10 +218,10 @@ function maskSiblingSpans(
 /**
  * Recover a display-safe description of a finding's secret and its
  * immediately preceding label text, without ever exposing the secret itself
- * in `near`. Tries, in order: redacted-template alignment (the push path's
- * usual shape, since `scanStagedTree` passes `--redact`), the unredacted
- * report's `Finding.Secret`, then a conservative fallback that treats the
- * whole clamped raw span as the secret.
+ * in `near`. The span is recovered by `alignFindingSpan`, which verifies the
+ * reported columns against the line rather than trusting them; when nothing
+ * verifies, `value` is null and `near` falls back to the finding's own
+ * redaction-template text.
  *
  * @param finding The gitleaks finding to resolve.
  * @param readLine Injected seam returning the raw 1-indexed source line, or null on any failure.
@@ -213,30 +233,60 @@ export function resolveSecretContext(
   siblings: Finding[] = [],
 ): { value: string | null; near: string | null; exact: boolean } {
   const resolved = resolveSpanContext(finding, readLine, siblings);
-  const ownStripped = withoutValue(resolved.near, resolved.value);
-  // A multi-line match (a PEM block, say) is only partly on this line, so the
-  // recovered span is a fragment of the real secret and gitleaks' entropy
-  // describes the whole. Never call that exact.
-  const multiLine = typeof finding.EndLine === 'number' && finding.EndLine > finding.StartLine;
+  // A multi-line match needs no special case here: `alignFindingSpan` declines
+  // it outright rather than describing a fragment of a PEM block as if it were
+  // the whole key, so a resolved value is always wholly on this line.
   return {
     value: resolved.value,
-    near: ownStripped,
-    exact: resolved.exact && !multiLine,
+    near: withoutValue(resolved.near, resolved.value),
+    exact: resolved.exact,
   };
 }
 
 /**
- * Resolve the raw `{ value, near }` pair before the `withoutValue` backstop
- * is applied. Split out so `resolveSecretContext` stays a two-line guard and
- * this body stays under the cognitive-complexity gate.
+ * Resolve a finding whose source line could not be read (missing file,
+ * out-of-range line, or a path the reader refused). Nothing here touches the
+ * reported columns, so none of it can be shifted.
  *
- * Column arithmetic is BYTE-based: gitleaks reports `StartColumn`/`EndColumn`
- * as 1-indexed byte offsets, so slicing the line as a JavaScript string
- * (UTF-16 code units) misaligns the span on any line containing multi-byte
- * UTF-8 before the secret. Session transcripts routinely carry such text.
+ * A `Match` carrying the redaction token has had its secret replaced by a
+ * placeholder, so there is no value left to describe and only the template's
+ * label text is offered. An unredacted `Match` IS the matched text, quoted
+ * verbatim by gitleaks, so it can still be described; `exact` stays false
+ * because the secret is only a part of it and the reported entropy would
+ * describe something narrower than what is shown.
+ *
+ * @param finding The gitleaks finding to resolve.
+ * @returns `{ value, near }`, both `string | null`.
+ */
+function resolveWithoutLine(finding: Finding): {
+  value: string | null;
+  near: string | null;
+  exact: boolean;
+} {
+  if (finding.Match.includes(REDACTED_TOKEN)) {
+    return { value: null, near: templateLead(finding), exact: false };
+  }
+  return { value: emptyToNull(finding.Match), near: null, exact: false };
+}
+
+/**
+ * Resolve the raw `{ value, near }` pair before the `withoutValue` backstop
+ * is applied. Split out so `resolveSecretContext` stays a short guard and this
+ * body stays under the cognitive-complexity gate.
+ *
+ * All arithmetic is BYTE-based, because gitleaks reports its columns as byte
+ * offsets: slicing the line as a JavaScript string (UTF-16 code units)
+ * misaligns the span on any line carrying multi-byte UTF-8 before the secret,
+ * which session transcripts routinely do. `alignFindingSpan` owns the offsets
+ * themselves, including the correction for gitleaks reporting them one high
+ * after the first line of a file.
+ *
+ * `near` is the masked line text up to the START OF THE VALUE, so the label
+ * text inside a redaction template is included while the secret never is.
  *
  * @param finding The gitleaks finding to resolve.
  * @param readLine Injected seam returning the raw 1-indexed source line, or null on any failure.
+ * @param siblings Other findings sharing this finding's file and line.
  * @returns `{ value, near }`, both `string | null`.
  */
 function resolveSpanContext(
@@ -245,43 +295,15 @@ function resolveSpanContext(
   siblings: Finding[] = [],
 ): { value: string | null; near: string | null; exact: boolean } {
   const raw = readLine(finding.File, finding.StartLine);
-
-  let span: string;
-  let lead: string;
-  if (raw !== null) {
-    const buf = Buffer.from(raw, 'utf8');
-    const len = buf.length;
-    const startCol = Math.max(1, Math.min(finding.StartColumn, len + 1));
-    const endCol = Math.max(startCol, Math.min(finding.EndColumn, len));
-    span = buf.subarray(startCol - 1, endCol).toString('utf8');
-    lead = maskSiblingSpans(buf, siblings, startCol - 1, endCol)
-      .subarray(0, startCol - 1)
-      .toString('utf8');
-  } else {
-    span = finding.Match;
-    lead = '';
-  }
-
-  const aligned = alignRedactedMatch(finding, span, lead);
-  if (aligned !== null) return aligned;
-
-  if (
-    typeof finding.Secret === 'string' &&
-    finding.Secret.length > 0 &&
-    span.includes(finding.Secret)
-  ) {
-    return {
-      value: finding.Secret,
-      near: emptyToNull(lead + span.slice(0, span.indexOf(finding.Secret))),
-      exact: true,
-    };
-  }
-
-  return {
-    value: span.length > 0 ? span : null,
-    near: emptyToNull(lead),
-    exact: false,
-  };
+  if (raw === null) return resolveWithoutLine(finding);
+  const unresolved = { value: null, near: templateLead(finding), exact: false };
+  const buf = Buffer.from(raw, 'utf8');
+  const aligned: AlignedSpan | null = alignFindingSpan(finding, buf);
+  if (aligned === null) return unresolved;
+  const near = maskSiblingSpans(buf, siblings, aligned.start, aligned.end)
+    .subarray(0, aligned.valueStart)
+    .toString('utf8');
+  return { value: aligned.value, near: emptyToNull(near), exact: aligned.exact };
 }
 
 // ---------------------------------------------------------------------------
