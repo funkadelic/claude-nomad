@@ -213,6 +213,12 @@ rule, including secrets shown under a separate prompt. The warning names how man
   warn:  Allow also suppresses 1 other distinct secret on this line
 ```
 
+The Allow itself is held back until the other secrets sharing that fingerprint have actually been
+cleaned. If one of them was set to Redact and the redaction did not apply (an active session, or a
+span that could not be located verbatim), no `.gitleaksignore` entry is written and the push stays
+blocked, rather than the entry silently suppressing a secret that is still present. A dropped
+session likewise needs no entry, since its content never reaches the push.
+
 What the actions do:
 
 - **Redact** rewrites the secret span in the LOCAL source transcript in place (same flow as

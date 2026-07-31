@@ -13,6 +13,7 @@ import { isAbsolute, resolve, sep } from 'node:path';
 import type { PathMap } from './config.ts';
 import { repoHome } from './config.ts';
 import { appendGitleaksIgnore } from './commands.redact.core.ts';
+import { applyDeferredAllows } from './commands.push.recovery.allow-gate.ts';
 import { applyRedact } from './commands.push.recovery.redact.ts';
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
 import {
@@ -43,16 +44,6 @@ import {
 
 export type { FindingAction, PromptFn };
 export { findingKey, parseAction };
-
-/**
- * Apply the Allow action: append the finding's fingerprint to .gitleaksignore.
- *
- * @param f The finding to allow.
- * @param repo Repo root resolved once by the calling command.
- */
-function applyAllow(f: Finding, repo: string): void {
-  appendGitleaksIgnore(f.Fingerprint, repo);
-}
 
 /**
  * Batch-allow all findings non-interactively (the `--allow-all` path). Appends
@@ -287,16 +278,14 @@ function dispatchNonSession(f: Finding, action: FindingAction, ctx: DispatchCtx)
  */
 function dispatchOne(f: Finding, ctx: DispatchCtx): void {
   const action = ctx.actions.get(findingKey(f)) ?? 'skip';
-  if (action === 'skip') return;
+  // Allow is deferred to applyDeferredAllows, which runs once the redact/drop
+  // ledgers are filled in and can tell whether the fingerprint would also
+  // suppress a secret that was never cleaned.
+  if (action === 'skip' || action === 'allow') return;
   const sid = sessionIdFromFinding(f);
-  // Drop wins: a dropped session short-circuits every later action for it,
-  // including allow, so a stale fingerprint is never written for content that
-  // was held back from the push.
+  // Drop wins: a dropped session short-circuits every later action for it, so
+  // nothing is rewritten for content that was held back from the push.
   if (sid !== null && ctx.droppedSids.has(sid)) return;
-  if (action === 'allow') {
-    applyAllow(f, ctx.repo);
-    return;
-  }
   if (sid === null) {
     dispatchNonSession(f, action, ctx);
     return;
@@ -360,4 +349,5 @@ export function dispatchActions(
   for (const f of findings) {
     dispatchOne(f, ctx);
   }
+  applyDeferredAllows(findings, ctx, repo);
 }
