@@ -39,6 +39,17 @@ local-only session transcripts are retained, and a repo-tracked extras file you 
 is kept (not overwritten) when it diverges from the incoming copy, with a warning to push and
 reconcile.
 
+On native Windows, where shared config is a real copy rather than a symlink, pull first mirrors
+those copies into the repo, before the rebase. Without that step the rebase-then-overlay sequence
+would overwrite an edit you had not published yet. On macOS and Linux the symlink already makes a
+local edit an uncommitted change in the sync repo, so the step is a no-op there and both platforms
+behave the same way. It is also skipped under `--dry-run`, which writes nothing to `~/.claude/` or
+to your shared config (though it still runs the `git pull --rebase` that refreshes the sync repo, so
+the preview reflects the remote), and under `--force-remote`, whose whole purpose is to take the
+remote's version. If the mirror step itself fails (an antivirus lock, or a path over the Windows
+length limit), the pull warns and carries on instead of aborting, so you can still fetch; your
+unpublished edit stays on the host untouched.
+
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
@@ -82,6 +93,10 @@ have to reason about which one to run first. The pull half is the same retain-me
 `nomad pull` runs (local-only work is kept, a diverged extras file is kept local with a warning),
 so it is always safe to run first; the push half then reconciles everything local, including any
 local-only sessions and diverged extras files the pull half just retained, to the remote.
+
+On native Windows the pull half also mirrors your shared-config copies into the repo before it
+fetches (see [`pull`](#pull) below), so pulling first cannot overwrite an edit you have not
+published yet. Under `--dry-run` that mirror is skipped along with every other write.
 
 Output is compact by default, matching `nomad doctor`: a run prints its `sync on host=<HOST>`
 header, then a single Sync summary composed from the run's outcome, not the full status tree.
@@ -286,7 +301,10 @@ that already configures other hosts, a hostname-derived host key that matches ne
 `hosts/<NOMAD_HOST>.json` override nor a path-map entry (the silent-misalignment nudge: per-host
 settings and session sync key off this label, so set `NOMAD_HOST` to the label this host should use
 when the warning fires; a single-host or fresh repo stays silent). The Environment section prints
-an informational sync-modality row (`symlink (posix)` or `copy-sync (win32)`), and a CRLF-guard
+an informational sync-modality row (`symlink (posix)` or `copy-sync`). On native Windows that row
+also names when a local edit reaches the repo (the next pull or push, since the host-side and
+repo-side files are distinct there) and is kept in the default compact view; the posix row stays
+verbose-only. A CRLF-guard
 check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
 wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or
 unset). On native Windows two further warn-only rows check long-path support (`git config

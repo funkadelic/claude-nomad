@@ -148,6 +148,20 @@ describe('reportSyncModality', () => {
     expect(s.items[0]).toContain('copy-sync');
   });
 
+  it('names when an edit reaches the repo on win32, where the two files are distinct', () => {
+    stubPlatform('win32');
+    const s = section('Environment');
+    reportSyncModality(s);
+    expect(s.items[0]).toContain('next pull or push');
+  });
+
+  it('omits that note on posix, where the symlink makes an edit live immediately', () => {
+    stubPlatform('linux');
+    const s = section('Environment');
+    reportSyncModality(s);
+    expect(s.items[0]).not.toContain('next pull or push');
+  });
+
   it('emits an informational row conveying symlink on a non-win32 platform', () => {
     stubPlatform('darwin');
     const s = section('Environment');

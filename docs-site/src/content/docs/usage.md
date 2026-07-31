@@ -27,9 +27,10 @@ data on the destination host.
 
 On native Windows the same two-pass scan runs, but the names are materialized as real copies
 instead of symlinks (creating a symlink on Windows needs Developer Mode or admin rights); the
-backup semantics are identical. The one behavioral difference: after editing a shared file on
-Windows, run `nomad push` before your next `nomad pull` or `nomad sync` so the edit is captured
-rather than overlaid by the repo's copy. See [Windows](/claude-nomad/quickstart/#windows).
+backup semantics are identical, and so is the guidance: on Windows the pull mirrors your local
+copies into the repo before it fetches, so an unpublished edit is captured rather than overwritten.
+Use `--force-remote` when you do want the repo's version. See
+[Windows](/claude-nomad/quickstart/#windows).
 
 If the remote has not been populated yet (you skipped `nomad init --snapshot` and `nomad push`),
 `nomad pull` is a no-op for SHARED_LINKS: there is nothing on the remote to symlink against, so

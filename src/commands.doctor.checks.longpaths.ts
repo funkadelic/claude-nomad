@@ -129,14 +129,36 @@ export function reportLongPathsCheck(
 }
 
 /**
+ * The win32 sync-modality wording. Exported so tests and `compactSections`'s
+ * keep-rule assert against the one literal the reporter actually emits instead
+ * of a hand-copied paraphrase that silently drifts from it.
+ */
+export const MODALITY_COPY_SYNC =
+  'copy-sync (native Windows; local edits reach the repo on the next pull or push)';
+
+/** The posix sync-modality wording. See {@link MODALITY_COPY_SYNC}. */
+export const MODALITY_SYMLINK = 'symlink (posix)';
+
+/**
  * Emit a single informational row naming the active sync modality: copy-sync
  * on win32 (symlinks need Developer Mode/admin there), symlink everywhere
  * else. Mirrors the `dim(infoGlyph)` informational-row style `reportHostAndPaths`
  * uses. Never sets `process.exitCode`.
  *
+ * The win32 row names when a local edit reaches the repo, because copy-sync is
+ * the one modality where the host-side file and the repo-side file are distinct:
+ * an edit is transcribed by the next `nomad pull` or `nomad push`, not the
+ * instant it is saved. It is deliberately NOT phrased as advice (there is no
+ * ordering for the user to get right; see `mirrorSharedLinksBeforePull` in
+ * `commands.pull.ts`), only as orientation for behavior that differs from
+ * posix. WSL2 reports as posix (Node sees it as linux), so a WSL2 host
+ * correctly shows the symlink row. `compactSections` keeps this row in the
+ * default view on win32 only, so the difference is visible without `--verbose`
+ * on the platform where it applies.
+ *
  * @param section - The Environment section to append the row to.
  */
 export function reportSyncModality(section: DoctorSection): void {
-  const modality = process.platform === 'win32' ? 'copy-sync (win32)' : 'symlink (posix)';
+  const modality = process.platform === 'win32' ? MODALITY_COPY_SYNC : MODALITY_SYMLINK;
   addItem(section, `${dim(infoGlyph)} sync modality: ${modality}`);
 }

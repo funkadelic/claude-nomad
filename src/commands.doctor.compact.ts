@@ -38,13 +38,31 @@ function isRepoStateLine(item: string): boolean {
 }
 
 /**
+ * True for the copy-sync variant of the Environment sync-modality row. Copy-sync
+ * is the one modality where the host-side file and the repo-side file are
+ * distinct, so the row is worth surfacing without `--verbose`. The posix symlink
+ * variant is the unsurprising default, so it stays verbose-only and the compact
+ * view is unchanged there.
+ *
+ * Matches on the emitted CONTENT rather than re-reading `process.platform`, so
+ * this stays a pure function of its argument: `reportSyncModality` only emits
+ * the copy-sync wording on win32, which makes the platform check redundant, and
+ * a platform read here would quietly break `compactSections`'s pure-transform
+ * contract.
+ */
+function isCopySyncModalityLine(item: string): boolean {
+  return item.includes('sync modality: copy-sync');
+}
+
+/**
  * Collapse the full doctor section list to the compact default view: only what
  * needs action plus minimal orientation. Pure transform over the rendered
  * section objects, so reporters and the `process.exitCode` contract are
  * untouched (this never inspects or mutates exit state).
  *
  * - `ALWAYS_FULL` sections pass through unchanged.
- * - `Environment` keeps the repo-state row plus any WARN/FAIL rows.
+ * - `Environment` keeps the repo-state row, the copy-sync modality row
+ *   (see `isCopySyncModalityLine`), plus any WARN/FAIL rows.
  * - every other section keeps only its WARN/FAIL rows; an emptied section is
  *   skipped by `renderTree` (it renders no zero-item sections).
  *
@@ -55,7 +73,12 @@ export function compactSections(sections: DoctorSection[]): DoctorSection[] {
   return sections.map((s) => {
     if (ALWAYS_FULL.has(s.header)) return s;
     if (s.header === 'Environment') {
-      return { ...s, items: s.items.filter((it) => isRepoStateLine(it) || isProblem(it)) };
+      return {
+        ...s,
+        items: s.items.filter(
+          (it) => isRepoStateLine(it) || isCopySyncModalityLine(it) || isProblem(it),
+        ),
+      };
     }
     return { ...s, items: s.items.filter(isProblem) };
   });

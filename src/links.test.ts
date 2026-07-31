@@ -983,6 +983,121 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
   });
 });
 
+// The pull-side mirror runs the same loop under a deliberately narrower policy
+// than the push side: it never creates a shared name the repo does not already
+// carry, it overlays rather than replaces, and it snapshots the repo-side copy
+// first. Each of those three is a separate data-loss or accidental-publish
+// path if it regresses, so each gets its own assertion here.
+describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  const realPlatform = process.platform;
+  const TS = '20260731-000000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-pull-mirror-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    // repoHome() prefers NOMAD_REPO over the $HOME fallback these fixtures
+    // assume; see the matching note in commands.pull.test.ts.
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('stages a host edit into a shared name the repo already carries', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unpublished local edit\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# unpublished local edit\n');
+  });
+
+  it('leaves a purely host-local name alone instead of adopting it into the repo', async () => {
+    // No shared/rules in the repo: this name is private to the host. Creating
+    // it here would make a plain pull a publish trigger (under `nomad sync` the
+    // push half would ship it to every other host).
+    mkdirSync(join(claudeDir, 'rules'), { recursive: true });
+    writeFileSync(join(claudeDir, 'rules', 'private.md'), '# host-only\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(existsSync(join(sharedDir, 'rules'))).toBe(false);
+  });
+
+  it('snapshots the repo-side copy under backup/<ts>/repo/ before overwriting it', async () => {
+    // An uncommitted working-tree edit under shared/ cannot be recovered by
+    // git, so the backup is the only recovery path.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# uncommitted repo-side edit\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host copy wins\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    const backedUp = join(testHome, '.cache', 'claude-nomad', 'backup', TS, 'repo', 'shared');
+    expect(readFileSync(join(backedUp, 'CLAUDE.md'), 'utf8')).toBe(
+      '# uncommitted repo-side edit\n',
+    );
+  });
+
+  it('overlays rather than replaces, so a repo-only file the host lacks survives', async () => {
+    // The host copy is missing upstream.md (an interrupted first pull, a user
+    // tidy-up, an antivirus quarantine). A true mirror would rm it here and the
+    // autostash would carry the deletion through the rebase.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'upstream.md'), '# from another host\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'mine.md'), '# local\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(readFileSync(join(sharedDir, 'commands', 'upstream.md'), 'utf8')).toBe(
+      '# from another host\n',
+    );
+    expect(readFileSync(join(sharedDir, 'commands', 'mine.md'), 'utf8')).toBe('# local\n');
+  });
+
+  it.skipIf(isWin)('is a no-op on a non-win32 stub', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+    const { stageLocalSharedEdits } = await import('./links.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
+  });
+});
+
 describe('applySharedLinks dry-run', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;

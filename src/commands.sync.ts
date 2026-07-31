@@ -11,6 +11,12 @@
  * ending in the two-phase Sync summary. The push half's full safety pipeline
  * (secret scan, interactive recovery on a leak) runs unchanged inside
  * `runPushCore`; this module never re-implements or bypasses it.
+ *
+ * On win32, pull-first is only safe for shared config because `runPullCore`
+ * mirrors the host-side copies into the repo before its own rebase (see
+ * `mirrorSharedLinksBeforePull` in `commands.pull.ts`). That lives in the pull
+ * half deliberately, so a bare `nomad pull` gets the same protection this
+ * command does; nothing platform-specific is needed here.
  */
 
 import { existsSync } from 'node:fs';

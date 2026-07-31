@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { compactSections } from './commands.doctor.compact.ts';
+import { MODALITY_COPY_SYNC, MODALITY_SYMLINK } from './commands.doctor.checks.longpaths.ts';
 import { failGlyph, okGlyph, warnGlyph, infoGlyph } from './color.ts';
 import { type DoctorSection } from './output-tree.ts';
 
@@ -65,5 +66,32 @@ describe('compactSections', () => {
     const snapshot = input[0].items.slice();
     compactSections(input);
     expect(input[0].items).toEqual(snapshot);
+  });
+});
+
+// The sync-modality row is informational, so it would normally be filtered out
+// of the compact view. The copy-sync variant is kept, because that is the one
+// modality where the host-side file and the repo-side file are distinct.
+//
+// These assert against the literals `reportSyncModality` actually emits, so a
+// reporter reword fails here instead of silently leaving a paraphrase behind.
+// No platform stub is needed: the keep-rule is a pure function of the row text.
+describe('compactSections sync-modality row', () => {
+  const copySync = info(`sync modality: ${MODALITY_COPY_SYNC}`);
+  const symlink = info(`sync modality: ${MODALITY_SYMLINK}`);
+
+  it('keeps the copy-sync modality row in Environment', () => {
+    const [out] = compactSections([sec('Environment', [ok('repo state: clean'), copySync])]);
+    expect(out.items).toEqual([ok('repo state: clean'), copySync]);
+  });
+
+  it('drops the symlink modality row in Environment', () => {
+    const [out] = compactSections([sec('Environment', [ok('repo state: clean'), symlink])]);
+    expect(out.items).toEqual([ok('repo state: clean')]);
+  });
+
+  it('still drops other informational Environment rows alongside the kept one', () => {
+    const [out] = compactSections([sec('Environment', [copySync, info('NOMAD_REPO: /tmp/x')])]);
+    expect(out.items).toEqual([copySync]);
   });
 });
