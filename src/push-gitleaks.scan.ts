@@ -43,6 +43,18 @@ export type Finding = {
    * doctor legend silently omits the entry (graceful degradation, no network).
    */
   Description?: string;
+  /**
+   * The matched secret value. `scanStagedTree` passes `--redact`, so on the
+   * push path this arrives as the literal string `REDACTED`, never the real
+   * value; `scanFile` (no `--redact`) returns the real value. Absent on older
+   * gitleaks reports.
+   */
+  Secret?: string;
+  /**
+   * Shannon entropy of the matched secret, computed on the real value even
+   * when `Secret`/`Match` are redacted. Absent on older gitleaks reports.
+   */
+  Entropy?: number;
 };
 
 /**

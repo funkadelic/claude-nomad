@@ -28,10 +28,10 @@ import {
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { log } from './utils.ts';
+import { renderFindingBlock } from './commands.push.recovery.display.ts';
 import {
   type FindingAction,
   type PromptFn,
-  buildFindingContext,
   findingKey,
   parseAction,
   sessionIdFromFinding,
@@ -124,9 +124,9 @@ function makeDefaultReadLine(repo: string): (file: string, line: number) => stri
 /**
  * Walk all findings and prompt the user for one action each. Returns a map
  * from `findingKey` to the chosen action, defaulting to `'skip'` on empty
- * input. Emits a masked `  context: <excerpt>` line under each finding header
- * when `buildFindingContext` returns a non-null excerpt, so the user can
- * distinguish a real secret from a documented fixture without seeing the raw value.
+ * input. Delegates the entire finding block (`file:` / `value:` / `near:`
+ * lines) to `renderFindingBlock`, so the user can distinguish a real secret
+ * from a documented fixture without ever seeing the raw value.
  *
  * @param findings The findings to present.
  * @param prompt An injectable prompt function (one question per call).
@@ -143,11 +143,9 @@ export async function collectActions(
   const actions = new Map<string, FindingAction>();
   for (const f of findings) {
     const sid = sessionIdFromFinding(f);
-    const ctx = buildFindingContext(f, reader);
+    const body = renderFindingBlock(f, reader).join('\n');
     const header =
-      `\nFinding: ${f.RuleID} in ${f.File} line ${f.StartLine}` +
-      (sid === null ? '' : ` (session: ${sid})`) +
-      (ctx === null ? '' : `\n  context: ${ctx}`) +
+      `\nFinding: ${f.RuleID}\n${body}` +
       // [D]rop applies only to session findings; a null sid (memory/skill
       // finding) has no session to drop, so omit the dead affordance.
       (sid === null
