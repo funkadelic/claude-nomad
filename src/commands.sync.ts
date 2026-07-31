@@ -329,16 +329,6 @@ async function runSyncPushHalf(): Promise<PushOutcome> {
  *
  * @param verbose - Threaded into `renderWetSync`; see its JSDoc.
  */
-/**
- * Run the wet (real) sync: the pull half first, then the push half, both in
- * compose mode so neither renders anything itself and `renderWetSync` owns
- * the single merged tree. A pull-half fatal error is NOT caught here, so it
- * propagates to `cmdSync`'s own catch and the push half never runs. The pull
- * half always returns the `wet` tag when run without a preview flag, so the
- * cast below carries no risk.
- *
- * @param verbose - Threaded into `renderWetSync`; see its JSDoc.
- */
 async function runSyncWet(verbose: boolean): Promise<void> {
   const pull = runPullCore({ compose: true }) as WetPull;
   const pushOutcome = await runSyncPushHalf();

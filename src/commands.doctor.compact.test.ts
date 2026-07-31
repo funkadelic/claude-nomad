@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { compactSections } from './commands.doctor.compact.ts';
+import { MODALITY_COPY_SYNC, MODALITY_SYMLINK } from './commands.doctor.checks.longpaths.ts';
 import { failGlyph, okGlyph, warnGlyph, infoGlyph } from './color.ts';
 import { type DoctorSection } from './output-tree.ts';
-import { stubPlatform } from './test-helpers.platform.ts';
 
 // Behavior-focused: assert on which items survive the compact transform for each
 // section class. Items carry their status glyph in the text, exactly as the
@@ -70,33 +70,28 @@ describe('compactSections', () => {
 });
 
 // The sync-modality row is informational, so it would normally be filtered out
-// of the compact view. It is kept on win32 only, where copy-sync means a local
-// edit reaches the repo at the next push rather than immediately.
+// of the compact view. The copy-sync variant is kept, because that is the one
+// modality where the host-side file and the repo-side file are distinct.
+//
+// These assert against the literals `reportSyncModality` actually emits, so a
+// reporter reword fails here instead of silently leaving a paraphrase behind.
+// No platform stub is needed: the keep-rule is a pure function of the row text.
 describe('compactSections sync-modality row', () => {
-  const realPlatform = process.platform;
-  const modality = info('sync modality: copy-sync (native Windows; run `nomad push` ...)');
+  const copySync = info(`sync modality: ${MODALITY_COPY_SYNC}`);
+  const symlink = info(`sync modality: ${MODALITY_SYMLINK}`);
 
-  afterEach(() => {
-    stubPlatform(realPlatform);
+  it('keeps the copy-sync modality row in Environment', () => {
+    const [out] = compactSections([sec('Environment', [ok('repo state: clean'), copySync])]);
+    expect(out.items).toEqual([ok('repo state: clean'), copySync]);
   });
 
-  it('keeps the sync-modality row in Environment on win32', () => {
-    stubPlatform('win32');
-    const [out] = compactSections([sec('Environment', [ok('repo state: clean'), modality])]);
-    expect(out.items).toEqual([ok('repo state: clean'), modality]);
-  });
-
-  it('drops the sync-modality row in Environment on a non-win32 platform', () => {
-    stubPlatform('darwin');
-    const [out] = compactSections([
-      sec('Environment', [ok('repo state: clean'), info('sync modality: symlink (posix)')]),
-    ]);
+  it('drops the symlink modality row in Environment', () => {
+    const [out] = compactSections([sec('Environment', [ok('repo state: clean'), symlink])]);
     expect(out.items).toEqual([ok('repo state: clean')]);
   });
 
-  it('still drops other informational Environment rows on win32', () => {
-    stubPlatform('win32');
-    const [out] = compactSections([sec('Environment', [modality, info('NOMAD_REPO: /tmp/x')])]);
-    expect(out.items).toEqual([modality]);
+  it('still drops other informational Environment rows alongside the kept one', () => {
+    const [out] = compactSections([sec('Environment', [copySync, info('NOMAD_REPO: /tmp/x')])]);
+    expect(out.items).toEqual([copySync]);
   });
 });

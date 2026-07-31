@@ -129,6 +129,17 @@ export function reportLongPathsCheck(
 }
 
 /**
+ * The win32 sync-modality wording. Exported so tests and `compactSections`'s
+ * keep-rule assert against the one literal the reporter actually emits instead
+ * of a hand-copied paraphrase that silently drifts from it.
+ */
+export const MODALITY_COPY_SYNC =
+  'copy-sync (native Windows; local edits reach the repo on the next pull or push)';
+
+/** The posix sync-modality wording. See {@link MODALITY_COPY_SYNC}. */
+export const MODALITY_SYMLINK = 'symlink (posix)';
+
+/**
  * Emit a single informational row naming the active sync modality: copy-sync
  * on win32 (symlinks need Developer Mode/admin there), symlink everywhere
  * else. Mirrors the `dim(infoGlyph)` informational-row style `reportHostAndPaths`
@@ -148,9 +159,6 @@ export function reportLongPathsCheck(
  * @param section - The Environment section to append the row to.
  */
 export function reportSyncModality(section: DoctorSection): void {
-  const modality =
-    process.platform === 'win32'
-      ? 'copy-sync (native Windows; local edits reach the repo on the next pull or push)'
-      : 'symlink (posix)';
+  const modality = process.platform === 'win32' ? MODALITY_COPY_SYNC : MODALITY_SYMLINK;
   addItem(section, `${dim(infoGlyph)} sync modality: ${modality}`);
 }
