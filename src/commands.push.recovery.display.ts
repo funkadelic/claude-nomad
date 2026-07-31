@@ -349,12 +349,10 @@ function elideTokenRuns(text: string): string {
 function sessionSuffix(finding: Finding): string {
   const sid = sessionIdFromFinding(finding);
   if (sid === null) return '';
-  const segments = finding.File.split('/');
-  /* c8 ignore start -- defense-in-depth: String.split always returns a
-     non-empty array (even '' splits to ['']), so the last element is
-     always defined; the fallback guards only a type-level possibility. */
-  const rawBasename = segments[segments.length - 1] ?? '';
-  /* c8 ignore stop */
+  // Branch-free basename: strip through the last slash. Indexing the split
+  // array would leave an unreachable undefined branch behind a coverage
+  // ignore, which the patch gate then cannot exercise either way.
+  const rawBasename = finding.File.replace(/^.*\//, '');
   const basename = rawBasename.endsWith('.jsonl')
     ? rawBasename.slice(0, -'.jsonl'.length)
     : rawBasename;
