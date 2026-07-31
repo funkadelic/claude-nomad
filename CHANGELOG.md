@@ -2,6 +2,21 @@
 
 ## [0.63.0](https://github.com/funkadelic/claude-nomad/compare/v0.62.6...v0.63.0) (2026-07-31)
 
+### What's new
+
+- **Windows: your own edits to shared config are no longer reverted.** On Windows, editing a synced
+  file like `~/.claude/CLAUDE.md` and then running `nomad pull` overwrote it from the repo, and
+  `nomad sync` went on to publish the reverted version, silently undoing the change you ran sync to
+  publish. Your edit is now carried into the sync repo first, so it survives the pull and gets
+  published instead.
+- **The secret prompt on push is readable and asks once per secret.** When a push finds a possible
+  secret it used to ask the same question several times over for one secret, and the snippet it
+  showed was mostly noise. It now asks once per secret and describes what was actually found, so you
+  can tell a real credential from a false positive at a glance.
+- **Three ways that prompt could show you a secret it meant to hide are closed**, along with a case
+  where allowing one false positive could quietly let a real secret through beside it on the same
+  line.
+
 
 ### Added
 
