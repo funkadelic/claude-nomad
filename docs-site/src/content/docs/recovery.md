@@ -180,13 +180,16 @@ sessions writing to the local file are not disturbed.
 ## Recovery flow: push-time interactive menu
 
 When `nomad push` detects a secret and the process is running on an interactive TTY, it presents a
-menu instead of aborting immediately, with one prompt per distinct gitleaks fingerprint rather than
-one per finding: several occurrences of the same secret on one line ask a single question, and
-Allow writes exactly one `.gitleaksignore` entry for them. Each prompt shows a `file:` / `value:` /
-`near:` block: `file:` names the location, `value:` describes the secret's shape (a short head/tail
+menu instead of aborting immediately, with one prompt per distinct secret rather than one per
+finding: several occurrences of the same value on one line ask a single question, and Allow writes
+exactly one `.gitleaksignore` entry for them. Two findings are only ever merged when they share
+both a gitleaks fingerprint and the same resolved value, so two different secrets that happen to
+sit on the same line still get their own prompts. Each prompt shows a `file:` / `value:` / `near:`
+block: `file:` names the location, `value:` describes the secret's shape (a short head/tail
 fragment plus its character count, character class, and entropy) without ever printing it in full,
-and `near:` shows the label text immediately preceding it, unmasked, since the secret span itself
-is excised rather than masked. The scan uses `--redact`, so the raw secret value is never printed.
+and `near:` shows the label text immediately preceding it, with any token-shaped run removed so a
+neighbouring secret cannot surface there. The scan uses `--redact`, so the raw secret value is
+never printed.
 
 ```text
 Finding 3/3: generic-api-key           2 occurrences, 1 ignore entry
@@ -200,6 +203,14 @@ Finding 3/3: generic-api-key           2 occurrences, 1 ignore entry
 The `(session: <id>)` suffix on the `file:` line appears only when the session id is not already
 the file's own name: a flat `<id>.jsonl` transcript omits it as redundant, while a nested subagent
 file (whose name differs from its session id) shows it.
+
+A `warn:` line appears when another distinct secret shares the same ignore fingerprint. Because a
+fingerprint is `file:rule:line` with no column, an Allow covers every finding on that line for that
+rule, including secrets shown under a separate prompt. The warning names how many:
+
+```text
+  warn:  Allow also suppresses 1 other distinct secret on this line
+```
 
 What the actions do:
 

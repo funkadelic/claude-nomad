@@ -28,7 +28,11 @@ import {
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { log } from './utils.ts';
-import { buildPromptHeader, groupFindingsByFingerprint } from './commands.push.recovery.display.ts';
+import {
+  buildPromptHeader,
+  groupFindingsForPrompt,
+  sharedFingerprintPeers,
+} from './commands.push.recovery.display.ts';
 import {
   type FindingAction,
   type PromptFn,
@@ -122,8 +126,8 @@ function makeDefaultReadLine(repo: string): (file: string, line: number) => stri
 }
 
 /**
- * Walk all findings, grouped by gitleaks fingerprint via
- * `groupFindingsByFingerprint`, and prompt the user for one action per
+ * Walk all findings, grouped by fingerprint AND resolved secret value via
+ * `groupFindingsForPrompt`, and prompt the user for one action per
  * group. The chosen action is applied to every finding in the group, so N
  * occurrences of the same secret on one line ask one question and the
  * returned map still carries one entry per finding (never per group):
@@ -145,11 +149,12 @@ export async function collectActions(
   readLine?: (file: string, line: number) => string | null,
 ): Promise<Map<string, FindingAction>> {
   const reader = readLine ?? makeDefaultReadLine(repoHome());
-  const groups = groupFindingsByFingerprint(findings);
+  const groups = groupFindingsForPrompt(findings, reader);
   const actions = new Map<string, FindingAction>();
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
-    const header = buildPromptHeader(group, i + 1, groups.length, reader);
+    const peers = sharedFingerprintPeers(groups, i);
+    const header = buildPromptHeader(group, i + 1, groups.length, reader, peers);
     const action = parseAction(await prompt(header + '> '));
     for (const f of group) {
       actions.set(findingKey(f), action);

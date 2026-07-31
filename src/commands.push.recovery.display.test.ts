@@ -6,9 +6,10 @@ import {
   classifyCharset,
   describeSecret,
   formatNear,
-  groupFindingsByFingerprint,
+  groupFindingsForPrompt,
   renderFindingBlock,
   resolveSecretContext,
+  sharedFingerprintPeers,
 } from './commands.push.recovery.display.ts';
 
 // ---------------------------------------------------------------------------
@@ -105,7 +106,7 @@ describe('describeSecret', () => {
 // resolveSecretContext
 // ---------------------------------------------------------------------------
 
-describe('resolveSecretContext - redacted-template alignment (F1/F2)', () => {
+describe('resolveSecretContext - redacted-template alignment', () => {
   it('describes the real secret and near ends with the label text, with no secret leakage', () => {
     const prefix = 'create-github-app-token  v3 -> ';
     const line = `${prefix}${HEX_FIXTURE} `;
@@ -124,7 +125,7 @@ describe('resolveSecretContext - redacted-template alignment (F1/F2)', () => {
   });
 });
 
-describe('resolveSecretContext - Match is exactly REDACTED (F4)', () => {
+describe('resolveSecretContext - Match is exactly REDACTED', () => {
   it('treats the whole clamped raw span as the secret', () => {
     const line = `prefix ${HEX_FIXTURE} suffix`;
     const startCol = 'prefix '.length + 1;
@@ -293,19 +294,37 @@ describe('renderFindingBlock', () => {
 // groupFindingsByFingerprint
 // ---------------------------------------------------------------------------
 
-describe('groupFindingsByFingerprint', () => {
-  it('groups two findings sharing a Fingerprint into one group, even at different columns', () => {
-    const f1 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 1 });
-    const f2 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 20 });
-    const groups = groupFindingsByFingerprint([f1, f2]);
+describe('groupFindingsForPrompt', () => {
+  /** A line carrying the same value twice, at 1-indexed byte columns 1 and 51. */
+  const twiceLine = `${HEX_FIXTURE} padding padding ${HEX_FIXTURE}`;
+
+  it('groups two findings sharing a fingerprint AND a value, even at different columns', () => {
+    const at = (col: number) =>
+      makeFinding({ Fingerprint: 'fp-a', StartColumn: col, EndColumn: col + 39 });
+    const groups = groupFindingsForPrompt(
+      [at(1), at(twiceLine.indexOf(HEX_FIXTURE, 1) + 1)],
+      () => twiceLine,
+    );
     expect(groups).toHaveLength(1);
     expect(groups[0]).toHaveLength(2);
+  });
+
+  it('does NOT merge two DIFFERENT secrets that share a fingerprint on one line', () => {
+    // A gitleaks fingerprint is file:rule:startline with no column, so two
+    // distinct secrets on one line collide. Merging them would hide the
+    // second and apply one answer to both.
+    const other = 'a'.repeat(40);
+    const line = `${HEX_FIXTURE} and also ${other}`;
+    const f1 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 1, EndColumn: 40 });
+    const f2 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 51, EndColumn: 90 });
+    const groups = groupFindingsForPrompt([f1, f2], () => line);
+    expect(groups).toHaveLength(2);
   });
 
   it('produces two groups, in first-appearance order, for two distinct fingerprints', () => {
     const f1 = makeFinding({ Fingerprint: 'fp-a' });
     const f2 = makeFinding({ Fingerprint: 'fp-b' });
-    const groups = groupFindingsByFingerprint([f1, f2]);
+    const groups = groupFindingsForPrompt([f1, f2], nullReader);
     expect(groups).toHaveLength(2);
     expect(groups[0]).toEqual([f1]);
     expect(groups[1]).toEqual([f2]);
@@ -314,8 +333,36 @@ describe('groupFindingsByFingerprint', () => {
   it('keys an empty-Fingerprint finding off findingKey, so two do not merge at different columns', () => {
     const f1 = makeFinding({ Fingerprint: '', StartColumn: 1 });
     const f2 = makeFinding({ Fingerprint: '', StartColumn: 20 });
-    const groups = groupFindingsByFingerprint([f1, f2]);
+    const groups = groupFindingsForPrompt([f1, f2], nullReader);
     expect(groups).toHaveLength(2);
+  });
+
+  it('keys an unresolvable-value finding off findingKey rather than merging on assumption', () => {
+    const f1 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 1, Match: '' });
+    const f2 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 20, Match: '' });
+    const groups = groupFindingsForPrompt([f1, f2], nullReader);
+    expect(groups).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sharedFingerprintPeers
+// ---------------------------------------------------------------------------
+
+describe('sharedFingerprintPeers', () => {
+  it('counts other groups sharing a fingerprint', () => {
+    const groups = [
+      [makeFinding({ Fingerprint: 'fp-a' })],
+      [makeFinding({ Fingerprint: 'fp-a' })],
+      [makeFinding({ Fingerprint: 'fp-b' })],
+    ];
+    expect(sharedFingerprintPeers(groups, 0)).toBe(1);
+    expect(sharedFingerprintPeers(groups, 2)).toBe(0);
+  });
+
+  it('reports no peers for an empty fingerprint', () => {
+    const groups = [[makeFinding({ Fingerprint: '' })], [makeFinding({ Fingerprint: '' })]];
+    expect(sharedFingerprintPeers(groups, 0)).toBe(0);
   });
 });
 
@@ -421,5 +468,72 @@ describe('disclosure guard - the full secret and long contiguous runs never appe
     expect(valueLine).toBeDefined();
     expect(valueLine).not.toContain('...');
     expect(valueLine).toContain('12 chars');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Disclosure regressions
+// ---------------------------------------------------------------------------
+
+describe('disclosure regressions', () => {
+  /** A PAT-shaped fixture assembled at runtime so the literal does not sit in the source. */
+  const PAT_FIXTURE = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;
+
+  it('does not leak the secret when multi-byte text precedes it on the line', () => {
+    // gitleaks reports StartColumn/EndColumn as BYTE offsets. Slicing the
+    // line as UTF-16 code units pushed the lead past the secret's own start
+    // and rendered it verbatim on the near: line.
+    const line = `${'é'.repeat(40)} ${PAT_FIXTURE}`;
+    const byteStart = Buffer.from(`${'é'.repeat(40)} `, 'utf8').length + 1;
+    const finding = makeFinding({
+      RuleID: 'github-pat',
+      StartColumn: byteStart,
+      EndColumn: byteStart + PAT_FIXTURE.length - 1,
+      Match: 'REDACTED',
+    });
+    const rendered = renderFindingBlock(finding, () => line).join('\n');
+    expect(rendered).not.toContain(PAT_FIXTURE);
+  });
+
+  it('does not leak a neighbouring secret through the near: line', () => {
+    const other = `ghp_${'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2'}`;
+    const line = `${other} and also ${PAT_FIXTURE}`;
+    const finding = makeFinding({
+      RuleID: 'github-pat',
+      StartColumn: line.indexOf(PAT_FIXTURE) + 1,
+      EndColumn: line.indexOf(PAT_FIXTURE) + PAT_FIXTURE.length,
+      Match: 'REDACTED',
+    });
+    const rendered = renderFindingBlock(finding, () => line).join('\n');
+    expect(rendered).not.toContain(other);
+    expect(rendered).not.toContain(PAT_FIXTURE);
+  });
+
+  it('keeps a hyphenated label on the near: line while eliding token-shaped runs', () => {
+    const line = `actions/create-github-app-token v3 -> ${HEX_FIXTURE} `;
+    const finding = makeFinding({
+      StartColumn: 1,
+      EndColumn: line.length,
+      Match: `actions/create-github-app-token v3 -> REDACTED `,
+    });
+    const rendered = renderFindingBlock(finding, () => line).join('\n');
+    expect(rendered).toContain('create-github-app-token');
+    expect(rendered).not.toContain(HEX_FIXTURE);
+  });
+
+  it('warns when an Allow would also suppress another distinct secret', () => {
+    const group = [makeFinding({ Fingerprint: 'fp-a' })];
+    const header = buildPromptHeader(group, 1, 2, nullReader, 1);
+    expect(header).toContain('Allow also suppresses 1 other distinct secret');
+  });
+
+  it('pluralises the shared-fingerprint warning', () => {
+    const group = [makeFinding({ Fingerprint: 'fp-a' })];
+    expect(buildPromptHeader(group, 1, 3, nullReader, 2)).toContain('2 other distinct secrets');
+  });
+
+  it('omits the warning when no other group shares the fingerprint', () => {
+    const group = [makeFinding({ Fingerprint: 'fp-a' })];
+    expect(buildPromptHeader(group, 1, 1, nullReader, 0)).not.toContain('warn:');
   });
 });
