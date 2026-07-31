@@ -30,6 +30,12 @@ export type Finding = {
   RuleID: string;
   File: string;
   StartLine: number;
+  /**
+   * 1-indexed last line of the match. Greater than `StartLine` for a
+   * multi-line secret (a PEM block, for example), where a single-line span is
+   * only a fragment of the real value. Absent on older gitleaks reports.
+   */
+  EndLine?: number;
   /** 1-indexed character offset where the secret span starts within the raw line. Display and identification metadata only; not used for redaction (which is value-based). */
   StartColumn: number;
   /** 1-indexed inclusive end offset of the secret span within the raw line. Display and identification metadata only; not used for redaction (which is value-based). */
@@ -86,6 +92,7 @@ export function toFinding(entry: unknown): Finding | null {
     RuleID: rule,
     File: file,
     StartLine: num(e.StartLine),
+    EndLine: typeof e.EndLine === 'number' ? e.EndLine : undefined,
     StartColumn: num(e.StartColumn),
     EndColumn: num(e.EndColumn),
     Match: str(e.Match),

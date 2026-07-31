@@ -187,9 +187,10 @@ both a gitleaks fingerprint and the same resolved value, so two different secret
 sit on the same line still get their own prompts. Each prompt shows a `file:` / `value:` / `near:`
 block: `file:` names the location, `value:` describes the secret's shape (a short head/tail
 fragment plus its character count, character class, and entropy) without ever printing it in full,
-and `near:` shows the label text immediately preceding it, with any token-shaped run removed so a
-neighbouring secret cannot surface there. The scan uses `--redact`, so the raw secret value is
-never printed.
+and `near:` shows the label text immediately preceding it. Any other finding on that same line has
+its value excised from `near:` exactly, so triaging one secret never displays another. Text that
+gitleaks did not report as a secret can still appear on that line. The scan uses `--redact`, so the
+raw secret value is never printed.
 
 ```text
 Finding 3/3: generic-api-key           2 occurrences, 1 ignore entry

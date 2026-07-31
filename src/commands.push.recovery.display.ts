@@ -157,6 +157,45 @@ function alignRedactedMatch(
 }
 
 /**
+ * Blank the byte spans of OTHER findings on the same line.
+ *
+ * When two secrets share a line, the second finding's label context is
+ * everything before it, which includes the first secret. This is the exact
+ * control for that. It masks by POSITION, not by value: replacing every
+ * occurrence of a sibling's text would corrupt unrelated label characters
+ * whenever that text is short (a one-character span once turned `label:`
+ * into a run of ellipses), and shape heuristics cannot tell a hyphenated
+ * label from a hyphenated passphrase.
+ *
+ * Filling with NUL keeps every byte offset stable, so the caller's own span
+ * arithmetic is unaffected, and `CONTROL_CHARS` strips the fill during
+ * rendering. A sibling overlapping the finding's own span is skipped so it
+ * can never blank the value being described.
+ *
+ * @param buf The raw source line as UTF-8 bytes.
+ * @param siblings Other findings sharing this finding's file and line.
+ * @param ownStart 0-indexed byte offset where the finding's own span starts.
+ * @param ownEnd Exclusive 0-indexed byte offset where the finding's own span ends.
+ * @returns A copy with each sibling span blanked, or `buf` when there are none.
+ */
+function maskSiblingSpans(
+  buf: Buffer,
+  siblings: Finding[],
+  ownStart: number,
+  ownEnd: number,
+): Buffer {
+  if (siblings.length === 0) return buf;
+  const copy = Buffer.from(buf);
+  for (const sibling of siblings) {
+    const start = Math.max(1, Math.min(sibling.StartColumn, copy.length + 1)) - 1;
+    const end = Math.max(start, Math.min(sibling.EndColumn, copy.length));
+    if (start < ownEnd && ownStart < end) continue;
+    copy.fill(0, start, end);
+  }
+  return copy;
+}
+
+/**
  * Recover a display-safe description of a finding's secret and its
  * immediately preceding label text, without ever exposing the secret itself
  * in `near`. Tries, in order: redacted-template alignment (the push path's
@@ -171,12 +210,18 @@ function alignRedactedMatch(
 export function resolveSecretContext(
   finding: Finding,
   readLine: (file: string, line: number) => string | null,
+  siblings: Finding[] = [],
 ): { value: string | null; near: string | null; exact: boolean } {
-  const resolved = resolveSpanContext(finding, readLine);
+  const resolved = resolveSpanContext(finding, readLine, siblings);
+  const ownStripped = withoutValue(resolved.near, resolved.value);
+  // A multi-line match (a PEM block, say) is only partly on this line, so the
+  // recovered span is a fragment of the real secret and gitleaks' entropy
+  // describes the whole. Never call that exact.
+  const multiLine = typeof finding.EndLine === 'number' && finding.EndLine > finding.StartLine;
   return {
     value: resolved.value,
-    near: withoutValue(resolved.near, resolved.value),
-    exact: resolved.exact,
+    near: ownStripped,
+    exact: resolved.exact && !multiLine,
   };
 }
 
@@ -197,6 +242,7 @@ export function resolveSecretContext(
 function resolveSpanContext(
   finding: Finding,
   readLine: (file: string, line: number) => string | null,
+  siblings: Finding[] = [],
 ): { value: string | null; near: string | null; exact: boolean } {
   const raw = readLine(finding.File, finding.StartLine);
 
@@ -208,7 +254,9 @@ function resolveSpanContext(
     const startCol = Math.max(1, Math.min(finding.StartColumn, len + 1));
     const endCol = Math.max(startCol, Math.min(finding.EndColumn, len));
     span = buf.subarray(startCol - 1, endCol).toString('utf8');
-    lead = buf.subarray(0, startCol - 1).toString('utf8');
+    lead = maskSiblingSpans(buf, siblings, startCol - 1, endCol)
+      .subarray(0, startCol - 1)
+      .toString('utf8');
   } else {
     span = finding.Match;
     lead = '';
@@ -262,14 +310,13 @@ export function formatNear(text: string): string | null {
 /**
  * Elide token-shaped runs from label text before it is rendered.
  *
- * `withoutValue` removes the finding's OWN secret, but a line can carry more
- * than one. When two secrets sit on one line, the second finding's label
- * context is everything before it, which includes the first secret. Rather
- * than depend on knowing every other finding on the line, this rejects any
- * atom that looks like a credential on its own: at least `MIN_ELIDE_LEN`
- * characters, drawn from the token alphabet, and not a plain hyphenated word.
- * So `create-github-app-token` survives (letters and hyphens only) while a
- * mixed alphanumeric run of the same length does not.
+ * BEST EFFORT ONLY, and deliberately not the control for a neighbouring
+ * secret: that is `withoutSiblingValues`, which excises other findings'
+ * values exactly. Shape cannot decide the question, because a hyphenated
+ * label and a hyphenated passphrase are indistinguishable, and a short
+ * secret is indistinguishable from a short word. This catches obvious
+ * token-shaped junk that gitleaks did not flag, and nothing more. Text that
+ * gitleaks did not report as a secret can still appear here.
  *
  * @param text The label text to sanitize.
  * @returns The text with token-shaped atoms replaced by an ellipsis.
@@ -326,9 +373,10 @@ function sessionSuffix(finding: Finding): string {
 export function renderFindingBlock(
   finding: Finding,
   readLine: (file: string, line: number) => string | null,
+  siblings: Finding[] = [],
 ): string[] {
   const lines = [`  file:  ${finding.File}:${finding.StartLine}${sessionSuffix(finding)}`];
-  const { value, near, exact } = resolveSecretContext(finding, readLine);
+  const { value, near, exact } = resolveSecretContext(finding, readLine, siblings);
   // Entropy is computed by gitleaks on the REAL secret. When alignment fell
   // back to the whole match span, the rendered value is a different string,
   // so quoting the entropy beside it would describe something not shown.
@@ -431,13 +479,14 @@ export function buildPromptHeader(
   total: number,
   readLine: (file: string, line: number) => string | null,
   peers = 0,
+  siblings: Finding[] = [],
 ): string {
   const first = group[0];
   const headerLine =
     group.length === 1
       ? `Finding ${index}/${total}: ${first.RuleID}`
       : `Finding ${index}/${total}: ${first.RuleID.padEnd(RULE_PAD)}  ${group.length} occurrences, 1 ignore entry`;
-  const body = renderFindingBlock(first, readLine);
+  const body = renderFindingBlock(first, readLine, siblings);
   if (peers > 0) {
     const other = peers === 1 ? 'secret' : 'secrets';
     body.push(`  warn:  Allow also suppresses ${peers} other distinct ${other} on this line`);

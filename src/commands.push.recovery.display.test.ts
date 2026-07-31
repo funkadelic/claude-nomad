@@ -29,6 +29,7 @@ function makeFinding(
     EndColumn: number;
     Match: string;
     Fingerprint: string;
+    EndLine: number;
     Secret: string;
     Entropy: number;
   }> = {},
@@ -37,6 +38,7 @@ function makeFinding(
     RuleID: overrides.RuleID ?? 'create-github-app-token',
     File: overrides.File ?? 'shared/projects/my-proj/abc123.jsonl',
     StartLine: overrides.StartLine ?? 1,
+    EndLine: overrides.EndLine,
     StartColumn: overrides.StartColumn ?? 1,
     EndColumn: overrides.EndColumn ?? 1,
     Match: overrides.Match ?? '',
@@ -567,6 +569,107 @@ describe('entropy provenance', () => {
       StartColumn: 1,
       EndColumn: line.length,
       Entropy: 4.2,
+    });
+    const rendered = renderFindingBlock(finding, () => line).join('\n');
+    expect(rendered).toContain('value:');
+    expect(rendered).not.toContain('entropy');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Neighbouring-secret excision
+// ---------------------------------------------------------------------------
+
+describe('neighbouring secret excision', () => {
+  // Shape cannot decide which text is a secret: a hyphenated label and a
+  // hyphenated passphrase look identical, and a short secret looks like a
+  // short word. Every shape below defeated the earlier shape heuristic, so
+  // the control is exact excision of other findings' resolved values.
+  const shapes: [string, string][] = [
+    ['letters only, above the elision gate', 'QzWxEcRvTyUiOpAsDfGh'],
+    ['mixed but below the elision gate', 'aB3dE7gH1jK5mN9'],
+    ['letters and hyphens, label-shaped', 'zZ-xX-cC-vV-bB-nN-mM-qQ'],
+    ['mixed alphanumeric', 'A1b2C3d4E5f6G7h8I9j0K1'],
+  ];
+
+  for (const [name, neighbour] of shapes) {
+    it(`excises a neighbouring secret that is ${name}`, () => {
+      const line = `{"pw":"${neighbour}","tok":"${HEX_FIXTURE}"}`;
+      const span = (needle: string) =>
+        makeFinding({
+          StartColumn: line.indexOf(needle) + 1,
+          EndColumn: line.indexOf(needle) + needle.length,
+          Match: 'REDACTED',
+        });
+      const rendered = renderFindingBlock(span(HEX_FIXTURE), () => line, [span(neighbour)]).join(
+        '\n',
+      );
+      expect(rendered).not.toContain(neighbour);
+    });
+  }
+
+  it('ignores a sibling whose own value cannot be resolved', () => {
+    // An unresolvable sibling contributes nothing to excise; it must not
+    // blank the label or throw.
+    const line = `label: ${HEX_FIXTURE}`;
+    const target = makeFinding({
+      StartColumn: line.indexOf(HEX_FIXTURE) + 1,
+      EndColumn: line.length,
+      Match: 'REDACTED',
+    });
+    const unresolvable = makeFinding({ Match: '', StartColumn: 1, EndColumn: 0 });
+    const rendered = renderFindingBlock(target, () => line, [unresolvable]).join('\n');
+    expect(rendered).toContain('label:');
+  });
+
+  it('skips a sibling whose span overlaps the finding being described', () => {
+    // An overlapping sibling must never blank the value under triage.
+    const line = `label: ${HEX_FIXTURE}`;
+    const start = line.indexOf(HEX_FIXTURE) + 1;
+    const target = makeFinding({
+      StartColumn: start,
+      EndColumn: line.length,
+      Match: 'REDACTED',
+    });
+    const overlapping = makeFinding({
+      StartColumn: start,
+      EndColumn: line.length,
+      Match: 'REDACTED',
+    });
+    const rendered = renderFindingBlock(target, () => line, [overlapping]).join('\n');
+    expect(rendered).toContain('5857...a4d6');
+    expect(rendered).toContain('label:');
+  });
+
+  it('leaves the label intact when no sibling finding covers it', () => {
+    const line = `actions/create-github-app-token v3 -> ${HEX_FIXTURE} `;
+    const finding = makeFinding({
+      StartColumn: 1,
+      EndColumn: line.length,
+      Match: 'actions/create-github-app-token v3 -> REDACTED ',
+    });
+    const rendered = renderFindingBlock(finding, () => line, []).join('\n');
+    expect(rendered).toContain('create-github-app-token');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-line matches
+// ---------------------------------------------------------------------------
+
+describe('multi-line matches', () => {
+  it('omits entropy when the match spans more than one line', () => {
+    // Only part of a PEM block is on this line, so the recovered span is a
+    // fragment while gitleaks' entropy describes the whole secret.
+    const line = '-----BEGIN PRIVATE KEY-----';
+    const finding = makeFinding({
+      RuleID: 'private-key',
+      Match: 'REDACTED',
+      StartColumn: 1,
+      EndColumn: line.length,
+      StartLine: 1,
+      EndLine: 9,
+      Entropy: 5.1,
     });
     const rendered = renderFindingBlock(finding, () => line).join('\n');
     expect(rendered).toContain('value:');

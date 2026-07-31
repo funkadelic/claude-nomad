@@ -154,7 +154,12 @@ export async function collectActions(
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
     const peers = sharedFingerprintPeers(groups, i);
-    const header = buildPromptHeader(group, i + 1, groups.length, reader, peers);
+    // Other findings sharing this one's line: their values are excised from
+    // the label context so triaging one secret never displays another.
+    const siblings = findings.filter(
+      (o) => o.File === group[0].File && o.StartLine === group[0].StartLine && !group.includes(o),
+    );
+    const header = buildPromptHeader(group, i + 1, groups.length, reader, peers, siblings);
     const action = parseAction(await prompt(header + '> '));
     for (const f of group) {
       actions.set(findingKey(f), action);
