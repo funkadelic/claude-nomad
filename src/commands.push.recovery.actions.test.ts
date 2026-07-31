@@ -561,7 +561,7 @@ function makeFullFinding(
   };
 }
 
-describe('collectActions - masked context line in prompt', () => {
+describe('collectActions - file/value/near block in prompt', () => {
   const SECRET = 'ghp_FAKESECRETVALUE1234567890ABCDEF';
 
   beforeEach(() => {
@@ -572,7 +572,7 @@ describe('collectActions - masked context line in prompt', () => {
     vi.restoreAllMocks();
   });
 
-  it('emits a context line with masked span and surrounding text when readLine returns a line', async () => {
+  it('emits the file/value/near block when readLine returns a line', async () => {
     const { collectActions } = await import('./commands.push.recovery.actions.ts');
     const line = `prefix_text ${SECRET} suffix_text`;
     const startCol = 'prefix_text '.length + 1;
@@ -588,14 +588,18 @@ describe('collectActions - masked context line in prompt', () => {
 
     await collectActions([f], prompt, readLine);
 
-    expect(capturedPrompt).toContain('context:');
-    expect(capturedPrompt).toContain('ghp_************');
-    expect(capturedPrompt).toContain('prefix_text ');
+    expect(capturedPrompt).toContain('  file:  ');
+    expect(capturedPrompt).toContain('  value: ');
+    expect(capturedPrompt).toContain('  near:  ');
+    expect(capturedPrompt).not.toContain('context:');
     expect(capturedPrompt).not.toContain(SECRET);
   });
 
   it('offers [D]rop session in the menu header for a session finding', async () => {
     const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    // Flat <sid>.jsonl: the basename equals the session id, so the "(session:"
+    // suffix is suppressed as redundant (see the display module's dedicated
+    // basename-suppression tests). This test only proves the menu offering.
     const f = makeFullFinding({ File: 'shared/projects/my-proj/abc123.jsonl' });
     let capturedPrompt = '';
     const prompt = (p: string): Promise<string> => {
@@ -604,7 +608,6 @@ describe('collectActions - masked context line in prompt', () => {
     };
     await collectActions([f], prompt, () => null);
     expect(capturedPrompt).toContain('[D]rop session');
-    expect(capturedPrompt).toContain('(session:');
   });
 
   it('omits [D]rop session in the menu header for a non-session (skill) finding', async () => {
@@ -622,7 +625,7 @@ describe('collectActions - masked context line in prompt', () => {
     expect(capturedPrompt).not.toContain('(session:');
   });
 
-  it('emits a masked-Match context line when readLine returns null and Match is non-empty', async () => {
+  it('emits a value line describing the secret when readLine returns null and Match is non-empty', async () => {
     const { collectActions } = await import('./commands.push.recovery.actions.ts');
     const f = makeFullFinding({ Match: SECRET });
 
@@ -635,12 +638,12 @@ describe('collectActions - masked context line in prompt', () => {
 
     await collectActions([f], prompt, readLine);
 
-    expect(capturedPrompt).toContain('context:');
-    expect(capturedPrompt).toContain('ghp_************');
+    expect(capturedPrompt).toContain('  value: ');
+    expect(capturedPrompt).not.toContain('context:');
     expect(capturedPrompt).not.toContain(SECRET);
   });
 
-  it('omits the context line when readLine returns null and Match is empty', async () => {
+  it('omits the value and near lines when readLine returns null and Match is empty', async () => {
     const { collectActions } = await import('./commands.push.recovery.actions.ts');
     const f = makeFullFinding({ Match: '' });
 
@@ -653,12 +656,13 @@ describe('collectActions - masked context line in prompt', () => {
 
     await collectActions([f], prompt, readLine);
 
-    expect(capturedPrompt).not.toContain('context:');
-    expect(capturedPrompt).toContain('Finding:');
+    expect(capturedPrompt).not.toContain('value:');
+    expect(capturedPrompt).not.toContain('near:');
+    expect(capturedPrompt).toContain('Finding 1/1:');
     expect(capturedPrompt).toContain('[R]edact');
   });
 
-  it('action map is unaffected by the new context line (default skip still applies)', async () => {
+  it('action map is unaffected by the new value/near lines (default skip still applies)', async () => {
     const { collectActions } = await import('./commands.push.recovery.actions.ts');
     const f = makeFullFinding({ Match: SECRET });
     const prompt = (_p: string): Promise<string> => Promise.resolve(''); // empty -> skip
@@ -728,8 +732,8 @@ describe('collectActions - masked context line in prompt', () => {
       // No readLine arg: uses the real default reader.
       await collectActions([f], prompt);
 
-      expect(capturedPrompt).toContain('context:');
-      expect(capturedPrompt).toContain('ghp_************');
+      expect(capturedPrompt).toContain('  value: ');
+      expect(capturedPrompt).not.toContain('context:');
       expect(capturedPrompt).not.toContain(SECRET);
     } finally {
       rmSync(testRepo, { recursive: true, force: true });
@@ -738,7 +742,7 @@ describe('collectActions - masked context line in prompt', () => {
     }
   });
 
-  it('default real readLine falls back to masked Match when file is missing', async () => {
+  it('default real readLine falls back to a value line describing Match when file is missing', async () => {
     const originalNomadRepo = process.env.NOMAD_REPO;
     const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-missing-'));
     try {
@@ -747,7 +751,7 @@ describe('collectActions - masked context line in prompt', () => {
       const { collectActions } = await import('./commands.push.recovery.actions.ts');
 
       // No fixture file written: the reader throws ENOENT and returns null.
-      // Match is non-empty so the fallback fires and shows a masked Match.
+      // Match is non-empty so the fallback fires and describes it on a value line.
       const f = makeFullFinding({
         File: 'shared/projects/my-proj/missing.jsonl',
         StartLine: 1,
@@ -762,9 +766,9 @@ describe('collectActions - masked context line in prompt', () => {
 
       await collectActions([f], prompt);
 
-      // Falls back to masked Match.
-      expect(capturedPrompt).toContain('context:');
-      expect(capturedPrompt).toContain('ghp_************');
+      // Falls back to a value line describing the Match field.
+      expect(capturedPrompt).toContain('  value: ');
+      expect(capturedPrompt).not.toContain('context:');
       expect(capturedPrompt).not.toContain(SECRET);
     } finally {
       rmSync(testRepo, { recursive: true, force: true });
@@ -773,7 +777,7 @@ describe('collectActions - masked context line in prompt', () => {
     }
   });
 
-  it('default real readLine returns null for an out-of-range line number (falls back to masked Match)', async () => {
+  it('default real readLine returns null for an out-of-range line number (falls back to a value line)', async () => {
     const originalNomadRepo = process.env.NOMAD_REPO;
     const testRepo = mkdtempSync(join(tmpdir(), 'nomad-ctx-oor-'));
     try {
@@ -801,9 +805,9 @@ describe('collectActions - masked context line in prompt', () => {
 
       await collectActions([f], prompt);
 
-      // Out-of-range line -> readLine returns null -> falls back to masked Match.
-      expect(capturedPrompt).toContain('context:');
-      expect(capturedPrompt).toContain('ghp_************');
+      // Out-of-range line -> readLine returns null -> falls back to a value line.
+      expect(capturedPrompt).toContain('  value: ');
+      expect(capturedPrompt).not.toContain('context:');
       expect(capturedPrompt).not.toContain(SECRET);
     } finally {
       rmSync(testRepo, { recursive: true, force: true });
@@ -824,7 +828,7 @@ describe('collectActions - masked context line in prompt', () => {
 
       // A real secret-bearing file sits OUTSIDE the repo root. A traversal
       // File must not read it; the reader returns null and the prompt falls
-      // back to the masked Match instead of leaking the outside file.
+      // back to a value line describing Match instead of leaking the outside file.
       writeFileSync(join(outer, 'outside.jsonl'), `leaked ${SECRET}\n`, 'utf8');
 
       const f = makeFullFinding({
@@ -841,9 +845,9 @@ describe('collectActions - masked context line in prompt', () => {
 
       await collectActions([f], prompt);
 
-      // Confinement guard -> null -> masked Match fallback, raw secret absent.
-      expect(capturedPrompt).toContain('context:');
-      expect(capturedPrompt).toContain('ghp_************');
+      // Confinement guard -> null -> value line describing Match, raw secret absent.
+      expect(capturedPrompt).toContain('  value: ');
+      expect(capturedPrompt).not.toContain('context:');
       expect(capturedPrompt).not.toContain(SECRET);
     } finally {
       rmSync(outer, { recursive: true, force: true });
@@ -878,9 +882,9 @@ describe('collectActions - masked context line in prompt', () => {
 
       await collectActions([f], prompt);
 
-      // Absolute path rejected -> null -> masked Match fallback.
-      expect(capturedPrompt).toContain('context:');
-      expect(capturedPrompt).toContain('ghp_************');
+      // Absolute path rejected -> null -> value line describing Match.
+      expect(capturedPrompt).toContain('  value: ');
+      expect(capturedPrompt).not.toContain('context:');
       expect(capturedPrompt).not.toContain(SECRET);
     } finally {
       rmSync(testRepo, { recursive: true, force: true });

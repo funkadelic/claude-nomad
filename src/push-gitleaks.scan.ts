@@ -30,6 +30,12 @@ export type Finding = {
   RuleID: string;
   File: string;
   StartLine: number;
+  /**
+   * 1-indexed last line of the match. Greater than `StartLine` for a
+   * multi-line secret (a PEM block, for example), where a single-line span is
+   * only a fragment of the real value. Absent on older gitleaks reports.
+   */
+  EndLine?: number;
   /** 1-indexed character offset where the secret span starts within the raw line. Display and identification metadata only; not used for redaction (which is value-based). */
   StartColumn: number;
   /** 1-indexed inclusive end offset of the secret span within the raw line. Display and identification metadata only; not used for redaction (which is value-based). */
@@ -43,21 +49,85 @@ export type Finding = {
    * doctor legend silently omits the entry (graceful degradation, no network).
    */
   Description?: string;
+  /**
+   * The matched secret value. `scanStagedTree` passes `--redact`, so on the
+   * push path this arrives as the literal string `REDACTED`, never the real
+   * value; `scanFile` (no `--redact`) returns the real value. Absent on older
+   * gitleaks reports.
+   */
+  Secret?: string;
+  /**
+   * Shannon entropy of the matched secret, computed on the real value even
+   * when `Secret`/`Match` are redacted. Absent on older gitleaks reports.
+   */
+  Entropy?: number;
 };
 
 /**
+ * Coerce one raw report entry into a `Finding`, or return null when it lacks
+ * the fields that make it actionable. Optional string and number fields are
+ * defaulted rather than trusted, and numeric ones must be FINITE (a report
+ * carrying `1e400` would otherwise pass an Infinity through to consumers): consumers dereference `Match`, `Fingerprint`
+ * and `File` directly, and an entry missing one used to surface as a
+ * `Cannot read properties of undefined` deep inside the interactive recovery
+ * menu, i.e. after `remapPush` had already mutated the repo.
+ *
+ * `File` and `RuleID` have no safe default: they identify the finding and
+ * form its `.gitleaksignore` fingerprint, so an entry without them is
+ * rejected rather than repaired.
+ *
+ * @param entry One element of the parsed report array.
+ * @returns The normalized finding, or null when it cannot be trusted.
+ */
+// Exported only for direct unit tests.
+// fallow-ignore-next-line unused-export
+export function toFinding(entry: unknown): Finding | null {
+  if (typeof entry !== 'object' || entry === null) return null;
+  const e = entry as Record<string, unknown>;
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const file = str(e.File);
+  const rule = str(e.RuleID);
+  if (file === '' || rule === '') return null;
+  return {
+    RuleID: rule,
+    File: file,
+    StartLine: num(e.StartLine),
+    EndLine: Number.isFinite(e.EndLine) ? (e.EndLine as number) : undefined,
+    StartColumn: num(e.StartColumn),
+    EndColumn: num(e.EndColumn),
+    Match: str(e.Match),
+    Fingerprint: str(e.Fingerprint),
+    Description: typeof e.Description === 'string' ? e.Description : undefined,
+    Secret: typeof e.Secret === 'string' ? e.Secret : undefined,
+    Entropy: Number.isFinite(e.Entropy) ? (e.Entropy as number) : undefined,
+  };
+}
+
+/**
  * Read and parse the gitleaks JSON report at `reportPath`. Returns the
- * findings array on success, or `null` when the file is missing or the
- * JSON is malformed. Defense-in-depth: an unreadable/invalid report on
- * the failure path must NOT cascade into a parse-error stack trace; the
- * caller falls back to the legacy FATAL string in that case.
+ * findings array on success, or `null` when the file is missing, the JSON is
+ * malformed, or any entry fails normalization. Defense-in-depth: an
+ * unreadable/invalid report on the failure path must NOT cascade into a
+ * parse-error stack trace; the caller falls back to the legacy FATAL string
+ * in that case.
+ *
+ * A single unusable entry fails the WHOLE report rather than being dropped.
+ * Silently discarding one would mean pushing whatever secret it described,
+ * so the safe direction is to refuse the report and let the caller abort.
  */
 function readGitleaksReport(reportPath: string): Finding[] | null {
   try {
     const raw = readFileSync(reportPath, 'utf8');
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
-    return parsed as Finding[];
+    const findings: Finding[] = [];
+    for (const entry of parsed) {
+      const finding = toFinding(entry);
+      if (finding === null) return null;
+      findings.push(finding);
+    }
+    return findings;
   } catch {
     return null;
   }

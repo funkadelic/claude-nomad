@@ -3,6 +3,17 @@ title: Recovery flows
 description: Pruning backups, dropping sessions, redacting secrets, and managing the gitleaks allowlist.
 ---
 
+## Table of contents
+
+- [Pruning old backups](#pruning-old-backups)
+- [nomad drop-session](#nomad-drop-session)
+- [nomad redact](#nomad-redact)
+- [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)
+- [Recovery flow: push-time interactive menu](#recovery-flow-push-time-interactive-menu)
+- [Recovery flow: a secret in a memory note](#recovery-flow-a-secret-in-a-memory-note)
+- [Recovery flow: a secret in a synced skill](#recovery-flow-a-secret-in-a-synced-skill)
+- [.gitleaks.toml allowlist policy](#gitleakstoml-allowlist-policy)
+
 ## Pruning old backups
 
 Every `nomad pull` and `nomad push` keeps you safe by copying any file it is about to overwrite
@@ -180,14 +191,46 @@ sessions writing to the local file are not disturbed.
 ## Recovery flow: push-time interactive menu
 
 When `nomad push` detects a secret and the process is running on an interactive TTY, it presents a
-per-finding menu instead of aborting immediately. Each finding is shown with its rule id, file, and
-line number (the secret value is never printed: the scan uses `--redact`).
+menu instead of aborting immediately, with one prompt per distinct secret rather than one per
+finding: several occurrences of the same value on one line ask a single question, and Allow writes
+at most one `.gitleaksignore` entry for them, or none at all if another secret sharing that entry
+was left unresolved (see below). Two findings are only ever merged when they share
+both a gitleaks fingerprint and the same resolved value, so two different secrets that happen to
+sit on the same line still get their own prompts. Each prompt shows a `file:` / `value:` / `near:`
+block: `file:` names the location, `value:` describes the secret's shape (a short head/tail
+fragment plus its character count, character class, and entropy) without ever printing it in full,
+and `near:` shows the label text immediately preceding it. Any other finding on that same line is
+blanked out of `near:` by position, so triaging one secret never displays another. Text that
+gitleaks did not report as a secret can still appear on that line. The scan uses `--redact`, so the
+raw secret value is never printed.
 
 ```text
-Finding: github-pat in shared/projects/my-proj/abc123.jsonl line 42 (session: abc123)
+Finding 3/3: generic-api-key           2 occurrences, 1 ignore entry
+  file:  shared/projects/my-proj/abc123.jsonl:42
+  value: 5857...a4d6       40 chars, hex, entropy 3.62
+  near:  create-github-app-token  v3 ->
   [R]edact  [A]llow  [D]rop session  [S]kip (default)
 >
 ```
+
+The `(session: <id>)` suffix on the `file:` line appears only when the session id is not already
+the file's own name: a flat `<id>.jsonl` transcript omits it as redundant, while a nested subagent
+file (whose name differs from its session id) shows it.
+
+A `warn:` line appears when another distinct secret shares the same ignore fingerprint. Because a
+fingerprint is `file:rule:line` with no column, an Allow covers every finding on that line for that
+rule, including secrets shown under a separate prompt. The warning names how many:
+
+```text
+  warn:  Allow also suppresses 1 other distinct secret on this line
+```
+
+The Allow itself is held back until every secret sharing that fingerprint has been resolved, which
+means allowed in its own right, redacted successfully, or dropped from the push. If one of them was
+set to Redact and the redaction did not apply (an active session, or a span that could not be
+located verbatim), no `.gitleaksignore` entry is written and the push stays blocked, rather than the
+entry silently suppressing a secret that is still present. A dropped session likewise needs no
+entry, since its content never reaches the push.
 
 What the actions do:
 
@@ -197,8 +240,8 @@ What the actions do:
   instead and wait for the session to end. Redact also handles a non-session finding, a
   project-level `memory/*.md` note or a user skill file under `shared/skills/<name>/`, rewriting
   that local file in place the same way (the 5-minute active-session guard does not apply to those).
-- **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root. Use this for
-  confirmed false positives. The fingerprint format (`file:rule:line`) is tied to the current
+- **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root, but only once
+  the gate described above passes. Use this for confirmed false positives. The fingerprint format (`file:rule:line`) is tied to the current
   line, so if the content moves gitleaks re-prompts rather than silently suppressing a new hit.
   The embedded path also uses the scanning host's separators, so an entry recorded on Windows
   (backslashes) does not suppress the same finding scanned from macOS or Linux, and vice versa;

@@ -13,6 +13,7 @@ import { isAbsolute, resolve, sep } from 'node:path';
 import type { PathMap } from './config.ts';
 import { repoHome } from './config.ts';
 import { appendGitleaksIgnore } from './commands.redact.core.ts';
+import { applyDeferredAllows } from './commands.push.recovery.allow-gate.ts';
 import { applyRedact } from './commands.push.recovery.redact.ts';
 import { dropSessionFromStaged } from './commands.push.recovery.drop.ts';
 import {
@@ -29,9 +30,13 @@ import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { log } from './utils.ts';
 import {
+  buildPromptHeader,
+  groupFindingsForPrompt,
+  sharedFingerprintPeers,
+} from './commands.push.recovery.display.ts';
+import {
   type FindingAction,
   type PromptFn,
-  buildFindingContext,
   findingKey,
   parseAction,
   sessionIdFromFinding,
@@ -39,16 +44,6 @@ import {
 
 export type { FindingAction, PromptFn };
 export { findingKey, parseAction };
-
-/**
- * Apply the Allow action: append the finding's fingerprint to .gitleaksignore.
- *
- * @param f The finding to allow.
- * @param repo Repo root resolved once by the calling command.
- */
-function applyAllow(f: Finding, repo: string): void {
-  appendGitleaksIgnore(f.Fingerprint, repo);
-}
 
 /**
  * Batch-allow all findings non-interactively (the `--allow-all` path). Appends
@@ -102,6 +97,13 @@ export function allowFindingsByRule(findings: Finding[], ruleId: string, repo: s
  * `..`) returns null rather than reading an unintended local file.
  */
 function makeDefaultReadLine(repo: string): (file: string, line: number) => string | null {
+  // Memoized per reader instance: grouping resolves every finding and
+  // rendering then resolves every group, so one transcript would otherwise be
+  // read and split once per finding AND once per group. The grouping pass runs
+  // before any prompt, so on a large transcript with many findings that read
+  // amplification is visible as a stall rather than absorbed by user think
+  // time. Scoped to one collectActions call, so nothing is cached across runs.
+  const cache = new Map<string, string[]>();
   return (file: string, line: number): string | null => {
     try {
       const repoRoot = resolve(repo);
@@ -109,8 +111,11 @@ function makeDefaultReadLine(repo: string): (file: string, line: number) => stri
       if (isAbsolute(file) || (target !== repoRoot && !target.startsWith(repoRoot + sep))) {
         return null;
       }
-      const content = readFileSync(target, 'utf8');
-      const lines = content.split(/\r?\n/);
+      let lines = cache.get(target);
+      if (lines === undefined) {
+        lines = readFileSync(target, 'utf8').split(/\r?\n/);
+        cache.set(target, lines);
+      }
       const idx = line - 1; // convert 1-indexed to 0-indexed
       if (idx < 0 || idx >= lines.length) return null;
       /* c8 ignore next */
@@ -122,17 +127,22 @@ function makeDefaultReadLine(repo: string): (file: string, line: number) => stri
 }
 
 /**
- * Walk all findings and prompt the user for one action each. Returns a map
- * from `findingKey` to the chosen action, defaulting to `'skip'` on empty
- * input. Emits a masked `  context: <excerpt>` line under each finding header
- * when `buildFindingContext` returns a non-null excerpt, so the user can
- * distinguish a real secret from a documented fixture without seeing the raw value.
+ * Walk all findings, grouped by fingerprint AND resolved secret value via
+ * `groupFindingsForPrompt`, and prompt the user for one action per
+ * group. The chosen action is applied to every finding in the group, so N
+ * occurrences of the same secret on one line ask one question and the
+ * returned map still carries one entry per finding (never per group):
+ * `dispatchActions` and the `unresolved` filter in
+ * `commands.push.recovery.ts` both look up by `findingKey`. Defaults to
+ * `'skip'` on empty input. Delegates the entire prompt text to
+ * `buildPromptHeader`, so the user can distinguish a real secret from a
+ * documented fixture without ever seeing the raw value.
  *
  * @param findings The findings to present.
- * @param prompt An injectable prompt function (one question per call).
+ * @param prompt An injectable prompt function (one question per group).
  * @param readLine Optional injectable line reader seam. Defaults to a real
  *   reader that resolves `repoHome()` once and reads the repo-relative file.
- * @returns Populated actions map.
+ * @returns Populated actions map, one entry per finding.
  */
 export async function collectActions(
   findings: Finding[],
@@ -140,20 +150,21 @@ export async function collectActions(
   readLine?: (file: string, line: number) => string | null,
 ): Promise<Map<string, FindingAction>> {
   const reader = readLine ?? makeDefaultReadLine(repoHome());
+  const groups = groupFindingsForPrompt(findings, reader);
   const actions = new Map<string, FindingAction>();
-  for (const f of findings) {
-    const sid = sessionIdFromFinding(f);
-    const ctx = buildFindingContext(f, reader);
-    const header =
-      `\nFinding: ${f.RuleID} in ${f.File} line ${f.StartLine}` +
-      (sid === null ? '' : ` (session: ${sid})`) +
-      (ctx === null ? '' : `\n  context: ${ctx}`) +
-      // [D]rop applies only to session findings; a null sid (memory/skill
-      // finding) has no session to drop, so omit the dead affordance.
-      (sid === null
-        ? '\n  [R]edact  [A]llow  [S]kip (default)\n'
-        : '\n  [R]edact  [A]llow  [D]rop session  [S]kip (default)\n');
-    actions.set(findingKey(f), parseAction(await prompt(header + '> ')));
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const peers = sharedFingerprintPeers(groups, i);
+    // Other findings sharing this one's line: their values are excised from
+    // the label context so triaging one secret never displays another.
+    const siblings = findings.filter(
+      (o) => o.File === group[0].File && o.StartLine === group[0].StartLine && !group.includes(o),
+    );
+    const header = buildPromptHeader(group, i + 1, groups.length, reader, peers, siblings);
+    const action = parseAction(await prompt(header + '> '));
+    for (const f of group) {
+      actions.set(findingKey(f), action);
+    }
   }
   return actions;
 }
@@ -277,16 +288,14 @@ function dispatchNonSession(f: Finding, action: FindingAction, ctx: DispatchCtx)
  */
 function dispatchOne(f: Finding, ctx: DispatchCtx): void {
   const action = ctx.actions.get(findingKey(f)) ?? 'skip';
-  if (action === 'skip') return;
+  // Allow is deferred to applyDeferredAllows, which runs once the redact/drop
+  // ledgers are filled in and can tell whether the fingerprint would also
+  // suppress a secret that was never cleaned.
+  if (action === 'skip' || action === 'allow') return;
   const sid = sessionIdFromFinding(f);
-  // Drop wins: a dropped session short-circuits every later action for it,
-  // including allow, so a stale fingerprint is never written for content that
-  // was held back from the push.
+  // Drop wins: a dropped session short-circuits every later action for it, so
+  // nothing is rewritten for content that was held back from the push.
   if (sid !== null && ctx.droppedSids.has(sid)) return;
-  if (action === 'allow') {
-    applyAllow(f, ctx.repo);
-    return;
-  }
   if (sid === null) {
     dispatchNonSession(f, action, ctx);
     return;
@@ -350,4 +359,5 @@ export function dispatchActions(
   for (const f of findings) {
     dispatchOne(f, ctx);
   }
+  applyDeferredAllows(findings, ctx, repo);
 }

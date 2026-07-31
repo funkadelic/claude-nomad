@@ -166,6 +166,47 @@ describe('scanFile (mocked child_process)', () => {
     expect(stdoutLeaked).toBe(false);
   });
 
+  it('fails the whole report when one entry is unusable, rather than dropping it', async () => {
+    // Silently discarding a malformed entry would mean pushing whatever
+    // secret it described. Refusing the report makes the caller abort.
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+          const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
+          if (flag !== undefined) {
+            const reportPath = flag.slice('--report-path='.length);
+            mkdirSync(dirname(reportPath), { recursive: true });
+            writeFileSync(
+              reportPath,
+              JSON.stringify([
+                {
+                  RuleID: 'generic-api-key',
+                  File: '/some/file.jsonl',
+                  StartLine: 1,
+                  StartColumn: 1,
+                  EndColumn: 9,
+                  Match: 'real-secret',
+                  Fingerprint: 'fp1',
+                },
+                { StartLine: 2 },
+              ]),
+            );
+          }
+          const err = new Error('detected') as NodeJS.ErrnoException & {
+            status?: number;
+            stderr?: Buffer;
+          };
+          err.status = 1;
+          throw err;
+        }),
+      };
+    });
+    const { scanFile } = await import('./push-gitleaks.scan.ts');
+    expect(scanFile('/some/file.jsonl', false)).toBeNull();
+  });
+
   it('returns parsed findings on exit-1 and does NOT forward streams when the report parses', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();

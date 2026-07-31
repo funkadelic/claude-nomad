@@ -2013,15 +2013,15 @@ describe('applyRedact: no map-match returns false and emits message', () => {
 });
 
 // ---------------------------------------------------------------------------
-// collectActions: session-less finding omits the "(session: ...)" header tag
+// collectActions: the "(session: ...)" header tag is basename-gated
 // ---------------------------------------------------------------------------
 
-describe('collectActions - header for a finding with no resolvable session id', () => {
+describe('collectActions - "(session:" suffix is shown only when it adds information', () => {
   beforeEach(() => {
     vi.resetModules();
   });
 
-  it('omits the "(session:" suffix when sessionIdFromFinding returns null', async () => {
+  it('omits the suffix when sessionIdFromFinding returns null', async () => {
     const { collectActions } = await import('./commands.push.recovery.actions.ts');
     // A File path that matches neither the flat nor subagent session pattern.
     const finding = makeFinding({ File: 'shared/other/not-a-session.txt' });
@@ -2033,6 +2033,32 @@ describe('collectActions - header for a finding with no resolvable session id', 
     await collectActions([finding], prompt);
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).not.toContain('(session:');
+  });
+
+  it('omits the suffix for a flat <sid>.jsonl finding, whose basename already names the session', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const finding = makeFinding({ File: 'shared/projects/p/abc123.jsonl' });
+    const prompts: string[] = [];
+    const prompt = (p: string): Promise<string> => {
+      prompts.push(p);
+      return Promise.resolve('s');
+    };
+    await collectActions([finding], prompt, () => null);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).not.toContain('(session:');
+  });
+
+  it('keeps the suffix for a nested subagent finding, whose basename differs from the session id', async () => {
+    const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    const finding = makeFinding({ File: 'shared/projects/p/abc123/subagents/agent-1.jsonl' });
+    const prompts: string[] = [];
+    const prompt = (p: string): Promise<string> => {
+      prompts.push(p);
+      return Promise.resolve('s');
+    };
+    await collectActions([finding], prompt, () => null);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('(session: abc123)');
   });
 });
 
