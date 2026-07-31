@@ -64,9 +64,9 @@ What `~/claude-nomad/` looks like on a configured host:
 
 On native Windows the two symlinked rows are copy-synced instead: creating a symlink there needs
 Developer Mode or admin rights, so `nomad pull` materializes those names as real copies and
-`nomad push` mirrors your local edits back into `shared/`. After editing one of these files on
-Windows, run `nomad push` before your next `nomad pull` or `nomad sync` so the edit is captured
-rather than overlaid. Everything else in the table behaves identically. See
+`nomad push` mirrors your local edits back into `shared/`. On Windows `nomad pull` runs that mirror
+before it fetches (and `nomad sync` inherits it), so an unpublished edit is captured rather than
+overlaid. Everything else in the table behaves identically. See
 [Windows](/claude-nomad/quickstart/#windows) in the Quickstart.
 
 If you run GSD (`@opengsd/gsd-core`), the `.planning` overlay, the `gsd-*` skill exclusion, and the

@@ -40,8 +40,12 @@ This is the ongoing case. One command becomes part of your routine, the same way
 
 ## Works across platforms
 
-claude-nomad runs the same way on macOS, Linux, WSL2, and native Windows (no WSL required). See
-the [Quickstart](/claude-nomad/quickstart/) for the native Windows steps (PowerShell or cmd).
+claude-nomad runs on macOS, Linux, WSL2, and native Windows, and the everyday loop is the same on
+all of them. The first three symlink your shared config into `~/.claude/`, so there is only ever one
+file. Native Windows cannot use symlinks, because creating one there needs Developer Mode or admin
+rights, so it keeps a real copy and claude-nomad keeps the two in step for you. See the
+[Quickstart](/claude-nomad/quickstart/#windows) for the native Windows steps (PowerShell or cmd)
+and the Windows-only caveats worth knowing.
 
 ## What it is not
 

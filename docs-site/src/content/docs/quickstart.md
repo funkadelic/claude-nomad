@@ -68,8 +68,25 @@ $ nomad pull
 
 ## Windows
 
-claude-nomad also runs natively on Windows, no WSL required (WSL2 still works fine too, if you
-prefer it). The steps are the same as [First host](#first-host-once-ever) and
+claude-nomad runs natively on Windows (PowerShell or cmd), and WSL2 works too. The everyday loop is
+the same either way.
+
+:::note[How native Windows differs under the hood]
+On macOS, Linux, and WSL2, claude-nomad **symlinks** your shared config into `~/.claude/`, so there
+is only ever one file: the one in your sync repo.
+
+Native Windows cannot use symlinks, because creating one there needs Developer Mode or admin
+rights. claude-nomad keeps a **real copy** in `~/.claude/` instead. That leaves two files to keep in
+step, and claude-nomad does it for you: `nomad pull` and `nomad sync` both copy your edits into the
+repo before they fetch, so an unpublished edit is never overwritten. Enabling Developer Mode does
+not change this; copies are used on every native Windows host either way.
+:::
+
+Two things are genuinely Windows-only, both in the list below: a `.gitleaksignore` allow entry may
+not travel to a macOS or Linux host, and deep session paths can hit Windows's 260-character path
+limit.
+
+The native Windows steps are the same as [First host](#first-host-once-ever) and
 [Each additional host](#each-additional-host) above, with a couple of PowerShell-specific swaps:
 
 ```powershell
@@ -98,13 +115,14 @@ A few Windows-specific things worth knowing:
   use Scoop). `nomad doctor` prints the same hint whenever gitleaks is missing from PATH.
 - **Shared config is copied, not symlinked.** On macOS and Linux, files like `CLAUDE.md` and your
   skills live in the sync repo and are symlinked into `~/.claude/`, so there is one source of truth
-  on disk. Creating a symlink on Windows needs Developer Mode or admin rights, so on Windows these
-  are real copies instead. What this means for you: after editing a shared file on Windows, run
-  `nomad push` before your next `nomad pull` or `nomad sync`. `nomad sync` always pulls first, and
-  the pull half overlays the repo's copy onto yours (the prior content is snapshotted to the backup
-  dir first, so it is recoverable, but it is still reverted in place); pushing first is what
-  actually captures your edit. This is the same behavior claude-nomad's `skills/` sync already has
-  on every platform.
+  on disk. Creating a symlink on Windows needs Developer Mode or admin rights, so on native Windows
+  these are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected
+  and behaves like Linux. What this means for you: nothing extra. On Windows both `nomad pull` and
+  `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit is
+  captured rather than reverted. The one command that deliberately takes the repo's version is
+  `nomad pull --force-remote`, which is what that flag is for; the copy it replaces is snapshotted
+  to the backup dir first. This is the same behavior claude-nomad's `skills/` sync already has on
+  every platform.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
   macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the
