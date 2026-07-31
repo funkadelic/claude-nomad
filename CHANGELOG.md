@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.63.0](https://github.com/funkadelic/claude-nomad/compare/v0.62.6...v0.63.0) (2026-07-31)
+
+### What's new
+
+- **Windows: your own edits to shared config are no longer reverted.** On Windows, editing a synced
+  file like `~/.claude/CLAUDE.md` and then running `nomad pull` overwrote it from the repo, and
+  `nomad sync` went on to publish the reverted version, silently undoing the change you ran sync to
+  publish. Your edit is now carried into the sync repo first, so it survives the pull and gets
+  published instead.
+- **The secret prompt on push is readable and asks once per secret.** When a push finds a possible
+  secret it used to ask the same question several times over for one secret, and the snippet it
+  showed was mostly noise. It now asks once per secret and describes what was actually found, so you
+  can tell a real credential from a false positive at a glance.
+- **Three ways that prompt could show you a secret it meant to hide are closed**, along with a case
+  where allowing one false positive could quietly let a real secret through beside it on the same
+  line.
+
+
+### Added
+
+* **pull:** stop Windows pulls reverting unpublished shared-config edits ([#476](https://github.com/funkadelic/claude-nomad/issues/476)) ([16fa692](https://github.com/funkadelic/claude-nomad/commit/16fa6925477fb56dd0104c8106cbdaf2ff27539d))
+
+
+### Fixed
+
+* **push:** rework the leak recovery prompt and close disclosure paths ([#477](https://github.com/funkadelic/claude-nomad/issues/477)) ([a1ccb9a](https://github.com/funkadelic/claude-nomad/commit/a1ccb9af7ac718ee43a5629f9d5ee6ca89c84114))
+
+
+### Testing
+
+* **push:** close doMock/doUnmock asymmetry in the push cluster ([#475](https://github.com/funkadelic/claude-nomad/issues/475)) ([9c0d5ab](https://github.com/funkadelic/claude-nomad/commit/9c0d5abf32e3478b85550ee18365bffab425f193))
+
+
+### Dependencies
+
+* bump actions/checkout from 7.0.0 to 7.0.1 ([#470](https://github.com/funkadelic/claude-nomad/issues/470)) ([4b74689](https://github.com/funkadelic/claude-nomad/commit/4b74689b6b857aeddeb040113e50488fdc0ab2fa))
+* bump actions/labeler from 6.2.0 to 7.0.0 ([#469](https://github.com/funkadelic/claude-nomad/issues/469)) ([8a6d413](https://github.com/funkadelic/claude-nomad/commit/8a6d413aa815fa7c2070c29c76d5d5688146ffbd))
+* bump the codeql-action group with 2 updates ([#468](https://github.com/funkadelic/claude-nomad/issues/468)) ([d19e7fd](https://github.com/funkadelic/claude-nomad/commit/d19e7fdad1d24f8917c10c9e398cc8c89db9c289))
+* bump the dev-dependencies group across 1 directory with 6 updates ([#471](https://github.com/funkadelic/claude-nomad/issues/471)) ([971a82f](https://github.com/funkadelic/claude-nomad/commit/971a82f6dac29dacfa0681b15b33e616dbbdef99))
+* bump the prod-dependencies group across 1 directory with 2 updates ([#474](https://github.com/funkadelic/claude-nomad/issues/474)) ([ea259dd](https://github.com/funkadelic/claude-nomad/commit/ea259dd169ce2d7beba9bef83581199ebea5a167))
+
 ## [0.62.6](https://github.com/funkadelic/claude-nomad/compare/v0.62.5...v0.62.6) (2026-07-25)
 
 
