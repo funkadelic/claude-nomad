@@ -183,13 +183,13 @@ When `nomad push` detects a secret and the process is running on an interactive 
 menu instead of aborting immediately, with one prompt per distinct secret rather than one per
 finding: several occurrences of the same value on one line ask a single question, and Allow writes
 at most one `.gitleaksignore` entry for them, or none at all if another secret sharing that entry
-was left uncleaned (see below). Two findings are only ever merged when they share
+was left unresolved (see below). Two findings are only ever merged when they share
 both a gitleaks fingerprint and the same resolved value, so two different secrets that happen to
 sit on the same line still get their own prompts. Each prompt shows a `file:` / `value:` / `near:`
 block: `file:` names the location, `value:` describes the secret's shape (a short head/tail
 fragment plus its character count, character class, and entropy) without ever printing it in full,
-and `near:` shows the label text immediately preceding it. Any other finding on that same line has
-its value excised from `near:` exactly, so triaging one secret never displays another. Text that
+and `near:` shows the label text immediately preceding it. Any other finding on that same line is
+blanked out of `near:` by position, so triaging one secret never displays another. Text that
 gitleaks did not report as a secret can still appear on that line. The scan uses `--redact`, so the
 raw secret value is never printed.
 
