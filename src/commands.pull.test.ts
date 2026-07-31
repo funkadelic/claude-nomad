@@ -1751,16 +1751,23 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
   const realPlatform = process.platform;
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
     process.exitCode = 0;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-pull-mirror-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
+    // repoHome() prefers NOMAD_REPO and only falls back to $HOME/claude-nomad,
+    // and CLAUDE.md tells developers to export it for an alternate checkout, so
+    // an ambient value would point these assertions at a repo the code under
+    // test never touched.
+    delete process.env.NOMAD_REPO;
     repoUnderHome = join(testHome, 'claude-nomad');
     mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
     mkdirSync(join(testHome, '.claude'), { recursive: true });
@@ -1798,6 +1805,8 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
     else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     rmSync(testHome, { recursive: true, force: true });
   });
 
@@ -1878,6 +1887,25 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore({ forceRemote: true });
     expect(mirrorSpy).not.toHaveBeenCalled();
+  });
+
+  it('warns and still pulls when the staging copy throws on win32', async () => {
+    stubPlatform('win32');
+    const order: string[] = [];
+    const mirrorSpy = mockPipelineRecording(order);
+    mirrorSpy.mockImplementation(() => {
+      order.push('mirror');
+      throw new Error('EPERM: operation not permitted');
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    // The copy can throw for reasons unrelated to intent (Windows path limit,
+    // antivirus lock, EPERM on a read-only repo file). Aborting here would
+    // leave the host unable to fetch at all, so the pre-step contains it.
+    expect(() => runPullCore()).not.toThrow();
+    expect(order, 'the pull did not continue past the failed mirror').toEqual([
+      'mirror',
+      'gitOrFatal',
+    ]);
   });
 
   it('still stages with the empty map when path-map.json is absent on win32', async () => {

@@ -904,6 +904,40 @@ describe('copyExtrasOverlayFiltered filtered overlay copy', () => {
     const { NomadFatal } = await import('./utils.ts');
     expect(() => copyExtrasOverlayFiltered(tmpSrc, tmpDst, new Set())).toThrow(NomadFatal);
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'replaces a symlinked destination root instead of copying through it',
+    async () => {
+      // stripCollidingDstSymlinks only walks CHILDREN, so without the root
+      // guard cpSync follows a symlink AT dst and writes outside the tree. A
+      // repo-controlled dst (shared/<name> on the pull-side mirror) makes that
+      // an arbitrary-write primitive.
+      const outside = mkdtempSync(join(tmpdir(), 'nomad-core-ovflt-outside-'));
+      const linkedDst = join(tmpDst, 'linked');
+      symlinkSync(outside, linkedDst);
+      writeFileSync(join(tmpSrc, 'PLAN.md'), '# plan\n');
+
+      const { copyExtrasOverlayFiltered } = await import('./extras-sync.core.ts');
+      copyExtrasOverlayFiltered(tmpSrc, linkedDst, new Set());
+
+      expect(lstatSync(linkedDst).isSymbolicLink(), 'dst root is still a symlink').toBe(false);
+      expect(existsSync(join(linkedDst, 'PLAN.md'))).toBe(true);
+      expect(existsSync(join(outside, 'PLAN.md')), 'copy escaped through the symlink').toBe(false);
+      rmSync(outside, { recursive: true, force: true });
+    },
+  );
+
+  it('replaces a plain-file destination root so the copy can recreate it as a directory', async () => {
+    const fileDst = join(tmpDst, 'was-a-file');
+    writeFileSync(fileDst, 'not a directory\n');
+    writeFileSync(join(tmpSrc, 'PLAN.md'), '# plan\n');
+
+    const { copyExtrasOverlayFiltered } = await import('./extras-sync.core.ts');
+    copyExtrasOverlayFiltered(tmpSrc, fileDst, new Set());
+
+    expect(lstatSync(fileDst).isDirectory()).toBe(true);
+    expect(existsSync(join(fileDst, 'PLAN.md'))).toBe(true);
+  });
 });
 
 // copyExtrasOverlaySkipDiverged: divergence-skip overlay copy for .planning pull

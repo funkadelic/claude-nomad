@@ -135,11 +135,24 @@ export function copyExtrasOverlay(src: string, dst: string): void {
  * re-thrown as a `NomadFatal` naming the colliding path so the user gets an
  * actionable message instead of a raw stack trace.
  *
+ * The destination ROOT is guarded before the copy, mirroring
+ * `copyExtrasFilteredPreserving`: `stripCollidingDstSymlinks` only ever walks
+ * CHILDREN, so a symlink or win32 junction AT `dst` itself is left in place and
+ * `cpSync` traverses it, writing the copy outside the intended tree. Removing a
+ * non-directory root lets `cpSync` recreate it as a plain directory instead.
+ * Callers whose `dst` is repo-controlled (`shared/<name>` on the pull-side
+ * mirror) depend on this: a poisoned revision could otherwise redirect a managed
+ * directory to an arbitrary path.
+ *
  * @param src - Source directory to copy from.
  * @param dst - Destination path; dst-only files survive unchanged.
  * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
  */
 export function copyExtrasOverlayFiltered(src: string, dst: string, blockSet: Set<string>): void {
+  const dstStat = lstatSync(dst, { throwIfNoEntry: false });
+  if (dstStat !== undefined && !dstStat.isDirectory()) {
+    rmSync(dst, { recursive: true, force: true });
+  }
   stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
   cpSyncGuarded(
     src,

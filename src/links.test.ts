@@ -991,6 +991,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
 describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
   let claudeDir: string;
@@ -1001,9 +1002,13 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-test-pull-mirror-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
+    // repoHome() prefers NOMAD_REPO over the $HOME fallback these fixtures
+    // assume; see the matching note in commands.pull.test.ts.
+    delete process.env.NOMAD_REPO;
     repoUnderHome = join(testHome, 'claude-nomad');
     sharedDir = join(repoUnderHome, 'shared');
     claudeDir = join(testHome, '.claude');
@@ -1019,6 +1024,8 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
     else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     rmSync(testHome, { recursive: true, force: true });
   });
 

@@ -43,8 +43,10 @@ On native Windows, where shared config is a real copy rather than a symlink, pul
 those copies into the repo, before the rebase. Without that step the rebase-then-overlay sequence
 would overwrite an edit you had not published yet. On macOS and Linux the symlink already makes a
 local edit an uncommitted change in the sync repo, so the step is a no-op there and both platforms
-behave the same way. It is also skipped under `--dry-run` (which writes nothing) and under
-`--force-remote`, whose whole purpose is to take the remote's version.
+behave the same way. It is also skipped under `--dry-run`, which writes nothing to `~/.claude/` or
+to your shared config (though it still runs the `git pull --rebase` that refreshes the sync repo, so
+the preview reflects the remote), and under `--force-remote`, whose whole purpose is to take the
+remote's version.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -92,7 +94,7 @@ local-only sessions and diverged extras files the pull half just retained, to th
 
 On native Windows the pull half also mirrors your shared-config copies into the repo before it
 fetches (see [`pull`](#pull) below), so pulling first cannot overwrite an edit you have not
-published yet.
+published yet. Under `--dry-run` that mirror is skipped along with every other write.
 
 Output is compact by default, matching `nomad doctor`: a run prints its `sync on host=<HOST>`
 header, then a single Sync summary composed from the run's outcome, not the full status tree.

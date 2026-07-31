@@ -24,7 +24,7 @@ import {
 import { recoverForceRemote } from './commands.pull.recovery.ts';
 import { recoverUnmergedIndex } from './commands.pull.recovery.unmerged.ts';
 import { EXIT } from './exit-codes.ts';
-import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
+import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal, warn } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
@@ -292,7 +292,18 @@ function readMapForMirror(mapPath: string): PathMap | null {
  */
 function mirrorSharedLinksBeforePull(repo: string, ts: string): void {
   if (process.platform !== 'win32') return;
-  stageLocalSharedEdits(readMapForMirror(join(repo, 'path-map.json')), ts);
+  try {
+    stageLocalSharedEdits(readMapForMirror(join(repo, 'path-map.json')), ts);
+  } catch (err) {
+    // A pre-step must never be the thing that fails a pull. The copy can throw
+    // for reasons unrelated to the user's intent (a path over the Windows
+    // limit, an antivirus lock, EPERM on a read-only repo file), and letting
+    // that propagate would abort before `git pull --rebase` runs, leaving the
+    // host unable to fetch at all until the local condition clears. Warn and
+    // continue: the unstaged edit is still on the host, and
+    // applySharedLinksWin32 backs it up again before overwriting it.
+    warn(`could not stage local shared edits before the pull: ${(err as Error).message}`);
+  }
 }
 
 /**
