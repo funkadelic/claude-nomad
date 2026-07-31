@@ -66,7 +66,8 @@ export type Finding = {
 /**
  * Coerce one raw report entry into a `Finding`, or return null when it lacks
  * the fields that make it actionable. Optional string and number fields are
- * defaulted rather than trusted: consumers dereference `Match`, `Fingerprint`
+ * defaulted rather than trusted, and numeric ones must be FINITE (a report
+ * carrying `1e400` would otherwise pass an Infinity through to consumers): consumers dereference `Match`, `Fingerprint`
  * and `File` directly, and an entry missing one used to surface as a
  * `Cannot read properties of undefined` deep inside the interactive recovery
  * menu, i.e. after `remapPush` had already mutated the repo.
@@ -92,14 +93,14 @@ export function toFinding(entry: unknown): Finding | null {
     RuleID: rule,
     File: file,
     StartLine: num(e.StartLine),
-    EndLine: typeof e.EndLine === 'number' ? e.EndLine : undefined,
+    EndLine: Number.isFinite(e.EndLine) ? (e.EndLine as number) : undefined,
     StartColumn: num(e.StartColumn),
     EndColumn: num(e.EndColumn),
     Match: str(e.Match),
     Fingerprint: str(e.Fingerprint),
     Description: typeof e.Description === 'string' ? e.Description : undefined,
     Secret: typeof e.Secret === 'string' ? e.Secret : undefined,
-    Entropy: typeof e.Entropy === 'number' ? e.Entropy : undefined,
+    Entropy: Number.isFinite(e.Entropy) ? (e.Entropy as number) : undefined,
   };
 }
 

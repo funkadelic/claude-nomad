@@ -1,0 +1,330 @@
+/**
+ * Describes a gitleaks finding's secret without ever printing it: character
+ * class and length, a length-gated head/tail fragment, and the label text that
+ * precedes the secret with every other finding's span blanked out.
+ *
+ * Split from `commands.push.recovery.display.ts`, which now owns only prompt
+ * and block assembly. This half depends on nothing but the `Finding` shape, so
+ * the dependency runs display -> this module, never the reverse.
+ */
+
+import type { Finding } from './push-gitleaks.scan.ts';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Leading characters of the secret shown in the value fragment. */
+const VALUE_HEAD = 4;
+
+/** Trailing characters of the secret shown in the value fragment. */
+const VALUE_TAIL = 4;
+
+/** Minimum secret length before any fragment is shown; shorter secrets show the structural summary only. */
+const MIN_ELIDE_LEN = 16;
+
+/** Non-class separator between the head and tail fragments. */
+const FRAGMENT_SEP = '...';
+
+/** Maximum characters of label context shown on the `near:` line. */
+const NEAR_WINDOW = 40;
+
+/** Fragment column width when a structural summary follows on the value line. */
+const VALUE_PAD = 16;
+
+/** Literal token gitleaks substitutes for a real secret when `--redact` is passed. */
+const REDACTED_TOKEN = 'REDACTED';
+
+/** Control-character regex: C0 range (U+0000-U+001F) and DEL (U+007F). */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/g;
+
+// ---------------------------------------------------------------------------
+// Secret classification and description
+// ---------------------------------------------------------------------------
+
+/**
+ * Classify a secret's character set for the `value:` structural summary.
+ * Each earlier class is a subset of the next, so evaluation order is the
+ * definition: a hex string is also alphanumeric and base64url, but is
+ * reported as the narrowest matching class.
+ *
+ * @param value The secret text to classify.
+ * @returns One of `'hex'`, `'alphanumeric'`, `'base64url'`, or `'mixed'`.
+ */
+export function classifyCharset(value: string): string {
+  if (/^[0-9a-fA-F]+$/.test(value)) return 'hex';
+  if (/^[0-9a-zA-Z]+$/.test(value)) return 'alphanumeric';
+  if (/^[0-9a-zA-Z_-]+$/.test(value)) return 'base64url';
+  return 'mixed';
+}
+
+/**
+ * Describe a secret for the `value:` line: a length-gated head/tail fragment
+ * (below `MIN_ELIDE_LEN` chars, no fragment at all) plus a structural summary
+ * (char count, char class, and entropy when supplied and greater than zero).
+ * Never returns the secret itself, only a fragment short enough that it
+ * cannot itself trip a high-entropy gitleaks rule when it lands in a
+ * re-scanned session transcript.
+ *
+ * @param secret The real secret value (never rendered in full).
+ * @param entropy The gitleaks-reported entropy for the finding, when available.
+ * @returns The rendered `value:` line body.
+ */
+export function describeSecret(secret: string, entropy?: number): string {
+  const parts = [`${secret.length} chars`, classifyCharset(secret)];
+  if (typeof entropy === 'number' && Number.isFinite(entropy) && entropy > 0) {
+    parts.push(`entropy ${entropy.toFixed(2)}`);
+  }
+  const summary = parts.join(', ');
+  if (secret.length < MIN_ELIDE_LEN) return summary;
+  const fragment = secret.slice(0, VALUE_HEAD) + FRAGMENT_SEP + secret.slice(-VALUE_TAIL);
+  return `${fragment.padEnd(VALUE_PAD)}  ${summary}`;
+}
+
+// ---------------------------------------------------------------------------
+// Secret resolution
+// ---------------------------------------------------------------------------
+
+/** Collapse an empty string to null; a non-empty string passes through unchanged. */
+function emptyToNull(text: string): string | null {
+  return text.length > 0 ? text : null;
+}
+
+/**
+ * Backstop that truncates `near` at the first occurrence of the resolved
+ * secret. `near` is *intended* to hold only the text preceding the secret,
+ * but that property depends on the column arithmetic being right, and
+ * gitleaks reports byte offsets while a JavaScript string slices UTF-16 code
+ * units. A line carrying multi-byte text before the secret once pushed the
+ * lead past the secret's own start and printed it verbatim. Slicing is now
+ * byte-based, so this is defense in depth rather than the primary control:
+ * it enforces the invariant on the value rather than trusting how it was
+ * built.
+ *
+ * @param near The candidate label text preceding the secret.
+ * @param value The resolved secret, when one was recovered.
+ * @returns `near` truncated before any occurrence of `value`, or null when nothing remains.
+ */
+function withoutValue(near: string | null, value: string | null): string | null {
+  if (near === null || value === null || value.length === 0) return near;
+  const idx = near.indexOf(value);
+  return idx < 0 ? near : emptyToNull(near.slice(0, idx));
+}
+
+/**
+ * Attempt to recover the secret by aligning the finding's (possibly redacted)
+ * `Match` template against the raw source span. Returns null when `Match`
+ * does not contain the `REDACTED` literal at all (the unredacted-report or
+ * final-fallback paths in `resolveSecretContext` apply instead); otherwise
+ * always returns a result, with `value: null` when alignment fails (no
+ * readable line, or the raw span does not bracket a `REDACTED`-shaped hole).
+ *
+ * @param finding The gitleaks finding, whose `Match` may carry the literal `REDACTED`.
+ * @param span The raw source span at the finding's column range, or `finding.Match` when no line was readable.
+ * @param lead The raw source text preceding `span` on its line, or `''` when no line was readable.
+ * @returns `{ value, near }` when `Match` contains `REDACTED`, else null.
+ */
+function alignRedactedMatch(
+  finding: Finding,
+  span: string,
+  lead: string,
+): { value: string | null; near: string | null; exact: boolean } | null {
+  const idx = finding.Match.indexOf(REDACTED_TOKEN);
+  if (idx < 0) return null;
+  const pre = finding.Match.slice(0, idx);
+  const post = finding.Match.slice(idx + REDACTED_TOKEN.length);
+  if (
+    span !== finding.Match &&
+    span.startsWith(pre) &&
+    span.endsWith(post) &&
+    span.length > pre.length + post.length
+  ) {
+    return {
+      value: span.slice(pre.length, span.length - post.length),
+      near: emptyToNull(lead + pre),
+      exact: true,
+    };
+  }
+  return { value: null, near: emptyToNull(lead + pre), exact: false };
+}
+
+/**
+ * Blank the byte spans of OTHER findings on the same line.
+ *
+ * When two secrets share a line, the second finding's label context is
+ * everything before it, which includes the first secret. This is the exact
+ * control for that. It masks by POSITION, not by value: replacing every
+ * occurrence of a sibling's text would corrupt unrelated label characters
+ * whenever that text is short (a one-character span once turned `label:`
+ * into a run of ellipses), and shape heuristics cannot tell a hyphenated
+ * label from a hyphenated passphrase.
+ *
+ * Filling with NUL keeps every byte offset stable, so the caller's own span
+ * arithmetic is unaffected, and `CONTROL_CHARS` strips the fill during
+ * rendering. A sibling overlapping the finding's own span is skipped so it
+ * can never blank the value being described.
+ *
+ * @param buf The raw source line as UTF-8 bytes.
+ * @param siblings Other findings sharing this finding's file and line.
+ * @param ownStart 0-indexed byte offset where the finding's own span starts.
+ * @param ownEnd Exclusive 0-indexed byte offset where the finding's own span ends.
+ * @returns A copy with each sibling span blanked, or `buf` when there are none.
+ */
+function maskSiblingSpans(
+  buf: Buffer,
+  siblings: Finding[],
+  ownStart: number,
+  ownEnd: number,
+): Buffer {
+  if (siblings.length === 0) return buf;
+  const copy = Buffer.from(buf);
+  for (const sibling of siblings) {
+    const start = Math.max(1, Math.min(sibling.StartColumn, copy.length + 1)) - 1;
+    const end = Math.max(start, Math.min(sibling.EndColumn, copy.length));
+    // Mask everything outside the finding's own span. Skipping an overlapping
+    // sibling wholesale used to leave its protruding head in the label: two
+    // rules can match nested spans on one line, so a broad rule enclosing a
+    // narrow one starts to the LEFT of ownStart and that prefix reached the
+    // rendered output. The own span itself is never blanked.
+    const headEnd = Math.min(end, ownStart);
+    if (start < headEnd) copy.fill(0, start, headEnd);
+    const tailStart = Math.max(start, ownEnd);
+    if (tailStart < end) copy.fill(0, tailStart, end);
+  }
+  return copy;
+}
+
+/**
+ * Recover a display-safe description of a finding's secret and its
+ * immediately preceding label text, without ever exposing the secret itself
+ * in `near`. Tries, in order: redacted-template alignment (the push path's
+ * usual shape, since `scanStagedTree` passes `--redact`), the unredacted
+ * report's `Finding.Secret`, then a conservative fallback that treats the
+ * whole clamped raw span as the secret.
+ *
+ * @param finding The gitleaks finding to resolve.
+ * @param readLine Injected seam returning the raw 1-indexed source line, or null on any failure.
+ * @returns `{ value, near }`, both `string | null`.
+ */
+export function resolveSecretContext(
+  finding: Finding,
+  readLine: (file: string, line: number) => string | null,
+  siblings: Finding[] = [],
+): { value: string | null; near: string | null; exact: boolean } {
+  const resolved = resolveSpanContext(finding, readLine, siblings);
+  const ownStripped = withoutValue(resolved.near, resolved.value);
+  // A multi-line match (a PEM block, say) is only partly on this line, so the
+  // recovered span is a fragment of the real secret and gitleaks' entropy
+  // describes the whole. Never call that exact.
+  const multiLine = typeof finding.EndLine === 'number' && finding.EndLine > finding.StartLine;
+  return {
+    value: resolved.value,
+    near: ownStripped,
+    exact: resolved.exact && !multiLine,
+  };
+}
+
+/**
+ * Resolve the raw `{ value, near }` pair before the `withoutValue` backstop
+ * is applied. Split out so `resolveSecretContext` stays a two-line guard and
+ * this body stays under the cognitive-complexity gate.
+ *
+ * Column arithmetic is BYTE-based: gitleaks reports `StartColumn`/`EndColumn`
+ * as 1-indexed byte offsets, so slicing the line as a JavaScript string
+ * (UTF-16 code units) misaligns the span on any line containing multi-byte
+ * UTF-8 before the secret. Session transcripts routinely carry such text.
+ *
+ * @param finding The gitleaks finding to resolve.
+ * @param readLine Injected seam returning the raw 1-indexed source line, or null on any failure.
+ * @returns `{ value, near }`, both `string | null`.
+ */
+function resolveSpanContext(
+  finding: Finding,
+  readLine: (file: string, line: number) => string | null,
+  siblings: Finding[] = [],
+): { value: string | null; near: string | null; exact: boolean } {
+  const raw = readLine(finding.File, finding.StartLine);
+
+  let span: string;
+  let lead: string;
+  if (raw !== null) {
+    const buf = Buffer.from(raw, 'utf8');
+    const len = buf.length;
+    const startCol = Math.max(1, Math.min(finding.StartColumn, len + 1));
+    const endCol = Math.max(startCol, Math.min(finding.EndColumn, len));
+    span = buf.subarray(startCol - 1, endCol).toString('utf8');
+    lead = maskSiblingSpans(buf, siblings, startCol - 1, endCol)
+      .subarray(0, startCol - 1)
+      .toString('utf8');
+  } else {
+    span = finding.Match;
+    lead = '';
+  }
+
+  const aligned = alignRedactedMatch(finding, span, lead);
+  if (aligned !== null) return aligned;
+
+  if (
+    typeof finding.Secret === 'string' &&
+    finding.Secret.length > 0 &&
+    span.includes(finding.Secret)
+  ) {
+    return {
+      value: finding.Secret,
+      near: emptyToNull(lead + span.slice(0, span.indexOf(finding.Secret))),
+      exact: true,
+    };
+  }
+
+  return {
+    value: span.length > 0 ? span : null,
+    near: emptyToNull(lead),
+    exact: false,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// near: rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Format the `near:` line body: strips control characters, then keeps a
+ * trailing window of at most `NEAR_WINDOW` characters (the label text
+ * immediately adjacent to the secret is what matters), prefixing an ellipsis
+ * when the text was truncated. `near` is constructed by `resolveSecretContext`
+ * as strictly the text preceding the secret span, so it can never contain the
+ * secret itself or anything after it.
+ *
+ * @param text The raw label text preceding the secret.
+ * @returns The formatted `near:` line body, or null when nothing remains after stripping and trimming.
+ */
+export function formatNear(text: string): string | null {
+  const stripped = elideTokenRuns(text.replace(CONTROL_CHARS, ''));
+  const truncated = stripped.length > NEAR_WINDOW;
+  const window = stripped.slice(-NEAR_WINDOW).trim();
+  if (window.length === 0) return null;
+  return (truncated ? FRAGMENT_SEP : '') + window;
+}
+
+/**
+ * Elide token-shaped runs from label text before it is rendered.
+ *
+ * BEST EFFORT ONLY, and deliberately not the control for a neighbouring
+ * secret: that is `maskSiblingSpans`, which blanks other findings' byte spans
+ * by position. Shape cannot decide the question, because a hyphenated
+ * label and a hyphenated passphrase are indistinguishable, and a short
+ * secret is indistinguishable from a short word. This catches obvious
+ * token-shaped junk that gitleaks did not flag, and nothing more. Text that
+ * gitleaks did not report as a secret can still appear here.
+ *
+ * @param text The label text to sanitize.
+ * @returns The text with token-shaped atoms replaced by an ellipsis.
+ */
+function elideTokenRuns(text: string): string {
+  return text.replace(/[A-Za-z0-9_+=-]+/g, (atom) => {
+    if (atom.length < MIN_ELIDE_LEN) return atom;
+    if (/^[A-Za-z_-]+$/.test(atom)) return atom;
+    return FRAGMENT_SEP;
+  });
+}

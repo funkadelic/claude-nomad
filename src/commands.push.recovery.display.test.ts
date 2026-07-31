@@ -3,14 +3,16 @@ import { describe, expect, it } from 'vitest';
 import type { Finding } from './push-gitleaks.scan.ts';
 import {
   buildPromptHeader,
+  groupFindingsForPrompt,
+  renderFindingBlock,
+  sharedFingerprintPeers,
+} from './commands.push.recovery.display.ts';
+import {
   classifyCharset,
   describeSecret,
   formatNear,
-  groupFindingsForPrompt,
-  renderFindingBlock,
   resolveSecretContext,
-  sharedFingerprintPeers,
-} from './commands.push.recovery.display.ts';
+} from './commands.push.recovery.secret-shape.ts';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

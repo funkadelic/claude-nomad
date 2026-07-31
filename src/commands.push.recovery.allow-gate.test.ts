@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Finding } from './push-gitleaks.scan.ts';
 import { findingKey, type FindingAction } from './commands.push.recovery.seams.ts';
@@ -209,10 +209,15 @@ describe('empty fingerprints', () => {
   it('writes nothing and reports no blank id for an empty fingerprint', () => {
     const f = { ...sessionFinding(1), Fingerprint: '' };
     const repo = mkdtempSync(join(tmpdir(), 'allow-gate-'));
+    const warned = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
       applyDeferredAllows([f], state([[f, 'allow']]), repo);
       expect(existsSync(join(repo, '.gitleaksignore'))).toBe(false);
+      // The second half of the claim: no notice naming a blank fingerprint.
+      const messages = warned.mock.calls.map((c) => String(c[0]));
+      expect(messages.some((m) => m.includes('not allowing '))).toBe(false);
     } finally {
+      warned.mockRestore();
       rmSync(repo, { recursive: true, force: true });
     }
   });

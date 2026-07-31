@@ -60,6 +60,20 @@ describe('toFinding', () => {
     expect(toFinding('a string')).toBeNull();
   });
 
+  it('drops a non-finite EndLine or Entropy rather than passing Infinity through', () => {
+    // The required numeric fields already go through a finite check; the
+    // optional ones must match, or a report carrying 1e400 hands an Infinity
+    // to every consumer.
+    // Modelled the way it actually arrives: JSON.parse turns an out-of-range
+    // literal into Infinity, so the report reaches the parser already non-finite.
+    const entry: unknown = JSON.parse(
+      '{"RuleID":"r","File":"a.jsonl","StartLine":1,"EndLine":1e400,"Entropy":1e400}',
+    );
+    const result = toFinding(entry);
+    expect(result?.EndLine).toBeUndefined();
+    expect(result?.Entropy).toBeUndefined();
+  });
+
   it('coerces a non-finite number field to zero', () => {
     const result = toFinding({ RuleID: 'r', File: 'a.jsonl', StartLine: Number.NaN });
     expect(result?.StartLine).toBe(0);

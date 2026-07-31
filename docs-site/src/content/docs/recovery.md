@@ -214,11 +214,12 @@ rule, including secrets shown under a separate prompt. The warning names how man
   warn:  Allow also suppresses 1 other distinct secret on this line
 ```
 
-The Allow itself is held back until the other secrets sharing that fingerprint have actually been
-cleaned. If one of them was set to Redact and the redaction did not apply (an active session, or a
-span that could not be located verbatim), no `.gitleaksignore` entry is written and the push stays
-blocked, rather than the entry silently suppressing a secret that is still present. A dropped
-session likewise needs no entry, since its content never reaches the push.
+The Allow itself is held back until every secret sharing that fingerprint has been resolved, which
+means allowed in its own right, redacted successfully, or dropped from the push. If one of them was
+set to Redact and the redaction did not apply (an active session, or a span that could not be
+located verbatim), no `.gitleaksignore` entry is written and the push stays blocked, rather than the
+entry silently suppressing a secret that is still present. A dropped session likewise needs no
+entry, since its content never reaches the push.
 
 What the actions do:
 
@@ -228,8 +229,8 @@ What the actions do:
   instead and wait for the session to end. Redact also handles a non-session finding, a
   project-level `memory/*.md` note or a user skill file under `shared/skills/<name>/`, rewriting
   that local file in place the same way (the 5-minute active-session guard does not apply to those).
-- **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root. Use this for
-  confirmed false positives. The fingerprint format (`file:rule:line`) is tied to the current
+- **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root, but only once
+  the gate described above passes. Use this for confirmed false positives. The fingerprint format (`file:rule:line`) is tied to the current
   line, so if the content moves gitleaks re-prompts rather than silently suppressing a new hit.
   The embedded path also uses the scanning host's separators, so an entry recorded on Windows
   (backslashes) does not suppress the same finding scanned from macOS or Linux, and vice versa;
