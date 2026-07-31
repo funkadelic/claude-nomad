@@ -46,7 +46,9 @@ local edit an uncommitted change in the sync repo, so the step is a no-op there 
 behave the same way. It is also skipped under `--dry-run`, which writes nothing to `~/.claude/` or
 to your shared config (though it still runs the `git pull --rebase` that refreshes the sync repo, so
 the preview reflects the remote), and under `--force-remote`, whose whole purpose is to take the
-remote's version.
+remote's version. If the mirror step itself fails (an antivirus lock, or a path over the Windows
+length limit), the pull warns and carries on instead of aborting, so you can still fetch; your
+unpublished edit stays on the host untouched.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
