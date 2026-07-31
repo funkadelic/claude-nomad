@@ -3,6 +3,17 @@ title: Recovery flows
 description: Pruning backups, dropping sessions, redacting secrets, and managing the gitleaks allowlist.
 ---
 
+## Table of contents
+
+- [Pruning old backups](#pruning-old-backups)
+- [nomad drop-session](#nomad-drop-session)
+- [nomad redact](#nomad-redact)
+- [Recovery flow: gitleaks FATAL on a session JSONL](#recovery-flow-gitleaks-fatal-on-a-session-jsonl)
+- [Recovery flow: push-time interactive menu](#recovery-flow-push-time-interactive-menu)
+- [Recovery flow: a secret in a memory note](#recovery-flow-a-secret-in-a-memory-note)
+- [Recovery flow: a secret in a synced skill](#recovery-flow-a-secret-in-a-synced-skill)
+- [.gitleaks.toml allowlist policy](#gitleakstoml-allowlist-policy)
+
 ## Pruning old backups
 
 Every `nomad pull` and `nomad push` keeps you safe by copying any file it is about to overwrite
