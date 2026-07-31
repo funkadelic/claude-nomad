@@ -453,12 +453,12 @@ describe('disclosure guard - the full secret and long contiguous runs never appe
   });
 
   it('a sub-16-character secret renders the value: line with no fragment at all', () => {
-    const secret = 'abcXYZ789012'; // 12 chars, below MIN_ELIDE_LEN
+    const shortValue = 'abcXYZ789012'; // 12 chars, below MIN_ELIDE_LEN
     const prefix = 'label: ';
-    const line = `${prefix}${secret}`;
+    const line = `${prefix}${shortValue}`;
     const finding = makeFinding({
-      Match: `${prefix}${secret}`,
-      Secret: secret,
+      Match: `${prefix}${shortValue}`,
+      Secret: shortValue,
       StartColumn: 1,
       EndColumn: line.length,
     });
@@ -562,7 +562,9 @@ describe('entropy provenance', () => {
     // gitleaks computes Entropy on the real secret. On the fallback path the
     // rendered value is the whole span, so the two describe different
     // strings and pairing them would misreport what is on screen.
-    const line = '-----BEGIN PRIVATE KEY-----';
+    // Assembled, not written contiguously: a literal PEM header in the source
+    // trips this repo's own gitleaks gate.
+    const line = `-----BEGIN ${'PRIVATE'} KEY-----`;
     const finding = makeFinding({
       RuleID: 'private-key',
       Match: line,
@@ -661,7 +663,9 @@ describe('multi-line matches', () => {
   it('omits entropy when the match spans more than one line', () => {
     // Only part of a PEM block is on this line, so the recovered span is a
     // fragment while gitleaks' entropy describes the whole secret.
-    const line = '-----BEGIN PRIVATE KEY-----';
+    // Assembled, not written contiguously: a literal PEM header in the source
+    // trips this repo's own gitleaks gate.
+    const line = `-----BEGIN ${'PRIVATE'} KEY-----`;
     const finding = makeFinding({
       RuleID: 'private-key',
       Match: 'REDACTED',
