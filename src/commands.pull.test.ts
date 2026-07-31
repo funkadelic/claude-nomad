@@ -1729,7 +1729,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
    * into one shared ordering log.
    *
    * @param order - Array appended to on each mocked call.
-   * @returns The `syncSharedLinksPush` spy, for argument assertions.
+   * @returns The `stageLocalSharedEdits` spy, for argument assertions.
    */
   function mockPipelineRecording(order: string[]): ReturnType<typeof vi.fn> {
     const mirrorSpy = vi.fn(() => {
@@ -1738,7 +1738,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      syncSharedLinksPush: mirrorSpy,
+      stageLocalSharedEdits: mirrorSpy,
     }));
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
@@ -1770,7 +1770,9 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore();
     expect(order).toEqual(['mirror', 'gitOrFatal']);
-    expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} });
+    // The backup timestamp is threaded through so the mirror can snapshot the
+    // repo-side copy it is about to overwrite.
+    expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} }, expect.any(String));
   });
 
   it('does not mirror on a posix platform, where the symlink already made the edit live', async () => {
@@ -1801,14 +1803,18 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(mirrorSpy).not.toHaveBeenCalled();
   });
 
-  it('passes null when path-map.json is absent on win32', async () => {
+  it('still stages with the empty map when path-map.json is absent on win32', async () => {
     stubPlatform('win32');
     rmSync(join(repoUnderHome, 'path-map.json'), { force: true });
     const order: string[] = [];
     const mirrorSpy = mockPipelineRecording(order);
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore();
-    expect(mirrorSpy).toHaveBeenCalledWith(null);
+    // Absent is a valid steady state (a clone that predates init), and
+    // allSharedLinks({projects:{}}) is exactly SHARED_LINKS, so the mirror must
+    // still run: skipping it here would silently disable the fix in the very
+    // case it exists to cover.
+    expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} }, expect.any(String));
     expect(order).toEqual(['mirror', 'gitOrFatal']);
   });
 
@@ -1820,7 +1826,9 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const { runPullCore } = await import('./commands.pull.ts');
     // The mirror degrades to null rather than throwing, so it is never what
     // fails a pull; the post-rebase readPathMap still dies loudly as before.
-    expect(() => runPullCore()).toThrow();
-    expect(mirrorSpy).toHaveBeenCalledWith(null);
+    // Matched on the message so an unrelated failure (a mis-wired doMock, a
+    // missing settings.base.json) cannot masquerade as this assertion passing.
+    expect(() => runPullCore()).toThrow(/path-map\.json/);
+    expect(mirrorSpy).toHaveBeenCalledWith(null, expect.any(String));
   });
 });
