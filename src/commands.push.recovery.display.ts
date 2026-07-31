@@ -136,7 +136,7 @@ function alignRedactedMatch(
   finding: Finding,
   span: string,
   lead: string,
-): { value: string | null; near: string | null } | null {
+): { value: string | null; near: string | null; exact: boolean } | null {
   const idx = finding.Match.indexOf(REDACTED_TOKEN);
   if (idx < 0) return null;
   const pre = finding.Match.slice(0, idx);
@@ -150,9 +150,10 @@ function alignRedactedMatch(
     return {
       value: span.slice(pre.length, span.length - post.length),
       near: emptyToNull(lead + pre),
+      exact: true,
     };
   }
-  return { value: null, near: emptyToNull(lead + pre) };
+  return { value: null, near: emptyToNull(lead + pre), exact: false };
 }
 
 /**
@@ -170,9 +171,13 @@ function alignRedactedMatch(
 export function resolveSecretContext(
   finding: Finding,
   readLine: (file: string, line: number) => string | null,
-): { value: string | null; near: string | null } {
+): { value: string | null; near: string | null; exact: boolean } {
   const resolved = resolveSpanContext(finding, readLine);
-  return { value: resolved.value, near: withoutValue(resolved.near, resolved.value) };
+  return {
+    value: resolved.value,
+    near: withoutValue(resolved.near, resolved.value),
+    exact: resolved.exact,
+  };
 }
 
 /**
@@ -192,7 +197,7 @@ export function resolveSecretContext(
 function resolveSpanContext(
   finding: Finding,
   readLine: (file: string, line: number) => string | null,
-): { value: string | null; near: string | null } {
+): { value: string | null; near: string | null; exact: boolean } {
   const raw = readLine(finding.File, finding.StartLine);
 
   let span: string;
@@ -220,12 +225,14 @@ function resolveSpanContext(
     return {
       value: finding.Secret,
       near: emptyToNull(lead + span.slice(0, span.indexOf(finding.Secret))),
+      exact: true,
     };
   }
 
   return {
     value: span.length > 0 ? span : null,
     near: emptyToNull(lead),
+    exact: false,
   };
 }
 
@@ -321,8 +328,13 @@ export function renderFindingBlock(
   readLine: (file: string, line: number) => string | null,
 ): string[] {
   const lines = [`  file:  ${finding.File}:${finding.StartLine}${sessionSuffix(finding)}`];
-  const { value, near } = resolveSecretContext(finding, readLine);
-  if (value !== null) lines.push(`  value: ${describeSecret(value, finding.Entropy)}`);
+  const { value, near, exact } = resolveSecretContext(finding, readLine);
+  // Entropy is computed by gitleaks on the REAL secret. When alignment fell
+  // back to the whole match span, the rendered value is a different string,
+  // so quoting the entropy beside it would describe something not shown.
+  if (value !== null) {
+    lines.push(`  value: ${describeSecret(value, exact ? finding.Entropy : undefined)}`);
+  }
   const formattedNear = near !== null ? formatNear(near) : null;
   if (formattedNear !== null) lines.push(`  near:  ${formattedNear}`);
   return lines;

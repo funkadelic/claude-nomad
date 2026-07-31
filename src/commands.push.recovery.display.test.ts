@@ -537,3 +537,39 @@ describe('disclosure regressions', () => {
     expect(buildPromptHeader(group, 1, 1, nullReader, 0)).not.toContain('warn:');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Entropy provenance
+// ---------------------------------------------------------------------------
+
+describe('entropy provenance', () => {
+  it('quotes entropy when the rendered value IS the secret', () => {
+    const prefix = 'label: ';
+    const line = `${prefix}${HEX_FIXTURE} `;
+    const finding = makeFinding({
+      Match: `${prefix}REDACTED `,
+      StartColumn: 1,
+      EndColumn: line.length,
+      Entropy: 3.62,
+    });
+    const rendered = renderFindingBlock(finding, () => line).join('\n');
+    expect(rendered).toContain('entropy 3.62');
+  });
+
+  it('omits entropy when the value fell back to the whole match span', () => {
+    // gitleaks computes Entropy on the real secret. On the fallback path the
+    // rendered value is the whole span, so the two describe different
+    // strings and pairing them would misreport what is on screen.
+    const line = '-----BEGIN PRIVATE KEY-----';
+    const finding = makeFinding({
+      RuleID: 'private-key',
+      Match: line,
+      StartColumn: 1,
+      EndColumn: line.length,
+      Entropy: 4.2,
+    });
+    const rendered = renderFindingBlock(finding, () => line).join('\n');
+    expect(rendered).toContain('value:');
+    expect(rendered).not.toContain('entropy');
+  });
+});
