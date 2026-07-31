@@ -28,7 +28,7 @@ import {
 import type { Finding } from './push-gitleaks.scan.ts';
 import { scanFile } from './push-gitleaks.scan.ts';
 import { log } from './utils.ts';
-import { renderFindingBlock } from './commands.push.recovery.display.ts';
+import { buildPromptHeader, groupFindingsByFingerprint } from './commands.push.recovery.display.ts';
 import {
   type FindingAction,
   type PromptFn,
@@ -122,17 +122,22 @@ function makeDefaultReadLine(repo: string): (file: string, line: number) => stri
 }
 
 /**
- * Walk all findings and prompt the user for one action each. Returns a map
- * from `findingKey` to the chosen action, defaulting to `'skip'` on empty
- * input. Delegates the entire finding block (`file:` / `value:` / `near:`
- * lines) to `renderFindingBlock`, so the user can distinguish a real secret
- * from a documented fixture without ever seeing the raw value.
+ * Walk all findings, grouped by gitleaks fingerprint via
+ * `groupFindingsByFingerprint`, and prompt the user for one action per
+ * group. The chosen action is applied to every finding in the group, so N
+ * occurrences of the same secret on one line ask one question and the
+ * returned map still carries one entry per finding (never per group):
+ * `dispatchActions` and the `unresolved` filter in
+ * `commands.push.recovery.ts` both look up by `findingKey`. Defaults to
+ * `'skip'` on empty input. Delegates the entire prompt text to
+ * `buildPromptHeader`, so the user can distinguish a real secret from a
+ * documented fixture without ever seeing the raw value.
  *
  * @param findings The findings to present.
- * @param prompt An injectable prompt function (one question per call).
+ * @param prompt An injectable prompt function (one question per group).
  * @param readLine Optional injectable line reader seam. Defaults to a real
  *   reader that resolves `repoHome()` once and reads the repo-relative file.
- * @returns Populated actions map.
+ * @returns Populated actions map, one entry per finding.
  */
 export async function collectActions(
   findings: Finding[],
@@ -140,18 +145,15 @@ export async function collectActions(
   readLine?: (file: string, line: number) => string | null,
 ): Promise<Map<string, FindingAction>> {
   const reader = readLine ?? makeDefaultReadLine(repoHome());
+  const groups = groupFindingsByFingerprint(findings);
   const actions = new Map<string, FindingAction>();
-  for (const f of findings) {
-    const sid = sessionIdFromFinding(f);
-    const body = renderFindingBlock(f, reader).join('\n');
-    const header =
-      `\nFinding: ${f.RuleID}\n${body}` +
-      // [D]rop applies only to session findings; a null sid (memory/skill
-      // finding) has no session to drop, so omit the dead affordance.
-      (sid === null
-        ? '\n  [R]edact  [A]llow  [S]kip (default)\n'
-        : '\n  [R]edact  [A]llow  [D]rop session  [S]kip (default)\n');
-    actions.set(findingKey(f), parseAction(await prompt(header + '> ')));
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const header = buildPromptHeader(group, i + 1, groups.length, reader);
+    const action = parseAction(await prompt(header + '> '));
+    for (const f of group) {
+      actions.set(findingKey(f), action);
+    }
   }
   return actions;
 }

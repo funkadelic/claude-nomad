@@ -597,6 +597,9 @@ describe('collectActions - file/value/near block in prompt', () => {
 
   it('offers [D]rop session in the menu header for a session finding', async () => {
     const { collectActions } = await import('./commands.push.recovery.actions.ts');
+    // Flat <sid>.jsonl: the basename equals the session id, so the "(session:"
+    // suffix is suppressed as redundant (see the display module's dedicated
+    // basename-suppression tests). This test only proves the menu offering.
     const f = makeFullFinding({ File: 'shared/projects/my-proj/abc123.jsonl' });
     let capturedPrompt = '';
     const prompt = (p: string): Promise<string> => {
@@ -605,7 +608,6 @@ describe('collectActions - file/value/near block in prompt', () => {
     };
     await collectActions([f], prompt, () => null);
     expect(capturedPrompt).toContain('[D]rop session');
-    expect(capturedPrompt).toContain('(session:');
   });
 
   it('omits [D]rop session in the menu header for a non-session (skill) finding', async () => {
@@ -656,7 +658,7 @@ describe('collectActions - file/value/near block in prompt', () => {
 
     expect(capturedPrompt).not.toContain('value:');
     expect(capturedPrompt).not.toContain('near:');
-    expect(capturedPrompt).toContain('Finding:');
+    expect(capturedPrompt).toContain('Finding 1/1:');
     expect(capturedPrompt).toContain('[R]edact');
   });
 

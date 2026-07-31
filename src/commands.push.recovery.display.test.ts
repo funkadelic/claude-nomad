@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { Finding } from './push-gitleaks.scan.ts';
 import {
+  buildPromptHeader,
   classifyCharset,
   describeSecret,
   formatNear,
+  groupFindingsByFingerprint,
   renderFindingBlock,
   resolveSecretContext,
 } from './commands.push.recovery.display.ts';
@@ -242,5 +244,83 @@ describe('renderFindingBlock', () => {
     expect(lines.some((l) => l.startsWith('  value: '))).toBe(true);
     expect(lines.some((l) => l.startsWith('  near:  '))).toBe(true);
     expect(lines.join('\n')).not.toContain(HEX_FIXTURE);
+  });
+
+  it('omits the session suffix for a flat <sid>.jsonl file, whose basename already names the session', () => {
+    const finding = makeFinding({ File: 'shared/projects/p/abc123.jsonl', Match: '' });
+    const lines = renderFindingBlock(finding, nullReader);
+    expect(lines[0]).not.toContain('(session:');
+  });
+
+  it('keeps the session suffix for a nested subagent file, whose basename differs from the session id', () => {
+    const finding = makeFinding({
+      File: 'shared/projects/p/abc123/subagents/agent-1.jsonl',
+      Match: '',
+    });
+    const lines = renderFindingBlock(finding, nullReader);
+    expect(lines[0]).toContain('(session: abc123)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// groupFindingsByFingerprint
+// ---------------------------------------------------------------------------
+
+describe('groupFindingsByFingerprint', () => {
+  it('groups two findings sharing a Fingerprint into one group, even at different columns', () => {
+    const f1 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 1 });
+    const f2 = makeFinding({ Fingerprint: 'fp-a', StartColumn: 20 });
+    const groups = groupFindingsByFingerprint([f1, f2]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(2);
+  });
+
+  it('produces two groups, in first-appearance order, for two distinct fingerprints', () => {
+    const f1 = makeFinding({ Fingerprint: 'fp-a' });
+    const f2 = makeFinding({ Fingerprint: 'fp-b' });
+    const groups = groupFindingsByFingerprint([f1, f2]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toEqual([f1]);
+    expect(groups[1]).toEqual([f2]);
+  });
+
+  it('keys an empty-Fingerprint finding off findingKey, so two do not merge at different columns', () => {
+    const f1 = makeFinding({ Fingerprint: '', StartColumn: 1 });
+    const f2 = makeFinding({ Fingerprint: '', StartColumn: 20 });
+    const groups = groupFindingsByFingerprint([f1, f2]);
+    expect(groups).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildPromptHeader
+// ---------------------------------------------------------------------------
+
+describe('buildPromptHeader', () => {
+  it('includes an occurrence/ignore-entry summary for a multi-member group', () => {
+    const f1 = makeFinding({ Fingerprint: 'fp-a' });
+    const f2 = makeFinding({ Fingerprint: 'fp-a' });
+    const header = buildPromptHeader([f1, f2], 1, 2, nullReader);
+    expect(header).toContain('Finding 1/2:');
+    expect(header).toContain('2 occurrences, 1 ignore entry');
+  });
+
+  it('omits the occurrence/ignore-entry summary for a single-member group', () => {
+    const f1 = makeFinding();
+    const header = buildPromptHeader([f1], 1, 1, nullReader);
+    expect(header).toContain('Finding 1/1:');
+    expect(header).not.toContain('occurrence');
+    expect(header).not.toContain('ignore entry');
+  });
+
+  it('offers [D]rop session only when the group resolves a session id', () => {
+    const sessionFinding = makeFinding({ File: 'shared/projects/p/abc123.jsonl' });
+    const withSession = buildPromptHeader([sessionFinding], 1, 1, nullReader);
+    expect(withSession).toContain('[D]rop session');
+
+    const skillFinding = makeFinding({ File: 'shared/skills/my-skill/SKILL.md' });
+    const withoutSession = buildPromptHeader([skillFinding], 1, 1, nullReader);
+    expect(withoutSession).not.toContain('[D]rop');
+    expect(withoutSession).toContain('[R]edact  [A]llow  [S]kip (default)');
   });
 });

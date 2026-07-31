@@ -9,7 +9,7 @@
  */
 
 import type { Finding } from './push-gitleaks.scan.ts';
-import { sessionIdFromFinding } from './commands.push.recovery.seams.ts';
+import { findingKey, sessionIdFromFinding } from './commands.push.recovery.seams.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -32,6 +32,9 @@ const NEAR_WINDOW = 40;
 
 /** Fragment column width when a structural summary follows on the value line. */
 const VALUE_PAD = 16;
+
+/** Rule id column width when an occurrence summary follows on the header line. */
+const RULE_PAD = 24;
 
 /** Literal token gitleaks substitutes for a real secret when `--redact` is passed. */
 const REDACTED_TOKEN = 'REDACTED';
@@ -207,15 +210,27 @@ export function formatNear(text: string): string | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the ` (session: <sid>)` suffix for the `file:` line, or `''` when the
- * finding has no resolvable session id.
+ * Build the ` (session: <sid>)` suffix for the `file:` line. Suppressed when
+ * the finding has no resolvable session id, OR when the session id is
+ * already the file's own basename (the common flat `<sid>.jsonl` shape,
+ * where naming it again is redundant): only a nested subagent path, whose
+ * basename differs from its session id, shows the parenthetical. The
+ * basename is computed by splitting on `/` only (never `node:path`
+ * `basename`, which is platform-dependent), mirroring the forward-slash-
+ * anchored path regexes in `commands.push.recovery.seams.ts`.
  *
  * @param finding The finding to check.
  * @returns The suffix text, or `''`.
  */
 function sessionSuffix(finding: Finding): string {
   const sid = sessionIdFromFinding(finding);
-  return sid === null ? '' : ` (session: ${sid})`;
+  if (sid === null) return '';
+  const segments = finding.File.split('/');
+  const rawBasename = segments[segments.length - 1] ?? '';
+  const basename = rawBasename.endsWith('.jsonl')
+    ? rawBasename.slice(0, -'.jsonl'.length)
+    : rawBasename;
+  return basename === sid ? '' : ` (session: ${sid})`;
 }
 
 /**
@@ -237,4 +252,68 @@ export function renderFindingBlock(
   const formattedNear = near !== null ? formatNear(near) : null;
   if (formattedNear !== null) lines.push(`  near:  ${formattedNear}`);
   return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Grouping
+// ---------------------------------------------------------------------------
+
+/**
+ * Group findings by gitleaks fingerprint, preserving first-appearance order.
+ * Multiple occurrences of the same fingerprint on one line (or repeated
+ * across a file) collapse to a single group, so the recovery menu asks one
+ * question per distinct secret rather than one per finding. A finding with
+ * an empty `Fingerprint` keys off `findingKey` instead, a defensive fallback
+ * so an empty fingerprint cannot collapse unrelated findings into one group.
+ *
+ * @param findings The findings to group.
+ * @returns Groups of findings sharing a fingerprint, in first-appearance order.
+ */
+export function groupFindingsByFingerprint(findings: Finding[]): Finding[][] {
+  const groups: Finding[][] = [];
+  const indexByKey = new Map<string, number>();
+  for (const f of findings) {
+    const key = f.Fingerprint.length > 0 ? f.Fingerprint : findingKey(f);
+    const idx = indexByKey.get(key);
+    if (idx === undefined) {
+      indexByKey.set(key, groups.length);
+      groups.push([f]);
+    } else {
+      groups[idx].push(f);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Build the full prompt text for one fingerprint group: the header line
+ * (bare `Finding N/M: <rule>` for a single-member group, or padded with an
+ * occurrence/ignore-entry summary for a multi-member group), the rendered
+ * body of the group's first finding, and the action menu (`[D]rop session`
+ * offered only when the group's first finding resolves a session id).
+ *
+ * @param group One fingerprint group (at least one finding).
+ * @param index 1-based position of this group among all groups.
+ * @param total Total number of groups.
+ * @param readLine Injected seam returning the raw 1-indexed source line, or null on any failure.
+ * @returns The full prompt text, ready for the caller to append its own input marker.
+ */
+export function buildPromptHeader(
+  group: Finding[],
+  index: number,
+  total: number,
+  readLine: (file: string, line: number) => string | null,
+): string {
+  const first = group[0];
+  const headerLine =
+    group.length === 1
+      ? `Finding ${index}/${total}: ${first.RuleID}`
+      : `Finding ${index}/${total}: ${first.RuleID.padEnd(RULE_PAD)}  ${group.length} occurrences, 1 ignore entry`;
+  const body = renderFindingBlock(first, readLine);
+  const sid = sessionIdFromFinding(first);
+  const menu =
+    sid === null
+      ? '  [R]edact  [A]llow  [S]kip (default)'
+      : '  [R]edact  [A]llow  [D]rop session  [S]kip (default)';
+  return ['', headerLine, ...body, menu, ''].join('\n');
 }
