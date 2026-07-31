@@ -22,7 +22,7 @@ import { appendGitleaksIgnore } from './commands.redact.core.ts';
 import { isMemoryFindingPath, memoryFileFromFinding } from './commands.push.recovery.memory.ts';
 import { isSkillFindingPath, skillFileFromFinding } from './commands.push.recovery.skills.ts';
 import type { Finding } from './push-gitleaks.scan.ts';
-import { log } from './utils.ts';
+import { warn } from './utils.ts';
 import {
   type FindingAction,
   findingKey,
@@ -80,6 +80,11 @@ export function isCleared(f: Finding, state: ClearedState): boolean {
 function byFingerprint(findings: Finding[]): Map<string, Finding[]> {
   const groups = new Map<string, Finding[]>();
   for (const f of findings) {
+    // An empty fingerprint identifies nothing, so grouping on it would lump
+    // unrelated findings together and put a blank id in the held-back notice.
+    // appendGitleaksIgnore already refuses to write one, so this is precision
+    // rather than a second guard on the write.
+    if (f.Fingerprint.length === 0) continue;
     const existing = groups.get(f.Fingerprint);
     if (existing === undefined) groups.set(f.Fingerprint, [f]);
     else existing.push(f);
@@ -114,7 +119,7 @@ export function applyDeferredAllows(findings: Finding[], state: ClearedState, re
       appendGitleaksIgnore(fingerprint, repo);
       continue;
     }
-    log(
+    warn(
       `not allowing ${fingerprint}: another secret sharing that line was not cleaned, and the entry would suppress it too`,
     );
   }

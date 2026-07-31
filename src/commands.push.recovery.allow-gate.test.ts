@@ -204,3 +204,16 @@ describe('applyDeferredAllows', () => {
     expect(written).toBe('');
   });
 });
+
+describe('empty fingerprints', () => {
+  it('writes nothing and reports no blank id for an empty fingerprint', () => {
+    const f = { ...sessionFinding(1), Fingerprint: '' };
+    const repo = mkdtempSync(join(tmpdir(), 'allow-gate-'));
+    try {
+      applyDeferredAllows([f], state([[f, 'allow']]), repo);
+      expect(existsSync(join(repo, '.gitleaksignore'))).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});

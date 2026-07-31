@@ -189,8 +189,15 @@ function maskSiblingSpans(
   for (const sibling of siblings) {
     const start = Math.max(1, Math.min(sibling.StartColumn, copy.length + 1)) - 1;
     const end = Math.max(start, Math.min(sibling.EndColumn, copy.length));
-    if (start < ownEnd && ownStart < end) continue;
-    copy.fill(0, start, end);
+    // Mask everything outside the finding's own span. Skipping an overlapping
+    // sibling wholesale used to leave its protruding head in the label: two
+    // rules can match nested spans on one line, so a broad rule enclosing a
+    // narrow one starts to the LEFT of ownStart and that prefix reached the
+    // rendered output. The own span itself is never blanked.
+    const headEnd = Math.min(end, ownStart);
+    if (start < headEnd) copy.fill(0, start, headEnd);
+    const tailStart = Math.max(start, ownEnd);
+    if (tailStart < end) copy.fill(0, tailStart, end);
   }
   return copy;
 }
@@ -311,8 +318,8 @@ export function formatNear(text: string): string | null {
  * Elide token-shaped runs from label text before it is rendered.
  *
  * BEST EFFORT ONLY, and deliberately not the control for a neighbouring
- * secret: that is `withoutSiblingValues`, which excises other findings'
- * values exactly. Shape cannot decide the question, because a hyphenated
+ * secret: that is `maskSiblingSpans`, which blanks other findings' byte spans
+ * by position. Shape cannot decide the question, because a hyphenated
  * label and a hyphenated passphrase are indistinguishable, and a short
  * secret is indistinguishable from a short word. This catches obvious
  * token-shaped junk that gitleaks did not flag, and nothing more. Text that

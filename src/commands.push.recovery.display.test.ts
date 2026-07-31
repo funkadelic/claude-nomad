@@ -586,7 +586,7 @@ describe('neighbouring secret excision', () => {
   // Shape cannot decide which text is a secret: a hyphenated label and a
   // hyphenated passphrase look identical, and a short secret looks like a
   // short word. Every shape below defeated the earlier shape heuristic, so
-  // the control is exact excision of other findings' resolved values.
+  // the control blanks other findings' byte spans by position.
   const shapes: [string, string][] = [
     ['letters only, above the elision gate', 'QzWxEcRvTyUiOpAsDfGh'],
     ['mixed but below the elision gate', 'aB3dE7gH1jK5mN9'],
@@ -624,7 +624,46 @@ describe('neighbouring secret excision', () => {
     expect(rendered).toContain('label:');
   });
 
-  it('skips a sibling whose span overlaps the finding being described', () => {
+  it('masks the protruding head of a sibling that encloses the finding', () => {
+    // Two rules can match nested spans on one line: a broad rule enclosing a
+    // narrow one starts to the LEFT of the finding, and skipping it wholesale
+    // left that prefix in the label.
+    const enclosing = 'QzWxEcRvTyUiOpAsDfGhJkLp';
+    const inner = HEX_FIXTURE;
+    const line = `{"cfg":"${enclosing} wraps ${inner}"}`;
+    const narrow = makeFinding({
+      StartColumn: line.indexOf(inner) + 1,
+      EndColumn: line.indexOf(inner) + inner.length,
+      Match: 'REDACTED',
+    });
+    const broad = makeFinding({
+      StartColumn: line.indexOf(enclosing) + 1,
+      EndColumn: line.indexOf(inner) + inner.length,
+      Match: 'REDACTED',
+    });
+    const rendered = renderFindingBlock(narrow, () => line, [broad]).join('\n');
+    expect(rendered).not.toContain(enclosing);
+    expect(rendered).not.toContain(inner);
+  });
+
+  it('masks a sibling that sits entirely after the finding', () => {
+    const trailing = 'QzWxEcRvTyUiOpAsDfGhJkLp';
+    const line = `${HEX_FIXTURE} then ${trailing}`;
+    const target = makeFinding({
+      StartColumn: 1,
+      EndColumn: HEX_FIXTURE.length,
+      Match: 'REDACTED',
+    });
+    const after = makeFinding({
+      StartColumn: line.indexOf(trailing) + 1,
+      EndColumn: line.indexOf(trailing) + trailing.length,
+      Match: 'REDACTED',
+    });
+    const rendered = renderFindingBlock(target, () => line, [after]).join('\n');
+    expect(rendered).not.toContain(trailing);
+  });
+
+  it('still describes the finding when a sibling covers exactly its own span', () => {
     // An overlapping sibling must never blank the value under triage.
     const line = `label: ${HEX_FIXTURE}`;
     const start = line.indexOf(HEX_FIXTURE) + 1;

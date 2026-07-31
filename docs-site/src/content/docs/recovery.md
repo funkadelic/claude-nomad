@@ -182,7 +182,8 @@ sessions writing to the local file are not disturbed.
 When `nomad push` detects a secret and the process is running on an interactive TTY, it presents a
 menu instead of aborting immediately, with one prompt per distinct secret rather than one per
 finding: several occurrences of the same value on one line ask a single question, and Allow writes
-exactly one `.gitleaksignore` entry for them. Two findings are only ever merged when they share
+at most one `.gitleaksignore` entry for them, or none at all if another secret sharing that entry
+was left uncleaned (see below). Two findings are only ever merged when they share
 both a gitleaks fingerprint and the same resolved value, so two different secrets that happen to
 sit on the same line still get their own prompts. Each prompt shows a `file:` / `value:` / `near:`
 block: `file:` names the location, `value:` describes the secret's shape (a short head/tail

@@ -97,6 +97,13 @@ export function allowFindingsByRule(findings: Finding[], ruleId: string, repo: s
  * `..`) returns null rather than reading an unintended local file.
  */
 function makeDefaultReadLine(repo: string): (file: string, line: number) => string | null {
+  // Memoized per reader instance: grouping resolves every finding and
+  // rendering then resolves every group, so one transcript would otherwise be
+  // read and split once per finding AND once per group. The grouping pass runs
+  // before any prompt, so on a large transcript with many findings that read
+  // amplification is visible as a stall rather than absorbed by user think
+  // time. Scoped to one collectActions call, so nothing is cached across runs.
+  const cache = new Map<string, string[]>();
   return (file: string, line: number): string | null => {
     try {
       const repoRoot = resolve(repo);
@@ -104,8 +111,11 @@ function makeDefaultReadLine(repo: string): (file: string, line: number) => stri
       if (isAbsolute(file) || (target !== repoRoot && !target.startsWith(repoRoot + sep))) {
         return null;
       }
-      const content = readFileSync(target, 'utf8');
-      const lines = content.split(/\r?\n/);
+      let lines = cache.get(target);
+      if (lines === undefined) {
+        lines = readFileSync(target, 'utf8').split(/\r?\n/);
+        cache.set(target, lines);
+      }
       const idx = line - 1; // convert 1-indexed to 0-indexed
       if (idx < 0 || idx >= lines.length) return null;
       /* c8 ignore next */
