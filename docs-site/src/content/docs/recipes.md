@@ -218,7 +218,8 @@ directory into symlink sync with the top-level `sharedDirs` field:
 ```
 
 Each listed name is symlinked from `shared/<name>` into `~/.claude/<name>` (a real copy on native
-Windows, where `nomad push` captures local edits). Entries are validated
+Windows, where `nomad pull` and `nomad push` both keep that copy and the repo in step, so edits and
+deletions travel either way round). Entries are validated
 before linking: a name must be a single path segment (no `/` or `..`), must not be one of the
 never-synced names, and must not collide with a reserved name. In particular `hooks`, `agents`, and
 `skills` are reserved and cannot be re-added this way: `hooks` and `agents` are gsd-owned per host,

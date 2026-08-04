@@ -11,6 +11,7 @@ import {
   makeDoctorEnv,
   restoreEnv,
 } from './commands.doctor.checks.test-helpers.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 describe('cmdDoctor repo-state header', () => {
   let originalHome: string | undefined;
@@ -552,5 +553,212 @@ describe('reportRepoState NOMAD_REPO annotation (direct)', () => {
     const rows = sec.items.join('\n');
     expect(rows).toContain('repo state:');
     expect(rows).not.toContain('(NOMAD_REPO)');
+  });
+});
+
+describe('classifySharedLink win32 content-drift compare (direct)', () => {
+  // Regression tests for the doctor content-compare added to the win32
+  // real-copy branch: a drifted copy WARNs with its diverging files listed,
+  // a clean one still reads OK, the WARN never touches process.exitCode, and
+  // the compare itself never throws.
+  let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let originalNoColor: string | undefined;
+  let testHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  const realPlatform = process.platform;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-win32-drift-'));
+    process.env.HOME = testHome;
+    // home()'s win32 branch reads USERPROFILE before HOME; a stale value from
+    // an earlier describe in this shared worker must not leak in here.
+    process.env.USERPROFILE = testHome;
+    process.env.NOMAD_REPO = join(testHome, 'claude-nomad');
+    claudeDir = join(testHome, '.claude');
+    sharedDir = join(testHome, 'claude-nomad', 'shared');
+    mkdirSync(claudeDir, { recursive: true });
+    mkdirSync(sharedDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    restoreEnv('HOME', originalHome);
+    restoreEnv('USERPROFILE', originalUserProfile);
+    restoreEnv('NOMAD_REPO', originalNomadRepo);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('WARNs naming the diverging file count when a win32 real copy differs from shared/<name>', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    writeFileSync(join(sharedDir, name), '# shared content\n');
+    writeFileSync(join(claudeDir, name), '# drifted local content\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name) && !item.startsWith('\t'));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('diverge from shared/');
+    expect(process.exitCode).toBe(0);
+    // The diverging file itself renders as a child row (leading-tab marker,
+    // see addChildItem) beneath the summary line.
+    const childRow = sec.items.find((item) => item.startsWith('\t'));
+    expect(childRow).toBeDefined();
+    expect(childRow).toContain(name);
+  });
+
+  it('still reads OK when a win32 real copy matches shared/<name> byte-for-byte', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    writeFileSync(join(sharedDir, name), '# identical content\n');
+    writeFileSync(join(claudeDir, name), '# identical content\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(okGlyph);
+    expect(row).toContain('win32 copy-sync');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('leaves process.exitCode untouched by the drift WARN and still renders a later row', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const drifted = SHARED_LINKS[0];
+    const clean = SHARED_LINKS[1];
+    if (drifted === undefined || clean === undefined) {
+      throw new Error('SHARED_LINKS needs at least two entries for this test');
+    }
+    writeFileSync(join(sharedDir, drifted), '# shared\n');
+    writeFileSync(join(claudeDir, drifted), '# drifted\n');
+    writeFileSync(join(sharedDir, clean), '# same\n');
+    writeFileSync(join(claudeDir, clean), '# same\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    expect(process.exitCode).toBe(0);
+    const driftedRow = sec.items.find((item) => item.includes(drifted) && !item.startsWith('\t'));
+    const cleanRow = sec.items.find((item) => item.includes(clean));
+    expect(driftedRow).toContain(warnGlyph);
+    expect(cleanRow).toContain(okGlyph);
+  });
+
+  it('skips the compare (stays the plain OK row) when the repo has no shared/<name> source', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    // No shared/<name> written at all: nothing to compare against.
+    writeFileSync(join(claudeDir, name), '# local only\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(okGlyph);
+    expect(row).toContain('win32 copy-sync');
+  });
+
+  it('never throws when the compare cannot run (git absent from PATH)', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    writeFileSync(join(sharedDir, name), '# shared\n');
+    writeFileSync(join(claudeDir, name), '# local\n');
+
+    vi.doMock('node:child_process', () => ({
+      execFileSync: vi.fn(() => {
+        const err = new Error('spawn git ENOENT') as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        throw err;
+      }),
+    }));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    expect(() => reportSharedLinks(sec, { projects: {} })).not.toThrow();
+    expect(process.exitCode).toBe(0);
+    const warned = errSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(warned).toContain('git not on PATH');
+  });
+
+  it('does not count a never-synced deny-set file under a shared name as drift', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    // Both sync directions filter this basename out, so it exists locally by
+    // design and can never reach the repo. Reporting it as drift would produce
+    // a WARN on every run that no command could clear.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{}\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes('commands') && !item.startsWith('\t'));
+    expect(row).toBeDefined();
+    expect(row).toContain(okGlyph);
+    expect(row).not.toContain('diverge from shared/');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('still FAILs a non-symlink on posix, unaffected by the win32 drift compare', async () => {
+    stubPlatform('linux');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    writeFileSync(join(sharedDir, name), '# shared\n');
+    writeFileSync(join(claudeDir, name), '# local, but not a symlink\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(failGlyph);
+    expect(row).toContain('NOT a symlink');
+    expect(process.exitCode).toBe(1);
   });
 });

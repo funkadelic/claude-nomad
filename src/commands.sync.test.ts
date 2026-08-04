@@ -969,7 +969,12 @@ describe('cmdSync --dry-run: real pull half', () => {
     const seams = mockDrySeams(env);
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync({ dryRun: true });
-    expect(seams.previewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull');
+    // The fourth argument is the pre-rebase win32 plan pair, empty here because
+    // the planners no-op off win32 and because nothing is pending either way.
+    expect(seams.previewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull', {
+      captures: [],
+      deletions: [],
+    });
   });
 });
 

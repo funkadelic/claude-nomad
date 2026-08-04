@@ -66,8 +66,15 @@ On native Windows the two symlinked rows are copy-synced instead: creating a sym
 Developer Mode or admin rights, so `nomad pull` materializes those names as real copies and
 `nomad push` mirrors your local edits back into `shared/`. On Windows `nomad pull` runs that mirror
 before it fetches (and `nomad sync` inherits it), so an unpublished edit is captured rather than
-overlaid. Everything else in the table behaves identically. See
-[Windows](/claude-nomad/quickstart/#windows) in the Quickstart.
+overlaid. A file you delete from inside one of these directories is mirrored the same way: it is
+removed from `shared/` by the next pull, the same as deleting inside a symlinked directory already
+removes it on macOS or Linux. The removal is left uncommitted (it publishes on your next push,
+through the same secret scan as everything else) and the repo copy is snapshotted to the backup dir
+first. nomad only removes a file it has a record of having given this machine, so a repo file this
+machine has never synced is never touched. That record is also why the first pull after a host
+upgrades to this version is an exception: there is nothing to compare against yet, so a deletion
+made before that pull is restored once and has to be repeated. Everything else in the table behaves
+identically. See [Windows](/claude-nomad/quickstart/#windows) in the Quickstart.
 
 If you run GSD (`@opengsd/gsd-core`), the `.planning` overlay, the `gsd-*` skill exclusion, and the
 unsynced `hooks/` and `agents/` are all part of nomad's GSD-aware handling. See

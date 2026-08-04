@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,7 +15,16 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import type * as childProcessModule from 'node:child_process';
 
+import { stubPlatform } from './test-helpers.platform.ts';
 import { encodePath } from './utils.json.ts';
+
+const realPlatform = process.platform;
+
+/**
+ * Permission-based failure injection is a no-op on Windows, where `chmod` does
+ * not restrict access; the branch it covers is counted on the posix leg.
+ */
+const isWin = realPlatform === 'win32';
 
 /**
  * Snapshot helper mirroring preview.test.ts. Captures the `{ relPath:
@@ -45,6 +55,8 @@ describe('cmdDiff (offline, lockless preview)', () => {
   type LogSpy = MockInstance<(...args: unknown[]) => void>;
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
+  let originalUserProfile: string | undefined;
+  let originalNomadRepo: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
   let claudeDir: string;
@@ -57,9 +69,17 @@ describe('cmdDiff (offline, lockless preview)', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    originalUserProfile = process.env.USERPROFILE;
+    originalNomadRepo = process.env.NOMAD_REPO;
     process.env.NO_COLOR = '1';
     testHome = mkdtempSync(join(tmpdir(), 'nomad-diff-test-'));
     process.env.HOME = testHome;
+    // home() prefers USERPROFILE on its win32 branch and repoHome() prefers
+    // NOMAD_REPO, so stubbing HOME alone leaves the win32 cases below reachable
+    // by ambient state: a real Windows profile, or the alternate checkout a
+    // developer is told to export.
+    process.env.USERPROFILE = testHome;
+    delete process.env.NOMAD_REPO;
     process.env.NOMAD_HOST = 'test-host';
     repoUnderHome = join(testHome, 'claude-nomad');
     sharedDir = join(repoUnderHome, 'shared');
@@ -100,6 +120,10 @@ describe('cmdDiff (offline, lockless preview)', () => {
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
     else delete process.env.NOMAD_HOST;
+    if (originalUserProfile !== undefined) process.env.USERPROFILE = originalUserProfile;
+    else delete process.env.USERPROFILE;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     delete process.env.NO_COLOR;
     process.exitCode = 0;
     rmSync(testHome, { recursive: true, force: true });
@@ -366,5 +390,84 @@ describe('cmdDiff (offline, lockless preview)', () => {
     cmdDiff();
     expect(logOutput()).not.toContain('ℹ');
     expect(errOutput()).not.toContain('ℹ');
+  });
+
+  it('shows win32 capture and removal rows and invokes no networked git subcommand', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    // Pending capture: local CLAUDE.md differs from the pre-existing shared copy.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+
+    // Pending removal: baseline says commands/gone.md was synced to this
+    // host; it is now absent locally but still present in the repo.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'gone.md'), '# gone\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    const cacheDir = join(testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'shared-baseline-test-host.json'),
+      JSON.stringify({
+        schema: 1,
+        scannerVersion: 'shared-links-baseline/1',
+        configHash: 'not-applicable',
+        files: { 'commands/gone.md': { size: 1, mtime: 1, hash: 'x' } },
+      }) + '\n',
+    );
+
+    const execCalls: unknown[][] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: (...args: unknown[]) => {
+          execCalls.push(args);
+          return (actual.execFileSync as (...a: unknown[]) => Buffer)(...args);
+        },
+      };
+    });
+
+    stubPlatform('win32');
+    try {
+      const { cmdDiff } = await import('./diff.ts');
+      cmdDiff();
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    expect(logOutput()).toContain('would capture');
+    expect(logOutput()).toContain('would remove');
+    const networked = execCalls.some(
+      (call) =>
+        call[0] === 'git' &&
+        Array.isArray(call[1]) &&
+        (call[1].includes('pull') || call[1].includes('fetch') || call[1].includes('push')),
+    );
+    expect(networked).toBe(false);
+    vi.doUnmock('node:child_process');
+  });
+
+  it.skipIf(isWin)('stays exit-0 when a shared path cannot be stat-ed at all', async () => {
+    // A locked path makes lstat throw (`throwIfNoEntry: false` covers ENOENT
+    // only). `nomad diff` rethrows anything that is not a NomadFatal, so an
+    // unguarded stat here would write a crash report for a benign lock on the
+    // one command whose entire value is being safe to run.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+
+    chmodSync(claudeDir, 0o000);
+    stubPlatform('win32');
+    try {
+      const { cmdDiff } = await import('./diff.ts');
+      expect(() => cmdDiff()).not.toThrow();
+      expect(process.exitCode).toBe(0);
+    } finally {
+      stubPlatform(realPlatform);
+      chmodSync(claudeDir, 0o700);
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { encodePath } from '../utils.json.ts';
 
@@ -117,6 +117,54 @@ export function buildPushRepo(tmp: string): { local: string; origin: string; pro
   return { local, origin, projectRoot };
 }
 
+/**
+ * Build a world that starts from a genuinely SYNCED shared-config state: a bare
+ * origin, a clone of it whose `shared/commands/` holds two committed files, and
+ * a host config directory holding real copies of those same two files (the win32
+ * copy model, not symlinks).
+ *
+ * Starting synced rather than contrived is what makes a deletion scenario real:
+ * the host has demonstrably received both files, so removing one locally is
+ * unambiguously the user deleting it rather than a host that never had it.
+ *
+ * @param tmp - Parent temp directory; everything created stays under it.
+ * @returns The host `home` and `claudeDir`, the `repo` clone and its
+ *   `sharedDir`, and the bare `origin`.
+ */
+export function buildSyncedSharedWorld(tmp: string): {
+  home: string;
+  claudeDir: string;
+  repo: string;
+  sharedDir: string;
+  origin: string;
+} {
+  const origin = makeBareOrigin(tmp);
+  const repo = join(tmp, 'repo');
+  const home = join(tmp, 'home');
+  const claudeDir = join(home, '.claude');
+
+  const seed = join(tmp, 'seed');
+  mkdirSync(join(seed, 'shared', 'commands'), { recursive: true });
+  gitInit(seed);
+  writeFileSync(join(seed, 'shared', 'settings.base.json'), '{}\n');
+  writeFileSync(join(seed, 'shared', 'commands', 'keep.md'), '# keep\n');
+  writeFileSync(join(seed, 'shared', 'commands', 'doomed.md'), '# doomed\n');
+  writeFileSync(join(seed, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+  g(['add', '.'], seed);
+  g(['commit', '-q', '-m', 'base'], seed);
+  g(['remote', 'add', 'origin', origin], seed);
+  g(['push', '-q', 'origin', 'main'], seed);
+
+  g(['clone', '-q', origin, repo], tmp);
+  setTestIdentity(repo);
+
+  mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+  writeFileSync(join(claudeDir, 'commands', 'keep.md'), '# keep\n');
+  writeFileSync(join(claudeDir, 'commands', 'doomed.md'), '# doomed\n');
+
+  return { home, claudeDir, repo, sharedDir: join(repo, 'shared'), origin };
+}
+
 /** Monotonic counter backing the unique session ids minted by {@link plantLocalSession}. */
 let sessionSeq = 0;
 
@@ -198,4 +246,46 @@ export function buildUnmergedIndexNoMarker(dir: string): void {
   gitInit(dir);
   makeCommit(dir, 'file.txt', 'base\n', 'base');
   conflictThenStripMarkers(dir);
+}
+
+/**
+ * Leave an ALREADY-INITIALIZED repo in the same unmerged-index-no-marker state,
+ * using a scratch file so nothing the caller cares about is touched. Use this to
+ * wedge a repo built by another fixture, where `buildUnmergedIndexNoMarker`
+ * would clobber the existing history.
+ *
+ * @param dir - An existing git repository with at least one commit.
+ */
+export function wedgeExistingRepo(dir: string): void {
+  makeCommit(dir, 'file.txt', 'base\n', 'wedge base');
+  conflictThenStripMarkers(dir);
+}
+
+/**
+ * Publish a change to `origin` from a throwaway clone, so a host's next pull has
+ * something real to rebase onto. Used to stage a genuine two-sided change where
+ * upstream and the host touched the same file.
+ *
+ * @param origin - Bare origin repo to push to.
+ * @param tmp - Parent temp directory for the throwaway clone.
+ * @param relPath - Repo-relative path to write.
+ * @param content - File contents.
+ * @param message - Commit message.
+ */
+export function pushUpstreamChange(
+  origin: string,
+  tmp: string,
+  relPath: string,
+  content: string,
+  message: string,
+): void {
+  const scratch = mkdtempSync(join(tmp, 'upstream-'));
+  g(['clone', '-q', origin, scratch], tmp);
+  setTestIdentity(scratch);
+  mkdirSync(dirname(join(scratch, relPath)), { recursive: true });
+  writeFileSync(join(scratch, relPath), content);
+  g(['add', relPath], scratch);
+  g(['commit', '-q', '-m', message], scratch);
+  g(['push', '-q', 'origin', 'main'], scratch);
+  rmSync(scratch, { recursive: true, force: true });
 }

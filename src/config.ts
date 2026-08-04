@@ -107,6 +107,28 @@ export function manifestPath(): string {
 }
 
 /**
+ * Per-host shared-links baseline path:
+ * `~/.cache/claude-nomad/shared-baseline-<HOST>.json`. Records the files this
+ * host actually materialized under `~/.claude/` at its last successful
+ * shared-link apply, so a later run can tell "the user removed this" apart from
+ * "this host has never received this yet". Host-local and never synced, exactly
+ * like the push manifest it is modelled on.
+ *
+ * A MISSING file is the fail-safe state and means additive-only behavior: no
+ * removal is ever propagated from a host that has no baseline, which is why a
+ * fresh clone, a cleared cache, and a first-ever pull are all harmless.
+ *
+ * Resolved on each call (same call-time HOME convention as `manifestPath()` and
+ * `backupBase()`) so a mid-process HOME override is reflected immediately; this
+ * is load-bearing for Stryker's worker-thread test runner. `HOST` is embedded in
+ * the filename, and encoded, so a custom `NOMAD_HOST` containing a path
+ * separator cannot escape the single-filename slot.
+ */
+export function sharedBaselinePath(): string {
+  return join(home(), '.cache', 'claude-nomad', `shared-baseline-${encodeURIComponent(HOST)}.json`);
+}
+
+/**
  * The official Claude Code settings JSON schema. Source of truth for
  * `SCHEMA_KEYS` (kept current by `scripts/sync-settings-keys.ts`) and the
  * on-demand `nomad doctor --check-schema` reporter, which fetches it live to

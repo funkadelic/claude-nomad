@@ -78,8 +78,12 @@ is only ever one file: the one in your sync repo.
 Native Windows cannot use symlinks, because creating one there needs Developer Mode or admin
 rights. claude-nomad keeps a **real copy** in `~/.claude/` instead. That leaves two files to keep in
 step, and claude-nomad does it for you: `nomad pull` and `nomad sync` both copy your edits into the
-repo before they fetch, so an unpublished edit is never overwritten. Enabling Developer Mode does
-not change this; copies are used on every native Windows host either way.
+repo before they fetch, so an unpublished edit is never overwritten. A file you delete from a shared
+directory is handled the same way: it is removed from the repo by the next pull too, exactly as
+deleting inside a symlinked directory already removes it on macOS or Linux. The first pull after you
+upgrade to this version is the one exception, because this machine has no record to compare against
+yet: a deletion made before that pull comes back once, and deleting it again sticks. Enabling
+Developer Mode does not change this; copies are used on every native Windows host either way.
 :::
 
 Two things are genuinely Windows-only, both in the list below: a `.gitleaksignore` allow entry may
@@ -119,10 +123,17 @@ A few Windows-specific things worth knowing:
   these are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected
   and behaves like Linux. What this means for you: nothing extra. On Windows both `nomad pull` and
   `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit is
-  captured rather than reverted. The one command that deliberately takes the repo's version is
-  `nomad pull --force-remote`, which is what that flag is for; the copy it replaces is snapshotted
-  to the backup dir first. This is the same behavior claude-nomad's `skills/` sync already has on
-  every platform.
+  captured rather than reverted. A file you delete from a shared directory is handled the same way:
+  it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked directory
+  already removes it on macOS or Linux. The removal is left uncommitted, so it publishes on your next
+  push and passes the same secret scan as everything else, and the file is snapshotted to the backup
+  dir first. The safety rule behind this: nomad only removes a file it has a record of having given
+  this machine, so a repo file this machine has never synced is never touched. That record is also
+  why the first pull after you upgrade to this version is an exception: there is nothing to compare
+  against yet, so a deletion made before that pull comes back once, and deleting it again sticks.
+  The one command that deliberately takes the repo's version is `nomad pull --force-remote`, which
+  is what that flag is for; the copy it replaces is snapshotted to the backup dir first. This is the
+  same behavior claude-nomad's `skills/` sync already has on every platform.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
   macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the
