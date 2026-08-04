@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -18,6 +19,12 @@ import { stubPlatform } from './test-helpers.platform.ts';
 import { encodePath } from './utils.json.ts';
 
 const realPlatform = process.platform;
+
+/**
+ * Permission-based failure injection is a no-op on Windows, where `chmod` does
+ * not restrict access; the branch it covers is counted on the posix leg.
+ */
+const isWin = realPlatform === 'win32';
 
 /**
  * Snapshot helper mirroring preview.test.ts. Captures the `{ relPath:
@@ -426,5 +433,27 @@ describe('cmdDiff (offline, lockless preview)', () => {
     );
     expect(networked).toBe(false);
     vi.doUnmock('node:child_process');
+  });
+
+  it.skipIf(isWin)('stays exit-0 when a shared path cannot be stat-ed at all', async () => {
+    // A locked path makes lstat throw (`throwIfNoEntry: false` covers ENOENT
+    // only). `nomad diff` rethrows anything that is not a NomadFatal, so an
+    // unguarded stat here would write a crash report for a benign lock on the
+    // one command whose entire value is being safe to run.
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+
+    chmodSync(claudeDir, 0o000);
+    stubPlatform('win32');
+    try {
+      const { cmdDiff } = await import('./diff.ts');
+      expect(() => cmdDiff()).not.toThrow();
+      expect(process.exitCode).toBe(0);
+    } finally {
+      stubPlatform(realPlatform);
+      chmodSync(claudeDir, 0o700);
+    }
   });
 });

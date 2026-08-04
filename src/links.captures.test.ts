@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -18,6 +19,12 @@ import { type PathMap } from './config.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 const realPlatform = process.platform;
+
+/**
+ * Permission-based failure injection is a no-op on Windows, where `chmod` does
+ * not restrict access; the branch it covers is counted on the posix leg.
+ */
+const isWin = realPlatform === 'win32';
 
 /**
  * Recursively snapshot `{ relativePath: content }` for every regular file
@@ -132,6 +139,22 @@ describe('planSharedLinkCaptures', () => {
       const { planSharedLinkCaptures } = await import('./links.captures.ts');
       const plan = planSharedLinkCaptures({ projects: {} });
       expect(plan.some((e) => e.name === 'CLAUDE.md')).toBe(false);
+    });
+
+    it.skipIf(isWin)('skips a name whose local path cannot be stat-ed at all', async () => {
+      // `throwIfNoEntry: false` suppresses ENOENT only, so a locked path still
+      // throws. This planner is reached by `nomad diff` and `pull --dry-run`,
+      // whose whole value is being safe to run.
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local\n');
+      chmodSync(claudeDir, 0o000);
+      stubPlatform('win32');
+      const { planSharedLinkCaptures } = await import('./links.captures.ts');
+      try {
+        expect(planSharedLinkCaptures({ projects: {} })).toEqual([]);
+      } finally {
+        chmodSync(claudeDir, 0o700);
+      }
     });
 
     it('skips a name with no shared/<name> counterpart in the repo', async () => {

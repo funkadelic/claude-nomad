@@ -45,11 +45,17 @@ export type SharedLinkCapture = {
  *
  * Returns an empty plan on darwin and linux (checked first, so posix pays
  * nothing) and on a `null` map. Otherwise walks `allSharedLinks(map)` and
- * skips a name whose local path is absent, whose local path is a live
- * symlink (a symlink-era leftover the mirror defers to the next pull), or
- * that has no `shared/<name>` counterpart in the repo yet (matching the
- * mirror's `adoptNew: false` policy: a pull never creates a brand-new shared
- * name).
+ * skips a name whose local path is absent, whose local path cannot be
+ * stat'ed at all, whose local path is a live symlink (a symlink-era leftover
+ * the mirror defers to the next pull), or that has no `shared/<name>`
+ * counterpart in the repo yet (matching the mirror's `adoptNew: false`
+ * policy: a pull never creates a brand-new shared name).
+ *
+ * The stat is wrapped because `throwIfNoEntry: false` suppresses ENOENT
+ * only; EACCES, EPERM and EIO still throw. This planner is reached by
+ * `nomad diff` and by `pull --dry-run`, whose whole value is being safe to
+ * run, so a locked file must degrade to one missing preview row rather than
+ * a crash report.
  *
  * @param map - Parsed `path-map.json`, or `null` when it could not be read.
  * @returns One entry per name the mirror would copy; empty when nothing qualifies.
@@ -62,7 +68,12 @@ export function planSharedLinkCaptures(map: PathMap | null): SharedLinkCapture[]
   const plan: SharedLinkCapture[] = [];
   for (const name of allSharedLinks(map)) {
     const localPath = join(claude, name);
-    const stat = lstatSync(localPath, { throwIfNoEntry: false });
+    let stat;
+    try {
+      stat = lstatSync(localPath, { throwIfNoEntry: false });
+    } catch {
+      continue; // unreadable: the mirror cannot promise anything about it
+    }
     if (stat === undefined) continue; // absent: nothing to capture
     if (stat.isSymbolicLink()) continue; // symlink-era leftover; deferred to next pull
     const repoPath = join(repo, 'shared', name);
