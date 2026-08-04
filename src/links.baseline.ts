@@ -63,6 +63,31 @@ const SHARED_BASELINE_CONFIG_HASH = 'not-applicable';
 export type LocalFileStat = { size: number; mtime: number };
 
 /**
+ * One walk of the configured shared names: the files it recorded, plus every
+ * path it DECLINED to walk.
+ *
+ * The declined list exists because the two consumers of this walk have opposite
+ * failure polarity. For the baseline builder, skipping a path it could not read
+ * merely under-records, and an under-recorded baseline authorizes nothing. For
+ * the deletion planner the same walk supplies the set of files this host
+ * currently has, so a path that was skipped rather than genuinely absent reads
+ * as a file the user deleted, and that authorizes removing the repo copy.
+ * Reporting the skips is what lets the planner tell the two apart: an absence
+ * with no declined path above it is a real deletion, an absence beneath one is
+ * simply unknown.
+ *
+ * Recorded keys and declined paths share one format, `claudeHome()`-relative
+ * and POSIX-separated, so testing whether a key sits beneath a declined path is
+ * a plain string comparison.
+ */
+export type LocalSharedScan = {
+  /** Recorded regular files, keyed by relative POSIX path. */
+  files: Record<string, LocalFileStat>;
+  /** Relative POSIX paths the walk refused to descend into or to record. */
+  declined: string[];
+};
+
+/**
  * Read this host's baseline, or `null` when there is nothing trustworthy to
  * read: no file, an unreadable file, malformed JSON, a foreign shape, or a
  * record written by a different producer (see {@link SHARED_BASELINE_KIND}).
@@ -97,77 +122,118 @@ function baselineKey(claude: string, abs: string): string {
 }
 
 /**
- * Record `abs` into `out` if it is a regular file, recurse if it is a
- * directory, and skip it otherwise.
+ * Record `abs` into `scan.files` if it is a regular file, recurse if it is a
+ * directory, and otherwise decline it.
  *
  * Directories themselves are never recorded: `hashFile` throws on one, and a
- * deleted directory is fully described by its files disappearing. An absent
- * entry contributes nothing (there is nothing to record). A symlink is skipped
- * for the same reason the mirror skips one: recording a symlinked tree would let
- * a later un-symlinking read as a mass deletion.
+ * deleted directory is fully described by its files disappearing. A genuinely
+ * ABSENT entry contributes nothing and is deliberately NOT declined, because
+ * that absence is the deletion signal the whole pass exists to act on. A
+ * symlink is declined for the reason the mirror skips one: recording a
+ * symlinked tree would let a later un-symlinking read as a mass deletion, and
+ * declining it stops a tree that has SINCE become a symlink reading as one now.
+ *
+ * The stat is wrapped because `throwIfNoEntry: false` suppresses ENOENT only;
+ * EACCES, EPERM and EIO still throw, and a locked file is the ordinary Windows
+ * condition this pass has to survive rather than crash on.
  *
  * Shared by the top-level name loop and the recursive walk so both agree on
  * what counts as a recordable entry.
  */
-function addLocalPath(abs: string, claude: string, out: Record<string, LocalFileStat>): void {
-  const st = lstatSync(abs, { throwIfNoEntry: false });
-  if (st === undefined) return;
-  if (st.isSymbolicLink()) return;
-  if (st.isDirectory()) {
-    collectSharedFiles(abs, claude, out);
+function addLocalPath(abs: string, claude: string, scan: LocalSharedScan): void {
+  const key = baselineKey(claude, abs);
+  let st;
+  try {
+    st = lstatSync(abs, { throwIfNoEntry: false });
+  } catch {
+    scan.declined.push(key);
     return;
   }
-  out[baselineKey(claude, abs)] = { size: st.size, mtime: st.mtimeMs };
+  if (st === undefined) return;
+  if (st.isSymbolicLink()) {
+    scan.declined.push(key);
+    return;
+  }
+  if (st.isDirectory()) {
+    collectSharedFiles(abs, claude, scan);
+    return;
+  }
+  scan.files[key] = { size: st.size, mtime: st.mtimeMs };
 }
 
 /**
- * Walk `dir` recursively via {@link addLocalPath}, skipping any basename the
+ * Walk `dir` recursively via {@link addLocalPath}, declining any basename the
  * always-never-sync deny set rejects so a credential or per-host file can
  * neither enter the baseline nor authorize a deletion later.
  *
- * A directory that cannot be listed contributes nothing rather than throwing: an
- * unreadable subtree costs some missing records, and under-recording authorizes
- * nothing.
+ * A directory that cannot be listed is declined rather than throwing: an
+ * unreadable subtree costs the builder some missing records, and tells the
+ * planner not to read that whole subtree's absence as a deletion.
  */
-function collectSharedFiles(dir: string, claude: string, out: Record<string, LocalFileStat>): void {
+function collectSharedFiles(dir: string, claude: string, scan: LocalSharedScan): void {
   let entries: string[];
   try {
     entries = readdirSync(dir);
   } catch {
+    scan.declined.push(baselineKey(claude, dir));
     return;
   }
   for (const entry of entries) {
-    if (isDeniedName(ALWAYS_NEVER_SYNC, entry)) continue;
-    addLocalPath(join(dir, entry), claude, out);
+    const abs = join(dir, entry);
+    if (isDeniedName(ALWAYS_NEVER_SYNC, entry)) {
+      scan.declined.push(baselineKey(claude, abs));
+      continue;
+    }
+    addLocalPath(abs, claude, scan);
   }
 }
 
 /**
- * Enumerate the shared-link files this host currently has materialized, keyed
- * by `claudeHome()`-relative POSIX path.
+ * Walk the shared-link files this host currently has materialized, returning
+ * both the recorded files and every path the walk declined (see
+ * {@link LocalSharedScan} for why the second half matters).
  *
  * Iterates `allSharedLinks(map)` and nothing else, so a name the user never
  * configured is outside the record entirely; raw path-map keys are never walked.
- * A configured name that the deny set rejects is skipped outright: the
+ * A configured name that the deny set rejects is declined outright: the
  * `sharedDirs` guard blocks the never-sync names but not the credential-shaped
  * ones, so this is the boundary that keeps a name like `credentials` out of the
  * record.
  *
- * Exported because the deletion planner consumes this exact function. The key
+ * Exported because the deletion planner consumes this exact walk. The key
  * format is the contract between the record and its reader, and two
  * implementations of it would eventually disagree.
+ *
+ * @param map - Parsed `path-map.json`, for the configured shared names.
+ * @returns The recorded files plus the relative paths the walk declined.
+ */
+export function enumerateLocalSharedScan(map: PathMap): LocalSharedScan {
+  const claude = claudeHome();
+  const scan: LocalSharedScan = { files: {}, declined: [] };
+  for (const name of allSharedLinks(map)) {
+    if (isDeniedName(ALWAYS_NEVER_SYNC, name)) {
+      scan.declined.push(name);
+      continue;
+    }
+    addLocalPath(join(claude, name), claude, scan);
+  }
+  return scan;
+}
+
+/**
+ * The recorded half of {@link enumerateLocalSharedScan}, keyed by
+ * `claudeHome()`-relative POSIX path.
+ *
+ * The baseline builder consumes only this half deliberately: under-recording is
+ * safe for a record whose whole job is to prove a file WAS present, so the
+ * builder has no use for the declined paths and no branch that could misread
+ * them.
  *
  * @param map - Parsed `path-map.json`, for the configured shared names.
  * @returns Map from relative POSIX key to `{size, mtime}` for each local file.
  */
 export function enumerateLocalSharedFiles(map: PathMap): Record<string, LocalFileStat> {
-  const claude = claudeHome();
-  const out: Record<string, LocalFileStat> = {};
-  for (const name of allSharedLinks(map)) {
-    if (isDeniedName(ALWAYS_NEVER_SYNC, name)) continue;
-    addLocalPath(join(claude, name), claude, out);
-  }
-  return out;
+  return enumerateLocalSharedScan(map).files;
 }
 
 /**

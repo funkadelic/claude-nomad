@@ -205,6 +205,73 @@ describe('shared-links baseline', () => {
     });
   });
 
+  describe('enumerateLocalSharedScan', () => {
+    it('declines nothing when every configured name is readable or simply absent', async () => {
+      writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
+      stubPlatform('win32');
+      const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
+      const scan = enumerateLocalSharedScan({ projects: {} });
+      // A genuinely absent name is the deletion signal the planner acts on, so
+      // it must never be reported as a path the walk declined to read.
+      expect(scan.declined).toEqual([]);
+      expect(Object.keys(scan.files)).toEqual(['commands/a.md']);
+    });
+
+    it.skipIf(isWin)('declines a shared name that is still a live symlink', async () => {
+      const target = join(testHome, 'claude-nomad', 'shared', 'rules');
+      mkdirSync(target, { recursive: true });
+      writeFileSync(join(target, 'via-symlink.md'), '# linked\n');
+      symlinkSync(target, join(claudeDir, 'rules'));
+      stubPlatform('win32');
+      const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
+      expect(enumerateLocalSharedScan({ projects: {} }).declined).toEqual(['rules']);
+    });
+
+    it.skipIf(isWin)('declines a subdirectory it cannot list', async () => {
+      writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
+      const locked = join(claudeDir, 'commands', 'locked');
+      mkdirSync(locked, { recursive: true });
+      writeFileSync(join(locked, 'b.md'), '# b\n');
+      chmodSync(locked, 0o000);
+      stubPlatform('win32');
+      const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
+      try {
+        const scan = enumerateLocalSharedScan({ projects: {} });
+        expect(scan.declined).toEqual(['commands/locked']);
+        expect(Object.keys(scan.files)).toEqual(['commands/a.md']);
+      } finally {
+        chmodSync(locked, 0o700);
+      }
+    });
+
+    it.skipIf(isWin)('declines an entry it cannot stat at all', async () => {
+      writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
+      // An unreadable parent makes lstat on every child throw EACCES, which
+      // `throwIfNoEntry: false` does not suppress (it covers ENOENT only).
+      chmodSync(claudeDir, 0o000);
+      stubPlatform('win32');
+      const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
+      try {
+        const scan = enumerateLocalSharedScan({ projects: {} });
+        expect(scan.files).toEqual({});
+        expect(scan.declined).toContain('commands');
+      } finally {
+        chmodSync(claudeDir, 0o700);
+      }
+    });
+
+    it('declines a configured name and a nested basename the deny set rejects', async () => {
+      mkdirSync(join(claudeDir, 'credentials'), { recursive: true });
+      writeFileSync(join(claudeDir, 'credentials', 'token.txt'), 'secret\n');
+      writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{}\n');
+      stubPlatform('win32');
+      const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
+      const scan = enumerateLocalSharedScan({ projects: {}, sharedDirs: ['credentials'] });
+      expect(scan.files).toEqual({});
+      expect(scan.declined.sort()).toEqual(['commands/settings.local.json', 'credentials']);
+    });
+  });
+
   describe('buildSharedBaseline', () => {
     it('records size, mtime and hash for each enumerated file', async () => {
       writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
