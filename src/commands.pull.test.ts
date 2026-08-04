@@ -9,6 +9,7 @@ import type * as wedgeModule from './commands.pull.wedge.ts';
 import type * as recoveryModule from './commands.pull.recovery.ts';
 import type * as recoveryUnmergedModule from './commands.pull.recovery.unmerged.ts';
 
+import type * as baselineModule from './links.baseline.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 
@@ -169,6 +170,7 @@ describe('cmdPull: extras integration', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     vi.doUnmock('./preview.ts');
@@ -959,6 +961,7 @@ describe('cmdPull forceRemote routing', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
   });
@@ -1275,6 +1278,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     vi.restoreAllMocks();
@@ -1635,6 +1639,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     vi.doUnmock('./preview.ts');
@@ -1797,6 +1802,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     vi.doUnmock('./preview.ts');
@@ -1811,8 +1817,13 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
   });
 
   /**
-   * Mock the pull pipeline, recording the mirror and the `git pull --rebase`
-   * into one shared ordering log.
+   * Mock the pull pipeline, recording the mirror, the `git pull --rebase`, the
+   * shared-link apply, and the baseline write into one shared ordering log.
+   *
+   * The baseline write has to be asserted by call order rather than by effect:
+   * on a fixture where the apply changes nothing, a before-apply and an
+   * after-apply write produce identical files, and before-apply is exactly the
+   * ordering that would let an aborted pull record files the host never received.
    *
    * @param order - Array appended to on each mocked call.
    * @returns The `stageLocalSharedEdits` spy, for argument assertions.
@@ -1821,8 +1832,19 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const mirrorSpy = vi.fn(() => {
       order.push('mirror');
     });
+    vi.doMock('./links.baseline.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof baselineModule>();
+      return {
+        ...actual,
+        writeSharedBaseline: vi.fn(() => {
+          order.push('baseline');
+        }),
+      };
+    });
     vi.doMock('./links.ts', () => ({
-      applySharedLinks: vi.fn(),
+      applySharedLinks: vi.fn(() => {
+        order.push('apply');
+      }),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
       stageLocalSharedEdits: mirrorSpy,
     }));
@@ -1855,7 +1877,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const mirrorSpy = mockPipelineRecording(order);
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore();
-    expect(order).toEqual(['mirror', 'gitOrFatal']);
+    expect(order).toEqual(['mirror', 'gitOrFatal', 'apply', 'baseline']);
     // The backup timestamp is threaded through so the mirror can snapshot the
     // repo-side copy it is about to overwrite.
     expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} }, expect.any(String));
@@ -1867,7 +1889,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const mirrorSpy = mockPipelineRecording(order);
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore();
-    expect(order).toEqual(['gitOrFatal']);
+    expect(order).toEqual(['gitOrFatal', 'apply', 'baseline']);
     expect(mirrorSpy).not.toHaveBeenCalled();
   });
 
@@ -1878,6 +1900,21 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore({ dryRun: true });
     expect(mirrorSpy).not.toHaveBeenCalled();
+    // The baseline write lives inside the wet-only section builder, so a dry run
+    // is excluded structurally rather than by a flag anyone can later get wrong.
+    expect(order).not.toContain('baseline');
+  });
+
+  it('writes the baseline after the shared-link apply, never before it', async () => {
+    stubPlatform('win32');
+    const order: string[] = [];
+    mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+    // Recording BEFORE the apply would let a run that died mid-pull record files
+    // the host never actually received, and authorize deleting them next run.
+    expect(order.indexOf('baseline')).toBeGreaterThan(order.indexOf('apply'));
+    expect(order.indexOf('baseline')).toBeGreaterThan(order.indexOf('gitOrFatal'));
   });
 
   it('does not mirror under forceRemote on win32 (that flag means take the remote)', async () => {
@@ -1905,6 +1942,8 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(order, 'the pull did not continue past the failed mirror').toEqual([
       'mirror',
       'gitOrFatal',
+      'apply',
+      'baseline',
     ]);
   });
 
@@ -1920,7 +1959,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     // still run: skipping it here would silently disable the fix in the very
     // case it exists to cover.
     expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} }, expect.any(String));
-    expect(order).toEqual(['mirror', 'gitOrFatal']);
+    expect(order).toEqual(['mirror', 'gitOrFatal', 'apply', 'baseline']);
   });
 
   it('passes null on a malformed path-map.json, leaving the fatal to the pull proper', async () => {

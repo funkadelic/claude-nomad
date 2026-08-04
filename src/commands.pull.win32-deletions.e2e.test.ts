@@ -5,8 +5,13 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { EXIT } from './exit-codes.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
-import { buildSyncedSharedWorld } from './test-support/git.ts';
+import {
+  buildSyncedSharedWorld,
+  pushUpstreamChange,
+  wedgeExistingRepo,
+} from './test-support/git.ts';
 
 /**
  * End-to-end deletion parity for the win32 pull, against a real git repo.
@@ -72,6 +77,11 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
     }
     rmSync(tmp, { recursive: true, force: true });
   });
+
+  /** Absolute path of this host's baseline file inside the sandbox. */
+  function baselineFile(): string {
+    return join(world.home, '.cache', 'claude-nomad', 'shared-baseline-test-host.json');
+  }
 
   /** True when `relPath` is still present in the repo's committed HEAD tree. */
   function inHeadTree(repo: string, relPath: string): boolean {
@@ -145,6 +155,86 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
       .filter((p) => existsSync(p));
     expect(snapshots.length).toBeGreaterThan(0);
     expect(readFileSync(snapshots[0], 'utf8')).toBe('# doomed\n');
+  });
+
+  it('writes no baseline at all on a dry run', async () => {
+    stubPlatform('win32');
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ dryRun: true });
+    expect(existsSync(baselineFile())).toBe(false);
+  });
+
+  it('leaves the baseline and the pending deletion untouched when the pull aborts', async () => {
+    stubPlatform('win32');
+    await pull();
+    rmSync(join(world.claudeDir, 'commands', 'doomed.md'), { force: true });
+    const before = readFileSync(baselineFile(), 'utf8');
+    // A repo left unmerged by an earlier conflicted pop: the preflight conflict
+    // guard fires before anything in this run touches the host or the repo.
+    wedgeExistingRepo(world.repo);
+
+    const { NomadFatal } = await import('./utils.ts');
+    const { runPullCore } = await import('./commands.pull.ts');
+    let fatal: unknown;
+    try {
+      runPullCore();
+    } catch (err) {
+      fatal = err;
+    }
+    // Matched on the shipped guard's type and exit code so an unrelated failure
+    // cannot masquerade as this assertion passing.
+    expect(fatal).toBeInstanceOf(NomadFatal);
+    expect((fatal as InstanceType<typeof NomadFatal>).code).toBe(EXIT.CONFLICT);
+
+    // An abort must neither advance the record...
+    expect(readFileSync(baselineFile(), 'utf8')).toBe(before);
+    // ...nor lose the pending intent: the next run replays the same
+    // already-authorized removal rather than inventing a different one.
+    const { planSharedLinkDeletions } = await import('./links.deletions.ts');
+    const plan = planSharedLinkDeletions({ projects: {} });
+    expect(plan).toHaveLength(1);
+    expect(plan[0]?.repoPath).toBe(join(world.sharedDir, 'commands', 'doomed.md'));
+  });
+
+  it('leaves a delete-versus-upstream-modify collision to git', async () => {
+    stubPlatform('win32');
+    await pull();
+    const before = readFileSync(baselineFile(), 'utf8');
+    // Upstream edits the very file this host deleted. There is no win32-only
+    // pre-check for this and no nomad-worded delete conflict: the stash pop is
+    // the same mechanism a posix host running the same git command would hit.
+    pushUpstreamChange(
+      world.origin,
+      tmp,
+      'shared/commands/doomed.md',
+      '# upstream edit\n',
+      'upstream modifies doomed',
+    );
+    rmSync(join(world.claudeDir, 'commands', 'doomed.md'), { force: true });
+
+    const { NomadFatal } = await import('./utils.ts');
+    const { runPullCore } = await import('./commands.pull.ts');
+    let outcome: 'aborted' | 'resolved';
+    try {
+      runPullCore();
+      outcome = 'resolved';
+    } catch (err) {
+      expect(err).toBeInstanceOf(NomadFatal);
+      // Matched on the shipped guard's own wording and exit code so an
+      // unrelated failure cannot masquerade as this assertion passing.
+      expect((err as InstanceType<typeof NomadFatal>).message).toMatch(/autostash pop/);
+      expect((err as InstanceType<typeof NomadFatal>).code).toBe(EXIT.CONFLICT);
+      outcome = 'aborted';
+    }
+    // What real git does here, asserted rather than assumed: the autostash pop
+    // reports a modify/delete conflict and leaves an unmerged index, which the
+    // already-shipped guard turns into an abort.
+    expect(outcome).toBe('aborted');
+    // Nothing reached the host config directory, and the record still describes
+    // the last state this host actually had.
+    expect(readFileSync(baselineFile(), 'utf8')).toBe(before);
+    expect(existsSync(join(world.claudeDir, 'commands', 'doomed.md'))).toBe(false);
+    expect(readFileSync(join(world.claudeDir, 'commands', 'keep.md'), 'utf8')).toBe('# keep\n');
   });
 
   it('plans and removes nothing on a posix platform, even with a real baseline', async () => {
