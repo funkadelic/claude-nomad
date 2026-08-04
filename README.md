@@ -172,10 +172,13 @@ A few Windows-specific things worth knowing:
   directory already removes it on macOS or Linux. The removal is left uncommitted, so it publishes
   on your next push and passes the same secret scan as everything else, and the file is snapshotted
   to the backup dir first. The safety rule behind this: nomad only removes a file it has a record of
-  having given this machine, so a repo file this machine has never synced is never touched. The one
-  command that deliberately takes the repo's version is `nomad pull --force-remote`, which is what
-  that flag is for; the copy it replaces is snapshotted to the backup dir first. This is the same
-  behavior claude-nomad's `skills/` sync already has on every platform.
+  having given this machine, so a repo file this machine has never synced is never touched. That
+  record is also why the first pull after you upgrade to this version is an exception: there is
+  nothing to compare against yet, so a deletion made before that pull comes back once, and deleting
+  it again sticks. The one command that deliberately takes the repo's version is
+  `nomad pull --force-remote`, which is what that flag is for; the copy it replaces is snapshotted
+  to the backup dir first. This is the same behavior claude-nomad's `skills/` sync already has on
+  every platform.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
   macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the

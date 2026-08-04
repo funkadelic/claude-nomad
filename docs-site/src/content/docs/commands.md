@@ -46,14 +46,19 @@ deleted from a shared directory from the repo, the same as deleting inside a sym
 already removes it on macOS or Linux; the removal is left uncommitted (it publishes on your next
 push, through the same secret scan as everything else) and the repo copy is snapshotted to the
 backup dir first, gated on a per-host record of what this machine last had, so a repo file this
-machine has never synced is never touched. On macOS and Linux the symlink already makes a local edit
-(and a local deletion) an uncommitted change in the sync repo, so the step is a no-op there and both
-platforms behave the same way. It is also skipped under `--dry-run`, which writes nothing to
-`~/.claude/` or to your shared config (though it still runs the `git pull --rebase` that refreshes
-the sync repo, so the preview reflects the remote), and under `--force-remote`, whose whole purpose
-is to take the remote's version. If the mirror or removal step itself fails (an antivirus lock, or a
-path over the Windows length limit), the pull warns and carries on instead of aborting, so you can
-still fetch; your unpublished edit or deletion stays pending on the host untouched.
+machine has never synced is never touched. That record is also why the first pull after a host
+upgrades to this version is an exception: there is nothing to compare against yet, so a deletion
+made before that pull is restored once and has to be repeated. On macOS and Linux the symlink
+already makes a local edit (and a local deletion) an uncommitted change in the sync repo, so the
+step is a no-op there and both platforms behave the same way. It is also skipped under `--dry-run`,
+which writes nothing to `~/.claude/` or to your shared config (though it still runs the
+`git pull --rebase` that refreshes the sync repo, so the preview reflects the remote), and under
+`--force-remote`, whose whole purpose is to take the remote's version. If the mirror or removal step
+itself fails (an antivirus lock, or a path over the Windows length limit), the pull warns and
+carries on instead of aborting, so you can still fetch; your unpublished edit or deletion stays
+pending on the host. A file you had just created inside a shared directory is the exception: the
+repo-to-local overlay later in the same pull removes it from `~/.claude/`, after snapshotting it to
+the backup dir, so recover it from there and pull again.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
