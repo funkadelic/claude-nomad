@@ -13,8 +13,13 @@ import { stubPlatform } from './test-helpers.platform.ts';
  * still real: the step must run before `git pull --rebase` and must be skipped
  * under dry-run and force-remote). These assert the properties that now live
  * inside the extracted entry point instead: the platform gate, one map read
- * shared by both passes, the pass order, and the containment that keeps a
- * pre-step from ever being the thing that fails a pull.
+ * shared by both passes, the pass order, the containment that keeps a pre-step
+ * from ever being the thing that fails a pull, and the created-set report it
+ * hands back.
+ *
+ * The created-set probes shell out (`execFileSync` via `gitProbe`), and the
+ * fixture repo here is deliberately not a git repo, which is what makes it the
+ * right place to pin the degraded answer.
  */
 describe('reconcileSharedLinksBeforePull', () => {
   const realPlatform = process.platform;
@@ -113,9 +118,26 @@ describe('reconcileSharedLinksBeforePull', () => {
     const order: string[] = [];
     const { mirror, deletions } = mockPasses(order);
     const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
-    reconcileSharedLinksBeforePull(repoUnderHome, TS);
+    const created = reconcileSharedLinksBeforePull(repoUnderHome, TS);
     expect(mirror).not.toHaveBeenCalled();
     expect(deletions).not.toHaveBeenCalled();
+    // Nothing was mirrored, so nothing is this run's to account for, and the
+    // collision runbook downstream stays entirely out of the posix pull.
+    expect(created).toEqual([]);
+  });
+
+  it('reports no created files when the snapshots cannot be taken', async () => {
+    stubPlatform('win32');
+    const order: string[] = [];
+    const { mirror } = mockPasses(order);
+    mirror.mockImplementation(() => {
+      writeFileSync(join(repoUnderHome, 'shared', 'staged.md'), '# staged\n');
+    });
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    // The fixture repo is a plain directory, so the probes fail. Attributing
+    // every untracked file to this run would be the dangerous reading; the
+    // feature turns itself off instead.
+    expect(reconcileSharedLinksBeforePull(repoUnderHome, TS)).toEqual([]);
   });
 
   it('still runs both passes with the empty map when path-map.json is absent', async () => {
