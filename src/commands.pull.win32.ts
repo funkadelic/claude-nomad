@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { type PathMap } from './config.ts';
+import { gitProbe } from './git-probe.ts';
 import { planSharedLinkCaptures } from './links.captures.ts';
 import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
 import { stageLocalSharedEdits } from './links.ts';
@@ -40,6 +41,49 @@ function readMapForMirror(mapPath: string): PathMap | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Snapshot the untracked paths under `shared/` in the repo working tree.
+ *
+ * Taken once before the mirror and once after, the pair identifies exactly what
+ * this run wrote: nomad knows what it copied, so a set difference answers the
+ * question outright where matching against git's stderr later would be guessing
+ * at prose. Anything already untracked before the run (a file the user put in
+ * the repo by hand, a leftover from an earlier session) is in the BEFORE
+ * snapshot and is therefore never attributed to this run.
+ *
+ * Repo-relative, forward-slashed, and in git's own order on every platform,
+ * because `ls-files` normalizes all three. `-z` keeps a path with a space or a
+ * quote intact, which git's default output would have quoted and escaped.
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @returns The untracked paths, or `null` when the probe could not answer, which
+ *   callers treat as "cannot attribute anything to this run".
+ */
+function untrackedUnderShared(repo: string): Set<string> | null {
+  const out = gitProbe(['ls-files', '--others', '--exclude-standard', '-z', '--', 'shared/'], repo);
+  if (out === null) return null;
+  return new Set(out.split('\0').filter((p) => p !== ''));
+}
+
+/**
+ * The paths in `after` that were not already in `before`.
+ *
+ * An unanswerable snapshot on either side yields the empty set rather than a
+ * guess. That deliberately turns the whole created-set feature off for the run
+ * (the caller then behaves exactly as it did before the feature existed), which
+ * is the right degradation: the alternative reading, treating a missing BEFORE
+ * as "nothing was untracked", would attribute the user's own pre-existing files
+ * to this run and put them in line for removal.
+ *
+ * @param before - Snapshot taken before the mirror ran.
+ * @param after - Snapshot taken after the mirror ran.
+ * @returns Repo-relative paths this run created, in git's order.
+ */
+function newlyUntracked(before: Set<string> | null, after: Set<string> | null): string[] {
+  if (before === null || after === null) return [];
+  return [...after].filter((p) => !before.has(p));
 }
 
 /**
@@ -82,11 +126,20 @@ function readMapForMirror(mapPath: string): PathMap | null {
  * which names are shared. Mirror first, then deletions, so the backup cache
  * records the two in a stable order.
  *
+ * Reports what the mirror ADDED to the repo working tree, so the caller can
+ * tell the user's own files apart from the copies this run made if the fetch
+ * that follows refuses to overwrite one of them. The snapshots bracket both
+ * passes, including the containment below: a mirror that throws part way can
+ * still have written files, and those are this run's to account for.
+ *
  * @param repo - `repoHome()`, resolved once by `runPullCore`.
  * @param ts - Backup timestamp, resolved once by `runPullCore`.
+ * @returns Repo-relative paths this run newly created under `shared/`. Empty on
+ *   darwin and linux, and empty whenever the snapshots could not be taken.
  */
-export function reconcileSharedLinksBeforePull(repo: string, ts: string): void {
-  if (process.platform !== 'win32') return;
+export function reconcileSharedLinksBeforePull(repo: string, ts: string): string[] {
+  if (process.platform !== 'win32') return [];
+  const before = untrackedUnderShared(repo);
   try {
     const map = readMapForMirror(join(repo, 'path-map.json'));
     stageLocalSharedEdits(map, ts);
@@ -102,6 +155,7 @@ export function reconcileSharedLinksBeforePull(repo: string, ts: string): void {
     // simply replanned on the next run.
     warn(`could not reconcile local shared edits before the pull: ${(err as Error).message}`);
   }
+  return newlyUntracked(before, untrackedUnderShared(repo));
 }
 
 /**

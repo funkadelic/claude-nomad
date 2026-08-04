@@ -15,6 +15,7 @@ import {
   planSharedReconcileBeforePull,
   reconcileSharedLinksBeforePull,
 } from './commands.pull.win32.ts';
+import { pullWithCollisionRunbook } from './commands.pull.collision.ts';
 import { syncSkillsPull } from './skills-sync.ts';
 import { renderTree, section, addItem, type DoctorSection } from './output-tree.ts';
 import { computePreview } from './preview.ts';
@@ -29,7 +30,7 @@ import {
 import { recoverForceRemote } from './commands.pull.recovery.ts';
 import { recoverUnmergedIndex } from './commands.pull.recovery.unmerged.ts';
 import { EXIT } from './exit-codes.ts';
-import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
+import { die, fail, gitCaptureRaw, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
@@ -263,6 +264,9 @@ export type PullCoreResult =
  * `nomad sync`) that holds the lock across both the pull and push halves.
  * It also never catches a fatal error internally; any thrown fault propagates
  * to the caller, whose `try`/`finally` is responsible for releasing the lock.
+ * The one failure it re-words rather than merely forwards is a win32 collision
+ * between a copy the pre-pull mirror made and a file the incoming update adds;
+ * see `pullWithCollisionRunbook`.
  *
  * WET output is built (not rendered) as a doctor-style grouped tree
  * (`buildWetPullSections`): `Settings` / `Sessions` / `Extras` / `Pull summary`
@@ -360,7 +364,11 @@ export function runPullCore(
   // cannot put it back. Must run after handleWedge (never write into a wedged
   // repo) and after the backup root exists, so the repo-side snapshots it takes
   // have somewhere to land. See reconcileSharedLinksBeforePull.
-  if (!dryRun && !forceRemote) reconcileSharedLinksBeforePull(repo, ts);
+  //
+  // The paths it reports back are the copies THIS run added to the repo working
+  // tree, which is what lets the rebase below tell a name collision against
+  // nomad's own copy apart from any other reason a pull can fail.
+  const mirrored = !dryRun && !forceRemote ? reconcileSharedLinksBeforePull(repo, ts) : [];
   // A dry run applies nothing, but its preview has to describe the same repo
   // state the wet step above acts on, and the rebase below moves that state.
   // Both plans are read-only and empty on darwin and linux, so a posix host
@@ -373,7 +381,7 @@ export function runPullCore(
   // When pre === post (already up to date) the diff is empty and nothing
   // is deleted (benign no-op).
   const prePostHeads = capturePrePostHeads(repo, () => {
-    gitOrFatal(['pull', '--rebase', '--autostash'], 'git pull --rebase', repo);
+    pullWithCollisionRunbook(repo, mirrored);
   });
   // Re-probe immediately after the pull returns: git pull --rebase
   // --autostash exits 0 even when the autostash POP itself conflicts, so a
