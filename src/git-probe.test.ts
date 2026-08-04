@@ -47,6 +47,16 @@ describe('gitProbe', () => {
     expect(gitProbe(['rev-parse', 'HEAD'], tmp)).toBeNull();
   });
 
+  it('returns output larger than the default 1 MB stdout ceiling', () => {
+    gitInit(tmp);
+    // Node's execFileSync default would throw ENOBUFS here, and the catch below
+    // would report it as `null`: a listing probe over a large shared tree would
+    // silently read as "git could not answer" and turn its caller's feature off.
+    const body = `${'x'.repeat(64)}\n`.repeat(40_000);
+    makeCommit(tmp, 'big.txt', body, 'big');
+    expect(gitProbe(['cat-file', '-p', 'HEAD:big.txt'], tmp)?.length).toBe(body.length);
+  });
+
   it('distinguishes a successful silent command from a failed one', () => {
     gitInit(tmp);
     makeCommit(tmp, 'file.txt', 'base\n', 'base');

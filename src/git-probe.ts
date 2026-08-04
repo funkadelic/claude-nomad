@@ -27,6 +27,17 @@ import { execFileSync } from 'node:child_process';
 const PROBE_TIMEOUT_MS = 10_000;
 
 /**
+ * Ceiling on a single probe's stdout. Node's default is 1 MB, which a listing
+ * probe can legitimately exceed (`ls-files --others` over a large shared tree is
+ * one path per line), and exceeding it throws ENOBUFS. That failure reaches the
+ * caller as an ordinary `null`, indistinguishable from "git could not answer",
+ * so the feature the probe feeds turns itself off on exactly the hosts with the
+ * most to sync and says nothing. Sized well past any real listing instead, since
+ * the output is transient and freed as soon as the caller has filtered it.
+ */
+const PROBE_MAX_BUFFER = 64 * 1024 * 1024;
+
+/**
  * Run a read-only `git <args>` in `repo` and return its stdout.
  *
  * @param args - Git arguments (excludes the `git` binary name itself).
@@ -43,6 +54,7 @@ export function gitProbe(args: readonly string[], repo: string): string | null {
       cwd: repo,
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: PROBE_TIMEOUT_MS,
+      maxBuffer: PROBE_MAX_BUFFER,
     }).toString();
   } catch {
     return null;
