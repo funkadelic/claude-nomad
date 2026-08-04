@@ -58,7 +58,8 @@ survives different file paths and your secrets never ride along.
   project folder no longer exists on this machine, a multi-host repo where this machine's
   hostname-derived key matches no `hosts/<HOST>.json` or path-map entry (a sign `NOMAD_HOST` is
   unset here, so per-host settings and session sync will not line up with the other hosts), synced
-  skills with local edits that differ from the shared copy, and settings drift in both directions:
+  skills with local edits that differ from the shared copy, a Windows shared-config copy that has
+  drifted from the repo's copy (a warning, not a failure), and settings drift in both directions:
   keys present in the repo merge but absent from your live `settings.json` (behind; the next
   `nomad pull` will restore them, fix: `nomad pull`) and keys present locally but not yet in the
   repo (ahead; local-only additions, fix: `nomad capture-settings`). Each issue includes a fix hint.
@@ -166,10 +167,15 @@ A few Windows-specific things worth knowing:
   these are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected
   and behaves like Linux. What this means for you: nothing extra. On Windows both `nomad pull` and
   `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit is
-  captured rather than reverted. The one command that deliberately takes the repo's version is
-  `nomad pull --force-remote`, which is what that flag is for; the copy it replaces is snapshotted
-  to the backup dir first. This is the same behavior claude-nomad's `skills/` sync already has on
-  every platform.
+  captured rather than reverted. A file you delete from a shared directory is handled the same way:
+  it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked
+  directory already removes it on macOS or Linux. The removal is left uncommitted, so it publishes
+  on your next push and passes the same secret scan as everything else, and the file is snapshotted
+  to the backup dir first. The safety rule behind this: nomad only removes a file it has a record of
+  having given this machine, so a repo file this machine has never synced is never touched. The one
+  command that deliberately takes the repo's version is `nomad pull --force-remote`, which is what
+  that flag is for; the copy it replaces is snapshotted to the backup dir first. This is the same
+  behavior claude-nomad's `skills/` sync already has on every platform.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
   macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the

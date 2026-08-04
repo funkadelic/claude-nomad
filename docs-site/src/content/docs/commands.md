@@ -41,18 +41,23 @@ reconcile.
 
 On native Windows, where shared config is a real copy rather than a symlink, pull first mirrors
 those copies into the repo, before the rebase. Without that step the rebase-then-overlay sequence
-would overwrite an edit you had not published yet. On macOS and Linux the symlink already makes a
-local edit an uncommitted change in the sync repo, so the step is a no-op there and both platforms
-behave the same way. It is also skipped under `--dry-run`, which writes nothing to `~/.claude/` or
-to your shared config (though it still runs the `git pull --rebase` that refreshes the sync repo, so
-the preview reflects the remote), and under `--force-remote`, whose whole purpose is to take the
-remote's version. If the mirror step itself fails (an antivirus lock, or a path over the Windows
-length limit), the pull warns and carries on instead of aborting, so you can still fetch; your
-unpublished edit stays on the host untouched.
+would overwrite an edit you had not published yet. The same pre-rebase step also removes a file you
+deleted from a shared directory from the repo, the same as deleting inside a symlinked directory
+already removes it on macOS or Linux; the removal is left uncommitted (it publishes on your next
+push, through the same secret scan as everything else) and the repo copy is snapshotted to the
+backup dir first, gated on a per-host record of what this machine last had, so a repo file this
+machine has never synced is never touched. On macOS and Linux the symlink already makes a local edit
+(and a local deletion) an uncommitted change in the sync repo, so the step is a no-op there and both
+platforms behave the same way. It is also skipped under `--dry-run`, which writes nothing to
+`~/.claude/` or to your shared config (though it still runs the `git pull --rebase` that refreshes
+the sync repo, so the preview reflects the remote), and under `--force-remote`, whose whole purpose
+is to take the remote's version. If the mirror or removal step itself fails (an antivirus lock, or a
+path over the Windows length limit), the pull warns and carries on instead of aborting, so you can
+still fetch; your unpublished edit or deletion stays pending on the host untouched.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
+| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). On native Windows the same tree also shows every shared-config capture the pre-rebase mirror would perform and every removal the same step would make in the repo, so the preview matches the wet run in both directions. Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
 | `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
 
 ## `diff`
@@ -64,7 +69,9 @@ repo state. The `settings.json` diff filters gsd-owned hook entries from both si
 comparing, so GSD's per-session hook self-heal does not show up as a phantom `hooks` change; the
 preview reflects what a real pull would write. Also renders the same `Extras` section as
 `pull --dry-run`, listing every `<logical>/<dirname>` a pull would copy, including extras with no
-local copy yet.
+local copy yet. On native Windows it shows the same shared-config capture and removal rows
+`pull --dry-run` shows, reading the host-local record those rows are gated on without ever writing
+to it, so `nomad diff` stays fully read-only.
 
 ## `push`
 
@@ -95,8 +102,10 @@ so it is always safe to run first; the push half then reconciles everything loca
 local-only sessions and diverged extras files the pull half just retained, to the remote.
 
 On native Windows the pull half also mirrors your shared-config copies into the repo before it
-fetches (see [`pull`](#pull) below), so pulling first cannot overwrite an edit you have not
-published yet. Under `--dry-run` that mirror is skipped along with every other write.
+fetches, and removes a file you deleted from a shared directory from the repo the same way (see
+[`pull`](#pull) below), so pulling first cannot overwrite an edit, or resurrect a deletion, you have
+not published yet. Under `--dry-run` that mirror and removal pass is skipped along with every other
+write.
 
 Output is compact by default, matching `nomad doctor`: a run prints its `sync on host=<HOST>`
 header, then a single Sync summary composed from the run's outcome, not the full status tree.
@@ -304,7 +313,11 @@ when the warning fires; a single-host or fresh repo stays silent). The Environme
 an informational sync-modality row (`symlink (posix)` or `copy-sync`). On native Windows that row
 also names when a local edit reaches the repo (the next pull or push, since the host-side and
 repo-side files are distinct there) and is kept in the default compact view; the posix row stays
-verbose-only. A CRLF-guard
+verbose-only. On native Windows, the per-name shared-link row (the same one covering `CLAUDE.md`,
+`commands/`, `rules/`, and any `sharedDirs` entries) also byte-compares the real copy against its
+`shared/` counterpart and warns (`⚠︎`, exit code untouched) with the diverging files listed when it
+has drifted, instead of reporting it healthy on presence alone; a matching copy still reads `✓`.
+A CRLF-guard
 check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
 wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or
 unset). On native Windows two further warn-only rows check long-path support (`git config
