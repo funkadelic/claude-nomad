@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.63.2](https://github.com/funkadelic/claude-nomad/compare/v0.63.1...v0.63.2) (2026-08-04)
+
+
+### Fixed
+
+* **doctor:** refresh APP_ONLY_KEYS against the current settings schema ([#487](https://github.com/funkadelic/claude-nomad/issues/487)) ([1102b41](https://github.com/funkadelic/claude-nomad/commit/1102b4180fd53b90e869dc00736b3e62c9a997cc))
+
+
+### Changed
+
+* **doctor:** sync settings schema keys ([#483](https://github.com/funkadelic/claude-nomad/issues/483)) ([c406281](https://github.com/funkadelic/claude-nomad/commit/c4062811e6568f4e3d1c1be44a090de8df810385))
+* run the settings schema drift check daily ([#486](https://github.com/funkadelic/claude-nomad/issues/486)) ([090f247](https://github.com/funkadelic/claude-nomad/commit/090f247d5e941d08300138967560e09487f6c387))
+
+
+### Dependencies
+
+* bump npm-run-all2 from 9.0.2 to 9.0.3 in the dev-dependencies group ([#480](https://github.com/funkadelic/claude-nomad/issues/480)) ([9e9e7ef](https://github.com/funkadelic/claude-nomad/commit/9e9e7efcc586deafd1ce03224b88ffe8e7a0d023))
+* bump the codeql-action group across 1 directory with 2 updates ([#481](https://github.com/funkadelic/claude-nomad/issues/481)) ([0905267](https://github.com/funkadelic/claude-nomad/commit/0905267f2a74c23a41bde5947edaa9b823d59940))
+* bump the prod-dependencies group across 1 directory with 2 updates ([#485](https://github.com/funkadelic/claude-nomad/issues/485)) ([d77491d](https://github.com/funkadelic/claude-nomad/commit/d77491d241b9faf2cacb87b54d58591ca1dd3bef))
+
 ## [0.63.1](https://github.com/funkadelic/claude-nomad/compare/v0.63.0...v0.63.1) (2026-07-31)
 
 
