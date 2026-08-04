@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import {
   blue,
@@ -16,9 +16,11 @@ import {
 import {
   allSharedLinks,
   claudeHome,
+  isDeniedName,
   GSD_DROPPED_NAMES,
   HOST,
   repoHome,
+  ALWAYS_NEVER_SYNC,
   type PathMap,
 } from './config.ts';
 import { addChildItem, addItem, type DoctorSection } from './commands.doctor.format.ts';
@@ -30,9 +32,12 @@ import { readJson, validatePathMapShape } from './utils.json.ts';
  * Host- and repo-state reporters for `cmdDoctor`. Each helper appends one or
  * more items to its target `DoctorSection` (via `addItem`) and signals failure
  * by setting `process.exitCode = 1`. Items go to stdout at render time through
- * `renderDoctor` in `commands.doctor.format`; nothing here writes to stderr
- * (read-only doctor contract: FAIL lines stay on stdout so a piped
- * `nomad doctor 2>/dev/null` does not lose them).
+ * `renderDoctor` in `commands.doctor.format`; every status line stays on stdout
+ * (read-only doctor contract: FAIL lines must survive a piped
+ * `nomad doctor 2>/dev/null`). The one stderr write reachable from this file is
+ * the WARN `listDivergingFiles` emits when git is missing from PATH or the
+ * compare fails, which is skip-reporting rather than a status line and matches
+ * what `reportSkillsDivergence` already does.
  */
 
 /**
@@ -194,6 +199,16 @@ function win32CopyOkRow(name: string): SharedLinkClassification {
 }
 
 /**
+ * The basename of one `listDivergingFiles` line, with the `(local only)` /
+ * `(repo only)` side indicator that function appends stripped back off first so
+ * the name can be tested against a deny set. Mirrors the exact suffixes
+ * `labelEntry` produces in `extras-sync.diff.ts`.
+ */
+function divergingBasename(line: string): string {
+  return basename(line.replace(/ \((?:local|repo) only\)$/, ''));
+}
+
+/**
  * Win32 branch of `classifySharedLink`'s non-symlink case: the real (copied)
  * file/dir at `p` is the healthy state there, but a healthy PRESENCE is not
  * the same as a healthy CONTENT. With capture-on-pull in place (see
@@ -201,9 +216,11 @@ function win32CopyOkRow(name: string): SharedLinkClassification {
  * divergence from `shared/<name>` means something did not reconcile, which is
  * worth a nudge before the next mutating command runs.
  *
- * Skips the compare entirely when the repo has no `shared/<name>` source
- * (`repoHasSharedSource`): there is nothing to compare against, and the row
- * stays the plain OK line. The compare itself routes through
+ * Skips the compare entirely when the repo has no `shared/<name>` source:
+ * there is nothing to compare against, and the row stays the plain OK line.
+ * The presence probe is inlined rather than delegated to `repoHasSharedSource`
+ * so the repo path it builds is computed once and reused as the compare's
+ * right-hand side. The compare itself routes through
  * `listDivergingFiles`, the same byte-level `git diff --no-index` helper
  * `reportSkillsDivergence` already uses (never mtime-based, so a checkout
  * mtime rewrite cannot manufacture a false WARN), which never throws and
@@ -211,13 +228,22 @@ function win32CopyOkRow(name: string): SharedLinkClassification {
  * always a WARN, never a FAIL: `process.exitCode` is left untouched exactly
  * like `reportSkillsDivergence`, per the doctor reporter contract.
  *
+ * The compare's result is filtered through the same always-never-sync deny set
+ * both sync directions apply. A file under a shared name whose basename that
+ * set rejects (a credential file, a per-host `settings.local.json`) exists
+ * locally by design and is deliberately never copied into the repo, so counting
+ * it as drift would produce a WARN on every run that no command could clear,
+ * which is worse than no WARN at all.
+ *
  * Extracted out of `classifySharedLink` so adding this compare does not push
  * that already branch-dense function over the cognitive-complexity gate.
  */
 function classifyWin32Copy(name: string, p: string): SharedLinkClassification {
-  if (!repoHasSharedSource(name)) return win32CopyOkRow(name);
   const sharedPath = join(repoHome(), 'shared', name);
-  const diverging = listDivergingFiles(p, sharedPath);
+  if (!existsSync(sharedPath)) return win32CopyOkRow(name);
+  const diverging = listDivergingFiles(p, sharedPath).filter(
+    (line) => !isDeniedName(ALWAYS_NEVER_SYNC, divergingBasename(line)),
+  );
   if (diverging.length === 0) return win32CopyOkRow(name);
   return {
     line: `${yellow(warnGlyph)} ${name}: ${diverging.length} file(s) diverge from shared/${name}`,

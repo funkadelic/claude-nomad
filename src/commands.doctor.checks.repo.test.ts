@@ -718,6 +718,30 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     expect(warned).toContain('git not on PATH');
   });
 
+  it('does not count a never-synced deny-set file under a shared name as drift', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    // Both sync directions filter this basename out, so it exists locally by
+    // design and can never reach the repo. Reporting it as drift would produce
+    // a WARN on every run that no command could clear.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{}\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes('commands') && !item.startsWith('\t'));
+    expect(row).toBeDefined();
+    expect(row).toContain(okGlyph);
+    expect(row).not.toContain('diverge from shared/');
+    expect(process.exitCode).toBe(0);
+  });
+
   it('still FAILs a non-symlink on posix, unaffected by the win32 drift compare', async () => {
     stubPlatform('linux');
     vi.resetModules();
