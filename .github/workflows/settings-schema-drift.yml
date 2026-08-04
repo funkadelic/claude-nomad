@@ -1,6 +1,6 @@
 name: Settings schema drift
 
-# Weekly check that src/settings-keys.ts SCHEMA_KEYS still matches the official
+# Daily check that src/settings-keys.ts SCHEMA_KEYS still matches the official
 # Claude Code settings JSON schema. On drift, regenerate the file and open (or
 # update) a PR. APP_ONLY_KEYS stays hand-maintained.
 
@@ -14,7 +14,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '0 7 * * 1' # Mondays 07:00 UTC
+    - cron: '0 7 * * *' # Daily 07:00 UTC
   workflow_dispatch:
 
 concurrency:
