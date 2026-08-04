@@ -21,7 +21,8 @@ import {
   repoHome,
   type PathMap,
 } from './config.ts';
-import { addItem, type DoctorSection } from './commands.doctor.format.ts';
+import { addChildItem, addItem, type DoctorSection } from './commands.doctor.format.ts';
+import { listDivergingFiles } from './extras-sync.diff.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 import { readJson, validatePathMapShape } from './utils.json.ts';
 
@@ -184,21 +185,65 @@ function repoHasSharedSource(name: string): boolean {
   return existsSync(join(repoHome(), 'shared', name));
 }
 
+/** Return shape shared by every `classifySharedLink` branch. */
+type SharedLinkClassification = { line: string; fail: boolean; children?: string[] };
+
+/** The unconditional win32 copy-sync healthy row, reused by every OK case below. */
+function win32CopyOkRow(name: string): SharedLinkClassification {
+  return { line: `${green(okGlyph)} ${name}: real copy (win32 copy-sync)`, fail: false };
+}
+
+/**
+ * Win32 branch of `classifySharedLink`'s non-symlink case: the real (copied)
+ * file/dir at `p` is the healthy state there, but a healthy PRESENCE is not
+ * the same as a healthy CONTENT. With capture-on-pull in place (see
+ * `links.captures.ts`, `links.deletions.ts`), a standing byte-level
+ * divergence from `shared/<name>` means something did not reconcile, which is
+ * worth a nudge before the next mutating command runs.
+ *
+ * Skips the compare entirely when the repo has no `shared/<name>` source
+ * (`repoHasSharedSource`): there is nothing to compare against, and the row
+ * stays the plain OK line. The compare itself routes through
+ * `listDivergingFiles`, the same byte-level `git diff --no-index` helper
+ * `reportSkillsDivergence` already uses (never mtime-based, so a checkout
+ * mtime rewrite cannot manufacture a false WARN), which never throws and
+ * WARNs (rather than raising) when git is absent from PATH. Divergence is
+ * always a WARN, never a FAIL: `process.exitCode` is left untouched exactly
+ * like `reportSkillsDivergence`, per the doctor reporter contract.
+ *
+ * Extracted out of `classifySharedLink` so adding this compare does not push
+ * that already branch-dense function over the cognitive-complexity gate.
+ */
+function classifyWin32Copy(name: string, p: string): SharedLinkClassification {
+  if (!repoHasSharedSource(name)) return win32CopyOkRow(name);
+  const sharedPath = join(repoHome(), 'shared', name);
+  const diverging = listDivergingFiles(p, sharedPath);
+  if (diverging.length === 0) return win32CopyOkRow(name);
+  return {
+    line: `${yellow(warnGlyph)} ${name}: ${diverging.length} file(s) diverge from shared/${name}`,
+    fail: false,
+    children: diverging,
+  };
+}
+
 /**
  * Resolve the display item and optional exit-code side-effect for a single
- * shared-link path. Returns `{ line, fail }` where `fail` true means the
- * caller should set `process.exitCode = 1`.
+ * shared-link path. Returns `{ line, fail, children }` where `fail` true
+ * means the caller should set `process.exitCode = 1`, and `children` (when
+ * present) is one child row per diverging file for the caller to render via
+ * `addChildItem`. The classifier stays pure: it never touches the section
+ * itself, so `reportSharedLinks` owns every `addItem`/`addChildItem` call.
  *
  * A non-symlink is the copy-sync model's healthy state on win32 (no
- * unprivileged symlink support there), so it is reported OK (`fail: false`)
- * instead of the posix FAIL. On every other platform a non-symlink still
- * blocks sync and FAILs, unchanged.
+ * unprivileged symlink support there); see `classifyWin32Copy` for what
+ * "healthy" means there now that a content compare is in play. On every
+ * other platform a non-symlink still blocks sync and FAILs, unchanged.
  *
  * Extracted from `reportSharedLinks` to reduce cognitive complexity: the lstat
  * try/catch and the inner symlink-target try/catch each count against the
  * parent function's score.
  */
-function classifySharedLink(name: string, p: string): { line: string; fail: boolean } {
+function classifySharedLink(name: string, p: string): SharedLinkClassification {
   let stat;
   try {
     stat = lstatSync(p);
@@ -216,10 +261,7 @@ function classifySharedLink(name: string, p: string): { line: string; fail: bool
   }
   if (!stat.isSymbolicLink()) {
     if (process.platform === 'win32') {
-      return {
-        line: `${green(okGlyph)} ${name}: real copy (win32 copy-sync)`,
-        fail: false,
-      };
+      return classifyWin32Copy(name, p);
     }
     return {
       line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync); run \`nomad adopt ${name}\` to fix`,
@@ -272,15 +314,21 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
  * dangling link is a WARN with a `nomad pull` hint when the source exists (a
  * real out-of-sync state), and a calm info note when it does not (nothing to
  * sync). A symlink whose target cannot be resolved is never a healthy OK, so a
- * dangling or unreadable link is not masked.
+ * dangling or unreadable link is not masked. On win32, a real copy that has
+ * drifted in content from `shared/<name>` renders a WARN with the diverging
+ * files as child rows (see `classifyWin32Copy`), instead of the unconditional
+ * OK the copy-sync model used to report for any non-symlink.
  */
 export function reportSharedLinks(section: DoctorSection, map: PathMap): void {
   const claude = claudeHome();
   for (const name of allSharedLinks(map)) {
     const p = join(claude, name);
-    const { line, fail } = classifySharedLink(name, p);
+    const { line, fail, children } = classifySharedLink(name, p);
     addItem(section, line);
     if (fail) process.exitCode = 1;
+    if (children) {
+      for (const child of children) addChildItem(section, child);
+    }
   }
 }
 

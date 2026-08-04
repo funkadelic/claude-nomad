@@ -3,6 +3,17 @@ import { relative } from 'node:path';
 
 import { warn } from './utils.ts';
 
+/**
+ * Wall-clock ceiling (ms) for the `git diff --no-index` invocation below.
+ * Matches the `PROBE_TIMEOUT_MS` convention other doctor-adjacent subprocess
+ * probes use (`commands.doctor.checks.deps.ts`, `.crlf.ts`, `.longpaths.ts`):
+ * a local, no-network diff over a config-sized tree should return
+ * near-instantly, so a hang here (a wedged git process, a pathological
+ * filesystem) is bounded rather than left to block the doctor run or the
+ * dry-run preview indefinitely.
+ */
+const NAME_STATUS_DIFF_TIMEOUT_MS = 3_000;
+
 /** One parsed `--name-status` record: the status letter and the whole path. */
 type DiffEntry = { status: string; path: string };
 
@@ -105,6 +116,7 @@ function runNameStatusDiff(a: string, b: string, parse: (stdout: string) => stri
       ['diff', '--no-index', '--no-renames', '-z', '--name-status', a, b],
       {
         stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: NAME_STATUS_DIFF_TIMEOUT_MS,
       },
     ).toString();
     return parse(stdout);
