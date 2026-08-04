@@ -151,10 +151,15 @@ export function untrackedCollisionRunbookText(repoRelPaths: readonly string[]): 
  *
  * `FETCH_HEAD` is the discriminator because the fetch half of `git pull`
  * completes before the checkout refuses: on a real collision it names the
- * commit that carries the incoming file, while on a failure that never reached
- * the remote at all (offline, bad URL, auth) it is stale or absent and no path
- * resolves. That is what keeps an unrelated pull failure on the ordinary error
- * path instead of being reported as a name collision it is not.
+ * commit that carries the incoming file, so the path resolves under it.
+ *
+ * A failure that never reached the remote at all (offline, bad URL, auth) cannot
+ * produce a false collision, and the reason is stronger than "the file is
+ * missing": git TRUNCATES `FETCH_HEAD` to zero bytes when a fetch fails rather
+ * than leaving the previous successful fetch's entry in place (verified against
+ * git 2.53). So even a repo that fetched cleanly minutes ago resolves nothing
+ * here, and an unrelated pull failure stays on the ordinary error path instead
+ * of being reported as a name collision it is not.
  *
  * A mirrored path cannot be in HEAD (it would be tracked, and this set is
  * untracked by construction), so resolving under `FETCH_HEAD` means the
