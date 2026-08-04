@@ -1,6 +1,7 @@
 // Regenerate src/settings-keys.ts SCHEMA_KEYS from the official Claude Code
 // settings JSON schema. APP_ONLY_KEYS (keys the running app writes ahead of the
-// published schema) are preserved verbatim. No args rewrites the file; --check
+// published schema) are preserved except for entries the schema has since
+// absorbed, which move into SCHEMA_KEYS. No args rewrites the file; --check
 // prints drift and exits non-zero without writing. Network failure exits 2 in
 // both modes (never a silent pass). The daily settings-schema-drift workflow
 // runs the write mode and opens a PR when SCHEMA_KEYS changes. Run with
@@ -16,6 +17,17 @@ const TARGET = fileURLToPath(new URL('../src/settings-keys.ts', import.meta.url)
 /** Sort case-insensitively and drop duplicates; the canonical shape for both key arrays. */
 export function canonicalizeKeys(keys: string[]): string[] {
   return [...new Set(keys)].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+}
+
+/**
+ * Drop the app-only keys the published schema has since absorbed. Provenance is
+ * the whole point of the split, so a key documented upstream belongs in
+ * SCHEMA_KEYS and nowhere else; without this the hand-maintained half keeps a
+ * shadow copy forever and the two arrays stop being disjoint.
+ */
+export function pruneAbsorbedAppOnly(appOnlyKeys: string[], schemaKeys: string[]): string[] {
+  const documented = new Set(schemaKeys);
+  return appOnlyKeys.filter((key) => !documented.has(key));
 }
 
 /** Extract the quoted string entries of a `const <name> = [ ... ];` array literal from TS source. */
@@ -89,14 +101,17 @@ async function main(): Promise<void> {
 
   const added = live.filter((k) => !currentSchema.includes(k));
   const removed = currentSchema.filter((k) => !live.includes(k));
+  const keptAppOnly = pruneAbsorbedAppOnly(appOnly, live);
+  const absorbed = appOnly.filter((k) => !keptAppOnly.includes(k));
 
   if (check) {
-    if (added.length === 0 && removed.length === 0) {
+    if (added.length === 0 && removed.length === 0 && absorbed.length === 0) {
       console.log('settings schema in sync; no drift.');
       return;
     }
     if (added.length > 0) console.log(`added: ${added.join(', ')}`);
     if (removed.length > 0) console.log(`removed: ${removed.join(', ')}`);
+    if (absorbed.length > 0) console.log(`absorbed from APP_ONLY_KEYS: ${absorbed.join(', ')}`);
     process.exit(1);
   }
 
@@ -104,7 +119,7 @@ async function main(): Promise<void> {
   // unconditionally re-emitted the canonical header (e.g. after the script was
   // renamed) and produced a phantom comment-only diff that the daily workflow
   // turned into a no-op PR every run. Idempotent write mode prevents that.
-  const next = renderSettingsKeysFile(live, appOnly);
+  const next = renderSettingsKeysFile(live, keptAppOnly);
   if (next === source) {
     console.log('settings schema in sync; file unchanged.');
     return;
@@ -115,6 +130,9 @@ async function main(): Promise<void> {
       ? `updated SCHEMA_KEYS (+${added.length} -${removed.length}).`
       : 'rewrote settings-keys.ts (formatting only; keys unchanged).',
   );
+  if (absorbed.length > 0) {
+    console.log(`moved into SCHEMA_KEYS: ${absorbed.join(', ')}`);
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
