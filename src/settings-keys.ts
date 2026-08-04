@@ -94,7 +94,6 @@ export const SCHEMA_KEYS = [
   'includeGitInstructions',
   'inputNeededNotifEnabled',
   'language',
-  'leftArrowOpensAgents',
   'managedMcpServers',
   'minimumVersion',
   'model',
