@@ -55,6 +55,8 @@ describe('cmdDiff (offline, lockless preview)', () => {
   type LogSpy = MockInstance<(...args: unknown[]) => void>;
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
+  let originalUserProfile: string | undefined;
+  let originalNomadRepo: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
   let claudeDir: string;
@@ -67,9 +69,17 @@ describe('cmdDiff (offline, lockless preview)', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    originalUserProfile = process.env.USERPROFILE;
+    originalNomadRepo = process.env.NOMAD_REPO;
     process.env.NO_COLOR = '1';
     testHome = mkdtempSync(join(tmpdir(), 'nomad-diff-test-'));
     process.env.HOME = testHome;
+    // home() prefers USERPROFILE on its win32 branch and repoHome() prefers
+    // NOMAD_REPO, so stubbing HOME alone leaves the win32 cases below reachable
+    // by ambient state: a real Windows profile, or the alternate checkout a
+    // developer is told to export.
+    process.env.USERPROFILE = testHome;
+    delete process.env.NOMAD_REPO;
     process.env.NOMAD_HOST = 'test-host';
     repoUnderHome = join(testHome, 'claude-nomad');
     sharedDir = join(repoUnderHome, 'shared');
@@ -110,6 +120,10 @@ describe('cmdDiff (offline, lockless preview)', () => {
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
     else delete process.env.NOMAD_HOST;
+    if (originalUserProfile !== undefined) process.env.USERPROFILE = originalUserProfile;
+    else delete process.env.USERPROFILE;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     delete process.env.NO_COLOR;
     process.exitCode = 0;
     rmSync(testHome, { recursive: true, force: true });
