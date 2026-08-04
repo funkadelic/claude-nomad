@@ -97,14 +97,37 @@ function baselineKey(claude: string, abs: string): string {
 }
 
 /**
- * Walk `dir` recursively, adding one entry per regular file to `out`.
- * Directories themselves are never recorded: `hashFile` throws on one, and a
- * deleted directory is fully described by its files disappearing.
+ * Record `abs` into `out` if it is a regular file, recurse if it is a
+ * directory, and skip it otherwise.
  *
- * Skips any basename the always-never-sync deny set rejects, so a credential or
- * per-host file can neither enter the baseline nor authorize a deletion later.
- * Skips symlinks, and skips (rather than fails on) any entry whose stat throws,
- * so an unreadable file costs one missing record instead of a thrown pull.
+ * Directories themselves are never recorded: `hashFile` throws on one, and a
+ * deleted directory is fully described by its files disappearing. An absent
+ * entry contributes nothing (there is nothing to record). A symlink is skipped
+ * for the same reason the mirror skips one: recording a symlinked tree would let
+ * a later un-symlinking read as a mass deletion.
+ *
+ * Shared by the top-level name loop and the recursive walk so both agree on
+ * what counts as a recordable entry.
+ */
+function addLocalPath(abs: string, claude: string, out: Record<string, LocalFileStat>): void {
+  const st = lstatSync(abs, { throwIfNoEntry: false });
+  if (st === undefined) return;
+  if (st.isSymbolicLink()) return;
+  if (st.isDirectory()) {
+    collectSharedFiles(abs, claude, out);
+    return;
+  }
+  out[baselineKey(claude, abs)] = { size: st.size, mtime: st.mtimeMs };
+}
+
+/**
+ * Walk `dir` recursively via {@link addLocalPath}, skipping any basename the
+ * always-never-sync deny set rejects so a credential or per-host file can
+ * neither enter the baseline nor authorize a deletion later.
+ *
+ * A directory that cannot be listed contributes nothing rather than throwing: an
+ * unreadable subtree costs some missing records, and under-recording authorizes
+ * nothing.
  */
 function collectSharedFiles(dir: string, claude: string, out: Record<string, LocalFileStat>): void {
   let entries: string[];
@@ -115,15 +138,7 @@ function collectSharedFiles(dir: string, claude: string, out: Record<string, Loc
   }
   for (const entry of entries) {
     if (isDeniedName(ALWAYS_NEVER_SYNC, entry)) continue;
-    const child = join(dir, entry);
-    const st = lstatSync(child, { throwIfNoEntry: false });
-    if (st === undefined) continue;
-    if (st.isSymbolicLink()) continue;
-    if (st.isDirectory()) {
-      collectSharedFiles(child, claude, out);
-      continue;
-    }
-    out[baselineKey(claude, child)] = { size: st.size, mtime: st.mtimeMs };
+    addLocalPath(join(dir, entry), claude, out);
   }
 }
 
@@ -133,10 +148,10 @@ function collectSharedFiles(dir: string, claude: string, out: Record<string, Loc
  *
  * Iterates `allSharedLinks(map)` and nothing else, so a name the user never
  * configured is outside the record entirely; raw path-map keys are never walked.
- * A name absent from `~/.claude/` contributes nothing (there is nothing to
- * record), and a name that is still a live symlink is skipped, matching the
- * mirror: recording a symlinked tree would let a later un-symlinking read as a
- * mass deletion.
+ * A configured name that the deny set rejects is skipped outright: the
+ * `sharedDirs` guard blocks the never-sync names but not the credential-shaped
+ * ones, so this is the boundary that keeps a name like `credentials` out of the
+ * record.
  *
  * Exported because the deletion planner consumes this exact function. The key
  * format is the contract between the record and its reader, and two
@@ -150,15 +165,7 @@ export function enumerateLocalSharedFiles(map: PathMap): Record<string, LocalFil
   const out: Record<string, LocalFileStat> = {};
   for (const name of allSharedLinks(map)) {
     if (isDeniedName(ALWAYS_NEVER_SYNC, name)) continue;
-    const localPath = join(claude, name);
-    const st = lstatSync(localPath, { throwIfNoEntry: false });
-    if (st === undefined) continue;
-    if (st.isSymbolicLink()) continue;
-    if (st.isDirectory()) {
-      collectSharedFiles(localPath, claude, out);
-      continue;
-    }
-    out[baselineKey(claude, localPath)] = { size: st.size, mtime: st.mtimeMs };
+    addLocalPath(join(claude, name), claude, out);
   }
   return out;
 }
