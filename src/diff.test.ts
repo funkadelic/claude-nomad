@@ -14,7 +14,10 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import type * as childProcessModule from 'node:child_process';
 
+import { stubPlatform } from './test-helpers.platform.ts';
 import { encodePath } from './utils.json.ts';
+
+const realPlatform = process.platform;
 
 /**
  * Snapshot helper mirroring preview.test.ts. Captures the `{ relPath:
@@ -366,5 +369,62 @@ describe('cmdDiff (offline, lockless preview)', () => {
     cmdDiff();
     expect(logOutput()).not.toContain('ℹ');
     expect(errOutput()).not.toContain('ℹ');
+  });
+
+  it('shows win32 capture and removal rows and invokes no networked git subcommand', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    // Pending capture: local CLAUDE.md differs from the pre-existing shared copy.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+
+    // Pending removal: baseline says commands/gone.md was synced to this
+    // host; it is now absent locally but still present in the repo.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'gone.md'), '# gone\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    const cacheDir = join(testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'shared-baseline-test-host.json'),
+      JSON.stringify({
+        schema: 1,
+        scannerVersion: 'shared-links-baseline/1',
+        configHash: 'not-applicable',
+        files: { 'commands/gone.md': { size: 1, mtime: 1, hash: 'x' } },
+      }) + '\n',
+    );
+
+    const execCalls: unknown[][] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return {
+        ...actual,
+        execFileSync: (...args: unknown[]) => {
+          execCalls.push(args);
+          return (actual.execFileSync as (...a: unknown[]) => Buffer)(...args);
+        },
+      };
+    });
+
+    stubPlatform('win32');
+    try {
+      const { cmdDiff } = await import('./diff.ts');
+      cmdDiff();
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    expect(logOutput()).toContain('would capture');
+    expect(logOutput()).toContain('would remove');
+    const networked = execCalls.some(
+      (call) =>
+        call[0] === 'git' &&
+        Array.isArray(call[1]) &&
+        (call[1].includes('pull') || call[1].includes('fetch') || call[1].includes('push')),
+    );
+    expect(networked).toBe(false);
+    vi.doUnmock('node:child_process');
   });
 });

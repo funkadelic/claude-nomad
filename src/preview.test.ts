@@ -984,4 +984,125 @@ describe('computePreview orchestration', () => {
       expect(joined).not.toContain('would copy');
     },
   );
+
+  /** Plant a shared-links baseline by hand, matching links.deletions.test.ts. */
+  function plantBaseline(files: Record<string, unknown>): void {
+    const cacheDir = join(testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'shared-baseline-test-host.json'),
+      JSON.stringify({
+        schema: 1,
+        scannerVersion: 'shared-links-baseline/1',
+        configHash: 'not-applicable',
+        files,
+      }) + '\n',
+    );
+  }
+
+  it('renders would-capture and would-remove rows on a win32 dry-run, matching the wet predicates', async () => {
+    // Capture candidate: local CLAUDE.md differs from the pre-existing shared copy.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+
+    // Removal candidate: baseline says commands/gone.md was synced to this
+    // host; it is now absent locally but still present in the repo.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'gone.md'), '# gone\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    plantBaseline({ 'commands/gone.md': { size: 1, mtime: 1, hash: 'x' } });
+
+    const realPlatform = process.platform;
+    stubPlatform('win32');
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    try {
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260803-000000', { projects: {} });
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('would capture');
+    expect(joined).toMatch(/would capture.*CLAUDE\.md/);
+    expect(joined).toContain('would remove');
+    expect(joined).toMatch(/would remove.*gone\.md/);
+  });
+
+  it('mutates nothing and writes no baseline on a win32 dry-run with a pending capture and removal', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'gone.md'), '# gone\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    plantBaseline({ 'commands/gone.md': { size: 1, mtime: 1, hash: 'x' } });
+
+    const cacheRoot = join(testHome, '.cache', 'claude-nomad');
+    const beforeShared = snapshotTree(sharedDir);
+    const beforeClaude = snapshotTree(claudeDir);
+    const beforeCache = snapshotTree(cacheRoot);
+
+    const realPlatform = process.platform;
+    stubPlatform('win32');
+    try {
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260803-000001', { projects: {} });
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    expect(snapshotTree(sharedDir)).toEqual(beforeShared);
+    expect(snapshotTree(claudeDir)).toEqual(beforeClaude);
+    // The planted baseline file (and nothing else) is the only file under the
+    // cache dir, and it stays byte-identical: the preview reads it but never
+    // writes writeSharedBaseline's own record.
+    expect(snapshotTree(cacheRoot)).toEqual(beforeCache);
+  });
+
+  it('writes no shared-links baseline file when none existed before a win32 dry-run', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+    const baselinePath = join(testHome, '.cache', 'claude-nomad', 'shared-baseline-test-host.json');
+    expect(existsSync(baselinePath)).toBe(false);
+
+    const realPlatform = process.platform;
+    stubPlatform('win32');
+    try {
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260803-000002', { projects: {} });
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    expect(existsSync(baselinePath)).toBe(false);
+  });
+
+  it.skipIf(isWin)(
+    'renders no would-capture or would-remove rows on a non-win32 dry-run (no regression)',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+      mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+      writeFileSync(join(sharedDir, 'commands', 'gone.md'), '# gone\n');
+      mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+      plantBaseline({ 'commands/gone.md': { size: 1, mtime: 1, hash: 'x' } });
+
+      expect(process.platform).not.toBe('win32');
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      });
+
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260803-000003', { projects: {} });
+
+      const joined = logs.join('\n');
+      expect(joined).not.toContain('would capture');
+      expect(joined).not.toContain('would remove');
+    },
+  );
 });

@@ -5,6 +5,8 @@ import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
 import { remapExtrasPull } from './extras-sync.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
+import { planSharedLinkCaptures, type SharedLinkCapture } from './links.captures.ts';
+import { planSharedLinkDeletions, type SharedLinkDeletion } from './links.deletions.ts';
 import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
 import { addItem, renderTree, section } from './output-tree.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
@@ -134,6 +136,28 @@ function formatLinkRow(e: LinkPreviewEvent): string {
 }
 
 /**
+ * Format a planned win32 capture (`planSharedLinkCaptures`) as a Symlinks
+ * section row. Reads distinctly from the existing rows: the capture runs
+ * host-to-repo, the opposite direction from the win32 `would copy` row, so
+ * the local path is named first.
+ * Example: `would capture  ~/.claude/CLAUDE.md -> /repo/shared/CLAUDE.md`
+ */
+function formatCaptureRow(c: SharedLinkCapture): string {
+  return `would capture  ${c.localPath} -> ${c.repoPath}`;
+}
+
+/**
+ * Format a planned win32 deletion (`planSharedLinkDeletions`) as a Symlinks
+ * section row: names the repo path that would be removed and the host path
+ * whose absence authorized it, so a user reading a dry run understands their
+ * sync repo is about to lose that file.
+ * Example: `would remove  /repo/shared/commands/a.md (gone from ~/.claude/commands/a.md)`
+ */
+function formatDeletionRow(d: SharedLinkDeletion): string {
+  return `would remove  ${d.repoPath} (gone from ${d.localPath})`;
+}
+
+/**
  * Format a remap pull preview event as a Sessions section row. An `overwrite`
  * event renders `overwrite  <dst> (from <src>)`; a `note` event (e.g. nothing
  * to remap) renders its text verbatim. Either way the row is glyph-free.
@@ -172,6 +196,8 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *   `would pull on host=<HOST> (preview; nothing applied)`
  *   (blank line)
  *   Symlinks
+ *     would capture  <local> -> <repo>   <- win32 only; see the capture/removal note below
+ *     would remove   <repo> (gone from <local>)   <- win32 only; same note
  *     create  <from> -> <to>
  *     ...
  *   settings.json        <- RAW section, omitted when no changes
@@ -223,6 +249,22 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  * `~/.claude/settings.json` both produce a note in the settings section and
  * continue rather than throw. This supports `cmdDiff`'s offline-safe contract.
  *
+ * The Symlinks section's win32-only `would capture` and `would remove` rows
+ * come first, ahead of `applySharedLinks`'s own rows, so the tree reads in
+ * the same order the wet pre-pull reconcile executes (capture, then remove,
+ * then the repo-to-local overlay). `would remove` renders exactly the
+ * `planSharedLinkDeletions` plan the wet pull consumes, so preview and pull
+ * cannot disagree about what gets removed. `would capture` renders
+ * `planSharedLinkCaptures`, a separate predicate pinned to the real mirror
+ * by an equivalence test (`links.captures.test.ts`) rather than by shared
+ * code, since the mirror's gates live inside the over-cap `links.ts` and
+ * also drive the push mirror. Both predicates return `[]` on any non-win32
+ * platform and on a `null` map, so posix output is unaffected and no branch
+ * is needed at either call site. The removal preview reads the host-local
+ * shared-links baseline (`links.baseline.ts`) but never writes it: baseline
+ * writes happen only on the wet pull path, which this function never
+ * reaches, so the zero-mutation contract covers this artifact too.
+ *
  * @param ts - backup timestamp (used by applySharedLinks/remapPull for log
  *   phrasing; no backup dir is created under dryRun).
  * @param map - parsed path-map.json; callers fall back to `{ projects: {} }`
@@ -243,8 +285,17 @@ export function computePreview(
   console.log(`would pull on host=${HOST} (preview; nothing applied)`);
   console.log('');
 
-  // Symlinks section.
+  // Symlinks section. Win32-only capture and removal rows first, so the tree
+  // reads in the order the wet pre-pull reconcile executes; both predicates
+  // are read-only, return [] on non-win32 and on a null map, and never write
+  // the shared-links baseline (see the docstring above).
   const links = section('Symlinks');
+  for (const capture of planSharedLinkCaptures(map)) {
+    addItem(links, formatCaptureRow(capture));
+  }
+  for (const deletion of planSharedLinkDeletions(map)) {
+    addItem(links, formatDeletionRow(deletion));
+  }
   applySharedLinks(ts, map, {
     dryRun: true,
     onPreview: (e) => addItem(links, formatLinkRow(e)),
