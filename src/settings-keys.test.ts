@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { canonicalizeKeys, parseKeyArray } from '../scripts/sync-settings-keys.ts';
+import {
+  canonicalizeKeys,
+  parseKeyArray,
+  pruneAbsorbedAppOnly,
+} from '../scripts/sync-settings-keys.ts';
 import { APP_ONLY_KEYS, KNOWN_SETTINGS_KEYS, SCHEMA_KEYS } from './settings-keys.ts';
 
 /**
@@ -28,6 +32,26 @@ describe('settings-keys canonical shape', () => {
     expect(KNOWN_SETTINGS_KEYS.size).toBe(SCHEMA_KEYS.length + APP_ONLY_KEYS.length);
     for (const k of [...SCHEMA_KEYS, ...APP_ONLY_KEYS])
       expect(KNOWN_SETTINGS_KEYS.has(k)).toBe(true);
+  });
+});
+
+describe('sync-settings-keys pruneAbsorbedAppOnly', () => {
+  it('drops the app-only keys the schema now documents', () => {
+    expect(pruneAbsorbedAppOnly(['ultracode', 'model', 'remote'], ['env', 'model'])).toEqual([
+      'ultracode',
+      'remote',
+    ]);
+  });
+
+  it('keeps every app-only key while the schema still lacks them', () => {
+    expect(pruneAbsorbedAppOnly(['ultracode', 'remote'], ['env', 'model'])).toEqual([
+      'ultracode',
+      'remote',
+    ]);
+  });
+
+  it('leaves the committed arrays untouched against the live-shaped SCHEMA_KEYS', () => {
+    expect(pruneAbsorbedAppOnly(APP_ONLY_KEYS, SCHEMA_KEYS)).toEqual(APP_ONLY_KEYS);
   });
 });
 
