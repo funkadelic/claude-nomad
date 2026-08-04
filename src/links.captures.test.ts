@@ -1,7 +1,5 @@
 import {
   chmodSync,
-  existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -34,15 +32,29 @@ const isWin = realPlatform === 'win32';
  */
 function snapshotFiles(root: string): Map<string, string> {
   const out = new Map<string, string>();
-  if (!existsSync(root)) return out;
   const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir)) {
-      const abs = join(dir, entry);
-      const st = lstatSync(abs);
-      if (st.isDirectory()) {
+    // withFileTypes takes the entry kind from the directory read itself, so
+    // there is no separate stat between deciding what an entry is and acting
+    // on it. Both reads are wrapped rather than guarded by a prior existence
+    // check for the same reason: an absent or vanishing path contributes
+    // nothing instead of racing a check against a use.
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const abs = join(dir, entry.name);
+      if (entry.isDirectory()) {
         walk(abs);
-      } else if (st.isFile()) {
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      try {
         out.set(relative(root, abs).split(sep).join('/'), readFileSync(abs, 'utf8'));
+      } catch {
+        /* vanished between the directory read and the file read */
       }
     }
   };
