@@ -1905,6 +1905,49 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(order).not.toContain('baseline');
   });
 
+  it('computes the win32 dry-run plans before the rebase, not after it', async () => {
+    stubPlatform('win32');
+    mkdirSync(join(testHome, '.claude', 'commands'), { recursive: true });
+    mkdirSync(join(repoUnderHome, 'shared', 'commands'), { recursive: true });
+    const gone = join(repoUnderHome, 'shared', 'commands', 'gone.md');
+    writeFileSync(gone, '# gone\n');
+    const cacheDir = join(testHome, '.cache', 'claude-nomad');
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      join(cacheDir, 'shared-baseline-test-host.json'),
+      JSON.stringify({
+        schema: 1,
+        scannerVersion: 'shared-links-baseline/1',
+        configHash: 'not-applicable',
+        files: { 'commands/gone.md': { size: 1, mtime: 1, hash: 'x' } },
+      }) + '\n',
+    );
+
+    const order: string[] = [];
+    mockPipelineRecording(order);
+    const previewSpy = vi.fn();
+    vi.doMock('./preview.ts', () => ({ computePreview: previewSpy }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        // The rebase brings an upstream deletion of the same file, which is the
+        // window where a plan computed afterwards silently disagrees with what
+        // a wet run of the same moment would have done.
+        ...actual,
+        gitOrFatal: vi.fn(() => {
+          rmSync(gone, { force: true });
+        }),
+      };
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ dryRun: true });
+
+    const plans = previewSpy.mock.calls[0]?.[3] as
+      { deletions: { repoPath: string }[] } | undefined;
+    expect(plans?.deletions.map((d) => d.repoPath)).toEqual([gone]);
+  });
+
   it('writes the baseline after the shared-link apply, never before it', async () => {
     stubPlatform('win32');
     const order: string[] = [];

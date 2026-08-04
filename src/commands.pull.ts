@@ -11,7 +11,10 @@ import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { writeSharedBaseline } from './links.baseline.ts';
-import { reconcileSharedLinksBeforePull } from './commands.pull.win32.ts';
+import {
+  planSharedReconcileBeforePull,
+  reconcileSharedLinksBeforePull,
+} from './commands.pull.win32.ts';
 import { syncSkillsPull } from './skills-sync.ts';
 import { renderTree, section, addItem, type DoctorSection } from './output-tree.ts';
 import { computePreview } from './preview.ts';
@@ -358,6 +361,11 @@ export function runPullCore(
   // repo) and after the backup root exists, so the repo-side snapshots it takes
   // have somewhere to land. See reconcileSharedLinksBeforePull.
   if (!dryRun && !forceRemote) reconcileSharedLinksBeforePull(repo, ts);
+  // A dry run applies nothing, but its preview has to describe the same repo
+  // state the wet step above acts on, and the rebase below moves that state.
+  // Both plans are read-only and empty on darwin and linux, so a posix host
+  // pays nothing for computing them here.
+  const sharedPlans = dryRun ? planSharedReconcileBeforePull(repo) : undefined;
   // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
   // --autostash between them. capturePrePostHeads handles the unborn-HEAD
   // case (fresh clone, no commits) by returning undefined; when undefined
@@ -402,7 +410,7 @@ export function runPullCore(
     // sections for cmdPull to render: a composing caller (cmdSync) continues
     // with its own output afterwards, and a 'complete' line mid-stream reads
     // as if the command had ended.
-    computePreview(ts, map, 'pull');
+    computePreview(ts, map, 'pull', sharedPlans);
     return { tag: 'dry' };
   }
   const { sections, localOnly, settingsLabel, unmapped, extrasSkipped } = buildWetPullSections(

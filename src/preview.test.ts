@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -1079,6 +1080,60 @@ describe('computePreview orchestration', () => {
     }
 
     expect(existsSync(baselinePath)).toBe(false);
+  });
+
+  it('renders the plans the caller supplied instead of recomputing them', async () => {
+    // The pull dry-run computes both plans before its rebase moves the repo, so
+    // the preview has to render what it was handed rather than re-deriving it
+    // from post-rebase state.
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260803-000004', { projects: {} }, 'pull', {
+      captures: [
+        {
+          name: 'CLAUDE.md',
+          localPath: '/pre/rebase/CLAUDE.md',
+          repoPath: '/pre/shared/CLAUDE.md',
+        },
+      ],
+      deletions: [
+        { name: 'commands', localPath: '/pre/rebase/commands/a.md', repoPath: '/pre/shared/a.md' },
+      ],
+    });
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('would capture  /pre/rebase/CLAUDE.md -> /pre/shared/CLAUDE.md');
+    expect(joined).toContain(
+      'would remove  /pre/shared/a.md (gone from /pre/rebase/commands/a.md)',
+    );
+  });
+
+  it.skipIf(isWin)('does not throw when a shared path cannot be stat-ed at all', async () => {
+    // An antivirus lock or an EPERM makes lstat throw, which
+    // `throwIfNoEntry: false` does not suppress. A preview is the surface whose
+    // whole value is being safe to run, so it must degrade to missing rows.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    plantBaseline({ 'CLAUDE.md': { size: 1, mtime: 1, hash: 'x' } });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+
+    const realPlatform = process.platform;
+    chmodSync(claudeDir, 0o000);
+    stubPlatform('win32');
+    try {
+      const { computePreview } = await import('./preview.ts');
+      expect(() => computePreview('20260803-000005', { projects: {} })).not.toThrow();
+    } finally {
+      stubPlatform(realPlatform);
+      chmodSync(claudeDir, 0o700);
+    }
   });
 
   it.skipIf(isWin)(

@@ -25,6 +25,27 @@ const CANONICAL_ORDER_NOTE =
 type PreviewVerb = 'pull' | 'diff';
 
 /**
+ * The two win32 pre-rebase plans, computed by the caller rather than by
+ * `computePreview` itself.
+ *
+ * Both planners gate on repo-side state (a deletion needs the repo file to
+ * still exist, a capture needs `shared/<name>` to exist), and `pull --dry-run`
+ * runs the real `git pull --rebase` before it previews. Computing them inside
+ * the preview would therefore evaluate them against a repo the rebase had
+ * already moved, while the wet run evaluates them before it, which is exactly
+ * the preview-disagrees-with-the-run class the honest-preview rule exists to
+ * prevent. A caller that rebases passes the plans it computed beforehand;
+ * `nomad diff` has no rebase of its own, so it lets `computePreview` compute
+ * them.
+ */
+export type SharedLinkPlans = {
+  /** Host-to-repo captures the pre-rebase mirror would perform. */
+  captures: SharedLinkCapture[];
+  /** Repo-side removals the pre-rebase deletion pass would perform. */
+  deletions: SharedLinkDeletion[];
+};
+
+/**
  * LCS line diff for two pre-stringified JSON documents via jsdiff. Returns a
  * unified-diff style string: the two literal header lines
  * `--- ~/.claude/settings.json` and `+++ would write`, followed by body lines
@@ -253,8 +274,10 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  * come first, ahead of `applySharedLinks`'s own rows, so the tree reads in
  * the same order the wet pre-pull reconcile executes (capture, then remove,
  * then the repo-to-local overlay). `would remove` renders exactly the
- * `planSharedLinkDeletions` plan the wet pull consumes, so preview and pull
- * cannot disagree about what gets removed. `would capture` renders
+ * `planSharedLinkDeletions` plan the wet pull consumes, computed against the
+ * same pre-rebase repo state when the caller supplies `plans` (see
+ * {@link SharedLinkPlans}), so preview and pull cannot disagree about what
+ * gets removed. `would capture` renders
  * `planSharedLinkCaptures`, a separate predicate pinned to the real mirror
  * by an equivalence test (`links.captures.test.ts`) rather than by shared
  * code, since the mirror's gates live inside the over-cap `links.ts` and
@@ -271,11 +294,14 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *   when the file is absent.
  * @param verb - 'diff' for cmdDiff, 'pull' for pull --dry-run. Defaults to
  *   'pull' so existing callers compile unchanged.
+ * @param plans - Pre-rebase win32 capture and deletion plans; omit to compute
+ *   them here against current repo state (see {@link SharedLinkPlans}).
  */
 export function computePreview(
   ts: string,
   map: PathMap,
   verb: PreviewVerb = 'pull',
+  plans?: SharedLinkPlans,
 ): { unmapped: number; collisions: number; localOnly: number } {
   const repo = repoHome();
   const claude = claudeHome();
@@ -290,10 +316,14 @@ export function computePreview(
   // are read-only, return [] on non-win32 and on a null map, and never write
   // the shared-links baseline (see the docstring above).
   const links = section('Symlinks');
-  for (const capture of planSharedLinkCaptures(map)) {
+  const { captures, deletions } = plans ?? {
+    captures: planSharedLinkCaptures(map),
+    deletions: planSharedLinkDeletions(map),
+  };
+  for (const capture of captures) {
     addItem(links, formatCaptureRow(capture));
   }
-  for (const deletion of planSharedLinkDeletions(map)) {
+  for (const deletion of deletions) {
     addItem(links, formatDeletionRow(deletion));
   }
   applySharedLinks(ts, map, {

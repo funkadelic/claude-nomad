@@ -8,8 +8,10 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { type PathMap } from './config.ts';
-import { applySharedLinkDeletions } from './links.deletions.ts';
+import { planSharedLinkCaptures } from './links.captures.ts';
+import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
 import { stageLocalSharedEdits } from './links.ts';
+import { type SharedLinkPlans } from './preview.ts';
 import { warn } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
 
@@ -100,4 +102,25 @@ export function reconcileSharedLinksBeforePull(repo: string, ts: string): void {
     // simply replanned on the next run.
     warn(`could not reconcile local shared edits before the pull: ${(err as Error).message}`);
   }
+}
+
+/**
+ * The read-only counterpart of {@link reconcileSharedLinksBeforePull}: what
+ * that step WOULD do, for a caller previewing instead of applying.
+ *
+ * Exists so `pull --dry-run` can compute both plans at the same point in the
+ * run the wet reconcile acts, which is before the rebase. Both planners gate on
+ * repo-side existence, so computing them after the rebase would let the preview
+ * and the run disagree about a file the rebase deleted or added upstream.
+ *
+ * Reads the map through the same fail-safe reader the wet step uses, so the two
+ * cannot disagree about which names are shared, and returns empty plans on
+ * darwin and linux because both planners do.
+ *
+ * @param repo - `repoHome()`, resolved once by the caller.
+ * @returns The capture and deletion plans for the current repo state.
+ */
+export function planSharedReconcileBeforePull(repo: string): SharedLinkPlans {
+  const map = readMapForMirror(join(repo, 'path-map.json'));
+  return { captures: planSharedLinkCaptures(map), deletions: planSharedLinkDeletions(map) };
 }
