@@ -15,7 +15,7 @@
  * push pipeline exactly as they do for the mirror.
  */
 
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
 import {
@@ -26,19 +26,9 @@ import {
   ALWAYS_NEVER_SYNC,
   type PathMap,
 } from './config.ts';
-import { enumerateLocalSharedFiles, readSharedBaseline } from './links.baseline.ts';
-import { diffManifest, hashFile } from './push-manifest.ts';
+import { enumerateLocalSharedScan, readSharedBaseline } from './links.baseline.ts';
+import { warn } from './utils.ts';
 import { backupRepoWrite } from './utils.fs.ts';
-
-/**
- * Stable stand-in returned when a file's hash cannot be read. `diffManifest`
- * calls its hash callback only while computing the `changed` set, which this
- * consumer discards (the content gate for additions and edits is the eager
- * mirror, which copies unconditionally and lets git decide what really moved).
- * So the value is never compared against anything that matters; what matters is
- * that a file vanishing mid-run cannot throw out of the pull.
- */
-const HASH_UNAVAILABLE = 'unreadable';
 
 /** One repo file the pass will remove, with the local absence that authorized it. */
 export type SharedLinkDeletion = {
@@ -50,13 +40,22 @@ export type SharedLinkDeletion = {
   repoPath: string;
 };
 
-/** Hash `abs`, degrading to a stable sentinel rather than throwing. */
-function safeHash(abs: string): string {
-  try {
-    return hashFile(abs);
-  } catch {
-    return HASH_UNAVAILABLE;
-  }
+/**
+ * True when `key` names, or sits beneath, a path the local walk declined to
+ * read (a live symlink, an unlistable directory, an unstattable entry, a denied
+ * name). Such a key is absent from the recorded set for a reason that is not a
+ * deletion, so acting on it would remove a repo file nobody asked to remove.
+ *
+ * The test lands on a path-segment boundary rather than being a bare prefix
+ * match, so a declined `commands/sub` does not also swallow a sibling
+ * `commands/subtitle.md`. Both sides arrive already lowercased; see
+ * {@link planSharedLinkDeletions} for why case is folded.
+ *
+ * @param declined - Lowercased relative POSIX paths the walk declined.
+ * @param key - Lowercased baseline key under test.
+ */
+function isUnknown(declined: string[], key: string): boolean {
+  return declined.some((prefix) => key === prefix || key.startsWith(`${prefix}/`));
 }
 
 /**
@@ -69,14 +68,22 @@ function safeHash(abs: string): string {
  * - That name's local path must still exist. A whole missing directory is not a
  *   deletion; it is an unmounted drive, a rename, or an interrupted pull, and
  *   treating it as one would empty the repo.
- * - The basename must not be denied, so a credential or per-host file injected
- *   into a hand-written baseline cannot direct a removal.
- * - The re-anchored repo path must stay inside the repo's `shared/` directory.
- *   This is the only place in the pass where a value read off disk becomes an
- *   `rmSync` target. The escape test matches `backupUnder`: reject an empty
- *   result, a bare `..`, or a `..` followed by a separator, so the check lands
- *   on a path-segment boundary and a sibling merely NAMED `..config` still
- *   passes.
+ * - NO segment may be denied, matching the walk that produces the record: it
+ *   applies the deny predicate at every depth, so a key with a denied segment
+ *   anywhere could only have come from a hand-written baseline, and a
+ *   credential or per-host file must never direct a removal.
+ * - The re-anchored repo path must stay inside `shared/<name>`, not merely
+ *   inside `shared/`. This is the only place in the pass where a value read off
+ *   disk becomes an `rmSync` target, and anchoring on the name is what stops a
+ *   key that passed the name gate from redirecting the removal at a SIBLING
+ *   name whose local file is present. The escape test matches `backupUnder`:
+ *   reject an empty result, a bare `..`, or a `..` followed by a separator, so
+ *   the check lands on a path-segment boundary and a sibling merely NAMED
+ *   `..config` still passes.
+ * - No segment may be `..`, `.`, or empty. The containment check above proves
+ *   the resolved TARGET is in bounds; this proves the key itself is a plain
+ *   relative path, which is what makes the reported local path (built by
+ *   joining the raw key) describe the same file the repo path does.
  * - The repo file must exist. Nothing to remove otherwise.
  */
 function deletionFor(
@@ -89,10 +96,12 @@ function deletionFor(
   const name = segments[0];
   if (!names.has(name)) return null;
   if (!existsSync(join(claude, name))) return null;
-  if (isDeniedName(ALWAYS_NEVER_SYNC, segments[segments.length - 1])) return null;
+  if (segments.some((segment) => isDeniedName(ALWAYS_NEVER_SYNC, segment))) return null;
   const repoPath = resolve(sharedRoot, key);
-  const rel = relative(sharedRoot, repoPath);
+  const rel = relative(join(sharedRoot, name), repoPath);
   if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return null;
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..'))
+    return null;
   if (!existsSync(repoPath)) return null;
   return { name, localPath: join(claude, key), repoPath };
 }
@@ -107,6 +116,20 @@ function deletionFor(
  * trusted. That last line is what makes every baseline-integrity failure, absent
  * through malformed through foreign-producer, resolve to deleting nothing.
  *
+ * A recorded key is a deletion candidate only when it is absent from the walk
+ * AND no declined path sits above it, so an unreadable subtree or a name that
+ * has since become a symlink authorizes nothing rather than everything under
+ * it. Presence is tested with case folded, because this runs on win32 only and
+ * NTFS is case-insensitive: without folding, renaming `commands/Foo.md` to
+ * `foo.md` reads as a deletion of the old key whose repo path then resolves to
+ * the file the mirror wrote moments earlier under the new casing.
+ *
+ * The absence test is written out rather than routed through `diffManifest`,
+ * whose `changed` half this consumer discards: computing it hashes every file
+ * whose size matches the record and whose mtime moved, which a git checkout
+ * makes the common case, so the read-only surfaces would pay a full content
+ * read of the shared tree for a value nobody looks at.
+ *
  * @param map - Parsed `path-map.json`, or `null` when it could not be read.
  * @returns One entry per repo file to remove; empty when nothing is authorized.
  */
@@ -117,11 +140,15 @@ export function planSharedLinkDeletions(map: PathMap | null): SharedLinkDeletion
   if (baseline === null) return [];
   const claude = claudeHome();
   const sharedRoot = join(repoHome(), 'shared');
-  const current = enumerateLocalSharedFiles(map);
-  const { deleted } = diffManifest(baseline, current, (key) => safeHash(join(claude, key)));
+  const scan = enumerateLocalSharedScan(map);
+  const present = new Set(Object.keys(scan.files).map((key) => key.toLowerCase()));
+  const declined = scan.declined.map((path) => path.toLowerCase());
   const names = new Set(allSharedLinks(map));
   const plan: SharedLinkDeletion[] = [];
-  for (const key of deleted) {
+  for (const key of Object.keys(baseline.files)) {
+    const folded = key.toLowerCase();
+    if (present.has(folded)) continue;
+    if (isUnknown(declined, folded)) continue;
     const entry = deletionFor(key, names, claude, sharedRoot);
     if (entry !== null) plan.push(entry);
   }
@@ -136,7 +163,14 @@ export function planSharedLinkDeletions(map: PathMap | null): SharedLinkDeletion
  * Files only, never directories and never recursive. Removing the last file from
  * a repo directory therefore leaves an empty directory behind; git does not
  * track those, so the commit is clean, and posix behaves identically when the
- * last file inside a symlinked directory goes away.
+ * last file inside a symlinked directory goes away. A repo path that turns out
+ * to be a directory (a type change another host pushed) is skipped rather than
+ * raising, since a non-recursive removal cannot act on it anyway.
+ *
+ * Each entry is contained: a snapshot or removal that fails warns and the loop
+ * moves on, so one unremovable file cannot cancel the removals planned after
+ * it. Silently abandoning the rest would leave the repo half-reconciled while
+ * the run reported nothing about the entries it never reached.
  *
  * @param map - Parsed `path-map.json`, or `null` when it could not be read.
  * @param ts - Backup timestamp, already resolved by the pull.
@@ -144,7 +178,12 @@ export function planSharedLinkDeletions(map: PathMap | null): SharedLinkDeletion
 export function applySharedLinkDeletions(map: PathMap | null, ts: string): void {
   const repo = repoHome();
   for (const entry of planSharedLinkDeletions(map)) {
-    backupRepoWrite(entry.repoPath, ts, repo);
-    rmSync(entry.repoPath, { force: true });
+    try {
+      if (!lstatSync(entry.repoPath).isFile()) continue;
+      backupRepoWrite(entry.repoPath, ts, repo);
+      rmSync(entry.repoPath, { force: true });
+    } catch (err) {
+      warn(`could not remove ${entry.repoPath}: ${(err as Error).message}`);
+    }
   }
 }

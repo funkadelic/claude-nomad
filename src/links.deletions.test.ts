@@ -5,7 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  utimesSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -325,6 +325,66 @@ describe('shared-link deletions', () => {
       await expectRepoUntouched();
     });
 
+    it('discards a key that redirects at a sibling shared name inside shared/', async () => {
+      // The key passes the per-name gate on `commands` and never leaves
+      // `shared/`, so anchoring containment on the shared root alone would have
+      // let it delete a file under `rules` whose local copy is present and
+      // which was never in the deleted set at all.
+      mkdirSync(join(claudeDir, 'rules'), { recursive: true });
+      mkdirSync(join(sharedDir, 'rules'), { recursive: true });
+      seedSynced('commands/a.md', '# a\n');
+      seedSynced('rules/keep.md', '# keep\n');
+      plantBaseline({ 'commands/../rules/keep.md': entry() });
+      stubPlatform('win32');
+      const { applySharedLinkDeletions, planSharedLinkDeletions } =
+        await import('./links.deletions.ts');
+      expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
+      applySharedLinkDeletions({ projects: {} }, TS);
+      expect(readFileSync(join(sharedDir, 'rules', 'keep.md'), 'utf8')).toBe('# keep\n');
+    });
+
+    it('discards a key that names the shared name directory itself', async () => {
+      seedSynced('commands/a.md', '# a\n');
+      plantBaseline({ commands: entry() });
+      stubPlatform('win32');
+      const { planSharedLinkDeletions } = await import('./links.deletions.ts');
+      expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
+      await expectRepoUntouched();
+    });
+
+    it('discards an in-bounds key carrying a dot, empty, or parent segment', async () => {
+      // Each of these resolves back inside `shared/commands`, so containment
+      // alone accepts them; rejecting the key SHAPE is what keeps the reported
+      // local path describing the same file as the repo path.
+      seedSynced('commands/a.md', '# a\n');
+      plantBaseline({
+        'commands/./a.md': entry(),
+        'commands//a.md': entry(),
+        'commands/sub/../a.md': entry(),
+      });
+      stubPlatform('win32');
+      const { planSharedLinkDeletions } = await import('./links.deletions.ts');
+      expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
+      await expectRepoUntouched();
+    });
+
+    it('never removes through a denied segment above the basename', async () => {
+      // The walk applies the deny predicate at every depth, so a key with a
+      // denied intermediate segment could only come from a hand-written record.
+      mkdirSync(join(sharedDir, 'commands', 'settings.local.json'), { recursive: true });
+      writeFileSync(join(sharedDir, 'commands', 'settings.local.json', 'note.md'), '# note\n');
+      seedSynced('commands/a.md', '# a\n');
+      plantBaseline({ 'commands/settings.local.json/note.md': entry() });
+      stubPlatform('win32');
+      const { applySharedLinkDeletions, planSharedLinkDeletions } =
+        await import('./links.deletions.ts');
+      expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
+      applySharedLinkDeletions({ projects: {} }, TS);
+      expect(
+        readFileSync(join(sharedDir, 'commands', 'settings.local.json', 'note.md'), 'utf8'),
+      ).toBe('# note\n');
+    });
+
     it('still propagates a sibling name that merely begins with two dots', async () => {
       // The escape test lands on a path-segment boundary, so `..config` is an
       // ordinary name and not a parent reference.
@@ -343,28 +403,121 @@ describe('shared-link deletions', () => {
     });
   });
 
-  describe('resilience', () => {
-    it.skipIf(isWin)('plans through a file whose hash cannot be read', async () => {
-      seedSynced('commands/a.md', '# a\n');
-      seedSynced('commands/b.md', '# b\n');
-      // Same size as the record but a moved mtime is exactly the case where the
-      // diff reaches for a hash; the file is unreadable, so hashing throws.
-      const locked = join(claudeDir, 'commands', 'b.md');
-      utimesSync(locked, new Date(0), new Date(0));
-      chmodSync(locked, 0o000);
+  describe('an unreadable local path is not a deletion', () => {
+    it.skipIf(isWin)('plans nothing beneath a shared name that is now a live symlink', async () => {
+      // The baseline was recorded when the name was a real copy; the path has
+      // since become a symlink into the repo, so the walk cannot record what is
+      // under it. Reading that as a mass deletion would empty the user's own
+      // live config, since the link points straight at it.
+      mkdirSync(join(sharedDir, 'rules'), { recursive: true });
+      writeFileSync(join(sharedDir, 'rules', 'a.md'), '# a\n');
+      writeFileSync(join(sharedDir, 'rules', 'b.md'), '# b\n');
+      symlinkSync(join(sharedDir, 'rules'), join(claudeDir, 'rules'));
+      plantBaseline({ 'rules/a.md': entry(), 'rules/b.md': entry() });
+      stubPlatform('win32');
+      const { applySharedLinkDeletions, planSharedLinkDeletions } =
+        await import('./links.deletions.ts');
+      expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
+      applySharedLinkDeletions({ projects: {} }, TS);
+      expect(readFileSync(join(sharedDir, 'rules', 'a.md'), 'utf8')).toBe('# a\n');
+      expect(readFileSync(join(sharedDir, 'rules', 'b.md'), 'utf8')).toBe('# b\n');
+    });
+
+    it.skipIf(isWin)('plans nothing beneath a subdirectory it cannot list', async () => {
+      // An antivirus lock, an EPERM, or a cloud-storage placeholder makes a
+      // directory transiently unlistable. Its files are still there.
+      seedSynced('commands/top.md', '# top\n');
+      mkdirSync(join(claudeDir, 'commands', 'sub'), { recursive: true });
+      mkdirSync(join(sharedDir, 'commands', 'sub'), { recursive: true });
+      seedSynced(join('commands', 'sub', 'a.md'), '# a\n');
+      seedSynced(join('commands', 'sub', 'b.md'), '# b\n');
       plantBaseline({
-        'commands/a.md': entry(),
-        'commands/b.md': { size: 4, mtime: 999999, hash: 'stale' },
+        'commands/top.md': entry(),
+        'commands/sub/a.md': entry(),
+        'commands/sub/b.md': entry(),
       });
-      rmSync(join(claudeDir, 'commands', 'a.md'), { force: true });
+      const locked = join(claudeDir, 'commands', 'sub');
+      chmodSync(locked, 0o000);
+      stubPlatform('win32');
+      const { applySharedLinkDeletions, planSharedLinkDeletions } =
+        await import('./links.deletions.ts');
+      try {
+        expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
+        applySharedLinkDeletions({ projects: {} }, TS);
+        expect(readFileSync(join(sharedDir, 'commands', 'sub', 'a.md'), 'utf8')).toBe('# a\n');
+        expect(readFileSync(join(sharedDir, 'commands', 'sub', 'b.md'), 'utf8')).toBe('# b\n');
+      } finally {
+        chmodSync(locked, 0o700);
+      }
+    });
+
+    it('still propagates a sibling whose name merely starts with a declined name', async () => {
+      // The declined-path test lands on a path-segment boundary, so declining
+      // `commands/sub` must not also swallow `commands/subtitle.md`.
+      mkdirSync(join(sharedDir, 'commands', 'sub'), { recursive: true });
+      writeFileSync(join(sharedDir, 'commands', 'sub', 'a.md'), '# a\n');
+      seedSynced('commands/subtitle.md', '# subtitle\n');
+      symlinkSync(join(sharedDir, 'commands', 'sub'), join(claudeDir, 'commands', 'sub'));
+      plantBaseline({ 'commands/sub/a.md': entry(), 'commands/subtitle.md': entry() });
+      rmSync(join(claudeDir, 'commands', 'subtitle.md'), { force: true });
       stubPlatform('win32');
       const { planSharedLinkDeletions } = await import('./links.deletions.ts');
+      const plan = planSharedLinkDeletions({ projects: {} });
+      expect(plan.map((e) => e.repoPath)).toEqual([join(sharedDir, 'commands', 'subtitle.md')]);
+    });
+  });
+
+  describe('case folding: a rename is not a deletion', () => {
+    it('plans nothing for a rename that changes only the casing', async () => {
+      // NTFS is case-insensitive, so the repo path the old key resolves to is
+      // the file the mirror wrote moments earlier under the new casing.
+      seedSynced('commands/Foo.md', '# foo\n');
+      plantBaseline({ 'commands/Foo.md': entry() });
+      rmSync(join(claudeDir, 'commands', 'Foo.md'), { force: true });
+      writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# foo\n');
+      stubPlatform('win32');
+      const { applySharedLinkDeletions, planSharedLinkDeletions } =
+        await import('./links.deletions.ts');
+      expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
+      applySharedLinkDeletions({ projects: {} }, TS);
+      expect(readFileSync(join(sharedDir, 'commands', 'Foo.md'), 'utf8')).toBe('# foo\n');
+    });
+  });
+
+  describe('applying: one bad entry cannot cancel the rest', () => {
+    it('skips a repo path that is a directory and still applies the entries after it', async () => {
+      // A type change another host pushed: a file locally, a directory in the
+      // repo. A non-recursive removal cannot act on it, and raising would have
+      // abandoned every removal planned after it.
+      seedSynced('commands/a.md', '# a\n');
+      seedSynced('commands/b.md', '# b\n');
+      rmSync(join(claudeDir, 'commands', 'a.md'), { force: true });
+      rmSync(join(claudeDir, 'commands', 'b.md'), { force: true });
+      rmSync(join(sharedDir, 'commands', 'a.md'), { force: true });
+      mkdirSync(join(sharedDir, 'commands', 'a.md'), { recursive: true });
+      plantBaseline({ 'commands/a.md': entry(), 'commands/b.md': entry() });
+      stubPlatform('win32');
+      const { applySharedLinkDeletions } = await import('./links.deletions.ts');
+      expect(() => applySharedLinkDeletions({ projects: {} }, TS)).not.toThrow();
+      expect(existsSync(join(sharedDir, 'commands', 'a.md'))).toBe(true);
+      expect(existsSync(join(sharedDir, 'commands', 'b.md'))).toBe(false);
+    });
+
+    it.skipIf(isWin)('warns and continues when a repo file cannot be removed', async () => {
+      seedSynced('commands/a.md', '# a\n');
+      plantBaseline({ 'commands/a.md': entry() });
+      rmSync(join(claudeDir, 'commands', 'a.md'), { force: true });
+      // A read-only repo directory leaves the file readable (so it is planned
+      // and snapshotted) but makes the unlink itself fail.
+      chmodSync(join(sharedDir, 'commands'), 0o500);
+      stubPlatform('win32');
+      const { applySharedLinkDeletions } = await import('./links.deletions.ts');
       try {
-        // A file that cannot be read mid-run must not throw out of the pull; the
-        // genuine deletion beside it still propagates.
-        expect(planSharedLinkDeletions({ projects: {} })).toHaveLength(1);
+        expect(() => applySharedLinkDeletions({ projects: {} }, TS)).not.toThrow();
+        expect(vi.mocked(console.error).mock.calls.join('\n')).toContain('could not remove');
+        expect(readFileSync(join(sharedDir, 'commands', 'a.md'), 'utf8')).toBe('# a\n');
       } finally {
-        chmodSync(locked, 0o600);
+        chmodSync(join(sharedDir, 'commands'), 0o700);
       }
     });
   });
