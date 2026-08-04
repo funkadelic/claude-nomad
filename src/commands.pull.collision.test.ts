@@ -63,6 +63,26 @@ describe('untrackedCollisionRunbookText', () => {
   });
 });
 
+describe('isContainedMirrorPath', () => {
+  it('accepts a nested repo-relative path under shared/', async () => {
+    const { isContainedMirrorPath } = await import('./commands.pull.collision.ts');
+    expect(isContainedMirrorPath('shared/commands/mine.md')).toBe(true);
+  });
+
+  it('rejects anything that could unlink outside the shared tree', async () => {
+    const { isContainedMirrorPath } = await import('./commands.pull.collision.ts');
+    // Outside shared/ entirely, so not something this run's mirror wrote.
+    expect(isContainedMirrorPath('hosts/other.json')).toBe(false);
+    // Climbs back out of the tree the prefix appears to confine it to.
+    expect(isContainedMirrorPath('shared/../.git/config')).toBe(false);
+    // Absolute, and a prefix test alone would not catch it.
+    expect(isContainedMirrorPath('/etc/passwd')).toBe(false);
+    // A backslash separates segments on Windows, so it escapes there too.
+    expect(isContainedMirrorPath('shared\\..\\..\\evil')).toBe(false);
+    expect(isContainedMirrorPath('')).toBe(false);
+  });
+});
+
 describe('pullWithCollisionRunbook', () => {
   let tmp: string;
   let originalEnv: Record<string, string | undefined>;
@@ -257,6 +277,20 @@ describe('pullWithCollisionRunbook', () => {
     // a tree the user owns.
     expect(statSync(join(repo, 'shared', 'commands', 'mine.md')).isDirectory()).toBe(true);
     expect(existsSync(join(repo, 'shared', 'commands', 'mine.md', 'inner.txt'))).toBe(true);
+  });
+
+  it('never removes a colliding path from outside shared/', async () => {
+    // Reachable only if the created set were ever computed without its
+    // `-- shared/` pathspec, which is exactly what the removal re-asserts
+    // against rather than trusting.
+    const repo = buildClone(['hosts/other.json']);
+    plantUntracked(repo, 'hosts/other.json', '{}\n');
+
+    const err = await runPull(repo, ['hosts/other.json']);
+
+    const { NomadFatal } = await import('./utils.ts');
+    expect(err).toBeInstanceOf(NomadFatal);
+    expect(existsSync(join(repo, 'hosts', 'other.json'))).toBe(true);
   });
 
   it('warns and still raises the runbook when a removal fails', async () => {

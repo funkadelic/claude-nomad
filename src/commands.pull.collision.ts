@@ -29,6 +29,7 @@ import { join } from 'node:path';
 
 import { EXIT } from './exit-codes.ts';
 import { gitProbe } from './git-probe.ts';
+import { isSafeRelPath } from './rel-path-guard.ts';
 import { gitOrFatal, NomadFatal, warn } from './utils.ts';
 
 /** Repo-relative prefix every mirrored shared-config copy sits under. */
@@ -175,6 +176,26 @@ function addedByIncomingUpdate(repo: string, created: readonly string[]): string
 }
 
 /**
+ * Whether `rel` is a path this module is allowed to unlink: repo-relative,
+ * traversal-free, and under `shared/`.
+ *
+ * The paths reaching the removal already come from a `-- shared/` pathspec, but
+ * that containment is the caller's and lives several functions upstream. This
+ * re-asserts it at the only place it actually matters, one line from the
+ * `rmSync`, so the removal stays contained no matter how the created set is
+ * produced later. The `shared/` prefix plus a traversal-free relative path is
+ * the whole guarantee: `join(repo, rel)` cannot then land outside
+ * `<repo>/shared/`, on either platform (`isSafeRelPath` also rejects the
+ * backslash that would otherwise separate segments on Windows).
+ *
+ * @param rel - Repo-relative candidate path.
+ * @returns true when the path is safe to remove.
+ */
+export function isContainedMirrorPath(rel: string): boolean {
+  return rel.startsWith('shared/') && isSafeRelPath(rel);
+}
+
+/**
  * Remove nomad's own mirrored copies from the repo working tree, so the next
  * `nomad pull` is not blocked a second time by the leftovers of this one.
  *
@@ -185,10 +206,11 @@ function addedByIncomingUpdate(repo: string, created: readonly string[]): string
  * one unreadable or locked path does not abandon the rest.
  *
  * @param repo - Absolute path to the sync repo.
- * @param repoRelPaths - Repo-relative paths to remove.
+ * @param repoRelPaths - Repo-relative paths to remove. Anything
+ *   {@link isContainedMirrorPath} rejects is skipped rather than removed.
  */
 function removeMirroredCopies(repo: string, repoRelPaths: readonly string[]): void {
-  for (const rel of repoRelPaths) {
+  for (const rel of repoRelPaths.filter(isContainedMirrorPath)) {
     const abs = join(repo, rel);
     try {
       if (lstatSync(abs, { throwIfNoEntry: false })?.isFile() !== true) continue;
