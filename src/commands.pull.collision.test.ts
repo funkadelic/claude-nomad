@@ -20,7 +20,7 @@ import { g, gitInit, gitOut, makeBareOrigin, setTestIdentity } from './test-supp
 describe('untrackedCollisionRunbookText', () => {
   it('names the ~/.claude/ original rather than the copy inside the sync repo', async () => {
     const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
-    const text = untrackedCollisionRunbookText(['shared/commands/mine.md']);
+    const text = untrackedCollisionRunbookText(['shared/commands/mine.md'], true);
 
     expect(text).toContain('~/.claude/commands/mine.md');
     // The repo copy is the path git's own advice names, and acting on it is the
@@ -30,7 +30,7 @@ describe('untrackedCollisionRunbookText', () => {
 
   it('states that nothing changed and walks both recoveries from the local file', async () => {
     const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
-    const text = untrackedCollisionRunbookText(['shared/commands/mine.md']);
+    const text = untrackedCollisionRunbookText(['shared/commands/mine.md'], true);
 
     expect(text).toContain('One of those copies has the same name');
     expect(text).toContain('Your file is still exactly as you left it.');
@@ -46,7 +46,10 @@ describe('untrackedCollisionRunbookText', () => {
 
   it('lists every path and switches to plural wording for several collisions', async () => {
     const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
-    const text = untrackedCollisionRunbookText(['shared/commands/mine.md', 'shared/rules/mine.md']);
+    const text = untrackedCollisionRunbookText(
+      ['shared/commands/mine.md', 'shared/rules/mine.md'],
+      true,
+    );
 
     expect(text).toContain('  ~/.claude/commands/mine.md\n  ~/.claude/rules/mine.md');
     expect(text).toContain('Each of the copies below has the same name');
@@ -57,9 +60,23 @@ describe('untrackedCollisionRunbookText', () => {
     expect(text).toContain('  3. combine each pair, then nomad push');
   });
 
+  it('says the copies are still there when the cleanup did not happen', async () => {
+    const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
+    const one = untrackedCollisionRunbookText(['shared/commands/mine.md'], false);
+    const many = untrackedCollisionRunbookText(
+      ['shared/commands/mine.md', 'shared/rules/mine.md'],
+      false,
+    );
+
+    expect(one).toContain('delete it by hand if the next pull stops here again');
+    expect(many).toContain('delete them by hand if the next pull stops here again');
+    // The recovery steps are unchanged: they always start at the local file.
+    expect(one).toContain('  1. move ~/.claude/commands/mine.md outside ~/.claude/');
+  });
+
   it('suggests a .local name for a file with no extension', async () => {
     const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
-    expect(untrackedCollisionRunbookText(['shared/commands/mine'])).toContain('(mine.local)');
+    expect(untrackedCollisionRunbookText(['shared/commands/mine'], true)).toContain('(mine.local)');
   });
 });
 
@@ -88,7 +105,7 @@ describe('pullWithCollisionRunbook', () => {
   let originalEnv: Record<string, string | undefined>;
 
   /** Env keys stamped per test and restored afterwards. */
-  const ENV_KEYS = ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM'] as const;
+  const ENV_KEYS = ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'HOME', 'USERPROFILE'] as const;
 
   beforeEach(() => {
     originalEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
@@ -98,6 +115,11 @@ describe('pullWithCollisionRunbook', () => {
     process.env.GIT_CONFIG_GLOBAL = '/dev/null';
     process.env.GIT_CONFIG_SYSTEM = '/dev/null';
     tmp = mkdtempSync(join(tmpdir(), 'nomad-collision-'));
+    // The removal compares each repo copy against its `~/.claude/` original, so
+    // the tests need a real one. Both keys are set because `home()` reads
+    // USERPROFILE first on win32 and HOME everywhere else.
+    process.env.HOME = tmp;
+    process.env.USERPROFILE = tmp;
     vi.resetModules();
     vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
@@ -160,10 +182,29 @@ describe('pullWithCollisionRunbook', () => {
     return repo;
   }
 
-  /** Write an untracked file into the clone, the way the win32 mirror would. */
-  function plantUntracked(repo: string, rel: string, body: string): void {
+  /**
+   * Write an untracked file into the clone, the way the win32 mirror would:
+   * the local original under `~/.claude/` plus the identical copy in the repo.
+   *
+   * @param repo - The clone to write into.
+   * @param rel - Repo-relative path, normally under `shared/`.
+   * @param body - Content for both files.
+   * @param localBody - Content for the `~/.claude/` original when it should
+   *   NOT match the copy, or `null` to leave the original out entirely. Both
+   *   stand in for a file the mirror did not write.
+   */
+  function plantUntracked(
+    repo: string,
+    rel: string,
+    body: string,
+    localBody: string | null = body,
+  ): void {
     mkdirSync(join(repo, rel, '..'), { recursive: true });
     writeFileSync(join(repo, rel), body);
+    if (localBody === null) return;
+    const local = join(tmp, '.claude', rel.replace(/^shared\//, ''));
+    mkdirSync(join(local, '..'), { recursive: true });
+    writeFileSync(local, localBody);
   }
 
   /**
@@ -279,6 +320,36 @@ describe('pullWithCollisionRunbook', () => {
     expect(existsSync(join(repo, 'shared', 'commands', 'mine.md', 'inner.txt'))).toBe(true);
   });
 
+  it('keeps a colliding file whose content the mirror cannot account for', async () => {
+    // Something other than the mirror wrote into shared/ between the two
+    // ls-files snapshots, so the path is in the created set without the mirror
+    // having put it there. The snapshots cannot tell the two apart; the content
+    // can, because a mirrored copy always equals its local original.
+    const repo = buildClone(['shared/commands/mine.md']);
+    plantUntracked(repo, 'shared/commands/mine.md', '# written by someone else\n', '# mine\n');
+
+    const err = await runPull(repo, ['shared/commands/mine.md']);
+
+    const { NomadFatal } = await import('./utils.ts');
+    expect(err).toBeInstanceOf(NomadFatal);
+    expect(existsSync(join(repo, 'shared', 'commands', 'mine.md'))).toBe(true);
+    expect((err as InstanceType<typeof NomadFatal>).message).toContain(
+      'which nomad could not remove',
+    );
+  });
+
+  it('keeps a colliding file with no ~/.claude/ original at all', async () => {
+    const repo = buildClone(['shared/commands/mine.md']);
+    plantUntracked(repo, 'shared/commands/mine.md', '# my version\n', null);
+
+    const err = await runPull(repo, ['shared/commands/mine.md']);
+
+    const { NomadFatal } = await import('./utils.ts');
+    expect(err).toBeInstanceOf(NomadFatal);
+    // Nothing local to have been copied from, so the mirror cannot own it.
+    expect(existsSync(join(repo, 'shared', 'commands', 'mine.md'))).toBe(true);
+  });
+
   it('never removes a colliding path from outside shared/', async () => {
     // Reachable only if the created set were ever computed without its
     // `-- shared/` pathspec, which is exactly what the removal re-asserts
@@ -310,9 +381,13 @@ describe('pullWithCollisionRunbook', () => {
 
     const { NomadFatal } = await import('./utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
-    expect((err as InstanceType<typeof NomadFatal>).message).toContain(
-      'nomad pull could not fetch',
-    );
+    const text = (err as InstanceType<typeof NomadFatal>).message;
+    expect(text).toContain('nomad pull could not fetch');
     expect(vi.mocked(console.error).mock.calls.join('\n')).toContain('EBUSY');
+    // The leftover blocks the next fetch on its own, so claiming the cleanup
+    // happened would walk the user through the steps only to land back here.
+    expect(text).toContain('which nomad could not remove');
+    expect(text).toContain('delete it by hand if the next pull stops here again');
+    expect(text).not.toContain('has now removed for you');
   });
 });

@@ -24,9 +24,10 @@
  * copy nomad itself made so the runbook is one step instead of two.
  */
 
-import { lstatSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { claudeHome } from './config.ts';
 import { EXIT } from './exit-codes.ts';
 import { gitProbe } from './git-probe.ts';
 import { isSafeRelPath } from './rel-path-guard.ts';
@@ -95,19 +96,27 @@ function collisionSteps(locals: readonly string[]): string {
  * because it carries three singular/plural decisions of its own.
  *
  * @param single - Whether exactly one copy collided.
+ * @param cleared - Whether every colliding copy is actually gone from the repo.
+ *   False when a removal failed, which on Windows is a live case rather than a
+ *   theoretical one (an antivirus or editor lock), and the user has to be told:
+ *   a leftover blocks the next fetch on its own, so a message that claimed the
+ *   cleanup happened would send them through the steps below only to land back
+ *   on this same error.
  * @returns The paragraph, with no trailing newline.
  */
-function collisionAdvice(single: boolean): string {
+function collisionAdvice(single: boolean, cleared: boolean): string {
   const copies = single ? "nomad's copy" : "nomad's copies";
+  const them = single ? 'it' : 'them';
+  const fate = cleared
+    ? 'which nomad has now removed for you'
+    : `which nomad could not remove (the warning above says why), so delete ${them} by hand if ` +
+      'the next pull stops here again';
   const moving = single
     ? 'Moving only that copy would not have cleared this anyway: the next pull re-copies your ' +
       'local file over it before fetching. The file to move is the one under ~/.claude/.'
     : 'Moving only those copies would not have cleared this anyway: the next pull re-copies your ' +
       'local files over them before fetching. The files to move are the ones under ~/.claude/.';
-  return (
-    `Git's advice above refers to ${copies} inside the sync repo, which nomad has now removed ` +
-    `for you. ${moving}`
-  );
+  return `Git's advice above refers to ${copies} inside the sync repo, ${fate}. ${moving}`;
 }
 
 /**
@@ -121,9 +130,14 @@ function collisionAdvice(single: boolean): string {
  *
  * @param repoRelPaths - Repo-relative paths of the colliding mirrored copies,
  *   at least one. Named in the message as their `~/.claude/` originals.
+ * @param cleared - Whether every one of those copies is actually gone from the
+ *   repo now. Passed through to {@link collisionAdvice}.
  * @returns The actionable runbook string for `NomadFatal`.
  */
-export function untrackedCollisionRunbookText(repoRelPaths: readonly string[]): string {
+export function untrackedCollisionRunbookText(
+  repoRelPaths: readonly string[],
+  cleared: boolean,
+): string {
   const locals = repoRelPaths.map(localOriginal);
   const single = locals.length === 1;
   const claim = single
@@ -140,7 +154,7 @@ export function untrackedCollisionRunbookText(repoRelPaths: readonly string[]): 
     `${listed}\n\n` +
     'Nothing changed. Your ~/.claude/ config is untouched, the update did not land, and nothing ' +
     `was published. ${intact}\n\n` +
-    `${collisionAdvice(single)}\n\n` +
+    `${collisionAdvice(single, cleared)}\n\n` +
     collisionSteps(locals)
   );
 }
@@ -196,6 +210,35 @@ export function isContainedMirrorPath(rel: string): boolean {
 }
 
 /**
+ * Whether the repo file at `rel` is still byte-identical to the `~/.claude/`
+ * file the mirror copies it from.
+ *
+ * The created set is a difference between two `ls-files` snapshots taken around
+ * the mirror, which proves a path became untracked during the step, NOT that
+ * this mirror is what wrote it. Anything else writing under `shared/` in that
+ * window is indistinguishable, and the removal below would delete it. Content
+ * equality closes that gap without any new bookkeeping: the mirror's whole job
+ * is to make the repo copy equal the local original, so a genuine copy passes
+ * by construction, while a file some other hand put there has to match a local
+ * file it never came from.
+ *
+ * Both reads are treated as a NO on failure (a missing original, an unreadable
+ * file), which keeps the ambiguous case pointing at "leave it alone".
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @param rel - Repo-relative path under `shared/`.
+ * @returns true when the two files exist and their bytes match.
+ */
+function matchesLocalOriginal(repo: string, rel: string): boolean {
+  try {
+    const local = join(claudeHome(), rel.replace(SHARED_PREFIX, ''));
+    return readFileSync(join(repo, rel)).equals(readFileSync(local));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Remove nomad's own mirrored copies from the repo working tree, so the next
  * `nomad pull` is not blocked a second time by the leftovers of this one.
  *
@@ -203,22 +246,32 @@ export function isContainedMirrorPath(rel: string): boolean {
  * untouched, and the mirror recreates them on the next run. Files only, never a
  * directory and never recursively, so a mistake in the created-set computation
  * cannot escalate into a tree removal. Each removal is contained on its own, so
- * one unreadable or locked path does not abandon the rest.
+ * one unreadable or locked path does not abandon the rest. Two guards decide
+ * what is eligible at all: {@link isContainedMirrorPath} for where the path may
+ * point, {@link matchesLocalOriginal} for whether this mirror is plausibly what
+ * put it there.
  *
  * @param repo - Absolute path to the sync repo.
  * @param repoRelPaths - Repo-relative paths to remove. Anything
  *   {@link isContainedMirrorPath} rejects is skipped rather than removed.
+ * @returns Whether every one of those paths is now gone. Reported rather than
+ *   assumed because the caller's message tells the user the cleanup happened,
+ *   and a leftover blocks the next fetch by itself. Answered by looking at the
+ *   tree afterwards, so a skip counts the same as a failed removal: what matters
+ *   downstream is what is still there, not why.
  */
-function removeMirroredCopies(repo: string, repoRelPaths: readonly string[]): void {
+function removeMirroredCopies(repo: string, repoRelPaths: readonly string[]): boolean {
   for (const rel of repoRelPaths.filter(isContainedMirrorPath)) {
     const abs = join(repo, rel);
     try {
       if (lstatSync(abs, { throwIfNoEntry: false })?.isFile() !== true) continue;
+      if (!matchesLocalOriginal(repo, rel)) continue;
       rmSync(abs, { force: true });
     } catch (err) {
       warn(`could not remove nomad's copy at ${abs}: ${(err as Error).message}`);
     }
   }
+  return repoRelPaths.every((rel) => !existsSync(join(repo, rel)));
 }
 
 /**
@@ -242,8 +295,8 @@ export function pullWithCollisionRunbook(repo: string, mirrored: readonly string
   } catch (err) {
     const colliding = addedByIncomingUpdate(repo, mirrored);
     if (colliding.length === 0) throw err;
-    removeMirroredCopies(repo, colliding);
-    throw new NomadFatal(untrackedCollisionRunbookText(colliding), {
+    const cleared = removeMirroredCopies(repo, colliding);
+    throw new NomadFatal(untrackedCollisionRunbookText(colliding, cleared), {
       code: EXIT.GENERIC_FAILURE,
     });
   }
