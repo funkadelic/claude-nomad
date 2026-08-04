@@ -2,6 +2,20 @@
 
 ## [0.63.2](https://github.com/funkadelic/claude-nomad/compare/v0.63.1...v0.63.2) (2026-08-04)
 
+### What's new
+
+- **`nomad doctor` stops warning about settings you legitimately set.** The list of settings it
+  recognizes has been updated and synced with the current Claude Code settings schema, so settings
+  the app actually writes (quiet hours, the break reminder, the token-usage reminder, and others)
+  are no longer reported as unknown keys on an otherwise healthy machine. Entries that were never
+  settings at all have been dropped at the same time.
+- **A new Claude Code setting is recognized within a day.** The job that tracks the official
+  settings list ran once a week, so a setting added on a Tuesday could be reported as unknown until
+  the following Monday. It now runs daily.
+- **The list keeps its own bookkeeping straight from here.** When a setting Claude Code writes
+  ahead of its published documentation is later documented, it now moves across on its own instead
+  of being recorded in two places at once.
+
 
 ### Fixed
 
