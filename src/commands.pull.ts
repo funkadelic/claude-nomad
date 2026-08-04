@@ -9,7 +9,9 @@ import {
 } from './commands.push.sections.ts';
 import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
-import { applySharedLinks, regenerateSettings, stageLocalSharedEdits } from './links.ts';
+import { applySharedLinks, regenerateSettings } from './links.ts';
+import { writeSharedBaseline } from './links.baseline.ts';
+import { reconcileSharedLinksBeforePull } from './commands.pull.win32.ts';
 import { syncSkillsPull } from './skills-sync.ts';
 import { renderTree, section, addItem, type DoctorSection } from './output-tree.ts';
 import { computePreview } from './preview.ts';
@@ -24,7 +26,7 @@ import {
 import { recoverForceRemote } from './commands.pull.recovery.ts';
 import { recoverUnmergedIndex } from './commands.pull.recovery.unmerged.ts';
 import { EXIT } from './exit-codes.ts';
-import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal, warn } from './utils.ts';
+import { die, fail, gitCaptureRaw, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
@@ -123,6 +125,16 @@ function buildWetPullSections(
   extrasSkipped: number;
 } {
   applySharedLinks(ts, map);
+  // Record what this host now has under ~/.claude/, so the next run can tell a
+  // file the user deleted apart from a file this host has never received. The
+  // placement is the invariant, not a convenience: this function is reachable
+  // only on the wet path, so a dry run and `nomad diff` are excluded
+  // structurally rather than by a flag someone can later get wrong, and sitting
+  // on the line after the apply is what makes "after a successful apply"
+  // literally true. A run that dies before this line deliberately leaves the
+  // previous record in place, so it replays the same already-authorized
+  // removals next time instead of inventing new ones.
+  writeSharedBaseline(map);
   const { label } = regenerateSettings(ts);
   syncSkillsPull(ts, prePostHeads);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
@@ -227,84 +239,6 @@ export type PullCoreResult =
       unmapped: number;
       extrasSkipped: number;
     };
-
-/**
- * Read `path-map.json` for the win32 pre-pull mirror, fail-safe.
- *
- * An ABSENT file yields `{ projects: {} }`, matching what `runPullCore` itself
- * falls back to further down. `allSharedLinks({ projects: {} })` is exactly the
- * static `SHARED_LINKS` set, which is all the mirror needs, so a host whose repo
- * has no `path-map.json` yet (a clone that predates `nomad init`) still gets its
- * unpublished shared-config edits staged rather than silently reverted.
- *
- * Only an unreadable or MALFORMED file yields `null`, which
- * `stageLocalSharedEdits` treats as "skip the mirror". Deliberately does NOT
- * reuse the `readPathMap` call further down `runPullCore`: that one runs after
- * the rebase and dies fatally on a parse error, which is the right behavior for
- * the pull proper but wrong for a pre-step that must never be the thing that
- * fails a pull.
- *
- * @param mapPath - Absolute path to `REPO_HOME/path-map.json`.
- * @returns The parsed path-map, or `null` when it exists but cannot be parsed.
- */
-function readMapForMirror(mapPath: string): PathMap | null {
-  if (!existsSync(mapPath)) return { projects: {} };
-  try {
-    return readPathMap(mapPath);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * win32-only pre-pull step: stage the real copies at `~/.claude/<name>` into
- * `shared/<name>` BEFORE `git pull --rebase --autostash` runs.
- *
- * On posix a shared name is a symlink, so an edit to `~/.claude/CLAUDE.md` is
- * ALREADY an uncommitted change in the repo working tree when a pull starts.
- * The autostash carries it through the rebase, `applySharedLinks` re-points the
- * same symlink, and the edit is still there afterwards. Pull-first costs a posix
- * user nothing.
- *
- * On win32 that same edit lives only in the host-side copy, so without this step
- * `applySharedLinksWin32` overwrites it from the repo: the edit survives only in
- * the backup dir. Under `nomad sync` it was worse, because the push half then
- * published the reverted content, silently undoing the change the user ran sync
- * to publish.
- *
- * Staging first puts a win32 host in the same state a posix host is already in
- * when the pull begins, so the two platforms converge on one ordering and a
- * genuine two-sided edit surfaces through the same autostash path instead of as
- * a silent revert-to-backup.
- *
- * The write itself is deliberately narrower than the push mirror (no new shared
- * names, overlay rather than replace, repo-side backup first); see
- * `stageLocalSharedEdits` for why a pull cannot reuse the push policy.
- *
- * Skipped in three cases: on darwin/linux (`stageLocalSharedEdits` returns
- * immediately), under `dryRun` (zero-mutation preview contract), and under
- * `forceRemote`, which is the deliberate "discard local, take the remote"
- * escape hatch (`recoverForceRemote` resets to `origin/main`) that staging
- * host content in would fight. Also a no-op when `path-map.json` is malformed.
- *
- * @param repo - `repoHome()`, resolved once by `runPullCore`.
- * @param ts - Backup timestamp, resolved once by `runPullCore`.
- */
-function mirrorSharedLinksBeforePull(repo: string, ts: string): void {
-  if (process.platform !== 'win32') return;
-  try {
-    stageLocalSharedEdits(readMapForMirror(join(repo, 'path-map.json')), ts);
-  } catch (err) {
-    // A pre-step must never be the thing that fails a pull. The copy can throw
-    // for reasons unrelated to the user's intent (a path over the Windows
-    // limit, an antivirus lock, EPERM on a read-only repo file), and letting
-    // that propagate would abort before `git pull --rebase` runs, leaving the
-    // host unable to fetch at all until the local condition clears. Warn and
-    // continue: the unstaged edit is still on the host, and
-    // applySharedLinksWin32 backs it up again before overwriting it.
-    warn(`could not stage local shared edits before the pull: ${(err as Error).message}`);
-  }
-}
 
 /**
  * Lock-free core of `nomad pull`: takes a backup timestamp, runs
@@ -416,12 +350,14 @@ export function runPullCore(
         : `pull on host=${HOST} (backup=${ts})`,
     );
   }
-  // win32-only: transcribe the host-side copies into shared/ BEFORE the rebase,
+  // win32-only: reconcile the host-side copies into shared/ BEFORE the rebase,
   // so the autostash carries an unpublished local edit exactly the way a posix
-  // symlink already does. Must run after handleWedge (never mirror into a
-  // wedged repo) and after the backup root exists, so the repo-side snapshot it
-  // takes has somewhere to land. See mirrorSharedLinksBeforePull.
-  if (!dryRun && !forceRemote) mirrorSharedLinksBeforePull(repo, ts);
+  // symlink already does. Both directions: an edit or addition is staged in, and
+  // a file the user deleted is removed, so the overlay later in this same pull
+  // cannot put it back. Must run after handleWedge (never write into a wedged
+  // repo) and after the backup root exists, so the repo-side snapshots it takes
+  // have somewhere to land. See reconcileSharedLinksBeforePull.
+  if (!dryRun && !forceRemote) reconcileSharedLinksBeforePull(repo, ts);
   // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
   // --autostash between them. capturePrePostHeads handles the unborn-HEAD
   // case (fresh clone, no commits) by returning undefined; when undefined
