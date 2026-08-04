@@ -1825,10 +1825,22 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
    * after-apply write produce identical files, and before-apply is exactly the
    * ordering that would let an aborted pull record files the host never received.
    *
+   * Both seams a caller might want to drive are parameters rather than a second
+   * `vi.doMock` at the call site. Registering the same specifier twice does not
+   * reliably override the first factory, so a caller that re-mocked `preview.ts`
+   * or `utils.ts` here silently kept THIS one and asserted against a spy nothing
+   * ever called.
+   *
    * @param order - Array appended to on each mocked call.
+   * @param opts.previewSpy - Stands in for `computePreview`, for argument assertions.
+   * @param opts.onGitOrFatal - Extra side effect for the mocked `git pull --rebase`,
+   *   e.g. deleting a repo file to simulate an upstream deletion arriving with the rebase.
    * @returns The `stageLocalSharedEdits` spy, for argument assertions.
    */
-  function mockPipelineRecording(order: string[]): ReturnType<typeof vi.fn> {
+  function mockPipelineRecording(
+    order: string[],
+    opts: { previewSpy?: ReturnType<typeof vi.fn>; onGitOrFatal?: () => void } = {},
+  ): ReturnType<typeof vi.fn> {
     const mirrorSpy = vi.fn(() => {
       order.push('mirror');
     });
@@ -1858,13 +1870,14 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(() => 0),
     }));
-    vi.doMock('./preview.ts', () => ({ computePreview: vi.fn() }));
+    vi.doMock('./preview.ts', () => ({ computePreview: opts.previewSpy ?? vi.fn() }));
     vi.doMock('./utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
         gitOrFatal: vi.fn(() => {
           order.push('gitOrFatal');
+          opts.onGitOrFatal?.();
         }),
       };
     });
@@ -1924,20 +1937,15 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     );
 
     const order: string[] = [];
-    mockPipelineRecording(order);
     const previewSpy = vi.fn();
-    vi.doMock('./preview.ts', () => ({ computePreview: previewSpy }));
-    vi.doMock('./utils.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof utilsModule>();
-      return {
-        // The rebase brings an upstream deletion of the same file, which is the
-        // window where a plan computed afterwards silently disagrees with what
-        // a wet run of the same moment would have done.
-        ...actual,
-        gitOrFatal: vi.fn(() => {
-          rmSync(gone, { force: true });
-        }),
-      };
+    mockPipelineRecording(order, {
+      previewSpy,
+      // The rebase brings an upstream deletion of the same file, which is the
+      // window where a plan computed afterwards silently disagrees with what
+      // a wet run of the same moment would have done.
+      onGitOrFatal: () => {
+        rmSync(gone, { force: true });
+      },
     });
 
     const { runPullCore } = await import('./commands.pull.ts');
