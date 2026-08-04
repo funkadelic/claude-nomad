@@ -84,6 +84,34 @@ async function fetchSchemaKeys(): Promise<string[]> {
   return Object.keys(schema.properties);
 }
 
+/** Print the check-mode drift report. Returns true when there is drift to fail on. */
+function reportDrift(added: string[], removed: string[], absorbed: string[]): boolean {
+  if (added.length === 0 && removed.length === 0 && absorbed.length === 0) {
+    console.log('settings schema in sync; no drift.');
+    return false;
+  }
+  if (added.length > 0) console.log(`added: ${added.join(', ')}`);
+  if (removed.length > 0) console.log(`removed: ${removed.join(', ')}`);
+  if (absorbed.length > 0) console.log(`absorbed from APP_ONLY_KEYS: ${absorbed.join(', ')}`);
+  return true;
+}
+
+/** Print what the write-mode rewrite changed. */
+function reportWrite(added: string[], removed: string[], absorbed: string[]): void {
+  if (added.length > 0 || removed.length > 0) {
+    console.log(`updated SCHEMA_KEYS (+${added.length} -${removed.length}).`);
+  } else if (absorbed.length > 0) {
+    // Reachable only when a key already sat in both arrays, which is exactly
+    // what the prune exists to clear, so "keys unchanged" would be a lie.
+    console.log('updated settings-keys.ts (app-only keys the schema absorbed).');
+  } else {
+    console.log('rewrote settings-keys.ts (formatting only; keys unchanged).');
+  }
+  if (absorbed.length > 0) {
+    console.log(`moved into SCHEMA_KEYS: ${absorbed.join(', ')}`);
+  }
+}
+
 /** CLI entry: diff (and in write mode regenerate) SCHEMA_KEYS against the live schema. */
 async function main(): Promise<void> {
   const check = process.argv.includes('--check');
@@ -105,14 +133,8 @@ async function main(): Promise<void> {
   const absorbed = appOnly.filter((k) => !keptAppOnly.includes(k));
 
   if (check) {
-    if (added.length === 0 && removed.length === 0 && absorbed.length === 0) {
-      console.log('settings schema in sync; no drift.');
-      return;
-    }
-    if (added.length > 0) console.log(`added: ${added.join(', ')}`);
-    if (removed.length > 0) console.log(`removed: ${removed.join(', ')}`);
-    if (absorbed.length > 0) console.log(`absorbed from APP_ONLY_KEYS: ${absorbed.join(', ')}`);
-    process.exit(1);
+    if (reportDrift(added, removed, absorbed)) process.exit(1);
+    return;
   }
 
   // Only write when the rendered output actually differs from disk. Writing
@@ -125,14 +147,7 @@ async function main(): Promise<void> {
     return;
   }
   writeFileSync(TARGET, next);
-  console.log(
-    added.length > 0 || removed.length > 0
-      ? `updated SCHEMA_KEYS (+${added.length} -${removed.length}).`
-      : 'rewrote settings-keys.ts (formatting only; keys unchanged).',
-  );
-  if (absorbed.length > 0) {
-    console.log(`moved into SCHEMA_KEYS: ${absorbed.join(', ')}`);
-  }
+  reportWrite(added, removed, absorbed);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
