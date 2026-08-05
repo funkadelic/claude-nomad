@@ -45,7 +45,7 @@ all of them. The first three symlink your shared config into `~/.claude/`, so th
 file. Native Windows cannot use symlinks, because creating one there needs Developer Mode or admin
 rights, so it keeps a real copy and claude-nomad keeps the two in step for you. See the
 [Quickstart](/claude-nomad/quickstart/#windows) for the native Windows steps (PowerShell or cmd)
-and the Windows-only caveats worth knowing.
+and the native-Windows-only caveats worth knowing.
 
 ## What it is not
 
