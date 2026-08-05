@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.64.0](https://github.com/funkadelic/claude-nomad/compare/v0.63.2...v0.64.0) (2026-08-05)
+
+
+### Added
+
+* **pull:** propagate Windows shared-config deletions into the sync repo ([#489](https://github.com/funkadelic/claude-nomad/issues/489)) ([3255fb7](https://github.com/funkadelic/claude-nomad/commit/3255fb7fc54e3c490627e0701d96226403020f7e))
+
+
+### Fixed
+
+* **pull:** explain a Windows mirror collision instead of forwarding git advice ([#491](https://github.com/funkadelic/claude-nomad/issues/491)) ([2f13a61](https://github.com/funkadelic/claude-nomad/commit/2f13a619ca066ea707cc7b7e7e0e738a136ebf9f))
+
+
+### Changed
+
+* **doctor:** sync settings schema keys ([#488](https://github.com/funkadelic/claude-nomad/issues/488)) ([78bcf7c](https://github.com/funkadelic/claude-nomad/commit/78bcf7c17b8557f6f26e33bd74405fb8cd7228a8))
+
+
+### Documentation
+
+* distinguish native Windows from WSL2 in the user docs ([#492](https://github.com/funkadelic/claude-nomad/issues/492)) ([f6b1e9e](https://github.com/funkadelic/claude-nomad/commit/f6b1e9ee1feba24150b03741a255793b4238f253))
+
 ## [0.63.2](https://github.com/funkadelic/claude-nomad/compare/v0.63.1...v0.63.2) (2026-08-04)
 
 ### What's new
