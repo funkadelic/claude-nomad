@@ -2,6 +2,34 @@
 
 ## [0.64.0](https://github.com/funkadelic/claude-nomad/compare/v0.63.2...v0.64.0) (2026-08-05)
 
+### What's new
+
+- **Native Windows: deleting a shared config file now sticks.** On native Windows (PowerShell or
+  cmd), deleting a file inside a synced folder, say `~/.claude/commands/old.md`, used to leave it
+  sitting in the sync repo, and the next `nomad pull` put it straight back. The deletion is now
+  carried into the sync repo instead, so it survives the pull and reaches your other machines.
+  Nothing is removed unless this machine's own record shows it had the file, and every removed file
+  is copied to the backup directory first. The first pull after upgrading has no record yet, so
+  deletions start propagating from the pull after that. macOS, Linux, and WSL2 were never affected:
+  they symlink shared config, so deleting the file was always a deletion in the repo.
+- **Native Windows: a name clash during a pull now explains itself.** If a file you created inside a
+  synced folder has the same name as one an incoming update adds, the pull stops before changing
+  anything. You used to be left with git's own error, which pointed at a copy inside the sync repo
+  and told you to move it, and following that advice looped, because the next pull copied your file
+  back over it. You now get the file under `~/.claude/` to act on and the two ways to finish, keep
+  the incoming version or keep both and merge them, and nomad clears its own copy out of the way for
+  you. Your file is untouched either way.
+- **Native Windows shared-config changes show up in a preview first.** `nomad pull --dry-run` and
+  `nomad diff` now list both the edits being carried into the repo and the files being removed from
+  it, worked out before the pull so the preview and the real run agree.
+- **`nomad doctor` notices a native Windows shared file that has drifted.** When a synced copy under
+  `~/.claude/` no longer matches the one in the repo, doctor warns about it instead of reporting the
+  machine as healthy. On the symlink platforms there is only ever one file, so there is nothing to
+  drift.
+- **`nomad doctor` no longer recognizes `leftArrowOpensAgents`.** Claude Code dropped it from its
+  settings schema, so doctor will flag it as an unknown key if you still have it set. This one
+  applies everywhere, not just on Windows.
+
 
 ### Added
 
