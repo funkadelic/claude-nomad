@@ -86,9 +86,9 @@ yet: a deletion made before that pull comes back once, and deleting it again sti
 Developer Mode does not change this; copies are used on every native Windows host either way.
 :::
 
-Two things are genuinely native-Windows-only, both in the list below: a `.gitleaksignore` allow
-entry may not travel to a macOS or Linux host, and deep session paths can hit the native Windows
-260-character path limit.
+Two things come from native Windows specifically, both in the list below: a `.gitleaksignore` allow
+entry may not travel to a macOS, Linux, or WSL2 host, and deep session paths can hit the native
+Windows 260-character path limit.
 
 The native Windows steps are the same as [First host](#first-host-once-ever) and
 [Each additional host](#each-additional-host) above, with a couple of PowerShell-specific swaps:
@@ -111,8 +111,9 @@ The native Windows steps are the same as [First host](#first-host-once-ever) and
 > nomad push
 ```
 
-A few native Windows specifics worth knowing (none of them apply under WSL2, which behaves like
-Linux):
+A few native Windows specifics worth knowing. WSL2 behaves like Linux, so the copy-sync and
+path-length items below do not apply to it; the `.gitleaksignore` one can still reach it, from the
+other side:
 
 - **Installing gh:** `winget install GitHub.cli` (or `scoop install gh`), then `gh auth login`.
   Needed before `nomad init` on the first host; later hosts only clone with it.
@@ -139,8 +140,8 @@ Linux):
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
   on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native
-  Windows, the identical finding can reappear as "new" the first time it is scanned from a
-  macOS/Linux host, and the same happens in reverse. This is a known gitleaks limitation, not a
+  Windows, the identical finding can reappear as "new" the first time it is scanned from a macOS,
+  Linux, or WSL2 host, and the same happens in reverse. This is a known gitleaks limitation, not a
   claude-nomad bug; just allow it again from the other host.
 - **Deep session paths and the native Windows path-length limit.** `nomad doctor` checks `git config
   core.longpaths` and the Windows `LongPathsEnabled` registry value, and warns if either is off.
