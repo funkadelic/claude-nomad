@@ -12,7 +12,7 @@ full invocation, and lists any flags in its own table.
 
 Create a private GitHub repo via `gh`, wire it as `origin`, disable Actions, and scaffold `shared/`,
 `hosts/`, `path-map.json`, and a root `.gitattributes` (`* -text`) that stops Git from rewriting
-line endings between hosts (what would otherwise happen on a Windows checkout with the common
+line endings between hosts (what would otherwise happen on a native Windows checkout with the common
 `core.autocrlf=true` default; `nomad doctor` warns when an older repo lacks the guard). Does not
 commit or push; run `nomad push` afterward to publish. Prompts
 for a repo name (default: `claude-nomad-config`). `gh`
@@ -54,7 +54,7 @@ step is a no-op there and both platforms behave the same way. It is also skipped
 which writes nothing to `~/.claude/` or to your shared config (though it still runs the
 `git pull --rebase` that refreshes the sync repo, so the preview reflects the remote), and under
 `--force-remote`, whose whole purpose is to take the remote's version. If the mirror or removal step
-itself fails (an antivirus lock, or a path over the Windows length limit), the pull warns and
+itself fails (an antivirus lock, or a path over the native Windows length limit), the pull warns and
 carries on instead of aborting, so you can still fetch; your unpublished edit or deletion stays
 pending on the host. A file you had just created inside a shared directory is the exception: the
 repo-to-local overlay later in the same pull removes it from `~/.claude/`, after snapshotting it to
@@ -177,10 +177,9 @@ Back up, then move a pre-existing `~/.claude/<name>` directory into `shared/<nam
 symlink so this host keeps working, and stage the result for push. `<name>` must already be listed
 in `SHARED_LINKS` or in the `sharedDirs` field of `path-map.json`; adopt is a mover, not a config
 editor, so it never writes `path-map.json` itself. On native Windows adopt recreates the name as a
-real copy instead of a symlink (the win32 copy-sync modality). On Windows a name whose
-`shared/<name>` counterpart already exists is reported as already adopted and skipped (with a
-`nomad pull` hint to refresh the local copy), where macOS/Linux would refuse with a would-clobber
-error.
+real copy instead of a symlink (the win32 copy-sync modality). There a name whose `shared/<name>`
+counterpart already exists is reported as already adopted and skipped (with a `nomad pull` hint to
+refresh the local copy), where macOS, Linux, and WSL2 would refuse with a would-clobber error.
 
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |

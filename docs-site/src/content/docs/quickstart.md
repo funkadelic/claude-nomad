@@ -86,9 +86,9 @@ yet: a deletion made before that pull comes back once, and deleting it again sti
 Developer Mode does not change this; copies are used on every native Windows host either way.
 :::
 
-Two things are genuinely Windows-only, both in the list below: a `.gitleaksignore` allow entry may
-not travel to a macOS or Linux host, and deep session paths can hit Windows's 260-character path
-limit.
+Two things are genuinely native-Windows-only, both in the list below: a `.gitleaksignore` allow
+entry may not travel to a macOS or Linux host, and deep session paths can hit the native Windows
+260-character path limit.
 
 The native Windows steps are the same as [First host](#first-host-once-ever) and
 [Each additional host](#each-additional-host) above, with a couple of PowerShell-specific swaps:
@@ -111,7 +111,8 @@ The native Windows steps are the same as [First host](#first-host-once-ever) and
 > nomad push
 ```
 
-A few Windows-specific things worth knowing:
+A few native Windows specifics worth knowing (none of them apply under WSL2, which behaves like
+Linux):
 
 - **Installing gh:** `winget install GitHub.cli` (or `scoop install gh`), then `gh auth login`.
   Needed before `nomad init` on the first host; later hosts only clone with it.
@@ -119,37 +120,38 @@ A few Windows-specific things worth knowing:
   use Scoop). `nomad doctor` prints the same hint whenever gitleaks is missing from PATH.
 - **Shared config is copied, not symlinked.** On macOS and Linux, files like `CLAUDE.md` and your
   skills live in the sync repo and are symlinked into `~/.claude/`, so there is one source of truth
-  on disk. Creating a symlink on Windows needs Developer Mode or admin rights, so on native Windows
-  these are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected
-  and behaves like Linux. What this means for you: nothing extra. On Windows both `nomad pull` and
-  `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit is
-  captured rather than reverted. A file you delete from a shared directory is handled the same way:
-  it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked directory
-  already removes it on macOS or Linux. The removal is left uncommitted, so it publishes on your next
-  push and passes the same secret scan as everything else, and the file is snapshotted to the backup
-  dir first. The safety rule behind this: nomad only removes a file it has a record of having given
-  this machine, so a repo file this machine has never synced is never touched. That record is also
-  why the first pull after you upgrade to this version is an exception: there is nothing to compare
-  against yet, so a deletion made before that pull comes back once, and deleting it again sticks.
-  The one command that deliberately takes the repo's version is `nomad pull --force-remote`, which
-  is what that flag is for; the copy it replaces is snapshotted to the backup dir first. This is the
-  same behavior claude-nomad's `skills/` sync already has on every platform.
+  on disk. Creating a symlink on native Windows needs Developer Mode or admin rights, so there these
+  are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected and
+  behaves like Linux. What this means for you: nothing extra. On native Windows both `nomad pull`
+  and `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit
+  is captured rather than reverted. A file you delete from a shared directory is handled the same
+  way: it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked
+  directory already removes it on macOS or Linux. The removal is left uncommitted, so it publishes
+  on your next push and passes the same secret scan as everything else, and the file is snapshotted
+  to the backup dir first. The safety rule behind this: nomad only removes a file it has a record of
+  having given this machine, so a repo file this machine has never synced is never touched. That
+  record is also why the first pull after you upgrade to this version is an exception: there is
+  nothing to compare against yet, so a deletion made before that pull comes back once, and deleting
+  it again sticks. The one command that deliberately takes the repo's version is
+  `nomad pull --force-remote`, which is what that flag is for; the copy it replaces is snapshotted
+  to the backup dir first. This is the same behavior claude-nomad's `skills/` sync already has on
+  every platform.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
-  finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
-  macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the
-  identical finding can reappear as "new" the first time it is scanned from a macOS/Linux host, and
-  the same happens in reverse. This is a known gitleaks limitation, not a claude-nomad bug; just
-  allow it again from the other host.
-- **Deep session paths and Windows's path-length limit.** `nomad doctor` checks `git config
+  finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
+  on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native
+  Windows, the identical finding can reappear as "new" the first time it is scanned from a
+  macOS/Linux host, and the same happens in reverse. This is a known gitleaks limitation, not a
+  claude-nomad bug; just allow it again from the other host.
+- **Deep session paths and the native Windows path-length limit.** `nomad doctor` checks `git config
   core.longpaths` and the Windows `LongPathsEnabled` registry value, and warns if either is off.
-  Turning both on avoids problems with Windows's classic 260-character path limit, which a deeply
-  nested project's encoded session path can otherwise exceed.
+  Turning both on avoids problems with the classic 260-character path limit, which a deeply nested
+  project's encoded session path can otherwise exceed.
 - **Line endings stay put.** A fresh `nomad init` writes a `.gitattributes` with `* -text`, so Git
   never converts line endings between hosts. If you are joining a sync repo created before this file
   existed, add that one line from any host (or watch for the `nomad doctor` warning that nudges
-  you), otherwise a Windows checkout with the common `core.autocrlf=true` Git default would rewrite
-  every text file's line endings, and every host would then see the whole tree as permanently
-  changed.
+  you), otherwise a native Windows checkout with the common `core.autocrlf=true` Git default would
+  rewrite every text file's line endings, and every host would then see the whole tree as
+  permanently changed.
 
 ## Privacy by default
 

@@ -26,8 +26,8 @@ originals are preserved under that timestamped backup directory, not deleted. Pa
 data on the destination host.
 
 On native Windows the same two-pass scan runs, but the names are materialized as real copies
-instead of symlinks (creating a symlink on Windows needs Developer Mode or admin rights); the
-backup semantics are identical, and so is the guidance: on Windows the pull mirrors your local
+instead of symlinks (creating a symlink there needs Developer Mode or admin rights); the backup
+semantics are identical, and so is the guidance: on native Windows the pull mirrors your local
 copies into the repo before it fetches, so an unpublished edit is captured rather than overwritten.
 Use `--force-remote` when you do want the repo's version. See
 [Windows](/claude-nomad/quickstart/#windows).

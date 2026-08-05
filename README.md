@@ -58,14 +58,14 @@ survives different file paths and your secrets never ride along.
   project folder no longer exists on this machine, a multi-host repo where this machine's
   hostname-derived key matches no `hosts/<HOST>.json` or path-map entry (a sign `NOMAD_HOST` is
   unset here, so per-host settings and session sync will not line up with the other hosts), synced
-  skills with local edits that differ from the shared copy, a Windows shared-config copy that has
-  drifted from the repo's copy (a warning, not a failure), and settings drift in both directions:
-  keys present in the repo merge but absent from your live `settings.json` (behind; the next
-  `nomad pull` will restore them, fix: `nomad pull`) and keys present locally but not yet in the
-  repo (ahead; local-only additions, fix: `nomad capture-settings`). Each issue includes a fix hint.
-  By default the report is compact: it shows only checks that need action plus a one-line verdict.
-  Add `--verbose` (or `--all` / `-v`) to see the full per-check tree, including everything that
-  passed.
+  skills with local edits that differ from the shared copy, a native Windows shared-config copy that
+  has drifted from the repo's copy (a warning, not a failure), and settings drift in both
+  directions: keys present in the repo merge but absent from your live `settings.json` (behind; the
+  next `nomad pull` will restore them, fix: `nomad pull`) and keys present locally but not yet in
+  the repo (ahead; local-only additions, fix: `nomad capture-settings`). Each issue includes a fix
+  hint. By default the report is compact: it shows only checks that need action plus a one-line
+  verdict. Add `--verbose` (or `--all` / `-v`) to see the full per-check tree, including everything
+  that passed.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
   recovers two kinds of stuck sync repo: a repo stuck mid-rebase or mid-merge (aborts the operation,
   parks stranded work on a branch, refuses if shared config is at risk), and a repo where the rebase
@@ -131,9 +131,9 @@ That leaves two files to keep in step, and claude-nomad does it for you: `nomad 
 overwritten. Enabling Developer Mode does not change this; copies are used on every native Windows
 host either way.
 
-Two things are genuinely Windows-only, both covered in the bullets below: a `.gitleaksignore` allow
-entry may not travel to a macOS or Linux host, and deep session paths can hit Windows's
-260-character path limit.
+Two things are genuinely native-Windows-only, both covered in the bullets below: a `.gitleaksignore`
+allow entry may not travel to a macOS or Linux host, and deep session paths can hit the native
+Windows 260-character path limit.
 
 The native Windows steps are the same as above with a couple of PowerShell-specific swaps:
 
@@ -155,7 +155,8 @@ The native Windows steps are the same as above with a couple of PowerShell-speci
 > nomad push
 ```
 
-A few Windows-specific things worth knowing:
+A few native Windows specifics worth knowing (none of them apply under WSL2, which behaves like
+Linux):
 
 - **Installing gh:** `winget install GitHub.cli` (or `scoop install gh`), then `gh auth login`.
   Needed before `nomad init` on the first host; later hosts only clone with it.
@@ -163,12 +164,12 @@ A few Windows-specific things worth knowing:
   use Scoop). `nomad doctor` prints the same hint whenever gitleaks is missing from PATH.
 - **Shared config is copied, not symlinked.** On macOS and Linux, files like `CLAUDE.md` and your
   skills live in the sync repo and are symlinked into `~/.claude/`, so there is one source of truth
-  on disk. Creating a symlink on Windows needs Developer Mode or admin rights, so on native Windows
-  these are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected
-  and behaves like Linux. What this means for you: nothing extra. On Windows both `nomad pull` and
-  `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit is
-  captured rather than reverted. A file you delete from a shared directory is handled the same way:
-  it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked
+  on disk. Creating a symlink on native Windows needs Developer Mode or admin rights, so there these
+  are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected and
+  behaves like Linux. What this means for you: nothing extra. On native Windows both `nomad pull`
+  and `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit
+  is captured rather than reverted. A file you delete from a shared directory is handled the same
+  way: it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked
   directory already removes it on macOS or Linux. The removal is left uncommitted, so it publishes
   on your next push and passes the same secret scan as everything else, and the file is snapshotted
   to the backup dir first. The safety rule behind this: nomad only removes a file it has a record of
@@ -183,17 +184,17 @@ A few Windows-specific things worth knowing:
   replaces is snapshotted to the backup dir first. This is the same behavior claude-nomad's
   `skills/` sync already has on every platform.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
-  finding using the file path exactly as it saw it: backslashes on Windows, forward slashes on
-  macOS/Linux. If you allow a finding with `nomad push --allow` (or `nomad allow`) on Windows, the
-  identical finding can reappear as "new" the first time it is scanned from a macOS/Linux host, and
-  the same happens in reverse. This is a known gitleaks limitation, not a claude-nomad bug; just
-  allow it again from the other host.
+  finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
+  on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native
+  Windows, the identical finding can reappear as "new" the first time it is scanned from a
+  macOS/Linux host, and the same happens in reverse. This is a known gitleaks limitation, not a
+  claude-nomad bug; just allow it again from the other host.
 - **Line endings stay put.** A fresh `nomad init` writes a `.gitattributes` with `* -text`, so Git
   never converts line endings between hosts. If you are joining a sync repo created before this file
   existed, add that one line from any host (or watch for the `nomad doctor` warning that nudges
-  you), otherwise a Windows checkout with the common `core.autocrlf=true` Git default would rewrite
-  every text file's line endings, and every host would then see the whole tree as permanently
-  changed.
+  you), otherwise a native Windows checkout with the common `core.autocrlf=true` Git default would
+  rewrite every text file's line endings, and every host would then see the whole tree as
+  permanently changed.
 
 Everyday loop on any host:
 
@@ -319,8 +320,8 @@ independently from the CLI, but requires nomad `>= 0.35.0` because it calls rece
 - `gh` ([GitHub CLI](https://cli.github.com/)), required by `nomad init`
 
 Works on macOS, Linux (including WSL2), and native Windows (PowerShell or cmd). See
-[Windows](#windows) above for the Windows equivalents of the install and host-label steps, the
-copy-sync trade-off, and the `.gitleaksignore` cross-host caveat.
+[Windows](#windows) above for the native Windows equivalents of the install and host-label steps,
+the copy-sync trade-off, and the `.gitleaksignore` cross-host caveat.
 
 **Optional:** [curl](https://curl.se/) or [wget](https://www.gnu.org/software/wget/) for the
 version-staleness check and `nomad doctor --check-schema`. The CLI works without them. The opt-in
