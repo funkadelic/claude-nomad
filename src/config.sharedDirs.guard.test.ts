@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   assertSafeLogical,
   isValidSharedDir,
+  mayJoinRefusedEntry,
   validateSharedDirEntry,
+  type SharedDirRejectionReason,
 } from './config.sharedDirs.guard.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 describe('assertSafeLogical (path-map logical key traversal guard)', () => {
   it('accepts a well-formed alphanumeric logical name', () => {
@@ -288,6 +291,47 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
       expect(validateSharedDirEntry('mytools.')?.reason).toBe('win32-alias');
       expect(validateSharedDirEntry('../escape')?.reason).toBe('not-a-segment');
     });
+  });
+});
+
+describe('mayJoinRefusedEntry (shared join-safety policy for refused entries)', () => {
+  const ANY: ReadonlySet<SharedDirRejectionReason> = new Set([
+    'never-sync',
+    'reserved',
+    'secret-shaped',
+    'win32-alias',
+  ]);
+  const realPlatform = process.platform;
+  afterEach(() => stubPlatform(realPlatform));
+
+  // The ordering trap this function exists to hold: a traversal that also ends
+  // in a dot satisfies the alias test, so an alias check placed before the
+  // safety check answers true for it and hands `join` an escaping string.
+  it.each(['../escape.', 'foo/bar.', '..'])('never joins the traversal shape %p', (entry) => {
+    const rejection = validateSharedDirEntry(entry);
+    expect(rejection).not.toBeNull();
+    for (const platform of ['linux', 'win32'] as const) {
+      stubPlatform(platform);
+      expect(mayJoinRefusedEntry(entry, rejection!.reason, ANY)).toBe(false);
+    }
+  });
+
+  it.each(['mytools.', 'commands.', '.env.', '...'])(
+    'joins the trailing-dot name %p on posix but never on win32',
+    (entry) => {
+      const reason = validateSharedDirEntry(entry)!.reason;
+      stubPlatform('linux');
+      expect(mayJoinRefusedEntry(entry, reason, ANY)).toBe(true);
+      stubPlatform('win32');
+      expect(mayJoinRefusedEntry(entry, reason, ANY)).toBe(false);
+    },
+  );
+
+  it('defers to the caller set for a dotless name, so consumers can disagree', () => {
+    stubPlatform('linux');
+    const doctorSet: ReadonlySet<SharedDirRejectionReason> = new Set(['secret-shaped']);
+    expect(mayJoinRefusedEntry('commands', 'reserved', ANY)).toBe(true);
+    expect(mayJoinRefusedEntry('commands', 'reserved', doctorSet)).toBe(false);
   });
 
   describe('never-sync', () => {

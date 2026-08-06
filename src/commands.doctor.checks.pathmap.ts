@@ -15,6 +15,7 @@ import {
 } from './color.ts';
 import { claudeHome, HOST, NEVER_SYNC, repoHome, type PathMap } from './config.ts';
 import {
+  mayJoinRefusedEntry,
   validateSharedDirEntry,
   type SharedDirRejectionReason,
 } from './config.sharedDirs.guard.ts';
@@ -154,35 +155,6 @@ const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
 ]);
 
 /**
- * Whether a rejected entry may be joined into a path and probed on THIS host.
- *
- * Keyed on the entry's SPELLING, not on its rejection cause. The aliasing is a
- * property of the trailing dot itself, and the cause now describes the name
- * win32 would address rather than the one written, so a cause-based test stops
- * covering these the moment the guard starts resolving them: `commands.`
- * reports `reserved` and `.env.` reports `secret-shaped`, and neither is
- * `win32-alias` any more.
- *
- * On win32 the trailing dots are stripped, so the string addresses a DIFFERENT
- * path than it names: `mytools.` resolves to `shared/mytools`, `commands.` to
- * the live tracked `shared/commands`, and `...` to `shared/` itself, which is
- * precisely the escape this allow-list exists to prevent (and which slips past
- * the `.`/`..` test because it is neither). Never probe one there.
- *
- * On posix such a name is an ordinary distinct directory that aliases nothing,
- * so it is always probeable regardless of the cause it inherited: the inherited
- * cause describes a file this platform does not resolve it to.
- *
- * @param entry - The rejected `sharedDirs` entry, as written.
- * @param reason - The rejection cause reported for it.
- * @returns `true` when the entry is safe to join and probe here.
- */
-function isProbeableOnThisHost(entry: string, reason: SharedDirRejectionReason): boolean {
-  if (entry.endsWith('.')) return process.platform !== 'win32';
-  return PROBABLE_REASONS.has(reason);
-}
-
-/**
  * Classify `~/.claude/<entry>`: a symlink resolving into the repo's `shared/`
  * tree (the state an older, looser guard leaves behind after `nomad adopt`
  * moved that name into `shared/`), a symlink pointing anywhere else, or
@@ -307,7 +279,10 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
   for (const entry of entries) {
     const rejection = validateSharedDirEntry(entry);
     if (rejection === null) continue;
-    if (typeof entry === 'string' && isProbeableOnThisHost(entry, rejection.reason)) {
+    if (
+      typeof entry === 'string' &&
+      mayJoinRefusedEntry(entry, rejection.reason, PROBABLE_REASONS)
+    ) {
       probable.push(entry);
     }
     addItem(
