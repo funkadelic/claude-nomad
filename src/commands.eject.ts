@@ -2,6 +2,7 @@ import { cpSync, existsSync, lstatSync, realpathSync, rmSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
 import { allSharedLinks, backupBase, claudeHome, repoHome, type PathMap } from './config.ts';
+import { validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { die, fail, item, log } from './utils.ts';
 import { renameAtomicRetry } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
@@ -339,6 +340,38 @@ function materializeOneOrDie(
 }
 
 /**
+ * The managed names eject must consider on this host: `allSharedLinks(map)`
+ * widened with any `sharedDirs` entry the guard refuses for its credential
+ * shape alone.
+ *
+ * Eject materializes what this host ALREADY has, so its enumeration cannot be
+ * the sync-time guard on its own. A name that was accepted when `nomad adopt`
+ * ran, and is refused now, still has a live symlink under `~/.claude/`; leaving
+ * it out of the enumeration would skip it silently and then tell the user it is
+ * safe to delete the repo, destroying their only copy.
+ *
+ * The widening is by rejection REASON, never by type. Credential shape is the
+ * last cause the guard tests, so an entry that reaches it has already passed
+ * the single-safe-segment test and cannot carry a path separator, `.`, or
+ * `..`. That is what makes the widening safe here, where every name is joined
+ * into a filesystem path. The traversal and coercion shapes stay excluded, and
+ * the never-sync and reserved shapes were refused before this too, so no host
+ * can have materialized one of those.
+ *
+ * @param map Parsed `path-map.json` content.
+ * @returns The de-duplicated managed names, valid entries first.
+ */
+export function ejectNames(map: PathMap): string[] {
+  const raw: unknown = map.sharedDirs;
+  const entries: unknown[] = Array.isArray(raw) ? raw : [];
+  const alreadyMaterialized = entries.filter((entry): entry is string => {
+    const rejection = validateSharedDirEntry(entry);
+    return rejection === null || rejection.reason === 'secret-shaped';
+  });
+  return [...new Set([...allSharedLinks(map), ...alreadyMaterialized])];
+}
+
+/**
  * Production default roots for `cmdEject`, resolved at call time (a named
  * builder rather than an object-literal parameter default, S7737).
  *
@@ -353,8 +386,9 @@ function defaultEjectRoots(): { claudeHome: string; repoHome: string } {
  * copy so the host keeps working after `~/claude-nomad/` is deleted and the CLI
  * is uninstalled.
  *
- * Enumeration source is `allSharedLinks(map)` (the authoritative union of
- * `SHARED_LINKS` and validated `sharedDirs` entries). For each name:
+ * Enumeration source is {@link ejectNames}: the union of `SHARED_LINKS` and
+ * validated `sharedDirs` entries, widened with the entries this host may
+ * already have materialized under an earlier, looser guard. For each name:
  * - Absent: reported as skipped, not created.
  * - Already a real file/dir: reported as skipped, left unchanged.
  * - Valid symlink into `shared/`: replaced with a dereferenced copy (copy-then-swap).
@@ -379,7 +413,7 @@ export function cmdEject(
   const { claudeHome, repoHome } = roots;
 
   const map = readMapIfPresent(repoHome);
-  const names = allSharedLinks(map);
+  const names = ejectNames(map);
 
   // Classify every name upfront; abort before any mutation if any are dangling.
   const classifications = new Map<string, NameClass>();

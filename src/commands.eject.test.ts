@@ -435,6 +435,50 @@ describe('cmdEject', () => {
     expect(readFileSync(join(ejected, 'README.md'), 'utf8')).toBe('# GSD');
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: get-shit-done'));
   });
+
+  it('already-materialized credential-shaped entry is still dereferenced into a real directory', () => {
+    // The guard refuses this name for sync, but a host that adopted it under
+    // the older, looser guard still has the symlink. Eject must materialize it
+    // before the user is told the repo is safe to delete.
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['credentials'] }),
+    );
+    const target = join(repoHome, 'shared', 'credentials');
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'token.txt'), 'kept');
+    symlinkSync(target, join(claudeHome, 'credentials'));
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    const ejected = join(claudeHome, 'credentials');
+    expect(lstatSync(ejected).isSymbolicLink()).toBe(false);
+    expect(lstatSync(ejected).isDirectory()).toBe(true);
+    expect(readFileSync(join(ejected, 'token.txt'), 'utf8')).toBe('kept');
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: credentials'));
+  });
+
+  it('a traversal-shaped sharedDirs entry is never enumerated, so nothing outside claudeHome is touched', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }),
+    );
+    // join(claudeHome, '../escape') resolves to a sibling of claudeHome. Point
+    // a symlink there so an enumerated name would be materialized in place.
+    const target = join(repoHome, 'shared', 'escape');
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'outside.txt'), 'outside');
+    const escapePath = join(claudeHome, '..', 'escape');
+    symlinkSync(target, escapePath);
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    // Untouched: still a symlink, and never named in the output.
+    expect(lstatSync(escapePath).isSymbolicLink()).toBe(true);
+    expect(allLogs(logSpy)).not.toContain('escape');
+  });
 });
 
 describe('cmdEject win32 copy-sync modality', () => {
