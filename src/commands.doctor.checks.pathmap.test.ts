@@ -504,7 +504,7 @@ describe('reportRejectedSharedDirs', () => {
     const sec = makeSection('Path map');
     reportPathMap(sec);
     const out = sec.items.join('\n');
-    expect(out).toContain('shared/.env exists in the repo working tree');
+    expect(out).toContain('shared/ entry ".env" exists in the repo working tree');
     expect(out).toContain('remove it by hand');
     expect(existsSync(offenderPath)).toBe(true);
   });
@@ -524,7 +524,7 @@ describe('reportRejectedSharedDirs', () => {
     const sec = makeSection('Path map');
     reportPathMap(sec);
     const out = sec.items.join('\n');
-    expect(out).toContain('~/.claude/credentials is a symlink into shared/credentials');
+    expect(out).toContain('entry "credentials" is a symlink under ~/.claude/');
     expect(out).toContain('cp -RL');
     // The delete-only row must NOT also fire: following it destroys the copy.
     expect(out).not.toContain('remove it by hand');
@@ -550,6 +550,30 @@ describe('reportRejectedSharedDirs', () => {
     expect(out).toContain('exists in the repo working tree');
     expect(out).not.toContain('is a symlink into');
   });
+
+  it.skipIf(isWin)(
+    'escapes an ANSI-carrying offender name instead of emitting it raw',
+    async () => {
+      // path-map.json is a trust boundary and a POSIX filename may hold escape
+      // bytes. The offender row is reachable only when the on-disk name matches
+      // the configured one, so a crafted pair controls both halves.
+      const evil = '\u001b[2Kevil';
+      const map = { projects: {}, sharedDirs: [evil] };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      writeFileSync(join(env.testHome, 'claude-nomad', 'shared', evil), 'x\n');
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('exists in the repo working tree');
+      expect(out).toContain('\\u001b[2Kevil');
+      expect(out).not.toContain(evil);
+    },
+  );
 
   it('does not print an offender row when the rejected name is absent from shared/', async () => {
     const map: PathMap = {

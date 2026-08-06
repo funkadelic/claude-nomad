@@ -150,6 +150,12 @@ function isLocalSymlink(entry: string): boolean {
  * existed) gets the plain remove-it-by-hand row instead. Nomad never deletes
  * either one.
  *
+ * Every row escapes the entry with `JSON.stringify`. `path-map.json` is a
+ * trust boundary and a POSIX filename may carry control or ANSI escape bytes,
+ * so an unescaped interpolation lets a crafted name rewrite the WARN rows
+ * around it. The remediation rows are reachable only when the on-disk name
+ * matches the configured one, which puts both halves under the same control.
+ *
  * Tolerates a malformed `sharedDirs` (a non-array, or members that are not
  * strings), which `validatePathMapShape` deliberately leaves unchecked. A
  * present-but-non-array value gets its own row and stops the scan there,
@@ -187,13 +193,14 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
     if (isLocalSymlink(entry)) {
       addItem(
         section,
-        `${yellow(warnGlyph)} path-map: ~/.claude/${entry} is a symlink into shared/${entry}; ` +
-          `copy the content out first (cp -RL), then remove both. nomad will not do it for you`,
+        `${yellow(warnGlyph)} path-map: entry ${JSON.stringify(entry)} is a symlink under ~/.claude/ ` +
+          `pointing into shared/; copy the content out first (cp -RL), then remove both. ` +
+          `nomad will not do it for you`,
       );
     } else if (existing.has(entry)) {
       addItem(
         section,
-        `${yellow(warnGlyph)} path-map: shared/${entry} exists in the repo working tree; remove it by hand, nomad will not delete it`,
+        `${yellow(warnGlyph)} path-map: shared/ entry ${JSON.stringify(entry)} exists in the repo working tree; remove it by hand, nomad will not delete it`,
       );
     }
   }
