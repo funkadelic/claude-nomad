@@ -218,14 +218,59 @@ describe('isValidSharedDir (sharedDirs path-traversal and collision guard)', () 
 });
 
 describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir)', () => {
-  it('returns null for a valid entry', () => {
-    expect(validateSharedDirEntry('get-shit-done')).toBeNull();
+  describe('success', () => {
+    it('returns null for a valid alphanumeric entry', () => {
+      expect(validateSharedDirEntry('get-shit-done')).toBeNull();
+    });
+
+    it('returns null for a second valid entry (dots and underscores)', () => {
+      expect(validateSharedDirEntry('my.tool_dir')).toBeNull();
+    });
   });
 
-  it('returns the secret-shaped reason for ".env"', () => {
-    expect(validateSharedDirEntry('.env')).toEqual({
-      reason: 'secret-shaped',
-      message: expect.stringContaining('credential-shaped') as string,
+  describe('not-a-string', () => {
+    it.each([42, null, undefined, { nested: 'x' }])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('not-a-string');
+    });
+  });
+
+  describe('not-a-segment', () => {
+    it.each(['foo/bar', '..', '.', '', 'foo\\bar', 'foo bar'])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('not-a-segment');
+    });
+  });
+
+  describe('never-sync', () => {
+    it.each(['todos', '.credentials.json'])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('never-sync');
+    });
+  });
+
+  describe('reserved', () => {
+    it.each(['hooks', 'path-map.json'])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('reserved');
+    });
+  });
+
+  describe('secret-shaped', () => {
+    it.each([
+      '.env',
+      '.env.local',
+      '.ENV',
+      'id_rsa',
+      'credentials',
+      'server.pem',
+      'deploy.key',
+      '.npmrc',
+    ])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('secret-shaped');
+    });
+
+    it('returns the secret-shaped reason for ".env" with a message naming it', () => {
+      expect(validateSharedDirEntry('.env')).toEqual({
+        reason: 'secret-shaped',
+        message: expect.stringContaining('credential-shaped') as string,
+      });
     });
   });
 });

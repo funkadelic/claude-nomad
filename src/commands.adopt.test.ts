@@ -14,6 +14,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { EXIT } from './exit-codes.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 // Posix-only assertions (symlink creation, clobber-refusal wording) below
@@ -249,6 +250,50 @@ describe('cmdAdopt (precondition matrix)', () => {
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('skills')).toThrow('exit:1');
     expect(errOutput(env)).toContain('invalid name');
+    expect(diffCached(env)).toBe('');
+  });
+
+  // Credential-shaped names are a hard NomadFatal, ahead of the membership
+  // and mutation paths, even when the user configured and materialized the
+  // name themselves.
+  it('hard-fails cmdAdopt(".env") with a NomadFatal naming the reason, and mutates nothing', async () => {
+    addSharedDir(env, '.env');
+    writeFileSync(join(env.claudeHome, '.env'), 'SECRET=1\n');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      cmdAdopt('.env');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.message).toContain('.env');
+    expect(fatal.message).toContain('credential-shaped');
+    expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
+
+    expect(diffCached(env)).toBe('');
+    expect(existsSync(join(env.repoHome, 'shared', '.env'))).toBe(false);
+  });
+
+  it('hard-fails cmdAdopt("id_rsa") with a NomadFatal naming the reason', async () => {
+    addSharedDir(env, 'id_rsa');
+    writeFileSync(join(env.claudeHome, 'id_rsa'), 'fake-key\n');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      cmdAdopt('id_rsa');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.message).toContain('id_rsa');
+    expect(fatal.message).toContain('credential-shaped');
     expect(diffCached(env)).toBe('');
   });
 

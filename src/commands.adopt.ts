@@ -2,7 +2,8 @@ import { cpSync, existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { backupBase, claudeHome, repoHome, SHARED_LINKS, type PathMap } from './config.ts';
-import { isValidSharedDir } from './config.sharedDirs.guard.ts';
+import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.guard.ts';
+import { EXIT } from './exit-codes.ts';
 import { copySharedLinkPull } from './links.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
@@ -144,6 +145,20 @@ function performAdoptMove(
  */
 export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const dryRun = opts.dryRun === true;
+
+  // adopt is the one entry point where the user explicitly named this
+  // directory, so a quiet skip here is the confusing outcome: hard-fail
+  // instead of falling through to the generic invalid-name path below.
+  // EXIT.GENERIC_FAILURE preserves the exit code the adjacent invalid-name
+  // path already returns; EXIT.USAGE is reserved for bad argv shapes, not a
+  // rejected positional value.
+  const rejection = validateSharedDirEntry(name);
+  if (rejection !== null && rejection.reason === 'secret-shaped') {
+    throw new NomadFatal(
+      `cannot adopt ${JSON.stringify(name)}: ${rejection.message}. Remove it from sharedDirs in path-map.json.`,
+      { code: EXIT.GENERIC_FAILURE },
+    );
+  }
 
   // Validate name format (rejects path separators, NEVER_SYNC, and arbitrary
   // names that are not in SHARED_LINKS; SHARED_LINKS statics bypass isValidSharedDir
