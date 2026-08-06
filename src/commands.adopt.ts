@@ -1,7 +1,14 @@
 import { cpSync, existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { backupBase, claudeHome, repoHome, SHARED_LINKS, type PathMap } from './config.ts';
+import {
+  backupBase,
+  claudeHome,
+  repoHome,
+  sharedDirEntries,
+  SHARED_LINKS,
+  type PathMap,
+} from './config.ts';
 import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { EXIT } from './exit-codes.ts';
 import { copySharedLinkPull } from './links.ts';
@@ -57,9 +64,7 @@ function readMapIfPresent(repoHome: string): PathMap {
  * @returns True when name is a configured shared target.
  */
 function isConfiguredTarget(name: string, map: PathMap): boolean {
-  return (
-    (SHARED_LINKS as readonly string[]).includes(name) || (map.sharedDirs?.includes(name) ?? false)
-  );
+  return (SHARED_LINKS as readonly string[]).includes(name) || sharedDirEntries(map).includes(name);
 }
 
 /**
@@ -155,7 +160,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const rejection = validateSharedDirEntry(name);
   if (rejection !== null && rejection.reason === 'secret-shaped') {
     throw new NomadFatal(
-      `cannot adopt ${JSON.stringify(name)}: ${rejection.message}. Remove it from sharedDirs in path-map.json.`,
+      `cannot adopt ${JSON.stringify(name)}: ${rejection.message}. If it is listed in sharedDirs in path-map.json, remove it there too.`,
       { code: EXIT.GENERIC_FAILURE },
     );
   }

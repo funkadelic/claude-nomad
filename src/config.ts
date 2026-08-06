@@ -233,16 +233,28 @@ export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
  * deliberately leaves this field unchecked, so both malformed shapes reach
  * here: a number is not iterable and would throw out of a function that feeds
  * `applySharedLinks`, while a string iterates character by character and would
- * ask for one symlink per character. The doctor reporter applies the same
- * guard, so the read-only surface and the mutating one agree.
+ * ask for one symlink per character. Every other consumer reads the field
+ * through {@link sharedDirEntries}, so the read-only surfaces and the mutating
+ * ones agree on what a malformed value means.
+ *
+ * Pass `quiet` from a caller that reports these rejections itself. `nomad
+ * doctor` does: it prints one in-tree WARN row per rejected entry, and the
+ * Summary then repeats it. The stderr warn here would be a THIRD line for the
+ * same entry, and the only one outside the tree, so it is not counted by the
+ * verdict. That breaks the documented contract that a problem line's glyph
+ * count doubles, and hands a downstream glyph-grepping consumer an extra
+ * uncounted hit. Every mutating caller leaves it loud, since there the warn is
+ * the user's only notice.
  *
  * @param map - Parsed `path-map.json` content.
+ * @param opts - `quiet` suppresses the per-entry and non-array WARNs.
  * @returns Array of link names to symlink under `~/.claude/`.
  */
-export function allSharedLinks(map: PathMap): string[] {
+export function allSharedLinks(map: PathMap, opts: { quiet?: boolean } = {}): string[] {
+  const emit = opts.quiet === true ? () => undefined : warn;
   const raw = map.sharedDirs;
   if (raw !== undefined && !Array.isArray(raw)) {
-    warn('sharedDirs in path-map.json is not an array; ignoring the whole field');
+    emit('sharedDirs in path-map.json is not an array; ignoring the whole field');
     return [...SHARED_LINKS];
   }
   const extras: string[] = [];
@@ -251,10 +263,36 @@ export function allSharedLinks(map: PathMap): string[] {
     if (rejection === null) {
       extras.push(entry);
     } else {
-      warn(`sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`);
+      emit(`sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`);
     }
   }
   return [...SHARED_LINKS, ...extras];
+}
+
+/**
+ * Read `map.sharedDirs` as a list, treating any non-array value as absent.
+ *
+ * `path-map.json` is runtime input and `validatePathMapShape` deliberately
+ * leaves this field unchecked, so a hand-edited or synced map can carry a
+ * number, a string, or an object here. Every consumer that reaches for the
+ * field goes through this accessor, because reading it raw fails differently
+ * (and worse) at each call site: `.filter`/`.includes` on a number throws a
+ * bare `TypeError`, which is not a `NomadFatal` and so writes a crash report
+ * for what is really a malformed-config case, and a STRING answers
+ * `.includes()` as a SUBSTRING test, which silently widens a membership gate
+ * (`sharedDirs: "get-shit-done"` would otherwise authorize the name `shit`).
+ *
+ * Returns the entries unvalidated: callers still apply
+ * `validateSharedDirEntry` or `isValidSharedDir` per entry. This only
+ * normalizes the container.
+ *
+ * @param map - Parsed `path-map.json` content.
+ * @returns The `sharedDirs` entries, or an empty array when the field is
+ *   absent or not an array.
+ */
+export function sharedDirEntries(map: PathMap): unknown[] {
+  const raw: unknown = map.sharedDirs;
+  return Array.isArray(raw) ? raw : [];
 }
 
 /**

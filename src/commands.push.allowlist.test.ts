@@ -231,6 +231,29 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     expect(() => enforceAllowList('M  shared/escape/file.txt\0', map)).toThrow(NomadFatal);
   });
 
+  it('does NOT add an allow entry for a credential-shaped sharedDir', async () => {
+    // The consumer-level half of the guard: unit tests prove the guard rejects
+    // ".env", this proves the rejection actually keeps shared/.env/ out of the
+    // runtime allow-list, which is the behavior that protects the user.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['.env'] };
+    expect(() => enforceAllowList('M  shared/.env/token\0', map)).toThrow(NomadFatal);
+  });
+
+  it.each([42, 'gsd', null])(
+    'does not throw a raw TypeError when sharedDirs is %p',
+    async (bad) => {
+      // A non-array reaches here from a synced path-map.json; a bare TypeError
+      // is not a NomadFatal, so it would write a crash report for what is only
+      // a malformed config. The string case must not substring-match either.
+      const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+      const { NomadFatal } = await import('./utils.ts');
+      const map = { projects: {}, sharedDirs: bad } as unknown as PathMap;
+      expect(() => enforceAllowList('M  shared/gsd/cli.js\0', map)).toThrow(NomadFatal);
+    },
+  );
+
   it('does NOT add an allow entry for a NEVER_SYNC sharedDir, and the hard-block still fires', async () => {
     // 'todos' is in NEVER_SYNC; it must not widen the allow-list AND the
     // NEVER_SYNC hard-block must still reject a path containing it.
