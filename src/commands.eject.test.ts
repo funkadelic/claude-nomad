@@ -583,6 +583,11 @@ describe('cmdEject', () => {
         ],
       });
       expect(names.filter((n) => n.endsWith('.'))).toEqual([]);
+      // Positive control: the assertion above must not be satisfiable by an
+      // empty or truncated enumeration.
+      expect(names).toEqual(
+        expect.arrayContaining(['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs']),
+      );
     } finally {
       stubPlatform(realPlatform);
     }
