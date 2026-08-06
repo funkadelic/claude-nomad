@@ -76,6 +76,24 @@ const RESERVED_SHARED = new Set([
 const RESERVED_SHARED_FOLDED = new Set([...RESERVED_SHARED].map((name) => name.toLowerCase()));
 
 /**
+ * Win32 device names, which are reserved at every path level and with any
+ * extension: `NUL`, `nul.json` and `CON.md` all address the device, not a file.
+ * A `sharedDirs` entry naming one cannot be created or copied on native
+ * Windows, where shared names are materialized as real files rather than
+ * symlinks, so accepting it hands that host an unfixable per-name failure on
+ * every pull. Rejected on all platforms: `path-map.json` syncs, so a name
+ * accepted on Linux lands on the Windows host that cannot use it.
+ */
+const WIN32_DEVICE_NAMES = new Set([
+  'con',
+  'prn',
+  'aux',
+  'nul',
+  ...Array.from({ length: 9 }, (_unused, i) => `com${i + 1}`),
+  ...Array.from({ length: 9 }, (_unused, i) => `lpt${i + 1}`),
+]);
+
+/**
  * Machine-comparable cause for a rejected `sharedDirs` entry, in the order
  * `validateSharedDirEntry` tests them. A string-literal union, not a TS
  * `enum`, because `erasableSyntaxOnly` forbids enums.
@@ -136,6 +154,15 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
   }
   if (RESERVED_SHARED.has(entry) || RESERVED_SHARED_FOLDED.has(folded)) {
     return { reason: 'reserved', message: 'a reserved shared/ name' };
+  }
+  // Device names are reserved with any extension, so test the stem. `indexOf`
+  // rather than a regex (a `.*$` form backtracks super-linearly) or
+  // `split(...)[0]` (types as possibly-undefined, adding an unreachable branch
+  // to a file the patch gate holds at 100%).
+  const dot = folded.indexOf('.');
+  const stem = dot === -1 ? folded : folded.slice(0, dot);
+  if (WIN32_DEVICE_NAMES.has(stem)) {
+    return { reason: 'reserved', message: 'a reserved Windows device name' };
   }
   if (isSecretFileName(entry)) {
     return {

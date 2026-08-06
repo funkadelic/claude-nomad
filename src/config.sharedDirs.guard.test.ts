@@ -324,4 +324,35 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
       expect(validateSharedDirEntry('Get-Shit-Done')).toBeNull();
     });
   });
+
+  // Reserved at every path level and with any extension on win32, where shared
+  // names are materialized as real files. Accepting one hands that host a
+  // per-name failure it cannot fix, and path-map.json syncs, so the name must
+  // be refused on every platform rather than only where it breaks.
+  describe('win32 device names', () => {
+    it.each(['NUL', 'nul', 'CON', 'PRN', 'AUX', 'com1', 'COM9', 'lpt1', 'LPT9'])(
+      'rejects %p as reserved',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('reserved');
+      },
+    );
+
+    it.each(['NUL.json', 'con.md', 'aux.tar.gz'])(
+      'rejects %p (extension does not help)',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('reserved');
+      },
+    );
+
+    it.each(['console', 'communicate', 'nulls', 'auxiliary', 'com', 'com10', 'lpt0'])(
+      'still accepts %p, which merely starts with a device name',
+      (value) => {
+        expect(validateSharedDirEntry(value)).toBeNull();
+      },
+    );
+
+    it('names the device rule in the message', () => {
+      expect(validateSharedDirEntry('NUL')?.message).toContain('Windows device name');
+    });
+  });
 });
