@@ -161,7 +161,7 @@ function hasSharedLeftover(entry: string): boolean {
  * syncs. There is also nothing to recover, since the name is already synced
  * under nomad's own management.
  */
-const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
+const PROBEABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
   'never-sync',
   'secret-shaped',
 ]);
@@ -250,10 +250,10 @@ function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'dangling' | 
  *
  * For any rejected entry this host may still have materialized, also emits a
  * remediation row, but only for entries {@link mayJoinRefusedEntry} admits
- * with {@link PROBABLE_REASONS} as the remediable set. That gate is two
+ * with {@link PROBEABLE_REASONS} as the remediable set. That gate is two
  * rules and not one: the traversal and coercion shapes are never joinable on
  * any host, and a trailing-dot spelling is admitted on posix (refused on
- * win32) regardless of its cause, before {@link PROBABLE_REASONS} is ever
+ * win32) regardless of its cause, before {@link PROBEABLE_REASONS} is ever
  * consulted. Only for a non-dotted name does the reason set decide. A
  * symlink at `~/.claude/<entry>` that resolves INTO `shared/` leads with copying the
  * content out and only then removing both: telling the user to delete the
@@ -297,7 +297,7 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
     if (rejection === null) continue;
     if (
       typeof entry === 'string' &&
-      mayJoinRefusedEntry(entry, rejection.reason, PROBABLE_REASONS)
+      mayJoinRefusedEntry(entry, rejection.reason, PROBEABLE_REASONS)
     ) {
       probable.push(entry);
     }
@@ -325,7 +325,7 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
  *
  * @param section - The doctor "Path map" section to append rows to.
  * @param probable - Rejected entries {@link mayJoinRefusedEntry} admits on
- *   this host, with {@link PROBABLE_REASONS} as the remediable set.
+ *   this host, with {@link PROBEABLE_REASONS} as the remediable set.
  */
 function reportRejectedLeftovers(section: DoctorSection, probable: string[]): void {
   for (const entry of probable) {
@@ -400,6 +400,9 @@ export function reportPathMap(section: DoctorSection): void {
   }
   const map = readJsonSafe<PathMap>(mapPath, mapPath, section);
   if (map === null) return;
+  // Reads only `sharedDirs`, so it is safe before the `projects` shape gate
+  // and stays reachable when that gate fails: the other call sites are quiet.
+  reportRejectedSharedDirs(section, map);
   // Guard non-object `projects` and per-project non-object `hosts` so the
   // helpers' `hosts[HOST]` / `Object.values(hosts)` cannot throw mid-output and
   // break the tolerant-doctor contract. Shares the shape walk with `readPathMap`
@@ -412,7 +415,6 @@ export function reportPathMap(section: DoctorSection): void {
   }
   reportMappedProjects(section, map);
   reportCurrentHostPathsMissing(section, map);
-  reportRejectedSharedDirs(section, map);
   reportUnmappedProjects(section, map);
   reportPathCollisions(section, map);
 }

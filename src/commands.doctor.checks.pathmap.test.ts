@@ -670,7 +670,7 @@ describe('reportRejectedSharedDirs', () => {
     async () => {
       // "commands." strips to "commands", the reserved shared/ name win32
       // would address, and "reserved" is deliberately absent from
-      // PROBABLE_REASONS, so this row can only fire because the spelling is
+      // PROBEABLE_REASONS, so this row can only fire because the spelling is
       // consulted ahead of the cause on posix. On posix these are two
       // unrelated directories, nomad manages neither dotted spelling, and
       // dropping the row leaves the user's only copy behind a link nomad
