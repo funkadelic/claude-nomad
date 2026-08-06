@@ -219,12 +219,18 @@ directory into symlink sync with the top-level `sharedDirs` field:
 
 Each listed name is symlinked from `shared/<name>` into `~/.claude/<name>` (a real copy on native
 Windows, where `nomad pull` and `nomad push` both keep that copy and the repo in step, so edits and
-deletions travel either way round). Entries are validated
-before linking: a name must be a single path segment (no `/` or `..`), must not be one of the
-never-synced names, and must not collide with a reserved name. In particular `hooks`, `agents`, and
-`skills` are reserved and cannot be re-added this way: `hooks` and `agents` are gsd-owned per host,
-and `skills` is handled by the filtered copy-sync. Invalid entries are dropped with a warning rather
-than aborting the run.
+deletions travel either way round). Entries are validated before linking: a name must be a single
+path segment (no `/` or `..`), must not be one of the never-synced names, must not collide with a
+reserved name, and must not look like a credential file (`.env`, `id_rsa`, `credentials`, `*.pem`,
+and `*.key` are all refused). In particular `hooks`, `agents`, and `skills` are reserved and cannot
+be re-added this way: `hooks` and `agents` are gsd-owned per host, and `skills` is handled by the
+filtered copy-sync. `nomad doctor` lists every refused `sharedDirs` entry with its reason; if a
+refused name was already copied into `shared/` by an older version of nomad, doctor also names that
+path and you remove it by hand, since nomad will not delete it for you.
+
+Invalid entries are dropped with a warning rather than aborting the run when read by `nomad pull`.
+`nomad adopt` on such a name is the one place this differs: it stops with an error instead of
+dropping the name silently, since you named that directory explicitly.
 
 ## Stop using nomad (offboard a machine)
 
