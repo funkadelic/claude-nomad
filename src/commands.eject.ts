@@ -1,8 +1,18 @@
 import { cpSync, existsSync, lstatSync, realpathSync, rmSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
-import { allSharedLinks, backupBase, claudeHome, repoHome, type PathMap } from './config.ts';
-import { validateSharedDirEntry } from './config.sharedDirs.guard.ts';
+import {
+  allSharedLinks,
+  backupBase,
+  claudeHome,
+  repoHome,
+  sharedDirEntries,
+  type PathMap,
+} from './config.ts';
+import {
+  validateSharedDirEntry,
+  type SharedDirRejectionReason,
+} from './config.sharedDirs.guard.ts';
 import { die, fail, item, log } from './utils.ts';
 import { renameAtomicRetry } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
@@ -340,6 +350,28 @@ function materializeOneOrDie(
 }
 
 /**
+ * Rejection reasons whose entries eject still enumerates, because this host may
+ * have materialized one under an older, looser guard and the name is safe to
+ * join into a filesystem path.
+ *
+ * Every reason here is tested AFTER `SAFE_SEGMENT`, so reaching it proves the
+ * name carries no path separator, `.` or `..`. `not-a-string` and
+ * `not-a-segment` are therefore absent: those are the coercion and traversal
+ * shapes, and no host ever materialized one, because the guard has refused them
+ * since before `sharedDirs` had any other rejection cause.
+ *
+ * `never-sync` and `reserved` earn their place for the same reason the
+ * credential shape does: the guard folds case, so names an older nomad accepted
+ * and symlinked (`Plans`, `Agents`, `Settings.local.json`) are refused now.
+ * Enumerating only the credential shape would strand exactly those.
+ */
+const WIDENED_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
+  'never-sync',
+  'reserved',
+  'secret-shaped',
+]);
+
+/**
  * The managed names eject must consider on this host: `allSharedLinks(map)`
  * widened with any `sharedDirs` entry the guard refuses for a reason that is
  * still safe to join into a filesystem path.
@@ -350,28 +382,20 @@ function materializeOneOrDie(
  * it out of the enumeration would skip it silently and then tell the user it is
  * safe to delete the repo, destroying their only copy.
  *
- * The widening is by rejection REASON, never by type, and the split is drawn at
- * "can this string be joined into a path". `not-a-string` and `not-a-segment`
- * stay excluded: those are the coercion and traversal shapes, and no host ever
- * materialized one, because the guard has refused them since before `sharedDirs`
- * had any other rejection cause. Every other reason has already cleared the
- * single-safe-segment test, so it cannot carry a path separator, `.`, or `..`.
- *
- * The never-sync and reserved reasons have to be included for the same reason
- * the credential shape does: the guard folds case, so names an older nomad
- * accepted and symlinked (`Plans`, `Agents`, `Settings.local.json`) are refused
- * now. Gating on the credential shape alone would strand exactly those.
+ * The widening is by rejection REASON, never by type, and is an allow-list
+ * ({@link WIDENED_REASONS}) rather than a deny-list on the unsafe shapes. Both
+ * express the same policy today, but a deny-list fails OPEN: a rejection cause
+ * added later is silently joined into a filesystem path until someone notices.
+ * The sibling allow-list in `commands.doctor.checks.pathmap.ts` documents the
+ * same reasoning, and two divergent encodings of one policy is how they drift.
  *
  * @param map Parsed `path-map.json` content.
  * @returns The de-duplicated managed names, valid entries first.
  */
 export function ejectNames(map: PathMap): string[] {
-  const raw: unknown = map.sharedDirs;
-  const entries: unknown[] = Array.isArray(raw) ? raw : [];
-  const alreadyMaterialized = entries.filter((entry): entry is string => {
+  const alreadyMaterialized = sharedDirEntries(map).filter((entry): entry is string => {
     const rejection = validateSharedDirEntry(entry);
-    if (rejection === null) return true;
-    return rejection.reason !== 'not-a-string' && rejection.reason !== 'not-a-segment';
+    return rejection === null || WIDENED_REASONS.has(rejection.reason);
   });
   return [...new Set([...allSharedLinks(map), ...alreadyMaterialized])];
 }
@@ -427,15 +451,21 @@ export function cmdEject(
   }
 
   // ejectNames calls allSharedLinks, which has already printed
-  // `... rejected: ...; skipping` for each of these. Eject does NOT skip the
-  // ones this host actually has, and that wording is byte-identical to the case
-  // where a name genuinely is dropped and the user's only copy is at risk.
-  // Reconcile explicitly so the safe case and the dangerous one do not read the
-  // same. Gated on classification, since a configured-but-never-materialized
-  // name is absent here and claiming the host has it would be false.
+  // `... rejected: ...; skipping` for each re-adopted name. Eject does NOT skip
+  // those, and that wording is byte-identical to the case where a name really is
+  // dropped and the user's only copy is at risk, so reconcile explicitly.
+  //
+  // Two gates, both load-bearing. Membership in the base set, because the
+  // SHARED_LINKS statics are all in RESERVED_SHARED and so fail the guard on
+  // their own name: testing the guard alone would print this for CLAUDE.md,
+  // commands, rules and my-statusline.cjs on every host. And classification,
+  // because the line claims the host HAS the name, which is false for one that
+  // is absent and misleading for a real copy that is about to be reported as
+  // already ejected.
+  const base = new Set(allSharedLinks(map, { quiet: true }));
   for (const name of names) {
-    if (classifications.get(name) === 'absent') continue;
-    if (validateSharedDirEntry(name) === null) continue;
+    if (base.has(name)) continue;
+    if (classifications.get(name) !== 'materialize') continue;
     item(`materializing anyway (this host already has it): ${name}`);
   }
 

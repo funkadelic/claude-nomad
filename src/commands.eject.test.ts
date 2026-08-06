@@ -15,7 +15,14 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import { cmdEject, ejectChecklist, errMessage, previewMaterialize } from './commands.eject.ts';
+import {
+  cmdEject,
+  ejectChecklist,
+  ejectNames,
+  errMessage,
+  previewMaterialize,
+} from './commands.eject.ts';
+import type { PathMap } from './config.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 // Windows chmod only toggles the read-only attribute: a 0o500 dir still
@@ -506,9 +513,33 @@ describe('cmdEject', () => {
       JSON.stringify({ projects: {}, sharedDirs: [42] }),
     );
 
+    // Assert on the enumeration itself, not on an output line: "ejected: 42"
+    // is absent whether or not 42 was enumerated, since an absent name is
+    // reported as skipped either way.
+    expect(ejectNames({ projects: {}, sharedDirs: [42] } as unknown as PathMap)).not.toContain(42);
+    expect(ejectNames({ projects: {}, sharedDirs: [42] } as unknown as PathMap)).toEqual(
+      ejectNames({ projects: {} }),
+    );
+
+    cmdEject({}, { claudeHome, repoHome });
+    expect(allLogs(logSpy)).not.toContain('42');
+  });
+
+  it('does not print the reconciliation line for the SHARED_LINKS statics', () => {
+    // Every static is in RESERVED_SHARED, so it fails the guard on its own
+    // name. Gating on the guard alone would print this four times on every
+    // host, for names that were never re-adopted.
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(join(repoHome, 'path-map.json'), JSON.stringify({ projects: {} }));
+    for (const name of ['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs']) {
+      const target = join(repoHome, 'shared', name);
+      mkdirSync(target, { recursive: true });
+      symlinkSync(target, join(claudeHome, name));
+    }
+
     cmdEject({}, { claudeHome, repoHome });
 
-    expect(allLogs(logSpy)).not.toContain('ejected: 42');
+    expect(allLogs(logSpy)).not.toContain('materializing anyway');
   });
 
   it('a traversal-shaped sharedDirs entry is never enumerated, so nothing outside claudeHome is touched', () => {
