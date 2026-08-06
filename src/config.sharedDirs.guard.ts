@@ -321,15 +321,17 @@ export function mayJoinRefusedEntry(
 
 /**
  * Boolean wrapper over {@link validateSharedDirEntry}: `true` when `entry` is
- * a valid `sharedDirs` path segment (a single path segment not present in
- * `NEVER_SYNC`, not a reserved `shared/` name, and not a credential-shaped
- * filename). Invalid entries are dropped with a WARN by the caller
- * (`allSharedLinks` in `config.ts`) rather than throwing a fatal error,
- * mirroring the resilience of the existing extras path.
+ * a valid `sharedDirs` path segment (a single path segment, not a
+ * `NEVER_SYNC` name, not a reserved `shared/` name, not a Windows device
+ * name, not a credential-shaped filename, and carrying no trailing dot).
+ * Invalid entries are dropped with a WARN by the caller (`allSharedLinks` in
+ * `config.ts`) rather than throwing a fatal error, mirroring the resilience
+ * of the existing extras path.
  *
- * Kept as a thin same-signature wrapper so its three consumers (`config.ts`,
- * `commands.adopt.ts`, `commands.push.allowlist.ts`) inherit the
- * credential-shape rejection with no edit to any call site.
+ * Kept as a thin same-signature wrapper so its consumers (`commands.adopt.ts`,
+ * `commands.push.allowlist.ts`) inherit new rejection causes with no edit to
+ * any call site. `config.ts` calls {@link validateSharedDirEntry} directly,
+ * not this wrapper.
  *
  * @param entry - Candidate `sharedDirs` value from `path-map.json`.
  * @returns `true` if the entry is safe to use as a symlink target under `~/.claude/`.
