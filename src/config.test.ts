@@ -430,6 +430,23 @@ describe('allSharedLinks', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('drops a string sharedDirs whole rather than walking it character by character', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const map = { projects: {}, sharedDirs: 'credentials' } as unknown as PathMap;
+    expect(allSharedLinks(map)).toEqual([...SHARED_LINKS]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('is not an array'));
+  });
+
+  it('drops a non-iterable sharedDirs whole rather than throwing', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const map = { projects: {}, sharedDirs: 42 } as unknown as PathMap;
+    expect(() => allSharedLinks(map)).not.toThrow();
+    expect(allSharedLinks(map)).toEqual([...SHARED_LINKS]);
+  });
+
   it('drops a credential-shaped entry and keeps the valid one, with the specific reason in the warn', async () => {
     vi.resetModules();
     const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');

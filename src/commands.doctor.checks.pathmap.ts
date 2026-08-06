@@ -151,15 +151,25 @@ function isLocalSymlink(entry: string): boolean {
  * either one.
  *
  * Tolerates a malformed `sharedDirs` (a non-array, or members that are not
- * strings): reading `map.sharedDirs` via `Array.isArray` rather than the
- * `?? []` fallthrough used elsewhere in this file, because a non-array value
- * would otherwise throw on iteration and abort the whole doctor run.
+ * strings), which `validatePathMapShape` deliberately leaves unchecked. A
+ * present-but-non-array value gets its own row and stops the scan there,
+ * matching what `allSharedLinks` does with the same input: iterating it would
+ * either throw and abort the whole doctor run (a number is not iterable) or
+ * walk a string character by character and report one row per character.
  *
  * @param section - The doctor "Path map" section to append rows to.
  * @param map - Parsed `path-map.json` content.
  */
 function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
-  const entries: unknown[] = Array.isArray(map.sharedDirs) ? map.sharedDirs : [];
+  const raw: unknown = map.sharedDirs;
+  if (raw !== undefined && !Array.isArray(raw)) {
+    addItem(
+      section,
+      `${yellow(warnGlyph)} path-map: sharedDirs is not an array (${typeof raw}); the whole field is ignored`,
+    );
+    return;
+  }
+  const entries: unknown[] = Array.isArray(raw) ? raw : [];
   const rejected: unknown[] = [];
   for (const entry of entries) {
     const rejection = validateSharedDirEntry(entry);

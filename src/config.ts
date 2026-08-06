@@ -228,12 +228,25 @@ export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
  * `for...of` to apply the same symlink machinery to both built-in and
  * user-configured dirs.
  *
+ * A `sharedDirs` that is present but not an array is dropped whole with one
+ * WARN. `path-map.json` is runtime input and `validatePathMapShape`
+ * deliberately leaves this field unchecked, so both malformed shapes reach
+ * here: a number is not iterable and would throw out of a function that feeds
+ * `applySharedLinks`, while a string iterates character by character and would
+ * ask for one symlink per character. The doctor reporter applies the same
+ * guard, so the read-only surface and the mutating one agree.
+ *
  * @param map - Parsed `path-map.json` content.
  * @returns Array of link names to symlink under `~/.claude/`.
  */
 export function allSharedLinks(map: PathMap): string[] {
+  const raw = map.sharedDirs;
+  if (raw !== undefined && !Array.isArray(raw)) {
+    warn('sharedDirs in path-map.json is not an array; ignoring the whole field');
+    return [...SHARED_LINKS];
+  }
   const extras: string[] = [];
-  for (const entry of map.sharedDirs ?? []) {
+  for (const entry of raw ?? []) {
     const rejection = validateSharedDirEntry(entry);
     if (rejection === null) {
       extras.push(entry);

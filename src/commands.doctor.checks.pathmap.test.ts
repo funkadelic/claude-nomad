@@ -589,14 +589,26 @@ describe('reportRejectedSharedDirs', () => {
     expect(sec.items.join('\n')).not.toContain('sharedDirs entry');
   });
 
-  it('tolerates a non-array sharedDirs without throwing or aborting the run', async () => {
+  it('names a non-array sharedDirs in its own row instead of walking it per character', async () => {
     const map = { projects: {}, sharedDirs: 'not-an-array' };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
     const { section: makeSection } = await import('./commands.doctor.format.ts');
     const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
     const sec = makeSection('Path map');
     expect(() => reportPathMap(sec)).not.toThrow();
-    expect(sec.items.join('\n')).not.toContain('sharedDirs entry');
+    const out = sec.items.join('\n');
+    expect(out).toContain('sharedDirs is not an array (string)');
+    expect(out).not.toContain('sharedDirs entry');
+  });
+
+  it('names a non-iterable sharedDirs without throwing', async () => {
+    const map = { projects: {}, sharedDirs: 42 };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    expect(() => reportPathMap(sec)).not.toThrow();
+    expect(sec.items.join('\n')).toContain('sharedDirs is not an array (number)');
   });
 
   it('tolerates non-string sharedDirs members, naming each as not a string, without throwing', async () => {
