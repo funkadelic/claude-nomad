@@ -485,6 +485,20 @@ describe('cmdEject', () => {
     },
   );
 
+  it('does not claim the host has a refused name that was never materialized', () => {
+    // Configured but absent: the reconciliation line asserts "this host already
+    // has it", which would be false here.
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['credentials'] }),
+    );
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    expect(allLogs(logSpy)).not.toContain('materializing anyway');
+  });
+
   it('a non-string sharedDirs entry is never enumerated', () => {
     const { claudeHome, repoHome } = makeTempRoots();
     writeFileSync(

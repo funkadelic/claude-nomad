@@ -420,20 +420,23 @@ export function cmdEject(
   const map = readMapIfPresent(repoHome);
   const names = ejectNames(map);
 
-  // ejectNames calls allSharedLinks, which has already printed
-  // `... rejected: ...; skipping` for each of these. Eject does NOT skip them,
-  // and that wording is byte-identical to the case where a name genuinely is
-  // dropped and the user's only copy is at risk. Reconcile explicitly so the
-  // safe case and the dangerous one do not read the same.
-  const readopted = names.filter((name) => validateSharedDirEntry(name) !== null);
-  for (const name of readopted) {
-    item(`materializing anyway (this host already has it): ${name}`);
-  }
-
   // Classify every name upfront; abort before any mutation if any are dangling.
   const classifications = new Map<string, NameClass>();
   for (const name of names) {
     classifications.set(name, classifyName(join(claudeHome, name)));
+  }
+
+  // ejectNames calls allSharedLinks, which has already printed
+  // `... rejected: ...; skipping` for each of these. Eject does NOT skip the
+  // ones this host actually has, and that wording is byte-identical to the case
+  // where a name genuinely is dropped and the user's only copy is at risk.
+  // Reconcile explicitly so the safe case and the dangerous one do not read the
+  // same. Gated on classification, since a configured-but-never-materialized
+  // name is absent here and claiming the host has it would be false.
+  for (const name of names) {
+    if (classifications.get(name) === 'absent') continue;
+    if (validateSharedDirEntry(name) === null) continue;
+    item(`materializing anyway (this host already has it): ${name}`);
   }
 
   const dangling = names.filter((n) => classifications.get(n) === 'dangling');
