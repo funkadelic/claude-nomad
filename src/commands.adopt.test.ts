@@ -228,8 +228,11 @@ describe('cmdAdopt (precondition matrix)', () => {
       writeFileSync(mapPath, JSON.stringify({ projects: {}, sharedDirs: bad }) + '\n');
       const { cmdAdopt } = await import('./commands.adopt.ts');
       expect(() => cmdAdopt('custom')).toThrow();
-      expect(errOutput(env)).not.toContain('TypeError');
-      expect(diffCached(env)).toBe('');
+      // The friendly refusal, which only the guarded path can produce. A bare
+      // toThrow() would also pass against the old code, where a non-array threw
+      // a raw TypeError before reaching any message at all.
+      expect(errOutput(env)).toContain('sharedDirs');
+      expect(diffCached(env)).not.toContain('custom');
     },
   );
 
