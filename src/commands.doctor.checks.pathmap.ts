@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, realpathSync, type Stats } from 'node:fs';
 import { join, sep } from 'node:path';
 
 import {
@@ -115,9 +115,11 @@ function reportCurrentHostPathsMissing(section: DoctorSection, map: PathMap): vo
  * `throwIfNoEntry: false` so an absent, unreadable, or non-directory `shared/`
  * degrades to `false` and leaves the caller's rejection rows intact.
  *
- * The entry is safe to join: only reasons {@link isProbeableOnThisHost} admits
- * reach here, and every one has cleared `SAFE_SEGMENT` on a platform where the
- * name means what it says.
+ * The entry is safe to join because {@link mayJoinRefusedEntry} is the only
+ * way one reaches here, and it refuses the coercion and traversal shapes
+ * outright, then refuses any trailing-dot spelling on win32 where such a name
+ * addresses a different path than it spells; so every entry that arrives has
+ * cleared `SAFE_SEGMENT` on a platform where the name means what it says.
  *
  * @param entry - The rejected `sharedDirs` name to probe under `shared/`.
  * @returns `true` when `shared/<entry>` resolves on this filesystem.
@@ -131,15 +133,14 @@ function hasSharedLeftover(entry: string): boolean {
 }
 
 /**
- * The rejection reasons whose entries may be joined into a filesystem path by
- * the remediation probes below. An allow-list, not a deny-list on
- * `not-a-segment`: reaching any reason listed here proves `SAFE_SEGMENT`
- * already passed, so the name carries no path separator, `.` or `..`. A
- * `not-a-segment` entry may be `../escape`, and `join` normalizes `..`, so
- * probing one would stat a path outside `~/.claude/` and report the answer as
- * though it were about the configured name. Listing the safe reasons means a
- * future reason added before the segment check fails closed instead of
- * silently becoming probeable.
+ * This is the `remediable` argument this file passes to
+ * {@link mayJoinRefusedEntry}: the reasons doctor offers remediation rows
+ * for, one half of the gate. The other half, which no consumer may decide for
+ * itself, lives in the guard, where the coercion and traversal shapes are
+ * never joinable and a trailing-dot spelling is never joinable on win32. This
+ * set is still an allow-list rather than a deny-list on the unsafe shapes: a
+ * rejection reason added later fails closed instead of silently becoming
+ * probeable.
  *
  * `reserved` is deliberately NOT listed, even though it is path-safe. The
  * remediation rows exist for a name nomad no longer manages but this host
@@ -172,8 +173,9 @@ const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
  *
  * A link whose target cannot be resolved is `'dangling'`, NOT `'absent'`, and
  * that distinction is load-bearing. Whether the link resolves and whether
- * `shared/<entry>` exists are INDEPENDENT facts: the listing comes from its own
- * `readdirSync`. So a link left over from a moved checkout can dangle while
+ * `shared/<entry>` exists are INDEPENDENT facts: the listing comes from
+ * {@link hasSharedLeftover} statting `shared/<entry>` directly and on its own.
+ * So a link left over from a moved checkout can dangle while
  * `shared/<entry>` under the current root holds the user's only copy, and
  * collapsing dangling into absent would hand that state the delete-it-by-hand
  * row. Follows the tolerant-doctor contract otherwise: an absent path, an
@@ -187,7 +189,7 @@ const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
  */
 function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'dangling' | 'absent' {
   const linkPath = join(claudeHome(), entry);
-  let stat;
+  let stat: Stats | undefined;
   try {
     stat = lstatSync(linkPath, { throwIfNoEntry: false });
   } catch {
@@ -236,9 +238,11 @@ function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'dangling' | 
  * informational, not a failure.
  *
  * For any rejected entry this host may still have materialized, also emits a
- * remediation row, but only for the reasons in {@link PROBABLE_REASONS}: those
- * are the ones the guard tests after its single-segment check, so the name is
- * known separator-free before it reaches a `join`. A symlink at
+ * remediation row, but only for entries {@link mayJoinRefusedEntry} admits
+ * with {@link PROBABLE_REASONS} as the remediable set. That gate is two rules
+ * and not one: the traversal and coercion shapes are never joinable on any
+ * host, and a trailing-dot spelling is joinable only off win32. Only after
+ * both does the reason set decide. A symlink at
  * `~/.claude/<entry>` that resolves INTO `shared/` leads with copying the
  * content out and only then removing both: telling the user to delete the
  * repo-side path on its own would destroy the only copy and leave a dangling
@@ -308,8 +312,8 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
  * name is an independent fact, so those two rows may fire together.
  *
  * @param section - The doctor "Path map" section to append rows to.
- * @param probable - Rejected entries whose reason makes them safe to join into
- *   a path (see {@link PROBABLE_REASONS}).
+ * @param probable - Rejected entries {@link mayJoinRefusedEntry} admits on
+ *   this host, with {@link PROBABLE_REASONS} as the remediable set.
  */
 function reportRejectedLeftovers(section: DoctorSection, probable: string[]): void {
   for (const entry of probable) {
