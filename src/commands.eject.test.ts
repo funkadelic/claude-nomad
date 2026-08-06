@@ -546,13 +546,43 @@ describe('cmdEject', () => {
     const realPlatform = process.platform;
     try {
       stubPlatform('win32');
-      const names = ejectNames({ projects: {}, sharedDirs: ['mytools.', '...'] });
-      expect(names).not.toContain('mytools.');
-      expect(names).not.toContain('...');
+      // Every spelling, not just the ones reporting win32-alias. These inherit
+      // reserved / secret-shaped / never-sync from the name they address, and
+      // all three of those causes are unconditionally widened, so a gate keyed
+      // on the cause rather than the spelling lets them straight back in.
+      const names = ejectNames({
+        projects: {},
+        sharedDirs: [
+          'mytools.',
+          '...',
+          'commands.',
+          'agents.',
+          'hooks.',
+          '.env.',
+          'settings.local.json.',
+        ],
+      });
+      expect(names.filter((n) => n.endsWith('.'))).toEqual([]);
     } finally {
       stubPlatform(realPlatform);
     }
   });
+
+  it.skipIf(isWin)(
+    'enumerates every trailing-dot spelling on posix, whatever cause it inherited',
+    () => {
+      // The mirror of the win32 case: here they are ordinary distinct
+      // directories that alias nothing, so the inherited cause describes a file
+      // this platform never resolves them to, and stranding one loses data.
+      const names = ejectNames({
+        projects: {},
+        sharedDirs: ['mytools.', 'commands.', '.env.', 'settings.local.json.'],
+      });
+      expect(names).toEqual(
+        expect.arrayContaining(['mytools.', 'commands.', '.env.', 'settings.local.json.']),
+      );
+    },
+  );
 
   it('does not print the reconciliation line for the SHARED_LINKS statics', () => {
     // Every static is in RESERVED_SHARED, so it fails the guard on its own

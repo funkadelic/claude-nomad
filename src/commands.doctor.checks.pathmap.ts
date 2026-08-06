@@ -156,25 +156,29 @@ const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
 /**
  * Whether a rejected entry may be joined into a path and probed on THIS host.
  *
- * `win32-alias` is the one platform-dependent answer, and it has to be decided
- * at call time rather than baked into {@link PROBABLE_REASONS}. On posix a
- * trailing-dot name is an ordinary distinct directory, so probing it is safe
- * and useful. On win32 the trailing dots are stripped, so the same string
- * addresses a DIFFERENT path: `mytools.` resolves to `shared/mytools` and
- * `commands.` to the live, tracked `shared/commands`, which would put a
- * remove-it-by-hand row on fleet-synced content. `...` collapses to `shared/`
- * itself, which is precisely the escape this allow-list exists to prevent, and
- * it slips past the `.`/`..` test because it is neither.
+ * Keyed on the entry's SPELLING, not on its rejection cause. The aliasing is a
+ * property of the trailing dot itself, and the cause now describes the name
+ * win32 would address rather than the one written, so a cause-based test stops
+ * covering these the moment the guard starts resolving them: `commands.`
+ * reports `reserved` and `.env.` reports `secret-shaped`, and neither is
+ * `win32-alias` any more.
  *
- * The trailing-dot check also runs BEFORE the reserved check in the guard, so
- * every reserved name with a trailing dot reports `win32-alias` rather than
- * `reserved` and would otherwise bypass that exclusion entirely.
+ * On win32 the trailing dots are stripped, so the string addresses a DIFFERENT
+ * path than it names: `mytools.` resolves to `shared/mytools`, `commands.` to
+ * the live tracked `shared/commands`, and `...` to `shared/` itself, which is
+ * precisely the escape this allow-list exists to prevent (and which slips past
+ * the `.`/`..` test because it is neither). Never probe one there.
  *
- * @param reason - The rejection cause reported for the entry.
+ * On posix such a name is an ordinary distinct directory that aliases nothing,
+ * so it is always probeable regardless of the cause it inherited: the inherited
+ * cause describes a file this platform does not resolve it to.
+ *
+ * @param entry - The rejected `sharedDirs` entry, as written.
+ * @param reason - The rejection cause reported for it.
  * @returns `true` when the entry is safe to join and probe here.
  */
-function isProbeableOnThisHost(reason: SharedDirRejectionReason): boolean {
-  if (reason === 'win32-alias') return process.platform !== 'win32';
+function isProbeableOnThisHost(entry: string, reason: SharedDirRejectionReason): boolean {
+  if (entry.endsWith('.')) return process.platform !== 'win32';
   return PROBABLE_REASONS.has(reason);
 }
 
@@ -303,7 +307,9 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
   for (const entry of entries) {
     const rejection = validateSharedDirEntry(entry);
     if (rejection === null) continue;
-    if (typeof entry === 'string' && isProbeableOnThisHost(rejection.reason)) probable.push(entry);
+    if (typeof entry === 'string' && isProbeableOnThisHost(entry, rejection.reason)) {
+      probable.push(entry);
+    }
     addItem(
       section,
       `${yellow(warnGlyph)} path-map: sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`,

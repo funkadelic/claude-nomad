@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -667,12 +675,20 @@ describe('reportRejectedSharedDirs', () => {
       const realPlatform = process.platform;
       try {
         stubPlatform('win32');
-        const map: PathMap = { projects: {}, sharedDirs: ['mytools.'] };
+        // Includes spellings that inherit never-sync and secret-shaped, both of
+        // which ARE probeable causes: a gate keyed on the cause rather than the
+        // spelling would let these through.
+        const map: PathMap = {
+          projects: {},
+          sharedDirs: ['mytools.', '.env.', 'settings.local.json.'],
+        };
         writeFileSync(
           join(env.testHome, 'claude-nomad', 'path-map.json'),
           JSON.stringify(map) + '\n',
         );
-        mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'mytools.'), { recursive: true });
+        for (const name of ['mytools.', '.env.', 'settings.local.json.']) {
+          mkdirSync(join(env.testHome, 'claude-nomad', 'shared', name), { recursive: true });
+        }
 
         const { section: makeSection } = await import('./commands.doctor.format.ts');
         const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
@@ -691,9 +707,12 @@ describe('reportRejectedSharedDirs', () => {
   // toNamespacedPath prefixing disables the trailing-dot stripping the whole
   // win32-alias reason rests on. If this fails, the reason is unnecessary.
   it.runIf(isWin)('confirms win32 really does strip a trailing dot from a path', () => {
+    // Same syscall the code under test uses. `existsSync` would answer a
+    // different question, so a green result here would not license the
+    // lstat-based probe in hasSharedLeftover.
     const base = join(env.testHome, 'claude-nomad', 'shared');
     mkdirSync(join(base, 'aliasprobe'), { recursive: true });
-    expect(existsSync(join(base, 'aliasprobe.'))).toBe(true);
+    expect(lstatSync(join(base, 'aliasprobe.'), { throwIfNoEntry: false })).toBeDefined();
   });
 
   it.skipIf(isWin)(

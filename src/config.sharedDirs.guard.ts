@@ -155,8 +155,20 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
   // one of them `win32-alias`, which shadowed those causes and left `.env.`
   // with no other surface naming it: it is absent from NEVER_SYNC and
   // `isSecretFileName` does not match it either.
-  const named = classifyDeniedName(stripTrailingDots(entry));
-  if (named !== null) return named;
+  const addressed = stripTrailingDots(entry);
+  const named = classifyDeniedName(addressed);
+  if (named !== null) {
+    // Say which name the cause is about. `commands.` is not itself in the
+    // reserved set and `.env.` matches none of the credential patterns, so
+    // reporting the bare cause tells the user something checkably false about
+    // the string they typed.
+    return addressed === entry
+      ? named
+      : {
+          reason: named.reason,
+          message: `a trailing-dot name addressing ${named.message} (win32 strips the dot)`,
+        };
+  }
   // Reached only when the addressed name is denied by nothing, so the trailing
   // dot is the whole objection. Its OWN cause rather than `not-a-segment`,
   // because such a name is a single safe segment that every released nomad

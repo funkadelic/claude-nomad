@@ -379,20 +379,28 @@ const WIDENED_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
 /**
  * Whether a refused entry is still safe to enumerate on THIS host.
  *
- * `win32-alias` is platform-dependent and so cannot live in the static set
- * above. On posix a trailing-dot name is an ordinary distinct directory that an
- * older nomad may well have symlinked, and stranding it is the data-loss bug
- * this widening exists to prevent. On win32 the trailing dots are stripped, so
- * the string addresses a different path than it names: enumerating `commands.`
- * would operate on the live `shared/commands`, and `...` on the config root
- * itself. Nothing is stranded by excluding it there either, since such a name
- * could never have been materialized as a distinct entry on that platform.
+ * Keyed on the entry's SPELLING, not on its rejection cause. The aliasing is a
+ * property of the trailing dot itself, and the cause now describes the name
+ * win32 would address rather than the one written, so a cause-based test stops
+ * covering these the moment the guard starts resolving them: `commands.`
+ * reports `reserved`, `.env.` reports `secret-shaped`, and both of those causes
+ * are unconditionally widened, which would put every such spelling back into
+ * the enumeration on the one platform where it must not be.
  *
- * @param reason - The rejection cause reported for the entry.
+ * On posix a trailing-dot name is an ordinary distinct directory that an older
+ * nomad may well have symlinked, and stranding it is the data-loss bug this
+ * widening exists to prevent, so it is always enumerated there. On win32 the
+ * trailing dots are stripped, so enumerating `commands.` would operate on the
+ * live `shared/commands` and `...` on the config root itself; nothing is
+ * stranded by excluding them, since such a name cannot exist as a distinct
+ * entry on that platform.
+ *
+ * @param entry - The refused `sharedDirs` entry, as written.
+ * @param reason - The rejection cause reported for it.
  * @returns `true` when the entry should still be enumerated here.
  */
-function isWidenedOnThisHost(reason: SharedDirRejectionReason): boolean {
-  if (reason === 'win32-alias') return process.platform !== 'win32';
+function isWidenedOnThisHost(entry: string, reason: SharedDirRejectionReason): boolean {
+  if (entry.endsWith('.')) return process.platform !== 'win32';
   return WIDENED_REASONS.has(reason);
 }
 
@@ -420,7 +428,12 @@ function isWidenedOnThisHost(reason: SharedDirRejectionReason): boolean {
 export function ejectNames(map: PathMap): string[] {
   const alreadyMaterialized = sharedDirEntries(map).filter((entry): entry is string => {
     const rejection = validateSharedDirEntry(entry);
-    return rejection === null || isWidenedOnThisHost(rejection.reason);
+    if (rejection === null) return true;
+    // `not-a-string` is the first cause tested, so reaching any other proves
+    // the entry is a string and the narrowing below is sound.
+    return (
+      rejection.reason !== 'not-a-string' && isWidenedOnThisHost(entry as string, rejection.reason)
+    );
   });
   return [...new Set([...allSharedLinks(map), ...alreadyMaterialized])];
 }
