@@ -108,16 +108,25 @@ function reportCurrentHostPathsMissing(section: DoctorSection, map: PathMap): vo
  * case-insensitively there would name a real but unrelated directory and tell
  * the user to delete it, which is worse than naming none.
  *
- * `existsSync` never throws, so an absent, unreadable, or non-directory
- * `shared/` degrades to `false` and leaves the caller's rejection rows intact.
- * The entry is safe to join: only {@link PROBABLE_REASONS} entries reach here,
- * and every one has cleared `SAFE_SEGMENT`.
+ * `lstat` rather than `existsSync`, so the final component is not followed: a
+ * leftover stored as a symlink whose own target is gone is still a leftover the
+ * user has to clear, and `existsSync` reports it absent. Wrapped and given
+ * `throwIfNoEntry: false` so an absent, unreadable, or non-directory `shared/`
+ * degrades to `false` and leaves the caller's rejection rows intact.
+ *
+ * The entry is safe to join: only reasons {@link isProbeableOnThisHost} admits
+ * reach here, and every one has cleared `SAFE_SEGMENT` on a platform where the
+ * name means what it says.
  *
  * @param entry - The rejected `sharedDirs` name to probe under `shared/`.
  * @returns `true` when `shared/<entry>` resolves on this filesystem.
  */
 function hasSharedLeftover(entry: string): boolean {
-  return existsSync(join(repoHome(), 'shared', entry));
+  try {
+    return lstatSync(join(repoHome(), 'shared', entry), { throwIfNoEntry: false }) !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -140,10 +149,34 @@ function hasSharedLeftover(entry: string): boolean {
  * the name is already synced under nomad's own management.
  */
 const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
-  'win32-alias',
   'never-sync',
   'secret-shaped',
 ]);
+
+/**
+ * Whether a rejected entry may be joined into a path and probed on THIS host.
+ *
+ * `win32-alias` is the one platform-dependent answer, and it has to be decided
+ * at call time rather than baked into {@link PROBABLE_REASONS}. On posix a
+ * trailing-dot name is an ordinary distinct directory, so probing it is safe
+ * and useful. On win32 the trailing dots are stripped, so the same string
+ * addresses a DIFFERENT path: `mytools.` resolves to `shared/mytools` and
+ * `commands.` to the live, tracked `shared/commands`, which would put a
+ * remove-it-by-hand row on fleet-synced content. `...` collapses to `shared/`
+ * itself, which is precisely the escape this allow-list exists to prevent, and
+ * it slips past the `.`/`..` test because it is neither.
+ *
+ * The trailing-dot check also runs BEFORE the reserved check in the guard, so
+ * every reserved name with a trailing dot reports `win32-alias` rather than
+ * `reserved` and would otherwise bypass that exclusion entirely.
+ *
+ * @param reason - The rejection cause reported for the entry.
+ * @returns `true` when the entry is safe to join and probe here.
+ */
+function isProbeableOnThisHost(reason: SharedDirRejectionReason): boolean {
+  if (reason === 'win32-alias') return process.platform !== 'win32';
+  return PROBABLE_REASONS.has(reason);
+}
 
 /**
  * Classify `~/.claude/<entry>`: a symlink resolving into the repo's `shared/`
@@ -185,22 +218,33 @@ function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'dangling' | 
     return 'absent';
   }
   if (stat?.isSymbolicLink() !== true) return 'absent';
+
+  let target: string;
   try {
-    // BOTH sides resolved. Comparing a resolved target against a raw root
-    // misreads every managed link on a host whose repo path runs through a
-    // symlink (macOS /tmp and /var/folders, a symlinked $HOME, NOMAD_REPO via a
-    // link): the prefix test fails, the link is called foreign, and foreign is
-    // not terminal, so the delete row then names the user's only copy.
-    // `cmdEject` resolves its root for the same reason.
-    const target = realpathSync(linkPath);
-    const root = realpathSync(join(repoHome(), 'shared'));
-    return target.startsWith(root + sep) ? 'managed' : 'foreign';
+    target = realpathSync(linkPath);
   } catch {
-    // Either the link or the shared root is unresolvable. Both are states where
-    // containment cannot be established, so degrade to the terminal row that
-    // recommends removing nothing.
+    // The LINK is what will not resolve. Terminal, and recommends removing
+    // nothing, since a copy under shared/ may be all that is left.
     return 'dangling';
   }
+
+  // Resolved on BOTH sides. Comparing a resolved target against a raw root
+  // misreads every managed link on a host whose repo path runs through a
+  // symlink (macOS /tmp and /var/folders, a symlinked $HOME, NOMAD_REPO via a
+  // link): the prefix test fails, the link is called foreign, and foreign is
+  // not terminal, so the delete row then names the user's only copy.
+  // `cmdEject` resolves its root for the same reason.
+  let root: string;
+  try {
+    root = realpathSync(join(repoHome(), 'shared'));
+  } catch {
+    // Separate from the link's own failure on purpose. The link resolves fine
+    // here; it is `shared/` that is absent, and a link cannot be contained by a
+    // directory that does not exist. Reporting this as dangling would tell the
+    // user a live link is dead and invite them to remove it.
+    return 'foreign';
+  }
+  return target.startsWith(root + sep) ? 'managed' : 'foreign';
 }
 
 /**
@@ -259,7 +303,7 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
   for (const entry of entries) {
     const rejection = validateSharedDirEntry(entry);
     if (rejection === null) continue;
-    if (typeof entry === 'string' && PROBABLE_REASONS.has(rejection.reason)) probable.push(entry);
+    if (typeof entry === 'string' && isProbeableOnThisHost(rejection.reason)) probable.push(entry);
     addItem(
       section,
       `${yellow(warnGlyph)} path-map: sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`,

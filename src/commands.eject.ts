@@ -371,11 +371,30 @@ function materializeOneOrDie(
  * Enumerating only the credential shape would strand exactly those.
  */
 const WIDENED_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
-  'win32-alias',
   'never-sync',
   'reserved',
   'secret-shaped',
 ]);
+
+/**
+ * Whether a refused entry is still safe to enumerate on THIS host.
+ *
+ * `win32-alias` is platform-dependent and so cannot live in the static set
+ * above. On posix a trailing-dot name is an ordinary distinct directory that an
+ * older nomad may well have symlinked, and stranding it is the data-loss bug
+ * this widening exists to prevent. On win32 the trailing dots are stripped, so
+ * the string addresses a different path than it names: enumerating `commands.`
+ * would operate on the live `shared/commands`, and `...` on the config root
+ * itself. Nothing is stranded by excluding it there either, since such a name
+ * could never have been materialized as a distinct entry on that platform.
+ *
+ * @param reason - The rejection cause reported for the entry.
+ * @returns `true` when the entry should still be enumerated here.
+ */
+function isWidenedOnThisHost(reason: SharedDirRejectionReason): boolean {
+  if (reason === 'win32-alias') return process.platform !== 'win32';
+  return WIDENED_REASONS.has(reason);
+}
 
 /**
  * The managed names eject must consider on this host: `allSharedLinks(map)`
@@ -401,7 +420,7 @@ const WIDENED_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
 export function ejectNames(map: PathMap): string[] {
   const alreadyMaterialized = sharedDirEntries(map).filter((entry): entry is string => {
     const rejection = validateSharedDirEntry(entry);
-    return rejection === null || WIDENED_REASONS.has(rejection.reason);
+    return rejection === null || isWidenedOnThisHost(rejection.reason);
   });
   return [...new Set([...allSharedLinks(map), ...alreadyMaterialized])];
 }

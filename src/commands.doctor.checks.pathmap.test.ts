@@ -636,6 +636,93 @@ describe('reportRejectedSharedDirs', () => {
     expect(existsSync(join(onlyCopy, 'token.txt'))).toBe(true);
   });
 
+  it.skipIf(isWin)(
+    'probes a trailing-dot entry on posix, where it is a real distinct name',
+    async () => {
+      const map: PathMap = { projects: {}, sharedDirs: ['mytools.'] };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'mytools.'), { recursive: true });
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      expect(sec.items.join('\n')).toContain(
+        'shared/ entry "mytools." exists in the repo working tree',
+      );
+    },
+  );
+
+  it('never probes a trailing-dot entry on win32, where it addresses a different path', async () => {
+    // win32 strips the trailing dots, so "commands." resolves to the live,
+    // tracked shared/commands and "..." to shared/ itself. Probing either would
+    // put a remove-it-by-hand row on content the whole fleet syncs.
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const map: PathMap = { projects: {}, sharedDirs: ['commands.', '...', 'mytools.'] };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'commands'), { recursive: true });
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('rejected');
+    expect(out).not.toContain('exists in the repo working tree');
+    expect(out).not.toContain('remove it by hand');
+  });
+
+  it.skipIf(isWin)(
+    'reports a leftover stored as a dangling symlink, which existsSync would miss',
+    async () => {
+      const map: PathMap = { projects: {}, sharedDirs: ['.env'] };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      // A leftover whose own target is gone is still a leftover to clear.
+      symlinkSync(
+        join(env.testHome, 'vanished'),
+        join(env.testHome, 'claude-nomad', 'shared', '.env'),
+      );
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      expect(sec.items.join('\n')).toContain('exists in the repo working tree');
+    },
+  );
+
+  it.skipIf(isWin)(
+    'calls a live outside link foreign, not dangling, when shared/ is absent',
+    async () => {
+      // The link resolves; it is shared/ that is gone. Reporting it dangling
+      // would tell the user a live link is dead and invite removing it.
+      const map: PathMap = { projects: {}, sharedDirs: ['credentials'] };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      const elsewhere = join(env.testHome, 'password-store');
+      mkdirSync(elsewhere, { recursive: true });
+      symlinkSync(elsewhere, join(env.testHome, '.claude', 'credentials'));
+      rmSync(join(env.testHome, 'claude-nomad', 'shared'), { recursive: true, force: true });
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('pointing OUTSIDE shared/');
+      expect(out).not.toContain('DANGLING');
+      expect(existsSync(elsewhere)).toBe(true);
+    },
+  );
+
   it('never emits a remediation row for a reserved name nomad manages right now', async () => {
     // ~/.claude/commands is a live symlink into shared/commands, which is
     // tracked and synced to every host. "remove both" would delete it fleet-wide.

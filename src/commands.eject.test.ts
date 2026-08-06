@@ -531,6 +531,21 @@ describe('cmdEject', () => {
     expect(allLogs(logSpy)).not.toContain('42');
   });
 
+  it('enumerates a trailing-dot name on posix, where an older nomad could have symlinked it', () => {
+    expect(ejectNames({ projects: {}, sharedDirs: ['mytools.'] })).toContain('mytools.');
+  });
+
+  it('never enumerates a trailing-dot name on win32, where it addresses a different path', () => {
+    // win32 strips the dots, so "commands." would operate on the live
+    // shared/commands and "..." on the config root itself. Nothing is stranded
+    // by excluding them: such a name cannot exist as a distinct entry there.
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const names = ejectNames({ projects: {}, sharedDirs: ['mytools.', 'commands.', '...'] });
+    expect(names).not.toContain('mytools.');
+    expect(names).not.toContain('commands.');
+    expect(names).not.toContain('...');
+  });
+
   it('does not print the reconciliation line for the SHARED_LINKS statics', () => {
     // Every static is in RESERVED_SHARED, so it fails the guard on its own
     // name. Gating on the guard alone would print this four times on every
