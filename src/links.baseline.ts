@@ -195,10 +195,11 @@ function collectSharedFiles(dir: string, claude: string, scan: LocalSharedScan):
  *
  * Iterates `allSharedLinks(map)` and nothing else, so a name the user never
  * configured is outside the record entirely; raw path-map keys are never walked.
- * A configured name that the deny set rejects is declined outright: the
- * `sharedDirs` guard blocks the never-sync names but not the credential-shaped
- * ones, so this is the boundary that keeps a name like `credentials` out of the
- * record.
+ * A configured name that the deny set rejects is declined outright. The
+ * `sharedDirs` guard now refuses the credential-shaped names as well as the
+ * never-sync ones, so this check is a second, redundant gate on that shape; it
+ * still earns its place by covering a `SHARED_LINKS` static and a hand-written
+ * baseline key, neither of which passes through that guard.
  *
  * Exported because the deletion planner consumes this exact walk. The key
  * format is the contract between the record and its reader, and two
