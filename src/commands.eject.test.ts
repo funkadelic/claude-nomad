@@ -459,6 +459,44 @@ describe('cmdEject', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: credentials'));
   });
 
+  it.each(['Plans', 'Agents', 'Settings.local.json'])(
+    'already-materialized %s is still dereferenced after the guard started folding case',
+    (name) => {
+      // The guard folds case, so these are refused now but were accepted (and
+      // symlinked) by an older nomad. Gating the widening on the credential
+      // shape alone would strand them: skipped silently, then the user is told
+      // the repo is safe to delete and the symlink dangles.
+      const { claudeHome, repoHome } = makeTempRoots();
+      writeFileSync(
+        join(repoHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: [name] }),
+      );
+      const target = join(repoHome, 'shared', name);
+      mkdirSync(target, { recursive: true });
+      writeFileSync(join(target, 'kept.txt'), 'kept');
+      symlinkSync(target, join(claudeHome, name));
+
+      cmdEject({}, { claudeHome, repoHome });
+
+      const ejected = join(claudeHome, name);
+      expect(lstatSync(ejected).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(ejected, 'kept.txt'), 'utf8')).toBe('kept');
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`ejected: ${name}`));
+    },
+  );
+
+  it('a non-string sharedDirs entry is never enumerated', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: [42] }),
+    );
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    expect(allLogs(logSpy)).not.toContain('ejected: 42');
+  });
+
   it('a traversal-shaped sharedDirs entry is never enumerated, so nothing outside claudeHome is touched', () => {
     const { claudeHome, repoHome } = makeTempRoots();
     writeFileSync(

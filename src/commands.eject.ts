@@ -341,8 +341,8 @@ function materializeOneOrDie(
 
 /**
  * The managed names eject must consider on this host: `allSharedLinks(map)`
- * widened with any `sharedDirs` entry the guard refuses for its credential
- * shape alone.
+ * widened with any `sharedDirs` entry the guard refuses for a reason that is
+ * still safe to join into a filesystem path.
  *
  * Eject materializes what this host ALREADY has, so its enumeration cannot be
  * the sync-time guard on its own. A name that was accepted when `nomad adopt`
@@ -350,13 +350,17 @@ function materializeOneOrDie(
  * it out of the enumeration would skip it silently and then tell the user it is
  * safe to delete the repo, destroying their only copy.
  *
- * The widening is by rejection REASON, never by type. Credential shape is the
- * last cause the guard tests, so an entry that reaches it has already passed
- * the single-safe-segment test and cannot carry a path separator, `.`, or
- * `..`. That is what makes the widening safe here, where every name is joined
- * into a filesystem path. The traversal and coercion shapes stay excluded, and
- * the never-sync and reserved shapes were refused before this too, so no host
- * can have materialized one of those.
+ * The widening is by rejection REASON, never by type, and the split is drawn at
+ * "can this string be joined into a path". `not-a-string` and `not-a-segment`
+ * stay excluded: those are the coercion and traversal shapes, and no host ever
+ * materialized one, because the guard has refused them since before `sharedDirs`
+ * had any other rejection cause. Every other reason has already cleared the
+ * single-safe-segment test, so it cannot carry a path separator, `.`, or `..`.
+ *
+ * The never-sync and reserved reasons have to be included for the same reason
+ * the credential shape does: the guard folds case, so names an older nomad
+ * accepted and symlinked (`Plans`, `Agents`, `Settings.local.json`) are refused
+ * now. Gating on the credential shape alone would strand exactly those.
  *
  * @param map Parsed `path-map.json` content.
  * @returns The de-duplicated managed names, valid entries first.
@@ -366,7 +370,8 @@ export function ejectNames(map: PathMap): string[] {
   const entries: unknown[] = Array.isArray(raw) ? raw : [];
   const alreadyMaterialized = entries.filter((entry): entry is string => {
     const rejection = validateSharedDirEntry(entry);
-    return rejection === null || rejection.reason === 'secret-shaped';
+    if (rejection === null) return true;
+    return rejection.reason !== 'not-a-string' && rejection.reason !== 'not-a-segment';
   });
   return [...new Set([...allSharedLinks(map), ...alreadyMaterialized])];
 }
