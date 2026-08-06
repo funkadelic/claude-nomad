@@ -531,9 +531,12 @@ describe('cmdEject', () => {
     expect(allLogs(logSpy)).not.toContain('42');
   });
 
-  it('enumerates a trailing-dot name on posix, where an older nomad could have symlinked it', () => {
-    expect(ejectNames({ projects: {}, sharedDirs: ['mytools.'] })).toContain('mytools.');
-  });
+  it.skipIf(isWin)(
+    'enumerates a trailing-dot name on posix, where an older nomad could have symlinked it',
+    () => {
+      expect(ejectNames({ projects: {}, sharedDirs: ['mytools.'] })).toContain('mytools.');
+    },
+  );
 
   it('never enumerates a trailing-dot name on win32, where it addresses a different path', () => {
     // win32 strips the dots, so each of these would operate on the shared/
