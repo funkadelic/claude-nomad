@@ -1,4 +1,4 @@
-import { NEVER_SYNC } from './config.never-sync.ts';
+import { isSecretFileName, NEVER_SYNC } from './config.never-sync.ts';
 import { NomadFatal } from './utils.ts';
 
 /**
@@ -33,8 +33,9 @@ export function assertSafeLogical(logical: string): void {
  * Single-segment path characters allowed in a `sharedDirs` entry. Mirrors
  * `SAFE_LOGICAL` above but applied to global support directory names rather
  * than per-project logical names. Must match `^[A-Za-z0-9._-]+$` so no path
- * separator, no shell-special character, no leading dot that would collide
- * with a hidden state directory.
+ * separator and no shell-special character reach the filesystem join. This is
+ * a character and separator test only: it does not reject a credential-shaped
+ * name (`.env` matches the pattern), which is a separate later check.
  */
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
@@ -60,25 +61,83 @@ const RESERVED_SHARED = new Set([
 ]);
 
 /**
- * Returns `true` when `entry` is a valid `sharedDirs` path segment: a single
- * path segment (no `/` or `..`), not present in `NEVER_SYNC`, and not a
- * reserved `shared/` name. Invalid entries are dropped with a WARN by the
- * caller (`allSharedLinks` in `config.ts`) rather than throwing a fatal error,
- * mirroring the resilience of the existing extras path.
+ * Machine-comparable cause for a rejected `sharedDirs` entry, in the order
+ * `validateSharedDirEntry` tests them. A string-literal union, not a TS
+ * `enum`, because `erasableSyntaxOnly` forbids enums.
+ */
+export type SharedDirRejectionReason =
+  'not-a-string' | 'not-a-segment' | 'never-sync' | 'reserved' | 'secret-shaped';
+
+/**
+ * Result of a failed `validateSharedDirEntry` check: a machine-comparable
+ * `reason` identifier plus a human-readable `message` fragment. Callers that
+ * only need pass/fail use `isValidSharedDir` instead.
+ */
+export type SharedDirRejection = {
+  reason: SharedDirRejectionReason;
+  message: string;
+};
+
+/**
+ * Validate a `sharedDirs` entry from `path-map.json` and name the specific
+ * reason a rejected entry was refused. Returns `null` when `entry` is safe to
+ * use as a symlink target under `~/.claude/`; otherwise returns the first
+ * matching {@link SharedDirRejection}, testing causes in this fixed order so
+ * an existing rejection never changes its reported cause: not a string, not a
+ * single path segment, a `NEVER_SYNC` member, a reserved `shared/` name, then
+ * a credential-shaped filename. The credential-shape check runs last so a
+ * `NEVER_SYNC` member that also looks credential-shaped (e.g.
+ * `.credentials.json`) keeps reporting `never-sync`.
  *
  * Accepts `unknown` because `path-map.json` is runtime input: a malformed
  * `sharedDirs` array can hold non-string values (numbers, objects, null) that
  * `SAFE_SEGMENT.test` would otherwise string-coerce (e.g. `42` -> `"42"`).
- * Rejecting non-strings first drops those shapes deterministically, and the
- * `entry is string` predicate narrows the value for callers that filter on it.
+ * Rejecting non-strings first drops those shapes deterministically.
+ *
+ * @param entry - Candidate `sharedDirs` value from `path-map.json`.
+ * @returns `null` if safe; otherwise the rejection reason and message.
+ */
+export function validateSharedDirEntry(entry: unknown): SharedDirRejection | null {
+  if (typeof entry !== 'string') {
+    return { reason: 'not-a-string', message: 'not a string' };
+  }
+  if (!SAFE_SEGMENT.test(entry) || entry === '.' || entry === '..') {
+    return {
+      reason: 'not-a-segment',
+      message:
+        'not a single path segment (contains a path separator, an unsupported character, "." or "..")',
+    };
+  }
+  if (NEVER_SYNC.has(entry)) {
+    return { reason: 'never-sync', message: 'a never-sync name' };
+  }
+  if (RESERVED_SHARED.has(entry)) {
+    return { reason: 'reserved', message: 'a reserved shared/ name' };
+  }
+  if (isSecretFileName(entry)) {
+    return {
+      reason: 'secret-shaped',
+      message: 'a credential-shaped filename (.env, id_rsa, credentials, *.pem, *.key and similar)',
+    };
+  }
+  return null;
+}
+
+/**
+ * Boolean wrapper over {@link validateSharedDirEntry}: `true` when `entry` is
+ * a valid `sharedDirs` path segment (a single path segment not present in
+ * `NEVER_SYNC`, not a reserved `shared/` name, and not a credential-shaped
+ * filename). Invalid entries are dropped with a WARN by the caller
+ * (`allSharedLinks` in `config.ts`) rather than throwing a fatal error,
+ * mirroring the resilience of the existing extras path.
+ *
+ * Kept as a thin same-signature wrapper so its three consumers (`config.ts`,
+ * `commands.adopt.ts`, `commands.push.allowlist.ts`) inherit the
+ * credential-shape rejection with no edit to any call site.
  *
  * @param entry - Candidate `sharedDirs` value from `path-map.json`.
  * @returns `true` if the entry is safe to use as a symlink target under `~/.claude/`.
  */
 export function isValidSharedDir(entry: unknown): entry is string {
-  if (typeof entry !== 'string') return false;
-  if (!SAFE_SEGMENT.test(entry) || entry === '.' || entry === '..') return false;
-  if (NEVER_SYNC.has(entry)) return false;
-  if (RESERVED_SHARED.has(entry)) return false;
-  return true;
+  return validateSharedDirEntry(entry) === null;
 }

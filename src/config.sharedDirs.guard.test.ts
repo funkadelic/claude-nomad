@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { assertSafeLogical, isValidSharedDir } from './config.sharedDirs.guard.ts';
+import {
+  assertSafeLogical,
+  isValidSharedDir,
+  validateSharedDirEntry,
+} from './config.sharedDirs.guard.ts';
 
 describe('assertSafeLogical (path-map logical key traversal guard)', () => {
   it('accepts a well-formed alphanumeric logical name', () => {
@@ -195,6 +199,33 @@ describe('isValidSharedDir (sharedDirs path-traversal and collision guard)', () 
 
     it('rejects "path-map.json" (reserved shared/ file)', () => {
       expect(isValidSharedDir('path-map.json')).toBe(false);
+    });
+  });
+
+  describe('credential-shaped name rejection', () => {
+    it('rejects ".env"', () => {
+      expect(isValidSharedDir('.env')).toBe(false);
+    });
+
+    it('rejects "id_rsa"', () => {
+      expect(isValidSharedDir('id_rsa')).toBe(false);
+    });
+
+    it('rejects "credentials"', () => {
+      expect(isValidSharedDir('credentials')).toBe(false);
+    });
+  });
+});
+
+describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir)', () => {
+  it('returns null for a valid entry', () => {
+    expect(validateSharedDirEntry('get-shit-done')).toBeNull();
+  });
+
+  it('returns the secret-shaped reason for ".env"', () => {
+    expect(validateSharedDirEntry('.env')).toEqual({
+      reason: 'secret-shaped',
+      message: expect.stringContaining('credential-shaped') as string,
     });
   });
 });

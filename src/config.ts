@@ -1,7 +1,7 @@
 import { homedir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { isValidSharedDir } from './config.sharedDirs.guard.ts';
+import { validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { warn } from './utils.ts';
 
 /**
@@ -220,11 +220,13 @@ export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
 
 /**
  * Returns the union of `SHARED_LINKS` and any validated entries from
- * `map.sharedDirs`. Entries that fail the `isValidSharedDir` guard (path
- * separators, NEVER_SYNC names, reserved shared/ names) are dropped with a
- * single WARN per entry; the remaining valid entries are appended after the
- * static `SHARED_LINKS` names. Callers iterate the result with `for...of` to
- * apply the same symlink machinery to both built-in and user-configured dirs.
+ * `map.sharedDirs`. Entries that fail the `validateSharedDirEntry` guard (not
+ * a string, path separator, NEVER_SYNC name, reserved shared/ name, or a
+ * credential-shaped filename) are dropped with a single WARN per entry naming
+ * the specific rejection reason; the remaining valid entries are appended
+ * after the static `SHARED_LINKS` names. Callers iterate the result with
+ * `for...of` to apply the same symlink machinery to both built-in and
+ * user-configured dirs.
  *
  * @param map - Parsed `path-map.json` content.
  * @returns Array of link names to symlink under `~/.claude/`.
@@ -232,12 +234,11 @@ export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
 export function allSharedLinks(map: PathMap): string[] {
   const extras: string[] = [];
   for (const entry of map.sharedDirs ?? []) {
-    if (isValidSharedDir(entry)) {
+    const rejection = validateSharedDirEntry(entry);
+    if (rejection === null) {
       extras.push(entry);
     } else {
-      warn(
-        `sharedDirs entry ${JSON.stringify(entry)} is invalid (path separator, reserved name, or NEVER_SYNC); skipping`,
-      );
+      warn(`sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`);
     }
   }
   return [...SHARED_LINKS, ...extras];

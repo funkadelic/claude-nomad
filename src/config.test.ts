@@ -429,6 +429,16 @@ describe('allSharedLinks', () => {
     expect(result).toEqual([...SHARED_LINKS]);
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('drops a credential-shaped entry and keeps the valid one, with the specific reason in the warn', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const result = allSharedLinks({ projects: {}, sharedDirs: ['.env', 'get-shit-done'] });
+    expect(result).toEqual([...SHARED_LINKS, 'get-shit-done']);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('".env"'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('credential-shaped'));
+  });
 });
 
 describe('isSecretFileName', () => {
