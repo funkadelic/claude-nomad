@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -417,4 +417,162 @@ describe('reportPathMap current-host path missing on disk', () => {
     expect(sec.items.join('\n')).toContain('path-map: myproj local path missing');
     expect(process.exitCode).toBe(exitBefore);
   });
+});
+
+describe('reportRejectedSharedDirs', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', writeSettings: true });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('prints a top-level WARN row naming a rejected entry and its reason, visible in the default compact view', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env', 'get-shit-done'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('".env"');
+    expect(out).toContain('credential-shaped');
+    expect(out).toContain(warnGlyph);
+    expect(out).not.toContain('get-shit-done');
+  });
+
+  it('leaves process.exitCode untouched when a sharedDirs entry is rejected', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    process.exitCode = 0;
+    reportPathMap(sec);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('names an existing shared/.env leftover with a remove-by-hand instruction, and does not remove it', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const offenderPath = join(env.testHome, 'claude-nomad', 'shared', '.env');
+    writeFileSync(offenderPath, 'SECRET=1\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('shared/.env exists in the repo working tree');
+    expect(out).toContain('remove it by hand');
+    expect(existsSync(offenderPath)).toBe(true);
+  });
+
+  it('does not print an offender row when the rejected name is absent from shared/', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('sharedDirs entry ".env" rejected');
+    expect(out).not.toContain('exists in the repo working tree');
+  });
+
+  it('stays silent when sharedDirs holds only valid entries', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['get-shit-done'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).not.toContain('sharedDirs entry');
+  });
+
+  it('stays silent when sharedDirs is absent', async () => {
+    const map: PathMap = { projects: {} };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).not.toContain('sharedDirs entry');
+  });
+
+  it('tolerates a non-array sharedDirs without throwing or aborting the run', async () => {
+    const map = { projects: {}, sharedDirs: 'not-an-array' };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    expect(() => reportPathMap(sec)).not.toThrow();
+    expect(sec.items.join('\n')).not.toContain('sharedDirs entry');
+  });
+
+  it('tolerates non-string sharedDirs members, naming each as not a string, without throwing', async () => {
+    const map = { projects: {}, sharedDirs: [42, null, { a: 1 }] };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    expect(() => reportPathMap(sec)).not.toThrow();
+    const out = sec.items.join('\n');
+    expect(out).toContain('42');
+    expect(out).toContain('null');
+    expect(out.match(/not a string/g) ?? []).toHaveLength(3);
+  });
+
+  it.skipIf(isWin)(
+    'tolerates an unreadable shared/ directory: rejection rows still print, offender probe is skipped',
+    async () => {
+      const map: PathMap = {
+        projects: {},
+        sharedDirs: ['.env'],
+      };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      const sharedDir = join(env.testHome, 'claude-nomad', 'shared');
+      chmodSync(sharedDir, 0o000);
+      try {
+        const { section: makeSection } = await import('./commands.doctor.format.ts');
+        const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+        const sec = makeSection('Path map');
+        expect(() => reportPathMap(sec)).not.toThrow();
+        expect(sec.items.join('\n')).toContain('sharedDirs entry ".env" rejected');
+      } finally {
+        chmodSync(sharedDir, 0o755);
+      }
+    },
+  );
 });

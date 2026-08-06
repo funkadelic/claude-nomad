@@ -14,6 +14,7 @@ import {
   yellow,
 } from './color.ts';
 import { claudeHome, HOST, NEVER_SYNC, repoHome, type PathMap } from './config.ts';
+import { validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import {
   addChildItem,
   addItem,
@@ -91,6 +92,70 @@ function reportCurrentHostPathsMissing(section: DoctorSection, map: PathMap): vo
   }
 }
 
+/**
+ * Lists the direct entry names under `shared/` in the repo working tree, for
+ * matching a rejected `sharedDirs` entry against a leftover copy already on
+ * disk. Wrapped in try/catch so an absent, unreadable, or non-directory
+ * `shared/` degrades to an empty set instead of aborting the doctor run; the
+ * caller's rejection rows are unaffected by this failure.
+ *
+ * @returns The set of names directly under `shared/`, or an empty set on any
+ *   read failure.
+ */
+function sharedDirNames(): Set<string> {
+  try {
+    return new Set(readdirSync(join(repoHome(), 'shared')));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Emits a top-level WARN row for every rejected `sharedDirs` entry in
+ * `path-map.json`, naming the entry and the specific reason
+ * {@link validateSharedDirEntry} gave. Rows are pushed as top-level items,
+ * never as nested children: `compactSections` drops nested rows in the
+ * default doctor view, and a rejected entry must stay visible there. Never
+ * sets `process.exitCode`, since the condition already fails closed at the
+ * push gate and this row is informational, not a failure.
+ *
+ * For any rejected entry that also names a directory already present under
+ * `shared/` in the repo working tree (a leftover from before this guard
+ * existed), also emits a row naming that exact path and telling the user to
+ * remove it by hand; nomad never deletes it.
+ *
+ * Tolerates a malformed `sharedDirs` (a non-array, or members that are not
+ * strings): reading `map.sharedDirs` via `Array.isArray` rather than the
+ * `?? []` fallthrough used elsewhere in this file, because a non-array value
+ * would otherwise throw on iteration and abort the whole doctor run.
+ *
+ * @param section - The doctor "Path map" section to append rows to.
+ * @param map - Parsed `path-map.json` content.
+ */
+function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
+  const entries: unknown[] = Array.isArray(map.sharedDirs) ? map.sharedDirs : [];
+  const rejected: unknown[] = [];
+  for (const entry of entries) {
+    const rejection = validateSharedDirEntry(entry);
+    if (rejection === null) continue;
+    rejected.push(entry);
+    addItem(
+      section,
+      `${yellow(warnGlyph)} path-map: sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`,
+    );
+  }
+  if (rejected.length === 0) return;
+  const existing = sharedDirNames();
+  for (const entry of rejected) {
+    if (typeof entry === 'string' && existing.has(entry)) {
+      addItem(
+        section,
+        `${yellow(warnGlyph)} path-map: shared/${entry} exists in the repo working tree; remove it by hand, nomad will not delete it`,
+      );
+    }
+  }
+}
+
 /** Scans every host of every project for encodePath collisions; emits failGlyph per collision (sets exitCode=1), okGlyph when clean. */
 function reportPathCollisions(section: DoctorSection, map: PathMap): void {
   const seen = new Map<string, string>();
@@ -137,6 +202,7 @@ export function reportPathMap(section: DoctorSection): void {
   }
   reportMappedProjects(section, map);
   reportCurrentHostPathsMissing(section, map);
+  reportRejectedSharedDirs(section, map);
   reportUnmappedProjects(section, map);
   reportPathCollisions(section, map);
 }
