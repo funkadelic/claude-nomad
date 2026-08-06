@@ -253,7 +253,9 @@ export function reportPreserveSymlinksCheck(section: DoctorSection): void {
   }
 
   const map = readPathMapSafe();
-  const sharedLinkNames = allSharedLinks(map);
+  // quiet: this runs inside doctor's gathering phase, where the spinner owns
+  // stderr and reportRejectedSharedDirs already owns the rejection text.
+  const sharedLinkNames = allSharedLinks(map, { quiet: true });
   let anyWarn = false;
 
   for (const [event, groups] of Object.entries(hooks as Record<string, unknown>)) {

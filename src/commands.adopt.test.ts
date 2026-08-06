@@ -217,6 +217,22 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(errOutput(env)).toBe('');
   });
 
+  // A string sharedDirs turned the membership gate into a substring test, so
+  // sharedDirs "my-custom-dir" answered yes for "custom". The accessor drops a
+  // non-array whole, which must refuse the substring AND not throw a raw
+  // TypeError (that is not a NomadFatal, so it would write a crash report).
+  it.each(['my-custom-dir', 42, null])(
+    'refuses a substring match and does not throw when sharedDirs is %p',
+    async (bad) => {
+      const mapPath = join(env.repoHome, 'path-map.json');
+      writeFileSync(mapPath, JSON.stringify({ projects: {}, sharedDirs: bad }) + '\n');
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('custom')).toThrow();
+      expect(errOutput(env)).not.toContain('TypeError');
+      expect(diffCached(env)).toBe('');
+    },
+  );
+
   // readMapIfPresent fallback: a missing path-map.json yields an empty map and
   // a SHARED_LINKS name still passes the membership check (covers the absent branch)
   it('tolerates a missing path-map.json for a SHARED_LINKS name', async () => {

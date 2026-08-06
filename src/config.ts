@@ -233,9 +233,12 @@ export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
  * deliberately leaves this field unchecked, so both malformed shapes reach
  * here: a number is not iterable and would throw out of a function that feeds
  * `applySharedLinks`, while a string iterates character by character and would
- * ask for one symlink per character. Every other consumer reads the field
- * through {@link sharedDirEntries}, so the read-only surfaces and the mutating
- * ones agree on what a malformed value means.
+ * ask for one symlink per character. Every consumer that only needs the entries
+ * reads them through {@link sharedDirEntries} and agrees with this on what a
+ * malformed value means. The one exception is `reportRejectedSharedDirs` in
+ * `commands.doctor.checks.pathmap.ts`, which reads the field raw on purpose:
+ * it has to tell a malformed value from an absent one to name the type in its
+ * own WARN row, which is a distinction the accessor deliberately erases.
  *
  * Pass `quiet` from a caller that reports these rejections itself. `nomad
  * doctor` does: it prints one in-tree WARN row per rejected entry, and the

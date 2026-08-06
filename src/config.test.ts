@@ -399,6 +399,26 @@ describe('allSharedLinks', () => {
     expect(result).toEqual([...SHARED_LINKS]);
   });
 
+  it('quiet suppresses the per-entry and non-array WARNs but not the filtering', async () => {
+    vi.resetModules();
+    const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const rejected = allSharedLinks({ projects: {}, sharedDirs: ['.env'] }, { quiet: true });
+    const nonArray = allSharedLinks({ projects: {}, sharedDirs: 42 } as never, { quiet: true });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(rejected).toEqual([...SHARED_LINKS]);
+    expect(nonArray).toEqual([...SHARED_LINKS]);
+
+    // Loud by default, so no caller silently loses the notice.
+    allSharedLinks({ projects: {}, sharedDirs: ['.env'] });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('rejected'));
+    warnSpy.mockRestore();
+  });
+
   it('appends a valid sharedDirs entry after SHARED_LINKS', async () => {
     vi.resetModules();
     const { allSharedLinks, SHARED_LINKS } = await import('./config.ts');
