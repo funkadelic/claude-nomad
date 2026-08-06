@@ -36,6 +36,13 @@ export function assertSafeLogical(logical: string): void {
  * separator and no shell-special character reach the filesystem join. This is
  * a character and separator test only: it does not reject a credential-shaped
  * name (`.env` matches the pattern), which is a separate later check.
+ *
+ * A trailing `.` is rejected alongside it, by the caller rather than by this
+ * pattern. Win32 strips trailing dots off a path's final component, so `.env.`
+ * and `settings.local.json.` address the same files as `.env` and
+ * `settings.local.json` while matching none of the name checks below. Refusing
+ * the shape outright is narrower than teaching every membership test and every
+ * secret pattern to normalize.
  */
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
@@ -116,11 +123,11 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
   if (typeof entry !== 'string') {
     return { reason: 'not-a-string', message: 'not a string' };
   }
-  if (!SAFE_SEGMENT.test(entry) || entry === '.' || entry === '..') {
+  if (!SAFE_SEGMENT.test(entry) || entry === '.' || entry === '..' || entry.endsWith('.')) {
     return {
       reason: 'not-a-segment',
       message:
-        'not a single path segment (contains a path separator, an unsupported character, "." or "..")',
+        'not a single path segment (contains a path separator, an unsupported character, a trailing ".", or is "." or "..")',
     };
   }
   const folded = entry.toLowerCase();

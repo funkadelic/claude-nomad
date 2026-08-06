@@ -238,6 +238,32 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
     it.each(['foo/bar', '..', '.', '', 'foo\\bar', 'foo bar'])('rejects %p', (value) => {
       expect(validateSharedDirEntry(value)?.reason).toBe('not-a-segment');
     });
+
+    // Win32 strips a trailing dot off a path's final component, so each of
+    // these addresses the same file as its dotless form while matching none of
+    // the name checks that follow. Without this rejection the whole guard is a
+    // one-character bypass, including adopt's hard fail.
+    it.each([
+      '.env.',
+      'id_rsa.',
+      'credentials.',
+      'server.pem.',
+      '.npmrc.',
+      'settings.local.json.',
+      '.credentials.json.',
+      'CLAUDE.md.',
+      'foo.',
+    ])('rejects the trailing-dot alias %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('not-a-segment');
+    });
+
+    it('names the trailing dot in the message', () => {
+      expect(validateSharedDirEntry('.env.')?.message).toContain('trailing');
+    });
+
+    it('still accepts an interior dot', () => {
+      expect(validateSharedDirEntry('my.tool_dir')).toBeNull();
+    });
   });
 
   describe('never-sync', () => {
