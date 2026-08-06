@@ -231,9 +231,12 @@ and `skills` is handled by the filtered copy-sync. `nomad doctor` lists every re
 entry with its reason, and adds a remediation line for anything an older version of nomad already
 put in place:
 
-- If `~/.claude/<name>` is still a symlink, it points into `shared/<name>`, so copy the content out
-  first (`cp -RL ~/.claude/<name> /somewhere/safe`) and only then remove both. Deleting the
-  repo-side copy on its own destroys the only copy you have and leaves a dangling link behind.
+- If `~/.claude/<name>` is a symlink that points into `shared/<name>`, copy the content out first
+  (`cp -RL ~/.claude/<name> /somewhere/safe`) and only then remove both. Deleting the repo-side copy
+  on its own destroys the only copy you have and leaves a dangling link behind.
+- If it is a symlink pointing somewhere else, it is not nomad's: leave it alone and just drop the
+  entry from `sharedDirs`. Doctor tells the two apart by resolving the link, so it says which case
+  you are in.
 - If there is a leftover under `shared/` with no matching symlink, remove it by hand.
 
 Nomad will not delete either one for you.

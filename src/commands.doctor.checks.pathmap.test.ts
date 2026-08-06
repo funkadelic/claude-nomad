@@ -531,6 +531,52 @@ describe('reportRejectedSharedDirs', () => {
     expect(existsSync(join(target, 'token.txt'))).toBe(true);
   });
 
+  it('says leave-it-alone for a symlink pointing outside shared/, and still reports the leftover', async () => {
+    // A user's own symlink at a name that also appears in sharedDirs. Claiming
+    // it "points into shared/" and telling them to remove both would aim the
+    // instruction at content nomad never owned. The repo-side leftover is a
+    // separate fact and must still be reported, not shadowed by the link.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['credentials'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const foreign = join(env.testHome, 'password-store');
+    mkdirSync(foreign, { recursive: true });
+    writeFileSync(join(foreign, 'mine.gpg'), 'user data\n');
+    symlinkSync(foreign, join(env.testHome, '.claude', 'credentials'));
+    // A genuine repo-side leftover under the same name.
+    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'credentials'), { recursive: true });
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('pointing OUTSIDE shared/');
+    expect(out).not.toContain('cp -RL');
+    expect(out).toContain('exists in the repo working tree');
+    expect(existsSync(join(foreign, 'mine.gpg'))).toBe(true);
+  });
+
+  it('matches a leftover whose stored casing differs from the configured entry', async () => {
+    // The guard folds case, so "Plans" is rejected; macOS and NTFS then store
+    // the leftover as the same directory under either spelling. An exact-case
+    // lookup would withhold the pointer to the copy in the user's own repo.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['Plans'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'plans'), { recursive: true });
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).toContain('exists in the repo working tree');
+  });
+
   it('falls back to the delete-only row when the local probe cannot stat the path', async () => {
     const map: PathMap = {
       projects: {},
@@ -666,7 +712,10 @@ describe('reportRejectedSharedDirs', () => {
     expect(out.match(/not a string/g) ?? []).toHaveLength(3);
   });
 
-  it.skipIf(isWin)(
+  // Root reads through mode 0o000, so the catch branch this test exists for
+  // would never execute under a root runner (common in containers) and could
+  // silently stop being covered without the patch gate noticing.
+  it.skipIf(isWin || process.getuid?.() === 0)(
     'tolerates an unreadable shared/ directory: rejection rows still print, offender probe is skipped',
     async () => {
       const map: PathMap = {
@@ -678,13 +727,18 @@ describe('reportRejectedSharedDirs', () => {
         JSON.stringify(map) + '\n',
       );
       const sharedDir = join(env.testHome, 'claude-nomad', 'shared');
+      // A real leftover, so there IS an offender row to suppress. Without it
+      // the assertion below passes whether or not the probe was skipped.
+      writeFileSync(join(sharedDir, '.env'), 'SECRET=1\n');
       chmodSync(sharedDir, 0o000);
       try {
         const { section: makeSection } = await import('./commands.doctor.format.ts');
         const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
         const sec = makeSection('Path map');
         expect(() => reportPathMap(sec)).not.toThrow();
-        expect(sec.items.join('\n')).toContain('sharedDirs entry ".env" rejected');
+        const rendered = sec.items.join('\n');
+        expect(rendered).toContain('sharedDirs entry ".env" rejected');
+        expect(rendered).not.toContain('exists in the repo working tree');
       } finally {
         chmodSync(sharedDir, 0o755);
       }

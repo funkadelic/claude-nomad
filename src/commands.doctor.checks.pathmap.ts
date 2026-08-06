@@ -1,5 +1,5 @@
-import { existsSync, lstatSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
+import { join, sep } from 'node:path';
 
 import {
   blue,
@@ -102,12 +102,21 @@ function reportCurrentHostPathsMissing(section: DoctorSection, map: PathMap): vo
  * `shared/` degrades to an empty set instead of aborting the doctor run; the
  * caller's rejection rows are unaffected by this failure.
  *
- * @returns The set of names directly under `shared/`, or an empty set on any
- *   read failure.
+ * Names are folded to lowercase, and the caller folds its probe to match. The
+ * guard that produces these rejections folds case precisely because macOS and
+ * NTFS do, so on those filesystems a `Plans` entry whose leftover is stored as
+ * `shared/plans` is the SAME directory. An exact-case lookup would print the
+ * rejection row and then withhold the remediation row pointing at the copy
+ * sitting in the user's repo. The sibling symlink probe already folds case,
+ * because `lstat` does, so matching here keeps the two halves of one
+ * remediation consistent on the same host.
+ *
+ * @returns The set of lowercased names directly under `shared/`, or an empty
+ *   set on any read failure.
  */
 function sharedDirNames(): Set<string> {
   try {
-    return new Set(readdirSync(join(repoHome(), 'shared')));
+    return new Set(readdirSync(join(repoHome(), 'shared')).map((name) => name.toLowerCase()));
   } catch {
     return new Set();
   }
@@ -131,21 +140,37 @@ const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
 ]);
 
 /**
- * Report whether `~/.claude/<entry>` is currently a symlink, which is the state
- * an older, looser guard leaves behind after `nomad adopt` moved that name into
- * `shared/`. Follows the tolerant-doctor contract: an absent path, an
- * unreadable parent, or a path component that is not a directory all degrade to
- * `false` instead of throwing mid-output.
+ * Classify `~/.claude/<entry>`: a symlink resolving into the repo's `shared/`
+ * tree (the state an older, looser guard leaves behind after `nomad adopt`
+ * moved that name into `shared/`), a symlink pointing anywhere else, or
+ * neither.
+ *
+ * The target is resolved rather than assumed. A user may have their own
+ * symlink at that name (`~/.claude/credentials -> ~/.password-store`) and a
+ * matching `sharedDirs` entry; telling them to "remove both" would then point
+ * at content nomad never owned. `cmdEject` already treats this exact state as
+ * real and guards it with the same containment test, so resolving here keeps
+ * the two commands agreeing about the same directory.
+ *
+ * Containment uses a trailing-separator prefix test, so a sibling
+ * `shared-other/` is not read as a child of `shared/`. Follows the
+ * tolerant-doctor contract: an absent path, an unreadable parent, a dangling
+ * link, or a path component that is not a directory all degrade to `'absent'`
+ * instead of throwing mid-output.
  *
  * @param entry - The rejected `sharedDirs` name to probe under `~/.claude/`.
- * @returns `true` only when a symlink is present at `~/.claude/<entry>`.
+ * @returns `'managed'` for a link into `shared/`, `'foreign'` for a link
+ *   elsewhere, `'absent'` when there is no symlink to classify.
  */
-function isLocalSymlink(entry: string): boolean {
+function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'absent' {
   try {
-    const stat = lstatSync(join(claudeHome(), entry), { throwIfNoEntry: false });
-    return stat?.isSymbolicLink() === true;
+    const linkPath = join(claudeHome(), entry);
+    const stat = lstatSync(linkPath, { throwIfNoEntry: false });
+    if (stat?.isSymbolicLink() !== true) return 'absent';
+    const target = realpathSync(linkPath);
+    return target.startsWith(join(repoHome(), 'shared') + sep) ? 'managed' : 'foreign';
   } catch {
-    return false;
+    return 'absent';
   }
 }
 
@@ -164,14 +189,16 @@ function isLocalSymlink(entry: string): boolean {
  * For any rejected entry this host may still have materialized, also emits a
  * remediation row, but only for the reasons in {@link PROBABLE_REASONS}: those
  * are the ones the guard tests after its single-segment check, so the name is
- * known separator-free before it reaches a `join`. A live symlink at
- * `~/.claude/<entry>` points INTO
- * `shared/<entry>`, so that row leads with copying the content out and only
- * then removing both: telling the user to delete the repo-side path on its own
- * would destroy the only copy and leave a dangling link behind. With no such
- * symlink, a leftover directly under `shared/` (from before this guard
- * existed) gets the plain remove-it-by-hand row instead. Nomad never deletes
- * either one.
+ * known separator-free before it reaches a `join`. A symlink at
+ * `~/.claude/<entry>` that resolves INTO `shared/` leads with copying the
+ * content out and only then removing both: telling the user to delete the
+ * repo-side path on its own would destroy the only copy and leave a dangling
+ * link behind. A symlink resolving anywhere else is someone else's, so that row
+ * says to leave it alone; the name is still checked for a repo-side leftover,
+ * since an unrelated link shadowing the name must not suppress that. With no
+ * symlink at all, a leftover directly under `shared/` (from before this guard
+ * existed) gets the plain remove-it-by-hand row. Nomad never deletes any of
+ * them.
  *
  * Every row escapes the entry with `JSON.stringify`. `path-map.json` is a
  * trust boundary and a POSIX filename may carry control or ANSI escape bytes,
@@ -209,17 +236,48 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
       `${yellow(warnGlyph)} path-map: sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`,
     );
   }
+  reportRejectedLeftovers(section, probable);
+}
+
+/**
+ * Emit the remediation rows for rejected entries this host may still have
+ * materialized. Split out of {@link reportRejectedSharedDirs} to keep both
+ * under the cognitive-complexity gate; the seam is the natural one, since the
+ * caller decides WHICH entries are probeable and this decides what to say
+ * about each.
+ *
+ * A managed link (resolving into `shared/`) is terminal: its row already tells
+ * the user to remove the repo side, so adding the leftover row would double up.
+ * A foreign link is someone else's, and the repo-side leftover under the same
+ * name is an independent fact, so both rows may fire together.
+ *
+ * @param section - The doctor "Path map" section to append rows to.
+ * @param probable - Rejected entries whose reason makes them safe to join into
+ *   a path (see {@link PROBABLE_REASONS}).
+ */
+function reportRejectedLeftovers(section: DoctorSection, probable: string[]): void {
   if (probable.length === 0) return;
   const existing = sharedDirNames();
   for (const entry of probable) {
-    if (isLocalSymlink(entry)) {
+    const link = classifyLocalLink(entry);
+    if (link === 'managed') {
       addItem(
         section,
         `${yellow(warnGlyph)} path-map: entry ${JSON.stringify(entry)} is a symlink under ~/.claude/ ` +
           `pointing into shared/; copy the content out first (cp -RL), then remove both. ` +
           `nomad will not do it for you`,
       );
-    } else if (existing.has(entry)) {
+      continue;
+    }
+    if (link === 'foreign') {
+      addItem(
+        section,
+        `${yellow(warnGlyph)} path-map: entry ${JSON.stringify(entry)} is a symlink under ~/.claude/ ` +
+          `pointing OUTSIDE shared/; nomad does not manage it, so leave it alone and just drop the ` +
+          `entry from sharedDirs`,
+      );
+    }
+    if (existing.has(entry.toLowerCase())) {
       addItem(
         section,
         `${yellow(warnGlyph)} path-map: shared/ entry ${JSON.stringify(entry)} exists in the repo working tree; remove it by hand, nomad will not delete it`,

@@ -347,7 +347,9 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
  */
 export function reportSharedLinks(section: DoctorSection, map: PathMap): void {
   const claude = claudeHome();
-  for (const name of allSharedLinks(map)) {
+  // quiet: reportRejectedSharedDirs owns the user-facing text for a rejected
+  // entry, in-tree and counted by the verdict.
+  for (const name of allSharedLinks(map, { quiet: true })) {
     const p = join(claude, name);
     const { line, fail, children } = classifySharedLink(name, p);
     addItem(section, line);
