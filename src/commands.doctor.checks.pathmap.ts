@@ -102,24 +102,38 @@ function reportCurrentHostPathsMissing(section: DoctorSection, map: PathMap): vo
  * `shared/` degrades to an empty set instead of aborting the doctor run; the
  * caller's rejection rows are unaffected by this failure.
  *
- * Names are folded to lowercase, and the caller folds its probe to match. The
- * guard that produces these rejections folds case precisely because macOS and
- * NTFS do, so on those filesystems a `Plans` entry whose leftover is stored as
- * `shared/plans` is the SAME directory. An exact-case lookup would print the
- * rejection row and then withhold the remediation row pointing at the copy
- * sitting in the user's repo. The sibling symlink probe already folds case,
- * because `lstat` does, so matching here keeps the two halves of one
- * remediation consistent on the same host.
+ * Returned as stored, with no normalization; {@link storedSharedName} owns the
+ * matching policy.
  *
- * @returns The set of lowercased names directly under `shared/`, or an empty
- *   set on any read failure.
+ * @returns The names directly under `shared/`, or an empty array on any read
+ *   failure.
  */
-function sharedDirNames(): Set<string> {
+function sharedDirNames(): string[] {
   try {
-    return new Set(readdirSync(join(repoHome(), 'shared')).map((name) => name.toLowerCase()));
+    return readdirSync(join(repoHome(), 'shared'));
   } catch {
-    return new Set();
+    return [];
   }
+}
+
+/**
+ * Find the name under `shared/` that a rejected entry refers to: an exact match
+ * if there is one, otherwise a case-insensitive match.
+ *
+ * Exact-first rather than folded-only, because the two are genuinely different
+ * questions per platform. On a case-sensitive filesystem `Plans` and `plans` are
+ * two directories, and answering with the folded hit would name a path the user
+ * cannot act on for a directory unrelated to their entry. On macOS and NTFS they
+ * are one directory, and answering exact-only would withhold the pointer
+ * entirely. Trying exact first and folding only as a fallback is correct on both.
+ *
+ * @param names - Listing of `shared/`, as stored.
+ * @param entry - The configured `sharedDirs` entry to resolve.
+ * @returns The name AS STORED, or `undefined` when nothing matches.
+ */
+function storedSharedName(names: string[], entry: string): string | undefined {
+  const folded = entry.toLowerCase();
+  return names.find((name) => name === entry) ?? names.find((n) => n.toLowerCase() === folded);
 }
 
 /**
@@ -132,10 +146,17 @@ function sharedDirNames(): Set<string> {
  * though it were about the configured name. Listing the safe reasons means a
  * future reason added before the segment check fails closed instead of
  * silently becoming probeable.
+ *
+ * `reserved` is deliberately NOT listed, even though it is path-safe. The
+ * remediation rows exist for a name nomad no longer manages but this host
+ * still has materialized. A reserved name is the opposite: it collides with
+ * something nomad manages RIGHT NOW, so `~/.claude/commands` is a live symlink
+ * into `shared/commands`, and the rows would tell the user to remove tracked
+ * content that every other host syncs. There is also nothing to recover, since
+ * the name is already synced under nomad's own management.
  */
 const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
   'never-sync',
-  'reserved',
   'secret-shaped',
 ]);
 
@@ -153,24 +174,37 @@ const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
  * the two commands agreeing about the same directory.
  *
  * Containment uses a trailing-separator prefix test, so a sibling
- * `shared-other/` is not read as a child of `shared/`. Follows the
- * tolerant-doctor contract: an absent path, an unreadable parent, a dangling
- * link, or a path component that is not a directory all degrade to `'absent'`
- * instead of throwing mid-output.
+ * `shared-other/` is not read as a child of `shared/`.
+ *
+ * A link whose target cannot be resolved is `'dangling'`, NOT `'absent'`, and
+ * that distinction is load-bearing. Whether the link resolves and whether
+ * `shared/<entry>` exists are INDEPENDENT facts: the listing comes from its own
+ * `readdirSync`. So a link left over from a moved checkout can dangle while
+ * `shared/<entry>` under the current root holds the user's only copy, and
+ * collapsing dangling into absent would hand that state the delete-it-by-hand
+ * row. Follows the tolerant-doctor contract otherwise: an absent path, an
+ * unreadable parent, or a path component that is not a directory degrade to
+ * `'absent'` instead of throwing mid-output.
  *
  * @param entry - The rejected `sharedDirs` name to probe under `~/.claude/`.
  * @returns `'managed'` for a link into `shared/`, `'foreign'` for a link
- *   elsewhere, `'absent'` when there is no symlink to classify.
+ *   elsewhere, `'dangling'` for a link whose target will not resolve,
+ *   `'absent'` when there is no symlink to classify.
  */
-function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'absent' {
+function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'dangling' | 'absent' {
+  const linkPath = join(claudeHome(), entry);
+  let stat;
   try {
-    const linkPath = join(claudeHome(), entry);
-    const stat = lstatSync(linkPath, { throwIfNoEntry: false });
-    if (stat?.isSymbolicLink() !== true) return 'absent';
+    stat = lstatSync(linkPath, { throwIfNoEntry: false });
+  } catch {
+    return 'absent';
+  }
+  if (stat?.isSymbolicLink() !== true) return 'absent';
+  try {
     const target = realpathSync(linkPath);
     return target.startsWith(join(repoHome(), 'shared') + sep) ? 'managed' : 'foreign';
   } catch {
-    return 'absent';
+    return 'dangling';
   }
 }
 
@@ -248,8 +282,10 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
  *
  * A managed link (resolving into `shared/`) is terminal: its row already tells
  * the user to remove the repo side, so adding the leftover row would double up.
+ * A dangling link is terminal for the opposite reason: nothing about it is
+ * safe to delete yet, so it must not fall through to a row that says remove.
  * A foreign link is someone else's, and the repo-side leftover under the same
- * name is an independent fact, so both rows may fire together.
+ * name is an independent fact, so those two rows may fire together.
  *
  * @param section - The doctor "Path map" section to append rows to.
  * @param probable - Rejected entries whose reason makes them safe to join into
@@ -269,6 +305,15 @@ function reportRejectedLeftovers(section: DoctorSection, probable: string[]): vo
       );
       continue;
     }
+    if (link === 'dangling') {
+      addItem(
+        section,
+        `${yellow(warnGlyph)} path-map: entry ${JSON.stringify(entry)} is a DANGLING symlink under ~/.claude/ ` +
+          `(its target does not resolve); do not delete anything under shared/ yet, since a copy there ` +
+          `may be the only one left. Run \`nomad pull\` to restore the target, or remove just the dead link`,
+      );
+      continue;
+    }
     if (link === 'foreign') {
       addItem(
         section,
@@ -277,10 +322,11 @@ function reportRejectedLeftovers(section: DoctorSection, probable: string[]): vo
           `entry from sharedDirs`,
       );
     }
-    if (existing.has(entry.toLowerCase())) {
+    const stored = storedSharedName(existing, entry);
+    if (stored !== undefined) {
       addItem(
         section,
-        `${yellow(warnGlyph)} path-map: shared/ entry ${JSON.stringify(entry)} exists in the repo working tree; remove it by hand, nomad will not delete it`,
+        `${yellow(warnGlyph)} path-map: shared/ entry ${JSON.stringify(stored)} exists in the repo working tree; remove it by hand, nomad will not delete it`,
       );
     }
   }

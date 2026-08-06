@@ -559,10 +559,12 @@ describe('reportRejectedSharedDirs', () => {
     expect(existsSync(join(foreign, 'mine.gpg'))).toBe(true);
   });
 
-  it('matches a leftover whose stored casing differs from the configured entry', async () => {
+  it('matches a leftover case-insensitively but names the casing actually on disk', async () => {
     // The guard folds case, so "Plans" is rejected; macOS and NTFS then store
-    // the leftover as the same directory under either spelling. An exact-case
-    // lookup would withhold the pointer to the copy in the user's own repo.
+    // the leftover as the same directory under either spelling, and an
+    // exact-case lookup would withhold the pointer to the copy in the user's
+    // own repo. The row must still name shared/plans, the path that exists,
+    // not the configured shared/Plans, which on Linux does not.
     const map: PathMap = {
       projects: {},
       sharedDirs: ['Plans'],
@@ -574,7 +576,61 @@ describe('reportRejectedSharedDirs', () => {
     const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
     const sec = makeSection('Path map');
     reportPathMap(sec);
-    expect(sec.items.join('\n')).toContain('exists in the repo working tree');
+    const out = sec.items.join('\n');
+    expect(out).toContain('shared/ entry "plans" exists in the repo working tree');
+    expect(out).not.toContain('"Plans" exists in the repo working tree');
+  });
+
+  it('never tells the user to remove anything when the local link is dangling', async () => {
+    // Whether the link resolves and whether shared/<entry> exists are
+    // independent facts. A link left by a moved checkout dangles while the
+    // repo-side copy is the only one left, so the delete row here would
+    // destroy it.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['credentials'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const onlyCopy = join(env.testHome, 'claude-nomad', 'shared', 'credentials');
+    mkdirSync(onlyCopy, { recursive: true });
+    writeFileSync(join(onlyCopy, 'token.txt'), 'THE ONLY COPY\n');
+    symlinkSync(
+      join(env.testHome, 'gone-old-checkout', 'shared', 'credentials'),
+      join(env.testHome, '.claude', 'credentials'),
+    );
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('DANGLING symlink');
+    expect(out).not.toContain('remove it by hand');
+    expect(out).not.toContain('cp -RL');
+    expect(existsSync(join(onlyCopy, 'token.txt'))).toBe(true);
+  });
+
+  it('never emits a remediation row for a reserved name nomad manages right now', async () => {
+    // ~/.claude/commands is a live symlink into shared/commands, which is
+    // tracked and synced to every host. "remove both" would delete it fleet-wide.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['commands'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const managed = join(env.testHome, 'claude-nomad', 'shared', 'commands');
+    mkdirSync(managed, { recursive: true });
+    writeFileSync(join(managed, 'shipped.md'), '# fleet content\n');
+    symlinkSync(managed, join(env.testHome, '.claude', 'commands'));
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('sharedDirs entry "commands" rejected');
+    expect(out).not.toContain('remove both');
+    expect(out).not.toContain('remove it by hand');
   });
 
   it('falls back to the delete-only row when the local probe cannot stat the path', async () => {
@@ -594,7 +650,10 @@ describe('reportRejectedSharedDirs', () => {
     expect(() => reportPathMap(sec)).not.toThrow();
     const out = sec.items.join('\n');
     expect(out).toContain('exists in the repo working tree');
-    expect(out).not.toContain('is a symlink into');
+    // Must name the row that actually exists: "is a symlink under ~/.claude/".
+    // Asserting on "is a symlink into" would pass no matter what, since no row
+    // uses that wording.
+    expect(out).not.toContain('is a symlink under');
   });
 
   it('escapes an ANSI-carrying rejected name instead of emitting it raw', async () => {
