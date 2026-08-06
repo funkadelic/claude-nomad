@@ -368,8 +368,12 @@ function materializeOneOrDie(
  * on the spelling itself, before this set is consulted at all. Enumerated on
  * posix, where it is an ordinary distinct directory that every released nomad
  * accepted and symlinked and where stranding one loses data. Never enumerated
- * on win32, where it addresses the dotless path instead. Adding it to this
- * set would change nothing on posix and would be unreachable on win32.
+ * on win32, where it addresses the dotless path instead; that exclusion
+ * accepts a narrow cost, not a zero one, since a legacy win32 symlink
+ * materialized under the dotted spelling is left un-enumerated (a modern
+ * win32 host is copy-sync already, so it has a real copy and loses nothing).
+ * Adding it to this set would change nothing on posix and would be
+ * unreachable on win32.
  *
  * `never-sync` and `reserved` earn their place for the same reason the
  * credential shape does: the guard folds case, so names an older nomad accepted

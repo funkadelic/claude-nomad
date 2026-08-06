@@ -539,9 +539,11 @@ describe('cmdEject', () => {
     // win32 strips the dots, so each of these would operate on the shared/
     // name it addresses rather than the dotted one written. This is the full
     // set a code review found leaking through a gate keyed on the inherited
-    // cause rather than the spelling, not a representative sample. Nothing is
-    // stranded by excluding them: on win32 none of these spellings exist as a
-    // distinct entry.
+    // cause rather than the spelling, not a representative sample. Excluding
+    // them accepts a narrow cost, not a zero one: a legacy win32 symlink
+    // materialized under a dotted entry (Developer Mode, before win32 became
+    // copy-sync) is left un-enumerated here. A modern win32 host is
+    // copy-sync already, so it has a real copy and loses nothing.
     //
     // stubPlatform, not a vi.spyOn getter: the helper installs a DATA
     // descriptor and this file already uses it, so mixing an accessor

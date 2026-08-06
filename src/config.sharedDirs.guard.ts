@@ -292,10 +292,17 @@ const UNJOINABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
  *
  * The alias rule is keyed on the entry's SPELLING, never on its cause. Win32
  * strips a trailing dot, so such a name addresses a different path than it
- * spells: `commands.` reaches the live `shared/commands` and `...` the config
- * root itself, so no consumer may join one there. On posix it is an ordinary
- * distinct directory that aliases nothing, so it stands on its own regardless
- * of the cause it inherited from the name win32 WOULD have resolved it to.
+ * spells: `commands.` reaches the live `shared/commands` and `...` a path
+ * above the config root, so no consumer may join one there. On posix it is
+ * an ordinary distinct directory that aliases nothing, so it stands on its
+ * own regardless of the cause it inherited from the name win32 WOULD have
+ * resolved it to.
+ *
+ * Excluding it on win32 accepts a narrow cost, not a zero one: a legacy
+ * win32 symlink materialized under the dotted spelling (Developer Mode,
+ * before win32 became copy-sync) is left un-enumerated by any consumer that
+ * honors this gate. A modern win32 host is copy-sync already, so it has a
+ * real copy and loses nothing.
  *
  * @param entry - The refused entry, as written in `path-map.json`.
  * @param reason - The cause {@link validateSharedDirEntry} reported for it.
