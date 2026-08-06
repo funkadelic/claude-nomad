@@ -99,7 +99,7 @@ const WIN32_DEVICE_NAMES = new Set([
  * `enum`, because `erasableSyntaxOnly` forbids enums.
  */
 export type SharedDirRejectionReason =
-  'not-a-string' | 'not-a-segment' | 'never-sync' | 'reserved' | 'secret-shaped';
+  'not-a-string' | 'not-a-segment' | 'win32-alias' | 'never-sync' | 'reserved' | 'secret-shaped';
 
 /**
  * Result of a failed `validateSharedDirEntry` check: a machine-comparable
@@ -117,10 +117,10 @@ export type SharedDirRejection = {
  * use as a symlink target under `~/.claude/`; otherwise returns the first
  * matching {@link SharedDirRejection}, testing causes in this fixed order so
  * an existing rejection never changes its reported cause: not a string, not a
- * single path segment, a `NEVER_SYNC` member, a reserved `shared/` name, then
- * a credential-shaped filename. The credential-shape check runs last so a
- * `NEVER_SYNC` member that also looks credential-shaped (e.g.
- * `.credentials.json`) keeps reporting `never-sync`.
+ * single path segment, a trailing-dot win32 alias, a `NEVER_SYNC` member, a
+ * reserved `shared/` name, then a credential-shaped filename. The
+ * credential-shape check runs last so a `NEVER_SYNC` member that also looks
+ * credential-shaped (e.g. `.credentials.json`) keeps reporting `never-sync`.
  *
  * The name and reserved probes are case-insensitive, matching `isDeniedName`
  * and for the same reason: on a case-insensitive filesystem (macOS default,
@@ -141,11 +141,22 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
   if (typeof entry !== 'string') {
     return { reason: 'not-a-string', message: 'not a string' };
   }
-  if (!SAFE_SEGMENT.test(entry) || entry === '.' || entry === '..' || entry.endsWith('.')) {
+  if (!SAFE_SEGMENT.test(entry) || entry === '.' || entry === '..') {
     return {
       reason: 'not-a-segment',
       message:
-        'not a single path segment (contains a path separator, an unsupported character, a trailing ".", or is "." or "..")',
+        'not a single path segment (contains a path separator, an unsupported character, "." or "..")',
+    };
+  }
+  // Its OWN reason, not `not-a-segment`. Such a name is a single safe segment
+  // and every released nomad accepted and symlinked it, so eject must still
+  // enumerate one this host materialized; folding it into the traversal cause
+  // would strand that link and then tell the user the repo is safe to delete.
+  if (entry.endsWith('.')) {
+    return {
+      reason: 'win32-alias',
+      message:
+        'a trailing-dot name (win32 strips the dot, so it addresses the same file as the name without it)',
     };
   }
   const folded = entry.toLowerCase();

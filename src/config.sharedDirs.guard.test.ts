@@ -239,10 +239,16 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
       expect(validateSharedDirEntry(value)?.reason).toBe('not-a-segment');
     });
 
-    // Win32 strips a trailing dot off a path's final component, so each of
-    // these addresses the same file as its dotless form while matching none of
-    // the name checks that follow. Without this rejection the whole guard is a
-    // one-character bypass, including adopt's hard fail.
+    it('still accepts an interior dot', () => {
+      expect(validateSharedDirEntry('my.tool_dir')).toBeNull();
+    });
+  });
+
+  // Win32 strips a trailing dot off a path's final component, so each of these
+  // addresses the same file as its dotless form while matching none of the name
+  // checks that follow. Without this rejection the whole guard is a
+  // one-character bypass, including adopt's hard fail.
+  describe('win32-alias', () => {
     it.each([
       '.env.',
       'id_rsa.',
@@ -253,16 +259,20 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
       '.credentials.json.',
       'CLAUDE.md.',
       'foo.',
+      'mytools..',
     ])('rejects the trailing-dot alias %p', (value) => {
-      expect(validateSharedDirEntry(value)?.reason).toBe('not-a-segment');
+      expect(validateSharedDirEntry(value)?.reason).toBe('win32-alias');
     });
 
     it('names the trailing dot in the message', () => {
-      expect(validateSharedDirEntry('.env.')?.message).toContain('trailing');
+      expect(validateSharedDirEntry('.env.')?.message).toContain('trailing-dot');
     });
 
-    it('still accepts an interior dot', () => {
-      expect(validateSharedDirEntry('my.tool_dir')).toBeNull();
+    // Load-bearing: eject widens on this reason, and would strand a link an
+    // older nomad materialized if it reported the traversal cause instead.
+    it('is a distinct reason from not-a-segment, which eject must not widen', () => {
+      expect(validateSharedDirEntry('mytools.')?.reason).toBe('win32-alias');
+      expect(validateSharedDirEntry('../escape')?.reason).toBe('not-a-segment');
     });
   });
 

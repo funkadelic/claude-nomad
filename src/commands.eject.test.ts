@@ -489,6 +489,12 @@ describe('cmdEject', () => {
       expect(lstatSync(ejected).isSymbolicLink()).toBe(false);
       expect(readFileSync(join(ejected, 'kept.txt'), 'utf8')).toBe('kept');
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`ejected: ${name}`));
+      // The reconciliation line MUST fire here: allSharedLinks already printed
+      // "rejected ...; skipping" for this name, and eject is about to do the
+      // opposite. Without this the loop could be deleted and stay green.
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`materializing anyway (this host already has it): ${name}`),
+      );
     },
   );
 

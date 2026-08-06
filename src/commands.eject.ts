@@ -360,12 +360,18 @@ function materializeOneOrDie(
  * shapes, and no host ever materialized one, because the guard has refused them
  * since before `sharedDirs` had any other rejection cause.
  *
+ * `win32-alias` is included for the opposite reason, and is why the trailing-dot
+ * check has its own cause rather than reporting `not-a-segment`: that rule is
+ * new, so every released nomad accepted and symlinked a name like `mytools.`,
+ * and a host running one still has that link.
+ *
  * `never-sync` and `reserved` earn their place for the same reason the
  * credential shape does: the guard folds case, so names an older nomad accepted
  * and symlinked (`Plans`, `Agents`, `Settings.local.json`) are refused now.
  * Enumerating only the credential shape would strand exactly those.
  */
 const WIDENED_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
+  'win32-alias',
   'never-sync',
   'reserved',
   'secret-shaped',
