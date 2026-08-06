@@ -486,7 +486,7 @@ export function cmdEject(
   for (const name of names) {
     if (base.has(name)) continue;
     if (classifications.get(name) !== 'materialize') continue;
-    item(`materializing anyway (this host already has it): ${name}`);
+    item(`processing rejected entry already present on this host: ${name}`);
   }
 
   const dangling = names.filter((n) => classifications.get(n) === 'dangling');

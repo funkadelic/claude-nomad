@@ -493,14 +493,14 @@ describe('cmdEject', () => {
       // "rejected ...; skipping" for this name, and eject is about to do the
       // opposite. Without this the loop could be deleted and stay green.
       expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining(`materializing anyway (this host already has it): ${name}`),
+        expect.stringContaining(`processing rejected entry already present on this host: ${name}`),
       );
     },
   );
 
   it('does not claim the host has a refused name that was never materialized', () => {
-    // Configured but absent: the reconciliation line asserts "this host already
-    // has it", which would be false here.
+    // Configured but absent: the reconciliation line asserts the entry is
+    // already present on this host, which would be false here.
     const { claudeHome, repoHome } = makeTempRoots();
     writeFileSync(
       join(repoHome, 'path-map.json'),
@@ -509,7 +509,7 @@ describe('cmdEject', () => {
 
     cmdEject({}, { claudeHome, repoHome });
 
-    expect(allLogs(logSpy)).not.toContain('materializing anyway');
+    expect(allLogs(logSpy)).not.toContain('processing rejected entry already present');
   });
 
   it('a non-string sharedDirs entry is never enumerated', () => {
@@ -623,7 +623,7 @@ describe('cmdEject', () => {
 
     cmdEject({}, { claudeHome, repoHome });
 
-    expect(allLogs(logSpy)).not.toContain('materializing anyway');
+    expect(allLogs(logSpy)).not.toContain('processing rejected entry already present');
   });
 
   it('a traversal-shaped sharedDirs entry is never enumerated, so nothing outside claudeHome is touched', () => {
