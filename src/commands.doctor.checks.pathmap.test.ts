@@ -17,6 +17,11 @@ import {
 // cannot hold on win32.
 const isWin = process.platform === 'win32';
 
+// macOS and Windows default to case-insensitive volumes, where `shared/Plans`
+// and `shared/plans` are ONE directory, so the leftover probe finds the entry
+// and its row is correct. The negative assertion only holds where they are two.
+const caseInsensitiveFs = process.platform === 'darwin' || isWin;
+
 describe('cmdDoctor path-encoding collision detection', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
@@ -559,26 +564,47 @@ describe('reportRejectedSharedDirs', () => {
     expect(existsSync(join(foreign, 'mine.gpg'))).toBe(true);
   });
 
-  it('matches a leftover case-insensitively but names the casing actually on disk', async () => {
-    // The guard folds case, so "Plans" is rejected; macOS and NTFS then store
-    // the leftover as the same directory under either spelling, and an
-    // exact-case lookup would withhold the pointer to the copy in the user's
-    // own repo. The row must still name shared/plans, the path that exists,
-    // not the configured shared/Plans, which on Linux does not.
+  it.skipIf(caseInsensitiveFs)(
+    'does not name an unrelated directory that merely differs in case',
+    async () => {
+      // On a case-sensitive filesystem shared/Plans and shared/plans are two
+      // different directories, so a folded match would name a real but
+      // unrelated one and tell the user to delete it. The probe tests the
+      // entry's own path, so the filesystem decides: no row here, and on macOS
+      // or NTFS (where they are one directory) the row appears instead.
+      const map: PathMap = {
+        projects: {},
+        sharedDirs: ['Plans'],
+      };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'plans'), { recursive: true });
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('sharedDirs entry "Plans" rejected');
+      expect(out).not.toContain('exists in the repo working tree');
+    },
+  );
+
+  it('names the leftover when the entry resolves on this filesystem', async () => {
     const map: PathMap = {
       projects: {},
       sharedDirs: ['Plans'],
     };
     writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
-    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'plans'), { recursive: true });
+    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'Plans'), { recursive: true });
 
     const { section: makeSection } = await import('./commands.doctor.format.ts');
     const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
     const sec = makeSection('Path map');
     reportPathMap(sec);
-    const out = sec.items.join('\n');
-    expect(out).toContain('shared/ entry "plans" exists in the repo working tree');
-    expect(out).not.toContain('"Plans" exists in the repo working tree');
+    expect(sec.items.join('\n')).toContain('shared/ entry "Plans" exists in the repo working tree');
   });
 
   it('never tells the user to remove anything when the local link is dangling', async () => {

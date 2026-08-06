@@ -96,44 +96,28 @@ function reportCurrentHostPathsMissing(section: DoctorSection, map: PathMap): vo
 }
 
 /**
- * Lists the direct entry names under `shared/` in the repo working tree, for
- * matching a rejected `sharedDirs` entry against a leftover copy already on
- * disk. Wrapped in try/catch so an absent, unreadable, or non-directory
- * `shared/` degrades to an empty set instead of aborting the doctor run; the
- * caller's rejection rows are unaffected by this failure.
+ * Report whether a rejected `sharedDirs` entry has a leftover copy under
+ * `shared/` in the repo working tree.
  *
- * Returned as stored, with no normalization; {@link storedSharedName} owns the
- * matching policy.
+ * Tests the entry's own path rather than matching it against a listing, which
+ * makes the filesystem answer the case question instead of this code guessing
+ * at it. On macOS and NTFS a `Plans` entry finds a leftover stored as
+ * `shared/plans`, because those names ARE one directory there, and the row's
+ * `shared/Plans` is a path the user can act on. On a case-sensitive filesystem
+ * they are two unrelated directories and this correctly finds nothing: matching
+ * case-insensitively there would name a real but unrelated directory and tell
+ * the user to delete it, which is worse than naming none.
  *
- * @returns The names directly under `shared/`, or an empty array on any read
- *   failure.
+ * `existsSync` never throws, so an absent, unreadable, or non-directory
+ * `shared/` degrades to `false` and leaves the caller's rejection rows intact.
+ * The entry is safe to join: only {@link PROBABLE_REASONS} entries reach here,
+ * and every one has cleared `SAFE_SEGMENT`.
+ *
+ * @param entry - The rejected `sharedDirs` name to probe under `shared/`.
+ * @returns `true` when `shared/<entry>` resolves on this filesystem.
  */
-function sharedDirNames(): string[] {
-  try {
-    return readdirSync(join(repoHome(), 'shared'));
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Find the name under `shared/` that a rejected entry refers to: an exact match
- * if there is one, otherwise a case-insensitive match.
- *
- * Exact-first rather than folded-only, because the two are genuinely different
- * questions per platform. On a case-sensitive filesystem `Plans` and `plans` are
- * two directories, and answering with the folded hit would name a path the user
- * cannot act on for a directory unrelated to their entry. On macOS and NTFS they
- * are one directory, and answering exact-only would withhold the pointer
- * entirely. Trying exact first and folding only as a fallback is correct on both.
- *
- * @param names - Listing of `shared/`, as stored.
- * @param entry - The configured `sharedDirs` entry to resolve.
- * @returns The name AS STORED, or `undefined` when nothing matches.
- */
-function storedSharedName(names: string[], entry: string): string | undefined {
-  const folded = entry.toLowerCase();
-  return names.find((name) => name === entry) ?? names.find((n) => n.toLowerCase() === folded);
+function hasSharedLeftover(entry: string): boolean {
+  return existsSync(join(repoHome(), 'shared', entry));
 }
 
 /**
@@ -156,6 +140,7 @@ function storedSharedName(names: string[], entry: string): string | undefined {
  * the name is already synced under nomad's own management.
  */
 const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
+  'win32-alias',
   'never-sync',
   'secret-shaped',
 ]);
@@ -201,9 +186,19 @@ function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'dangling' | 
   }
   if (stat?.isSymbolicLink() !== true) return 'absent';
   try {
+    // BOTH sides resolved. Comparing a resolved target against a raw root
+    // misreads every managed link on a host whose repo path runs through a
+    // symlink (macOS /tmp and /var/folders, a symlinked $HOME, NOMAD_REPO via a
+    // link): the prefix test fails, the link is called foreign, and foreign is
+    // not terminal, so the delete row then names the user's only copy.
+    // `cmdEject` resolves its root for the same reason.
     const target = realpathSync(linkPath);
-    return target.startsWith(join(repoHome(), 'shared') + sep) ? 'managed' : 'foreign';
+    const root = realpathSync(join(repoHome(), 'shared'));
+    return target.startsWith(root + sep) ? 'managed' : 'foreign';
   } catch {
+    // Either the link or the shared root is unresolvable. Both are states where
+    // containment cannot be established, so degrade to the terminal row that
+    // recommends removing nothing.
     return 'dangling';
   }
 }
@@ -292,8 +287,6 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
  *   a path (see {@link PROBABLE_REASONS}).
  */
 function reportRejectedLeftovers(section: DoctorSection, probable: string[]): void {
-  if (probable.length === 0) return;
-  const existing = sharedDirNames();
   for (const entry of probable) {
     const link = classifyLocalLink(entry);
     if (link === 'managed') {
@@ -310,7 +303,8 @@ function reportRejectedLeftovers(section: DoctorSection, probable: string[]): vo
         section,
         `${yellow(warnGlyph)} path-map: entry ${JSON.stringify(entry)} is a DANGLING symlink under ~/.claude/ ` +
           `(its target does not resolve); do not delete anything under shared/ yet, since a copy there ` +
-          `may be the only one left. Run \`nomad pull\` to restore the target, or remove just the dead link`,
+          `may be the only one left. nomad cannot restore this name, because the entry is refused: ` +
+          `recover the content by hand if you need it, then remove the dead link`,
       );
       continue;
     }
@@ -322,11 +316,10 @@ function reportRejectedLeftovers(section: DoctorSection, probable: string[]): vo
           `entry from sharedDirs`,
       );
     }
-    const stored = storedSharedName(existing, entry);
-    if (stored !== undefined) {
+    if (hasSharedLeftover(entry)) {
       addItem(
         section,
-        `${yellow(warnGlyph)} path-map: shared/ entry ${JSON.stringify(stored)} exists in the repo working tree; remove it by hand, nomad will not delete it`,
+        `${yellow(warnGlyph)} path-map: shared/ entry ${JSON.stringify(entry)} exists in the repo working tree; remove it by hand, nomad will not delete it`,
       );
     }
   }

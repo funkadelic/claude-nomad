@@ -235,8 +235,11 @@ put in place:
   (`cp -RL ~/.claude/<name> /somewhere/safe`) and only then remove both. Deleting the repo-side copy
   on its own destroys the only copy you have and leaves a dangling link behind.
 - If it is a symlink pointing somewhere else, it is not nomad's: leave it alone and just drop the
-  entry from `sharedDirs`. Doctor tells the two apart by resolving the link, so it says which case
-  you are in.
+  entry from `sharedDirs`. Doctor tells these cases apart by resolving the link, so it says which
+  one you are in.
+- If the symlink is dangling (its target is gone), do not delete anything under `shared/` yet: a
+  copy there may be the only one left, and because the entry is refused nomad cannot restore the
+  name for you. Recover the content by hand if you need it, then remove the dead link.
 - If there is a leftover under `shared/` with no matching symlink, remove it by hand.
 
 Nomad will not delete either one for you.
