@@ -536,14 +536,22 @@ describe('cmdEject', () => {
   });
 
   it('never enumerates a trailing-dot name on win32, where it addresses a different path', () => {
-    // win32 strips the dots, so "commands." would operate on the live
-    // shared/commands and "..." on the config root itself. Nothing is stranded
-    // by excluding them: such a name cannot exist as a distinct entry there.
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-    const names = ejectNames({ projects: {}, sharedDirs: ['mytools.', 'commands.', '...'] });
-    expect(names).not.toContain('mytools.');
-    expect(names).not.toContain('commands.');
-    expect(names).not.toContain('...');
+    // win32 strips the dots, so "mytools." would operate on shared/mytools and
+    // "..." on the config root itself. Nothing is stranded by excluding them:
+    // such a name cannot exist as a distinct entry there.
+    //
+    // stubPlatform, not a vi.spyOn getter: the helper installs a DATA
+    // descriptor and this file already uses it, so mixing an accessor
+    // descriptor onto the same property is a restore hazard.
+    const realPlatform = process.platform;
+    try {
+      stubPlatform('win32');
+      const names = ejectNames({ projects: {}, sharedDirs: ['mytools.', '...'] });
+      expect(names).not.toContain('mytools.');
+      expect(names).not.toContain('...');
+    } finally {
+      stubPlatform(realPlatform);
+    }
   });
 
   it('does not print the reconciliation line for the SHARED_LINKS statics', () => {

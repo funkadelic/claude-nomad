@@ -244,32 +244,46 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
     });
   });
 
-  // Win32 strips a trailing dot off a path's final component, so each of these
-  // addresses the same file as its dotless form while matching none of the name
-  // checks that follow. Without this rejection the whole guard is a
-  // one-character bypass, including adopt's hard fail.
-  describe('win32-alias', () => {
+  // Win32 strips a trailing dot off a path's final component, so a trailing-dot
+  // name addresses a DIFFERENT path than it spells. Every such name is refused;
+  // what differs is the cause reported, which must describe the file the name
+  // actually reaches, because consumers key remediation and enumeration off it.
+  describe('trailing-dot aliases', () => {
+    // Load-bearing: these carried `win32-alias` as their ONLY label until the
+    // guard started classifying the addressed name. Doctor excludes reserved
+    // names from its filesystem probe and gates win32-alias off win32, so a
+    // mislabelled `.env.` lost the one row that named it, and a mislabelled
+    // `commands.` gained a row telling the user to delete managed content.
     it.each([
-      '.env.',
-      'id_rsa.',
-      'credentials.',
-      'server.pem.',
-      '.npmrc.',
-      'settings.local.json.',
-      '.credentials.json.',
-      'CLAUDE.md.',
-      'foo.',
-      'mytools..',
-    ])('rejects the trailing-dot alias %p', (value) => {
-      expect(validateSharedDirEntry(value)?.reason).toBe('win32-alias');
+      ['.env.', 'secret-shaped'],
+      ['id_rsa.', 'secret-shaped'],
+      ['credentials.', 'secret-shaped'],
+      ['server.pem.', 'secret-shaped'],
+      ['.npmrc.', 'secret-shaped'],
+      ['settings.local.json.', 'never-sync'],
+      ['.credentials.json.', 'never-sync'],
+      ['CLAUDE.md.', 'reserved'],
+      ['commands.', 'reserved'],
+      ['nul.', 'reserved'],
+    ])('%p inherits the cause of the name it addresses: %s', (value, reason) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe(reason);
     });
 
-    it('names the trailing dot in the message', () => {
-      expect(validateSharedDirEntry('.env.')?.message).toContain('trailing-dot');
+    // Only when the addressed name is denied by nothing else is the trailing
+    // dot itself the whole objection.
+    it.each(['mytools.', 'foo.', 'mytools..', '...'])(
+      'reports %p as win32-alias, since nothing else denies the name it addresses',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('win32-alias');
+      },
+    );
+
+    it('names the trailing dot in the win32-alias message', () => {
+      expect(validateSharedDirEntry('mytools.')?.message).toContain('trailing-dot');
     });
 
-    // Load-bearing: eject widens on this reason, and would strand a link an
-    // older nomad materialized if it reported the traversal cause instead.
+    // Load-bearing: eject widens on win32-alias and must never widen on the
+    // traversal cause, or it would join an escaping name into a path.
     it('is a distinct reason from not-a-segment, which eject must not widen', () => {
       expect(validateSharedDirEntry('mytools.')?.reason).toBe('win32-alias');
       expect(validateSharedDirEntry('../escape')?.reason).toBe('not-a-segment');

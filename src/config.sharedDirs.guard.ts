@@ -148,22 +148,66 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
         'not a single path segment (contains a path separator, an unsupported character, "." or "..")',
     };
   }
-  // Its OWN reason, not `not-a-segment`. Such a name is a single safe segment
-  // and every released nomad accepted and symlinked it, so eject must still
-  // enumerate one this host materialized; folding it into the traversal cause
-  // would strand that link and then tell the user the repo is safe to delete.
+  // Classify the name win32 would ACTUALLY address, not the one written. The
+  // trailing dots are decoration there, so `.env.` is the credential file and
+  // `commands.` is the managed directory, and each must report the cause that
+  // describes what it reaches. Testing the written form first labelled every
+  // one of them `win32-alias`, which shadowed those causes and left `.env.`
+  // with no other surface naming it: it is absent from NEVER_SYNC and
+  // `isSecretFileName` does not match it either.
+  const named = classifyDeniedName(stripTrailingDots(entry));
+  if (named !== null) return named;
+  // Reached only when the addressed name is denied by nothing, so the trailing
+  // dot is the whole objection. Its OWN cause rather than `not-a-segment`,
+  // because such a name is a single safe segment that every released nomad
+  // accepted and symlinked: folding it into the traversal cause would strand a
+  // link this host has and then say the repo is safe to delete.
   if (entry.endsWith('.')) {
     return {
       reason: 'win32-alias',
       message:
-        'a trailing-dot name (win32 strips the dot, so it addresses the same file as the name without it)',
+        'a trailing-dot name (win32 strips the dot, so it addresses a different path than it names)',
     };
   }
-  const folded = entry.toLowerCase();
-  if (NEVER_SYNC.has(entry) || NEVER_SYNC.has(folded)) {
+  return null;
+}
+
+/**
+ * Drop every trailing `.` from `name`, giving the path win32 resolves it to.
+ *
+ * A loop rather than a `/\.+$/` replace: an anchored quantifier over a
+ * repeated character is the shape `sonarjs/super-linear-regex` rejects, and
+ * this runs on unvalidated `path-map.json` input.
+ *
+ * @param name - A single path segment.
+ * @returns The segment without trailing dots, possibly empty.
+ */
+function stripTrailingDots(name: string): string {
+  let end = name.length;
+  while (end > 0 && name[end - 1] === '.') end -= 1;
+  return name.slice(0, end);
+}
+
+/**
+ * Report whether `name` is denied on its own terms: a `NEVER_SYNC` member, a
+ * reserved `shared/` name, or a credential-shaped filename.
+ *
+ * Split from {@link validateSharedDirEntry} so the same four causes can be
+ * tested against the name a host actually resolves rather than the one the user
+ * typed. Case-insensitive throughout, matching `isDeniedName`: on macOS and NTFS
+ * a mixed-case `Settings.local.json` is the same inode as the denied lowercase
+ * spelling, so an exact-case `Set.has` would accept an entry that then gets
+ * symlinked over this host's per-host settings.
+ *
+ * @param name - A single path segment, already normalized for trailing dots.
+ * @returns The matching rejection, or `null` when nothing denies the name.
+ */
+function classifyDeniedName(name: string): SharedDirRejection | null {
+  const folded = name.toLowerCase();
+  if (NEVER_SYNC.has(name) || NEVER_SYNC.has(folded)) {
     return { reason: 'never-sync', message: 'a never-sync name' };
   }
-  if (RESERVED_SHARED.has(entry) || RESERVED_SHARED_FOLDED.has(folded)) {
+  if (RESERVED_SHARED.has(name) || RESERVED_SHARED_FOLDED.has(folded)) {
     return { reason: 'reserved', message: 'a reserved shared/ name' };
   }
   // Device names are reserved with any extension, so test the stem. `indexOf`
@@ -175,7 +219,7 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
   if (WIN32_DEVICE_NAMES.has(stem)) {
     return { reason: 'reserved', message: 'a reserved Windows device name' };
   }
-  if (isSecretFileName(entry)) {
+  if (isSecretFileName(name)) {
     return {
       reason: 'secret-shaped',
       message: 'a credential-shaped filename (.env, id_rsa, credentials, *.pem, *.key and similar)',

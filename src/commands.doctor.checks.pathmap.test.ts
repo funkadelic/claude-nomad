@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { failGlyph, infoGlyph, okGlyph, warnGlyph } from './color.ts';
 import { type PathMap } from './config.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 import {
   type Env,
   joinedLog,
@@ -656,23 +657,43 @@ describe('reportRejectedSharedDirs', () => {
     },
   );
 
-  it('never probes a trailing-dot entry on win32, where it addresses a different path', async () => {
-    // win32 strips the trailing dots, so "commands." resolves to the live,
-    // tracked shared/commands and "..." to shared/ itself. Probing either would
-    // put a remove-it-by-hand row on content the whole fleet syncs.
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-    const map: PathMap = { projects: {}, sharedDirs: ['commands.', '...', 'mytools.'] };
-    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
-    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'commands'), { recursive: true });
+  it.skipIf(isWin)(
+    'never probes a trailing-dot entry on win32, where it addresses a different path',
+    async () => {
+      // The leftover is created WITH the trailing dot. Creating shared/mytools
+      // instead would make this pass whether or not the gate exists, since on
+      // the posix filesystem this runs on the two are different directories and
+      // neither spelling would be found: the assertion has to be able to fail.
+      const realPlatform = process.platform;
+      try {
+        stubPlatform('win32');
+        const map: PathMap = { projects: {}, sharedDirs: ['mytools.'] };
+        writeFileSync(
+          join(env.testHome, 'claude-nomad', 'path-map.json'),
+          JSON.stringify(map) + '\n',
+        );
+        mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'mytools.'), { recursive: true });
 
-    const { section: makeSection } = await import('./commands.doctor.format.ts');
-    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
-    const sec = makeSection('Path map');
-    reportPathMap(sec);
-    const out = sec.items.join('\n');
-    expect(out).toContain('rejected');
-    expect(out).not.toContain('exists in the repo working tree');
-    expect(out).not.toContain('remove it by hand');
+        const { section: makeSection } = await import('./commands.doctor.format.ts');
+        const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+        const sec = makeSection('Path map');
+        reportPathMap(sec);
+        const out = sec.items.join('\n');
+        expect(out).toContain('rejected');
+        expect(out).not.toContain('exists in the repo working tree');
+      } finally {
+        stubPlatform(realPlatform);
+      }
+    },
+  );
+
+  // Settles on the runner what cannot be observed from posix: whether Node's
+  // toNamespacedPath prefixing disables the trailing-dot stripping the whole
+  // win32-alias reason rests on. If this fails, the reason is unnecessary.
+  it.runIf(isWin)('confirms win32 really does strip a trailing dot from a path', () => {
+    const base = join(env.testHome, 'claude-nomad', 'shared');
+    mkdirSync(join(base, 'aliasprobe'), { recursive: true });
+    expect(existsSync(join(base, 'aliasprobe.'))).toBe(true);
   });
 
   it.skipIf(isWin)(
