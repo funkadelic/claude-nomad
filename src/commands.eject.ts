@@ -359,12 +359,17 @@ function materializeOneOrDie(
  * name carries no path separator, `.` or `..`. `not-a-string` and
  * `not-a-segment` are therefore absent: those are the coercion and traversal
  * shapes, and no host ever materialized one, because the guard has refused them
- * since before `sharedDirs` had any other rejection cause.
+ * since before `sharedDirs` had any other rejection cause. That guarantee is
+ * now enforced by the guard for every consumer, not by which reasons this set
+ * happens to list.
  *
- * `win32-alias` is included for the opposite reason, and is why the trailing-dot
- * check has its own cause rather than reporting `not-a-segment`: that rule is
- * new, so every released nomad accepted and symlinked a name like `mytools.`,
- * and a host running one still has that link.
+ * `win32-alias` is deliberately absent, and its absence is not an exclusion:
+ * a trailing-dot spelling is admitted or refused by {@link mayJoinRefusedEntry}
+ * on the spelling itself, before this set is consulted at all. Enumerated on
+ * posix, where it is an ordinary distinct directory that every released nomad
+ * accepted and symlinked and where stranding one loses data. Never enumerated
+ * on win32, where it addresses the dotless path instead. Adding it to this
+ * set would change nothing on posix and would be unreachable on win32.
  *
  * `never-sync` and `reserved` earn their place for the same reason the
  * credential shape does: the guard folds case, so names an older nomad accepted
@@ -388,12 +393,16 @@ const WIDENED_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
  * it out of the enumeration would skip it silently and then tell the user it is
  * safe to delete the repo, destroying their only copy.
  *
- * The widening is by rejection REASON, never by type, and is an allow-list
- * ({@link WIDENED_REASONS}) rather than a deny-list on the unsafe shapes. Both
- * express the same policy today, but a deny-list fails OPEN: a rejection cause
- * added later is silently joined into a filesystem path until someone notices.
- * The sibling allow-list in `commands.doctor.checks.pathmap.ts` documents the
- * same reasoning, and two divergent encodings of one policy is how they drift.
+ * The widening is by rejection REASON and by SPELLING, never by type.
+ * {@link mayJoinRefusedEntry} owns the part no consumer may decide for itself
+ * (the coercion and traversal shapes are never joinable, and a trailing-dot
+ * spelling is never joinable on win32) and takes {@link WIDENED_REASONS} as
+ * the part that is legitimately eject's own. That set is an allow-list rather
+ * than a deny-list on the unsafe shapes, because a deny-list fails OPEN: a
+ * rejection cause added later would be silently joined into a filesystem path
+ * until someone noticed. `commands.doctor.checks.pathmap.ts` passes its own
+ * narrower set through the same function, which is why the two consumers can
+ * differ without the policy living in two places.
  *
  * @param map Parsed `path-map.json` content.
  * @returns The de-duplicated managed names, valid entries first.
