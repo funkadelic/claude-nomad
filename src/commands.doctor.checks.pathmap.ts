@@ -133,10 +133,13 @@ function isLocalSymlink(entry: string): boolean {
  * Emits a top-level WARN row for every rejected `sharedDirs` entry in
  * `path-map.json`, naming the entry and the specific reason
  * {@link validateSharedDirEntry} gave. Rows are pushed as top-level items,
- * never as nested children: `compactSections` drops nested rows in the
- * default doctor view, and a rejected entry must stay visible there. Never
- * sets `process.exitCode`, since the condition already fails closed at the
- * push gate and this row is informational, not a failure.
+ * never as nested children: `compactSections` keeps a row by its WARN glyph
+ * alone, so a child row survives into the compact view while the passing
+ * parent it belonged under does not. `renderChildLine` then attaches its
+ * connector to whatever row happens to precede it, and the rejection reads as
+ * subordinate to an unrelated entry. Never sets `process.exitCode`, since the
+ * condition already fails closed at the push gate and this row is
+ * informational, not a failure.
  *
  * For any rejected entry this host may still have materialized, also emits a
  * remediation row. A live symlink at `~/.claude/<entry>` points INTO

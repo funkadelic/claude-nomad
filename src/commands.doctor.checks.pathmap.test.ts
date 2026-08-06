@@ -458,6 +458,25 @@ describe('reportRejectedSharedDirs', () => {
     expect(out).not.toContain('get-shit-done');
   });
 
+  it('emits the rejection as a top-level item, not a nested child row', async () => {
+    // Structural, not textual: the compact filter keeps a row for its glyph
+    // whether or not it is nested, so only the leading-tab child marker
+    // distinguishes the two. A child row would outlive its passing parent and
+    // render its connector under an unrelated entry.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const row = sec.items.find((it) => it.includes('sharedDirs entry'));
+    expect(row).toBeDefined();
+    expect(row?.startsWith('\t')).toBe(false);
+  });
+
   it('leaves process.exitCode untouched when a sharedDirs entry is rejected', async () => {
     const map: PathMap = {
       projects: {},
