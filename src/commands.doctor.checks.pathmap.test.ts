@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -488,6 +488,48 @@ describe('reportRejectedSharedDirs', () => {
     expect(out).toContain('shared/.env exists in the repo working tree');
     expect(out).toContain('remove it by hand');
     expect(existsSync(offenderPath)).toBe(true);
+  });
+
+  it('leads with copy-the-content-out when ~/.claude/<name> is still a symlink into shared/', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['credentials'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const target = join(env.testHome, 'claude-nomad', 'shared', 'credentials');
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'token.txt'), 'SECRET=1\n');
+    symlinkSync(target, join(env.testHome, '.claude', 'credentials'));
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('~/.claude/credentials is a symlink into shared/credentials');
+    expect(out).toContain('cp -RL');
+    // The delete-only row must NOT also fire: following it destroys the copy.
+    expect(out).not.toContain('remove it by hand');
+    expect(existsSync(join(target, 'token.txt'))).toBe(true);
+  });
+
+  it('falls back to the delete-only row when the local probe cannot stat the path', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    writeFileSync(join(env.testHome, 'claude-nomad', 'shared', '.env'), 'SECRET=1\n');
+    // Replace ~/.claude with a regular file so the lstat of a path THROUGH it
+    // raises instead of reporting absence. The tolerant probe must swallow it.
+    rmSync(join(env.testHome, '.claude'), { recursive: true, force: true });
+    writeFileSync(join(env.testHome, '.claude'), 'not a directory\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    expect(() => reportPathMap(sec)).not.toThrow();
+    const out = sec.items.join('\n');
+    expect(out).toContain('exists in the repo working tree');
+    expect(out).not.toContain('is a symlink into');
   });
 
   it('does not print an offender row when the rejected name is absent from shared/', async () => {

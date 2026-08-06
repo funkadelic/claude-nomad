@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -111,6 +111,25 @@ function sharedDirNames(): Set<string> {
 }
 
 /**
+ * Report whether `~/.claude/<entry>` is currently a symlink, which is the state
+ * an older, looser guard leaves behind after `nomad adopt` moved that name into
+ * `shared/`. Follows the tolerant-doctor contract: an absent path, an
+ * unreadable parent, or a path component that is not a directory all degrade to
+ * `false` instead of throwing mid-output.
+ *
+ * @param entry - The rejected `sharedDirs` name to probe under `~/.claude/`.
+ * @returns `true` only when a symlink is present at `~/.claude/<entry>`.
+ */
+function isLocalSymlink(entry: string): boolean {
+  try {
+    const stat = lstatSync(join(claudeHome(), entry), { throwIfNoEntry: false });
+    return stat?.isSymbolicLink() === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Emits a top-level WARN row for every rejected `sharedDirs` entry in
  * `path-map.json`, naming the entry and the specific reason
  * {@link validateSharedDirEntry} gave. Rows are pushed as top-level items,
@@ -119,10 +138,14 @@ function sharedDirNames(): Set<string> {
  * sets `process.exitCode`, since the condition already fails closed at the
  * push gate and this row is informational, not a failure.
  *
- * For any rejected entry that also names a directory already present under
- * `shared/` in the repo working tree (a leftover from before this guard
- * existed), also emits a row naming that exact path and telling the user to
- * remove it by hand; nomad never deletes it.
+ * For any rejected entry this host may still have materialized, also emits a
+ * remediation row. A live symlink at `~/.claude/<entry>` points INTO
+ * `shared/<entry>`, so that row leads with copying the content out and only
+ * then removing both: telling the user to delete the repo-side path on its own
+ * would destroy the only copy and leave a dangling link behind. With no such
+ * symlink, a leftover directly under `shared/` (from before this guard
+ * existed) gets the plain remove-it-by-hand row instead. Nomad never deletes
+ * either one.
  *
  * Tolerates a malformed `sharedDirs` (a non-array, or members that are not
  * strings): reading `map.sharedDirs` via `Array.isArray` rather than the
@@ -147,7 +170,14 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
   if (rejected.length === 0) return;
   const existing = sharedDirNames();
   for (const entry of rejected) {
-    if (typeof entry === 'string' && existing.has(entry)) {
+    if (typeof entry !== 'string') continue;
+    if (isLocalSymlink(entry)) {
+      addItem(
+        section,
+        `${yellow(warnGlyph)} path-map: ~/.claude/${entry} is a symlink into shared/${entry}; ` +
+          `copy the content out first (cp -RL), then remove both. nomad will not do it for you`,
+      );
+    } else if (existing.has(entry)) {
       addItem(
         section,
         `${yellow(warnGlyph)} path-map: shared/${entry} exists in the repo working tree; remove it by hand, nomad will not delete it`,

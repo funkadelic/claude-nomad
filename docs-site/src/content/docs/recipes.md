@@ -224,9 +224,15 @@ path segment (no `/` or `..`), must not be one of the never-synced names, must n
 reserved name, and must not look like a credential file (`.env`, `id_rsa`, `credentials`, `*.pem`,
 and `*.key` are all refused). In particular `hooks`, `agents`, and `skills` are reserved and cannot
 be re-added this way: `hooks` and `agents` are gsd-owned per host, and `skills` is handled by the
-filtered copy-sync. `nomad doctor` lists every refused `sharedDirs` entry with its reason; if a
-refused name was already copied into `shared/` by an older version of nomad, doctor also names that
-path and you remove it by hand, since nomad will not delete it for you.
+filtered copy-sync. `nomad doctor` lists every refused `sharedDirs` entry with its reason, and adds
+a remediation line for anything an older version of nomad already put in place:
+
+- If `~/.claude/<name>` is still a symlink, it points into `shared/<name>`, so copy the content out
+  first (`cp -RL ~/.claude/<name> /somewhere/safe`) and only then remove both. Deleting the
+  repo-side copy on its own destroys the only copy you have and leaves a dangling link behind.
+- If there is a leftover under `shared/` with no matching symlink, remove it by hand.
+
+Nomad will not delete either one for you.
 
 Invalid entries are dropped with a warning rather than aborting the run when read by `nomad pull`.
 `nomad adopt` on such a name is the one place this differs: it stops with an error instead of
