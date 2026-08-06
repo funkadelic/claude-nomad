@@ -61,6 +61,14 @@ const RESERVED_SHARED = new Set([
 ]);
 
 /**
+ * `RESERVED_SHARED` folded to lowercase, for the case-insensitive probe in
+ * {@link validateSharedDirEntry}. Two of the reserved names are not lowercase
+ * (`CLAUDE.md`, `my-statusline.cjs`), so the probe cannot simply lowercase the
+ * candidate and test it against the original set.
+ */
+const RESERVED_SHARED_FOLDED = new Set([...RESERVED_SHARED].map((name) => name.toLowerCase()));
+
+/**
  * Machine-comparable cause for a rejected `sharedDirs` entry, in the order
  * `validateSharedDirEntry` tests them. A string-literal union, not a TS
  * `enum`, because `erasableSyntaxOnly` forbids enums.
@@ -89,6 +97,13 @@ export type SharedDirRejection = {
  * `NEVER_SYNC` member that also looks credential-shaped (e.g.
  * `.credentials.json`) keeps reporting `never-sync`.
  *
+ * The name and reserved probes are case-insensitive, matching `isDeniedName`
+ * and for the same reason: on a case-insensitive filesystem (macOS default,
+ * NTFS) a mixed-case `Settings.local.json` resolves to the same inode as the
+ * denied `settings.local.json`, so an exact-case `Set.has` would accept a
+ * `sharedDirs` entry that then gets symlinked over this host's per-host
+ * settings file. `isSecretFileName` already folds case in its own patterns.
+ *
  * Accepts `unknown` because `path-map.json` is runtime input: a malformed
  * `sharedDirs` array can hold non-string values (numbers, objects, null) that
  * `SAFE_SEGMENT.test` would otherwise string-coerce (e.g. `42` -> `"42"`).
@@ -108,10 +123,11 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
         'not a single path segment (contains a path separator, an unsupported character, "." or "..")',
     };
   }
-  if (NEVER_SYNC.has(entry)) {
+  const folded = entry.toLowerCase();
+  if (NEVER_SYNC.has(entry) || NEVER_SYNC.has(folded)) {
     return { reason: 'never-sync', message: 'a never-sync name' };
   }
-  if (RESERVED_SHARED.has(entry)) {
+  if (RESERVED_SHARED.has(entry) || RESERVED_SHARED_FOLDED.has(folded)) {
     return { reason: 'reserved', message: 'a reserved shared/ name' };
   }
   if (isSecretFileName(entry)) {

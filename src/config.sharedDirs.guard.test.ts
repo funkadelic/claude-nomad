@@ -273,4 +273,29 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
       });
     });
   });
+
+  // On a case-insensitive filesystem (macOS default, NTFS) these resolve to the
+  // same inode as their lowercase counterparts, so accepting one would let a
+  // sharedDirs entry be symlinked over this host's per-host settings or its
+  // OAuth credential store. `isDeniedName` folds case for exactly this reason;
+  // the guard has to agree with it or it is the weaker of the two boundaries.
+  describe('case-insensitive matching', () => {
+    it.each(['Settings.local.json', 'SETTINGS.LOCAL.JSON', '.Credentials.json', 'Todos'])(
+      'rejects mixed-case %p as never-sync',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('never-sync');
+      },
+    );
+
+    it.each(['CLAUDE.MD', 'claude.md', 'Hooks', 'My-Statusline.cjs', 'Path-Map.json'])(
+      'rejects mixed-case %p as reserved',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('reserved');
+      },
+    );
+
+    it('still accepts a valid entry that differs only in case from nothing denied', () => {
+      expect(validateSharedDirEntry('Get-Shit-Done')).toBeNull();
+    });
+  });
 });
