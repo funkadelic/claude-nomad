@@ -135,20 +135,31 @@ function hasSharedLeftover(entry: string): boolean {
 /**
  * This is the `remediable` argument this file passes to
  * {@link mayJoinRefusedEntry}: the reasons doctor offers remediation rows
- * for, one half of the gate. The other half, which no consumer may decide for
- * itself, lives in the guard, where the coercion and traversal shapes are
- * never joinable and a trailing-dot spelling is never joinable on win32. This
- * set is still an allow-list rather than a deny-list on the unsafe shapes: a
- * rejection reason added later fails closed instead of silently becoming
- * probeable.
+ * for, one half of the gate.
  *
- * `reserved` is deliberately NOT listed, even though it is path-safe. The
- * remediation rows exist for a name nomad no longer manages but this host
- * still has materialized. A reserved name is the opposite: it collides with
- * something nomad manages RIGHT NOW, so `~/.claude/commands` is a live symlink
- * into `shared/commands`, and the rows would tell the user to remove tracked
- * content that every other host syncs. There is also nothing to recover, since
- * the name is already synced under nomad's own management.
+ * This set does NOT decide for a trailing-dot spelling. `mayJoinRefusedEntry`
+ * admits any such name on posix before this set is ever consulted, whatever
+ * cause it inherited, because the dotted name is a distinct directory there
+ * that nomad manages under no spelling. So `commands.` DOES get a
+ * remediation row on posix despite `reserved` being absent below; only the
+ * dotless `commands` is excluded by this set. A rejection reason added later
+ * is therefore fail-closed for ordinary names and fail-OPEN for dotted ones:
+ * check {@link mayJoinRefusedEntry} when adding one.
+ *
+ * For a non-dotted name, the other half of the gate lives in the guard,
+ * where the coercion and traversal shapes are never joinable on any host,
+ * and this set is still an allow-list rather than a deny-list on top of
+ * that: a rejection reason added later fails closed instead of silently
+ * becoming probeable.
+ *
+ * `reserved` is deliberately NOT listed, even though it is path-safe, for a
+ * non-dotted name. The remediation rows exist for a name nomad no longer
+ * manages but this host still has materialized. A reserved name is the
+ * opposite: it collides with something nomad manages RIGHT NOW, so
+ * `~/.claude/commands` is a live symlink into `shared/commands`, and the
+ * rows would tell the user to remove tracked content that every other host
+ * syncs. There is also nothing to recover, since the name is already synced
+ * under nomad's own management.
  */
 const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
   'never-sync',
@@ -239,11 +250,12 @@ function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'dangling' | 
  *
  * For any rejected entry this host may still have materialized, also emits a
  * remediation row, but only for entries {@link mayJoinRefusedEntry} admits
- * with {@link PROBABLE_REASONS} as the remediable set. That gate is two rules
- * and not one: the traversal and coercion shapes are never joinable on any
- * host, and a trailing-dot spelling is joinable only off win32. Only after
- * both does the reason set decide. A symlink at
- * `~/.claude/<entry>` that resolves INTO `shared/` leads with copying the
+ * with {@link PROBABLE_REASONS} as the remediable set. That gate is two
+ * rules and not one: the traversal and coercion shapes are never joinable on
+ * any host, and a trailing-dot spelling is admitted on posix (refused on
+ * win32) regardless of its cause, before {@link PROBABLE_REASONS} is ever
+ * consulted. Only for a non-dotted name does the reason set decide. A
+ * symlink at `~/.claude/<entry>` that resolves INTO `shared/` leads with copying the
  * content out and only then removing both: telling the user to delete the
  * repo-side path on its own would destroy the only copy and leave a dangling
  * link behind. A symlink resolving anywhere else is someone else's, so that row

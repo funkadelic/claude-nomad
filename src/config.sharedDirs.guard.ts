@@ -274,14 +274,16 @@ const UNJOINABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
  * Whether a REFUSED `sharedDirs` entry may still be joined into a filesystem
  * path on this host, for a consumer that acts on names the guard rejected.
  *
- * Two such consumers exist and they disagree, legitimately, about WHICH causes
- * are worth acting on: `nomad doctor` offers remediation for a name it no
- * longer manages but excludes `reserved`, since those are managed right now and
- * the advice would target live content; `nomad eject` must materialize anything
- * this host already has, `reserved` included. That difference is the
- * `remediable` parameter. Everything before it is the part neither consumer may
- * decide for itself, because getting it wrong joins an attacker-influenced
- * string into a path.
+ * Two such consumers exist and they disagree, legitimately, about WHICH
+ * causes are worth acting on for a NON-DOTTED name: `nomad doctor` offers
+ * remediation for a name it no longer manages but excludes `reserved`, since
+ * those are managed right now and the advice would target live content;
+ * `nomad eject` must materialize anything this host already has, `reserved`
+ * included. That difference is the `remediable` parameter, and it is
+ * consulted only when the entry is not a trailing-dot spelling; see the
+ * alias rule below for that case. Everything before `remediable` is the part
+ * neither consumer may decide for itself, because getting it wrong joins an
+ * attacker-influenced string into a path.
  *
  * Ordering is load-bearing and is the whole reason this lives in one place.
  * The unjoinable causes are tested FIRST: `../escape.` ends with a dot AND is a
