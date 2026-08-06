@@ -37,12 +37,15 @@ export function assertSafeLogical(logical: string): void {
  * a character and separator test only: it does not reject a credential-shaped
  * name (`.env` matches the pattern), which is a separate later check.
  *
- * A trailing `.` is rejected alongside it, by the caller rather than by this
- * pattern. Win32 strips trailing dots off a path's final component, so `.env.`
- * and `settings.local.json.` address the same files as `.env` and
- * `settings.local.json` while matching none of the name checks below. Refusing
- * the shape outright is narrower than teaching every membership test and every
- * secret pattern to normalize.
+ * This pattern says nothing about trailing dots; the caller owns them. Win32
+ * strips trailing dots off a path's final component, so `.env.` and
+ * `settings.local.json.` address the same files as `.env` and
+ * `settings.local.json` while matching none of the name checks below.
+ * {@link validateSharedDirEntry} therefore normalizes first and classifies
+ * the name the host addresses, so each spelling reports the cause describing
+ * what it actually reaches. A bare trailing dot remains a rejection in its
+ * own right, `win32-alias`, but only as the residual case when nothing else
+ * denies the addressed name.
  */
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
@@ -94,9 +97,11 @@ const WIN32_DEVICE_NAMES = new Set([
 ]);
 
 /**
- * Machine-comparable cause for a rejected `sharedDirs` entry, in the order
- * `validateSharedDirEntry` tests them. A string-literal union, not a TS
- * `enum`, because `erasableSyntaxOnly` forbids enums.
+ * Machine-comparable cause for a rejected `sharedDirs` entry. The declaration
+ * order below is NOT the evaluation order: `win32-alias` is tested LAST, as
+ * the residual cause when nothing else denies the name the entry addresses.
+ * A string-literal union, not a TS `enum`, because `erasableSyntaxOnly`
+ * forbids enums.
  */
 export type SharedDirRejectionReason =
   'not-a-string' | 'not-a-segment' | 'win32-alias' | 'never-sync' | 'reserved' | 'secret-shaped';
@@ -115,12 +120,25 @@ export type SharedDirRejection = {
  * Validate a `sharedDirs` entry from `path-map.json` and name the specific
  * reason a rejected entry was refused. Returns `null` when `entry` is safe to
  * use as a symlink target under `~/.claude/`; otherwise returns the first
- * matching {@link SharedDirRejection}, testing causes in this fixed order so
- * an existing rejection never changes its reported cause: not a string, not a
- * single path segment, a trailing-dot win32 alias, a `NEVER_SYNC` member, a
- * reserved `shared/` name, then a credential-shaped filename. The
- * credential-shape check runs last so a `NEVER_SYNC` member that also looks
- * credential-shaped (e.g. `.credentials.json`) keeps reporting `never-sync`.
+ * matching {@link SharedDirRejection}.
+ *
+ * The real evaluation order: not a string, not a single path segment, then
+ * the cause of the name this host actually ADDRESSES, via
+ * `classifyDeniedName(stripTrailingDots(entry))`, and finally the trailing
+ * dot itself as the residual cause when nothing else denies the addressed
+ * name.
+ *
+ * The invariant is NOT that a rejection keeps its reported cause. It does
+ * not: classifying by the addressed name deliberately moved every
+ * trailing-dot spelling out of `win32-alias` and into the cause of the file
+ * it reaches. What holds is that the accept/reject partition never changes,
+ * only the reported cause, and the cause always describes the path the host
+ * resolves. A name that was refused stays refused, and no name that was
+ * accepted becomes refused, for any suffix of dots.
+ *
+ * Within `classifyDeniedName` the credential-shape check still runs last, so
+ * a `NEVER_SYNC` member that also looks credential-shaped (e.g.
+ * `.credentials.json`) keeps reporting `never-sync`.
  *
  * The name and reserved probes are case-insensitive, matching `isDeniedName`
  * and for the same reason: on a case-insensitive filesystem (macOS default,
@@ -202,9 +220,10 @@ function stripTrailingDots(name: string): string {
 
 /**
  * Report whether `name` is denied on its own terms: a `NEVER_SYNC` member, a
- * reserved `shared/` name, or a credential-shaped filename.
+ * reserved `shared/` name, a reserved Windows device name, or a
+ * credential-shaped filename.
  *
- * Split from {@link validateSharedDirEntry} so the same four causes can be
+ * Split from {@link validateSharedDirEntry} so the same four checks can be
  * tested against the name a host actually resolves rather than the one the user
  * typed. Case-insensitive throughout, matching `isDeniedName`: on macOS and NTFS
  * a mixed-case `Settings.local.json` is the same inode as the denied lowercase
