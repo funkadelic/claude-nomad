@@ -551,29 +551,24 @@ describe('reportRejectedSharedDirs', () => {
     expect(out).not.toContain('is a symlink into');
   });
 
-  it.skipIf(isWin)(
-    'escapes an ANSI-carrying offender name instead of emitting it raw',
-    async () => {
-      // path-map.json is a trust boundary and a POSIX filename may hold escape
-      // bytes. The offender row is reachable only when the on-disk name matches
-      // the configured one, so a crafted pair controls both halves.
-      const evil = '\u001b[2Kevil';
-      const map = { projects: {}, sharedDirs: [evil] };
-      writeFileSync(
-        join(env.testHome, 'claude-nomad', 'path-map.json'),
-        JSON.stringify(map) + '\n',
-      );
-      writeFileSync(join(env.testHome, 'claude-nomad', 'shared', evil), 'x\n');
-      const { section: makeSection } = await import('./commands.doctor.format.ts');
-      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
-      const sec = makeSection('Path map');
-      reportPathMap(sec);
-      const out = sec.items.join('\n');
-      expect(out).toContain('exists in the repo working tree');
-      expect(out).toContain('\\u001b[2Kevil');
-      expect(out).not.toContain(evil);
-    },
-  );
+  it('escapes an ANSI-carrying rejected name instead of emitting it raw', async () => {
+    // path-map.json is a trust boundary and its values may hold escape bytes,
+    // which would let a crafted name rewrite the WARN rows around it. The
+    // rejection row is the only row such a name reaches: an escape byte fails
+    // the single-segment check, and a not-a-segment entry is never probed, so
+    // the remediation rows below cannot carry one at all.
+    const evil = '\u001b[2Kevil';
+    const map = { projects: {}, sharedDirs: [evil] };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('rejected: not a single path segment');
+    expect(out).toContain('\\u001b[2Kevil');
+    expect(out).not.toContain(evil);
+  });
 
   it('does not print an offender row when the rejected name is absent from shared/', async () => {
     const map: PathMap = {
@@ -587,6 +582,29 @@ describe('reportRejectedSharedDirs', () => {
     reportPathMap(sec);
     const out = sec.items.join('\n');
     expect(out).toContain('sharedDirs entry ".env" rejected');
+    expect(out).not.toContain('exists in the repo working tree');
+  });
+
+  it('never probes a traversing entry, so no remediation row claims a path outside ~/.claude/', async () => {
+    // "../escape" is rejected as not-a-segment, and join() normalizes "..", so
+    // probing it would stat a sibling of ~/.claude/ and report the answer as
+    // though it described the configured name. Only reasons the guard tests
+    // AFTER its single-segment check are probeable.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['../escape'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const outside = join(env.testHome, 'outside-target');
+    mkdirSync(outside, { recursive: true });
+    symlinkSync(outside, join(env.testHome, 'escape'));
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('sharedDirs entry "../escape" rejected');
+    expect(out).not.toContain('is a symlink under ~/.claude/');
     expect(out).not.toContain('exists in the repo working tree');
   });
 

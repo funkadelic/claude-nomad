@@ -14,7 +14,10 @@ import {
   yellow,
 } from './color.ts';
 import { claudeHome, HOST, NEVER_SYNC, repoHome, type PathMap } from './config.ts';
-import { validateSharedDirEntry } from './config.sharedDirs.guard.ts';
+import {
+  validateSharedDirEntry,
+  type SharedDirRejectionReason,
+} from './config.sharedDirs.guard.ts';
 import {
   addChildItem,
   addItem,
@@ -111,6 +114,23 @@ function sharedDirNames(): Set<string> {
 }
 
 /**
+ * The rejection reasons whose entries may be joined into a filesystem path by
+ * the remediation probes below. An allow-list, not a deny-list on
+ * `not-a-segment`: reaching any reason listed here proves `SAFE_SEGMENT`
+ * already passed, so the name carries no path separator, `.` or `..`. A
+ * `not-a-segment` entry may be `../escape`, and `join` normalizes `..`, so
+ * probing one would stat a path outside `~/.claude/` and report the answer as
+ * though it were about the configured name. Listing the safe reasons means a
+ * future reason added before the segment check fails closed instead of
+ * silently becoming probeable.
+ */
+const PROBABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
+  'never-sync',
+  'reserved',
+  'secret-shaped',
+]);
+
+/**
  * Report whether `~/.claude/<entry>` is currently a symlink, which is the state
  * an older, looser guard leaves behind after `nomad adopt` moved that name into
  * `shared/`. Follows the tolerant-doctor contract: an absent path, an
@@ -142,7 +162,10 @@ function isLocalSymlink(entry: string): boolean {
  * informational, not a failure.
  *
  * For any rejected entry this host may still have materialized, also emits a
- * remediation row. A live symlink at `~/.claude/<entry>` points INTO
+ * remediation row, but only for the reasons in {@link PROBABLE_REASONS}: those
+ * are the ones the guard tests after its single-segment check, so the name is
+ * known separator-free before it reaches a `join`. A live symlink at
+ * `~/.claude/<entry>` points INTO
  * `shared/<entry>`, so that row leads with copying the content out and only
  * then removing both: telling the user to delete the repo-side path on its own
  * would destroy the only copy and leave a dangling link behind. With no such
@@ -176,20 +199,19 @@ function reportRejectedSharedDirs(section: DoctorSection, map: PathMap): void {
     return;
   }
   const entries: unknown[] = Array.isArray(raw) ? raw : [];
-  const rejected: unknown[] = [];
+  const probable: string[] = [];
   for (const entry of entries) {
     const rejection = validateSharedDirEntry(entry);
     if (rejection === null) continue;
-    rejected.push(entry);
+    if (typeof entry === 'string' && PROBABLE_REASONS.has(rejection.reason)) probable.push(entry);
     addItem(
       section,
       `${yellow(warnGlyph)} path-map: sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`,
     );
   }
-  if (rejected.length === 0) return;
+  if (probable.length === 0) return;
   const existing = sharedDirNames();
-  for (const entry of rejected) {
-    if (typeof entry !== 'string') continue;
+  for (const entry of probable) {
     if (isLocalSymlink(entry)) {
       addItem(
         section,
