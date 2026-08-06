@@ -666,6 +666,35 @@ describe('reportRejectedSharedDirs', () => {
   );
 
   it.skipIf(isWin)(
+    'probes a trailing-dot entry that inherits reserved, which the cause alone excludes',
+    async () => {
+      // "commands." strips to "commands", the reserved shared/ name win32
+      // would address, and "reserved" is deliberately absent from
+      // PROBABLE_REASONS, so this row can only fire because the spelling is
+      // consulted ahead of the cause on posix. On posix these are two
+      // unrelated directories, nomad manages neither dotted spelling, and
+      // dropping the row leaves the user's only copy behind a link nomad
+      // refuses to restore.
+      const map: PathMap = { projects: {}, sharedDirs: ['commands.'] };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      const target = join(env.testHome, 'claude-nomad', 'shared', 'commands.');
+      mkdirSync(target, { recursive: true });
+      symlinkSync(target, join(env.testHome, '.claude', 'commands.'));
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('cp -RL');
+      expect(out).toContain('"commands."');
+    },
+  );
+
+  it.skipIf(isWin)(
     'never probes a trailing-dot entry on win32, where it addresses a different path',
     async () => {
       // The leftover is created WITH the trailing dot. Creating shared/mytools

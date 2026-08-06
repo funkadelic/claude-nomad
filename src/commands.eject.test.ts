@@ -536,9 +536,12 @@ describe('cmdEject', () => {
   });
 
   it('never enumerates a trailing-dot name on win32, where it addresses a different path', () => {
-    // win32 strips the dots, so "mytools." would operate on shared/mytools and
-    // "..." on the config root itself. Nothing is stranded by excluding them:
-    // such a name cannot exist as a distinct entry there.
+    // win32 strips the dots, so each of these would operate on the shared/
+    // name it addresses rather than the dotted one written. This is the full
+    // set a code review found leaking through a gate keyed on the inherited
+    // cause rather than the spelling, not a representative sample. Nothing is
+    // stranded by excluding them: on win32 none of these spellings exist as a
+    // distinct entry.
     //
     // stubPlatform, not a vi.spyOn getter: the helper installs a DATA
     // descriptor and this file already uses it, so mixing an accessor
@@ -546,20 +549,35 @@ describe('cmdEject', () => {
     const realPlatform = process.platform;
     try {
       stubPlatform('win32');
-      // Every spelling, not just the ones reporting win32-alias. These inherit
-      // reserved / secret-shaped / never-sync from the name they address, and
-      // all three of those causes are unconditionally widened, so a gate keyed
-      // on the cause rather than the spelling lets them straight back in.
       const names = ejectNames({
         projects: {},
         sharedDirs: [
-          'mytools.',
-          '...',
           'commands.',
+          'rules.',
+          'CLAUDE.md.',
+          'my-statusline.cjs.',
           'agents.',
           'hooks.',
-          '.env.',
+          'skills.',
+          'projects.',
+          'hosts.',
+          'extras.',
+          'path-map.json.',
+          'settings.base.json.',
+          'todos.',
           'settings.local.json.',
+          '.credentials.json.',
+          'plans.',
+          'sessions.',
+          '.env.',
+          'id_rsa.',
+          'credentials.',
+          'server.pem.',
+          'nul.',
+          'con.',
+          'com1.',
+          'mytools.',
+          '...',
         ],
       });
       expect(names.filter((n) => n.endsWith('.'))).toEqual([]);
