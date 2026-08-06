@@ -420,6 +420,16 @@ export function cmdEject(
   const map = readMapIfPresent(repoHome);
   const names = ejectNames(map);
 
+  // ejectNames calls allSharedLinks, which has already printed
+  // `... rejected: ...; skipping` for each of these. Eject does NOT skip them,
+  // and that wording is byte-identical to the case where a name genuinely is
+  // dropped and the user's only copy is at risk. Reconcile explicitly so the
+  // safe case and the dangerous one do not read the same.
+  const readopted = names.filter((name) => validateSharedDirEntry(name) !== null);
+  for (const name of readopted) {
+    item(`materializing anyway (this host already has it): ${name}`);
+  }
+
   // Classify every name upfront; abort before any mutation if any are dangling.
   const classifications = new Map<string, NameClass>();
   for (const name of names) {
