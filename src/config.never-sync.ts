@@ -76,14 +76,56 @@ const SECRET_FILE_PATTERNS: RegExp[] = [
 ];
 
 /**
+ * Drop every trailing `.` and every trailing ` ` (U+0020) from `name`, in any
+ * order and any count, giving the name underneath those characters. May
+ * return the empty string when `name` is composed entirely of dots and
+ * spaces.
+ *
+ * A descending index loop rather than a `/[. ]+$/` replace: an anchored
+ * quantifier over a repeated character class is the shape
+ * `sonarjs/super-linear-regex` rejects, and this runs on unvalidated
+ * filesystem input. Mirrors the shape of the private `stripTrailingDots` in
+ * `config.sharedDirs.guard.ts`, which strips dots only for a different
+ * reason (see that module).
+ *
+ * The reason to normalize before a deny-list test: an anchored pattern set
+ * like `SECRET_FILE_PATTERNS` is defeated by a trailing character that costs
+ * an attacker nothing to add, and `.env.` is a credential file by every
+ * meaning that matters to the deny-list even though it is a distinct real
+ * name to `node:fs`. The transform is the identity on any name carrying no
+ * trailing dot or space, so applying it before the test is monotonically
+ * more restrictive: it can only ever cause a name to be denied that was
+ * already denied without the trailing character, never the reverse. This
+ * module takes no imports and must stay a dependency-free leaf.
+ *
+ * @param name A single path segment (basename) to normalize.
+ * @returns `name` with trailing dots and spaces removed, possibly empty.
+ */
+export function stripTrailingDotsAndSpaces(name: string): string {
+  let end = name.length;
+  while (end > 0 && (name[end - 1] === '.' || name[end - 1] === ' ')) end -= 1;
+  return name.slice(0, end);
+}
+
+/**
  * True when `name` matches a credential-bearing filename pattern (see
  * `SECRET_FILE_PATTERNS`). Basename test only; callers pass a single path
  * segment.
  *
+ * Tests the candidate after {@link stripTrailingDotsAndSpaces}, so a
+ * trailing-dot or trailing-space spelling like `.env.` or `server.pem ` is
+ * denied exactly like its plain spelling: see that function's docstring for
+ * the monotonicity argument. `config.sharedDirs.guard.ts` hands this
+ * predicate a name already stripped of trailing dots via its own
+ * `classifyDeniedName`, so the second normalization is the identity there
+ * (that guard's `SAFE_SEGMENT` also rejects any entry containing a space
+ * before this predicate ever runs).
+ *
  * @param name A single path segment (basename) to test.
  */
 export function isSecretFileName(name: string): boolean {
-  return SECRET_FILE_PATTERNS.some((re) => re.test(name));
+  const stripped = stripTrailingDotsAndSpaces(name);
+  return SECRET_FILE_PATTERNS.some((re) => re.test(stripped));
 }
 
 /**
