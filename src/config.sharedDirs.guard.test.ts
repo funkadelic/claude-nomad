@@ -295,10 +295,10 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
     });
 
     // Non-regression: `classifyDeniedName` calls `isSecretFileName` on a name
-    // this guard already stripped of trailing dots and whitespace via the
-    // shared `stripTrailingDotsAndWhitespace` (config.never-sync.ts), so the
-    // second normalization inside `isSecretFileName` is the identity here.
-    // This pins that the full pre-existing reason table still holds after the
+    // this guard already stripped of trailing dots via its own private
+    // `stripTrailingDots`, so the second normalization added to
+    // `isSecretFileName` (config.never-sync.ts) is the identity here. This
+    // pins that the full pre-existing reason table still holds after the
     // predicate underneath changed: `nomad eject` and `nomad doctor` both key
     // remediation off these causes, and a silent relabel would misdirect a
     // filesystem action.
