@@ -38,6 +38,7 @@ jobs:
           permission-pull-requests: write
 
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        id: release
         with:
           # Authenticating release-please via the App (not GITHUB_TOKEN) so
           # PRs it creates trigger the required CI workflows. GITHUB_TOKEN-
@@ -47,3 +48,44 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ steps.release.outputs.release_created }}
+        with:
+          persist-credentials: false
+
+      - name: Sync the release body from the changelog
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          # The body release-please publishes comes from its own generated
+          # notes, not from the file, so a "What's new" section hand-written
+          # onto the release PR's CHANGELOG.md never reaches the release page.
+          # Copying the file's own section over it makes CHANGELOG.md the one
+          # place that text is ever written.
+          #
+          # Matched with index() rather than a regex because the heading
+          # carries literal brackets, and stopping at the next "## [" is what
+          # keeps this to a single version's section. This runs on the
+          # checkout above, which is the release PR's merge commit, so the
+          # hand-written section is already present in the file.
+          awk -v ver="$VERSION" '
+            index($0, "## [" ver "]") == 1 { found = 1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+          # A section that is missing or blank would otherwise replace a
+          # correct generated body with nothing, which is worse than doing
+          # nothing at all. The release and its tag are both published and
+          # intact by this point, so only the notes would be stale; this fails
+          # the run to make that visible rather than passing quietly.
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::No CHANGELOG.md section found for ${VERSION}; release body left as generated."
+            exit 1
+          fi
+
+          gh release edit "$TAG_NAME" --notes-file release-notes.md
