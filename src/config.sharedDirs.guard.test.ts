@@ -293,6 +293,36 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
       expect(validateSharedDirEntry('mytools.')?.reason).toBe('win32-alias');
       expect(validateSharedDirEntry('../escape')?.reason).toBe('not-a-segment');
     });
+
+    // Non-regression: `classifyDeniedName` calls `isSecretFileName` on a name
+    // this guard already stripped of trailing dots via its own private
+    // `stripTrailingDots`, so the second normalization added to
+    // `isSecretFileName` (config.never-sync.ts) is the identity here. This
+    // pins that the full pre-existing reason table still holds after the
+    // predicate underneath changed: `nomad eject` and `nomad doctor` both key
+    // remediation off these causes, and a silent relabel would misdirect a
+    // filesystem action.
+    it('reports the identical pre-existing reason for every classified entry after the predicate underneath changed', () => {
+      const expected: [string, SharedDirRejectionReason][] = [
+        ['.env.', 'secret-shaped'],
+        ['id_rsa.', 'secret-shaped'],
+        ['credentials.', 'secret-shaped'],
+        ['server.pem.', 'secret-shaped'],
+        ['.npmrc.', 'secret-shaped'],
+        ['settings.local.json.', 'never-sync'],
+        ['.credentials.json.', 'never-sync'],
+        ['CLAUDE.md.', 'reserved'],
+        ['commands.', 'reserved'],
+        ['nul.', 'reserved'],
+        ['mytools.', 'win32-alias'],
+        ['foo.', 'win32-alias'],
+        ['mytools..', 'win32-alias'],
+        ['...', 'win32-alias'],
+      ];
+      for (const [value, reason] of expected) {
+        expect(validateSharedDirEntry(value)?.reason).toBe(reason);
+      }
+    });
   });
 });
 

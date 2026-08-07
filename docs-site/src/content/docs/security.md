@@ -55,9 +55,11 @@ documented here as accepted trade-offs rather than defended in code.
   along with common credential filetypes matched by name (dotenv files, `*.pem`/`*.key` private
   keys, `.netrc`/`.npmrc` auth), is hard-blocked from crossing the sync boundary even when nested
   inside an opted-in `shared/extras/` tree; the name match is case-insensitive, so a case-folded
-  variant cannot slip past on macOS. A secret dropped under a synced `.planning/` directory cannot
-  ride through. The `.claude/` extra (a
-  project's own `<repo>/.claude/` directory, not the global `~/.claude/`) is filtered more strictly
+  variant cannot slip past on macOS, and it also ignores trailing dots and whitespace (spaces,
+  tabs, newlines), so a spelling like `.env.` or `.env` with a trailing tab is refused exactly
+  like `.env`. A secret dropped under a synced `.planning/`
+  directory cannot ride through. The `.claude/` extra (a project's own `<repo>/.claude/` directory,
+  not the global `~/.claude/`) is filtered more strictly
   still: it is checked against the full `NEVER_SYNC` set plus `projects/`, so opting it in strips
   session transcripts and every per-host state directory on push, leaving only config
   (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`, `rules/`). But the broader principle

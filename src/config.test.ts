@@ -508,6 +508,87 @@ describe('isSecretFileName', () => {
       expect(isSecretFileName(name)).toBe(false);
     },
   );
+
+  // A trailing dot or whitespace character is a trivially-cheap evasion of
+  // the `$`-anchored SECRET_FILE_PATTERNS. `.env.` is not the same file as
+  // `.env`, but it is a credential file by every meaning that matters to
+  // this deny-list; the same is true of a trailing tab or newline, which are
+  // legal POSIX basenames just like a trailing space.
+  it.each([
+    '.env.',
+    '.env..',
+    '.env ',
+    '.env. . ',
+    '.env\t',
+    '.env\n',
+    '.env\r',
+    'id_rsa.',
+    'server.pem.',
+    'SERVER.PEM ', // case-folded plus trailing space
+    '.npmrc.',
+    'credentials.',
+    '.git-credentials.',
+  ])('flags trailing-dot or trailing-whitespace credential name %j', async (name) => {
+    const { isSecretFileName } = await import('./config.ts');
+    expect(isSecretFileName(name)).toBe(true);
+  });
+
+  // Proves the transform did not overreach: these names carry a trailing dot
+  // but the name underneath is still not credential-shaped, and `...`
+  // normalizes to the empty string, which must not match any pattern.
+  it.each(['settings.json.', 'notes.md.', 'environment.ts.', 'README.', 'key.', '.', '...'])(
+    'does not flag %j, whose underlying name is still not credential-shaped',
+    async (name) => {
+      const { isSecretFileName } = await import('./config.ts');
+      expect(isSecretFileName(name)).toBe(false);
+    },
+  );
+
+  it('never admits a name it previously denied, for any suffix of dots and whitespace', async () => {
+    const { isSecretFileName, stripTrailingDotsAndWhitespace } = await import('./config.ts');
+    const bases = [
+      '.env',
+      'server.pem',
+      'id_rsa',
+      'credentials',
+      '.npmrc',
+      'settings.json',
+      'notes.md',
+      'README',
+      'key',
+    ];
+    for (const base of bases) {
+      const before = isSecretFileName(base);
+      for (const suffix of ['.', '..', ' ', '. ', ' .. ', '\t', '\n']) {
+        const after = isSecretFileName(base + suffix);
+        // The property: denial is preserved, and the suffixed name agrees
+        // with the name underneath it. Both halves of `bases` (credential
+        // and non-credential) now assert something for every suffix.
+        expect(after).toBe(before);
+        expect(stripTrailingDotsAndWhitespace(base + suffix)).toBe(base);
+      }
+    }
+  });
+});
+
+describe('stripTrailingDotsAndWhitespace', () => {
+  it.each([
+    ['keep.md', 'keep.md'], // no trailing character: identity
+    ['.env.', '.env'], // one dot
+    ['.env...', '.env'], // several dots
+    ['.env ', '.env'], // one space
+    ['.env. . ', '.env'], // mixed dots and spaces
+    ['.env\t', '.env'], // trailing tab
+    ['.env\n', '.env'], // trailing newline
+    ['.env\r', '.env'], // trailing carriage return
+    ['.env ', '.env'], // trailing non-breaking space
+    ['...', ''], // entirely dots and spaces
+    ['   ', ''], // entirely spaces
+    ['', ''], // empty string input
+  ])('strips %j to %j', async (input, expected) => {
+    const { stripTrailingDotsAndWhitespace } = await import('./config.ts');
+    expect(stripTrailingDotsAndWhitespace(input)).toBe(expected);
+  });
 });
 
 describe('isDeniedName', () => {
@@ -530,4 +611,12 @@ describe('isDeniedName', () => {
     const { isDeniedName, ALWAYS_NEVER_SYNC } = await import('./config.ts');
     expect(isDeniedName(ALWAYS_NEVER_SYNC, 'settings.json')).toBe(false);
   });
+
+  it.each(['settings.local.json.', 'Settings.Local.JSON.', 'deploy.pem.'])(
+    'matches a trailing-dot spelling of a denied name: %s',
+    async (name) => {
+      const { isDeniedName, ALWAYS_NEVER_SYNC } = await import('./config.ts');
+      expect(isDeniedName(ALWAYS_NEVER_SYNC, name)).toBe(true);
+    },
+  );
 });

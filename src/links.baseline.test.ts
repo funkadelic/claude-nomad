@@ -273,6 +273,28 @@ describe('shared-links baseline', () => {
       expect(scan.files).toEqual({});
       expect(scan.declined).toEqual(['commands/settings.local.json']);
     });
+
+    // Runs on every platform, win32 included. A trailing-dot basename does
+    // survive `node:fs` on the windows-latest runner (a probe wrote
+    // `commands/.env.` there and read it back verbatim), so this class is
+    // reachable on native Windows and the case must not be skipped on the one
+    // platform its threat model is about. The assertion doubles as the
+    // standing record of that ground truth: on win32 it can only pass if the
+    // name is still `.env.` when the walk reads it back. An ordinary file
+    // proves `files` still records what it should; `declined` (not a silent
+    // absence) is what stops a later read of that absence from being taken as
+    // a user deletion. No `stubPlatform('win32')` here: `enumerateLocalSharedScan`
+    // has no platform branch, so stubbing it (as the sibling tests above do
+    // for `writeSharedBaseline`, which does branch) would only misstate what
+    // this test exercises.
+    it('declines a nested trailing-dot credential name instead of recording it', async () => {
+      writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
+      writeFileSync(join(claudeDir, 'commands', '.env.'), 'TOKEN=secret\n');
+      const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
+      const scan = enumerateLocalSharedScan({ projects: {} });
+      expect(Object.keys(scan.files)).toEqual(['commands/a.md']);
+      expect(scan.declined).toEqual(['commands/.env.']);
+    });
   });
 
   describe('buildSharedBaseline', () => {

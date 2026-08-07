@@ -5,6 +5,7 @@ import {
   ALWAYS_NEVER_SYNC,
   CLAUDE_EXTRA_NEVER_SYNC,
   HOST,
+  isClaudeExtraName,
   isDeniedName,
   repoHome,
   SUPPORTED_EXTRAS,
@@ -254,11 +255,16 @@ export function copyExtrasFileSkipDiverged(src: string, dst: string): void {
  * not false-blocked by the broader `.claude` denylist. Mirrored by `blockSetFor` in
  * `commands.push.allowlist.ts` so the copy filter and the push gate agree.
  *
+ * The `.claude` comparison runs through `isClaudeExtraName` (case-insensitive,
+ * trailing dot/whitespace normalized) rather than a raw `===`, matching
+ * `blockSetFor` in `commands.push.allowlist.ts` so neither side of the
+ * boundary can be downgraded by a spelling variant.
+ *
  * @param dirname - The extra's whitelisted name (e.g. `.claude`, `.planning`).
  * @returns The set of basenames to skip during the copy.
  */
 export function extrasDenySet(dirname: string): Set<string> {
-  return dirname === '.claude' ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+  return isClaudeExtraName(dirname) ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
 }
 
 /**
