@@ -1,10 +1,20 @@
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { failGlyph, infoGlyph, okGlyph, warnGlyph } from './color.ts';
 import { type PathMap } from './config.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 import {
   type Env,
   joinedLog,
@@ -16,6 +26,11 @@ import {
 // 0o000 still allows readdirSync there, so this EACCES-injection assertion
 // cannot hold on win32.
 const isWin = process.platform === 'win32';
+
+// macOS and Windows default to case-insensitive volumes, where `shared/Plans`
+// and `shared/plans` are ONE directory, so the leftover probe finds the entry
+// and its row is correct. The negative assertion only holds where they are two.
+const caseInsensitiveFs = process.platform === 'darwin' || isWin;
 
 describe('cmdDoctor path-encoding collision detection', () => {
   let originalHome: string | undefined;
@@ -417,4 +432,566 @@ describe('reportPathMap current-host path missing on disk', () => {
     expect(sec.items.join('\n')).toContain('path-map: myproj local path missing');
     expect(process.exitCode).toBe(exitBefore);
   });
+});
+
+describe('reportRejectedSharedDirs', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', writeSettings: true });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('prints a top-level WARN row naming a rejected entry and its reason, visible in the default compact view', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env', 'get-shit-done'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { cmdDoctor } = await import('./commands.doctor.ts');
+    cmdDoctor();
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('".env"');
+    expect(out).toContain('credential-shaped');
+    expect(out).toContain(warnGlyph);
+    expect(out).not.toContain('get-shit-done');
+  });
+
+  it('emits the rejection as a top-level item, not a nested child row', async () => {
+    // Structural, not textual: the compact filter keeps a row for its glyph
+    // whether or not it is nested, so only the leading-tab child marker
+    // distinguishes the two. A child row would outlive its passing parent and
+    // render its connector under an unrelated entry.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const row = sec.items.find((it) => it.includes('sharedDirs entry'));
+    expect(row).toBeDefined();
+    expect(row?.startsWith('\t')).toBe(false);
+  });
+
+  it('leaves process.exitCode untouched when a sharedDirs entry is rejected', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    process.exitCode = 0;
+    reportPathMap(sec);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('names an existing shared/.env leftover with a remove-by-hand instruction, and does not remove it', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const offenderPath = join(env.testHome, 'claude-nomad', 'shared', '.env');
+    writeFileSync(offenderPath, 'SECRET=1\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('shared/ entry ".env" exists in the repo working tree');
+    expect(out).toContain('remove it by hand');
+    expect(existsSync(offenderPath)).toBe(true);
+  });
+
+  it('leads with copy-the-content-out when ~/.claude/<name> is still a symlink into shared/', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['credentials'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const target = join(env.testHome, 'claude-nomad', 'shared', 'credentials');
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'token.txt'), 'SECRET=1\n');
+    symlinkSync(target, join(env.testHome, '.claude', 'credentials'));
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('entry "credentials" is a symlink under ~/.claude/');
+    expect(out).toContain('cp -RL');
+    // The delete-only row must NOT also fire: following it destroys the copy.
+    expect(out).not.toContain('remove it by hand');
+    expect(existsSync(join(target, 'token.txt'))).toBe(true);
+  });
+
+  it('says leave-it-alone for a symlink pointing outside shared/, and still reports the leftover', async () => {
+    // A user's own symlink at a name that also appears in sharedDirs. Claiming
+    // it "points into shared/" and telling them to remove both would aim the
+    // instruction at content nomad never owned. The repo-side leftover is a
+    // separate fact and must still be reported, not shadowed by the link.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['credentials'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const foreign = join(env.testHome, 'password-store');
+    mkdirSync(foreign, { recursive: true });
+    writeFileSync(join(foreign, 'mine.gpg'), 'user data\n');
+    symlinkSync(foreign, join(env.testHome, '.claude', 'credentials'));
+    // A genuine repo-side leftover under the same name.
+    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'credentials'), { recursive: true });
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('pointing OUTSIDE shared/');
+    expect(out).not.toContain('cp -RL');
+    expect(out).toContain('exists in the repo working tree');
+    expect(existsSync(join(foreign, 'mine.gpg'))).toBe(true);
+  });
+
+  it.skipIf(caseInsensitiveFs)(
+    'does not name an unrelated directory that merely differs in case',
+    async () => {
+      // On a case-sensitive filesystem shared/Plans and shared/plans are two
+      // different directories, so a folded match would name a real but
+      // unrelated one and tell the user to delete it. The probe tests the
+      // entry's own path, so the filesystem decides: no row here, and on macOS
+      // or NTFS (where they are one directory) the row appears instead.
+      const map: PathMap = {
+        projects: {},
+        sharedDirs: ['Plans'],
+      };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'plans'), { recursive: true });
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('sharedDirs entry "Plans" rejected');
+      expect(out).not.toContain('exists in the repo working tree');
+    },
+  );
+
+  it('names the leftover when the entry resolves on this filesystem', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['Plans'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'Plans'), { recursive: true });
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).toContain('shared/ entry "Plans" exists in the repo working tree');
+  });
+
+  it('never tells the user to remove anything when the local link is dangling', async () => {
+    // Whether the link resolves and whether shared/<entry> exists are
+    // independent facts. A link left by a moved checkout dangles while the
+    // repo-side copy is the only one left, so the delete row here would
+    // destroy it.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['credentials'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const onlyCopy = join(env.testHome, 'claude-nomad', 'shared', 'credentials');
+    mkdirSync(onlyCopy, { recursive: true });
+    writeFileSync(join(onlyCopy, 'token.txt'), 'THE ONLY COPY\n');
+    symlinkSync(
+      join(env.testHome, 'gone-old-checkout', 'shared', 'credentials'),
+      join(env.testHome, '.claude', 'credentials'),
+    );
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('DANGLING symlink');
+    expect(out).not.toContain('remove it by hand');
+    expect(out).not.toContain('cp -RL');
+    expect(existsSync(join(onlyCopy, 'token.txt'))).toBe(true);
+  });
+
+  it('probes a trailing-dot entry, where it is a real distinct name', async () => {
+    const map: PathMap = { projects: {}, sharedDirs: ['mytools.'] };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'mytools.'), { recursive: true });
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).toContain(
+      'shared/ entry "mytools." exists in the repo working tree',
+    );
+  });
+
+  // symlinkSync needs Developer Mode or admin on native Windows, unrelated to
+  // the assertion under test, so this one skips there while the mkdirSync-only
+  // trailing-dot tests around it do not.
+  it.skipIf(isWin)(
+    'probes a trailing-dot entry that inherits reserved, which the cause alone excludes',
+    async () => {
+      // "commands." strips to "commands", the reserved shared/ name, and
+      // "reserved" is deliberately absent from PROBEABLE_REASONS, so this row
+      // can only fire because the spelling is consulted ahead of the cause.
+      // These are two unrelated directories on every platform this process
+      // touches, nomad manages neither dotted spelling, and dropping the row
+      // leaves the user's only copy behind a link nomad refuses to restore.
+      const map: PathMap = { projects: {}, sharedDirs: ['commands.'] };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      const target = join(env.testHome, 'claude-nomad', 'shared', 'commands.');
+      mkdirSync(target, { recursive: true });
+      symlinkSync(target, join(env.testHome, '.claude', 'commands.'));
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('cp -RL');
+      expect(out).toContain('"commands."');
+    },
+  );
+
+  it('also probes a trailing-dot entry on win32, where it is a real distinct name', async () => {
+    // The leftover is created WITH the trailing dot. Creating shared/mytools
+    // instead would make this pass whether or not the gate exists, since on
+    // the filesystem this runs on the two are different directories and
+    // neither spelling would be found: the assertion has to be able to fail.
+    const realPlatform = process.platform;
+    try {
+      stubPlatform('win32');
+      // Includes spellings that inherit never-sync and secret-shaped, both of
+      // which ARE probeable causes, plus one (reserved, via "commands." in
+      // the sibling test) that is not: none of these are gated by platform.
+      const map: PathMap = {
+        projects: {},
+        sharedDirs: ['mytools.', '.env.', 'settings.local.json.'],
+      };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      for (const name of ['mytools.', '.env.', 'settings.local.json.']) {
+        mkdirSync(join(env.testHome, 'claude-nomad', 'shared', name), { recursive: true });
+      }
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('exists in the repo working tree');
+    } finally {
+      stubPlatform(realPlatform);
+    }
+  });
+
+  // Settles on the runner what cannot be observed from posix: confirmed by a
+  // code review (see 73-SECURITY.md, T-73-01/T-73-04) that Node's fs bindings
+  // prefix an absolute win32 path with `\\?\` before every syscall this file
+  // makes (`ToNamespacedPath`, unconditional, no MAX_PATH check), which
+  // disables the legacy DOS-namespace normalization that would otherwise
+  // strip a trailing dot. So win32 never aliases "aliasprobe." to
+  // "aliasprobe" through any call this codebase makes, and both are real,
+  // distinct, independently creatable directories. If either assertion
+  // fails, this empirical premise no longer holds and mayJoinRefusedEntry's
+  // unconditional admit needs re-examining.
+  it.runIf(isWin)('confirms win32 does NOT alias a trailing-dot path to its dotless name', () => {
+    // Same syscall the code under test uses. `existsSync` would answer a
+    // different question, so a result here would not license the lstat-based
+    // probe in hasSharedLeftover.
+    const base = join(env.testHome, 'claude-nomad', 'shared');
+    mkdirSync(join(base, 'aliasprobe'), { recursive: true });
+    expect(lstatSync(join(base, 'aliasprobe.'), { throwIfNoEntry: false })).toBeUndefined();
+    mkdirSync(join(base, 'aliasprobe.'), { recursive: true });
+    expect(lstatSync(join(base, 'aliasprobe.'), { throwIfNoEntry: false })).toBeDefined();
+    // Both are real, independently listed entries, not one name folded into
+    // the other. readdirSync(base) also carries this fixture's pre-existing
+    // structural files (e.g. settings.base.json), so assert containment
+    // rather than an exact listing.
+    const entries = readdirSync(base);
+    expect(entries).toContain('aliasprobe');
+    expect(entries).toContain('aliasprobe.');
+  });
+
+  it.skipIf(isWin)(
+    'reports a leftover stored as a dangling symlink, which existsSync would miss',
+    async () => {
+      const map: PathMap = { projects: {}, sharedDirs: ['.env'] };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      // A leftover whose own target is gone is still a leftover to clear.
+      symlinkSync(
+        join(env.testHome, 'vanished'),
+        join(env.testHome, 'claude-nomad', 'shared', '.env'),
+      );
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      expect(sec.items.join('\n')).toContain('exists in the repo working tree');
+    },
+  );
+
+  it.skipIf(isWin)(
+    'calls a live outside link foreign, not dangling, when shared/ is absent',
+    async () => {
+      // The link resolves; it is shared/ that is gone. Reporting it dangling
+      // would tell the user a live link is dead and invite removing it.
+      const map: PathMap = { projects: {}, sharedDirs: ['credentials'] };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      const elsewhere = join(env.testHome, 'password-store');
+      mkdirSync(elsewhere, { recursive: true });
+      symlinkSync(elsewhere, join(env.testHome, '.claude', 'credentials'));
+      rmSync(join(env.testHome, 'claude-nomad', 'shared'), { recursive: true, force: true });
+
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('pointing OUTSIDE shared/');
+      expect(out).not.toContain('DANGLING');
+      expect(existsSync(elsewhere)).toBe(true);
+    },
+  );
+
+  it('never emits a remediation row for a reserved name nomad manages right now', async () => {
+    // ~/.claude/commands is a live symlink into shared/commands, which is
+    // tracked and synced to every host. "remove both" would delete it fleet-wide.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['commands'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const managed = join(env.testHome, 'claude-nomad', 'shared', 'commands');
+    mkdirSync(managed, { recursive: true });
+    writeFileSync(join(managed, 'shipped.md'), '# fleet content\n');
+    symlinkSync(managed, join(env.testHome, '.claude', 'commands'));
+
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('sharedDirs entry "commands" rejected');
+    expect(out).not.toContain('remove both');
+    expect(out).not.toContain('remove it by hand');
+  });
+
+  it('falls back to the delete-only row when the local probe cannot stat the path', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    writeFileSync(join(env.testHome, 'claude-nomad', 'shared', '.env'), 'SECRET=1\n');
+    // Replace ~/.claude with a regular file so the lstat of a path THROUGH it
+    // raises instead of reporting absence. The tolerant probe must swallow it.
+    rmSync(join(env.testHome, '.claude'), { recursive: true, force: true });
+    writeFileSync(join(env.testHome, '.claude'), 'not a directory\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    expect(() => reportPathMap(sec)).not.toThrow();
+    const out = sec.items.join('\n');
+    expect(out).toContain('exists in the repo working tree');
+    // Must name the row that actually exists: "is a symlink under ~/.claude/".
+    // Asserting on "is a symlink into" would pass no matter what, since no row
+    // uses that wording.
+    expect(out).not.toContain('is a symlink under');
+  });
+
+  it('escapes an ANSI-carrying rejected name instead of emitting it raw', async () => {
+    // path-map.json is a trust boundary and its values may hold escape bytes,
+    // which would let a crafted name rewrite the WARN rows around it. The
+    // rejection row is the only row such a name reaches: an escape byte fails
+    // the single-segment check, and a not-a-segment entry is never probed, so
+    // the remediation rows below cannot carry one at all.
+    const evil = '\u001b[2Kevil';
+    const map = { projects: {}, sharedDirs: [evil] };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('rejected: not a single path segment');
+    expect(out).toContain('\\u001b[2Kevil');
+    expect(out).not.toContain(evil);
+  });
+
+  it('does not print an offender row when the rejected name is absent from shared/', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['.env'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('sharedDirs entry ".env" rejected');
+    expect(out).not.toContain('exists in the repo working tree');
+  });
+
+  it('never probes a traversing entry, so no remediation row claims a path outside ~/.claude/', async () => {
+    // "../escape" is rejected as not-a-segment, and join() normalizes "..", so
+    // probing it would stat a sibling of ~/.claude/ and report the answer as
+    // though it described the configured name. Only reasons the guard tests
+    // AFTER its single-segment check are probeable.
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['../escape'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const outside = join(env.testHome, 'outside-target');
+    mkdirSync(outside, { recursive: true });
+    symlinkSync(outside, join(env.testHome, 'escape'));
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain('sharedDirs entry "../escape" rejected');
+    expect(out).not.toContain('is a symlink under ~/.claude/');
+    expect(out).not.toContain('exists in the repo working tree');
+  });
+
+  it('stays silent when sharedDirs holds only valid entries', async () => {
+    const map: PathMap = {
+      projects: {},
+      sharedDirs: ['get-shit-done'],
+    };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).not.toContain('sharedDirs entry');
+  });
+
+  it('stays silent when sharedDirs is absent', async () => {
+    const map: PathMap = { projects: {} };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).not.toContain('sharedDirs entry');
+  });
+
+  it('names a non-array sharedDirs in its own row instead of walking it per character', async () => {
+    const map = { projects: {}, sharedDirs: 'not-an-array' };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    expect(() => reportPathMap(sec)).not.toThrow();
+    const out = sec.items.join('\n');
+    expect(out).toContain('sharedDirs is not an array (string)');
+    expect(out).not.toContain('sharedDirs entry');
+  });
+
+  it('names a non-iterable sharedDirs without throwing', async () => {
+    const map = { projects: {}, sharedDirs: 42 };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    expect(() => reportPathMap(sec)).not.toThrow();
+    expect(sec.items.join('\n')).toContain('sharedDirs is not an array (number)');
+  });
+
+  it('tolerates non-string sharedDirs members, naming each as not a string, without throwing', async () => {
+    const map = { projects: {}, sharedDirs: [42, null, { a: 1 }] };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    expect(() => reportPathMap(sec)).not.toThrow();
+    const out = sec.items.join('\n');
+    expect(out).toContain('42');
+    expect(out).toContain('null');
+    expect(out.match(/not a string/g) ?? []).toHaveLength(3);
+  });
+
+  // Root reads through mode 0o000, so the catch branch this test exists for
+  // would never execute under a root runner (common in containers) and could
+  // silently stop being covered without the patch gate noticing.
+  it.skipIf(isWin || process.getuid?.() === 0)(
+    'tolerates an unreadable shared/ directory: rejection rows still print, offender probe is skipped',
+    async () => {
+      const map: PathMap = {
+        projects: {},
+        sharedDirs: ['.env'],
+      };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      const sharedDir = join(env.testHome, 'claude-nomad', 'shared');
+      // A real leftover, so there IS an offender row to suppress. Without it
+      // the assertion below passes whether or not the probe was skipped.
+      writeFileSync(join(sharedDir, '.env'), 'SECRET=1\n');
+      chmodSync(sharedDir, 0o000);
+      try {
+        const { section: makeSection } = await import('./commands.doctor.format.ts');
+        const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+        const sec = makeSection('Path map');
+        expect(() => reportPathMap(sec)).not.toThrow();
+        const rendered = sec.items.join('\n');
+        expect(rendered).toContain('sharedDirs entry ".env" rejected');
+        expect(rendered).not.toContain('exists in the repo working tree');
+      } finally {
+        chmodSync(sharedDir, 0o755);
+      }
+    },
+  );
 });

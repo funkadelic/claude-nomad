@@ -176,10 +176,14 @@ subagent directory from the staged tree of `~/claude-nomad/`. Idempotent; the lo
 Back up, then move a pre-existing `~/.claude/<name>` directory into `shared/<name>`, recreate the
 symlink so this host keeps working, and stage the result for push. `<name>` must already be listed
 in `SHARED_LINKS` or in the `sharedDirs` field of `path-map.json`; adopt is a mover, not a config
-editor, so it never writes `path-map.json` itself. On native Windows adopt recreates the name as a
-real copy instead of a symlink (the win32 copy-sync modality). There a name whose `shared/<name>`
-counterpart already exists is reported as already adopted and skipped (with a `nomad pull` hint to
-refresh the local copy), where macOS, Linux, and WSL2 would refuse with a would-clobber error.
+editor, so it never writes `path-map.json` itself. A credential-shaped `<name>` is refused
+outright, before the membership check and before `--dry-run` takes effect: `.env`, `id_rsa`,
+`credentials`, `*.pem`, `*.key` and similar shapes stop the command with an error and exit code 1,
+since adopting one would move a secret into the sync repo. On native Windows adopt recreates the
+name as a real copy instead of a symlink (the win32 copy-sync modality). There a name whose
+`shared/<name>` counterpart already exists is reported as already adopted and skipped (with a
+`nomad pull` hint to refresh the local copy), where macOS, Linux, and WSL2 would refuse with a
+would-clobber error.
 
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
@@ -191,9 +195,12 @@ refresh the local copy), where macOS, Linux, and WSL2 would refuse with a would-
 
 Replace every managed `~/.claude/` symlink with a real dereferenced copy so your setup keeps
 working after you delete the `~/claude-nomad/` checkout and uninstall the CLI. The set of managed
-names is the same union of `SHARED_LINKS` and validated `sharedDirs` entries that `nomad pull`
-manages (the authoritative list is `allSharedLinks` in `src/config.ts`). Names that are already
-real files or directories are reported as skipped and left unchanged; absent names are also
+names is the union of `SHARED_LINKS` and validated `sharedDirs` entries that `nomad pull` manages
+(the authoritative list is `allSharedLinks` in `src/config.ts`), widened with anything an older
+version of nomad already linked under a looser rule. That widening is deliberate: eject
+materializes what this host already has, so a name sync now refuses is still dereferenced into a
+real copy rather than left as a symlink into a checkout you are about to delete. Names that are
+already real files or directories are reported as skipped and left unchanged; absent names are also
 skipped. A managed name that is a symlink pointing outside the sync repo's `shared/` directory is
 skipped as not nomad-managed and left untouched, so eject only materializes links it owns. A
 dangling symlink (the target is missing) causes the whole command to abort before any

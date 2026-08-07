@@ -6,6 +6,7 @@ import {
   isDeniedName,
   NEVER_SYNC,
   PUSH_ALLOWED_STATIC,
+  sharedDirEntries,
   SUPPORTED_EXTRAS,
   type PathMap,
 } from './config.ts';
@@ -176,7 +177,13 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
         .filter((n) => extrasWhitelist.includes(n))
         .flatMap((n) => [`shared/extras/${l}/${n}`, `shared/extras/${l}/${n}/`]),
     ),
-    ...(map.sharedDirs ?? []).filter((d) => isValidSharedDir(d)).map((d) => `shared/${d}/`),
+    // Predicate passed by reference, not wrapped in an arrow: `isValidSharedDir`
+    // is a type guard, and an arrow returning its result is just a boolean, so
+    // wrapping it would leave `d` as `unknown` and let a non-string reach the
+    // template literal as "[object Object]".
+    ...sharedDirEntries(map)
+      .filter(isValidSharedDir)
+      .map((d) => `shared/${d}/`),
   ];
   const neverSyncHits: string[] = [];
   const violations: string[] = [];

@@ -453,6 +453,19 @@ describe('applySharedLinks auto-move', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
+  it.skipIf(isWin)('never creates a symlink for a credential-shaped sharedDirs entry', async () => {
+    // The consumer-level half of the guard: unit tests prove the guard
+    // rejects ".env", this proves applySharedLinks does not then materialize
+    // ~/.claude/.env, which is the behavior that protects the user.
+    mkdirSync(join(sharedDir, '.env'), { recursive: true });
+    writeFileSync(join(sharedDir, '.env', 'token'), 'SECRET=1\n');
+
+    const { applySharedLinks } = await import('./links.ts');
+    applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['.env'] });
+
+    expect(existsSync(join(claudeDir, '.env'))).toBe(false);
+  });
+
   it.skipIf(isWin)(
     'backs up a pre-existing real DIR and replaces it with a symlink in one call (commands)',
     async () => {

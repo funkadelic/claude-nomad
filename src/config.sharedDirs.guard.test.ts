@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { assertSafeLogical, isValidSharedDir } from './config.sharedDirs.guard.ts';
+import {
+  assertSafeLogical,
+  isValidSharedDir,
+  mayJoinRefusedEntry,
+  validateSharedDirEntry,
+  type SharedDirRejectionReason,
+} from './config.sharedDirs.guard.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 describe('assertSafeLogical (path-map logical key traversal guard)', () => {
   it('accepts a well-formed alphanumeric logical name', () => {
@@ -195,6 +202,232 @@ describe('isValidSharedDir (sharedDirs path-traversal and collision guard)', () 
 
     it('rejects "path-map.json" (reserved shared/ file)', () => {
       expect(isValidSharedDir('path-map.json')).toBe(false);
+    });
+  });
+
+  describe('credential-shaped name rejection', () => {
+    it('rejects ".env"', () => {
+      expect(isValidSharedDir('.env')).toBe(false);
+    });
+
+    it('rejects "id_rsa"', () => {
+      expect(isValidSharedDir('id_rsa')).toBe(false);
+    });
+
+    it('rejects "credentials"', () => {
+      expect(isValidSharedDir('credentials')).toBe(false);
+    });
+  });
+});
+
+describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir)', () => {
+  describe('success', () => {
+    it('returns null for a valid alphanumeric entry', () => {
+      expect(validateSharedDirEntry('get-shit-done')).toBeNull();
+    });
+
+    it('returns null for a second valid entry (dots and underscores)', () => {
+      expect(validateSharedDirEntry('my.tool_dir')).toBeNull();
+    });
+  });
+
+  describe('not-a-string', () => {
+    it.each([42, null, undefined, { nested: 'x' }])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('not-a-string');
+    });
+  });
+
+  describe('not-a-segment', () => {
+    it.each(['foo/bar', '..', '.', '', 'foo\\bar', 'foo bar'])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('not-a-segment');
+    });
+
+    it('still accepts an interior dot', () => {
+      expect(validateSharedDirEntry('my.tool_dir')).toBeNull();
+    });
+  });
+
+  // A trailing-dot name is refused because git for Windows cannot create or
+  // check it out (core.protectNTFS), not because it silently addresses a
+  // different path: it stays a distinct, real name on every platform.
+  // What differs is the cause reported, which must describe the name
+  // underneath the dots, because consumers key remediation and enumeration
+  // off it.
+  describe('trailing-dot aliases', () => {
+    // Load-bearing: these carried `win32-alias` as their ONLY label until the
+    // guard started classifying the name underneath. Doctor excludes reserved
+    // names from its filesystem probe, so a mislabelled `.env.` lost the one
+    // row that named it, and a mislabelled `commands.` gained a row telling
+    // the user to delete managed content.
+    it.each([
+      ['.env.', 'secret-shaped'],
+      ['id_rsa.', 'secret-shaped'],
+      ['credentials.', 'secret-shaped'],
+      ['server.pem.', 'secret-shaped'],
+      ['.npmrc.', 'secret-shaped'],
+      ['settings.local.json.', 'never-sync'],
+      ['.credentials.json.', 'never-sync'],
+      ['CLAUDE.md.', 'reserved'],
+      ['commands.', 'reserved'],
+      ['nul.', 'reserved'],
+    ])('%p inherits the cause of the name it addresses: %s', (value, reason) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe(reason);
+    });
+
+    // Only when the name underneath is denied by nothing else is the trailing
+    // dot itself the whole objection.
+    it.each(['mytools.', 'foo.', 'mytools..', '...'])(
+      'reports %p as win32-alias, since nothing else denies the name underneath',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('win32-alias');
+      },
+    );
+
+    it('names the trailing dot in the win32-alias message', () => {
+      expect(validateSharedDirEntry('mytools.')?.message).toContain('trailing-dot');
+    });
+
+    // Load-bearing: eject widens on win32-alias and must never widen on the
+    // traversal cause, or it would join an escaping name into a path.
+    it('is a distinct reason from not-a-segment, which eject must not widen', () => {
+      expect(validateSharedDirEntry('mytools.')?.reason).toBe('win32-alias');
+      expect(validateSharedDirEntry('../escape')?.reason).toBe('not-a-segment');
+    });
+  });
+});
+
+describe('mayJoinRefusedEntry (shared join-safety policy for refused entries)', () => {
+  const ANY: ReadonlySet<SharedDirRejectionReason> = new Set([
+    'never-sync',
+    'reserved',
+    'secret-shaped',
+    'win32-alias',
+  ]);
+  const realPlatform = process.platform;
+  afterEach(() => stubPlatform(realPlatform));
+
+  // The ordering trap this function exists to hold: a traversal that also ends
+  // in a dot satisfies the alias test, so an alias check placed before the
+  // safety check answers true for it and hands `join` an escaping string.
+  it.each(['../escape.', 'foo/bar.', '..'])('never joins the traversal shape %p', (entry) => {
+    const rejection = validateSharedDirEntry(entry);
+    expect(rejection).not.toBeNull();
+    for (const platform of ['linux', 'win32'] as const) {
+      stubPlatform(platform);
+      expect(mayJoinRefusedEntry(entry, rejection!.reason, ANY)).toBe(false);
+    }
+  });
+
+  it.each(['mytools.', 'commands.', '.env.', '...'])(
+    'joins the trailing-dot name %p on every platform',
+    (entry) => {
+      const reason = validateSharedDirEntry(entry)!.reason;
+      for (const platform of ['linux', 'win32'] as const) {
+        stubPlatform(platform);
+        expect(mayJoinRefusedEntry(entry, reason, ANY)).toBe(true);
+      }
+    },
+  );
+
+  it('defers to the caller set for a dotless name, so consumers can disagree', () => {
+    stubPlatform('linux');
+    const doctorSet: ReadonlySet<SharedDirRejectionReason> = new Set(['secret-shaped']);
+    expect(mayJoinRefusedEntry('commands', 'reserved', ANY)).toBe(true);
+    expect(mayJoinRefusedEntry('commands', 'reserved', doctorSet)).toBe(false);
+  });
+});
+
+// Every assertion below calls validateSharedDirEntry, not mayJoinRefusedEntry;
+// kept as a second describe of the same name rather than nested inside the
+// block above, which closed after its own three mayJoinRefusedEntry tests.
+describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir)', () => {
+  describe('never-sync', () => {
+    it.each(['todos', '.credentials.json'])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('never-sync');
+    });
+  });
+
+  describe('reserved', () => {
+    it.each(['hooks', 'path-map.json'])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('reserved');
+    });
+  });
+
+  describe('secret-shaped', () => {
+    it.each([
+      '.env',
+      '.env.local',
+      '.ENV',
+      'id_rsa',
+      'credentials',
+      'server.pem',
+      'deploy.key',
+      '.npmrc',
+    ])('rejects %p', (value) => {
+      expect(validateSharedDirEntry(value)?.reason).toBe('secret-shaped');
+    });
+
+    it('returns the secret-shaped reason for ".env" with a message naming it', () => {
+      expect(validateSharedDirEntry('.env')).toEqual({
+        reason: 'secret-shaped',
+        message: expect.stringContaining('credential-shaped') as string,
+      });
+    });
+  });
+
+  // On a case-insensitive filesystem (macOS default, NTFS) these resolve to the
+  // same inode as their lowercase counterparts, so accepting one would let a
+  // sharedDirs entry be symlinked over this host's per-host settings or its
+  // OAuth credential store. `isDeniedName` folds case for exactly this reason;
+  // the guard has to agree with it or it is the weaker of the two boundaries.
+  describe('case-insensitive matching', () => {
+    it.each(['Settings.local.json', 'SETTINGS.LOCAL.JSON', '.Credentials.json', 'Todos'])(
+      'rejects mixed-case %p as never-sync',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('never-sync');
+      },
+    );
+
+    it.each(['CLAUDE.MD', 'claude.md', 'Hooks', 'My-Statusline.cjs', 'Path-Map.json'])(
+      'rejects mixed-case %p as reserved',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('reserved');
+      },
+    );
+
+    it('still accepts a valid entry that differs only in case from nothing denied', () => {
+      expect(validateSharedDirEntry('Get-Shit-Done')).toBeNull();
+    });
+  });
+
+  // Reserved at every path level and with any extension on win32, where shared
+  // names are materialized as real files. Accepting one hands that host a
+  // per-name failure it cannot fix, and path-map.json syncs, so the name must
+  // be refused on every platform rather than only where it breaks.
+  describe('win32 device names', () => {
+    it.each(['NUL', 'nul', 'CON', 'PRN', 'AUX', 'com1', 'COM9', 'lpt1', 'LPT9'])(
+      'rejects %p as reserved',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('reserved');
+      },
+    );
+
+    it.each(['NUL.json', 'con.md', 'aux.tar.gz'])(
+      'rejects %p (extension does not help)',
+      (value) => {
+        expect(validateSharedDirEntry(value)?.reason).toBe('reserved');
+      },
+    );
+
+    it.each(['console', 'communicate', 'nulls', 'auxiliary', 'com', 'com10', 'lpt0'])(
+      'still accepts %p, which merely starts with a device name',
+      (value) => {
+        expect(validateSharedDirEntry(value)).toBeNull();
+      },
+    );
+
+    it('names the device rule in the message', () => {
+      expect(validateSharedDirEntry('NUL')?.message).toContain('Windows device name');
     });
   });
 });

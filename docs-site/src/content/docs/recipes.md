@@ -219,12 +219,37 @@ directory into symlink sync with the top-level `sharedDirs` field:
 
 Each listed name is symlinked from `shared/<name>` into `~/.claude/<name>` (a real copy on native
 Windows, where `nomad pull` and `nomad push` both keep that copy and the repo in step, so edits and
-deletions travel either way round). Entries are validated
-before linking: a name must be a single path segment (no `/` or `..`), must not be one of the
-never-synced names, and must not collide with a reserved name. In particular `hooks`, `agents`, and
+deletions travel either way round). Entries are validated before linking: a name must be a single
+path segment (no `/` or `..`, and no trailing `.`), must not be one of the never-synced names, must
+not collide with a reserved name, must not look like a credential file (`.env`, `id_rsa`,
+`credentials`, `*.pem`, and `*.key` are all refused), and must not be a Windows device name with or
+without an extension (`nul`, `con`, `com1`, `nul.json` are all refused, on every platform, since
+`path-map.json` syncs and a name usable on Linux or macOS may still be unusable on a Windows host).
+Those name checks ignore case, so `Plans` and
+`Settings.local.json` are refused exactly like their lowercase spellings. That matters on macOS and
+Windows, where the two spellings are the same file: without it, a name that differs only in case
+would be linked straight over your real per-host settings. In particular `hooks`, `agents`, and
 `skills` are reserved and cannot be re-added this way: `hooks` and `agents` are gsd-owned per host,
-and `skills` is handled by the filtered copy-sync. Invalid entries are dropped with a warning rather
-than aborting the run.
+and `skills` is handled by the filtered copy-sync. `nomad doctor` lists every refused `sharedDirs`
+entry with its reason, and adds a remediation line for anything an older version of nomad already
+put in place:
+
+- If `~/.claude/<name>` is a symlink that points into `shared/<name>`, copy the content out first
+  (`cp -RL ~/.claude/<name> /somewhere/safe`) and only then remove both. Deleting the repo-side copy
+  on its own destroys the only copy you have and leaves a dangling link behind.
+- If it is a symlink pointing somewhere else, it is not nomad's: leave it alone and just drop the
+  entry from `sharedDirs`. Doctor tells these cases apart by resolving the link, so it says which
+  one you are in.
+- If the symlink is dangling (its target is gone), do not delete anything under `shared/` yet: a
+  copy there may be the only one left, and because the entry is refused nomad cannot restore the
+  name for you. Recover the content by hand if you need it, then remove the dead link.
+- If there is a leftover under `shared/` with no matching symlink, remove it by hand.
+
+Nomad will not delete either one for you.
+
+Invalid entries are dropped with a warning rather than aborting the run when read by `nomad pull`.
+`nomad adopt` on such a name is the one place this differs: it stops with an error instead of
+dropping the name silently, since you named that directory explicitly.
 
 ## Stop using nomad (offboard a machine)
 

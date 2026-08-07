@@ -1,7 +1,19 @@
 import { cpSync, existsSync, lstatSync, realpathSync, rmSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
-import { allSharedLinks, backupBase, claudeHome, repoHome, type PathMap } from './config.ts';
+import {
+  allSharedLinks,
+  backupBase,
+  claudeHome,
+  repoHome,
+  sharedDirEntries,
+  type PathMap,
+} from './config.ts';
+import {
+  mayJoinRefusedEntry,
+  validateSharedDirEntry,
+  type SharedDirRejectionReason,
+} from './config.sharedDirs.guard.ts';
 import { die, fail, item, log } from './utils.ts';
 import { renameAtomicRetry } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
@@ -339,6 +351,71 @@ function materializeOneOrDie(
 }
 
 /**
+ * Rejection reasons whose entries eject still enumerates, because this host may
+ * have materialized one under an older, looser guard and the name is safe to
+ * join into a filesystem path.
+ *
+ * Every reason here is tested AFTER `SAFE_SEGMENT`, so reaching it proves the
+ * name carries no path separator, `.` or `..`. `not-a-string` and
+ * `not-a-segment` are therefore absent: those are the coercion and traversal
+ * shapes, and no host ever materialized one, because the guard has refused them
+ * since before `sharedDirs` had any other rejection cause. That guarantee is
+ * now enforced by the guard for every consumer, not by which reasons this set
+ * happens to list.
+ *
+ * `win32-alias` is deliberately absent, and its absence is not an exclusion:
+ * a trailing-dot spelling is admitted, on every platform, by
+ * {@link mayJoinRefusedEntry} on the spelling itself, before this set is
+ * consulted at all. It is an ordinary distinct directory name that every
+ * released nomad accepted and symlinked, and stranding one loses data.
+ * Adding it to this set would change nothing: it is already admitted.
+ *
+ * `never-sync` and `reserved` earn their place for the same reason the
+ * credential shape does: the guard folds case, so names an older nomad accepted
+ * and symlinked (`Plans`, `Agents`, `Settings.local.json`) are refused now.
+ * Enumerating only the credential shape would strand exactly those.
+ */
+const WIDENED_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
+  'never-sync',
+  'reserved',
+  'secret-shaped',
+]);
+
+/**
+ * The managed names eject must consider on this host: `allSharedLinks(map)`
+ * widened with any `sharedDirs` entry the guard refuses for a reason that is
+ * still safe to join into a filesystem path.
+ *
+ * Eject materializes what this host ALREADY has, so its enumeration cannot be
+ * the sync-time guard on its own. A name that was accepted when `nomad adopt`
+ * ran, and is refused now, still has a live symlink under `~/.claude/`; leaving
+ * it out of the enumeration would skip it silently and then tell the user it is
+ * safe to delete the repo, destroying their only copy.
+ *
+ * The widening is by rejection REASON and by SPELLING, never by type.
+ * {@link mayJoinRefusedEntry} owns the part no consumer may decide for itself
+ * (the coercion and traversal shapes are never joinable, full stop) and takes
+ * {@link WIDENED_REASONS} as the part that is legitimately eject's own. That
+ * set is an allow-list rather than a deny-list on the unsafe shapes, because
+ * a deny-list fails OPEN: a rejection cause added later would be silently
+ * joined into a filesystem path until someone noticed.
+ * `commands.doctor.checks.pathmap.ts` passes its own
+ * narrower set through the same function, which is why the two consumers can
+ * differ without the policy living in two places.
+ *
+ * @param map Parsed `path-map.json` content.
+ * @returns The de-duplicated managed names, valid entries first.
+ */
+export function ejectNames(map: PathMap): string[] {
+  const alreadyMaterialized = sharedDirEntries(map).filter((entry): entry is string => {
+    if (typeof entry !== 'string') return false;
+    const rejection = validateSharedDirEntry(entry);
+    return rejection === null || mayJoinRefusedEntry(entry, rejection.reason, WIDENED_REASONS);
+  });
+  return [...new Set([...allSharedLinks(map), ...alreadyMaterialized])];
+}
+
+/**
  * Production default roots for `cmdEject`, resolved at call time (a named
  * builder rather than an object-literal parameter default, S7737).
  *
@@ -353,14 +430,17 @@ function defaultEjectRoots(): { claudeHome: string; repoHome: string } {
  * copy so the host keeps working after `~/claude-nomad/` is deleted and the CLI
  * is uninstalled.
  *
- * Enumeration source is `allSharedLinks(map)` (the authoritative union of
- * `SHARED_LINKS` and validated `sharedDirs` entries). For each name:
+ * Enumeration source is {@link ejectNames}: the union of `SHARED_LINKS` and
+ * validated `sharedDirs` entries, widened with the entries this host may
+ * already have materialized under an earlier, looser guard. For each name:
  * - Absent: reported as skipped, not created.
  * - Already a real file/dir: reported as skipped, left unchanged.
  * - Valid symlink into `shared/`: replaced with a dereferenced copy (copy-then-swap).
  * - Valid symlink to a target outside `shared/`: reported and skipped (not owned).
- * - Dangling symlink: the whole command aborts with exit 1 before any mutation;
- *   the user is told to run `nomad pull` first.
+ * - Dangling symlink: the whole command aborts with exit 1 before any mutation.
+ *   A base name is told to run `nomad pull` first; a refused name (one this
+ *   host already had under a looser guard) is told nomad cannot restore it
+ *   and to remove the dead link by hand, since `nomad pull` would not help.
  *
  * A real `node:fs` fault during the live pass (disk full, EACCES, target removed
  * under us) aborts with exit 1 and a FATAL message naming the failed entry, the
@@ -379,7 +459,7 @@ export function cmdEject(
   const { claudeHome, repoHome } = roots;
 
   const map = readMapIfPresent(repoHome);
-  const names = allSharedLinks(map);
+  const names = ejectNames(map);
 
   // Classify every name upfront; abort before any mutation if any are dangling.
   const classifications = new Map<string, NameClass>();
@@ -387,12 +467,45 @@ export function cmdEject(
     classifications.set(name, classifyName(join(claudeHome, name)));
   }
 
+  // ejectNames calls allSharedLinks, which has already printed
+  // `... rejected: ...; skipping` for each re-adopted name. Eject does NOT skip
+  // those, and that wording is byte-identical to the case where a name really is
+  // dropped and the user's only copy is at risk, so reconcile explicitly.
+  //
+  // Two gates, both load-bearing. Membership in the base set, because the
+  // SHARED_LINKS statics are all in RESERVED_SHARED and so fail the guard on
+  // their own name: testing the guard alone would print this for CLAUDE.md,
+  // commands, rules and my-statusline.cjs on every host. And classification,
+  // because the line claims the host HAS the name, which is false for one that
+  // is absent and misleading for a real copy that is about to be reported as
+  // already ejected.
+  const base = new Set(allSharedLinks(map, { quiet: true }));
+  for (const name of names) {
+    if (base.has(name)) continue;
+    if (classifications.get(name) !== 'materialize') continue;
+    item(`processing rejected entry already present on this host: ${name}`);
+  }
+
+  // A dangling name outside `base` is a refused entry ejectNames widened in:
+  // `nomad pull` never restores it (it is refused, not synced), so the base
+  // case's advice would send the user in a circle. Split the report instead
+  // of aborting with instructions that cannot be followed for this half.
   const dangling = names.filter((n) => classifications.get(n) === 'dangling');
-  if (dangling.length > 0) {
+  const danglingBase = dangling.filter((n) => base.has(n));
+  const danglingRefused = dangling.filter((n) => !base.has(n));
+  if (danglingBase.length > 0) {
     fail(
-      `dangling symlink(s): ${dangling.join(', ')}. ` +
+      `dangling symlink(s): ${danglingBase.join(', ')}. ` +
         `run \`nomad pull\` first to restore the missing target, then re-run \`nomad eject\``,
     );
+  }
+  if (danglingRefused.length > 0) {
+    fail(
+      `dangling symlink(s) for a refused name nomad cannot restore: ${danglingRefused.join(', ')}. ` +
+        `recover the content by hand if you need it, then remove the dead link and re-run \`nomad eject\``,
+    );
+  }
+  if (dangling.length > 0) {
     process.exit(1);
   }
 

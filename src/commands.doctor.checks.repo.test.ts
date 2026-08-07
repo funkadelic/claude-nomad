@@ -279,6 +279,22 @@ describe('reportSharedLinks non-symlink fail path (direct)', () => {
   // behavior is covered by commands.doctor.checks.repo2.test.ts.
   const isWin = process.platform === 'win32';
 
+  it('does not write a rejected sharedDirs entry to stderr while gathering', async () => {
+    // The rejection belongs in-tree, where the Summary repeats it and the
+    // verdict counts it. A stderr line here is a third, uncounted glyph and it
+    // lands while the spinner owns the terminal. Asserts the `{ quiet: true }`
+    // argument at this call site: dropping it makes this fail.
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    reportSharedLinks(section('Links'), { projects: {}, sharedDirs: ['.env'] });
+
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it.skipIf(isWin)(
     'sets exitCode=1 and emits a FAIL row when a SHARED_LINKS entry is a regular file',
     async () => {

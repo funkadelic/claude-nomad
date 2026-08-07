@@ -195,10 +195,15 @@ function collectSharedFiles(dir: string, claude: string, scan: LocalSharedScan):
  *
  * Iterates `allSharedLinks(map)` and nothing else, so a name the user never
  * configured is outside the record entirely; raw path-map keys are never walked.
- * A configured name that the deny set rejects is declined outright: the
- * `sharedDirs` guard blocks the never-sync names but not the credential-shaped
- * ones, so this is the boundary that keeps a name like `credentials` out of the
- * record.
+ * A configured name that the deny set rejects is declined outright, which keeps
+ * a deletion from being authorized underneath it.
+ *
+ * That gate is unreachable as written: every name `allSharedLinks` yields is
+ * either a `SHARED_LINKS` static (none of which the deny set rejects) or a
+ * `sharedDirs` entry that already cleared `validateSharedDirEntry`, whose
+ * rejections are a superset of this deny set's. It is kept as defense-in-depth
+ * on a security boundary, so a future loosening of that guard cannot silently
+ * authorize deletions under a denied name.
  *
  * Exported because the deletion planner consumes this exact walk. The key
  * format is the contract between the record and its reader, and two
@@ -211,6 +216,7 @@ export function enumerateLocalSharedScan(map: PathMap): LocalSharedScan {
   const claude = claudeHome();
   const scan: LocalSharedScan = { files: {}, declined: [] };
   for (const name of allSharedLinks(map)) {
+    /* c8 ignore next 4 -- unreachable defense-in-depth; the sharedDirs guard rejects a superset of this deny set (see above) */
     if (isDeniedName(ALWAYS_NEVER_SYNC, name)) {
       scan.declined.push(name);
       continue;

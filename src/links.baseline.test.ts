@@ -179,9 +179,9 @@ describe('shared-links baseline', () => {
     });
 
     it('never records a configured shared name the deny set rejects', async () => {
-      // `credentials` passes the sharedDirs guard (single segment, not a
-      // never-sync name, not reserved) but is credential-shaped, so the deny set
-      // is the only thing keeping it out of the record.
+      // `credentials` is credential-shaped, so `allSharedLinks` now drops it
+      // before this walk even sees it (the sharedDirs guard's own reason,
+      // not the deny set). The deny set stays as a second, redundant gate.
       mkdirSync(join(claudeDir, 'credentials'), { recursive: true });
       writeFileSync(join(claudeDir, 'credentials', 'token.txt'), 'secret\n');
       stubPlatform('win32');
@@ -260,7 +260,10 @@ describe('shared-links baseline', () => {
       }
     });
 
-    it('declines a configured name and a nested basename the deny set rejects', async () => {
+    it('declines a nested basename the deny set rejects, and never walks a credential-shaped configured name at all', async () => {
+      // `credentials` is now excluded by `allSharedLinks` itself (the
+      // sharedDirs guard's secret-shaped reason), so it never reaches this
+      // walk and is absent from both `files` and `declined`.
       mkdirSync(join(claudeDir, 'credentials'), { recursive: true });
       writeFileSync(join(claudeDir, 'credentials', 'token.txt'), 'secret\n');
       writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{}\n');
@@ -268,7 +271,7 @@ describe('shared-links baseline', () => {
       const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
       const scan = enumerateLocalSharedScan({ projects: {}, sharedDirs: ['credentials'] });
       expect(scan.files).toEqual({});
-      expect(scan.declined.sort()).toEqual(['commands/settings.local.json', 'credentials']);
+      expect(scan.declined).toEqual(['commands/settings.local.json']);
     });
   });
 

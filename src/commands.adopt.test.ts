@@ -14,6 +14,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { EXIT } from './exit-codes.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 // Posix-only assertions (symlink creation, clobber-refusal wording) below
@@ -216,6 +217,25 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(errOutput(env)).toBe('');
   });
 
+  // A string sharedDirs turned the membership gate into a substring test, so
+  // sharedDirs "my-custom-dir" answered yes for "custom". The accessor drops a
+  // non-array whole, which must refuse the substring AND not throw a raw
+  // TypeError (that is not a NomadFatal, so it would write a crash report).
+  it.each(['my-custom-dir', 42, null])(
+    'refuses a substring match and does not throw when sharedDirs is %p',
+    async (bad) => {
+      const mapPath = join(env.repoHome, 'path-map.json');
+      writeFileSync(mapPath, JSON.stringify({ projects: {}, sharedDirs: bad }) + '\n');
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('custom')).toThrow();
+      // The friendly refusal, which only the guarded path can produce. A bare
+      // toThrow() would also pass against the old code, where a non-array threw
+      // a raw TypeError before reaching any message at all.
+      expect(errOutput(env)).toContain('sharedDirs');
+      expect(diffCached(env)).not.toContain('custom');
+    },
+  );
+
   // readMapIfPresent fallback: a missing path-map.json yields an empty map and
   // a SHARED_LINKS name still passes the membership check (covers the absent branch)
   it('tolerates a missing path-map.json for a SHARED_LINKS name', async () => {
@@ -249,6 +269,50 @@ describe('cmdAdopt (precondition matrix)', () => {
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('skills')).toThrow('exit:1');
     expect(errOutput(env)).toContain('invalid name');
+    expect(diffCached(env)).toBe('');
+  });
+
+  // Credential-shaped names are a hard NomadFatal, ahead of the membership
+  // and mutation paths, even when the user configured and materialized the
+  // name themselves.
+  it('hard-fails cmdAdopt(".env") with a NomadFatal naming the reason, and mutates nothing', async () => {
+    addSharedDir(env, '.env');
+    writeFileSync(join(env.claudeHome, '.env'), 'SECRET=1\n');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      cmdAdopt('.env');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.message).toContain('.env');
+    expect(fatal.message).toContain('credential-shaped');
+    expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
+
+    expect(diffCached(env)).toBe('');
+    expect(existsSync(join(env.repoHome, 'shared', '.env'))).toBe(false);
+  });
+
+  it('hard-fails cmdAdopt("id_rsa") with a NomadFatal naming the reason', async () => {
+    addSharedDir(env, 'id_rsa');
+    writeFileSync(join(env.claudeHome, 'id_rsa'), 'fake-key\n');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      cmdAdopt('id_rsa');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.message).toContain('id_rsa');
+    expect(fatal.message).toContain('credential-shaped');
     expect(diffCached(env)).toBe('');
   });
 

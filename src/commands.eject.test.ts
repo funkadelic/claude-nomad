@@ -15,7 +15,14 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import { cmdEject, ejectChecklist, errMessage, previewMaterialize } from './commands.eject.ts';
+import {
+  cmdEject,
+  ejectChecklist,
+  ejectNames,
+  errMessage,
+  previewMaterialize,
+} from './commands.eject.ts';
+import type { PathMap } from './config.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 // Windows chmod only toggles the read-only attribute: a 0o500 dir still
@@ -210,6 +217,44 @@ describe('cmdEject', () => {
 
     expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('CLAUDE.md'));
+  });
+
+  it('dangling FAIL for a refused name: nomad pull cannot restore it, so the message says so instead', () => {
+    // Refused entries are excluded from nomad pull's sync, so the base
+    // case's "run nomad pull first" advice would send the user in a circle:
+    // pull would never restore this link, and the next eject aborts again.
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['credentials'] }),
+    );
+    symlinkSync(join(repoHome, 'shared', 'credentials'), join(claudeHome, 'credentials'));
+
+    expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('credentials'));
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('nomad cannot restore'));
+    expect(errSpy).not.toHaveBeenCalledWith(expect.stringContaining('nomad pull'));
+  });
+
+  it('dangling FAIL reports both a base and a refused name with their own instructions', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['credentials'] }),
+    );
+    symlinkSync('/nonexistent/CLAUDE.md', join(claudeHome, 'CLAUDE.md'));
+    symlinkSync(join(repoHome, 'shared', 'credentials'), join(claudeHome, 'credentials'));
+
+    expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+    const baseCall = errSpy.mock.calls.find(
+      (c) => c[0].includes('CLAUDE.md') && c[0].includes('nomad pull'),
+    );
+    const refusedCall = errSpy.mock.calls.find(
+      (c) => c[0].includes('credentials') && c[0].includes('nomad cannot restore'),
+    );
+    expect(baseCall).toBeDefined();
+    expect(refusedCall).toBeDefined();
   });
 
   it.skipIf(isWin)(
@@ -434,6 +479,202 @@ describe('cmdEject', () => {
     expect(lstatSync(ejected).isDirectory()).toBe(true);
     expect(readFileSync(join(ejected, 'README.md'), 'utf8')).toBe('# GSD');
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: get-shit-done'));
+  });
+
+  it('already-materialized credential-shaped entry is still dereferenced into a real directory', () => {
+    // The guard refuses this name for sync, but a host that adopted it under
+    // the older, looser guard still has the symlink. Eject must materialize it
+    // before the user is told the repo is safe to delete.
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['credentials'] }),
+    );
+    const target = join(repoHome, 'shared', 'credentials');
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'token.txt'), 'kept');
+    symlinkSync(target, join(claudeHome, 'credentials'));
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    const ejected = join(claudeHome, 'credentials');
+    expect(lstatSync(ejected).isSymbolicLink()).toBe(false);
+    expect(lstatSync(ejected).isDirectory()).toBe(true);
+    expect(readFileSync(join(ejected, 'token.txt'), 'utf8')).toBe('kept');
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ejected: credentials'));
+  });
+
+  it.each(['Plans', 'Agents', 'Settings.local.json'])(
+    'already-materialized %s is still dereferenced after the guard started folding case',
+    (name) => {
+      // The guard folds case, so these are refused now but were accepted (and
+      // symlinked) by an older nomad. Gating the widening on the credential
+      // shape alone would strand them: skipped silently, then the user is told
+      // the repo is safe to delete and the symlink dangles.
+      const { claudeHome, repoHome } = makeTempRoots();
+      writeFileSync(
+        join(repoHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: [name] }),
+      );
+      const target = join(repoHome, 'shared', name);
+      mkdirSync(target, { recursive: true });
+      writeFileSync(join(target, 'kept.txt'), 'kept');
+      symlinkSync(target, join(claudeHome, name));
+
+      cmdEject({}, { claudeHome, repoHome });
+
+      const ejected = join(claudeHome, name);
+      expect(lstatSync(ejected).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(ejected, 'kept.txt'), 'utf8')).toBe('kept');
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`ejected: ${name}`));
+      // The reconciliation line MUST fire here: allSharedLinks already printed
+      // "rejected ...; skipping" for this name, and eject is about to do the
+      // opposite. Without this the loop could be deleted and stay green.
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`processing rejected entry already present on this host: ${name}`),
+      );
+    },
+  );
+
+  it('does not claim the host has a refused name that was never materialized', () => {
+    // Configured but absent: the reconciliation line asserts the entry is
+    // already present on this host, which would be false here.
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['credentials'] }),
+    );
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    expect(allLogs(logSpy)).not.toContain('processing rejected entry already present');
+  });
+
+  it('a non-string sharedDirs entry is never enumerated', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: [42] }),
+    );
+
+    // Assert on the enumeration itself, not on an output line: "ejected: 42"
+    // is absent whether or not 42 was enumerated, since an absent name is
+    // reported as skipped either way.
+    expect(ejectNames({ projects: {}, sharedDirs: [42] } as unknown as PathMap)).not.toContain(42);
+    expect(ejectNames({ projects: {}, sharedDirs: [42] } as unknown as PathMap)).toEqual(
+      ejectNames({ projects: {} }),
+    );
+
+    cmdEject({}, { claudeHome, repoHome });
+    // A bare '42' assertion risks a false pass from an unrelated digit (a temp
+    // dir name, PID, or timestamp in the same log). '42' is absent from
+    // claudeHome, so a coercion regression would print this exact fragment.
+    expect(allLogs(logSpy)).not.toContain('skipped (absent): 42');
+  });
+
+  it('enumerates a trailing-dot name on every platform, where an older nomad could have symlinked it', () => {
+    expect(ejectNames({ projects: {}, sharedDirs: ['mytools.'] })).toContain('mytools.');
+  });
+
+  it('also enumerates a trailing-dot name on win32, where it is a real, distinct name', () => {
+    // A trailing-dot name is refused (git for Windows cannot create or check
+    // it out), but a name this host ALREADY has, from an older nomad or hand
+    // placement, is real and every node:fs call nomad makes addresses it
+    // directly: no syscall in this path aliases it to the dotless name. This
+    // is the full set a code review once found leaking through a gate keyed
+    // on the inherited cause rather than the spelling, not a representative
+    // sample.
+    //
+    // stubPlatform, not a vi.spyOn getter: the helper installs a DATA
+    // descriptor and this file already uses it, so mixing an accessor
+    // descriptor onto the same property is a restore hazard.
+    const realPlatform = process.platform;
+    try {
+      stubPlatform('win32');
+      const dotted = [
+        'commands.',
+        'rules.',
+        'CLAUDE.md.',
+        'my-statusline.cjs.',
+        'agents.',
+        'hooks.',
+        'skills.',
+        'projects.',
+        'hosts.',
+        'extras.',
+        'path-map.json.',
+        'settings.base.json.',
+        'todos.',
+        'settings.local.json.',
+        '.credentials.json.',
+        'plans.',
+        'sessions.',
+        '.env.',
+        'id_rsa.',
+        'credentials.',
+        'server.pem.',
+        'nul.',
+        'con.',
+        'com1.',
+        'mytools.',
+        '...',
+      ];
+      const names = ejectNames({ projects: {}, sharedDirs: dotted });
+      expect(names).toEqual(expect.arrayContaining(dotted));
+    } finally {
+      stubPlatform(realPlatform);
+    }
+  });
+
+  it('enumerates every trailing-dot spelling on this platform, whatever cause it inherited', () => {
+    // Ordinary distinct directory names that alias nothing, so the inherited
+    // cause describes a name this process never resolves them to, and
+    // stranding one loses data.
+    const names = ejectNames({
+      projects: {},
+      sharedDirs: ['mytools.', 'commands.', '.env.', 'settings.local.json.'],
+    });
+    expect(names).toEqual(
+      expect.arrayContaining(['mytools.', 'commands.', '.env.', 'settings.local.json.']),
+    );
+  });
+
+  it('does not print the reconciliation line for the SHARED_LINKS statics', () => {
+    // Every static is in RESERVED_SHARED, so it fails the guard on its own
+    // name. Gating on the guard alone would print this four times on every
+    // host, for names that were never re-adopted.
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(join(repoHome, 'path-map.json'), JSON.stringify({ projects: {} }));
+    for (const name of ['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs']) {
+      const target = join(repoHome, 'shared', name);
+      mkdirSync(target, { recursive: true });
+      symlinkSync(target, join(claudeHome, name));
+    }
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    expect(allLogs(logSpy)).not.toContain('processing rejected entry already present');
+  });
+
+  it('a traversal-shaped sharedDirs entry is never enumerated, so nothing outside claudeHome is touched', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }),
+    );
+    // join(claudeHome, '../escape') resolves to a sibling of claudeHome. Point
+    // a symlink there so an enumerated name would be materialized in place.
+    const target = join(repoHome, 'shared', 'escape');
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'outside.txt'), 'outside');
+    const escapePath = join(claudeHome, '..', 'escape');
+    symlinkSync(target, escapePath);
+
+    cmdEject({}, { claudeHome, repoHome });
+
+    // Untouched: still a symlink, and never named in the output.
+    expect(lstatSync(escapePath).isSymbolicLink()).toBe(true);
+    expect(allLogs(logSpy)).not.toContain('escape');
   });
 });
 
