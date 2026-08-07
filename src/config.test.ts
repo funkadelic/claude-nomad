@@ -544,8 +544,8 @@ describe('isSecretFileName', () => {
     },
   );
 
-  it('never admits a name it previously denied, and only ever denies more', async () => {
-    const { isSecretFileName } = await import('./config.ts');
+  it('never admits a name it previously denied, for any suffix of dots and whitespace', async () => {
+    const { isSecretFileName, stripTrailingDotsAndWhitespace } = await import('./config.ts');
     const bases = [
       '.env',
       'server.pem',
@@ -557,15 +557,15 @@ describe('isSecretFileName', () => {
       'README',
       'key',
     ];
-    const suffixes = ['.', '..', ' ', '. '];
     for (const base of bases) {
       const before = isSecretFileName(base);
-      // No suffix appended: identical to the base result.
-      expect(isSecretFileName(base)).toBe(before);
-      for (const suffix of suffixes) {
-        if (before) {
-          expect(isSecretFileName(base + suffix)).toBe(true);
-        }
+      for (const suffix of ['.', '..', ' ', '. ', ' .. ', '\t', '\n']) {
+        const after = isSecretFileName(base + suffix);
+        // The property: denial is preserved, and the suffixed name agrees
+        // with the name underneath it. Both halves of `bases` (credential
+        // and non-credential) now assert something for every suffix.
+        expect(after).toBe(before);
+        expect(stripTrailingDotsAndWhitespace(base + suffix)).toBe(base);
       }
     }
   });
