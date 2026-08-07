@@ -313,7 +313,12 @@ describe('shared-links baseline', () => {
         // win32) or it normalized to `.env` (already caught pre-change; the
         // trailing-dot class is unreachable through node:fs on this host).
         const survived = existsSync(join(claudeDir, 'commands', '.env.'));
-        expect(readdirSync(join(claudeDir, 'commands'))).toContain(survived ? '.env.' : '.env');
+        const entries = readdirSync(join(claudeDir, 'commands'));
+        // Printed so the answer is readable in the Windows job log. A green run
+        // alone cannot say which way it went, and unrecorded ground truth is
+        // how the falsified premise above survived in the first place.
+        console.log(`[win32 probe] trailing-dot basename on disk: ${JSON.stringify(entries)}`);
+        expect(entries).toContain(survived ? '.env.' : '.env');
       },
     );
   });
