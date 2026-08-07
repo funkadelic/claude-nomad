@@ -412,6 +412,26 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
     },
   );
 
+  // The exact-name axis of isDeniedName (blockSet.has(stripped)) is what
+  // protects a trailing-dot spelling of an EXACT denylist entry like
+  // `settings.local.json`, distinct from the pattern axis exercised above.
+  // Nested at depth (not the source root) so the "blocked at any depth"
+  // claim covers this axis too, not only the credential-pattern one.
+  it.skipIf(process.platform === 'win32')(
+    'strips a nested trailing-dot spelling of an exact denylist entry from the copy',
+    async () => {
+      mkdirSync(join(tmpSrc, 'sub'), { recursive: true });
+      writeFileSync(join(tmpSrc, 'sub', 'settings.local.json.'), 'host=1\n');
+      writeFileSync(join(tmpSrc, 'sub', 'keep.json'), '{"ok":1}\n');
+
+      const { copyExtrasFiltered, extrasDenySet } = await import('./extras-sync.core.ts');
+      copyExtrasFiltered(tmpSrc, tmpDst, extrasDenySet('.planning'));
+
+      expect(existsSync(join(tmpDst, 'sub', 'settings.local.json.'))).toBe(false);
+      expect(existsSync(join(tmpDst, 'sub', 'keep.json'))).toBe(true);
+    },
+  );
+
   it('allows a todos/ dir under the .planning denylist (NEVER_SYNC-but-not-ALWAYS_NEVER_SYNC)', async () => {
     // todos/ is in NEVER_SYNC but NOT in ALWAYS_NEVER_SYNC; under the .planning
     // (ALWAYS_NEVER_SYNC) denylist it must pass.

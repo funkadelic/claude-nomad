@@ -317,4 +317,17 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
     ).not.toThrow();
     expect(errorSpy).not.toHaveBeenCalled();
   });
+
+  it('rejects a trailing-dot spelling of a denied name inside an extras tree', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // isNeverSync -> isDeniedName's exact-name axis (blockSet.has(stripped))
+    // must fire through the push gate itself, not just the copy-layer filter:
+    // `settings.local.json.` is a distinct real name to node:fs but the same
+    // credential file by every meaning that matters here.
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.claude/settings.local.json.\0', map),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
 });
