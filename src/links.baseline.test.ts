@@ -1,7 +1,9 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -279,17 +281,39 @@ describe('shared-links baseline', () => {
     // platform-independent proof of the underlying predicate already lives
     // in config.test.ts. An ordinary file proves `files` still records what
     // it should; `declined` (not a silent absence) is what stops a later
-    // read of that absence from being taken as a user deletion.
+    // read of that absence from being taken as a user deletion. No
+    // `stubPlatform('win32')` here: `enumerateLocalSharedScan` has no
+    // platform branch, so stubbing it (as the sibling tests above do for
+    // `writeSharedBaseline`, which does branch) would only misstate what
+    // this test actually exercises.
     it.skipIf(isWin)(
       'declines a nested trailing-dot credential name instead of recording it',
       async () => {
         writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
         writeFileSync(join(claudeDir, 'commands', '.env.'), 'TOKEN=secret\n');
-        stubPlatform('win32');
         const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
         const scan = enumerateLocalSharedScan({ projects: {} });
         expect(Object.keys(scan.files)).toEqual(['commands/a.md']);
         expect(scan.declined).toEqual(['commands/.env.']);
+      },
+    );
+
+    // Ground truth instead of an assumption: this repo has already shipped a
+    // win32 premise (the Phase 72/73 sharedDirs trailing-dot alias rule) that
+    // survived five-plus review passes before the first real Windows CI run
+    // falsified it. Runs ONLY on win32 (CI has that runner); records whether
+    // `.env.` survives `node:fs` on this host rather than skipping the
+    // platform the trailing-dot threat model is about.
+    it.runIf(process.platform === 'win32')(
+      'records whether NTFS preserves a trailing-dot basename',
+      () => {
+        writeFileSync(join(claudeDir, 'commands', '.env.'), 'TOKEN=secret\n');
+        // Either the name survives on disk (the predicate must catch it, and
+        // the skipped test above should be un-skipped and re-verified on
+        // win32) or it normalized to `.env` (already caught pre-change; the
+        // trailing-dot class is unreachable through node:fs on this host).
+        const survived = existsSync(join(claudeDir, 'commands', '.env.'));
+        expect(readdirSync(join(claudeDir, 'commands'))).toContain(survived ? '.env.' : '.env');
       },
     );
   });
