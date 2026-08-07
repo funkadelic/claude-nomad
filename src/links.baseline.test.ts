@@ -1,9 +1,7 @@
 import {
   chmodSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -276,51 +274,27 @@ describe('shared-links baseline', () => {
       expect(scan.declined).toEqual(['commands/settings.local.json']);
     });
 
-    // Skipped on win32: whether NTFS accepts a basename with a trailing dot
-    // through node:fs is unverified on this project's CI, and the
-    // platform-independent proof of the underlying predicate already lives
-    // in config.test.ts. An ordinary file proves `files` still records what
-    // it should; `declined` (not a silent absence) is what stops a later
-    // read of that absence from being taken as a user deletion. No
-    // `stubPlatform('win32')` here: `enumerateLocalSharedScan` has no
-    // platform branch, so stubbing it (as the sibling tests above do for
-    // `writeSharedBaseline`, which does branch) would only misstate what
-    // this test actually exercises.
-    it.skipIf(isWin)(
-      'declines a nested trailing-dot credential name instead of recording it',
-      async () => {
-        writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
-        writeFileSync(join(claudeDir, 'commands', '.env.'), 'TOKEN=secret\n');
-        const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
-        const scan = enumerateLocalSharedScan({ projects: {} });
-        expect(Object.keys(scan.files)).toEqual(['commands/a.md']);
-        expect(scan.declined).toEqual(['commands/.env.']);
-      },
-    );
-
-    // Ground truth instead of an assumption: this repo has already shipped a
-    // win32 premise (the Phase 72/73 sharedDirs trailing-dot alias rule) that
-    // survived five-plus review passes before the first real Windows CI run
-    // falsified it. Runs ONLY on win32 (CI has that runner); records whether
-    // `.env.` survives `node:fs` on this host rather than skipping the
-    // platform the trailing-dot threat model is about.
-    it.runIf(process.platform === 'win32')(
-      'records whether NTFS preserves a trailing-dot basename',
-      () => {
-        writeFileSync(join(claudeDir, 'commands', '.env.'), 'TOKEN=secret\n');
-        // Either the name survives on disk (the predicate must catch it, and
-        // the skipped test above should be un-skipped and re-verified on
-        // win32) or it normalized to `.env` (already caught pre-change; the
-        // trailing-dot class is unreachable through node:fs on this host).
-        const survived = existsSync(join(claudeDir, 'commands', '.env.'));
-        const entries = readdirSync(join(claudeDir, 'commands'));
-        // Printed so the answer is readable in the Windows job log. A green run
-        // alone cannot say which way it went, and unrecorded ground truth is
-        // how the falsified premise above survived in the first place.
-        console.log(`[win32 probe] trailing-dot basename on disk: ${JSON.stringify(entries)}`);
-        expect(entries).toContain(survived ? '.env.' : '.env');
-      },
-    );
+    // Runs on every platform, win32 included. A trailing-dot basename does
+    // survive `node:fs` on the windows-latest runner (a probe wrote
+    // `commands/.env.` there and read it back verbatim), so this class is
+    // reachable on native Windows and the case must not be skipped on the one
+    // platform its threat model is about. The assertion doubles as the
+    // standing record of that ground truth: on win32 it can only pass if the
+    // name is still `.env.` when the walk reads it back. An ordinary file
+    // proves `files` still records what it should; `declined` (not a silent
+    // absence) is what stops a later read of that absence from being taken as
+    // a user deletion. No `stubPlatform('win32')` here: `enumerateLocalSharedScan`
+    // has no platform branch, so stubbing it (as the sibling tests above do
+    // for `writeSharedBaseline`, which does branch) would only misstate what
+    // this test exercises.
+    it('declines a nested trailing-dot credential name instead of recording it', async () => {
+      writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
+      writeFileSync(join(claudeDir, 'commands', '.env.'), 'TOKEN=secret\n');
+      const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
+      const scan = enumerateLocalSharedScan({ projects: {} });
+      expect(Object.keys(scan.files)).toEqual(['commands/a.md']);
+      expect(scan.declined).toEqual(['commands/.env.']);
+    });
   });
 
   describe('buildSharedBaseline', () => {
