@@ -531,22 +531,18 @@ describe('cmdEject', () => {
     expect(allLogs(logSpy)).not.toContain('42');
   });
 
-  it.skipIf(isWin)(
-    'enumerates a trailing-dot name on posix, where an older nomad could have symlinked it',
-    () => {
-      expect(ejectNames({ projects: {}, sharedDirs: ['mytools.'] })).toContain('mytools.');
-    },
-  );
+  it('enumerates a trailing-dot name on every platform, where an older nomad could have symlinked it', () => {
+    expect(ejectNames({ projects: {}, sharedDirs: ['mytools.'] })).toContain('mytools.');
+  });
 
-  it('never enumerates a trailing-dot name on win32, where it addresses a different path', () => {
-    // win32 strips the dots, so each of these would operate on the shared/
-    // name it addresses rather than the dotted one written. This is the full
-    // set a code review found leaking through a gate keyed on the inherited
-    // cause rather than the spelling, not a representative sample. Excluding
-    // them accepts a narrow cost, not a zero one: a legacy win32 symlink
-    // materialized under a dotted entry (Developer Mode, before win32 became
-    // copy-sync) is left un-enumerated here. A modern win32 host is
-    // copy-sync already, so it has a real copy and loses nothing.
+  it('also enumerates a trailing-dot name on win32, where it is a real, distinct name', () => {
+    // A trailing-dot name is refused (git for Windows cannot create or check
+    // it out), but a name this host ALREADY has, from an older nomad or hand
+    // placement, is real and every node:fs call nomad makes addresses it
+    // directly: no syscall in this path aliases it to the dotless name. This
+    // is the full set a code review once found leaking through a gate keyed
+    // on the inherited cause rather than the spelling, not a representative
+    // sample.
     //
     // stubPlatform, not a vi.spyOn getter: the helper installs a DATA
     // descriptor and this file already uses it, so mixing an accessor
@@ -554,63 +550,53 @@ describe('cmdEject', () => {
     const realPlatform = process.platform;
     try {
       stubPlatform('win32');
-      const names = ejectNames({
-        projects: {},
-        sharedDirs: [
-          'commands.',
-          'rules.',
-          'CLAUDE.md.',
-          'my-statusline.cjs.',
-          'agents.',
-          'hooks.',
-          'skills.',
-          'projects.',
-          'hosts.',
-          'extras.',
-          'path-map.json.',
-          'settings.base.json.',
-          'todos.',
-          'settings.local.json.',
-          '.credentials.json.',
-          'plans.',
-          'sessions.',
-          '.env.',
-          'id_rsa.',
-          'credentials.',
-          'server.pem.',
-          'nul.',
-          'con.',
-          'com1.',
-          'mytools.',
-          '...',
-        ],
-      });
-      expect(names.filter((n) => n.endsWith('.'))).toEqual([]);
-      // Positive control: the assertion above must not be satisfiable by an
-      // empty or truncated enumeration.
-      expect(names).toEqual(
-        expect.arrayContaining(['CLAUDE.md', 'commands', 'rules', 'my-statusline.cjs']),
-      );
+      const dotted = [
+        'commands.',
+        'rules.',
+        'CLAUDE.md.',
+        'my-statusline.cjs.',
+        'agents.',
+        'hooks.',
+        'skills.',
+        'projects.',
+        'hosts.',
+        'extras.',
+        'path-map.json.',
+        'settings.base.json.',
+        'todos.',
+        'settings.local.json.',
+        '.credentials.json.',
+        'plans.',
+        'sessions.',
+        '.env.',
+        'id_rsa.',
+        'credentials.',
+        'server.pem.',
+        'nul.',
+        'con.',
+        'com1.',
+        'mytools.',
+        '...',
+      ];
+      const names = ejectNames({ projects: {}, sharedDirs: dotted });
+      expect(names).toEqual(expect.arrayContaining(dotted));
     } finally {
       stubPlatform(realPlatform);
     }
   });
 
-  it.skipIf(isWin)(
-    'enumerates every trailing-dot spelling on posix, whatever cause it inherited',
-    () => {
-      // The mirror of the win32 case: here they are ordinary distinct
-      // directories that alias nothing, so the inherited cause describes a file
-      // this platform never resolves them to, and stranding one loses data.
-      const names = ejectNames({
-        projects: {},
-        sharedDirs: ['mytools.', 'commands.', '.env.', 'settings.local.json.'],
-      });
-      expect(names).toEqual(
-        expect.arrayContaining(['mytools.', 'commands.', '.env.', 'settings.local.json.']),
-      );
-    },
-  );
+  it('enumerates every trailing-dot spelling on this platform, whatever cause it inherited', () => {
+    // Ordinary distinct directory names that alias nothing, so the inherited
+    // cause describes a name this process never resolves them to, and
+    // stranding one loses data.
+    const names = ejectNames({
+      projects: {},
+      sharedDirs: ['mytools.', 'commands.', '.env.', 'settings.local.json.'],
+    });
+    expect(names).toEqual(
+      expect.arrayContaining(['mytools.', 'commands.', '.env.', 'settings.local.json.']),
+    );
+  });
 
   it('does not print the reconciliation line for the SHARED_LINKS statics', () => {
     // Every static is in RESERVED_SHARED, so it fails the guard on its own
