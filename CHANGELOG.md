@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.64.1](https://github.com/funkadelic/claude-nomad/compare/v0.64.0...v0.64.1) (2026-08-07)
+
+### What's new
+
+- **A stray dot or space at the end of a file name no longer hides a secret.** nomad never copies
+  password and key files (things like `.env`, `id_rsa`, or `server.pem`) out of the project folders
+  you sync. It spots them by name, and a name with an extra dot or space on the end, such as
+  `.env.`, did not match, so a file like that could end up in your sync repo. It matches now, and so
+  do the other files nomad always keeps out, such as `settings.local.json`. Nothing changes in how
+  you use nomad. It simply catches more ways of writing the same names it already blocked.
+- **A `.claude` folder is recognized however it is capitalized.** If a project had a folder named
+  `.Claude` instead of `.claude`, nomad checked what was inside it less carefully than it should
+  have. Both are treated the same now.
+- **A folder name nomad will never sync is turned down as soon as you add it.** You can ask nomad to
+  sync extra folders by listing their names in `path-map.json`. If a name you list is one nomad
+  refuses to sync, because it looks like a password file, or because it is a name that causes
+  trouble on one of the machines you sync to, you are told straight away and told why. Before,
+  nothing was said until a later `nomad push` stopped without explaining itself. `nomad doctor` also
+  lists any names in this situation and what to do about them.
+
+All of this applies on macOS, Linux, WSL2, and native Windows.
+
+
+### Fixed
+
+* **config:** close the trailing-dot bypass in the secret-name guard ([#495](https://github.com/funkadelic/claude-nomad/issues/495)) ([9aaf5d9](https://github.com/funkadelic/claude-nomad/commit/9aaf5d958027a3557974c1ab32254c6171aea631))
+* reject a secret-shaped name as a shared dir ([#493](https://github.com/funkadelic/claude-nomad/issues/493)) ([3054464](https://github.com/funkadelic/claude-nomad/commit/3054464c91c974a7abdad24b2067bab8386e1dfd))
+
+
+### Changed
+
+* **release:** publish the release body from CHANGELOG.md ([#496](https://github.com/funkadelic/claude-nomad/issues/496)) ([e7bff07](https://github.com/funkadelic/claude-nomad/commit/e7bff07504935e563936733eae1146dc6eeaca83))
+
 ## [0.64.0](https://github.com/funkadelic/claude-nomad/compare/v0.63.2...v0.64.0) (2026-08-05)
 
 ### What's new
