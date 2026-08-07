@@ -340,6 +340,7 @@ export {
   CLAUDE_EXTRA_NEVER_SYNC,
   isSecretFileName,
   isDeniedName,
+  stripTrailingDotsAndSpaces,
 } from './config.never-sync.ts';
 
 // Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in

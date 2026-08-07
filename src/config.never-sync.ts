@@ -129,7 +129,7 @@ export function isSecretFileName(name: string): boolean {
 }
 
 /**
- * Denylist membership for the sync boundary, hardened on two axes over a raw
+ * Denylist membership for the sync boundary, hardened on three axes over a raw
  * `blockSet.has(name)`:
  *   1. Case-insensitive: the exact-name sets are all lowercase, so a host on a
  *      case-insensitive filesystem (macOS default) could otherwise slip a
@@ -137,11 +137,24 @@ export function isSecretFileName(name: string): boolean {
  *      denied `settings.local.json`. Lowercasing the probe closes that.
  *   2. Secret-file patterns: ORs in `isSecretFileName` so credential filetypes
  *      the exact sets do not enumerate are still blocked.
+ *   3. Trailing dots and spaces: the exact-name probe also tests
+ *      `stripTrailingDotsAndSpaces(name)` and its lowercase form, so
+ *      `settings.local.json.` bypasses this axis by the same trivially-cheap
+ *      evasion `isSecretFileName` closes on the pattern axis, in the same
+ *      function. See {@link stripTrailingDotsAndSpaces} for the monotonicity
+ *      argument.
  *
  * @param blockSet The exact-name denylist for the context (e.g. the result of
  *   `extrasDenySet`, or `ALWAYS_NEVER_SYNC`).
  * @param name A single path segment (basename) to test.
  */
 export function isDeniedName(blockSet: Set<string>, name: string): boolean {
-  return blockSet.has(name) || blockSet.has(name.toLowerCase()) || isSecretFileName(name);
+  const stripped = stripTrailingDotsAndSpaces(name);
+  return (
+    blockSet.has(name) ||
+    blockSet.has(name.toLowerCase()) ||
+    blockSet.has(stripped) ||
+    blockSet.has(stripped.toLowerCase()) ||
+    isSecretFileName(name)
+  );
 }
