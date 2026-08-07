@@ -232,13 +232,19 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
   });
 
   it('does NOT add an allow entry for a credential-shaped sharedDir', async () => {
-    // The consumer-level half of the guard: unit tests prove the guard rejects
-    // ".env", this proves the rejection actually keeps shared/.env/ out of the
-    // runtime allow-list, which is the behavior that protects the user.
+    // `.env` is redundantly blocked: isNeverSync's isSecretFileName check
+    // catches every credential-shaped segment before enforceAllowList ever
+    // reaches the allow-list built from map.sharedDirs, so `toThrow(NomadFatal)`
+    // alone would also pass if the allow-list wrongly admitted `.env`. Assert
+    // the NEVER_SYNC-specific message, not just the violations-path text
+    // (`add to PUSH_ALLOWED`), which both branches' messages would otherwise share.
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['.env'] };
     expect(() => enforceAllowList('M  shared/.env/token\0', map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('shared/.env/token is in NEVER_SYNC'),
+    );
   });
 
   it.each([42, 'gsd', null])(
