@@ -37,15 +37,19 @@ export function assertSafeLogical(logical: string): void {
  * a character and separator test only: it does not reject a credential-shaped
  * name (`.env` matches the pattern), which is a separate later check.
  *
- * This pattern says nothing about trailing dots; the caller owns them. Win32
- * strips trailing dots off a path's final component, so `.env.` and
- * `settings.local.json.` address the same files as `.env` and
- * `settings.local.json` while matching none of the name checks below.
- * {@link validateSharedDirEntry} therefore normalizes first and classifies
- * the name the host addresses, so each spelling reports the cause describing
- * what it actually reaches. A bare trailing dot remains a rejection in its
+ * This pattern says nothing about trailing dots; the caller owns them.
+ * `.env.` and `settings.local.json.` match none of the name checks below
+ * despite meaning the same thing to a user as `.env` and
+ * `settings.local.json`. {@link validateSharedDirEntry} therefore strips the
+ * dots first and classifies the name underneath, so a dotted spelling of an
+ * otherwise-denied name reports the SAME cause as the dotless one instead of
+ * an opaque, unhelpful label. A bare trailing dot remains a rejection in its
  * own right, `win32-alias`, but only as the residual case when nothing else
- * denies the addressed name.
+ * denies the name underneath: no released nomad can create or check out such
+ * a name on a native Windows host (git's `core.protectNTFS`, on by default,
+ * refuses to write a path component ending in `.` or a space), and
+ * `path-map.json` syncs, so a name accepted on one host must still work on
+ * every other.
  */
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
@@ -123,18 +127,17 @@ export type SharedDirRejection = {
  * matching {@link SharedDirRejection}.
  *
  * The real evaluation order: not a string, not a single path segment, then
- * the cause of the name this host actually ADDRESSES, via
+ * the cause of the name UNDERNEATH the dots, via
  * `classifyDeniedName(stripTrailingDots(entry))`, and finally the trailing
- * dot itself as the residual cause when nothing else denies the addressed
- * name.
+ * dot itself as the residual cause when nothing else denies that name.
  *
  * The invariant is NOT that a rejection keeps its reported cause. It does
- * not: classifying by the addressed name deliberately moved every
- * trailing-dot spelling out of `win32-alias` and into the cause of the file
- * it reaches. What holds is that the accept/reject partition never changes,
- * only the reported cause, and the cause always describes the path the host
- * resolves. A name that was refused stays refused, and no name that was
- * accepted becomes refused, for any suffix of dots.
+ * not: classifying by the name underneath deliberately moved every
+ * trailing-dot spelling out of `win32-alias` and into the cause of the name
+ * it shadows. What holds is that the accept/reject partition never changes,
+ * only the reported cause, and the cause always describes the name
+ * underneath the dots. A name that was refused stays refused, and no name
+ * that was accepted becomes refused, for any suffix of dots.
  *
  * Within `classifyDeniedName` the credential-shape check still runs last, so
  * a `NEVER_SYNC` member that also looks credential-shaped (e.g.
@@ -166,13 +169,13 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
         'not a single path segment (contains a path separator, an unsupported character, "." or "..")',
     };
   }
-  // Classify the name win32 would ACTUALLY address, not the one written. The
-  // trailing dots are decoration there, so `.env.` is the credential file and
-  // `commands.` is the managed directory, and each must report the cause that
-  // describes what it reaches. Testing the written form first labelled every
-  // one of them `win32-alias`, which shadowed those causes and left `.env.`
-  // with no other surface naming it: it is absent from NEVER_SYNC and
-  // `isSecretFileName` does not match it either.
+  // Classify the name underneath the dots, not the one written. `.env.` is
+  // the credential file and `commands.` is the managed directory once the
+  // dots are stripped, and each must report the cause that names it.
+  // Testing the written form first labelled every one of them `win32-alias`,
+  // which shadowed those causes and left `.env.` with no other surface
+  // naming it: it is absent from NEVER_SYNC and `isSecretFileName` does not
+  // match it either.
   const addressed = stripTrailingDots(entry);
   const named = classifyDeniedName(addressed);
   if (named !== null) {
@@ -184,26 +187,27 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
       ? named
       : {
           reason: named.reason,
-          message: `a trailing-dot name addressing ${named.message} (win32 strips the dot)`,
+          message: `a trailing-dot name shadowing ${named.message}`,
         };
   }
-  // Reached only when the addressed name is denied by nothing, so the trailing
-  // dot is the whole objection. Its OWN cause rather than `not-a-segment`,
-  // because such a name is a single safe segment that every released nomad
-  // accepted and symlinked: folding it into the traversal cause would strand a
-  // link this host has and then say the repo is safe to delete.
+  // Reached only when the name underneath is denied by nothing, so the
+  // trailing dot is the whole objection. Its OWN cause rather than
+  // `not-a-segment`, because such a name is a single safe segment that every
+  // released nomad accepted and symlinked: folding it into the traversal
+  // cause would strand a link this host has and then say the repo is safe to
+  // delete.
   if (entry.endsWith('.')) {
     return {
       reason: 'win32-alias',
       message:
-        'a trailing-dot name (win32 strips the dot, so it addresses a different path than it names)',
+        'a trailing-dot name (git for Windows refuses to create or check out a path ending in ".")',
     };
   }
   return null;
 }
 
 /**
- * Drop every trailing `.` from `name`, giving the path win32 resolves it to.
+ * Drop every trailing `.` from `name`, giving the name underneath the dots.
  *
  * A loop rather than a `/\.+$/` replace: an anchored quantifier over a
  * repeated character is the shape `sonarjs/super-linear-regex` rejects, and
@@ -287,22 +291,22 @@ const UNJOINABLE_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
  *
  * Ordering is load-bearing and is the whole reason this lives in one place.
  * The unjoinable causes are tested FIRST: `../escape.` ends with a dot AND is a
- * traversal, so an alias test placed ahead of the safety test answers `true`
- * for it on posix.
+ * traversal, so an alias test placed ahead of the safety test would answer
+ * `true` for it.
  *
- * The alias rule is keyed on the entry's SPELLING, never on its cause. Win32
- * strips a trailing dot, so such a name addresses a different path than it
- * spells: `commands.` reaches the live `shared/commands` and `...` a path
- * above the config root, so no consumer may join one there. On posix it is
- * an ordinary distinct directory that aliases nothing, so it stands on its
- * own regardless of the cause it inherited from the name win32 WOULD have
- * resolved it to.
- *
- * Excluding it on win32 accepts a narrow cost, not a zero one: a legacy
- * win32 symlink materialized under the dotted spelling (Developer Mode,
- * before win32 became copy-sync) is left un-enumerated by any consumer that
- * honors this gate. A modern win32 host is copy-sync already, so it has a
- * real copy and loses nothing.
+ * The alias rule is keyed on the entry's SPELLING, never on its cause, and
+ * admits on every platform. `commands.` and `mytools.` are ordinary distinct
+ * directory names on the filesystem this process actually touches: every
+ * `node:fs` call nomad makes prefixes an absolute win32 path with `\\?\`
+ * before the syscall (Node does this unconditionally, not only past
+ * `MAX_PATH`), which is documented to disable the legacy DOS-namespace
+ * normalization that would otherwise strip a trailing dot, so win32 never
+ * aliases one dotted name to another here. A real Windows host still cannot
+ * CREATE such a name through git (`core.protectNTFS`) or through any tool
+ * that does not use an extended-length path, but a name this host already
+ * has on disk, whether from an older nomad or hand-placed, is real and must
+ * stand on its own regardless of the cause it inherited from the name
+ * underneath the dots.
  *
  * @param entry - The refused entry, as written in `path-map.json`.
  * @param reason - The cause {@link validateSharedDirEntry} reported for it.
@@ -315,7 +319,7 @@ export function mayJoinRefusedEntry(
   remediable: ReadonlySet<SharedDirRejectionReason>,
 ): boolean {
   if (UNJOINABLE_REASONS.has(reason)) return false;
-  if (entry.endsWith('.')) return process.platform !== 'win32';
+  if (entry.endsWith('.')) return true;
   return remediable.has(reason);
 }
 

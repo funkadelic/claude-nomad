@@ -247,16 +247,18 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
     });
   });
 
-  // Win32 strips a trailing dot off a path's final component, so a trailing-dot
-  // name addresses a DIFFERENT path than it spells. Every such name is refused;
-  // what differs is the cause reported, which must describe the file the name
-  // actually reaches, because consumers key remediation and enumeration off it.
+  // A trailing-dot name is refused because git for Windows cannot create or
+  // check it out (core.protectNTFS), not because it silently addresses a
+  // different path: it stays a distinct, real name on every platform.
+  // What differs is the cause reported, which must describe the name
+  // underneath the dots, because consumers key remediation and enumeration
+  // off it.
   describe('trailing-dot aliases', () => {
     // Load-bearing: these carried `win32-alias` as their ONLY label until the
-    // guard started classifying the addressed name. Doctor excludes reserved
-    // names from its filesystem probe and gates win32-alias off win32, so a
-    // mislabelled `.env.` lost the one row that named it, and a mislabelled
-    // `commands.` gained a row telling the user to delete managed content.
+    // guard started classifying the name underneath. Doctor excludes reserved
+    // names from its filesystem probe, so a mislabelled `.env.` lost the one
+    // row that named it, and a mislabelled `commands.` gained a row telling
+    // the user to delete managed content.
     it.each([
       ['.env.', 'secret-shaped'],
       ['id_rsa.', 'secret-shaped'],
@@ -272,10 +274,10 @@ describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir
       expect(validateSharedDirEntry(value)?.reason).toBe(reason);
     });
 
-    // Only when the addressed name is denied by nothing else is the trailing
+    // Only when the name underneath is denied by nothing else is the trailing
     // dot itself the whole objection.
     it.each(['mytools.', 'foo.', 'mytools..', '...'])(
-      'reports %p as win32-alias, since nothing else denies the name it addresses',
+      'reports %p as win32-alias, since nothing else denies the name underneath',
       (value) => {
         expect(validateSharedDirEntry(value)?.reason).toBe('win32-alias');
       },
@@ -317,13 +319,13 @@ describe('mayJoinRefusedEntry (shared join-safety policy for refused entries)', 
   });
 
   it.each(['mytools.', 'commands.', '.env.', '...'])(
-    'joins the trailing-dot name %p on posix but never on win32',
+    'joins the trailing-dot name %p on every platform',
     (entry) => {
       const reason = validateSharedDirEntry(entry)!.reason;
-      stubPlatform('linux');
-      expect(mayJoinRefusedEntry(entry, reason, ANY)).toBe(true);
-      stubPlatform('win32');
-      expect(mayJoinRefusedEntry(entry, reason, ANY)).toBe(false);
+      for (const platform of ['linux', 'win32'] as const) {
+        stubPlatform(platform);
+        expect(mayJoinRefusedEntry(entry, reason, ANY)).toBe(true);
+      }
     },
   );
 
