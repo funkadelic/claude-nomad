@@ -318,6 +318,17 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  it('rejects a stray file sitting directly at the extras logical level', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    // `shared/extras/foo` has no <dirname> segment at all, so the per-extra
+    // denylist choice has no name to inspect. It must fall back to the narrow
+    // subset rather than throwing on an absent segment, leaving the path to be
+    // rejected by the allow-list (no exact or prefix entry matches it).
+    expect(() => enforceAllowList('A  shared/extras/foo\0', map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync shared/extras/foo'));
+  });
+
   it('rejects a trailing-dot spelling of a denied name inside an extras tree', async () => {
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
