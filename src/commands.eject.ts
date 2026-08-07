@@ -437,8 +437,10 @@ function defaultEjectRoots(): { claudeHome: string; repoHome: string } {
  * - Already a real file/dir: reported as skipped, left unchanged.
  * - Valid symlink into `shared/`: replaced with a dereferenced copy (copy-then-swap).
  * - Valid symlink to a target outside `shared/`: reported and skipped (not owned).
- * - Dangling symlink: the whole command aborts with exit 1 before any mutation;
- *   the user is told to run `nomad pull` first.
+ * - Dangling symlink: the whole command aborts with exit 1 before any mutation.
+ *   A base name is told to run `nomad pull` first; a refused name (one this
+ *   host already had under a looser guard) is told nomad cannot restore it
+ *   and to remove the dead link by hand, since `nomad pull` would not help.
  *
  * A real `node:fs` fault during the live pass (disk full, EACCES, target removed
  * under us) aborts with exit 1 and a FATAL message naming the failed entry, the
@@ -484,12 +486,26 @@ export function cmdEject(
     item(`processing rejected entry already present on this host: ${name}`);
   }
 
+  // A dangling name outside `base` is a refused entry ejectNames widened in:
+  // `nomad pull` never restores it (it is refused, not synced), so the base
+  // case's advice would send the user in a circle. Split the report instead
+  // of aborting with instructions that cannot be followed for this half.
   const dangling = names.filter((n) => classifications.get(n) === 'dangling');
-  if (dangling.length > 0) {
+  const danglingBase = dangling.filter((n) => base.has(n));
+  const danglingRefused = dangling.filter((n) => !base.has(n));
+  if (danglingBase.length > 0) {
     fail(
-      `dangling symlink(s): ${dangling.join(', ')}. ` +
+      `dangling symlink(s): ${danglingBase.join(', ')}. ` +
         `run \`nomad pull\` first to restore the missing target, then re-run \`nomad eject\``,
     );
+  }
+  if (danglingRefused.length > 0) {
+    fail(
+      `dangling symlink(s) for a refused name nomad cannot restore: ${danglingRefused.join(', ')}. ` +
+        `recover the content by hand if you need it, then remove the dead link and re-run \`nomad eject\``,
+    );
+  }
+  if (dangling.length > 0) {
     process.exit(1);
   }
 

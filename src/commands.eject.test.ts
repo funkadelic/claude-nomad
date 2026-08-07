@@ -219,6 +219,44 @@ describe('cmdEject', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('CLAUDE.md'));
   });
 
+  it('dangling FAIL for a refused name: nomad pull cannot restore it, so the message says so instead', () => {
+    // Refused entries are excluded from nomad pull's sync, so the base
+    // case's "run nomad pull first" advice would send the user in a circle:
+    // pull would never restore this link, and the next eject aborts again.
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['credentials'] }),
+    );
+    symlinkSync(join(repoHome, 'shared', 'credentials'), join(claudeHome, 'credentials'));
+
+    expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('credentials'));
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('nomad cannot restore'));
+    expect(errSpy).not.toHaveBeenCalledWith(expect.stringContaining('nomad pull'));
+  });
+
+  it('dangling FAIL reports both a base and a refused name with their own instructions', () => {
+    const { claudeHome, repoHome } = makeTempRoots();
+    writeFileSync(
+      join(repoHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['credentials'] }),
+    );
+    symlinkSync('/nonexistent/CLAUDE.md', join(claudeHome, 'CLAUDE.md'));
+    symlinkSync(join(repoHome, 'shared', 'credentials'), join(claudeHome, 'credentials'));
+
+    expect(() => cmdEject({}, { claudeHome, repoHome })).toThrow('process.exit(1)');
+    const baseCall = errSpy.mock.calls.find(
+      (c) => c[0].includes('CLAUDE.md') && c[0].includes('nomad pull'),
+    );
+    const refusedCall = errSpy.mock.calls.find(
+      (c) => c[0].includes('credentials') && c[0].includes('nomad cannot restore'),
+    );
+    expect(baseCall).toBeDefined();
+    expect(refusedCall).toBeDefined();
+  });
+
   it.skipIf(isWin)(
     'dry-run: skip-real names are reported as not-a-symlink in dry-run output',
     () => {
@@ -528,7 +566,10 @@ describe('cmdEject', () => {
     );
 
     cmdEject({}, { claudeHome, repoHome });
-    expect(allLogs(logSpy)).not.toContain('42');
+    // A bare '42' assertion risks a false pass from an unrelated digit (a temp
+    // dir name, PID, or timestamp in the same log). '42' is absent from
+    // claudeHome, so a coercion regression would print this exact fragment.
+    expect(allLogs(logSpy)).not.toContain('skipped (absent): 42');
   });
 
   it('enumerates a trailing-dot name on every platform, where an older nomad could have symlinked it', () => {
