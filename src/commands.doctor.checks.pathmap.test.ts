@@ -744,7 +744,13 @@ describe('reportRejectedSharedDirs', () => {
     expect(lstatSync(join(base, 'aliasprobe.'), { throwIfNoEntry: false })).toBeUndefined();
     mkdirSync(join(base, 'aliasprobe.'), { recursive: true });
     expect(lstatSync(join(base, 'aliasprobe.'), { throwIfNoEntry: false })).toBeDefined();
-    expect(readdirSync(base).sort()).toEqual(['aliasprobe', 'aliasprobe.']);
+    // Both are real, independently listed entries, not one name folded into
+    // the other. readdirSync(base) also carries this fixture's pre-existing
+    // structural files (e.g. settings.base.json), so assert containment
+    // rather than an exact listing.
+    const entries = readdirSync(base);
+    expect(entries).toContain('aliasprobe');
+    expect(entries).toContain('aliasprobe.');
   });
 
   it.skipIf(isWin)(
