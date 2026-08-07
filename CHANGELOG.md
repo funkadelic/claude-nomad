@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.64.1](https://github.com/funkadelic/claude-nomad/compare/v0.64.0...v0.64.1) (2026-08-07)
+
+
+### Fixed
+
+* **config:** close the trailing-dot bypass in the secret-name guard ([#495](https://github.com/funkadelic/claude-nomad/issues/495)) ([9aaf5d9](https://github.com/funkadelic/claude-nomad/commit/9aaf5d958027a3557974c1ab32254c6171aea631))
+* reject a secret-shaped name as a shared dir ([#493](https://github.com/funkadelic/claude-nomad/issues/493)) ([3054464](https://github.com/funkadelic/claude-nomad/commit/3054464c91c974a7abdad24b2067bab8386e1dfd))
+
+
+### Changed
+
+* **release:** publish the release body from CHANGELOG.md ([#496](https://github.com/funkadelic/claude-nomad/issues/496)) ([e7bff07](https://github.com/funkadelic/claude-nomad/commit/e7bff07504935e563936733eae1146dc6eeaca83))
+
 ## [0.64.0](https://github.com/funkadelic/claude-nomad/compare/v0.63.2...v0.64.0) (2026-08-05)
 
 ### What's new
