@@ -221,8 +221,11 @@ Each listed name is symlinked from `shared/<name>` into `~/.claude/<name>` (a re
 Windows, where `nomad pull` and `nomad push` both keep that copy and the repo in step, so edits and
 deletions travel either way round). Entries are validated before linking: a name must be a single
 path segment (no `/` or `..`, and no trailing `.`), must not be one of the never-synced names, must
-not collide with a reserved name, and must not look like a credential file (`.env`, `id_rsa`,
-`credentials`, `*.pem`, and `*.key` are all refused). Those name checks ignore case, so `Plans` and
+not collide with a reserved name, must not look like a credential file (`.env`, `id_rsa`,
+`credentials`, `*.pem`, and `*.key` are all refused), and must not be a Windows device name with or
+without an extension (`nul`, `con`, `com1`, `nul.json` are all refused, on every platform, since
+`path-map.json` syncs and a name usable on Linux or macOS may still be unusable on a Windows host).
+Those name checks ignore case, so `Plans` and
 `Settings.local.json` are refused exactly like their lowercase spellings. That matters on macOS and
 Windows, where the two spellings are the same file: without it, a name that differs only in case
 would be linked straight over your real per-host settings. In particular `hooks`, `agents`, and
