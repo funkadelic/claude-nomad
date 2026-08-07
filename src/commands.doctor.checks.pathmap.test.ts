@@ -3,6 +3,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -645,36 +646,32 @@ describe('reportRejectedSharedDirs', () => {
     expect(existsSync(join(onlyCopy, 'token.txt'))).toBe(true);
   });
 
-  it.skipIf(isWin)(
-    'probes a trailing-dot entry on posix, where it is a real distinct name',
-    async () => {
-      const map: PathMap = { projects: {}, sharedDirs: ['mytools.'] };
-      writeFileSync(
-        join(env.testHome, 'claude-nomad', 'path-map.json'),
-        JSON.stringify(map) + '\n',
-      );
-      mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'mytools.'), { recursive: true });
+  it('probes a trailing-dot entry, where it is a real distinct name', async () => {
+    const map: PathMap = { projects: {}, sharedDirs: ['mytools.'] };
+    writeFileSync(join(env.testHome, 'claude-nomad', 'path-map.json'), JSON.stringify(map) + '\n');
+    mkdirSync(join(env.testHome, 'claude-nomad', 'shared', 'mytools.'), { recursive: true });
 
-      const { section: makeSection } = await import('./commands.doctor.format.ts');
-      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
-      const sec = makeSection('Path map');
-      reportPathMap(sec);
-      expect(sec.items.join('\n')).toContain(
-        'shared/ entry "mytools." exists in the repo working tree',
-      );
-    },
-  );
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+    const sec = makeSection('Path map');
+    reportPathMap(sec);
+    expect(sec.items.join('\n')).toContain(
+      'shared/ entry "mytools." exists in the repo working tree',
+    );
+  });
 
+  // symlinkSync needs Developer Mode or admin on native Windows, unrelated to
+  // the assertion under test, so this one skips there while the mkdirSync-only
+  // trailing-dot tests around it do not.
   it.skipIf(isWin)(
     'probes a trailing-dot entry that inherits reserved, which the cause alone excludes',
     async () => {
-      // "commands." strips to "commands", the reserved shared/ name win32
-      // would address, and "reserved" is deliberately absent from
-      // PROBEABLE_REASONS, so this row can only fire because the spelling is
-      // consulted ahead of the cause on posix. On posix these are two
-      // unrelated directories, nomad manages neither dotted spelling, and
-      // dropping the row leaves the user's only copy behind a link nomad
-      // refuses to restore.
+      // "commands." strips to "commands", the reserved shared/ name, and
+      // "reserved" is deliberately absent from PROBEABLE_REASONS, so this row
+      // can only fire because the spelling is consulted ahead of the cause.
+      // These are two unrelated directories on every platform this process
+      // touches, nomad manages neither dotted spelling, and dropping the row
+      // leaves the user's only copy behind a link nomad refuses to restore.
       const map: PathMap = { projects: {}, sharedDirs: ['commands.'] };
       writeFileSync(
         join(env.testHome, 'claude-nomad', 'path-map.json'),
@@ -694,54 +691,60 @@ describe('reportRejectedSharedDirs', () => {
     },
   );
 
-  it.skipIf(isWin)(
-    'never probes a trailing-dot entry on win32, where it addresses a different path',
-    async () => {
-      // The leftover is created WITH the trailing dot. Creating shared/mytools
-      // instead would make this pass whether or not the gate exists, since on
-      // the posix filesystem this runs on the two are different directories and
-      // neither spelling would be found: the assertion has to be able to fail.
-      const realPlatform = process.platform;
-      try {
-        stubPlatform('win32');
-        // Includes spellings that inherit never-sync and secret-shaped, both of
-        // which ARE probeable causes: a gate keyed on the cause rather than the
-        // spelling would let these through.
-        const map: PathMap = {
-          projects: {},
-          sharedDirs: ['mytools.', '.env.', 'settings.local.json.'],
-        };
-        writeFileSync(
-          join(env.testHome, 'claude-nomad', 'path-map.json'),
-          JSON.stringify(map) + '\n',
-        );
-        for (const name of ['mytools.', '.env.', 'settings.local.json.']) {
-          mkdirSync(join(env.testHome, 'claude-nomad', 'shared', name), { recursive: true });
-        }
-
-        const { section: makeSection } = await import('./commands.doctor.format.ts');
-        const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
-        const sec = makeSection('Path map');
-        reportPathMap(sec);
-        const out = sec.items.join('\n');
-        expect(out).toContain('rejected');
-        expect(out).not.toContain('exists in the repo working tree');
-      } finally {
-        stubPlatform(realPlatform);
+  it('also probes a trailing-dot entry on win32, where it is a real distinct name', async () => {
+    // The leftover is created WITH the trailing dot. Creating shared/mytools
+    // instead would make this pass whether or not the gate exists, since on
+    // the filesystem this runs on the two are different directories and
+    // neither spelling would be found: the assertion has to be able to fail.
+    const realPlatform = process.platform;
+    try {
+      stubPlatform('win32');
+      // Includes spellings that inherit never-sync and secret-shaped, both of
+      // which ARE probeable causes, plus one (reserved, via "commands." in
+      // the sibling test) that is not: none of these are gated by platform.
+      const map: PathMap = {
+        projects: {},
+        sharedDirs: ['mytools.', '.env.', 'settings.local.json.'],
+      };
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'path-map.json'),
+        JSON.stringify(map) + '\n',
+      );
+      for (const name of ['mytools.', '.env.', 'settings.local.json.']) {
+        mkdirSync(join(env.testHome, 'claude-nomad', 'shared', name), { recursive: true });
       }
-    },
-  );
 
-  // Settles on the runner what cannot be observed from posix: whether Node's
-  // toNamespacedPath prefixing disables the trailing-dot stripping the whole
-  // win32-alias reason rests on. If this fails, the reason is unnecessary.
-  it.runIf(isWin)('confirms win32 really does strip a trailing dot from a path', () => {
+      const { section: makeSection } = await import('./commands.doctor.format.ts');
+      const { reportPathMap } = await import('./commands.doctor.checks.pathmap.ts');
+      const sec = makeSection('Path map');
+      reportPathMap(sec);
+      const out = sec.items.join('\n');
+      expect(out).toContain('exists in the repo working tree');
+    } finally {
+      stubPlatform(realPlatform);
+    }
+  });
+
+  // Settles on the runner what cannot be observed from posix: confirmed by a
+  // code review (see 73-SECURITY.md, T-73-01/T-73-04) that Node's fs bindings
+  // prefix an absolute win32 path with `\\?\` before every syscall this file
+  // makes (`ToNamespacedPath`, unconditional, no MAX_PATH check), which
+  // disables the legacy DOS-namespace normalization that would otherwise
+  // strip a trailing dot. So win32 never aliases "aliasprobe." to
+  // "aliasprobe" through any call this codebase makes, and both are real,
+  // distinct, independently creatable directories. If either assertion
+  // fails, this empirical premise no longer holds and mayJoinRefusedEntry's
+  // unconditional admit needs re-examining.
+  it.runIf(isWin)('confirms win32 does NOT alias a trailing-dot path to its dotless name', () => {
     // Same syscall the code under test uses. `existsSync` would answer a
-    // different question, so a green result here would not license the
-    // lstat-based probe in hasSharedLeftover.
+    // different question, so a result here would not license the lstat-based
+    // probe in hasSharedLeftover.
     const base = join(env.testHome, 'claude-nomad', 'shared');
     mkdirSync(join(base, 'aliasprobe'), { recursive: true });
+    expect(lstatSync(join(base, 'aliasprobe.'), { throwIfNoEntry: false })).toBeUndefined();
+    mkdirSync(join(base, 'aliasprobe.'), { recursive: true });
     expect(lstatSync(join(base, 'aliasprobe.'), { throwIfNoEntry: false })).toBeDefined();
+    expect(readdirSync(base).sort()).toEqual(['aliasprobe', 'aliasprobe.']);
   });
 
   it.skipIf(isWin)(

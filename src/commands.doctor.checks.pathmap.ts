@@ -117,9 +117,8 @@ function reportCurrentHostPathsMissing(section: DoctorSection, map: PathMap): vo
  *
  * The entry is safe to join because {@link mayJoinRefusedEntry} is the only
  * way one reaches here, and it refuses the coercion and traversal shapes
- * outright, then refuses any trailing-dot spelling on win32 where such a name
- * addresses a different path than it spells; so every entry that arrives has
- * cleared `SAFE_SEGMENT` on a platform where the name means what it says.
+ * outright; every entry that arrives has cleared `SAFE_SEGMENT` and names a
+ * real, distinct directory this process can address.
  *
  * @param entry - The rejected `sharedDirs` name to probe under `shared/`.
  * @returns `true` when `shared/<entry>` resolves on this filesystem.
@@ -138,10 +137,10 @@ function hasSharedLeftover(entry: string): boolean {
  * for, one half of the gate.
  *
  * This set does NOT decide for a trailing-dot spelling. `mayJoinRefusedEntry`
- * admits any such name on posix before this set is ever consulted, whatever
- * cause it inherited, because the dotted name is a distinct directory there
- * that nomad manages under no spelling. So `commands.` DOES get a
- * remediation row on posix despite `reserved` being absent below; only the
+ * admits any such name, on every platform, before this set is ever
+ * consulted, whatever cause it inherited, because the dotted name is a
+ * distinct directory that nomad manages under no spelling. So `commands.`
+ * DOES get a remediation row despite `reserved` being absent below; only the
  * dotless `commands` is excluded by this set. A rejection reason added later
  * is therefore fail-closed for ordinary names and fail-OPEN for dotted ones:
  * check {@link mayJoinRefusedEntry} when adding one.
@@ -252,8 +251,8 @@ function classifyLocalLink(entry: string): 'managed' | 'foreign' | 'dangling' | 
  * remediation row, but only for entries {@link mayJoinRefusedEntry} admits
  * with {@link PROBEABLE_REASONS} as the remediable set. That gate is two
  * rules and not one: the traversal and coercion shapes are never joinable on
- * any host, and a trailing-dot spelling is admitted on posix (refused on
- * win32) regardless of its cause, before {@link PROBEABLE_REASONS} is ever
+ * any host, and a trailing-dot spelling is admitted on every platform
+ * regardless of its cause, before {@link PROBEABLE_REASONS} is ever
  * consulted. Only for a non-dotted name does the reason set decide. A
  * symlink at `~/.claude/<entry>` that resolves INTO `shared/` leads with copying the
  * content out and only then removing both: telling the user to delete the
