@@ -335,7 +335,12 @@ describe('mayJoinRefusedEntry (shared join-safety policy for refused entries)', 
     expect(mayJoinRefusedEntry('commands', 'reserved', ANY)).toBe(true);
     expect(mayJoinRefusedEntry('commands', 'reserved', doctorSet)).toBe(false);
   });
+});
 
+// Every assertion below calls validateSharedDirEntry, not mayJoinRefusedEntry;
+// kept as a second describe of the same name rather than nested inside the
+// block above, which closed after its own three mayJoinRefusedEntry tests.
+describe('validateSharedDirEntry (reason-returning companion to isValidSharedDir)', () => {
   describe('never-sync', () => {
     it.each(['todos', '.credentials.json'])('rejects %p', (value) => {
       expect(validateSharedDirEntry(value)?.reason).toBe('never-sync');
