@@ -273,6 +273,25 @@ describe('shared-links baseline', () => {
       expect(scan.files).toEqual({});
       expect(scan.declined).toEqual(['commands/settings.local.json']);
     });
+
+    // Skipped on win32: whether NTFS accepts a basename with a trailing dot
+    // through node:fs is unverified on this project's CI, and the
+    // platform-independent proof of the underlying predicate already lives
+    // in config.test.ts. An ordinary file proves `files` still records what
+    // it should; `declined` (not a silent absence) is what stops a later
+    // read of that absence from being taken as a user deletion.
+    it.skipIf(isWin)(
+      'declines a nested trailing-dot credential name instead of recording it',
+      async () => {
+        writeFileSync(join(claudeDir, 'commands', 'a.md'), '# a\n');
+        writeFileSync(join(claudeDir, 'commands', '.env.'), 'TOKEN=secret\n');
+        stubPlatform('win32');
+        const { enumerateLocalSharedScan } = await import('./links.baseline.ts');
+        const scan = enumerateLocalSharedScan({ projects: {} });
+        expect(Object.keys(scan.files)).toEqual(['commands/a.md']);
+        expect(scan.declined).toEqual(['commands/.env.']);
+      },
+    );
   });
 
   describe('buildSharedBaseline', () => {
