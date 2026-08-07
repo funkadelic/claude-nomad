@@ -3,6 +3,7 @@ import {
   CLAUDE_EXTRA_NEVER_SYNC,
   GSD_DROPPED_NAMES,
   GSD_PREFIX,
+  isClaudeExtraName,
   isDeniedName,
   NEVER_SYNC,
   PUSH_ALLOWED_STATIC,
@@ -40,11 +41,15 @@ function isAllowed(path: string, allowed: readonly string[]): boolean {
  * its subtree mirrors `~/.claude/` semantics, so its ephemeral segment names
  * (`projects`, `shell-snapshots`, `sessions`, `todos`, ...) get the full
  * `NEVER_SYNC` boundary. Mirrors `extrasDenySet` in `extras-sync.core.ts` so
- * the push gate and the copy filter agree on the boundary.
+ * the push gate and the copy filter agree on the boundary. The `.claude`
+ * comparison runs through `isClaudeExtraName` (case-insensitive, trailing
+ * dot/whitespace normalized) rather than a raw `===`, so a spelling like
+ * `.Claude` or `.claude.` cannot silently downgrade to the narrower
+ * `ALWAYS_NEVER_SYNC` set.
  */
 function blockSetFor(segments: string[]): Set<string> {
   if (segments[0] !== 'shared' || segments[1] !== 'extras') return NEVER_SYNC;
-  return segments[3] === '.claude' ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+  return isClaudeExtraName(segments[3] ?? '') ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
 }
 
 /**

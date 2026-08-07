@@ -340,6 +340,7 @@ export {
   CLAUDE_EXTRA_NEVER_SYNC,
   isSecretFileName,
   isDeniedName,
+  isClaudeExtraName,
   stripTrailingDotsAndWhitespace,
 } from './config.never-sync.ts';
 

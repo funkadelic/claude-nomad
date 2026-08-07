@@ -158,3 +158,21 @@ export function isDeniedName(blockSet: Set<string>, name: string): boolean {
     isSecretFileName(name)
   );
 }
+
+/**
+ * True when `name` is a spelling of the `.claude` extra directory: the exact
+ * lowercase name after normalizing trailing dots/whitespace and case-folding.
+ * `isDeniedName` hardened *membership* in a deny set on the case and
+ * trailing-character axes; this closes the same two axes for the sibling
+ * *selection* comparisons in `commands.push.allowlist.ts` and
+ * `extras-sync.core.ts` that choose WHICH deny set (`CLAUDE_EXTRA_NEVER_SYNC`
+ * vs `ALWAYS_NEVER_SYNC`) applies to a `.claude` extra's contents. Without
+ * this, a spelling like `.Claude` (same directory as `.claude` on
+ * case-insensitive filesystems) or `.claude.` silently downgrades to the
+ * narrower denylist, which does not contain `projects`.
+ *
+ * @param name A single path segment (basename) to test.
+ */
+export function isClaudeExtraName(name: string): boolean {
+  return stripTrailingDotsAndWhitespace(name).toLowerCase() === '.claude';
+}
