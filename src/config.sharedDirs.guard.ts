@@ -1,4 +1,8 @@
-import { isSecretFileName, NEVER_SYNC } from './config.never-sync.ts';
+import {
+  isSecretFileName,
+  NEVER_SYNC,
+  stripTrailingDotsAndWhitespace,
+} from './config.never-sync.ts';
 import { NomadFatal } from './utils.ts';
 
 /**
@@ -128,8 +132,9 @@ export type SharedDirRejection = {
  *
  * The real evaluation order: not a string, not a single path segment, then
  * the cause of the name UNDERNEATH the dots, via
- * `classifyDeniedName(stripTrailingDots(entry))`, and finally the trailing
- * dot itself as the residual cause when nothing else denies that name.
+ * `classifyDeniedName(stripTrailingDotsAndWhitespace(entry))`, and finally
+ * the trailing dot itself as the residual cause when nothing else denies
+ * that name.
  *
  * The invariant is NOT that a rejection keeps its reported cause. It does
  * not: classifying by the name underneath deliberately moved every
@@ -176,7 +181,7 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
   // which shadowed those causes and left `.env.` with no other surface
   // naming it: it is absent from NEVER_SYNC and `isSecretFileName` does not
   // match it either.
-  const addressed = stripTrailingDots(entry);
+  const addressed = stripTrailingDotsAndWhitespace(entry);
   const named = classifyDeniedName(addressed);
   if (named !== null) {
     // Say which name the cause is about. `commands.` is not itself in the
@@ -207,22 +212,6 @@ export function validateSharedDirEntry(entry: unknown): SharedDirRejection | nul
 }
 
 /**
- * Drop every trailing `.` from `name`, giving the name underneath the dots.
- *
- * A loop rather than a `/\.+$/` replace: an anchored quantifier over a
- * repeated character is the shape `sonarjs/super-linear-regex` rejects, and
- * this runs on unvalidated `path-map.json` input.
- *
- * @param name - A single path segment.
- * @returns The segment without trailing dots, possibly empty.
- */
-function stripTrailingDots(name: string): string {
-  let end = name.length;
-  while (end > 0 && name[end - 1] === '.') end -= 1;
-  return name.slice(0, end);
-}
-
-/**
  * Report whether `name` is denied on its own terms: a `NEVER_SYNC` member, a
  * reserved `shared/` name, a reserved Windows device name, or a
  * credential-shaped filename.
@@ -234,7 +223,8 @@ function stripTrailingDots(name: string): string {
  * spelling, so an exact-case `Set.has` would accept an entry that then gets
  * symlinked over this host's per-host settings.
  *
- * @param name - A single path segment, already normalized for trailing dots.
+ * @param name - A single path segment, already normalized for trailing dots
+ *   and whitespace.
  * @returns The matching rejection, or `null` when nothing denies the name.
  */
 function classifyDeniedName(name: string): SharedDirRejection | null {
