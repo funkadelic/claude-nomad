@@ -428,3 +428,114 @@ describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# repo copy\n');
   });
 });
+
+/**
+ * The mirror's copy-time filter runs against the full `NEVER_SYNC` set, not the
+ * five-name `ALWAYS_NEVER_SYNC` subset. Every path this mirror writes lives
+ * under `shared/<name>` and never under `shared/extras/`, so that set is
+ * exactly what the repo-working-tree gate resolves for the same path; running
+ * it here means the path is simply never written.
+ *
+ * `NEVER_SYNC` carries ordinary-sounding directory names authored against
+ * `~/.claude/` semantics, so this is a user-facing behavior change and gets a
+ * test that names the generic entry it uses rather than reaching for an
+ * obviously-secret one. Pinned in both directions: a name that is now refused,
+ * and a name that still passes.
+ */
+describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  const realPlatform = process.platform;
+  const TS = '20260810-010000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-mirror-denylist-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    sharedDir = join(testHome, 'claude-nomad', 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('refuses a directory segment spelled exactly like the generic NEVER_SYNC entry "sessions"', async () => {
+    mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# token: abc\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(existsSync(join(sharedDir, 'commands', 'sessions'))).toBe(false);
+  });
+
+  it('still mirrors an ordinary shared file, so the widening did not blanket-refuse', async () => {
+    writeFileSync(join(claudeDir, 'commands', 'deploy.md'), '# deploy\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(readFileSync(join(sharedDir, 'commands', 'deploy.md'), 'utf8')).toBe('# deploy\n');
+  });
+
+  it('leaves a file named tasks.md alone: isDeniedName matches whole segments, not substrings', async () => {
+    // `tasks` is a NEVER_SYNC entry, but only a path segment spelled exactly
+    // `tasks` collides. A user's `tasks.md` command file is untouched.
+    writeFileSync(join(claudeDir, 'commands', 'tasks.md'), '# my tasks\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(readFileSync(join(sharedDir, 'commands', 'tasks.md'), 'utf8')).toBe('# my tasks\n');
+  });
+
+  it('still refuses a credential-shaped name, unchanged from the narrower subset', async () => {
+    // The credential-pattern axis already covered `.env` through isDeniedName;
+    // widening the exact-name set must not have regressed it.
+    writeFileSync(join(claudeDir, 'commands', '.env'), 'TOKEN=abc\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(existsSync(join(sharedDir, 'commands', '.env'))).toBe(false);
+  });
+
+  it('applies the same refusal on the push mirror, which routes through copyExtrasFiltered', async () => {
+    // The pull mirror overlays (copyExtrasOverlayFiltered); the push mirror
+    // replaces (copyExtrasFiltered). Both call sites take the widened set.
+    mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# token: abc\n');
+    writeFileSync(join(claudeDir, 'commands', 'deploy.md'), '# deploy\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    expect(existsSync(join(sharedDir, 'commands', 'sessions'))).toBe(false);
+    expect(readFileSync(join(sharedDir, 'commands', 'deploy.md'), 'utf8')).toBe('# deploy\n');
+  });
+});

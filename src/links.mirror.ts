@@ -7,7 +7,7 @@
 import { existsSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, claudeHome, repoHome, ALWAYS_NEVER_SYNC, type PathMap } from './config.ts';
+import { allSharedLinks, claudeHome, repoHome, NEVER_SYNC, type PathMap } from './config.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras-sync.core.ts';
 import { log } from './utils.ts';
 import { backupRepoWrite } from './utils.fs.ts';
@@ -100,6 +100,25 @@ type SharedMirrorPolicy = {
  * either. On the wet path, the copy happens first and the event is emitted
  * afterward only when `opts.onPreview` is supplied (`emitMirrorWet`).
  *
+ * The copy filter runs against the full `NEVER_SYNC` set. Every path this
+ * mirror writes lives under `shared/<name>` and never under `shared/extras/`,
+ * so `blockSetFor` resolves such a path to `NEVER_SYNC` unconditionally: this
+ * computes, at copy time and with no git invocation, exactly the gate the
+ * repo-working-tree backstop computes for the same path afterwards. The point
+ * is that the path is simply never written, leaving the backstop a genuine
+ * second layer rather than the only line of defense.
+ *
+ * The trade-off is real and deliberate. `NEVER_SYNC` is not a generic secrets
+ * list: it was authored against `~/.claude/`'s own directory semantics and
+ * carries ordinary-sounding names (`todos`, `shell-snapshots`, `debug`,
+ * `file-history`, `plans`, `session-env`, `statsig`, `telemetry`, `ide`,
+ * `cache`, `backups`, `paste-cache`, `daemon`, `jobs`, `tasks`, `security`,
+ * `sessions`). A user whose `sharedDirs` content legitimately contains a
+ * directory spelled exactly like one of those stops seeing it mirrored.
+ * `isDeniedName` matches whole segments, not substrings, so a FILE named
+ * `tasks.md` is unaffected; only a path segment spelled exactly `tasks`
+ * collides.
+ *
  * @param name - Shared name from `allSharedLinks`.
  * @param claude - `claudeHome()`, resolved once by the caller.
  * @param repo - `repoHome()`, resolved once by the caller.
@@ -131,9 +150,9 @@ function mirrorOneSharedName(
   // sibling to preserve in the first place, so the plain filtered copy IS the
   // overlay for it, and routing files here keeps the primitive's contract intact.
   if (policy.overlay && stat.isDirectory()) {
-    copyExtrasOverlayFiltered(localPath, target, ALWAYS_NEVER_SYNC);
+    copyExtrasOverlayFiltered(localPath, target, NEVER_SYNC);
   } else {
-    copyExtrasFiltered(localPath, target, ALWAYS_NEVER_SYNC);
+    copyExtrasFiltered(localPath, target, NEVER_SYNC);
   }
   emitMirrorWet(opts.onPreview, name, localPath, target);
 }
@@ -175,9 +194,10 @@ function mirrorSharedNames(
  * (a symlink-era leftover, or a host sharing `~/.claude` with a
  * symlink-capable OS; mirroring through it would rm the copy target from
  * under the `cpSync` source and crash), otherwise mirror via
- * `copyExtrasFiltered` with a blockSet seeded from `ALWAYS_NEVER_SYNC` (the
- * same deny-set boundary `copySharedLinkPull` uses on the pull side), so a
- * host-local sensitive name cannot ride from `~/.claude/` into the repo.
+ * `copyExtrasFiltered` with a blockSet seeded from `NEVER_SYNC`, so a
+ * host-local sensitive name cannot ride from `~/.claude/` into the repo. See
+ * `mirrorOneSharedName` for why that set and not the narrower subset
+ * `copySharedLinkPull` still uses on the repo-to-host read half.
  *
  * On darwin/linux this is a no-op: the symlink means an edit at
  * `~/.claude/<name>` already lands in `shared/<name>` directly, so push has
