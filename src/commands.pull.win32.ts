@@ -11,7 +11,8 @@ import { type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
 import { planSharedLinkCaptures } from './links.captures.ts';
 import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
-import { stageLocalSharedEdits } from './links.ts';
+import { stageLocalSharedEdits, type MirrorPreviewEvent } from './links.mirror.ts';
+import { addItem, section, type DoctorSection } from './output-tree.ts';
 import { type SharedLinkPlans } from './preview.ts';
 import { warn } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
@@ -132,17 +133,31 @@ function newlyUntracked(before: Set<string> | null, after: Set<string> | null): 
  * passes, including the containment below: a mirror that throws part way can
  * still have written files, and those are this run's to account for.
  *
+ * `events` is collected via an `onPreview` sink passed into
+ * `stageLocalSharedEdits`, and is what lets a wet pull render a `Symlinks` row
+ * naming what the mirror captured. It answers a different question than
+ * `mirrored`: `mirrored` is the flat set of repo-relative paths this run
+ * newly created (from the untracked-file snapshot diff, used by the collision
+ * runbook), while `events` is one entry per name the mirror actually copied,
+ * whether or not the repo-side path was already tracked.
+ *
  * @param repo - `repoHome()`, resolved once by `runPullCore`.
  * @param ts - Backup timestamp, resolved once by `runPullCore`.
- * @returns Repo-relative paths this run newly created under `shared/`. Empty on
- *   darwin and linux, and empty whenever the snapshots could not be taken.
+ * @returns `mirrored` (repo-relative paths this run newly created under
+ *   `shared/`) and `events` (one `MirrorPreviewEvent` per name the mirror
+ *   copied). Both empty on darwin and linux; `mirrored` is also empty
+ *   whenever the untracked-file snapshots could not be taken.
  */
-export function reconcileSharedLinksBeforePull(repo: string, ts: string): string[] {
-  if (process.platform !== 'win32') return [];
+export function reconcileSharedLinksBeforePull(
+  repo: string,
+  ts: string,
+): { mirrored: string[]; events: MirrorPreviewEvent[] } {
+  if (process.platform !== 'win32') return { mirrored: [], events: [] };
   const before = untrackedUnderShared(repo);
+  const events: MirrorPreviewEvent[] = [];
   try {
     const map = readMapForMirror(join(repo, 'path-map.json'));
-    stageLocalSharedEdits(map, ts);
+    stageLocalSharedEdits(map, ts, { onPreview: (e) => events.push(e) });
     applySharedLinkDeletions(map, ts);
   } catch (err) {
     // A pre-step must never be the thing that fails a pull. Either pass can
@@ -155,7 +170,26 @@ export function reconcileSharedLinksBeforePull(repo: string, ts: string): string
     // simply replanned on the next run.
     warn(`could not reconcile local shared edits before the pull: ${(err as Error).message}`);
   }
-  return newlyUntracked(before, untrackedUnderShared(repo));
+  return { mirrored: newlyUntracked(before, untrackedUnderShared(repo)), events };
+}
+
+/**
+ * Build the wet-pull `Symlinks` section from the mirror events collected by
+ * `reconcileSharedLinksBeforePull`. Reuses the `Symlinks` header the dry-run
+ * preview tree already uses for the same concept (locked decision: no third
+ * name for one idea). Row text is past tense since the copy already happened
+ * by the time this renders.
+ *
+ * @param events - Mirror events collected during the pre-rebase reconcile.
+ * @returns A `DoctorSection` with zero items when `events` is empty, so
+ *   `renderTree` omits it entirely and posix output stays byte-identical.
+ */
+export function buildMirrorSection(events: readonly MirrorPreviewEvent[]): DoctorSection {
+  const s = section('Symlinks');
+  for (const e of events) {
+    addItem(s, `captured  ${e.localPath} -> ${e.repoPath}`);
+  }
+  return s;
 }
 
 /**

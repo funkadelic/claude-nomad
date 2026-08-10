@@ -254,7 +254,7 @@ describe('planSharedLinkCaptures', () => {
       // (there are none, but this matches the established isolation pattern)
       // leak into the mirror's own execution.
       vi.resetModules();
-      const { stageLocalSharedEdits } = await import('./links.ts');
+      const { stageLocalSharedEdits } = await import('./links.mirror.ts');
       stageLocalSharedEdits(map, '20260803-120000');
       const after = snapshotFiles(sharedDir);
 

@@ -72,6 +72,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./utils.lockfile.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./push-checks.ts');
     vi.doUnmock('./push-gitleaks.ts');
     vi.doUnmock('./remap.ts');
@@ -136,6 +137,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
         throw new TypeError('synthetic non-NomadFatal');
       }),
       regenerateSettings: vi.fn(),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // See the note in commands.pull.test.ts: omitting this passes on posix
       // and throws on a real Windows runner.
       stageLocalSharedEdits: vi.fn(),

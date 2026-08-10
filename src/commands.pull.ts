@@ -12,6 +12,7 @@ import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { writeSharedBaseline } from './links.baseline.ts';
 import {
+  buildMirrorSection,
   planSharedReconcileBeforePull,
   reconcileSharedLinksBeforePull,
 } from './commands.pull.win32.ts';
@@ -367,8 +368,15 @@ export function runPullCore(
   //
   // The paths it reports back are the copies THIS run added to the repo working
   // tree, which is what lets the rebase below tell a name collision against
-  // nomad's own copy apart from any other reason a pull can fail.
-  const mirrored = !dryRun && !forceRemote ? reconcileSharedLinksBeforePull(repo, ts) : [];
+  // nomad's own copy apart from any other reason a pull can fail. `events` is
+  // the typed record of what the mirror captured, threaded into the wet
+  // `Symlinks` section built just before this function returns; it must be
+  // captured here (before the rebase) rather than rebuilt inside
+  // `buildWetPullSections` (after the rebase), so the mirror runs once.
+  const { mirrored, events: mirrorEvents } =
+    !dryRun && !forceRemote
+      ? reconcileSharedLinksBeforePull(repo, ts)
+      : { mirrored: [], events: [] };
   // A dry run applies nothing, but its preview has to describe the same repo
   // state the wet step above acts on, and the rebase below moves that state.
   // Both plans are read-only and empty on darwin and linux, so a posix host
@@ -433,9 +441,13 @@ export function runPullCore(
   // not mean anything actually changed upstream).
   const incomingChanges =
     prePostHeads === undefined ? true : prePostHeads.pre !== prePostHeads.post;
+  // Spliced at the head so the wet tree reads in the order the pull executes
+  // and matches the preview tree, which already puts Symlinks first. Empty on
+  // darwin, linux, and whenever nothing was mirrored, so renderTree drops it
+  // and posix output stays byte-identical.
   return {
     tag: 'wet',
-    sections,
+    sections: [buildMirrorSection(mirrorEvents), ...sections],
     localOnly,
     divergedKeptLocal,
     incomingChanges,

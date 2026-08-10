@@ -170,6 +170,7 @@ describe('cmdPull: extras integration', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -208,6 +209,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -263,6 +266,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -314,6 +319,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -362,6 +369,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -402,6 +411,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -446,6 +457,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -501,6 +514,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -542,6 +557,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'test-host.json' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       stageLocalSharedEdits: vi.fn(),
     }));
     vi.doMock('./remap.ts', () => ({
@@ -712,6 +729,8 @@ describe('cmdPull wedge preflight', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -866,6 +885,8 @@ describe('cmdPull forceRemote routing', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -895,6 +916,7 @@ describe('cmdPull forceRemote routing', () => {
     const branches = gitOut(['branch', '--list', 'nomad/stranded-*'], local);
     expect(branches.trim().length).toBeGreaterThan(0);
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
   });
@@ -940,6 +962,8 @@ describe('cmdPull forceRemote routing', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -961,6 +985,7 @@ describe('cmdPull forceRemote routing', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -1009,6 +1034,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doUnmock('./commands.pull.recovery.unmerged.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     process.exitCode = 0;
@@ -1076,6 +1102,8 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1119,6 +1147,8 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1159,6 +1189,8 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1278,6 +1310,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -1329,6 +1362,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1363,6 +1398,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1411,6 +1448,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1438,6 +1477,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(existsSync(join(localSkills, 'gsd-executor'))).toBe(true);
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
   });
@@ -1468,6 +1508,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1494,6 +1536,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(existsSync(localSkills3)).toBe(false);
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     vi.doUnmock('./preview.ts');
@@ -1526,6 +1569,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1610,6 +1655,8 @@ describe('runPullCore: return shape and lock-free contract', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       // Required even where the test does not assert on it: runPullCore calls
       // this on win32, so a mock omitting it passes on posix (the pre-pull
       // mirror early-returns there) and throws on a real Windows runner.
@@ -1639,6 +1686,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -1802,6 +1850,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -1858,6 +1907,8 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
         order.push('apply');
       }),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./links.mirror.ts', () => ({
       stageLocalSharedEdits: mirrorSpy,
     }));
     vi.doMock('./remap.ts', () => ({
@@ -1884,6 +1935,23 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     return mirrorSpy;
   }
 
+  /**
+   * Assert the mirror spy's first call matches `(map, <backup timestamp>, { onPreview: <fn> })`.
+   * Written as positional-argument checks rather than
+   * `toHaveBeenCalledWith(..., expect.objectContaining(...))` so the untyped
+   * `vi.fn()` spy's `any`-typed call args never flow through a nested
+   * `expect.any()` matcher, which trips `no-unsafe-assignment`.
+   *
+   * @param mirror - The mirror spy returned by `mockPipelineRecording`.
+   * @param map - Expected first argument (the path map passed through).
+   */
+  function expectMirrorCalledWith(mirror: ReturnType<typeof vi.fn>, map: unknown): void {
+    const call = mirror.mock.calls[0] as [unknown, unknown, { onPreview?: unknown } | undefined];
+    expect(call[0]).toEqual(map);
+    expect(typeof call[1]).toBe('string');
+    expect(typeof call[2]?.onPreview).toBe('function');
+  }
+
   it('mirrors the host-side copies into the repo BEFORE git pull --rebase on win32', async () => {
     stubPlatform('win32');
     const order: string[] = [];
@@ -1893,7 +1961,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(order).toEqual(['mirror', 'gitOrFatal', 'apply', 'baseline']);
     // The backup timestamp is threaded through so the mirror can snapshot the
     // repo-side copy it is about to overwrite.
-    expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} }, expect.any(String));
+    expectMirrorCalledWith(mirrorSpy, { projects: {} });
   });
 
   it('does not mirror on a posix platform, where the symlink already made the edit live', async () => {
@@ -2009,7 +2077,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     // allSharedLinks({projects:{}}) is exactly SHARED_LINKS, so the mirror must
     // still run: skipping it here would silently disable the fix in the very
     // case it exists to cover.
-    expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} }, expect.any(String));
+    expectMirrorCalledWith(mirrorSpy, { projects: {} });
     expect(order).toEqual(['mirror', 'gitOrFatal', 'apply', 'baseline']);
   });
 
@@ -2024,6 +2092,6 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     // Matched on the message so an unrelated failure (a mis-wired doMock, a
     // missing settings.base.json) cannot masquerade as this assertion passing.
     expect(() => runPullCore()).toThrow(/path-map\.json/);
-    expect(mirrorSpy).toHaveBeenCalledWith(null, expect.any(String));
+    expectMirrorCalledWith(mirrorSpy, null);
   });
 });

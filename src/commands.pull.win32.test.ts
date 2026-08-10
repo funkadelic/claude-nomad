@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { renderTree } from './output-tree.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 /**
@@ -53,7 +54,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     vi.restoreAllMocks();
     // vi.restoreAllMocks does NOT clear doMock registrations, and a leaked one
     // fails an unrelated test in a different file in the same worker.
-    vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.deletions.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -84,9 +85,31 @@ describe('reconcileSharedLinksBeforePull', () => {
     const deletions = vi.fn(() => {
       order.push('deletions');
     });
-    vi.doMock('./links.ts', () => ({ stageLocalSharedEdits: mirror }));
+    vi.doMock('./links.mirror.ts', () => ({ stageLocalSharedEdits: mirror }));
     vi.doMock('./links.deletions.ts', () => ({ applySharedLinkDeletions: deletions }));
     return { mirror, deletions };
+  }
+
+  /**
+   * Assert the mirror spy's first call matches `(map, ts, { onPreview: <fn> })`.
+   * Written as positional-argument checks rather than
+   * `toHaveBeenCalledWith(..., expect.objectContaining(...))` so the untyped
+   * `vi.fn()` spy's `any`-typed call args never flow through a nested
+   * `expect.any()` matcher, which trips `no-unsafe-assignment`.
+   *
+   * @param mirror - The mirror spy returned by `mockPasses`.
+   * @param map - Expected first argument (the path map passed through).
+   * @param ts - Expected second argument (the backup timestamp).
+   */
+  function expectMirrorCalledWith(
+    mirror: ReturnType<typeof vi.fn>,
+    map: unknown,
+    ts: string,
+  ): void {
+    const call = mirror.mock.calls[0] as [unknown, unknown, { onPreview?: unknown } | undefined];
+    expect(call[0]).toEqual(map);
+    expect(call[1]).toBe(ts);
+    expect(typeof call[2]?.onPreview).toBe('function');
   }
 
   it('runs the mirror before the deletion pass', async () => {
@@ -110,7 +133,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
     // One read, so the two passes cannot disagree about which names are shared.
     expect(mirror.mock.calls[0]?.[0]).toBe(deletions.mock.calls[0]?.[0]);
-    expect(mirror).toHaveBeenCalledWith({ projects: {}, sharedDirs: ['extra'] }, TS);
+    expectMirrorCalledWith(mirror, { projects: {}, sharedDirs: ['extra'] }, TS);
   });
 
   it('does nothing at all on a posix platform', async () => {
@@ -118,12 +141,13 @@ describe('reconcileSharedLinksBeforePull', () => {
     const order: string[] = [];
     const { mirror, deletions } = mockPasses(order);
     const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
-    const created = reconcileSharedLinksBeforePull(repoUnderHome, TS);
+    const { mirrored, events } = reconcileSharedLinksBeforePull(repoUnderHome, TS);
     expect(mirror).not.toHaveBeenCalled();
     expect(deletions).not.toHaveBeenCalled();
     // Nothing was mirrored, so nothing is this run's to account for, and the
     // collision runbook downstream stays entirely out of the posix pull.
-    expect(created).toEqual([]);
+    expect(mirrored).toEqual([]);
+    expect(events).toEqual([]);
   });
 
   it('reports no created files when the snapshots cannot be taken', async () => {
@@ -137,7 +161,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     // The fixture repo is a plain directory, so the probes fail. Attributing
     // every untracked file to this run would be the dangerous reading; the
     // feature turns itself off instead.
-    expect(reconcileSharedLinksBeforePull(repoUnderHome, TS)).toEqual([]);
+    expect(reconcileSharedLinksBeforePull(repoUnderHome, TS).mirrored).toEqual([]);
   });
 
   it('still runs both passes with the empty map when path-map.json is absent', async () => {
@@ -149,7 +173,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
     // Absent is a valid steady state (a clone that predates init), and the empty
     // map still yields the static shared names.
-    expect(mirror).toHaveBeenCalledWith({ projects: {} }, TS);
+    expectMirrorCalledWith(mirror, { projects: {} }, TS);
     expect(deletions).toHaveBeenCalledWith({ projects: {} }, TS);
   });
 
@@ -161,7 +185,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
     // Degrades rather than throwing; the post-rebase read still dies loudly.
-    expect(mirror).toHaveBeenCalledWith(null, TS);
+    expectMirrorCalledWith(mirror, null, TS);
     expect(deletions).toHaveBeenCalledWith(null, TS);
   });
 
@@ -191,5 +215,119 @@ describe('reconcileSharedLinksBeforePull', () => {
     // unpropagated deletion is simply replanned on the next run.
     expect(() => reconcileSharedLinksBeforePull(repoUnderHome, TS)).not.toThrow();
     expect(vi.mocked(console.error).mock.calls.join('\n')).toContain('EBUSY');
+  });
+});
+
+/**
+ * End-to-end coverage of the tracer path this plan wires: a win32-stubbed
+ * capture travels from the host file, through the real (unmocked)
+ * `reconcileSharedLinksBeforePull`, into a rendered `Symlinks` row via
+ * `buildMirrorSection` + `renderTree`. Neither `links.mirror.ts` nor
+ * `links.deletions.ts` is mocked here, unlike the describe block above: this
+ * block exists specifically to prove the real mirror's output reaches the
+ * real renderer.
+ */
+describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', () => {
+  const realPlatform = process.platform;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  let logSpy: MockInstance<(...args: unknown[]) => void>;
+  const TS = '20260810-000000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-mirror-e2e-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.resetModules();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('renders a captured row end to end', async () => {
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# repo copy\n');
+    writeFileSync(localClaudeMd, '# host edit\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull, buildMirrorSection } =
+      await import('./commands.pull.win32.ts');
+    const { events } = reconcileSharedLinksBeforePull(repoUnderHome, TS);
+
+    expect(events).toEqual([
+      { kind: 'mirror', name: 'CLAUDE.md', localPath: localClaudeMd, repoPath: repoClaudeMd },
+    ]);
+    expect(readFileSync(repoClaudeMd, 'utf8')).toBe('# host edit\n');
+
+    renderTree([buildMirrorSection(events)]);
+    const rendered = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(rendered).toContain('Symlinks');
+    expect(rendered).toContain(localClaudeMd);
+    expect(rendered).toContain(repoClaudeMd);
+  });
+
+  it('leaves the repo-side file byte-unchanged under dryRun while still producing the event', async () => {
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# repo copy\n');
+    writeFileSync(localClaudeMd, '# host edit\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    const events: { name: string }[] = [];
+    stageLocalSharedEdits({ projects: {} }, TS, {
+      dryRun: true,
+      onPreview: (e) => events.push(e),
+    });
+
+    expect(events).toEqual([
+      { kind: 'mirror', name: 'CLAUDE.md', localPath: localClaudeMd, repoPath: repoClaudeMd },
+    ]);
+    expect(readFileSync(repoClaudeMd, 'utf8')).toBe('# repo copy\n');
+  });
+
+  it('yields an empty Symlinks section on a non-win32 platform, which renderTree omits entirely', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# repo copy\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+
+    stubPlatform('linux');
+    const { reconcileSharedLinksBeforePull, buildMirrorSection } =
+      await import('./commands.pull.win32.ts');
+    const { events } = reconcileSharedLinksBeforePull(repoUnderHome, TS);
+    expect(events).toEqual([]);
+
+    const section = buildMirrorSection(events);
+    expect(section.items).toEqual([]);
+
+    renderTree([section]);
+    expect(logSpy).not.toHaveBeenCalled();
   });
 });

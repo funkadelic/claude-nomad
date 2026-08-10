@@ -1,21 +1,20 @@
 /**
  * Read-only planner mirroring the win32 pre-pull mirror's per-name capture
- * gates (`mirrorOneSharedName` in `links.ts`, invoked by `stageLocalSharedEdits`
- * under its `adoptNew: false` policy), so the dry-run preview and `nomad diff`
- * can show exactly which shared names a real pull would copy from
- * `~/.claude/` into `shared/`, without importing or duplicating the mirror
- * itself.
+ * gates (`mirrorOneSharedName` in `links.mirror.ts`, invoked by
+ * `stageLocalSharedEdits` under its `adoptNew: false` policy), so the
+ * dry-run preview and `nomad diff` can show exactly which shared names a
+ * real pull would copy from `~/.claude/` into `shared/`, without importing or
+ * duplicating the mirror itself.
  *
  * There is no shared implementation between this predicate and the mirror:
- * the mirror's gates live inside `mirrorOneSharedName` in the over-cap
- * `links.ts`, which also drives the push mirror (`syncSharedLinksPush`), so
- * refactoring it to consume a planner would pull the push path into this
- * read-only preview slice. Instead this module reproduces the same gate
- * order, and `links.captures.test.ts` pins the two together with an
- * equivalence test: it runs this planner and the real mirror over the same
- * fixture and asserts the planner's name set equals the set of names the
- * mirror actually wrote. If a gate is added to or dropped from either side,
- * that test fails.
+ * the mirror's gates live inside `mirrorOneSharedName` in `links.mirror.ts`,
+ * which also drives the push mirror (`syncSharedLinksPush`), so refactoring
+ * it to consume a planner would pull the push path into this read-only
+ * preview slice. Instead this module reproduces the same gate order, and
+ * `links.captures.test.ts` pins the two together with an equivalence test:
+ * it runs this planner and the real mirror over the same fixture and asserts
+ * the planner's name set equals the set of names the mirror actually wrote.
+ * If a gate is added to or dropped from either side, that test fails.
  *
  * Unconditional, like the mirror: a name is captured whether or not its
  * bytes differ from the repo copy, matching the win32 `would copy` preview

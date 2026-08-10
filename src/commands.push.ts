@@ -11,7 +11,7 @@ import { guardGitlinks, guardResolutionModeConflicts } from './commands.push.gua
 import { commitAndPush, runDryRunPreview } from './commands.push.steps.ts';
 import type { DoctorSection } from './output-tree.ts';
 import { remapExtrasPush } from './extras-sync.ts';
-import { syncSharedLinksPush } from './links.ts';
+import { syncSharedLinksPush } from './links.mirror.ts';
 import { syncSkillsPush } from './skills-sync.ts';
 import { probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { remapPush } from './remap.ts';

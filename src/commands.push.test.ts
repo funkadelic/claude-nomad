@@ -12,7 +12,7 @@ import {
 import { stubPlatform } from './test-helpers.platform.ts';
 
 import type * as childProcessModule from 'node:child_process';
-import type * as linksModule from './links.ts';
+import type * as linksMirrorModule from './links.mirror.ts';
 import type * as pushChecksModule from './push-checks.ts';
 import type * as pushAllowlistModule from './commands.push.allowlist.ts';
 import type * as pushGlobalConfigModule from './push-global-config.ts';
@@ -830,8 +830,8 @@ describe('cmdPush: shared-links push mirror integration', () => {
   it('dry-run push: syncSharedLinksPush is NOT called (zero-mutation contract)', async () => {
     const syncSharedLinksPushMock = vi.fn();
     stubPlatform('win32');
-    vi.doMock('./links.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof linksModule>();
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
       return { ...actual, syncSharedLinksPush: syncSharedLinksPushMock };
     });
     vi.doMock('./push-checks.ts', async (importOriginal) => {
@@ -874,8 +874,8 @@ describe('cmdPush: shared-links push mirror integration', () => {
   it('WET push: syncSharedLinksPush is called after syncSkillsPush and before the gitlink walk (call order)', async () => {
     const callOrder: string[] = [];
     stubPlatform('win32');
-    vi.doMock('./links.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof linksModule>();
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
       return {
         ...actual,
         syncSharedLinksPush: vi.fn(() => {
