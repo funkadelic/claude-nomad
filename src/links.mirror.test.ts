@@ -275,3 +275,156 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     expect(readFileSync(join(sharedDir, 'gsd', 'local.md'), 'utf8')).toBe('# local gsd\n');
   });
 });
+
+/**
+ * Enumerates the four `dryRun` x `onPreview` combinations `mirrorOneSharedName`
+ * gained, plus the platform gate and the null-map gate. Codecov patch runs at
+ * 100% over the diff, so a single untested defensive branch on a changed line
+ * fails it; this block exists to pin each branch directly rather than relying
+ * on cross-file coverage from `commands.pull.win32.test.ts`.
+ */
+describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  const realPlatform = process.platform;
+  const TS = '20260810-000000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-mirror-matrix-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('dryRun true with an onPreview sink: the sink receives the event, nothing is written, no backup is taken', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# repo copy\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+    stubPlatform('win32');
+    const events: unknown[] = [];
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS, {
+      dryRun: true,
+      onPreview: (e) => events.push(e),
+    });
+
+    expect(events).toEqual([
+      {
+        kind: 'mirror',
+        name: 'CLAUDE.md',
+        localPath: join(claudeDir, 'CLAUDE.md'),
+        repoPath: join(sharedDir, 'CLAUDE.md'),
+      },
+    ]);
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# repo copy\n');
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', TS);
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('dryRun true with no sink: the log fallback line fires and still nothing is written', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# repo copy\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+    stubPlatform('win32');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS, { dryRun: true });
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('would capture: '));
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# repo copy\n');
+  });
+
+  it('dryRun false with a sink: the copy lands AND the sink receives the event', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# repo copy\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+    stubPlatform('win32');
+    const events: unknown[] = [];
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS, { onPreview: (e) => events.push(e) });
+
+    expect(events).toEqual([
+      {
+        kind: 'mirror',
+        name: 'CLAUDE.md',
+        localPath: join(claudeDir, 'CLAUDE.md'),
+        repoPath: join(sharedDir, 'CLAUDE.md'),
+      },
+    ]);
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# host edit\n');
+  });
+
+  it('dryRun false with no sink: the copy lands and nothing is logged (the pre-phase behavior commands.push.ts still depends on)', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# repo copy\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+    stubPlatform('win32');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# host edit\n');
+  });
+
+  it.skipIf(isWin)(
+    'platform gate: a non-win32 host mirrors nothing, even under dryRun with a sink attached',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# repo copy\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+      const events: unknown[] = [];
+
+      const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+      stageLocalSharedEdits({ projects: {} }, TS, {
+        dryRun: true,
+        onPreview: (e) => events.push(e),
+      });
+
+      expect(events).toEqual([]);
+      expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# repo copy\n');
+    },
+  );
+
+  it('null-map gate: a null map mirrors nothing, even under dryRun with a sink attached', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# repo copy\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+    stubPlatform('win32');
+    const events: unknown[] = [];
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits(null, TS, { dryRun: true, onPreview: (e) => events.push(e) });
+
+    expect(events).toEqual([]);
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# repo copy\n');
+  });
+});

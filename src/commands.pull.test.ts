@@ -1719,6 +1719,35 @@ describe('runPullCore: return shape and lock-free contract', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
+  it('renders no Symlinks group when the mirror produced no events (posix / mocked-mirror parity)', async () => {
+    // The mocked stageLocalSharedEdits never calls onPreview, so
+    // reconcileSharedLinksBeforePull's events array stays empty regardless of
+    // the runner's real platform. runPullCore always splices a Symlinks
+    // section into the returned array (buildMirrorSection(events), even when
+    // events is empty), but renderTree drops any section with zero items at
+    // render time; this asserts what actually reaches the terminal, which is
+    // the guard against the head-of-array splice leaking an empty group into
+    // every posix user's output. Extras does not render either in this
+    // fixture: the mocked remapExtrasPull returns nothing pulled, which is
+    // unrelated to the mirror and just this fixture's own empty data.
+    const { runPullCore } = await import('./commands.pull.ts');
+    const { renderTree } = await import('./output-tree.ts');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const result = runPullCore();
+    expect(result.tag).toBe('wet');
+    if (result.tag !== 'wet') throw new Error('unreachable');
+    renderTree(result.sections);
+    const renderedHeaders = logSpy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((line) =>
+        ['Settings', 'Sessions', 'Extras', 'Pull summary', 'Symlinks'].includes(line),
+      );
+    expect(renderedHeaders).not.toContain('Symlinks');
+    expect(renderedHeaders).toEqual(['Settings', 'Sessions', 'Pull summary']);
+  });
+
   it('reports incomingChanges: true when the pre-rebase HEAD cannot be captured (fresh clone)', async () => {
     gitCaptureRawMock.mockImplementation(() => {
       throw new Error('fatal: ambiguous argument HEAD');
