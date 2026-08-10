@@ -4,12 +4,20 @@
  * the whole thing.
  */
 
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, claudeHome, repoHome, NEVER_SYNC, type PathMap } from './config.ts';
+import {
+  allSharedLinks,
+  claudeHome,
+  deniedSegmentFor,
+  repoHome,
+  NEVER_SYNC,
+  type PathMap,
+} from './config.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras-sync.core.ts';
-import { log } from './utils.ts';
+import { gitProbe } from './git-probe.ts';
+import { log, warn } from './utils.ts';
 import { backupRepoWrite } from './utils.fs.ts';
 
 /**
@@ -275,4 +283,103 @@ export function stageLocalSharedEdits(
   opts: MirrorOpts = {},
 ): void {
   mirrorSharedNames(map, { adoptNew: false, overlay: true, backupTs: ts }, opts);
+}
+
+/**
+ * Drop an untracked denylisted path out of the repo working tree. Git never had
+ * it, so nothing is lost by removing it outright.
+ *
+ * Wrapped in its own try/catch so one unremovable path (an antivirus lock, a
+ * read-only file, a path over the Windows limit) does not abandon the rest of
+ * the sweep.
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @param path - Repo-relative path to remove.
+ * @param segment - The path segment that matched the never-sync list.
+ */
+function removeUntrackedDenied(repo: string, path: string, segment: string): void {
+  const abs = join(repo, path);
+  try {
+    rmSync(abs, { force: true });
+    warn(
+      `removed ${path} from the sync repo working tree: the path segment "${segment}" is on the never-sync list`,
+    );
+  } catch (err) {
+    warn(`could not remove ${abs}: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Restore a tracked denylisted path to its committed content.
+ *
+ * Restored rather than deleted on purpose: deleting a tracked path would turn a
+ * content gate into a deletion of committed repo content, which is a strictly
+ * worse outcome than the leak it is trying to prevent.
+ *
+ * A path git reports as tracked but that is no longer in the working tree is
+ * already gone (the deletion pass removed it, or the user did). Checking it out
+ * of HEAD would put denylisted content BACK, which is the opposite of what this
+ * gate is for, so that case is left alone.
+ *
+ * Runs through `gitProbe` rather than `gitOrFatal` because nothing in the
+ * pre-rebase path may fail a pull; a probe that cannot answer leaves the file
+ * as it found it and says so, so the user knows to remove it by hand. No
+ * try/catch: `gitProbe` is the codebase's never-throwing git invoker, so a
+ * catch here would be unreachable.
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @param path - Repo-relative path to restore.
+ * @param segment - The path segment that matched the never-sync list.
+ * @param ts - Backup timestamp, named in the WARN so the user can find the
+ *   pre-pull snapshot of any uncommitted edit this restore discards.
+ */
+function restoreTrackedDenied(repo: string, path: string, segment: string, ts: string): void {
+  if (!existsSync(join(repo, path))) return;
+  if (gitProbe(['checkout', 'HEAD', '--', path], repo) === null) {
+    warn(
+      `could not restore ${path} to its committed content: the path segment "${segment}" is on the never-sync list, so remove it by hand before committing`,
+    );
+    return;
+  }
+  warn(
+    `restored ${path} to its committed content: the path segment "${segment}" is on the never-sync list. Any uncommitted edit to it was snapshotted under backup/${ts}/repo/ before the pull`,
+  );
+}
+
+/**
+ * Revert every denylisted path out of the repo working tree, after both
+ * pre-pull passes have run.
+ *
+ * The second of the two layers guarding the host-to-repo boundary.
+ * `mirrorOneSharedName`'s copy-time filter means the mirror never writes such a
+ * path in the first place; this catches the ones that reach `shared/` another
+ * way. Two of those are real: a hand-edit made directly under the repo, which
+ * no copy filter sees, and content appended to an ALREADY-TRACKED file, which
+ * the mirror's own untracked-file accounting is blind to by construction.
+ *
+ * Never throws and never fails the pull. A hit is a WARN plus a revert; the
+ * caller carries on into `git pull --rebase` either way. The push side's
+ * `enforceAllowList` throws instead, which is right for an explicit publish the
+ * user can retry and wrong for a step that runs on every shell start on some
+ * hosts.
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @param tracked - Repo-relative tracked paths from the `git status` snapshot.
+ * @param untracked - Repo-relative untracked paths from the same snapshot.
+ * @param ts - Backup timestamp, resolved once by the caller.
+ */
+export function revertDeniedMirrorPaths(
+  repo: string,
+  tracked: readonly string[],
+  untracked: readonly string[],
+  ts: string,
+): void {
+  for (const path of untracked) {
+    const segment = deniedSegmentFor(path);
+    if (segment !== null) removeUntrackedDenied(repo, path, segment);
+  }
+  for (const path of tracked) {
+    const segment = deniedSegmentFor(path);
+    if (segment !== null) restoreTrackedDenied(repo, path, segment, ts);
+  }
 }

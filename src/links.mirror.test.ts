@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
@@ -11,9 +12,24 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { g, gitInit } from './test-support/git.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
+
+/**
+ * Returns `true` when the `git` binary is present on PATH. Gates the one
+ * backstop case below that needs a real checkout (a staged-added path with no
+ * HEAD version to restore from); the rest need no git at all.
+ */
+const hasGit = ((): boolean => {
+  try {
+    execFileSync('git', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 // Posix-only assertions throughout this file assume the process is genuinely
 // running on a non-win32 host. On a real win32 runner, syncSharedLinksPush/
@@ -538,4 +554,101 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     expect(existsSync(join(sharedDir, 'commands', 'sessions'))).toBe(false);
     expect(readFileSync(join(sharedDir, 'commands', 'deploy.md'), 'utf8')).toBe('# deploy\n');
   });
+});
+
+/**
+ * Unit cover for the backstop's per-path dispatch, sitting under the
+ * end-to-end fixtures in `commands.pull.win32.test.ts`. These drive
+ * `revertDeniedMirrorPaths` with hand-built path lists so each failure branch
+ * can be reached directly: an unremovable path, a tracked path git cannot
+ * restore, and a tracked path that is no longer in the working tree.
+ *
+ * Every case asserts the call returns normally. Nothing in this path may fail
+ * a pull.
+ */
+describe('revertDeniedMirrorPaths', () => {
+  let testHome: string;
+  let repo: string;
+  let errSpy: MockInstance<(...args: unknown[]) => void>;
+  const TS = '20260810-030000';
+
+  beforeEach(() => {
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-revert-denied-'));
+    repo = join(testHome, 'repo');
+    mkdirSync(join(repo, 'shared', 'commands'), { recursive: true });
+    vi.resetModules();
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /** Every captured stderr line joined, for substring assertions. */
+  function warnings(): string {
+    return errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+  }
+
+  it('warns and moves on when an untracked hit cannot be removed', async () => {
+    // A directory: rmSync without `recursive` refuses it. Stands in for the
+    // real cases (antivirus lock, read-only file, over-long Windows path).
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    expect(() => revertDeniedMirrorPaths(repo, [], ['shared/commands/sessions'], TS)).not.toThrow();
+
+    expect(warnings()).toContain('could not remove');
+    expect(existsSync(join(repo, 'shared', 'commands', 'sessions'))).toBe(true);
+  });
+
+  it('leaves a tracked hit that is no longer in the working tree alone, silently', async () => {
+    // Already deleted (the deletion pass removed it, or the user did).
+    // Checking it out of HEAD would put the denylisted content back.
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS);
+
+    expect(existsSync(join(repo, 'shared', 'commands', 'sessions'))).toBe(false);
+    expect(warnings()).toBe('');
+  });
+
+  it('reverts nothing and warns nothing when neither list holds a denylisted path', async () => {
+    writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# deploy\n');
+    writeFileSync(join(repo, 'shared', 'commands', 'new.md'), '# new\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, ['shared/commands/deploy.md'], ['shared/commands/new.md'], TS);
+
+    expect(existsSync(join(repo, 'shared', 'commands', 'deploy.md'))).toBe(true);
+    expect(existsSync(join(repo, 'shared', 'commands', 'new.md'))).toBe(true);
+    expect(warnings()).toBe('');
+  });
+
+  it.skipIf(!hasGit)(
+    'tells the user to remove a tracked hit by hand when git cannot restore it',
+    async () => {
+      // Staged-added: git reports it as tracked, but there is no HEAD version
+      // to check out, so the restore fails. The file survives, and the WARN has
+      // to say so or the user is left with denylisted content and no signal.
+      writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# deploy\n');
+      gitInit(repo);
+      g(['add', '-A'], repo);
+      g(['commit', '-qm', 'base'], repo);
+      mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+      writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+      g(['add', 'shared/commands/sessions/notes.md'], repo);
+
+      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+      expect(() =>
+        revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS),
+      ).not.toThrow();
+
+      expect(warnings()).toContain('could not restore');
+      expect(warnings()).toContain('sessions');
+      expect(existsSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'))).toBe(true);
+    },
+  );
 });

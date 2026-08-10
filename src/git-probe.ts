@@ -38,7 +38,12 @@ const PROBE_TIMEOUT_MS = 10_000;
 const PROBE_MAX_BUFFER = 64 * 1024 * 1024;
 
 /**
- * Run a read-only `git <args>` in `repo` and return its stdout.
+ * Run a `git <args>` in `repo` and return its stdout.
+ *
+ * Read-only for most callers, but not read-only by contract: it is also the
+ * codebase's only never-throwing git invoker, so a fail-open revert step that
+ * must not be able to fail a command (`git checkout HEAD -- <path>` in the
+ * pull's denylist backstop) runs through here too.
  *
  * @param args - Git arguments (excludes the `git` binary name itself).
  * @param repo - Working directory for the invocation.

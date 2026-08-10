@@ -7,11 +7,16 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { parsePorcelainZ } from './commands.pull.recovery.git.ts';
 import { allSharedLinks, type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
 import { planSharedLinkCaptures } from './links.captures.ts';
 import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
-import { stageLocalSharedEdits, type MirrorPreviewEvent } from './links.mirror.ts';
+import {
+  revertDeniedMirrorPaths,
+  stageLocalSharedEdits,
+  type MirrorPreviewEvent,
+} from './links.mirror.ts';
 import { addItem, section, type DoctorSection } from './output-tree.ts';
 import { type SharedLinkPlans } from './preview.ts';
 import { warn } from './utils.ts';
@@ -85,6 +90,36 @@ function untrackedUnderShared(repo: string): Set<string> | null {
 function newlyUntracked(before: Set<string> | null, after: Set<string> | null): string[] {
   if (before === null || after === null) return [];
   return [...after].filter((p) => !before.has(p));
+}
+
+/**
+ * Run the denylist backstop over the repo working tree's `shared/` subtree.
+ *
+ * Fed by a `git status` snapshot rather than the untracked-file diff the
+ * reconcile already computes, because `git ls-files --others` only ever lists
+ * untracked paths: a credential appended to an already-tracked
+ * `shared/<name>` file appears in neither the before nor the after snapshot,
+ * so that diff is empty for exactly the case this gate most needs to see.
+ * `--untracked-files=all` is required too, since without it a wholly untracked
+ * new subtree collapses to a single directory record and the per-file revert
+ * has nothing to act on.
+ *
+ * A `null` probe means git could not answer, and degrades to a silent skip:
+ * revert nothing, warn nothing. Every other `gitProbe` consumer in this file
+ * has the same fail-open contract, and inventing a revert from an unanswerable
+ * snapshot is how a gate deletes the wrong path.
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @param ts - Backup timestamp, resolved once by `runPullCore`.
+ */
+function revertDeniedUnderShared(repo: string, ts: string): void {
+  const out = gitProbe(
+    ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', 'shared/'],
+    repo,
+  );
+  if (out === null) return;
+  const { tracked, untracked } = parsePorcelainZ(out);
+  revertDeniedMirrorPaths(repo, tracked, untracked, ts);
 }
 
 /**
@@ -181,6 +216,11 @@ export function reconcileSharedLinksBeforePull(
     // simply replanned on the next run.
     warn(`could not reconcile local shared edits before the pull: ${(err as Error).message}`);
   }
+  // Outside the try on purpose: a pass that threw part way can still have
+  // written, so the gate has to see the tree as it actually stands. Before the
+  // "after" snapshot, so a path it removed is not then reported as one this run
+  // created.
+  revertDeniedUnderShared(repo, ts);
   return { mirrored: newlyUntracked(before, untrackedUnderShared(repo)), events, linkNames };
 }
 

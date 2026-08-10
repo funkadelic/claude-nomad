@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -6,7 +7,22 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import { SHARED_LINKS } from './config.ts';
 import { renderTree } from './output-tree.ts';
+import { g, gitInit } from './test-support/git.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
+
+/**
+ * Returns `true` when the `git` binary is present on PATH. Gates the backstop
+ * describe below, whose fixtures need a real checkout with a commit: the
+ * tracked-and-modified case cannot exist without a HEAD to restore from.
+ */
+const hasGit = ((): boolean => {
+  try {
+    execFileSync('git', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 /**
  * Module-level regression cover for the extracted win32 pre-pull reconcile.
@@ -391,5 +407,134 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
       String(c[0]).includes('sharedDirs entry'),
     );
     expect(rejectionCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * The denylist backstop that runs after both pre-pull passes, against a real
+ * `git status` snapshot rather than the untracked-only diff the mirror already
+ * takes. That distinction is the whole point of this block: `git ls-files
+ * --others` only ever lists untracked paths, so content appended to an
+ * ALREADY-TRACKED file under `shared/` never appears in either the before or
+ * the after snapshot and the diff is empty for it.
+ *
+ * The denylisted content is written straight into the repo working tree in
+ * every fixture, not through the mirror. The mirror's own copy-time filter
+ * already refuses it; this gate exists for the paths that reach `shared/`
+ * another way, which is precisely a hand-edit under the repo.
+ */
+describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () => {
+  const realPlatform = process.platform;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repo: string;
+  let errSpy: MockInstance<(...args: unknown[]) => void>;
+  const TS = '20260810-020000';
+
+  /** The denylisted repo-relative path every fixture below targets. */
+  const DENIED = 'shared/commands/sessions/notes.md';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-backstop-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repo = join(testHome, 'claude-nomad');
+    mkdirSync(join(repo, 'shared', 'commands'), { recursive: true });
+    mkdirSync(join(testHome, '.claude', 'commands'), { recursive: true });
+    writeFileSync(join(repo, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# committed deploy\n');
+    gitInit(repo);
+    g(['add', '-A'], repo);
+    g(['commit', '-qm', 'base'], repo);
+    vi.resetModules();
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /** Every captured stderr line joined, for substring assertions. */
+  function warnings(): string {
+    return errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+  }
+
+  it('removes an untracked denylisted path and names both the path and the segment', async () => {
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(repo, DENIED), 'token=abc\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(existsSync(join(repo, DENIED))).toBe(false);
+    expect(warnings()).toContain(DENIED);
+    expect(warnings()).toContain('sessions');
+  });
+
+  it('restores a TRACKED denylisted path to its committed content instead of deleting it', async () => {
+    // The case the mirror's own untracked-file accounting cannot see at all:
+    // the path is already in git history, so a local edit to it never enters
+    // either snapshot of the before/after diff.
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(repo, DENIED), '# committed notes\n');
+    g(['add', '-A'], repo);
+    g(['commit', '-qm', 'add notes'], repo);
+    writeFileSync(join(repo, DENIED), '# committed notes\ntoken=abc\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(existsSync(join(repo, DENIED))).toBe(true);
+    expect(readFileSync(join(repo, DENIED), 'utf8')).toBe('# committed notes\n');
+    expect(warnings()).toContain(DENIED);
+    expect(warnings()).toContain('sessions');
+    expect(warnings()).toContain(`backup/${TS}/repo/`);
+  });
+
+  it('leaves an ordinary shared edit alone and emits no WARN', async () => {
+    writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# edited deploy\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(readFileSync(join(repo, 'shared', 'commands', 'deploy.md'), 'utf8')).toBe(
+      '# edited deploy\n',
+    );
+    expect(warnings()).toBe('');
+  });
+
+  it('reverts nothing and warns nothing when the repo is not a git checkout', async () => {
+    // Acting on an unanswerable snapshot is how a gate deletes the wrong path,
+    // so an unavailable probe degrades to a silent skip, not to a revert.
+    const plain = join(testHome, 'plain');
+    mkdirSync(join(plain, 'shared', 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(plain, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    writeFileSync(join(plain, DENIED), 'token=abc\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    expect(() => reconcileSharedLinksBeforePull(plain, TS)).not.toThrow();
+
+    expect(existsSync(join(plain, DENIED))).toBe(true);
+    expect(warnings()).toBe('');
   });
 });
