@@ -235,4 +235,43 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     stageLocalSharedEdits({ projects: {} }, TS);
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
   });
+
+  it('omitting opts.linkNames derives allSharedLinks(map) internally, WARNing once for an invalid entry', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {}, sharedDirs: ['../escape'] }, TS);
+    const rejectionCalls = errSpy.mock.calls.filter((c) =>
+      String(c[0]).includes('sharedDirs entry'),
+    );
+    expect(rejectionCalls).toHaveLength(1);
+  });
+
+  it('a supplied opts.linkNames is used verbatim, bypassing allSharedLinks(map) entirely', async () => {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+    mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+    mkdirSync(join(claudeDir, 'gsd'), { recursive: true });
+    writeFileSync(join(claudeDir, 'gsd', 'local.md'), '# local gsd\n');
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    // The map's own (invalid) sharedDirs entry is never consulted: only the
+    // caller-supplied linkNames list drives which names get mirrored.
+    stageLocalSharedEdits({ projects: {}, sharedDirs: ['../escape'] }, TS, {
+      linkNames: ['gsd'],
+    });
+    expect(errSpy).not.toHaveBeenCalled();
+    // CLAUDE.md is a normal SHARED_LINKS static entry but is NOT in the
+    // supplied linkNames list, so it must be left untouched.
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
+    // gsd IS in the supplied list, so its host edit is mirrored in.
+    expect(readFileSync(join(sharedDir, 'gsd', 'local.md'), 'utf8')).toBe('# local gsd\n');
+  });
 });

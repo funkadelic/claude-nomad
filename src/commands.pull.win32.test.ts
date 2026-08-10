@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { SHARED_LINKS } from './config.ts';
 import { renderTree } from './output-tree.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
@@ -112,6 +113,28 @@ describe('reconcileSharedLinksBeforePull', () => {
     expect(typeof call[2]?.onPreview).toBe('function');
   }
 
+  /**
+   * Assert the deletions spy's first call matches
+   * `(map, ts, { linkNames: <expected> })`, again via positional checks
+   * rather than a nested `expect.objectContaining`.
+   *
+   * @param deletions - The deletions spy returned by `mockPasses`.
+   * @param map - Expected first argument (the path map passed through).
+   * @param ts - Expected second argument (the backup timestamp).
+   * @param linkNames - Expected `linkNames` threaded through the third argument.
+   */
+  function expectDeletionsCalledWith(
+    deletions: ReturnType<typeof vi.fn>,
+    map: unknown,
+    ts: string,
+    linkNames: string[],
+  ): void {
+    const call = deletions.mock.calls[0] as [unknown, unknown, { linkNames?: unknown } | undefined];
+    expect(call[0]).toEqual(map);
+    expect(call[1]).toBe(ts);
+    expect(call[2]?.linkNames).toEqual(linkNames);
+  }
+
   it('runs the mirror before the deletion pass', async () => {
     stubPlatform('win32');
     const order: string[] = [];
@@ -174,7 +197,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     // Absent is a valid steady state (a clone that predates init), and the empty
     // map still yields the static shared names.
     expectMirrorCalledWith(mirror, { projects: {} }, TS);
-    expect(deletions).toHaveBeenCalledWith({ projects: {} }, TS);
+    expectDeletionsCalledWith(deletions, { projects: {} }, TS, [...SHARED_LINKS]);
   });
 
   it('passes null to both passes on a malformed path-map.json', async () => {
@@ -186,7 +209,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
     // Degrades rather than throwing; the post-rebase read still dies loudly.
     expectMirrorCalledWith(mirror, null, TS);
-    expect(deletions).toHaveBeenCalledWith(null, TS);
+    expectDeletionsCalledWith(deletions, null, TS, []);
   });
 
   it('warns and returns when the mirror throws, without reaching the deletion pass', async () => {
@@ -237,6 +260,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
   let claudeDir: string;
   let sharedDir: string;
   let logSpy: MockInstance<(...args: unknown[]) => void>;
+  let errSpy: MockInstance<(...args: unknown[]) => void>;
   const TS = '20260810-000000';
 
   beforeEach(() => {
@@ -255,6 +279,9 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     vi.resetModules();
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
     });
   });
@@ -329,5 +356,40 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
 
     renderTree([section]);
     expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('warns exactly once for one invalid sharedDirs entry across the pre-rebase reconcile', async () => {
+    // Before this fix, mirrorSharedNames (via stageLocalSharedEdits) and
+    // planSharedLinkDeletions (via applySharedLinkDeletions) each derived
+    // allSharedLinks(map) independently inside this one reconcile step,
+    // WARNing twice for the same rejected entry. linkNames is now derived
+    // once here and threaded into both.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repoUnderHome, TS);
+
+    const rejectionCalls = errSpy.mock.calls.filter((c) =>
+      String(c[0]).includes('sharedDirs entry'),
+    );
+    expect(rejectionCalls).toHaveLength(1);
+  });
+
+  it('produces zero rejection WARNs for a sharedDirs array with no invalid entries', async () => {
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['get-shit-done'] }) + '\n',
+    );
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repoUnderHome, TS);
+
+    const rejectionCalls = errSpy.mock.calls.filter((c) =>
+      String(c[0]).includes('sharedDirs entry'),
+    );
+    expect(rejectionCalls).toHaveLength(0);
   });
 });

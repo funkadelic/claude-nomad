@@ -130,10 +130,20 @@ function deletionFor(
  * makes the common case, so the read-only surfaces would pay a full content
  * read of the shared tree for a value nobody looks at.
  *
+ * `opts.linkNames`, when supplied, is used verbatim instead of deriving the
+ * name list from `map` internally, so a caller (`reconcileSharedLinksBeforePull`)
+ * that already derived `allSharedLinks(map)` once for the mirror pass can
+ * thread the same list through here instead of triggering a second
+ * `sharedDirs` rejection WARN for the same invalid entry.
+ *
  * @param map - Parsed `path-map.json`, or `null` when it could not be read.
+ * @param opts - `linkNames`; falls back to `allSharedLinks(map)` when absent.
  * @returns One entry per repo file to remove; empty when nothing is authorized.
  */
-export function planSharedLinkDeletions(map: PathMap | null): SharedLinkDeletion[] {
+export function planSharedLinkDeletions(
+  map: PathMap | null,
+  opts: { linkNames?: readonly string[] } = {},
+): SharedLinkDeletion[] {
   if (process.platform !== 'win32') return [];
   if (map === null) return [];
   const baseline = readSharedBaseline();
@@ -143,7 +153,7 @@ export function planSharedLinkDeletions(map: PathMap | null): SharedLinkDeletion
   const scan = enumerateLocalSharedScan(map);
   const present = new Set(Object.keys(scan.files).map((key) => key.toLowerCase()));
   const declined = scan.declined.map((path) => path.toLowerCase());
-  const names = new Set(allSharedLinks(map));
+  const names = new Set(opts.linkNames ?? allSharedLinks(map));
   const plan: SharedLinkDeletion[] = [];
   for (const key of Object.keys(baseline.files)) {
     const folded = key.toLowerCase();
@@ -172,12 +182,20 @@ export function planSharedLinkDeletions(map: PathMap | null): SharedLinkDeletion
  * it. Silently abandoning the rest would leave the repo half-reconciled while
  * the run reported nothing about the entries it never reached.
  *
+ * `opts.linkNames`, when supplied, is threaded through to `planSharedLinkDeletions`
+ * verbatim; see that function's doc comment for why.
+ *
  * @param map - Parsed `path-map.json`, or `null` when it could not be read.
  * @param ts - Backup timestamp, already resolved by the pull.
+ * @param opts - `linkNames`; falls back to `allSharedLinks(map)` when absent.
  */
-export function applySharedLinkDeletions(map: PathMap | null, ts: string): void {
+export function applySharedLinkDeletions(
+  map: PathMap | null,
+  ts: string,
+  opts: { linkNames?: readonly string[] } = {},
+): void {
   const repo = repoHome();
-  for (const entry of planSharedLinkDeletions(map)) {
+  for (const entry of planSharedLinkDeletions(map, opts)) {
     try {
       if (!lstatSync(entry.repoPath).isFile()) continue;
       backupRepoWrite(entry.repoPath, ts, repo);

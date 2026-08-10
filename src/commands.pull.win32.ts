@@ -7,7 +7,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { type PathMap } from './config.ts';
+import { allSharedLinks, type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
 import { planSharedLinkCaptures } from './links.captures.ts';
 import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
@@ -141,24 +141,35 @@ function newlyUntracked(before: Set<string> | null, after: Set<string> | null): 
  * runbook), while `events` is one entry per name the mirror actually copied,
  * whether or not the repo-side path was already tracked.
  *
+ * `linkNames` is derived here ONCE (`allSharedLinks(map)`, when `map` is
+ * non-null) and threaded into both `stageLocalSharedEdits` and
+ * `applySharedLinkDeletions`, which otherwise each derive it independently and
+ * would double- or triple-emit a `sharedDirs` rejection WARN for the same
+ * invalid entry within a single pre-rebase reconcile. It is also returned so
+ * `runPullCore` can thread the SAME list into the post-rebase
+ * `applySharedLinks` call, making one derivation cover the entire wet pull.
+ *
  * @param repo - `repoHome()`, resolved once by `runPullCore`.
  * @param ts - Backup timestamp, resolved once by `runPullCore`.
  * @returns `mirrored` (repo-relative paths this run newly created under
- *   `shared/`) and `events` (one `MirrorPreviewEvent` per name the mirror
- *   copied). Both empty on darwin and linux; `mirrored` is also empty
+ *   `shared/`), `events` (one `MirrorPreviewEvent` per name the mirror
+ *   copied), and `linkNames` (the derived name list, empty when `map` could
+ *   not be read). All empty on darwin and linux; `mirrored` is also empty
  *   whenever the untracked-file snapshots could not be taken.
  */
 export function reconcileSharedLinksBeforePull(
   repo: string,
   ts: string,
-): { mirrored: string[]; events: MirrorPreviewEvent[] } {
-  if (process.platform !== 'win32') return { mirrored: [], events: [] };
+): { mirrored: string[]; events: MirrorPreviewEvent[]; linkNames: string[] } {
+  if (process.platform !== 'win32') return { mirrored: [], events: [], linkNames: [] };
   const before = untrackedUnderShared(repo);
   const events: MirrorPreviewEvent[] = [];
+  let linkNames: string[] = [];
   try {
     const map = readMapForMirror(join(repo, 'path-map.json'));
-    stageLocalSharedEdits(map, ts, { onPreview: (e) => events.push(e) });
-    applySharedLinkDeletions(map, ts);
+    if (map !== null) linkNames = allSharedLinks(map);
+    stageLocalSharedEdits(map, ts, { onPreview: (e) => events.push(e), linkNames });
+    applySharedLinkDeletions(map, ts, { linkNames });
   } catch (err) {
     // A pre-step must never be the thing that fails a pull. Either pass can
     // throw for reasons unrelated to the user's intent (a path over the Windows
@@ -170,7 +181,7 @@ export function reconcileSharedLinksBeforePull(
     // simply replanned on the next run.
     warn(`could not reconcile local shared edits before the pull: ${(err as Error).message}`);
   }
-  return { mirrored: newlyUntracked(before, untrackedUnderShared(repo)), events };
+  return { mirrored: newlyUntracked(before, untrackedUnderShared(repo)), events, linkNames };
 }
 
 /**

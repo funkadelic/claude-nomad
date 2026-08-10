@@ -111,6 +111,12 @@ function capturePrePostHeads(
  *   decision (a never-pushed local skill survives; a skill tracked at the
  *   pre-rebase HEAD but genuinely deleted upstream is still pruned).
  *   `undefined` when the pre-rebase capture failed (fresh clone).
+ * @param linkNames - Pre-derived shared-name list from the pre-rebase win32
+ *   reconcile, threaded into `applySharedLinks` so `allSharedLinks(map)` is
+ *   not derived a second time for the same wet pull (which would double a
+ *   `sharedDirs` rejection WARN). `undefined` on darwin/linux, where the
+ *   reconcile step never runs; `applySharedLinks` derives it itself in that
+ *   case, which is the only derivation posix ever performs.
  * @returns The ordered `Settings`/`Sessions`/`Extras`/`Pull summary` sections
  *   plus `localOnly` (retained local-only session files), `settingsLabel` (the
  *   `regenerateSettings` override-source tag), the combined session+extras
@@ -122,6 +128,7 @@ function buildWetPullSections(
   ts: string,
   map: PathMap,
   prePostHeads?: { pre: string; post: string },
+  linkNames?: readonly string[],
 ): {
   sections: DoctorSection[];
   localOnly: number;
@@ -129,7 +136,7 @@ function buildWetPullSections(
   unmapped: number;
   extrasSkipped: number;
 } {
-  applySharedLinks(ts, map);
+  applySharedLinks(ts, map, { linkNames });
   // Record what this host now has under ~/.claude/, so the next run can tell a
   // file the user deleted apart from a file this host has never received. The
   // placement is the invariant, not a convenience: this function is reachable
@@ -373,10 +380,13 @@ export function runPullCore(
   // `Symlinks` section built just before this function returns; it must be
   // captured here (before the rebase) rather than rebuilt inside
   // `buildWetPullSections` (after the rebase), so the mirror runs once.
-  const { mirrored, events: mirrorEvents } =
-    !dryRun && !forceRemote
-      ? reconcileSharedLinksBeforePull(repo, ts)
-      : { mirrored: [], events: [] };
+  const {
+    mirrored,
+    events: mirrorEvents,
+    linkNames: mirrorLinkNames,
+  } = !dryRun && !forceRemote
+    ? reconcileSharedLinksBeforePull(repo, ts)
+    : { mirrored: [], events: [], linkNames: [] };
   // A dry run applies nothing, but its preview has to describe the same repo
   // state the wet step above acts on, and the rebase below moves that state.
   // Both plans are read-only and empty on darwin and linux, so a posix host
@@ -429,10 +439,15 @@ export function runPullCore(
     computePreview(ts, map, 'pull', sharedPlans);
     return { tag: 'dry' };
   }
+  // Empty on darwin/linux (the reconcile step never runs there) and converted
+  // to undefined so buildWetPullSections's own applySharedLinks call derives
+  // it itself in that case, which is the only derivation posix ever performs.
+  const linkNames = mirrorLinkNames.length > 0 ? mirrorLinkNames : undefined;
   const { sections, localOnly, settingsLabel, unmapped, extrasSkipped } = buildWetPullSections(
     ts,
     map,
     prePostHeads,
+    linkNames,
   );
   // An unborn/uncapturable pre-rebase HEAD (fresh clone) is treated as
   // "changes present" so a first-ever pull is never collapsed to a no-op;

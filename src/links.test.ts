@@ -1322,6 +1322,49 @@ describe('applySharedLinks sharedDirs support', () => {
       expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
     },
   );
+
+  it.skipIf(isWin)(
+    'omitting opts.linkNames derives allSharedLinks(map) internally, WARNing once for an invalid entry',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        /* captured */
+      });
+      const { applySharedLinks } = await import('./links.ts');
+      applySharedLinks('20260516-000000', { projects: {}, sharedDirs: ['../escape'] });
+      const rejectionCalls = errSpy.mock.calls.filter((c) =>
+        String(c[0]).includes('sharedDirs entry'),
+      );
+      expect(rejectionCalls).toHaveLength(1);
+    },
+  );
+
+  it.skipIf(isWin)(
+    'a supplied opts.linkNames is used verbatim, bypassing allSharedLinks(map) entirely',
+    async () => {
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
+      writeFileSync(join(sharedDir, 'gsd', 'tool.sh'), '#!/bin/sh\n');
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        /* captured */
+      });
+      const { applySharedLinks } = await import('./links.ts');
+      // The map's own (invalid) sharedDirs entry is never consulted: only the
+      // caller-supplied linkNames list drives which names get linked.
+      applySharedLinks(
+        '20260516-000000',
+        { projects: {}, sharedDirs: ['../escape'] },
+        { linkNames: ['gsd'] },
+      );
+      expect(errSpy).not.toHaveBeenCalled();
+      const linkPath = join(claudeDir, 'gsd');
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      // CLAUDE.md has a shared/ counterpart but is NOT in the supplied
+      // linkNames list, so it must be left untouched even though it is a
+      // normal SHARED_LINKS static entry.
+      expect(existsSync(join(claudeDir, 'CLAUDE.md'))).toBe(false);
+    },
+  );
 });
 
 describe('regenerateSettings dry-run', () => {
