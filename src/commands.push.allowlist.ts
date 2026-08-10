@@ -1,11 +1,7 @@
 import {
-  ALWAYS_NEVER_SYNC,
-  CLAUDE_EXTRA_NEVER_SYNC,
   GSD_DROPPED_NAMES,
   GSD_PREFIX,
-  isClaudeExtraName,
-  isDeniedName,
-  NEVER_SYNC,
+  isNeverSync,
   PUSH_ALLOWED_STATIC,
   sharedDirEntries,
   SUPPORTED_EXTRAS,
@@ -29,47 +25,6 @@ function isAllowed(path: string, allowed: readonly string[]): boolean {
       continue;
     }
     if (entry.endsWith('/') && path.startsWith(entry)) return true;
-  }
-  return false;
-}
-
-/**
- * Choose the hard-block denylist for a staged path's segments. Outside the
- * extras tree the full `NEVER_SYNC` set applies. Inside `shared/extras/` the
- * narrow `ALWAYS_NEVER_SYNC` subset applies, so legitimate GSD content such
- * as `.planning/todos/` passes, EXCEPT for the `.claude` extra:
- * its subtree mirrors `~/.claude/` semantics, so its ephemeral segment names
- * (`projects`, `shell-snapshots`, `sessions`, `todos`, ...) get the full
- * `NEVER_SYNC` boundary. Mirrors `extrasDenySet` in `extras-sync.core.ts` so
- * the push gate and the copy filter agree on the boundary. The `.claude`
- * comparison runs through `isClaudeExtraName` (case-insensitive, trailing
- * dot/whitespace normalized) rather than a raw `===`, so a spelling like
- * `.Claude` or `.claude.` cannot silently downgrade to the narrower
- * `ALWAYS_NEVER_SYNC` set.
- */
-function blockSetFor(segments: string[]): Set<string> {
-  if (segments[0] !== 'shared' || segments[1] !== 'extras') return NEVER_SYNC;
-  return isClaudeExtraName(segments[3] ?? '') ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
-}
-
-/**
- * True when any path segment matches the hard-block denylist for that path (see
- * `blockSetFor`), tested via `isDeniedName` so the match is case-insensitive
- * (macOS case-fold) and also covers credential-file patterns (dotenv, private
- * keys, npm/netrc auth) the exact sets do not enumerate. Genuinely-sensitive
- * host-local files stay blocked even when nested inside a synced extras dir.
- * Inside `shared/extras/<logical>/<dirname>/`
- * only the content segments (index 4+) are scanned: the `<logical>` and
- * `<dirname>` names are not denylist tokens, and a logical that happens to equal
- * a `NEVER_SYNC` token (e.g. a project named `sessions`) must not hard-block its
- * own legitimate files.
- */
-function isNeverSync(path: string): boolean {
-  const segments = path.split('/');
-  const blockSet = blockSetFor(segments);
-  const scan = segments[0] === 'shared' && segments[1] === 'extras' ? segments.slice(4) : segments;
-  for (const segment of scan) {
-    if (isDeniedName(blockSet, segment)) return true;
   }
   return false;
 }
