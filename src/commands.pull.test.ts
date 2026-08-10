@@ -2003,15 +2003,30 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(mirrorSpy).not.toHaveBeenCalled();
   });
 
-  it('does not mirror under dryRun on win32 (zero-mutation preview contract)', async () => {
+  it('runs the mirror in dryRun mode only under dryRun on win32 (zero-mutation preview contract)', async () => {
     stubPlatform('win32');
     const order: string[] = [];
     const mirrorSpy = mockPipelineRecording(order);
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore({ dryRun: true });
-    expect(mirrorSpy).not.toHaveBeenCalled();
-    // The baseline write lives inside the wet-only section builder, so a dry run
-    // is excluded structurally rather than by a flag anyone can later get wrong.
+    // The mirror now runs under dry-run too, via planSharedReconcileBeforePull
+    // computing the pre-rebase capture plan the preview renders, but it is
+    // always called with dryRun: true, so no disk mutation occurs. The
+    // WET-only reconcile (reconcileSharedLinksBeforePull) does not run, so the
+    // mirror is called exactly once here rather than the twice a wet pull on
+    // win32 would produce.
+    expect(mirrorSpy).toHaveBeenCalledTimes(1);
+    const call = mirrorSpy.mock.calls[0] as [
+      unknown,
+      unknown,
+      { dryRun?: unknown; onPreview?: unknown } | undefined,
+    ];
+    expect(call[2]?.dryRun).toBe(true);
+    expect(typeof call[2]?.onPreview).toBe('function');
+    // The baseline write and the shared-link apply both live on the wet-only
+    // path, so a dry run is excluded structurally rather than by a flag anyone
+    // can later get wrong.
+    expect(order).not.toContain('apply');
     expect(order).not.toContain('baseline');
   });
 

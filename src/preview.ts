@@ -5,8 +5,8 @@ import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
 import { remapExtrasPull } from './extras-sync.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
-import { planSharedLinkCaptures, type SharedLinkCapture } from './links.captures.ts';
 import { planSharedLinkDeletions, type SharedLinkDeletion } from './links.deletions.ts';
+import { stageLocalSharedEdits, type MirrorPreviewEvent } from './links.mirror.ts';
 import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
 import { addItem, renderTree, section } from './output-tree.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
@@ -28,19 +28,19 @@ type PreviewVerb = 'pull' | 'diff';
  * The two win32 pre-rebase plans, computed by the caller rather than by
  * `computePreview` itself.
  *
- * Both planners gate on repo-side state (a deletion needs the repo file to
- * still exist, a capture needs `shared/<name>` to exist), and `pull --dry-run`
- * runs the real `git pull --rebase` before it previews. Computing them inside
- * the preview would therefore evaluate them against a repo the rebase had
- * already moved, while the wet run evaluates them before it, which is exactly
- * the preview-disagrees-with-the-run class the honest-preview rule exists to
- * prevent. A caller that rebases passes the plans it computed beforehand;
- * `nomad diff` has no rebase of its own, so it lets `computePreview` compute
- * them.
+ * Both the deletion planner and the dry-run mirror gate on repo-side state (a
+ * deletion needs the repo file to still exist, a capture needs `shared/<name>`
+ * to exist), and `pull --dry-run` runs the real `git pull --rebase` before it
+ * previews. Computing them inside the preview would therefore evaluate them
+ * against a repo the rebase had already moved, while the wet run evaluates
+ * them before it, which is exactly the preview-disagrees-with-the-run class
+ * the honest-preview rule exists to prevent. A caller that rebases passes the
+ * plans it computed beforehand; `nomad diff` has no rebase of its own, so it
+ * lets `computePreview` compute them.
  */
 export type SharedLinkPlans = {
-  /** Host-to-repo captures the pre-rebase mirror would perform. */
-  captures: SharedLinkCapture[];
+  /** Mirror events the pre-rebase dry-run mirror emitted for this run. */
+  captures: MirrorPreviewEvent[];
   /** Repo-side removals the pre-rebase deletion pass would perform. */
   deletions: SharedLinkDeletion[];
 };
@@ -157,14 +157,14 @@ function formatLinkRow(e: LinkPreviewEvent): string {
 }
 
 /**
- * Format a planned win32 capture (`planSharedLinkCaptures`) as a Symlinks
- * section row. Reads distinctly from the existing rows: the capture runs
- * host-to-repo, the opposite direction from the win32 `would copy` row, so
- * the local path is named first.
+ * Format a win32 mirror event (`stageLocalSharedEdits` under `dryRun: true`)
+ * as a Symlinks section row. Reads distinctly from the existing rows: the
+ * capture runs host-to-repo, the opposite direction from the win32
+ * `would copy` row, so the local path is named first.
  * Example: `would capture  ~/.claude/CLAUDE.md -> /repo/shared/CLAUDE.md`
  */
-function formatCaptureRow(c: SharedLinkCapture): string {
-  return `would capture  ${c.localPath} -> ${c.repoPath}`;
+function formatMirrorRow(e: MirrorPreviewEvent): string {
+  return `would capture  ${e.localPath} -> ${e.repoPath}`;
 }
 
 /**
@@ -277,16 +277,19 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  * `planSharedLinkDeletions` plan the wet pull consumes, computed against the
  * same pre-rebase repo state when the caller supplies `plans` (see
  * {@link SharedLinkPlans}), so preview and pull cannot disagree about what
- * gets removed. `would capture` renders
- * `planSharedLinkCaptures`, a separate predicate pinned to the real mirror
- * by an equivalence test (`links.captures.test.ts`) rather than by shared
- * code, since the mirror's gates live inside the over-cap `links.ts` and
- * also drive the push mirror. Both predicates return `[]` on any non-win32
- * platform and on a `null` map, so posix output is unaffected and no branch
- * is needed at either call site. The removal preview reads the host-local
- * shared-links baseline (`links.baseline.ts`) but never writes it: baseline
- * writes happen only on the wet pull path, which this function never
- * reaches, so the zero-mutation contract covers this artifact too.
+ * gets removed. `would capture` renders events from the real mirror
+ * (`stageLocalSharedEdits` in `links.mirror.ts`) run under `dryRun: true`, so
+ * the preview is fed by the same code the wet pull runs rather than by a
+ * second predicate that has to be kept honest against it. `nomad diff` calls
+ * the mirror directly and streams its events into this section; `pull
+ * --dry-run` instead supplies a pre-collected `plans.captures` array, so both
+ * plans in {@link SharedLinkPlans} are gathered from the same pre-rebase point
+ * in the run for the same reason. Both sources return nothing on any
+ * non-win32 platform and on a `null` map, so posix output is unaffected and
+ * no branch is needed at either call site. The removal preview reads the
+ * host-local shared-links baseline (`links.baseline.ts`) but never writes it:
+ * baseline writes happen only on the wet pull path, which this function
+ * never reaches, so the zero-mutation contract covers this artifact too.
  *
  * @param ts - backup timestamp (used by applySharedLinks/remapPull for log
  *   phrasing; no backup dir is created under dryRun).
@@ -312,17 +315,21 @@ export function computePreview(
   console.log('');
 
   // Symlinks section. Win32-only capture and removal rows first, so the tree
-  // reads in the order the wet pre-pull reconcile executes; both predicates
-  // are read-only, return [] on non-win32 and on a null map, and never write
-  // the shared-links baseline (see the docstring above).
+  // reads in the order the wet pre-pull reconcile executes; both sources are
+  // read-only under dryRun, return nothing on non-win32 and on a null map,
+  // and never write the shared-links baseline (see the docstring above).
   const links = section('Symlinks');
-  const { captures, deletions } = plans ?? {
-    captures: planSharedLinkCaptures(map),
-    deletions: planSharedLinkDeletions(map),
-  };
-  for (const capture of captures) {
-    addItem(links, formatCaptureRow(capture));
+  if (plans) {
+    for (const capture of plans.captures) {
+      addItem(links, formatMirrorRow(capture));
+    }
+  } else {
+    stageLocalSharedEdits(map, ts, {
+      dryRun: true,
+      onPreview: (e) => addItem(links, formatMirrorRow(e)),
+    });
   }
+  const deletions = plans?.deletions ?? planSharedLinkDeletions(map);
   for (const deletion of deletions) {
     addItem(links, formatDeletionRow(deletion));
   }

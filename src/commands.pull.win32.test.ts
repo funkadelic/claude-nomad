@@ -411,6 +411,76 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
 });
 
 /**
+ * `planSharedReconcileBeforePull` is `nomad diff` / `pull --dry-run`'s
+ * pre-rebase counterpart to `reconcileSharedLinksBeforePull`: it runs the real
+ * mirror in dry-run mode (not a separate predictor) so the two surfaces cannot
+ * silently disagree about what a real pull would capture.
+ */
+describe('planSharedReconcileBeforePull', () => {
+  const realPlatform = process.platform;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-plan-reconcile-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('collects the real dry-run mirror events into plans.captures, writing nothing', async () => {
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# repo copy\n');
+    writeFileSync(localClaudeMd, '# host edit\n');
+
+    stubPlatform('win32');
+    const { planSharedReconcileBeforePull } = await import('./commands.pull.win32.ts');
+    const plans = planSharedReconcileBeforePull(repoUnderHome, '20260810-050000');
+
+    expect(plans.captures).toEqual([
+      { kind: 'mirror', name: 'CLAUDE.md', localPath: localClaudeMd, repoPath: repoClaudeMd },
+    ]);
+    // Read-only: the repo-side file must stay byte-unchanged.
+    expect(readFileSync(repoClaudeMd, 'utf8')).toBe('# repo copy\n');
+  });
+
+  it('returns empty plans on a non-win32 platform', async () => {
+    stubPlatform('linux');
+    const { planSharedReconcileBeforePull } = await import('./commands.pull.win32.ts');
+    const plans = planSharedReconcileBeforePull(repoUnderHome, '20260810-050001');
+    expect(plans).toEqual({ captures: [], deletions: [] });
+  });
+});
+
+/**
  * The denylist backstop that runs after both pre-pull passes, against a real
  * `git status` snapshot rather than the untracked-only diff the mirror already
  * takes. That distinction is the whole point of this block: `git ls-files

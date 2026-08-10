@@ -10,7 +10,6 @@ import { join } from 'node:path';
 import { parsePorcelainZ } from './commands.pull.recovery.git.ts';
 import { allSharedLinks, type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
-import { planSharedLinkCaptures } from './links.captures.ts';
 import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
 import {
   revertDeniedMirrorPaths,
@@ -248,18 +247,30 @@ export function buildMirrorSection(events: readonly MirrorPreviewEvent[]): Docto
  * that step WOULD do, for a caller previewing instead of applying.
  *
  * Exists so `pull --dry-run` can compute both plans at the same point in the
- * run the wet reconcile acts, which is before the rebase. Both planners gate on
- * repo-side existence, so computing them after the rebase would let the preview
- * and the run disagree about a file the rebase deleted or added upstream.
+ * run the wet reconcile acts, which is before the rebase. Both the deletion
+ * planner and the dry-run mirror gate on repo-side existence, so computing
+ * them after the rebase would let the preview and the run disagree about a
+ * file the rebase deleted or added upstream.
+ *
+ * The capture half runs the real mirror (`stageLocalSharedEdits`) under
+ * `dryRun: true` with a collecting `onPreview` sink, instead of a separate
+ * predictor: this is the single source `computePreview` and a real pull share,
+ * so a gate added to one can no longer be missed on the other. No disk
+ * mutation occurs under `dryRun`, so `ts` here is only ever used for event
+ * phrasing, matching `applySharedLinks`'s existing `dryRun` contract.
  *
  * Reads the map through the same fail-safe reader the wet step uses, so the two
  * cannot disagree about which names are shared, and returns empty plans on
- * darwin and linux because both planners do.
+ * darwin and linux because both sources do.
  *
  * @param repo - `repoHome()`, resolved once by the caller.
+ * @param ts - Backup timestamp, resolved once by the caller; unused for
+ *   mutation under `dryRun`, only for event phrasing.
  * @returns The capture and deletion plans for the current repo state.
  */
-export function planSharedReconcileBeforePull(repo: string): SharedLinkPlans {
+export function planSharedReconcileBeforePull(repo: string, ts: string): SharedLinkPlans {
   const map = readMapForMirror(join(repo, 'path-map.json'));
-  return { captures: planSharedLinkCaptures(map), deletions: planSharedLinkDeletions(map) };
+  const captures: MirrorPreviewEvent[] = [];
+  stageLocalSharedEdits(map, ts, { dryRun: true, onPreview: (e) => captures.push(e) });
+  return { captures, deletions: planSharedLinkDeletions(map) };
 }

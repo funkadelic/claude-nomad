@@ -391,7 +391,7 @@ export function runPullCore(
   // state the wet step above acts on, and the rebase below moves that state.
   // Both plans are read-only and empty on darwin and linux, so a posix host
   // pays nothing for computing them here.
-  const sharedPlans = dryRun ? planSharedReconcileBeforePull(repo) : undefined;
+  const sharedPlans = dryRun ? planSharedReconcileBeforePull(repo, ts) : undefined;
   // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
   // --autostash between them. capturePrePostHeads handles the unborn-HEAD
   // case (fresh clone, no commits) by returning undefined; when undefined

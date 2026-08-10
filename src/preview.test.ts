@@ -1064,6 +1064,33 @@ describe('computePreview orchestration', () => {
     expect(snapshotTree(cacheRoot)).toEqual(beforeCache);
   });
 
+  it('under a win32 dry-run capture, leaves the repo-side file byte-unchanged and creates no backup directory', async () => {
+    // Now that the Symlinks capture row is sourced from the real mirror
+    // (stageLocalSharedEdits under dryRun) instead of a read-only predictor,
+    // this asserts the dryRun contract directly rather than assuming it: a
+    // regression here would turn the read-only `nomad diff` into a writer.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const realPlatform = process.platform;
+    stubPlatform('win32');
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+
+    try {
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260810-000010', { projects: {} });
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# shared-old\n');
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260810-000010');
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
   it('writes no shared-links baseline file when none existed before a win32 dry-run', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
@@ -1095,6 +1122,7 @@ describe('computePreview orchestration', () => {
     computePreview('20260803-000004', { projects: {} }, 'pull', {
       captures: [
         {
+          kind: 'mirror',
           name: 'CLAUDE.md',
           localPath: '/pre/rebase/CLAUDE.md',
           repoPath: '/pre/shared/CLAUDE.md',
