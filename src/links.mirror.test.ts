@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -10,7 +11,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
@@ -251,6 +253,28 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     stageLocalSharedEdits({ projects: {} }, TS);
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
   });
+
+  it.skipIf(isWin)(
+    'skips a name whose local path cannot be stat-ed at all, degrading rather than throwing',
+    async () => {
+      // `throwIfNoEntry: false` suppresses ENOENT only, so a locked path still
+      // throws. `computePreview` (preview.ts) calls this mirror directly, with
+      // no enclosing try/catch of its own, and its whole value is being safe
+      // to run, so a locked path must degrade to a skipped name rather than a
+      // crash report.
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+      chmodSync(claudeDir, 0o000);
+      stubPlatform('win32');
+      try {
+        const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+        expect(() => stageLocalSharedEdits({ projects: {} }, TS)).not.toThrow();
+      } finally {
+        chmodSync(claudeDir, 0o700);
+      }
+      expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
+    },
+  );
 
   it('omitting opts.linkNames derives allSharedLinks(map) internally, WARNing once for an invalid entry', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
@@ -651,4 +675,28 @@ describe('revertDeniedMirrorPaths', () => {
       expect(existsSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'))).toBe(true);
     },
   );
+});
+
+/**
+ * Regression cover for the parallel preview predictor this module's dryRun
+ * mode retired: a second module that reproduced this mirror's gate order
+ * independently, pinned to it only by an equivalence test. If a gate is ever
+ * added to this mirror and the second implementation is not updated to match,
+ * the two silently diverge and the preview stops describing what a real pull
+ * would do. Both assertions below fail loudly instead of relying on a human
+ * to remember the equivalence test exists.
+ */
+describe('the mirror is the only implementation of the capture gates', () => {
+  const HERE = dirname(fileURLToPath(import.meta.url));
+
+  it('the retired parallel planner module is absent from src/', () => {
+    expect(existsSync(join(HERE, 'links.captures.ts'))).toBe(false);
+  });
+
+  it('preview.ts imports this module and no sibling capture-planner module', () => {
+    const source = readFileSync(join(HERE, 'preview.ts'), 'utf8');
+    const importLines = source.split('\n').filter((line) => line.trimStart().startsWith('import '));
+    expect(importLines.some((line) => line.includes("from './links.mirror.ts'"))).toBe(true);
+    expect(importLines.some((line) => line.includes('captures'))).toBe(false);
+  });
 });

@@ -127,6 +127,15 @@ type SharedMirrorPolicy = {
  * `tasks.md` is unaffected; only a path segment spelled exactly `tasks`
  * collides.
  *
+ * The stat is wrapped in its own try/catch because `throwIfNoEntry: false`
+ * suppresses ENOENT only; EACCES, EPERM and EIO still throw. Since the preview
+ * path (`computePreview` in `preview.ts`) now calls this mirror directly, with
+ * no enclosing try/catch of its own, an unreadable local path must degrade to
+ * one skipped name rather than crash `nomad diff`/`pull --dry-run`, whose
+ * whole value is being safe to run. On the wet path this also narrows the
+ * blast radius of a locked file from aborting the entire mirror pass (the
+ * outer catch in `reconcileSharedLinksBeforePull`) to skipping just this name.
+ *
  * @param name - Shared name from `allSharedLinks`.
  * @param claude - `claudeHome()`, resolved once by the caller.
  * @param repo - `repoHome()`, resolved once by the caller.
@@ -141,7 +150,12 @@ function mirrorOneSharedName(
   opts: MirrorOpts,
 ): void {
   const localPath = join(claude, name);
-  const stat = lstatSync(localPath, { throwIfNoEntry: false });
+  let stat;
+  try {
+    stat = lstatSync(localPath, { throwIfNoEntry: false });
+  } catch {
+    return; // unreadable: the mirror cannot promise anything about it
+  }
   if (stat === undefined) return; // absent: nothing to mirror
   if (stat.isSymbolicLink()) return; // symlink-era live link; defer to next pull
   const target = join(repo, 'shared', name);

@@ -212,7 +212,7 @@ function divergingBasename(line: string): string {
  * Win32 branch of `classifySharedLink`'s non-symlink case: the real (copied)
  * file/dir at `p` is the healthy state there, but a healthy PRESENCE is not
  * the same as a healthy CONTENT. With capture-on-pull in place (see
- * `links.captures.ts`, `links.deletions.ts`), a standing byte-level
+ * `links.mirror.ts`, `links.deletions.ts`), a standing byte-level
  * divergence from `shared/<name>` means something did not reconcile, which is
  * worth a nudge before the next mutating command runs.
  *
