@@ -1,5 +1,5 @@
 /**
- * Bounded, never-throwing git stdout capture for read-only probes.
+ * Bounded, never-throwing git stdout capture.
  *
  * The pull's mirror-collision path asks git several read-only questions around
  * a failing `git pull`: which files under `shared/` are untracked, and whether
@@ -8,6 +8,12 @@
  * and a probe with no timeout would let a hung git binary block a pull that has
  * already finished its real work. Both properties are enforced here once rather
  * than re-derived at each call site.
+ *
+ * Most callers are read-only, but the contract is not: it is also the
+ * codebase's only never-throwing git invoker, so the pull's denylist backstop
+ * routes its fail-open `git checkout HEAD -- <path>` restore and `git rm
+ * --cached -f --` unstage through here too, for the same degrade-quietly
+ * guarantee. See `gitProbe`'s own docstring for the exact boundary.
  *
  * Deliberately NOT folded into `gitCaptureRaw`: that helper is unbounded and
  * propagates failures, which is correct for the callers that need the output to
