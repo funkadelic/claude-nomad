@@ -1,21 +1,19 @@
 /**
- * Bounded, never-throwing git stdout capture.
+ * Bounded, never-throwing git stdout capture for read-only probes.
  *
  * The pull's mirror-collision path asks git several read-only questions around
  * a failing `git pull`: which files under `shared/` are untracked, and whether
- * the fetched update adds a given path. Every one of them is advisory. A probe
- * that throws would turn a diagnostic into the thing that fails the command,
- * and a probe with no timeout would let a hung git binary block a pull that has
- * already finished its real work. Both properties are enforced here once rather
- * than re-derived at each call site.
+ * the fetched update adds a given path. The pull's denylist backstop asks one
+ * more, whether a path is in HEAD, purely to decide which command to name in a
+ * WARN. Every one of them is advisory. A probe that throws would turn a
+ * diagnostic into the thing that fails the command, and a probe with no timeout
+ * would let a hung git binary block a pull that has already finished its real
+ * work. Both properties are enforced here once rather than re-derived at each
+ * call site.
  *
- * Most callers are read-only, but the contract is not: it is also the
- * codebase's only never-throwing git invoker, so the pull's denylist backstop
- * routes its fail-open `git checkout HEAD -- <path>` restore and `git rm
- * --cached -f --` unstage through here too, for the same degrade-quietly
- * guarantee. Those two call the same implementation under the `gitTryMutate`
- * name, so a reader of the call site is not told the invocation is read-only
- * when it writes. See both docstrings for the exact boundary.
+ * Read-only by contract, not just by current usage: nothing in the tree routes
+ * a mutating git invocation through here, and nothing should. A caller that
+ * needs to change the repository has `gitOrFatal`, whose failures are visible.
  *
  * Deliberately NOT folded into `gitCaptureRaw`: that helper is unbounded and
  * propagates failures, which is correct for the callers that need the output to
@@ -46,13 +44,7 @@ const PROBE_TIMEOUT_MS = 10_000;
 const PROBE_MAX_BUFFER = 64 * 1024 * 1024;
 
 /**
- * Run a `git <args>` in `repo` and return its stdout.
- *
- * Read-only for most callers, but not read-only by contract: it is also the
- * codebase's only never-throwing git invoker, so a fail-open revert step that
- * must not be able to fail a command (`git checkout HEAD -- <path>` in the
- * pull's denylist backstop) runs through here too, under the `gitTryMutate`
- * name.
+ * Run a read-only `git <args>` in `repo` and return its stdout.
  *
  * @param args - Git arguments (excludes the `git` binary name itself).
  * @param repo - Working directory for the invocation.
@@ -74,29 +66,3 @@ export function gitProbe(args: readonly string[], repo: string): string | null {
     return null;
   }
 }
-
-/**
- * {@link gitProbe} under a name that says the invocation WRITES.
- *
- * Same function, so every property is identical: the same bounded timeout, the
- * same stdout ceiling, and the same never-throwing contract returning `null`
- * for any failure at all. It is a naming seam and nothing else, so it costs
- * nothing at runtime.
- *
- * Reach for this one whenever the git command changes the repository (`git
- * checkout HEAD -- <path>`, `git rm --cached`), and for `gitProbe` whenever it
- * only asks a question (`git ls-files`, `git status`, `git cat-file -e`). The
- * name is the only thing a reader of the call site sees, and a mutating call
- * spelled `gitProbe` reads as read-only.
- *
- * Choosing this over `gitOrFatal` is a separate decision: it means the write is
- * fail-open, so a caller must handle `null` by leaving the repository as it
- * found it and telling the user what was skipped.
- *
- * @param args - Git arguments (excludes the `git` binary name itself).
- * @param repo - Working directory for the invocation.
- * @returns The raw stdout string, or `null` when the call failed for any reason
- *   at all. A `null` means the mutation may not have happened; it is never a
- *   confirmation.
- */
-export const gitTryMutate = gitProbe;

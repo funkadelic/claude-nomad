@@ -10,7 +10,7 @@ import type * as linksMirrorModule from './links.mirror.ts';
 import { SHARED_LINKS } from './config.ts';
 import { renderTree } from './output-tree.ts';
 import { plantSharedBaseline } from './test-support/baseline.ts';
-import { g, gitInit } from './test-support/git.ts';
+import { g, gitInit, gitOut } from './test-support/git.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 /**
@@ -661,25 +661,30 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     expect(warnings()).toContain('sessions');
   });
 
-  it('restores a TRACKED denylisted path to its committed content instead of deleting it', async () => {
+  it('reports a TRACKED denylisted path and changes neither the file nor the index', async () => {
     // The case the mirror's own untracked-file accounting cannot see at all:
     // the path is already in git history, so a local edit to it never enters
-    // either snapshot of the before/after diff.
+    // either snapshot of the before/after diff. It is also the case where
+    // acting means reconstructing an index state from a status prefix, so the
+    // gate reports it and names the command instead.
     mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
     writeFileSync(join(repo, DENIED), '# committed notes\n');
     g(['add', '-A'], repo);
     g(['commit', '-qm', 'add notes'], repo);
     writeFileSync(join(repo, DENIED), '# committed notes\ntoken=abc\n');
+    const stagedBefore = gitOut(['diff', '--cached', '--name-status'], repo);
 
     stubPlatform('win32');
     const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(existsSync(join(repo, DENIED))).toBe(true);
-    expect(readFileSync(join(repo, DENIED), 'utf8')).toBe('# committed notes\n');
+    expect(readFileSync(join(repo, DENIED), 'utf8')).toBe('# committed notes\ntoken=abc\n');
+    expect(gitOut(['diff', '--cached', '--name-status'], repo)).toBe(stagedBefore);
     expect(warnings()).toContain(DENIED);
     expect(warnings()).toContain('sessions');
-    expect(warnings()).toContain(`backup/${TS}/repo/`);
+    expect(warnings()).toContain(`git checkout HEAD -- ${DENIED}`);
+    expect(warnings()).toContain('Nothing was changed');
   });
 
   it('leaves an ordinary shared edit alone and emits no WARN', async () => {

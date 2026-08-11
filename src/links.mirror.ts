@@ -16,7 +16,7 @@ import {
   type PathMap,
 } from './config.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras-sync.core.ts';
-import { gitProbe, gitTryMutate } from './git-probe.ts';
+import { gitProbe } from './git-probe.ts';
 import { log, warn } from './utils.ts';
 import { backupRepoWrite } from './utils.fs.ts';
 
@@ -94,17 +94,13 @@ function emitMirrorWet(
  *
  * Declared here rather than imported so this module stays a leaf of that one:
  * `commands.pull.win32.ts` already depends on both, and the parser has no
- * business knowing about the backstop that consumes it. `renameSources` is
- * optional so a caller with only the two path arrays (every direct-call test of
- * a plain add or removal) needs no third field.
+ * business knowing about the backstop that consumes it.
  */
 export type DeniedRevertStatus = {
   /** Repo-relative tracked paths, including both halves of a rename. */
   tracked: readonly string[];
   /** Repo-relative untracked paths. */
   untracked: readonly string[];
-  /** Rename/copy destination path to the source path the same record consumed. */
-  renameSources?: Readonly<Record<string, string>>;
 };
 
 /** How one mirror pass treats the repo side. See the two exported wrappers. */
@@ -324,11 +320,12 @@ export function stageLocalSharedEdits(
  *
  * Git never had the path, so git cannot recover it and the removal would
  * otherwise be permanent. That makes this the one destructive step in the
- * pre-pull reconcile with nothing behind it: its sibling `restoreTrackedDenied`
- * names a snapshot in its own WARN, and the deletion pass snapshots every file
- * it removes. A gate that fires on a false positive (an ordinary directory
- * spelled like a never-synced one) must not be the thing that loses the user's
- * work, so the snapshot lands first and the WARN names where it went.
+ * pre-pull reconcile with nothing behind it: its sibling
+ * {@link reportTrackedDenied} writes nothing at all, and the deletion pass
+ * snapshots every file it removes. A gate that fires on a false positive (an
+ * ordinary directory spelled like a never-synced one) must not be the thing that
+ * loses the user's work, so the snapshot lands first and the WARN names where it
+ * went.
  *
  * `backupRepoWrite` resolves under `~/.cache/claude-nomad/backup/<ts>/repo/`,
  * which is host-local and outside both the sync repo and `~/.claude/`. That
@@ -379,155 +376,84 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
 }
 
 /**
- * Take a denylisted path with no committed content out of the index, leaving
- * the file itself alone.
+ * Report a denylisted path git already tracks, changing nothing.
  *
- * `git status` reports a staged-but-never-committed add (and the new-name half
- * of a rename) as tracked, but there is nothing in HEAD to restore it to, so
- * the restore below can only fail on it. That is also the state in which a user
- * is closest to publishing the content: the next `git commit` takes it. Dropping
- * it from the index is the narrowest action that changes that, and it destroys
- * nothing, because nothing committed is at risk.
+ * Report-only by design, and the design is the point rather than a limitation.
+ * The gate that stops denylisted content reaching the repo is
+ * `mirrorOneSharedName`'s copy-time filter, which simply never writes such a
+ * path. This function covers the paths that got into `shared/` some other way,
+ * and every one of those is a path GIT already knows about, so acting on it
+ * means reconstructing an index state from a `git status` prefix and patching
+ * it up. Each shape that reconstruction has to handle (a staged add, a rename
+ * whose source lives outside the pathspec, a copy record, a gitlink, an
+ * index entry whose working file is gone) is a separate way to mutate the wrong
+ * thing, and the failure mode of getting one wrong is a staged deletion of
+ * committed repo content, which is strictly worse than the leak this exists to
+ * catch. Telling the user precisely what is where, and precisely what to run,
+ * has none of those shapes and loses nothing: the copy filter already held.
  *
- * A rename is TWO index entries, and `source` is what makes this safe on one.
- * `git mv shared/commands/foo.md shared/commands/tasks/foo.md` stages an add of
- * the destination AND a deletion of the committed source; acting on the
- * destination alone leaves that deletion staged, so the next push publishes the
- * removal of a committed file and every other host loses it on its next pull.
- * That is strictly worse than the leak this gate exists to stop, and it is the
- * exact outcome {@link restoreTrackedDenied}'s contract rules out.
+ * The WARN names the command, so it has to pick the right one, and that turns
+ * on a single question: is the path in HEAD?
  *
- * `git reset HEAD -- <path>` rather than `git rm --cached`: reset restores the
- * destination's index entry to its HEAD state, which for a path absent from HEAD
- * drops the entry (identical to `rm --cached` on a plain staged add) without
- * touching the SOURCE's own entry. `git checkout HEAD -- <source>` then puts the
- * source back in both the index and the working tree, which is what clears the
- * staged deletion. Neither step can resurrect denylisted content: `path` is
- * absent from HEAD by construction, so there is nothing there to check out.
+ * - Absent from HEAD (a staged add, an `AD` record whose file has since been
+ *   deleted, or the destination half of a rename or copy). Nothing is committed,
+ *   so `git rm --cached` takes the blob out of the index. A rename also staged a
+ *   deletion of its source, whose content IS committed, and the WARN says how to
+ *   find that half rather than guessing at it. Guessing is not available here in
+ *   any case: the status snapshot is taken under a `-- shared/` pathspec, and git
+ *   computes rename detection over the diff the pathspec produced, so a rename
+ *   from outside `shared/` arrives as a plain staged add with no pairing at all.
+ * - Present in HEAD (an ordinary modification, a staged edit, a gitlink). The
+ *   committed content is what `git checkout HEAD --` puts back.
  *
- * The destination file is deliberately left on disk. The gate's business is what
- * the repo is about to publish, not what the user keeps in their own working
- * tree, and a hand-placed file under `shared/` may well be wanted there; the WARN
- * says so explicitly so the user is never left believing it was deleted.
+ * That question is asked with a TREE lookup rather than a blob probe.
+ * `cat-file -e HEAD:<path>` has to materialize the object, so it fails on a
+ * committed GITLINK (whose commit lives in the submodule's object store) and on
+ * a partial clone that has not fetched the blob, reporting a committed entry as
+ * absent from HEAD. `ls-tree` reads the tree entry itself: empty stdout means
+ * the path really is not in HEAD, and non-empty means it is, gitlink included.
  *
- * It also says how long that lasts, because unstaging is precisely what converts
- * the path from a staged entry into an UNTRACKED one, which is the shape
- * `removeUntrackedDenied` acts on. So the next pull removes it (snapshotting it
- * first). A WARN stopping at "left on disk" would read as a guarantee that holds
- * for exactly one pull, and this WARN is the only user-facing record this gate
- * produces. The backup is named without a timestamp on purpose: the snapshot
- * belongs to the run that performs the removal, not this one, so naming this
- * run's `ts` would point at a directory that never holds the file.
+ * `gitProbe` collapses every failure to `null` (git absent, the probe timeout
+ * expiring, an unborn or corrupt HEAD, an unreadable repo), so a `null` gets its
+ * own WARN naming neither command rather than a guess at one.
  *
- * @param repo - Absolute path to the sync repo.
- * @param path - Repo-relative path to unstage.
- * @param segment - The path segment that matched the never-sync list.
- * @param source - When `path` is the destination half of a staged rename or
- *   copy, the repo-relative source path whose index entry has to be restored
- *   alongside. Absent for a plain staged add.
- */
-function unstageDeniedAdd(repo: string, path: string, segment: string, source?: string): void {
-  if (gitTryMutate(['reset', '-q', 'HEAD', '--', path], repo) === null) {
-    warn(
-      `could not unstage ${path}: the path segment "${segment}" is on the never-sync list, so unstage it by hand before committing`,
-    );
-    return;
-  }
-  if (source !== undefined && gitTryMutate(['checkout', 'HEAD', '--', source], repo) === null) {
-    warn(
-      `unstaged ${path}, but could not restore ${source}, which the same rename staged for deletion: run "git checkout HEAD -- ${source}" by hand, or the next push publishes that deletion`,
-    );
-    return;
-  }
-  const undone =
-    source === undefined ? '' : ` The rename it was half of is undone, so ${source} is back.`;
-  warn(
-    `unstaged ${path}: the path segment "${segment}" is on the never-sync list.${undone} The file is left on disk, but the next nomad pull removes it from the sync repo working tree (snapshotting it into the backup cache first), so move it outside shared/ now if you want to keep it`,
-  );
-}
-
-/**
- * Restore a tracked denylisted path to its committed content.
- *
- * Restored rather than deleted on purpose: deleting a tracked path would turn a
- * content gate into a deletion of committed repo content, which is a strictly
- * worse outcome than the leak it is trying to prevent.
- *
- * A path git reports as tracked but that is no longer in the working tree is
- * already gone (the deletion pass removed it, or the user did). Checking it out
- * of HEAD would put denylisted content BACK, which is the opposite of what this
- * gate is for, so that case is left alone.
- *
- * "Tracked" is decided by presence in HEAD, not by the `git status` prefix that
- * routed the path here: that prefix also covers a staged add and a rename
- * target, neither of which has committed content to protect. Those go to
- * `unstageDeniedAdd` instead, since the reasoning above does not apply to them.
- *
- * That question is asked with a TREE lookup (`git ls-tree HEAD -- <path>`) and
- * answered only on a POSITIVE result, because the destructive branch is the one
- * a wrong answer selects. `gitProbe` collapses every failure to `null`: git
- * absent, the probe timeout expiring, an unborn or corrupt HEAD, an unreadable
- * repo, a promisor clone that cannot materialize an object. Exactly one of those
- * means "nothing committed is at risk", so a `null` must leave the path alone
- * and say so rather than unstage on a guess.
- *
- * A tree lookup rather than a blob probe for the same reason. `cat-file -e
- * HEAD:<path>` has to materialize the object, so it fails on a committed GITLINK
- * (whose commit lives in the submodule's object store) and on a partial clone
- * that has not fetched the blob, reporting a committed entry as absent from HEAD.
- * `ls-tree` reads the tree entry itself: empty stdout means the path really is
- * not in HEAD, and non-empty means it is, gitlink included. Gitlinks under
- * `shared/` are a state this repo already handles elsewhere (`guardGitlinks` on
- * the push path), so this is a reachable case, not a hypothetical one.
- *
- * The restore runs through `gitTryMutate` (and the HEAD lookup through its
- * read-only sibling `gitProbe`) rather than `gitOrFatal` because nothing in the
- * pre-rebase path may fail a pull; a call that cannot answer leaves the file as
- * it found it and says so, so the user knows to remove it by hand. No try/catch:
- * both are the same never-throwing invoker, so a catch here would be
- * unreachable.
+ * A path in HEAD that is no longer in the working tree is left unreported: it is
+ * already gone (the deletion pass removed it, or the user did), so there is
+ * nothing for the user to act on and `git checkout HEAD --` would be the one
+ * piece of advice that puts denylisted content BACK. The `existsSync` test sits
+ * BELOW the HEAD lookup for that reason, since the same reasoning does not hold
+ * for a staged add: there the index entry is what publishes, and it exists
+ * whether or not the working file does.
  *
  * @param repo - Absolute path to the sync repo.
- * @param path - Repo-relative path to restore.
+ * @param path - Repo-relative path to report.
  * @param segment - The path segment that matched the never-sync list.
- * @param ts - Backup timestamp, named in the WARN so the user can find the
- *   pre-pull snapshot of any uncommitted edit this restore discards.
- * @param source - The rename source when `path` is a rename destination; see
- *   {@link unstageDeniedAdd}.
  */
-function restoreTrackedDenied(
-  repo: string,
-  path: string,
-  segment: string,
-  ts: string,
-  source?: string,
-): void {
-  if (!existsSync(join(repo, path))) return;
+function reportTrackedDenied(repo: string, path: string, segment: string): void {
   const inHead = gitProbe(['ls-tree', '--name-only', 'HEAD', '--', path], repo);
+  const denied = `the path segment "${segment}" is on the never-sync list`;
   if (inHead === null) {
     warn(
-      `could not check ${path} against HEAD: the path segment "${segment}" is on the never-sync list, so handle it by hand before committing`,
+      `could not check ${path} against HEAD: ${denied}. Nothing was changed. Inspect it with "git status -- ${path}" and take it out of shared/ before committing`,
     );
     return;
   }
   if (inHead.trim() === '') {
-    unstageDeniedAdd(repo, path, segment, source);
-    return;
-  }
-  if (gitTryMutate(['checkout', 'HEAD', '--', path], repo) === null) {
     warn(
-      `could not restore ${path} to its committed content: the path segment "${segment}" is on the never-sync list, so remove it by hand before committing`,
+      `${path} is staged and has no committed version: ${denied}. Nothing was changed. Run "git rm --cached -- ${path}" to take it out of the index. If it is the destination half of a staged rename, "git diff --cached --name-status" names the source, whose content IS committed, so restore that half with "git checkout HEAD -- <source>" rather than leaving its deletion staged`,
     );
     return;
   }
+  if (!existsSync(join(repo, path))) return;
   warn(
-    `restored ${path} to its committed content: the path segment "${segment}" is on the never-sync list. Any uncommitted edit to it was snapshotted under backup/${ts}/repo/ before the pull`,
+    `${path} is tracked and has changes against HEAD: ${denied}. Nothing was changed. Run "git checkout HEAD -- ${path}" to put the committed content back, or move the file outside shared/ if you want to keep it`,
   );
 }
 
 /**
- * Revert every denylisted path out of the repo working tree, after both
- * pre-pull passes have run.
+ * Sweep the repo working tree for denylisted paths, after both pre-pull passes
+ * have run: untracked hits are snapshotted and removed, tracked hits are
+ * reported and left exactly as they were found.
  *
  * The second of the two layers guarding the host-to-repo boundary.
  * `mirrorOneSharedName`'s copy-time filter means the mirror never writes such a
@@ -536,20 +462,24 @@ function restoreTrackedDenied(
  * no copy filter sees, and content appended to an ALREADY-TRACKED file, which
  * the mirror's own untracked-file accounting is blind to by construction.
  *
- * Never throws and never fails the pull. A hit is a WARN plus a revert; the
- * caller carries on into `git pull --rebase` either way. The push side's
- * `enforceAllowList` throws instead, which is right for an explicit publish the
- * user can retry and wrong for a step that runs on every shell start on some
- * hosts.
+ * The two halves are treated differently because git knows different things
+ * about them. An untracked record is unambiguous, so
+ * {@link removeUntrackedDenied} acts on it (after a snapshot, since git could
+ * not recover it otherwise). A tracked record is an index state this function
+ * would have to reconstruct from a two-character status prefix before it could
+ * safely patch it, and every shape that reconstruction can get wrong ends in a
+ * staged deletion of committed repo content. So the tracked half reports
+ * instead; see {@link reportTrackedDenied}.
  *
- * The whole `parsePorcelainZ` result is taken rather than its two path arrays,
- * because the rename pairing it also reports is load-bearing here: a denylisted
- * rename DESTINATION cannot be undone correctly without knowing which source the
- * same index operation staged for deletion. See {@link unstageDeniedAdd}.
+ * Never throws and never fails the pull. The caller carries on into
+ * `git pull --rebase` either way. The push side's `enforceAllowList` throws
+ * instead, which is right for an explicit publish the user can retry and wrong
+ * for a step that runs on every shell start on some hosts.
  *
  * @param repo - Absolute path to the sync repo.
  * @param status - The `git status` snapshot, as `parsePorcelainZ` returns it.
- * @param ts - Backup timestamp, resolved once by the caller.
+ * @param ts - Backup timestamp, resolved once by the caller. Used only by the
+ *   untracked half, which is the only half that writes anything.
  */
 export function revertDeniedMirrorPaths(
   repo: string,
@@ -562,8 +492,6 @@ export function revertDeniedMirrorPaths(
   }
   for (const path of status.tracked) {
     const segment = deniedSegmentFor(path);
-    if (segment !== null) {
-      restoreTrackedDenied(repo, path, segment, ts, status.renameSources?.[path]);
-    }
+    if (segment !== null) reportTrackedDenied(repo, path, segment);
   }
 }
