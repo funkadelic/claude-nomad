@@ -124,10 +124,11 @@ conflicts from a future session where two hosts drift apart.
 ## .claude extras filtering
 
 When a project opts its `<repo>/.claude/` directory into extras sync, nomad applies a per-name
-denylist on both push and pull. The denylist (`CLAUDE_EXTRA_NEVER_SYNC` in `src/config.ts`) is
-the full `NEVER_SYNC` set plus `projects/`, which strips session transcripts, `settings.local.json`,
-`shell-snapshots/`, `sessions/`, and other host-local or ephemeral names, leaving your project
-config (`settings.json`, `skills/`, `commands/`, `rules/`, `hooks/`, `agents/`).
+denylist on both push and pull. The denylist (`CLAUDE_EXTRA_NEVER_SYNC` in
+`src/config.never-sync.ts`) is the full `NEVER_SYNC` set plus `projects/`, which strips session
+transcripts, `settings.local.json`, `shell-snapshots/`, `sessions/`, and other host-local or
+ephemeral names, leaving your project config (`settings.json`, `skills/`, `commands/`, `rules/`,
+`hooks/`, `agents/`).
 
 The same boundary is enforced a second time at the push gate in `commands.push.allowlist.ts` as
 a backstop. On pull, the filter prevents a poisoned repo entry from restoring a host-local file

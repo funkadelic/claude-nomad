@@ -88,7 +88,7 @@ Pointers and specifics:
   `path-map.json`); the **skills filtered copy** is driven by `src/skills-sync.ts`
   (`syncSkillsPull`/`syncSkillsPush`); **whitelisted extras** names in `SUPPORTED_EXTRAS`
   (currently `.planning`, `CLAUDE.md`, and `.claude`); and the full **never-synced** set in
-  `NEVER_SYNC` (all in `src/config.ts`).
+  `NEVER_SYNC` (in `src/config.never-sync.ts`; the other three are in `src/config.ts`).
 - **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `.credentials.json` (OAuth
   credential store), `history.jsonl`, `settings.local.json` (per-host overrides),
   `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,

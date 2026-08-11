@@ -43,9 +43,9 @@ itself.
 
 Sync is allow-list driven: only paths **claude-nomad** knows about ever leave the machine.
 Credentials, OAuth state, MCP runtime state, shell history, and per-host local settings are on a
-hard never-sync list (the authoritative list is `NEVER_SYNC` in `src/config.ts`) and are blocked
-even when they appear nested inside a directory you opted into syncing. Projects not listed in
-`path-map.json` are left alone in both directions.
+hard never-sync list (the authoritative list is `NEVER_SYNC` in `src/config.never-sync.ts`) and
+are blocked even when they appear nested inside a directory you opted into syncing. Projects not
+listed in `path-map.json` are left alone in both directions.
 
 ## Opt-in per-project extras
 
