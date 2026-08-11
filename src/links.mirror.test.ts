@@ -701,30 +701,76 @@ describe('revertDeniedMirrorPaths', () => {
     expect(warnings()).toBe('');
   });
 
+  it.skipIf(!hasGit)('unstages a staged-added hit and leaves the file on disk', async () => {
+    // Staged-added: git status calls it tracked, but there is no HEAD version,
+    // so a restore can only fail on it. It is also the state where the content
+    // is closest to publication, so the gate has to act rather than print a
+    // sentence. Unstaging is the narrowest action that changes that, and it
+    // destroys nothing.
+    writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# deploy\n');
+    gitInit(repo);
+    g(['add', '-A'], repo);
+    g(['commit', '-qm', 'base'], repo);
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+    g(['add', 'shared/commands/sessions/notes.md'], repo);
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    expect(() =>
+      revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS),
+    ).not.toThrow();
+
+    // Out of the index: the next commit no longer publishes it.
+    const staged = execFileSync('git', ['diff', '--cached', '--name-only'], {
+      cwd: repo,
+    }).toString();
+    expect(staged).not.toContain('sessions/notes.md');
+    // Still on disk, untouched: the gate never deletes what the user put there.
+    expect(existsSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'))).toBe(true);
+    expect(readFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'utf8')).toBe(
+      'token=abc\n',
+    );
+    // The WARN has to name both halves, or the user acts on the wrong one.
+    expect(warnings()).toContain('unstaged shared/commands/sessions/notes.md');
+    expect(warnings()).toContain('sessions');
+    expect(warnings()).toContain('still on disk');
+  });
+
   it.skipIf(!hasGit)(
-    'tells the user to remove a tracked hit by hand when git cannot restore it',
+    'leaves a committed tracked hit restored from HEAD, not unstaged',
     async () => {
-      // Staged-added: git reports it as tracked, but there is no HEAD version
-      // to check out, so the restore fails. The file survives, and the WARN has
-      // to say so or the user is left with denylisted content and no signal.
-      writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# deploy\n');
+      // The committed case is unchanged: deleting or unstaging a path whose
+      // content IS in HEAD would turn a content gate into a loss of committed
+      // repo content, which is worse than the leak it prevents.
+      mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+      writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), '# committed\n');
       gitInit(repo);
       g(['add', '-A'], repo);
       g(['commit', '-qm', 'base'], repo);
-      mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
       writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
-      g(['add', 'shared/commands/sessions/notes.md'], repo);
 
       const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-      expect(() =>
-        revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS),
-      ).not.toThrow();
+      revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS);
 
-      expect(warnings()).toContain('could not restore');
-      expect(warnings()).toContain('sessions');
-      expect(existsSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'))).toBe(true);
+      expect(readFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'utf8')).toBe(
+        '# committed\n',
+      );
+      expect(warnings()).toContain('restored shared/commands/sessions/notes.md');
     },
   );
+
+  it('warns that it could not unstage when git cannot answer at all', async () => {
+    // No git checkout here, so both probes return null. Claiming the path was
+    // unstaged would be the same false record the removal branch avoids.
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS);
+
+    expect(warnings()).toContain('could not unstage');
+    expect(existsSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'))).toBe(true);
+  });
 });
 
 /**

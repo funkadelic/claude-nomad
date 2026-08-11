@@ -343,6 +343,38 @@ function removeUntrackedDenied(repo: string, path: string, segment: string): voi
 }
 
 /**
+ * Take a denylisted path with no committed content out of the index, leaving
+ * the file itself alone.
+ *
+ * `git status` reports a staged-but-never-committed add (and the new-name half
+ * of a rename) as tracked, but there is nothing in HEAD to restore it to, so
+ * the restore below can only fail on it. That is also the state in which a user
+ * is closest to publishing the content: the next `git commit` takes it. Dropping
+ * it from the index is the narrowest action that changes that, and it destroys
+ * nothing, because nothing committed is at risk.
+ *
+ * The file is deliberately left on disk. The gate's business is what the repo
+ * is about to publish, not what the user keeps in their own working tree, and a
+ * hand-placed file under `shared/` may well be wanted there; the WARN says so
+ * explicitly so the user is never left believing it was deleted.
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @param path - Repo-relative path to unstage.
+ * @param segment - The path segment that matched the never-sync list.
+ */
+function unstageDeniedAdd(repo: string, path: string, segment: string): void {
+  if (gitProbe(['rm', '--cached', '-f', '--', path], repo) === null) {
+    warn(
+      `could not unstage ${path}: the path segment "${segment}" is on the never-sync list, so unstage it by hand before committing`,
+    );
+    return;
+  }
+  warn(
+    `unstaged ${path}: the path segment "${segment}" is on the never-sync list. The file is still on disk, so remove it by hand if you did not mean to add it`,
+  );
+}
+
+/**
  * Restore a tracked denylisted path to its committed content.
  *
  * Restored rather than deleted on purpose: deleting a tracked path would turn a
@@ -353,6 +385,11 @@ function removeUntrackedDenied(repo: string, path: string, segment: string): voi
  * already gone (the deletion pass removed it, or the user did). Checking it out
  * of HEAD would put denylisted content BACK, which is the opposite of what this
  * gate is for, so that case is left alone.
+ *
+ * "Tracked" is decided by presence in HEAD, not by the `git status` prefix that
+ * routed the path here: that prefix also covers a staged add and a rename
+ * target, neither of which has committed content to protect. Those go to
+ * `unstageDeniedAdd` instead, since the reasoning above does not apply to them.
  *
  * Runs through `gitProbe` rather than `gitOrFatal` because nothing in the
  * pre-rebase path may fail a pull; a probe that cannot answer leaves the file
@@ -368,6 +405,10 @@ function removeUntrackedDenied(repo: string, path: string, segment: string): voi
  */
 function restoreTrackedDenied(repo: string, path: string, segment: string, ts: string): void {
   if (!existsSync(join(repo, path))) return;
+  if (gitProbe(['cat-file', '-e', `HEAD:${path}`], repo) === null) {
+    unstageDeniedAdd(repo, path, segment);
+    return;
+  }
   if (gitProbe(['checkout', 'HEAD', '--', path], repo) === null) {
     warn(
       `could not restore ${path} to its committed content: the path segment "${segment}" is on the never-sync list, so remove it by hand before committing`,
