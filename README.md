@@ -188,14 +188,14 @@ other side:
 - **The copy-in never carries your Claude secrets or session history.** The same mirror that
   captures your Windows edits into the sync repo refuses to copy anything sitting under a directory
   name on claude-nomad's never-sync list (session transcripts, credentials, caches, and other
-  ephemeral `~/.claude/` state; see `NEVER_SYNC` in `src/config.ts` for the exact set). If something
-  on that list somehow lands in the sync repo working tree anyway, such as a file edited directly in
-  the repo rather than through `~/.claude/`, the next `nomad pull` removes or restores it and prints
-  a warning naming the file. One thing worth knowing: that list is not only secrets, it also uses a
-  few ordinary-sounding directory names (`sessions`, `tasks`, `plans`, `cache`, and others) that
-  Claude Code itself uses under `~/.claude/`. If a directory inside one of your shared names happens
-  to be spelled exactly like one of those, it silently stops mirroring; only an exact directory name
-  collides, so a file named `tasks.md` is unaffected.
+  ephemeral `~/.claude/` state; see `NEVER_SYNC` in `src/config.never-sync.ts` for the exact set).
+  If something on that list somehow lands in the sync repo working tree anyway, such as a file
+  edited directly in the repo rather than through `~/.claude/`, the next `nomad pull` removes or
+  restores it and prints a warning naming the file. One thing worth knowing: that list is not only
+  secrets, it also uses a few ordinary-sounding directory names (`sessions`, `tasks`, `plans`,
+  `cache`, and others) that Claude Code itself uses under `~/.claude/`. If a directory inside one of
+  your shared names happens to be spelled exactly like one of those, it silently stops mirroring;
+  only an exact directory name collides, so a file named `tasks.md` is unaffected.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
   on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native

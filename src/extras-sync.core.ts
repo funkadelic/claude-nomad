@@ -253,11 +253,11 @@ export function copyExtrasFileSkipDiverged(src: string, dst: string): void {
  * Content-style extras (`.planning`) keep the narrow `ALWAYS_NEVER_SYNC` subset
  * so legitimate names like `todos`/`plans` inside a synced `.planning/` tree are
  * not false-blocked by the broader `.claude` denylist. Mirrored by `blockSetFor` in
- * `commands.push.allowlist.ts` so the copy filter and the push gate agree.
+ * `config.never-sync.ts` so the copy filter and the push gate agree.
  *
  * The `.claude` comparison runs through `isClaudeExtraName` (case-insensitive,
  * trailing dot/whitespace normalized) rather than a raw `===`, matching
- * `blockSetFor` in `commands.push.allowlist.ts` so neither side of the
+ * `blockSetFor` in `config.never-sync.ts` so neither side of the
  * boundary can be downgraded by a spelling variant.
  *
  * @param dirname - The extra's whitelisted name (e.g. `.claude`, `.planning`).

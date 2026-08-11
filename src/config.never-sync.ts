@@ -184,7 +184,7 @@ export function isDeniedName(blockSet: Set<string>, name: string): boolean {
  * lowercase name after normalizing trailing dots/whitespace and case-folding.
  * `isDeniedName` hardened *membership* in a deny set on the case and
  * trailing-character axes; this closes the same two axes for the sibling
- * *selection* comparisons in `commands.push.allowlist.ts` and
+ * *selection* comparisons in `blockSetFor` below and in
  * `extras-sync.core.ts` that choose WHICH deny set (`CLAUDE_EXTRA_NEVER_SYNC`
  * vs `ALWAYS_NEVER_SYNC`) applies to a `.claude` extra's contents. Without
  * this, a spelling like `.Claude` (same directory as `.claude` on
