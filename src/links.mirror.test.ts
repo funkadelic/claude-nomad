@@ -871,6 +871,14 @@ describe('revertDeniedMirrorPaths', () => {
       expect(warnings()).toContain('"sessions"');
       expect(warnings()).toContain('git rm --cached -- shared/commands/sessions/notes.md');
       expect(warnings()).toContain('Nothing was changed');
+      // ...and it has to say what running that command leads to. Unstaging is
+      // exactly what turns the path into an untracked record, which is the shape
+      // the NEXT pull's removal branch acts on, so a WARN that stops at "take it
+      // out of the index" leaves the user unaware their next pull deletes the
+      // file, and offers no way to keep it.
+      expect(warnings()).toContain('the next nomad pull removes from the sync repo working tree');
+      expect(warnings()).toContain('snapshotting it into the backup cache first');
+      expect(warnings()).toContain('move it outside shared/');
     },
   );
 
