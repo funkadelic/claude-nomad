@@ -809,7 +809,12 @@ describe('revertDeniedMirrorPaths', () => {
     // The WARN has to name both halves, or the user acts on the wrong one.
     expect(warnings()).toContain('unstaged shared/commands/sessions/notes.md');
     expect(warnings()).toContain('sessions');
-    expect(warnings()).toContain('still on disk');
+    expect(warnings()).toContain('left on disk');
+    // ...and it has to say for how long. Unstaging is exactly what turns the
+    // path into an untracked record, which is the shape the NEXT pull's removal
+    // branch acts on. A WARN that stops at "left on disk" reads as a guarantee
+    // and holds for precisely one pull.
+    expect(warnings()).toContain('next nomad pull removes it');
   });
 
   it.skipIf(!hasGit)(

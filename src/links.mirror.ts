@@ -410,6 +410,15 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
  * tree, and a hand-placed file under `shared/` may well be wanted there; the WARN
  * says so explicitly so the user is never left believing it was deleted.
  *
+ * It also says how long that lasts, because unstaging is precisely what converts
+ * the path from a staged entry into an UNTRACKED one, which is the shape
+ * `removeUntrackedDenied` acts on. So the next pull removes it (snapshotting it
+ * first). A WARN stopping at "left on disk" would read as a guarantee that holds
+ * for exactly one pull, and this WARN is the only user-facing record this gate
+ * produces. The backup is named without a timestamp on purpose: the snapshot
+ * belongs to the run that performs the removal, not this one, so naming this
+ * run's `ts` would point at a directory that never holds the file.
+ *
  * @param repo - Absolute path to the sync repo.
  * @param path - Repo-relative path to unstage.
  * @param segment - The path segment that matched the never-sync list.
@@ -433,7 +442,7 @@ function unstageDeniedAdd(repo: string, path: string, segment: string, source?: 
   const undone =
     source === undefined ? '' : ` The rename it was half of is undone, so ${source} is back.`;
   warn(
-    `unstaged ${path}: the path segment "${segment}" is on the never-sync list.${undone} The file is still on disk, so remove it by hand if you did not mean to add it`,
+    `unstaged ${path}: the path segment "${segment}" is on the never-sync list.${undone} The file is left on disk, but the next nomad pull removes it from the sync repo working tree (snapshotting it into the backup cache first), so move it outside shared/ now if you want to keep it`,
   );
 }
 
