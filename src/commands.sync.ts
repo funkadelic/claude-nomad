@@ -198,7 +198,14 @@ function buildSyncSummarySection(pull: WetPull, pushOutcome: PushOutcome): Docto
  * the push-only Global config, the merged Sessions/Extras, and the push-only
  * Leak scan. The caller appends the Sync summary after these.
  */
-const SYNC_SECTION_ORDER = ['Settings', 'Global config', 'Sessions', 'Extras', 'Leak scan'];
+const SYNC_SECTION_ORDER = [
+  'Symlinks',
+  'Settings',
+  'Global config',
+  'Sessions',
+  'Extras',
+  'Leak scan',
+];
 
 /**
  * True for the per-half summary headers dropped from the merged tree: the
