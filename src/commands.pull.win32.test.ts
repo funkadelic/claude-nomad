@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import type * as linksMirrorModule from './links.mirror.ts';
+
 import { SHARED_LINKS } from './config.ts';
 import { renderTree } from './output-tree.ts';
 import { g, gitInit } from './test-support/git.ts';
@@ -102,7 +104,15 @@ describe('reconcileSharedLinksBeforePull', () => {
     const deletions = vi.fn(() => {
       order.push('deletions');
     });
-    vi.doMock('./links.mirror.ts', () => ({ stageLocalSharedEdits: mirror }));
+    // Spread the real module rather than replacing it outright: the denylist
+    // backstop below (revertDeniedUnderShared) reaches revertDeniedMirrorPaths
+    // outside this function's try/catch, and a bare `{ stageLocalSharedEdits }`
+    // factory leaves that export undefined, only silently inert here because
+    // these fixtures are not git checkouts (gitProbe returns null first).
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: mirror };
+    });
     vi.doMock('./links.deletions.ts', () => ({ applySharedLinkDeletions: deletions }));
     return { mirror, deletions };
   }

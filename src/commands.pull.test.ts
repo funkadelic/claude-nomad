@@ -10,6 +10,7 @@ import type * as recoveryModule from './commands.pull.recovery.ts';
 import type * as recoveryUnmergedModule from './commands.pull.recovery.unmerged.ts';
 
 import type * as baselineModule from './links.baseline.ts';
+import type * as linksMirrorModule from './links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 
@@ -210,12 +211,15 @@ describe('cmdPull: extras integration', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: remapPullMock,
@@ -267,12 +271,15 @@ describe('cmdPull: extras integration', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -320,12 +327,15 @@ describe('cmdPull: extras integration', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -370,12 +380,15 @@ describe('cmdPull: extras integration', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -412,12 +425,15 @@ describe('cmdPull: extras integration', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -458,12 +474,15 @@ describe('cmdPull: extras integration', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 1, pulled: ['proj-a'], wouldPull: [] })),
@@ -515,12 +534,15 @@ describe('cmdPull: extras integration', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 2, pulled: [], wouldPull: [] })),
@@ -558,9 +580,10 @@ describe('cmdPull: extras integration', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'test-host.json' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] })),
@@ -730,12 +753,15 @@ describe('cmdPull wedge preflight', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -886,12 +912,15 @@ describe('cmdPull forceRemote routing', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -963,12 +992,15 @@ describe('cmdPull forceRemote routing', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1103,12 +1135,15 @@ describe('handleWedge unmerged-index dispatch', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1148,12 +1183,15 @@ describe('handleWedge unmerged-index dispatch', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1190,12 +1228,15 @@ describe('handleWedge unmerged-index dispatch', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1363,12 +1404,15 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1399,12 +1443,15 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1449,12 +1496,15 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1509,12 +1559,15 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1570,12 +1623,15 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1656,12 +1712,15 @@ describe('runPullCore: return shape and lock-free contract', () => {
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
-    }));
+    // Spread the real module rather than replacing it outright: the win32
+    // denylist backstop (revertDeniedUnderShared) reaches
+    // revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's
+    // try/catch, and a bare `{ stageLocalSharedEdits }` factory leaves that
+    // export undefined there.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 2),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] })),
@@ -1937,9 +1996,10 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
       }),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
     }));
-    vi.doMock('./links.mirror.ts', () => ({
-      stageLocalSharedEdits: mirrorSpy,
-    }));
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: mirrorSpy };
+    });
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
