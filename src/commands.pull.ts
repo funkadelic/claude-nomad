@@ -13,6 +13,8 @@ import { applySharedLinks, regenerateSettings } from './links.ts';
 import { writeSharedBaseline } from './links.baseline.ts';
 import {
   buildMirrorSection,
+  namesAlreadyReported,
+  plansAgainst,
   planSharedReconcileBeforePull,
   reconcileSharedLinksBeforePull,
 } from './commands.pull.win32.ts';
@@ -138,6 +140,14 @@ function buildWetPullSections(
   extrasSkipped: number;
 } {
   applySharedLinks(ts, map, { quietNames: namesDerived });
+  // `quiet` unconditionally, because the apply on the line above ALWAYS derives
+  // the shared-name list from this same `map`, whether audibly or not. The
+  // baseline walk derives a second time off the identical input, so leaving it
+  // loud reports one rejected sharedDirs entry twice on every win32 wet pull.
+  // This is not the flag above under another name: that one is about a
+  // derivation against a DIFFERENT (pre-rebase) map, which is why it can be
+  // false while this stays true.
+  //
   // Record what this host now has under ~/.claude/, so the next run can tell a
   // file the user deleted apart from a file this host has never received. The
   // placement is the invariant, not a convenience: this function is reachable
@@ -147,7 +157,7 @@ function buildWetPullSections(
   // literally true. A run that dies before this line deliberately leaves the
   // previous record in place, so it replays the same already-authorized
   // removals next time instead of inventing new ones.
-  writeSharedBaseline(map);
+  writeSharedBaseline(map, { quiet: true });
   const { label } = regenerateSettings(ts);
   syncSkillsPull(ts, prePostHeads);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
@@ -385,9 +395,10 @@ export function runPullCore(
     mirrored,
     events: mirrorEvents,
     namesDerived,
+    derivedSharedDirs,
   } = !dryRun && !forceRemote
     ? reconcileSharedLinksBeforePull(repo, ts)
-    : { mirrored: [], events: [], namesDerived: false };
+    : { mirrored: [], events: [], namesDerived: false, derivedSharedDirs: undefined };
   // A dry run applies nothing, but its preview has to describe the same repo
   // state the wet step above acts on, and the rebase below moves that state.
   // Both plans are read-only and empty on darwin and linux, so a posix host
@@ -437,19 +448,21 @@ export function runPullCore(
     // sections for cmdPull to render: a composing caller (cmdSync) continues
     // with its own output afterwards, and a 'complete' line mid-stream reads
     // as if the command had ended.
-    computePreview(ts, map, 'pull', sharedPlans);
+    computePreview(ts, map, 'pull', plansAgainst(sharedPlans, map));
     return { tag: 'dry' };
   }
   // The apply below derives its own name list from the POST-rebase map (the
   // only repo state it can act on); `namesDerived` only tells it whether the
   // pre-rebase reconcile already emitted this pull's sharedDirs rejection
   // WARNs. False on darwin/linux, where that reconcile never runs, so the
-  // apply's derivation stays audible there.
+  // apply's derivation stays audible there, and cleared whenever the rebase
+  // moved `sharedDirs` out from under those WARNs, so an entry the fetch
+  // delivered is still reported rather than silently dropped.
   const { sections, localOnly, settingsLabel, unmapped, extrasSkipped } = buildWetPullSections(
     ts,
     map,
     prePostHeads,
-    namesDerived,
+    namesAlreadyReported(namesDerived, derivedSharedDirs, map),
   );
   // An unborn/uncapturable pre-rebase HEAD (fresh clone) is treated as
   // "changes present" so a first-ever pull is never collapsed to a no-op;

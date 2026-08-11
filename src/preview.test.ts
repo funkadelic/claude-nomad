@@ -13,6 +13,7 @@ import { join, relative } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { plantSharedBaseline } from './test-support/baseline.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 // The "non-win32" test below asserts `process.platform !== 'win32'` directly
@@ -986,19 +987,11 @@ describe('computePreview orchestration', () => {
     },
   );
 
-  /** Plant a shared-links baseline by hand, matching links.deletions.test.ts. */
-  function plantBaseline(files: Record<string, unknown>): void {
-    const cacheDir = join(testHome, '.cache', 'claude-nomad');
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(
-      join(cacheDir, 'shared-baseline-test-host.json'),
-      JSON.stringify({
-        schema: 1,
-        scannerVersion: 'shared-links-baseline/1',
-        configHash: 'not-applicable',
-        files,
-      }) + '\n',
-    );
+  /** Plant a shared-links baseline into this suite's fixture HOME. */
+  function plantBaseline(
+    files: Record<string, { size: number; mtime: number; hash: string }>,
+  ): void {
+    plantSharedBaseline(testHome, files);
   }
 
   it('renders would-capture and would-remove rows on a win32 dry-run, matching the wet predicates', async () => {
@@ -1132,6 +1125,7 @@ describe('computePreview orchestration', () => {
         { name: 'commands', localPath: '/pre/rebase/commands/a.md', repoPath: '/pre/shared/a.md' },
       ],
       namesDerived: false,
+      derivedSharedDirs: undefined,
     });
 
     const joined = logs.join('\n');
@@ -1195,6 +1189,11 @@ describe('computePreview orchestration', () => {
     // planner, and the shared-link apply), so before the fix `nomad diff`
     // printed the same rejection line three times and a user reasonably read
     // it as three rejected entries.
+    //
+    // The planted baseline is what makes the deletion planner enumerate at all.
+    // Without one it returns early, so the assertion would pass on a host that
+    // has never completed a pull and fail on every host that has.
+    plantBaseline({ 'CLAUDE.md': { size: 1, mtime: 1, hash: 'x' } });
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local\n');
     const map = { projects: {}, sharedDirs: ['../escape'] };

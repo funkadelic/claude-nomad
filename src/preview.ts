@@ -53,6 +53,15 @@ export type SharedLinkPlans = {
    * only one that ever runs.
    */
   namesDerived: boolean;
+  /**
+   * The raw `sharedDirs` value `namesDerived`'s WARNs were emitted about.
+   *
+   * A rebasing caller computes these plans BEFORE its rebase and previews
+   * AFTER it, so `namesDerived` alone would suppress a derivation that has a
+   * different field to report on. The caller compares this against the map it
+   * previews and clears the flag when the two disagree.
+   */
+  derivedSharedDirs: unknown;
 };
 
 /**

@@ -977,6 +977,55 @@ describe('revertDeniedMirrorPaths', () => {
     expect(readFileSync(abs, 'utf8')).toBe('token=abc\n');
   });
 
+  it('warns that it could not unstage when HEAD answers but the reset fails', async () => {
+    // Fail-open on the mutating half: HEAD is readable and says the path is not
+    // committed, so the branch is right, but the index change itself did not
+    // land. Claiming it did would be the same false record the removal branch
+    // avoids.
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+    writeFileSync(abs, 'token=abc\n');
+    vi.doMock('./git-probe.ts', () => ({ gitProbe: () => '', gitTryMutate: () => null }));
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+      TS,
+    );
+
+    expect(warnings()).toContain('could not unstage shared/commands/sessions/notes.md');
+    expect(warnings()).toContain('by hand before committing');
+    expect(existsSync(abs)).toBe(true);
+  });
+
+  it('sends the user to the rename source when only its restore fails', async () => {
+    // The destination came out of the index but the source's staged deletion is
+    // still there, which is the state that publishes a removal of committed
+    // content. Reporting a plain success here would hide exactly that.
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'foo.md'), 'token=abc\n');
+    vi.doMock('./git-probe.ts', () => ({
+      gitProbe: () => '',
+      gitTryMutate: (args: readonly string[]) => (args[0] === 'checkout' ? null : ''),
+    }));
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(
+      repo,
+      {
+        tracked: ['shared/commands/sessions/foo.md'],
+        untracked: [],
+        renameSources: { 'shared/commands/sessions/foo.md': 'shared/commands/foo.md' },
+      },
+      TS,
+    );
+
+    expect(warnings()).toContain('could not restore shared/commands/foo.md');
+    expect(warnings()).toContain('git checkout HEAD -- shared/commands/foo.md');
+    expect(warnings()).toContain('publishes that deletion');
+  });
+
   it('says it could not check HEAD when the path is not in a git checkout at all', async () => {
     // No git repo here, so the HEAD probe fails. Claiming the path was unstaged
     // would be the same false record the removal branch avoids, and acting on

@@ -136,6 +136,13 @@ function deletionFor(
  * thread the same list through here instead of triggering a second
  * `sharedDirs` rejection WARN for the same invalid entry.
  *
+ * The one derivation this function makes when no list is supplied is threaded
+ * into `enumerateLocalSharedScan` as well. That walk derives its own otherwise,
+ * and it does so regardless of `opts.linkNames`, so threading a list in here
+ * used to silence only the name-set derivation on the line below it and left the
+ * scan's own WARN standing. Deriving once at the top and passing it down is what
+ * makes `opts.linkNames` mean zero derivations rather than one.
+ *
  * @param map - Parsed `path-map.json`, or `null` when it could not be read.
  * @param opts - `linkNames`; falls back to `allSharedLinks(map)` when absent.
  * @returns One entry per repo file to remove; empty when nothing is authorized.
@@ -150,10 +157,11 @@ export function planSharedLinkDeletions(
   if (baseline === null) return [];
   const claude = claudeHome();
   const sharedRoot = join(repoHome(), 'shared');
-  const scan = enumerateLocalSharedScan(map);
+  const linkNames = opts.linkNames ?? allSharedLinks(map);
+  const scan = enumerateLocalSharedScan(map, { linkNames });
   const present = new Set(Object.keys(scan.files).map((key) => key.toLowerCase()));
   const declined = scan.declined.map((path) => path.toLowerCase());
-  const names = new Set(opts.linkNames ?? allSharedLinks(map));
+  const names = new Set(linkNames);
   const plan: SharedLinkDeletion[] = [];
   for (const key of Object.keys(baseline.files)) {
     const folded = key.toLowerCase();

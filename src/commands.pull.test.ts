@@ -14,6 +14,7 @@ import type * as linksMirrorModule from './links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 
+import { plantSharedBaseline } from './test-support/baseline.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 /**
@@ -2258,10 +2259,13 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
       divergenceCheckExtras: vi.fn(() => 0),
     }));
     vi.doMock('./skills-sync.ts', () => ({ syncSkillsPull: vi.fn(), syncSkillsPush: vi.fn() }));
-    vi.doMock('./links.baseline.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof baselineModule>();
-      return { ...actual, writeSharedBaseline: vi.fn() };
-    });
+    // links.baseline.ts is deliberately NOT mocked here. It carries a
+    // shared-name derivation of its own on the wet path (writeSharedBaseline),
+    // and stubbing it out is what let an "exactly once" count pass while the
+    // real win32 host emitted more. Same reason a baseline manifest is planted:
+    // without one the deletion planner returns before enumerating, so a second
+    // derivation site never runs and the count is pinned for the wrong reason.
+    plantSharedBaseline(testHome);
     errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
     });
@@ -2279,7 +2283,6 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     vi.doUnmock('./skills-sync.ts');
-    vi.doUnmock('./links.baseline.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -2386,5 +2389,74 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     runPullCore({ dryRun: true });
 
     expect(rejectionWarns()).toHaveLength(1);
+  });
+
+  it('still reports an invalid sharedDirs entry the rebase itself delivered, on win32', async () => {
+    // The suppression decision is computed against the PRE-rebase map. When the
+    // rebase brings the invalid entry in, the pre-rebase derivation had nothing
+    // to say and the post-rebase one is the only one that can say it, so a
+    // suppression carried blindly across the boundary silently drops the entry
+    // and reports it ZERO times. Zero is a worse outcome than the duplicate the
+    // suppression exists to remove.
+    stubPlatform('win32');
+    mockRebase(() => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+      );
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    expect(rejectionWarns()).toHaveLength(1);
+    expect(rejectionWarns()[0]).toContain('../escape');
+  });
+
+  it('reports the entry that survived the rebase, not the one it replaced, on win32', async () => {
+    // Pre-rebase the map rejects A; the rebase swaps it for B. Both are worth
+    // reporting (they describe two real repo states), but reporting A and never
+    // B would leave the user chasing an entry that no longer exists while the
+    // one actually being dropped goes unmentioned.
+    stubPlatform('win32');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../before'] }) + '\n',
+    );
+    mockRebase(() => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['../after'] }) + '\n',
+      );
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    // Two lines here is the honest count, not a regression of the duplicate
+    // this suppression exists to remove: they name two different entries
+    // against two different repo states, and the win32 pre-rebase reconcile
+    // genuinely did reject the first one.
+    expect(rejectionWarns()).toHaveLength(2);
+    expect(rejectionWarns()[0]).toContain('../before');
+    expect(rejectionWarns()[1]).toContain('../after');
+  });
+
+  it('still reports an invalid sharedDirs entry the rebase delivered, on a win32 dry run', async () => {
+    // Same staleness, reached through the preview's plans object rather than
+    // the wet path's flag.
+    stubPlatform('win32');
+    mockRebase(() => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+      );
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ dryRun: true });
+
+    expect(rejectionWarns()).toHaveLength(1);
+    expect(rejectionWarns()[0]).toContain('../escape');
   });
 });

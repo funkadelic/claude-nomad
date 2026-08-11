@@ -49,6 +49,88 @@ function readMapForMirror(mapPath: string): PathMap | null {
 }
 
 /**
+ * Whether two `sharedDirs` values describe the same configuration.
+ *
+ * The pre-rebase reconcile reports whether it already emitted this run's
+ * `sharedDirs` rejection WARNs, so the post-rebase derivation can stay quiet
+ * instead of repeating them. That report is only sound while both derivations
+ * see the same field: the rebase in between can add, remove or replace entries,
+ * and a suppression carried across it silences a derivation that had something
+ * different to say. Two concrete failures, both reachable on win32: an invalid
+ * entry the rebase DELIVERS is reported zero times (the pre-rebase map had
+ * nothing to reject), and an entry the rebase REPLACES is reported under the old
+ * spelling and never the new one.
+ *
+ * Compared by serialization rather than field-by-field because the field is
+ * unvalidated runtime input: `validatePathMapShape` deliberately leaves it
+ * alone, so it can be an array, a string, a number, or absent, and every one of
+ * those shapes changes what `allSharedLinks` reports. Serializing compares them
+ * all with one rule. Both absent serializes to `undefined` on both sides and
+ * compares equal, which is the common case on a host with no `sharedDirs` at
+ * all.
+ *
+ * @param before - The `sharedDirs` value the earlier derivation ran against.
+ * @param after - The `sharedDirs` value the later derivation will run against.
+ * @returns `true` when a WARN emitted about `before` also covers `after`.
+ */
+function sharedDirsUnchanged(before: unknown, after: unknown): boolean {
+  return JSON.stringify(before) === JSON.stringify(after);
+}
+
+/**
+ * Whether a pre-rebase derivation's `sharedDirs` rejection WARNs still cover
+ * what a derivation against `map` would report, so the later one can stay quiet.
+ *
+ * Both halves have to hold. The earlier derivation must have happened at all
+ * (it does not on darwin or linux, where the win32 reconcile returns
+ * immediately, nor on an unreadable map), and the field it reported on must not
+ * have moved. The rebase sits between the two, so it can add, remove or replace
+ * `sharedDirs` entries; a suppression carried across that blindly hides an
+ * entry the fetch just delivered, which reports it ZERO times, worse than the
+ * duplicate the suppression exists to remove. See {@link sharedDirsUnchanged}.
+ *
+ * @param namesDerived - Whether the pre-rebase step derived the name list.
+ * @param derivedSharedDirs - The `sharedDirs` value it derived against.
+ * @param map - The post-rebase path-map the later derivation will read.
+ * @returns `true` when the later derivation can safely be silenced.
+ */
+export function namesAlreadyReported(
+  namesDerived: boolean,
+  derivedSharedDirs: unknown,
+  map: PathMap,
+): boolean {
+  return namesDerived && sharedDirsUnchanged(derivedSharedDirs, map.sharedDirs);
+}
+
+/**
+ * The pre-rebase plans, re-stated against the POST-rebase map the preview will
+ * actually describe.
+ *
+ * Only `namesDerived` can go stale across the rebase: the plans themselves are
+ * deliberately computed against pre-rebase repo state (see
+ * {@link SharedLinkPlans}), but the WARNs they claim to have already emitted
+ * were emitted about a `sharedDirs` field the rebase may have since changed.
+ *
+ * Takes and returns `undefined` unchanged so the wet path, which computes no
+ * plans, needs no branch of its own at the call site.
+ *
+ * @param plans - Plans from the pre-rebase `planSharedReconcileBeforePull`, or
+ *   `undefined` on the wet path.
+ * @param map - The post-rebase path-map the preview is rendered against.
+ * @returns The same plans, with `namesDerived` re-evaluated against `map`.
+ */
+export function plansAgainst(
+  plans: SharedLinkPlans | undefined,
+  map: PathMap,
+): SharedLinkPlans | undefined {
+  if (plans === undefined) return undefined;
+  return {
+    ...plans,
+    namesDerived: namesAlreadyReported(plans.namesDerived, plans.derivedSharedDirs, map),
+  };
+}
+
+/**
  * Snapshot the untracked paths under `shared/` in the repo working tree.
  *
  * Taken once before the mirror and once after, the pair identifies exactly what
@@ -191,29 +273,45 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
  * any `sharedDirs` rejection WARN for the run, so the post-rebase derivation
  * can be quiet rather than duplicating it.
  *
+ * That claim expires at the rebase, so `derivedSharedDirs` comes back with it:
+ * the raw `sharedDirs` value this step derived against. The caller compares it
+ * to the post-rebase map's own before honoring the suppression, because a WARN
+ * about the pre-rebase field says nothing about a field the rebase changed. See
+ * {@link sharedDirsUnchanged}.
+ *
  * @param repo - `repoHome()`, resolved once by `runPullCore`.
  * @param ts - Backup timestamp, resolved once by `runPullCore`.
  * @returns `mirrored` (repo-relative paths this run newly created under
  *   `shared/`), `events` (one `MirrorPreviewEvent` per name the mirror
- *   copied), and `namesDerived` (whether the shared-name list was derived
- *   here, and so whether its rejection WARNs have already been emitted).
- *   All empty/false on darwin and linux; `mirrored` is also empty whenever the
- *   untracked-file snapshots could not be taken.
+ *   copied), `namesDerived` (whether the shared-name list was derived here, and
+ *   so whether its rejection WARNs have already been emitted), and
+ *   `derivedSharedDirs` (the field those WARNs describe). All empty/false on
+ *   darwin and linux; `mirrored` is also empty whenever the untracked-file
+ *   snapshots could not be taken.
  */
 export function reconcileSharedLinksBeforePull(
   repo: string,
   ts: string,
-): { mirrored: string[]; events: MirrorPreviewEvent[]; namesDerived: boolean } {
-  if (process.platform !== 'win32') return { mirrored: [], events: [], namesDerived: false };
+): {
+  mirrored: string[];
+  events: MirrorPreviewEvent[];
+  namesDerived: boolean;
+  derivedSharedDirs: unknown;
+} {
+  if (process.platform !== 'win32') {
+    return { mirrored: [], events: [], namesDerived: false, derivedSharedDirs: undefined };
+  }
   const before = untrackedUnderShared(repo);
   const events: MirrorPreviewEvent[] = [];
   let linkNames: string[] = [];
   let namesDerived = false;
+  let derivedSharedDirs: unknown;
   try {
     const map = readMapForMirror(join(repo, 'path-map.json'));
     if (map !== null) {
       linkNames = allSharedLinks(map);
       namesDerived = true;
+      derivedSharedDirs = map.sharedDirs;
     }
     stageLocalSharedEdits(map, ts, { onPreview: (e) => events.push(e), linkNames });
     applySharedLinkDeletions(map, ts, { linkNames });
@@ -233,7 +331,12 @@ export function reconcileSharedLinksBeforePull(
   // "after" snapshot, so a path it removed is not then reported as one this run
   // created.
   revertDeniedUnderShared(repo, ts);
-  return { mirrored: newlyUntracked(before, untrackedUnderShared(repo)), events, namesDerived };
+  return {
+    mirrored: newlyUntracked(before, untrackedUnderShared(repo)),
+    events,
+    namesDerived,
+    derivedSharedDirs,
+  };
 }
 
 /**
@@ -285,6 +388,11 @@ export function buildMirrorSection(events: readonly MirrorPreviewEvent[]): Docto
  * WARN from the preview's own apply step to this one, and report it against
  * the pre-rebase map rather than the map the preview describes.
  *
+ * `derivedSharedDirs` travels with `namesDerived` for the same reason the wet
+ * step returns it: `pull --dry-run` runs the real rebase between this call and
+ * the preview that consumes the result, so the suppression is only sound while
+ * the field the WARNs are about has not moved.
+ *
  * @param repo - `repoHome()`, resolved once by the caller.
  * @param ts - Backup timestamp, resolved once by the caller; unused for
  *   mutation under `dryRun`, only for event phrasing.
@@ -300,5 +408,6 @@ export function planSharedReconcileBeforePull(repo: string, ts: string): SharedL
     captures,
     deletions: planSharedLinkDeletions(map, { linkNames }),
     namesDerived: linkNames !== undefined,
+    derivedSharedDirs: map?.sharedDirs,
   };
 }

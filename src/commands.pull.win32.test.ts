@@ -9,6 +9,7 @@ import type * as linksMirrorModule from './links.mirror.ts';
 
 import { SHARED_LINKS } from './config.ts';
 import { renderTree } from './output-tree.ts';
+import { plantSharedBaseline } from './test-support/baseline.ts';
 import { g, gitInit } from './test-support/git.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
@@ -390,6 +391,12 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     // allSharedLinks(map) independently inside this one reconcile step,
     // WARNing twice for the same rejected entry. linkNames is now derived
     // once here and threaded into both.
+    //
+    // The baseline is what makes this count meaningful. Without one,
+    // planSharedLinkDeletions returns before enumerating anything, so the whole
+    // deletion half is unreachable and the assertion holds for a reason that has
+    // nothing to do with the threading it is meant to pin.
+    plantSharedBaseline(testHome);
     writeFileSync(
       join(repoUnderHome, 'path-map.json'),
       JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
@@ -495,7 +502,10 @@ describe('planSharedReconcileBeforePull', () => {
   it('warns exactly once for one invalid sharedDirs entry across both read-only halves', async () => {
     // The dry-run mirror and the deletion planner each derived their own name
     // list, so `pull --dry-run` reported one rejected entry twice and a user
-    // counting lines concluded two entries were rejected.
+    // counting lines concluded two entries were rejected. The baseline is
+    // required for the deletion half to enumerate anything at all; see the
+    // matching note on the wet reconcile's own count assertion.
+    plantSharedBaseline(testHome);
     writeFileSync(
       join(repoUnderHome, 'path-map.json'),
       JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
@@ -512,6 +522,64 @@ describe('planSharedReconcileBeforePull', () => {
     );
     expect(rejectionCalls).toHaveLength(1);
     expect(plans.namesDerived).toBe(true);
+    expect(plans.derivedSharedDirs).toEqual(['../escape']);
+  });
+});
+
+/**
+ * The two helpers that decide whether a pre-rebase derivation's rejection WARNs
+ * still describe the post-rebase map. Driven directly here because the whole
+ * point of them is what they do when the two maps DISAGREE, and reaching that
+ * through `runPullCore` needs a rebase that rewrites `path-map.json` mid-run
+ * (`commands.pull.test.ts` has those end-to-end cases).
+ */
+describe('namesAlreadyReported and plansAgainst', () => {
+  it('never silences a derivation the pre-rebase step never made', async () => {
+    const { namesAlreadyReported } = await import('./commands.pull.win32.ts');
+    // Posix, force-remote, and an unreadable map all arrive here.
+    expect(
+      namesAlreadyReported(false, undefined, { projects: {}, sharedDirs: ['../escape'] }),
+    ).toBe(false);
+  });
+
+  it('silences the later derivation only while sharedDirs has not moved', async () => {
+    const { namesAlreadyReported } = await import('./commands.pull.win32.ts');
+    expect(namesAlreadyReported(true, ['a'], { projects: {}, sharedDirs: ['a'] })).toBe(true);
+    expect(namesAlreadyReported(true, undefined, { projects: {} })).toBe(true);
+    // Delivered by the rebase: the pre-rebase WARNs said nothing about this.
+    expect(namesAlreadyReported(true, undefined, { projects: {}, sharedDirs: ['../escape'] })).toBe(
+      false,
+    );
+    // Replaced by the rebase: the pre-rebase WARNs named the wrong entry.
+    expect(
+      namesAlreadyReported(true, ['../before'], { projects: {}, sharedDirs: ['../after'] }),
+    ).toBe(false);
+  });
+
+  it('passes a missing plans object straight through', async () => {
+    // The wet path computes no plans. Handling that here rather than at the call
+    // site is what keeps `runPullCore` free of another branch.
+    const { plansAgainst } = await import('./commands.pull.win32.ts');
+    expect(plansAgainst(undefined, { projects: {} })).toBeUndefined();
+  });
+
+  it('re-evaluates namesDerived against the post-rebase map, leaving the plans intact', async () => {
+    const { plansAgainst } = await import('./commands.pull.win32.ts');
+    const plans = {
+      captures: [],
+      deletions: [],
+      namesDerived: true,
+      derivedSharedDirs: ['../before'],
+    };
+
+    expect(plansAgainst(plans, { projects: {}, sharedDirs: ['../before'] })?.namesDerived).toBe(
+      true,
+    );
+    const stale = plansAgainst(plans, { projects: {}, sharedDirs: ['../after'] });
+    expect(stale?.namesDerived).toBe(false);
+    // Only the flag moves: the plans themselves are deliberately pre-rebase.
+    expect(stale?.captures).toBe(plans.captures);
+    expect(stale?.deletions).toBe(plans.deletions);
   });
 });
 
