@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, readdirSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 import {
   blue,
@@ -16,11 +16,10 @@ import {
 import {
   allSharedLinks,
   claudeHome,
-  isDeniedName,
+  deniedSegmentFor,
   GSD_DROPPED_NAMES,
   HOST,
   repoHome,
-  ALWAYS_NEVER_SYNC,
   type PathMap,
 } from './config.ts';
 import { addChildItem, addItem, type DoctorSection } from './commands.doctor.format.ts';
@@ -199,13 +198,30 @@ function win32CopyOkRow(name: string): SharedLinkClassification {
 }
 
 /**
- * The basename of one `listDivergingFiles` line, with the `(local only)` /
- * `(repo only)` side indicator that function appends stripped back off first so
- * the name can be tested against a deny set. Mirrors the exact suffixes
- * `labelEntry` produces in `extras-sync.diff.ts`.
+ * One `listDivergingFiles` line rewritten as the repo-relative, forward-slashed
+ * path `shared/<name>/<rest>`, which is the shape `deniedSegmentFor` expects:
+ * it picks its denylist from the first two segments, so a bare relative path
+ * would be classified as if it sat somewhere else in the tree.
+ *
+ * The `(local only)` / `(repo only)` side indicator is stripped first, matching
+ * the exact suffixes `labelEntry` produces in `extras-sync.diff.ts`. git
+ * reports a modified or local-only file under the local root and a repo-only
+ * file under the repo root, so the path is relativized against whichever of the
+ * two contains it. Separators are folded to `/` because `relative` returns
+ * backslashes on the one platform this check runs on.
+ *
+ * @param line - One line from `listDivergingFiles`.
+ * @param name - The shared name being compared (`commands`, `rules`, ...).
+ * @param local - Absolute `~/.claude/<name>` path passed to the compare.
+ * @param shared - Absolute `shared/<name>` path passed to the compare.
+ * @returns The repo-relative path, ready for `deniedSegmentFor`.
  */
-function divergingBasename(line: string): string {
-  return basename(line.replace(/ \((?:local|repo) only\)$/, ''));
+function divergingRepoPath(line: string, name: string, local: string, shared: string): string {
+  const path = line.replace(/ \((?:local|repo) only\)$/, '');
+  const fromLocal = relative(local, path);
+  const escapes = fromLocal === '..' || fromLocal.startsWith(`..${sep}`);
+  const rel = escapes ? relative(shared, path) : fromLocal;
+  return `shared/${name}/${rel.split(sep).join('/')}`;
 }
 
 /**
@@ -228,12 +244,15 @@ function divergingBasename(line: string): string {
  * always a WARN, never a FAIL: `process.exitCode` is left untouched exactly
  * like `reportSkillsDivergence`, per the doctor reporter contract.
  *
- * The compare's result is filtered through the same always-never-sync deny set
- * both sync directions apply. A file under a shared name whose basename that
- * set rejects (a credential file, a per-host `settings.local.json`) exists
- * locally by design and is deliberately never copied into the repo, so counting
- * it as drift would produce a WARN on every run that no command could clear,
- * which is worse than no WARN at all.
+ * The compare's result is filtered through `deniedSegmentFor`, the same
+ * predicate the host-to-repo mirror applies at copy time (`mirrorOneSharedName`
+ * in `links.mirror.ts`). A path under a shared name that the predicate rejects
+ * exists locally by design and is deliberately never copied into the repo, so
+ * counting it as drift would produce a WARN on every run that no command could
+ * clear, which is worse than no WARN at all. The test has to run over every
+ * segment rather than the basename, because that denylist holds ordinary
+ * DIRECTORY names (`sessions`, `tasks`, `plans`, ...) as well as filenames, and
+ * a denied directory segment is structurally invisible to a basename test.
  *
  * Extracted out of `classifySharedLink` so adding this compare does not push
  * that already branch-dense function over the cognitive-complexity gate.
@@ -242,7 +261,7 @@ function classifyWin32Copy(name: string, p: string): SharedLinkClassification {
   const sharedPath = join(repoHome(), 'shared', name);
   if (!existsSync(sharedPath)) return win32CopyOkRow(name);
   const diverging = listDivergingFiles(p, sharedPath).filter(
-    (line) => !isDeniedName(ALWAYS_NEVER_SYNC, divergingBasename(line)),
+    (line) => deniedSegmentFor(divergingRepoPath(line, name, p, sharedPath)) === null,
   );
   if (diverging.length === 0) return win32CopyOkRow(name);
   return {

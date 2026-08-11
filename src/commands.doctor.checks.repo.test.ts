@@ -758,6 +758,76 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('does not count a local-only directory segment on the never-sync list as drift', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    // The never-sync list holds ordinary-sounding DIRECTORY names, and the
+    // mirror refuses to copy such a segment into the repo, so it can only ever
+    // exist on the local side. A basename test cannot see it (the file itself
+    // is an unremarkable notes.md), which would leave the host with a WARN on
+    // every run that no command could clear.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# notes\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes('commands') && !item.startsWith('\t'));
+    expect(row).toBeDefined();
+    expect(row).toContain(okGlyph);
+    expect(row).not.toContain('diverge from shared/');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('does not count a repo-only directory segment on the never-sync list as drift', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    // The repo-only side of the same exemption: git reports this path under
+    // the REPO root, so relativizing it against the local root would escape
+    // the tree and the segment scan would miss the denied name.
+    mkdirSync(join(sharedDir, 'commands', 'tasks'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(sharedDir, 'commands', 'tasks', 'plan.md'), '# plan\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes('commands') && !item.startsWith('\t'));
+    expect(row).toBeDefined();
+    expect(row).toContain(okGlyph);
+    expect(row).not.toContain('diverge from shared/');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('still counts an ordinary nested file as drift, so the exemption is not a blanket one', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    mkdirSync(join(sharedDir, 'commands', 'deploy'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands', 'deploy'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'deploy', 'go.md'), '# shared\n');
+    writeFileSync(join(claudeDir, 'commands', 'deploy', 'go.md'), '# drifted\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes('commands') && !item.startsWith('\t'));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('diverge from shared/');
+    expect(process.exitCode).toBe(0);
+  });
+
   it('still FAILs a non-symlink on posix, unaffected by the win32 drift compare', async () => {
     stubPlatform('linux');
     vi.resetModules();

@@ -130,6 +130,16 @@ function runAutoMovePasses(
  * `my-statusline.cjs`) or a directory (`commands`, `rules`); the underlying
  * `cpSync` handles both.
  *
+ * The narrower set here is deliberate, and the asymmetry with the host-to-repo
+ * mirror (which filters on the full `NEVER_SYNC`; see `mirrorOneSharedName` in
+ * `links.mirror.ts`) is not an oversight. This is the READ half: widening it
+ * changes what an already-synced host RECEIVES on its next pull, so a host that
+ * has been getting a directory spelled like a `NEVER_SYNC` entry (`sessions`,
+ * `tasks`, ...) under a shared name would silently stop getting it, with no
+ * signal at pull time. That is a migration with its own blast radius, not a
+ * symmetry tidy-up: what the mirror WRITES into the repo is a separate
+ * decision from what a pull is allowed to land on the host.
+ *
  * @param src - Source path (`shared/<name>`, repo side).
  * @param dst - Destination path (`~/.claude/<name>`, host side).
  */
