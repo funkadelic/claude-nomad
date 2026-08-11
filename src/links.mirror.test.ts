@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { g, gitInit } from './test-support/git.ts';
+import { g, gitInit, gitOut } from './test-support/git.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 /**
@@ -649,7 +649,9 @@ describe('revertDeniedMirrorPaths', () => {
     });
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    expect(() => revertDeniedMirrorPaths(repo, [], ['shared/commands/sessions'], TS)).not.toThrow();
+    expect(() =>
+      revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS),
+    ).not.toThrow();
 
     expect(warnings()).toContain('could not remove');
     expect(warnings()).toContain('EPERM');
@@ -671,7 +673,11 @@ describe('revertDeniedMirrorPaths', () => {
     });
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, [], ['shared/commands/settings.local.json'], TS);
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: [], untracked: ['shared/commands/settings.local.json'] },
+      TS,
+    );
 
     expect(warnings()).toContain('could not remove');
     expect(warnings()).toContain('remove it by hand');
@@ -688,7 +694,7 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, [], ['shared/commands/sessions'], TS);
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
 
     expect(existsSync(dir)).toBe(false);
     expect(warnings()).toContain('removed shared/commands/sessions');
@@ -704,7 +710,7 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, [], ['shared/commands/sessions'], TS);
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
 
     expect(existsSync(dir)).toBe(false);
     const snapshot = backupOf(join('shared', 'commands', 'sessions', 'notes.md'));
@@ -722,7 +728,11 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(abs, '{"apiKey":"x"}\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, [], ['shared/commands/settings.local.json'], TS);
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: [], untracked: ['shared/commands/settings.local.json'] },
+      TS,
+    );
 
     expect(existsSync(abs)).toBe(false);
     expect(existsSync(backupOf(join('shared', 'commands', 'settings.local.json')))).toBe(true);
@@ -736,7 +746,11 @@ describe('revertDeniedMirrorPaths', () => {
     // Already deleted (the deletion pass removed it, or the user did).
     // Checking it out of HEAD would put the denylisted content back.
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS);
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+      TS,
+    );
 
     expect(existsSync(join(repo, 'shared', 'commands', 'sessions'))).toBe(false);
     expect(warnings()).toBe('');
@@ -747,7 +761,11 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(join(repo, 'shared', 'commands', 'new.md'), '# new\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, ['shared/commands/deploy.md'], ['shared/commands/new.md'], TS);
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: ['shared/commands/deploy.md'], untracked: ['shared/commands/new.md'] },
+      TS,
+    );
 
     expect(existsSync(join(repo, 'shared', 'commands', 'deploy.md'))).toBe(true);
     expect(existsSync(join(repo, 'shared', 'commands', 'new.md'))).toBe(true);
@@ -770,7 +788,11 @@ describe('revertDeniedMirrorPaths', () => {
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     expect(() =>
-      revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS),
+      revertDeniedMirrorPaths(
+        repo,
+        { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+        TS,
+      ),
     ).not.toThrow();
 
     // Out of the index: the next commit no longer publishes it.
@@ -790,6 +812,48 @@ describe('revertDeniedMirrorPaths', () => {
   });
 
   it.skipIf(!hasGit)(
+    'undoes a staged rename into a denylisted path, staging no deletion of the source',
+    async () => {
+      // A user reorganizing shared/commands/ into a tasks/ subfolder and running
+      // `git add -A` produces one R record spanning two index entries. Dropping
+      // only the destination entry leaves the source's staged DELETION behind,
+      // so the next push publishes the removal of a committed file and every
+      // other host loses it on its next pull. Both halves have to be undone.
+      mkdirSync(join(repo, 'shared', 'commands'), { recursive: true });
+      writeFileSync(join(repo, 'shared', 'commands', 'foo.md'), '# committed\n');
+      gitInit(repo);
+      g(['add', '-A'], repo);
+      g(['commit', '-qm', 'base'], repo);
+      mkdirSync(join(repo, 'shared', 'commands', 'tasks'), { recursive: true });
+      g(['mv', 'shared/commands/foo.md', 'shared/commands/tasks/foo.md'], repo);
+
+      // Parsed from the real snapshot the backstop is fed, so the rename pairing
+      // is exercised end to end rather than hand-built.
+      const { parsePorcelainZ } = await import('./commands.pull.recovery.git.ts');
+      const status = parsePorcelainZ(
+        execFileSync('git', ['status', '--porcelain=v1', '-z', '-uall', '--', 'shared/'], {
+          cwd: repo,
+        }).toString(),
+      );
+      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+      revertDeniedMirrorPaths(repo, status, TS);
+
+      // Nothing staged at all: no add of the denied destination, and crucially
+      // no deletion of the committed source.
+      expect(gitOut(['diff', '--cached', '--name-status'], repo)).toBe('');
+      // The committed source is back in the working tree with its content.
+      expect(readFileSync(join(repo, 'shared', 'commands', 'foo.md'), 'utf8')).toBe(
+        '# committed\n',
+      );
+      // The denied copy stays on disk, untracked, exactly as the plain
+      // staged-add branch leaves it.
+      expect(existsSync(join(repo, 'shared', 'commands', 'tasks', 'foo.md'))).toBe(true);
+      expect(warnings()).toContain('unstaged shared/commands/tasks/foo.md');
+      expect(warnings()).toContain('shared/commands/foo.md');
+    },
+  );
+
+  it.skipIf(!hasGit)(
     'leaves a committed tracked hit restored from HEAD, not unstaged',
     async () => {
       // The committed case is unchanged: deleting or unstaging a path whose
@@ -803,7 +867,11 @@ describe('revertDeniedMirrorPaths', () => {
       writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
 
       const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-      revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS);
+      revertDeniedMirrorPaths(
+        repo,
+        { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+        TS,
+      );
 
       expect(readFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'utf8')).toBe(
         '# committed\n',
@@ -827,7 +895,11 @@ describe('revertDeniedMirrorPaths', () => {
     }));
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS);
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+      TS,
+    );
 
     expect(warnings()).toContain('could not restore shared/commands/sessions/notes.md');
     expect(warnings()).toContain('remove it by hand');
@@ -841,7 +913,11 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS);
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+      TS,
+    );
 
     expect(warnings()).toContain('could not unstage');
     expect(existsSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'))).toBe(true);

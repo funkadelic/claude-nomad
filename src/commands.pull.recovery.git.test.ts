@@ -106,21 +106,34 @@ describe('parsePorcelainZ - rename and copy records', () => {
     expect(tracked).toEqual(expect.arrayContaining(['copy.ts', 'hosts/myhost.json']));
   });
 
+  it('reports the destination-to-source pairing, which the flat arrays lose', () => {
+    // A consumer that acts on the destination alone has to be able to find the
+    // source: the same index operation staged its deletion, and undoing only
+    // half of a rename leaves that deletion staged.
+    const raw = 'R  shared/commands/tasks/foo.md\0shared/commands/foo.md\0C  copy.ts\0src/a.ts\0';
+    expect(parsePorcelainZ(raw).renameSources).toEqual({
+      'shared/commands/tasks/foo.md': 'shared/commands/foo.md',
+      'copy.ts': 'src/a.ts',
+    });
+  });
+
   it('tolerates a rename record missing its source field', () => {
     // Truncated payload: R record whose trailing source field is empty.
     const raw = 'R  tool.ts\0';
-    const { tracked } = parsePorcelainZ(raw);
+    const { tracked, renameSources } = parsePorcelainZ(raw);
     expect(tracked).toEqual(['tool.ts']);
+    expect(renameSources).toEqual({});
   });
 
   it('partitions plain modified and untracked records', () => {
     const raw = ' M src/a.ts\0?? scratch.txt\0';
-    const { tracked, untracked } = parsePorcelainZ(raw);
+    const { tracked, untracked, renameSources } = parsePorcelainZ(raw);
     expect(tracked).toEqual(['src/a.ts']);
     expect(untracked).toEqual(['scratch.txt']);
+    expect(renameSources).toEqual({});
   });
 
   it('returns empty arrays for empty input', () => {
-    expect(parsePorcelainZ('')).toEqual({ tracked: [], untracked: [] });
+    expect(parsePorcelainZ('')).toEqual({ tracked: [], untracked: [], renameSources: {} });
   });
 });

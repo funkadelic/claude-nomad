@@ -117,8 +117,7 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
     repo,
   );
   if (out === null) return;
-  const { tracked, untracked } = parsePorcelainZ(out);
-  revertDeniedMirrorPaths(repo, tracked, untracked, ts);
+  revertDeniedMirrorPaths(repo, parsePorcelainZ(out), ts);
 }
 
 /**

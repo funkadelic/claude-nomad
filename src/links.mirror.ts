@@ -88,6 +88,25 @@ function emitMirrorWet(
   if (onPreview) onPreview({ kind: 'mirror', name, localPath, repoPath });
 }
 
+/**
+ * The `git status` snapshot {@link revertDeniedMirrorPaths} acts on, structurally
+ * matching what `parsePorcelainZ` (`commands.pull.recovery.git.ts`) returns.
+ *
+ * Declared here rather than imported so this module stays a leaf of that one:
+ * `commands.pull.win32.ts` already depends on both, and the parser has no
+ * business knowing about the backstop that consumes it. `renameSources` is
+ * optional so a caller with only the two path arrays (every direct-call test of
+ * a plain add or removal) needs no third field.
+ */
+export type DeniedRevertStatus = {
+  /** Repo-relative tracked paths, including both halves of a rename. */
+  tracked: readonly string[];
+  /** Repo-relative untracked paths. */
+  untracked: readonly string[];
+  /** Rename/copy destination path to the source path the same record consumed. */
+  renameSources?: Readonly<Record<string, string>>;
+};
+
 /** How one mirror pass treats the repo side. See the two exported wrappers. */
 type SharedMirrorPolicy = {
   /** Create `shared/<name>` when the repo has no counterpart yet. */
@@ -370,24 +389,51 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
  * it from the index is the narrowest action that changes that, and it destroys
  * nothing, because nothing committed is at risk.
  *
- * The file is deliberately left on disk. The gate's business is what the repo
- * is about to publish, not what the user keeps in their own working tree, and a
- * hand-placed file under `shared/` may well be wanted there; the WARN says so
- * explicitly so the user is never left believing it was deleted.
+ * A rename is TWO index entries, and `source` is what makes this safe on one.
+ * `git mv shared/commands/foo.md shared/commands/tasks/foo.md` stages an add of
+ * the destination AND a deletion of the committed source; acting on the
+ * destination alone leaves that deletion staged, so the next push publishes the
+ * removal of a committed file and every other host loses it on its next pull.
+ * That is strictly worse than the leak this gate exists to stop, and it is the
+ * exact outcome {@link restoreTrackedDenied}'s contract rules out.
+ *
+ * `git reset HEAD -- <path>` rather than `git rm --cached`: reset restores the
+ * destination's index entry to its HEAD state, which for a path absent from HEAD
+ * drops the entry (identical to `rm --cached` on a plain staged add) without
+ * touching the SOURCE's own entry. `git checkout HEAD -- <source>` then puts the
+ * source back in both the index and the working tree, which is what clears the
+ * staged deletion. Neither step can resurrect denylisted content: `path` is
+ * absent from HEAD by construction, so there is nothing there to check out.
+ *
+ * The destination file is deliberately left on disk. The gate's business is what
+ * the repo is about to publish, not what the user keeps in their own working
+ * tree, and a hand-placed file under `shared/` may well be wanted there; the WARN
+ * says so explicitly so the user is never left believing it was deleted.
  *
  * @param repo - Absolute path to the sync repo.
  * @param path - Repo-relative path to unstage.
  * @param segment - The path segment that matched the never-sync list.
+ * @param source - When `path` is the destination half of a staged rename or
+ *   copy, the repo-relative source path whose index entry has to be restored
+ *   alongside. Absent for a plain staged add.
  */
-function unstageDeniedAdd(repo: string, path: string, segment: string): void {
-  if (gitTryMutate(['rm', '--cached', '-f', '--', path], repo) === null) {
+function unstageDeniedAdd(repo: string, path: string, segment: string, source?: string): void {
+  if (gitTryMutate(['reset', '-q', 'HEAD', '--', path], repo) === null) {
     warn(
       `could not unstage ${path}: the path segment "${segment}" is on the never-sync list, so unstage it by hand before committing`,
     );
     return;
   }
+  if (source !== undefined && gitTryMutate(['checkout', 'HEAD', '--', source], repo) === null) {
+    warn(
+      `unstaged ${path}, but could not restore ${source}, which the same rename staged for deletion: run "git checkout HEAD -- ${source}" by hand, or the next push publishes that deletion`,
+    );
+    return;
+  }
+  const undone =
+    source === undefined ? '' : ` The rename it was half of is undone, so ${source} is back.`;
   warn(
-    `unstaged ${path}: the path segment "${segment}" is on the never-sync list. The file is still on disk, so remove it by hand if you did not mean to add it`,
+    `unstaged ${path}: the path segment "${segment}" is on the never-sync list.${undone} The file is still on disk, so remove it by hand if you did not mean to add it`,
   );
 }
 
@@ -420,11 +466,19 @@ function unstageDeniedAdd(repo: string, path: string, segment: string): void {
  * @param segment - The path segment that matched the never-sync list.
  * @param ts - Backup timestamp, named in the WARN so the user can find the
  *   pre-pull snapshot of any uncommitted edit this restore discards.
+ * @param source - The rename source when `path` is a rename destination; see
+ *   {@link unstageDeniedAdd}.
  */
-function restoreTrackedDenied(repo: string, path: string, segment: string, ts: string): void {
+function restoreTrackedDenied(
+  repo: string,
+  path: string,
+  segment: string,
+  ts: string,
+  source?: string,
+): void {
   if (!existsSync(join(repo, path))) return;
   if (gitProbe(['cat-file', '-e', `HEAD:${path}`], repo) === null) {
-    unstageDeniedAdd(repo, path, segment);
+    unstageDeniedAdd(repo, path, segment, source);
     return;
   }
   if (gitTryMutate(['checkout', 'HEAD', '--', path], repo) === null) {
@@ -455,23 +509,28 @@ function restoreTrackedDenied(repo: string, path: string, segment: string, ts: s
  * user can retry and wrong for a step that runs on every shell start on some
  * hosts.
  *
+ * The whole `parsePorcelainZ` result is taken rather than its two path arrays,
+ * because the rename pairing it also reports is load-bearing here: a denylisted
+ * rename DESTINATION cannot be undone correctly without knowing which source the
+ * same index operation staged for deletion. See {@link unstageDeniedAdd}.
+ *
  * @param repo - Absolute path to the sync repo.
- * @param tracked - Repo-relative tracked paths from the `git status` snapshot.
- * @param untracked - Repo-relative untracked paths from the same snapshot.
+ * @param status - The `git status` snapshot, as `parsePorcelainZ` returns it.
  * @param ts - Backup timestamp, resolved once by the caller.
  */
 export function revertDeniedMirrorPaths(
   repo: string,
-  tracked: readonly string[],
-  untracked: readonly string[],
+  status: DeniedRevertStatus,
   ts: string,
 ): void {
-  for (const path of untracked) {
+  for (const path of status.untracked) {
     const segment = deniedSegmentFor(path);
     if (segment !== null) removeUntrackedDenied(repo, path, segment, ts);
   }
-  for (const path of tracked) {
+  for (const path of status.tracked) {
     const segment = deniedSegmentFor(path);
-    if (segment !== null) restoreTrackedDenied(repo, path, segment, ts);
+    if (segment !== null) {
+      restoreTrackedDenied(repo, path, segment, ts, status.renameSources?.[path]);
+    }
   }
 }

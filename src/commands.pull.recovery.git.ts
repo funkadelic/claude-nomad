@@ -43,13 +43,26 @@ export function gitCapture(args: readonly string[], cwd: string): string {
  * would corrupt the path and could let a renamed synced-config path evade the
  * safety gate).
  *
+ * The pairing itself is reported too, in `renameSources`. Flattening both
+ * halves into `tracked` loses the fact that they are ONE index operation, and a
+ * consumer that acts on the destination alone (the pull's denylist backstop
+ * does) leaves the source's staged deletion behind: undoing half a rename
+ * stages a removal of committed content. Keyed by destination because that is
+ * the half a consumer matches on and therefore the half it has in hand.
+ *
  * @param raw Raw stdout from `git status --porcelain=v1 -z`.
- * @returns Object with `tracked` and `untracked` path arrays.
+ * @returns Object with `tracked` and `untracked` path arrays, plus
+ *   `renameSources` mapping each rename/copy destination to its source path.
  */
-export function parsePorcelainZ(raw: string): { tracked: string[]; untracked: string[] } {
+export function parsePorcelainZ(raw: string): {
+  tracked: string[];
+  untracked: string[];
+  renameSources: Record<string, string>;
+} {
   const tracked: string[] = [];
   const untracked: string[] = [];
-  if (!raw) return { tracked, untracked };
+  const renameSources: Record<string, string> = {};
+  if (!raw) return { tracked, untracked, renameSources };
   const records = raw.split('\0');
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
@@ -65,11 +78,12 @@ export function parsePorcelainZ(raw: string): { tracked: string[]; untracked: st
       const src = records[i + 1];
       if (src) {
         tracked.push(src);
+        renameSources[filePath] = src;
         i++;
       }
     }
   }
-  return { tracked, untracked };
+  return { tracked, untracked, renameSources };
 }
 
 /**
@@ -80,11 +94,12 @@ export function parsePorcelainZ(raw: string): { tracked: string[]; untracked: st
  *   untracked directory instead of collapsing it to a single `dir/` entry.
  *   Needed whenever the caller matches on exact paths; the default collapsed
  *   form is kept for callers that only prefix-match.
- * @returns Object with `tracked` and `untracked` path arrays.
+ * @returns Object with `tracked` and `untracked` path arrays, plus
+ *   `renameSources`; see {@link parsePorcelainZ}.
  */
 export function parseDirtyPaths(
   repo: string,
   opts: { untrackedAll?: boolean } = {},
-): { tracked: string[]; untracked: string[] } {
+): { tracked: string[]; untracked: string[]; renameSources: Record<string, string> } {
   return parsePorcelainZ(gitStatusPorcelainZ(repo, opts));
 }
