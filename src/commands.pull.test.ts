@@ -2310,4 +2310,21 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
 
     expect(rejectionWarns()).toHaveLength(1);
   });
+
+  it('reports one invalid sharedDirs entry exactly once on a win32 pull --dry-run', async () => {
+    // The dry run adds two more derivations of its own (the pre-rebase plan
+    // pair), and a user reading a preview has to be able to count rejected
+    // entries by counting lines.
+    stubPlatform('win32');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    mockRebase();
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ dryRun: true });
+
+    expect(rejectionWarns()).toHaveLength(1);
+  });
 });

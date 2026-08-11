@@ -1131,6 +1131,7 @@ describe('computePreview orchestration', () => {
       deletions: [
         { name: 'commands', localPath: '/pre/rebase/commands/a.md', repoPath: '/pre/shared/a.md' },
       ],
+      namesDerived: false,
     });
 
     const joined = logs.join('\n');
@@ -1186,6 +1187,62 @@ describe('computePreview orchestration', () => {
       const joined = logs.join('\n');
       expect(joined).not.toContain('would capture');
       expect(joined).not.toContain('would remove');
+    },
+  );
+
+  it('reports one invalid sharedDirs entry exactly once on a win32 nomad diff', async () => {
+    // Three derivations run on this surface (the dry-run mirror, the deletion
+    // planner, and the shared-link apply), so before the fix `nomad diff`
+    // printed the same rejection line three times and a user reasonably read
+    // it as three rejected entries.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local\n');
+    const map = { projects: {}, sharedDirs: ['../escape'] };
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify(map) + '\n');
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const realPlatform = process.platform;
+    stubPlatform('win32');
+    try {
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260810-000020', map, 'diff');
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    const rejections = errSpy.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).includes('sharedDirs entry'),
+    );
+    expect(rejections).toHaveLength(1);
+  });
+
+  it.skipIf(isWin)(
+    'reports one invalid sharedDirs entry exactly once on a posix nomad diff',
+    async () => {
+      // Posix derives nothing in the two win32 halves, so the apply's own
+      // derivation is the only one that can report the entry at all.
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      const map = { projects: {}, sharedDirs: ['../escape'] };
+      writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify(map) + '\n');
+      vi.spyOn(console, 'log').mockImplementation(() => {
+        /* captured */
+      });
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        /* captured */
+      });
+
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260810-000021', map, 'diff');
+
+      const rejections = errSpy.mock.calls.filter((c: unknown[]) =>
+        String(c[0]).includes('sharedDirs entry'),
+      );
+      expect(rejections).toHaveLength(1);
     },
   );
 });

@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome, repoHome, HOST, type PathMap } from './config.ts';
+import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from './config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
 import { remapExtrasPull } from './extras-sync.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { planSharedLinkDeletions, type SharedLinkDeletion } from './links.deletions.ts';
 import { stageLocalSharedEdits, type MirrorPreviewEvent } from './links.mirror.ts';
 import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
-import { addItem, renderTree, section } from './output-tree.ts';
+import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
 import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from './remap.ts';
 import { summaryRow } from './summary.ts';
@@ -43,6 +43,16 @@ export type SharedLinkPlans = {
   captures: MirrorPreviewEvent[];
   /** Repo-side removals the pre-rebase deletion pass would perform. */
   deletions: SharedLinkDeletion[];
+  /**
+   * Whether computing these plans already derived the shared-name list, and so
+   * already emitted this run's `sharedDirs` rejection WARNs. `computePreview`
+   * keeps its own derivation quiet when it did, so one rejected entry is
+   * reported once per command rather than once per derivation. False whenever
+   * the plans came from a source that derives nothing (every non-win32
+   * platform, or an unreadable map), where the preview's own derivation is the
+   * only one that ever runs.
+   */
+  namesDerived: boolean;
 };
 
 /**
@@ -191,6 +201,51 @@ function formatSessionRow(e: RemapPullPreviewEvent): string {
 }
 
 /**
+ * Append the win32 capture and removal rows to the Symlinks section, and report
+ * whether doing so already emitted this run's `sharedDirs` rejection WARNs.
+ *
+ * Two sources, matching the two callers of `computePreview`. A caller that
+ * rebases (`pull --dry-run`) supplies `plans` computed before its rebase, so
+ * the rows are rendered from that pre-collected pair and the WARN accounting
+ * comes with it. `nomad diff` has no rebase of its own, so it runs both halves
+ * here, against current repo state, deriving the shared-name list ONCE and
+ * threading it into both: they run at the same point in the run, so one list is
+ * correct for both, and each deriving its own would report a single rejected
+ * entry twice.
+ *
+ * Extracted from `computePreview` so the branch pair does not push that already
+ * long function's cognitive complexity up.
+ *
+ * @param links - The Symlinks section to append rows to.
+ * @param ts - Backup timestamp; under dryRun only ever used for phrasing.
+ * @param map - Parsed `path-map.json`.
+ * @param plans - Pre-rebase plans from a rebasing caller; omit to compute here.
+ * @returns Whether the shared-name list has already been derived for this run.
+ */
+function appendMirrorPlanRows(
+  links: DoctorSection,
+  ts: string,
+  map: PathMap,
+  plans?: SharedLinkPlans,
+): boolean {
+  if (plans) {
+    for (const capture of plans.captures) addItem(links, formatMirrorRow(capture));
+    for (const deletion of plans.deletions) addItem(links, formatDeletionRow(deletion));
+    return plans.namesDerived;
+  }
+  const linkNames = allSharedLinks(map);
+  stageLocalSharedEdits(map, ts, {
+    dryRun: true,
+    onPreview: (e) => addItem(links, formatMirrorRow(e)),
+    linkNames,
+  });
+  for (const deletion of planSharedLinkDeletions(map, { linkNames })) {
+    addItem(links, formatDeletionRow(deletion));
+  }
+  return true;
+}
+
+/**
  * Build the settings.json raw DoctorSection from a previewSettings result.
  * Returns a section with items when there is a diff or notes to show;
  * returns an empty-items section (skipped by renderTree) when both are absent.
@@ -319,22 +374,10 @@ export function computePreview(
   // read-only under dryRun, return nothing on non-win32 and on a null map,
   // and never write the shared-links baseline (see the docstring above).
   const links = section('Symlinks');
-  if (plans) {
-    for (const capture of plans.captures) {
-      addItem(links, formatMirrorRow(capture));
-    }
-  } else {
-    stageLocalSharedEdits(map, ts, {
-      dryRun: true,
-      onPreview: (e) => addItem(links, formatMirrorRow(e)),
-    });
-  }
-  const deletions = plans?.deletions ?? planSharedLinkDeletions(map);
-  for (const deletion of deletions) {
-    addItem(links, formatDeletionRow(deletion));
-  }
+  const namesDerived = appendMirrorPlanRows(links, ts, map, plans);
   applySharedLinks(ts, map, {
     dryRun: true,
+    quietNames: namesDerived,
     onPreview: (e) => addItem(links, formatLinkRow(e)),
   });
 

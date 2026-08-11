@@ -277,14 +277,29 @@ export function buildMirrorSection(events: readonly MirrorPreviewEvent[]): Docto
  * cannot disagree about which names are shared, and returns empty plans on
  * darwin and linux because both sources do.
  *
+ * The shared-name list is derived ONCE here and threaded into both halves, for
+ * the same reason the wet step does it: each half would otherwise derive its
+ * own and re-emit every `sharedDirs` rejection WARN, so a user reading
+ * `pull --dry-run` would count one rejected entry twice. The derivation is
+ * gated on win32 because both halves return before deriving anything on
+ * darwin and linux; deriving here anyway would move posix's only rejection
+ * WARN from the preview's own apply step to this one, and report it against
+ * the pre-rebase map rather than the map the preview describes.
+ *
  * @param repo - `repoHome()`, resolved once by the caller.
  * @param ts - Backup timestamp, resolved once by the caller; unused for
  *   mutation under `dryRun`, only for event phrasing.
- * @returns The capture and deletion plans for the current repo state.
+ * @returns The capture and deletion plans for the current repo state, plus
+ *   `namesDerived` (see {@link SharedLinkPlans}).
  */
 export function planSharedReconcileBeforePull(repo: string, ts: string): SharedLinkPlans {
   const map = readMapForMirror(join(repo, 'path-map.json'));
   const captures: MirrorPreviewEvent[] = [];
-  stageLocalSharedEdits(map, ts, { dryRun: true, onPreview: (e) => captures.push(e) });
-  return { captures, deletions: planSharedLinkDeletions(map) };
+  const linkNames = process.platform === 'win32' && map !== null ? allSharedLinks(map) : undefined;
+  stageLocalSharedEdits(map, ts, { dryRun: true, onPreview: (e) => captures.push(e), linkNames });
+  return {
+    captures,
+    deletions: planSharedLinkDeletions(map, { linkNames }),
+    namesDerived: linkNames !== undefined,
+  };
 }

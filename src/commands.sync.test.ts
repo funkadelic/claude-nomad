@@ -974,6 +974,9 @@ describe('cmdSync --dry-run: real pull half', () => {
     expect(seams.previewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull', {
       captures: [],
       deletions: [],
+      // Nothing derived the shared-name list off win32, so the preview's own
+      // derivation stays audible.
+      namesDerived: false,
     });
   });
 });

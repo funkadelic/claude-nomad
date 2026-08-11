@@ -476,7 +476,32 @@ describe('planSharedReconcileBeforePull', () => {
     stubPlatform('linux');
     const { planSharedReconcileBeforePull } = await import('./commands.pull.win32.ts');
     const plans = planSharedReconcileBeforePull(repoUnderHome, '20260810-050001');
-    expect(plans).toEqual({ captures: [], deletions: [] });
+    // namesDerived stays false: both halves return before deriving anything off
+    // win32, so the preview's own derivation is the only one that ever runs
+    // there and must keep reporting a rejected entry.
+    expect(plans).toEqual({ captures: [], deletions: [], namesDerived: false });
+  });
+
+  it('warns exactly once for one invalid sharedDirs entry across both read-only halves', async () => {
+    // The dry-run mirror and the deletion planner each derived their own name
+    // list, so `pull --dry-run` reported one rejected entry twice and a user
+    // counting lines concluded two entries were rejected.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { planSharedReconcileBeforePull } = await import('./commands.pull.win32.ts');
+    const plans = planSharedReconcileBeforePull(repoUnderHome, '20260810-050002');
+
+    const rejectionCalls = errSpy.mock.calls.filter((c) =>
+      String(c[0]).includes('sharedDirs entry'),
+    );
+    expect(rejectionCalls).toHaveLength(1);
+    expect(plans.namesDerived).toBe(true);
   });
 });
 
