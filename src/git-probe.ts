@@ -13,7 +13,9 @@
  * codebase's only never-throwing git invoker, so the pull's denylist backstop
  * routes its fail-open `git checkout HEAD -- <path>` restore and `git rm
  * --cached -f --` unstage through here too, for the same degrade-quietly
- * guarantee. See `gitProbe`'s own docstring for the exact boundary.
+ * guarantee. Those two call the same implementation under the `gitTryMutate`
+ * name, so a reader of the call site is not told the invocation is read-only
+ * when it writes. See both docstrings for the exact boundary.
  *
  * Deliberately NOT folded into `gitCaptureRaw`: that helper is unbounded and
  * propagates failures, which is correct for the callers that need the output to
@@ -49,7 +51,8 @@ const PROBE_MAX_BUFFER = 64 * 1024 * 1024;
  * Read-only for most callers, but not read-only by contract: it is also the
  * codebase's only never-throwing git invoker, so a fail-open revert step that
  * must not be able to fail a command (`git checkout HEAD -- <path>` in the
- * pull's denylist backstop) runs through here too.
+ * pull's denylist backstop) runs through here too, under the `gitTryMutate`
+ * name.
  *
  * @param args - Git arguments (excludes the `git` binary name itself).
  * @param repo - Working directory for the invocation.
@@ -71,3 +74,29 @@ export function gitProbe(args: readonly string[], repo: string): string | null {
     return null;
   }
 }
+
+/**
+ * {@link gitProbe} under a name that says the invocation WRITES.
+ *
+ * Same function, so every property is identical: the same bounded timeout, the
+ * same stdout ceiling, and the same never-throwing contract returning `null`
+ * for any failure at all. It is a naming seam and nothing else, so it costs
+ * nothing at runtime.
+ *
+ * Reach for this one whenever the git command changes the repository (`git
+ * checkout HEAD -- <path>`, `git rm --cached`), and for `gitProbe` whenever it
+ * only asks a question (`git ls-files`, `git status`, `git cat-file -e`). The
+ * name is the only thing a reader of the call site sees, and a mutating call
+ * spelled `gitProbe` reads as read-only.
+ *
+ * Choosing this over `gitOrFatal` is a separate decision: it means the write is
+ * fail-open, so a caller must handle `null` by leaving the repository as it
+ * found it and telling the user what was skipped.
+ *
+ * @param args - Git arguments (excludes the `git` binary name itself).
+ * @param repo - Working directory for the invocation.
+ * @returns The raw stdout string, or `null` when the call failed for any reason
+ *   at all. A `null` means the mutation may not have happened; it is never a
+ *   confirmation.
+ */
+export const gitTryMutate = gitProbe;

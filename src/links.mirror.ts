@@ -16,7 +16,7 @@ import {
   type PathMap,
 } from './config.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras-sync.core.ts';
-import { gitProbe } from './git-probe.ts';
+import { gitProbe, gitTryMutate } from './git-probe.ts';
 import { log, warn } from './utils.ts';
 import { backupRepoWrite } from './utils.fs.ts';
 
@@ -363,7 +363,7 @@ function removeUntrackedDenied(repo: string, path: string, segment: string): voi
  * @param segment - The path segment that matched the never-sync list.
  */
 function unstageDeniedAdd(repo: string, path: string, segment: string): void {
-  if (gitProbe(['rm', '--cached', '-f', '--', path], repo) === null) {
+  if (gitTryMutate(['rm', '--cached', '-f', '--', path], repo) === null) {
     warn(
       `could not unstage ${path}: the path segment "${segment}" is on the never-sync list, so unstage it by hand before committing`,
     );
@@ -391,11 +391,12 @@ function unstageDeniedAdd(repo: string, path: string, segment: string): void {
  * target, neither of which has committed content to protect. Those go to
  * `unstageDeniedAdd` instead, since the reasoning above does not apply to them.
  *
- * Runs through `gitProbe` rather than `gitOrFatal` because nothing in the
- * pre-rebase path may fail a pull; a probe that cannot answer leaves the file
+ * The restore runs through `gitTryMutate` (and the HEAD existence check through
+ * its read-only sibling `gitProbe`) rather than `gitOrFatal` because nothing in
+ * the pre-rebase path may fail a pull; a call that cannot answer leaves the file
  * as it found it and says so, so the user knows to remove it by hand. No
- * try/catch: `gitProbe` is the codebase's never-throwing git invoker, so a
- * catch here would be unreachable.
+ * try/catch: both are the same never-throwing invoker, so a catch here would be
+ * unreachable.
  *
  * @param repo - Absolute path to the sync repo.
  * @param path - Repo-relative path to restore.
@@ -409,7 +410,7 @@ function restoreTrackedDenied(repo: string, path: string, segment: string, ts: s
     unstageDeniedAdd(repo, path, segment);
     return;
   }
-  if (gitProbe(['checkout', 'HEAD', '--', path], repo) === null) {
+  if (gitTryMutate(['checkout', 'HEAD', '--', path], repo) === null) {
     warn(
       `could not restore ${path} to its committed content: the path segment "${segment}" is on the never-sync list, so remove it by hand before committing`,
     );

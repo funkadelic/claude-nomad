@@ -610,6 +610,7 @@ describe('revertDeniedMirrorPaths', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
+    vi.doUnmock('./git-probe.ts');
     rmSync(testHome, { recursive: true, force: true });
   });
 
@@ -758,6 +759,28 @@ describe('revertDeniedMirrorPaths', () => {
       expect(warnings()).toContain('restored shared/commands/sessions/notes.md');
     },
   );
+
+  it('warns that it could not restore when HEAD has the content but the checkout fails', async () => {
+    // The two git calls in this branch answer different questions and are
+    // spelled differently for that reason: the read-only existence check says
+    // HEAD carries the content, so the path is not a staged add, and the
+    // mutating checkout is then the step that fails. Fail-open means the file
+    // is left exactly as it was found, so the WARN has to send the user to it.
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+    writeFileSync(abs, 'token=abc\n');
+    vi.doMock('./git-probe.ts', () => ({
+      gitProbe: () => '',
+      gitTryMutate: () => null,
+    }));
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, ['shared/commands/sessions/notes.md'], [], TS);
+
+    expect(warnings()).toContain('could not restore shared/commands/sessions/notes.md');
+    expect(warnings()).toContain('remove it by hand');
+    expect(readFileSync(abs, 'utf8')).toBe('token=abc\n');
+  });
 
   it('warns that it could not unstage when git cannot answer at all', async () => {
     // No git checkout here, so both probes return null. Claiming the path was
