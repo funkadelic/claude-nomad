@@ -222,6 +222,18 @@ function formatSessionRow(e: RemapPullPreviewEvent): string {
  * correct for both, and each deriving its own would report a single rejected
  * entry twice.
  *
+ * That derivation is deliberately NOT gated on win32, even though both
+ * consumers return immediately on darwin and linux. On posix it exists purely
+ * to report `sharedDirs` rejections, and it is why this branch returns `true`
+ * on every platform: the caller's own `applySharedLinks` then stays quiet, so a
+ * rejected entry is still reported exactly once on a posix `nomad diff`, from
+ * here rather than from the apply. Sound because `nomad diff` has no rebase, so
+ * this derivation and the apply's read the same map. Its rebasing sibling
+ * `planSharedReconcileBeforePull` (`commands.pull.win32.ts`) gates its own
+ * derivation on win32 for exactly that reason, and moving either one to match
+ * the other without moving the suppression with it drops a posix `nomad diff`
+ * to zero WARNs.
+ *
  * Extracted from `computePreview` so the branch pair does not push that already
  * long function's cognitive complexity up.
  *

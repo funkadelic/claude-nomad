@@ -1223,8 +1223,12 @@ describe('computePreview orchestration', () => {
   it.skipIf(isWin)(
     'reports one invalid sharedDirs entry exactly once on a posix nomad diff',
     async () => {
-      // Posix derives nothing in the two win32 halves, so the apply's own
-      // derivation is the only one that can report the entry at all.
+      // Both win32 halves return before deriving anything on posix, but
+      // `appendMirrorPlanRows` derives the shared-name list on every platform,
+      // so on this path the single WARN comes from there and the preview's own
+      // apply step is the one that stays quiet. Exactly one either way, which
+      // is the property being pinned; the site it comes from is an asymmetry
+      // documented on both sibling functions.
       writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
       const map = { projects: {}, sharedDirs: ['../escape'] };
       writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify(map) + '\n');

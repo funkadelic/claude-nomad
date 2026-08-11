@@ -382,11 +382,22 @@ export function buildMirrorSection(events: readonly MirrorPreviewEvent[]): Docto
  * The shared-name list is derived ONCE here and threaded into both halves, for
  * the same reason the wet step does it: each half would otherwise derive its
  * own and re-emit every `sharedDirs` rejection WARN, so a user reading
- * `pull --dry-run` would count one rejected entry twice. The derivation is
- * gated on win32 because both halves return before deriving anything on
- * darwin and linux; deriving here anyway would move posix's only rejection
- * WARN from the preview's own apply step to this one, and report it against
- * the pre-rebase map rather than the map the preview describes.
+ * `pull --dry-run` would count one rejected entry twice.
+ *
+ * The derivation is gated on win32, and the reason is the rebase rather than
+ * the platform. Both halves return before deriving anything on darwin and
+ * linux, so a derivation here would be pure WARN accounting; and because the
+ * real rebase runs between this call and the preview that consumes the result,
+ * that accounting would move posix's only rejection WARN off the preview's own
+ * apply step, which reads the POST-rebase map, onto this one, which read the
+ * map as it stood before the fetch. The user would be told about a `sharedDirs`
+ * field the same command has already replaced.
+ *
+ * The sibling that renders those plans, `appendMirrorPlanRows` in `preview.ts`,
+ * deliberately does the opposite and derives on EVERY platform. That is not a
+ * contradiction: it only derives on the `nomad diff` path, which has no rebase
+ * of its own, so its derivation and the apply's read the same map and there is
+ * no stale field to report against.
  *
  * `derivedSharedDirs` travels with `namesDerived` for the same reason the wet
  * step returns it: `pull --dry-run` runs the real rebase between this call and
