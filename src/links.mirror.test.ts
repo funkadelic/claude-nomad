@@ -774,6 +774,123 @@ describe('revertDeniedMirrorPaths', () => {
 });
 
 /**
+ * Pins the invariant `nomad sync`'s no-op collapse rests on.
+ *
+ * `isNoopSync` (`commands.sync.ts`) can print `already in sync`, and so drop
+ * the whole `Symlinks` section, only when the push half returns the `nothing`
+ * tag. `runPushCore` returns that tag only when `gitStatusPorcelainZ` over the
+ * sync repo comes back empty. So the question the collapse actually turns on is
+ * not whether the mirror emitted events (it emits one per name it copies,
+ * changed or not) but whether the copy changed the repo working tree.
+ *
+ * The two cases below answer it against real git, using the same status reader
+ * the push half short-circuits on. A capture that carries a real host edit is
+ * visible to that reader, so the run cannot reach the collapse; a capture that
+ * rewrites byte-identical content is not, and `already in sync` is then the
+ * accurate report.
+ */
+describe('a win32 mirror capture vs the push half empty-status short-circuit', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  const realPlatform = process.platform;
+  const TS = '20260810-111111';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-test-mirror-noop-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Commit `shared/CLAUDE.md` so the repo side is tracked with committed
+   * content, which is what makes the capture below a modification git can see
+   * rather than an untracked add (the latter would prove nothing about a real
+   * host whose shared config is already published).
+   *
+   * @param content - The committed repo-side content.
+   */
+  function seedCommittedShared(content: string): void {
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), content);
+    gitInit(repoUnderHome);
+    g(['add', '.'], repoUnderHome);
+    g(['commit', '-q', '-m', 'seed'], repoUnderHome);
+  }
+
+  /**
+   * Run the pre-pull mirror on a win32-stubbed platform, collecting its events.
+   *
+   * @returns The events the mirror emitted, one per name it copied.
+   */
+  async function runMirror(): Promise<unknown[]> {
+    stubPlatform('win32');
+    const events: unknown[] = [];
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS, { onPreview: (e) => events.push(e) });
+    return events;
+  }
+
+  it.skipIf(!hasGit)(
+    'a capture carrying a real host edit leaves a non-empty status, so the push half cannot report nothing',
+    async () => {
+      seedCommittedShared('# published shared\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unpublished host edit\n');
+
+      const events = await runMirror();
+      const { gitStatusPorcelainZ } = await import('./utils.ts');
+      const status = gitStatusPorcelainZ(repoUnderHome, { untrackedAll: true });
+
+      expect(events).toHaveLength(1);
+      expect(status).not.toBe('');
+      expect(status).toContain('shared/CLAUDE.md');
+    },
+  );
+
+  it.skipIf(!hasGit)(
+    'a capture of byte-identical content leaves an empty status, which is the only state that reaches the collapse',
+    async () => {
+      seedCommittedShared('# published shared\n');
+      writeFileSync(join(claudeDir, 'CLAUDE.md'), '# published shared\n');
+
+      const events = await runMirror();
+      const { gitStatusPorcelainZ } = await import('./utils.ts');
+      const status = gitStatusPorcelainZ(repoUnderHome, { untrackedAll: true });
+
+      // The mirror still emits its event (it copies unconditionally), so the
+      // rows the collapse drops describe a copy that changed nothing.
+      expect(events).toHaveLength(1);
+      expect(status).toBe('');
+    },
+  );
+});
+
+/**
  * Regression cover for the parallel preview predictor this module's dryRun
  * mode retired: a second module that reproduced this mirror's gate order
  * independently, pinned to it only by an equivalence test. If a gate is ever
