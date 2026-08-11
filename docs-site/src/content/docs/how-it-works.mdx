@@ -99,12 +99,13 @@ Pointers and specifics:
 - **The win32 mirror is filtered against this same never-synced set.** Copying your local edits
   into `shared/` (the previous bullet) never writes a path carrying one of these names as a
   segment, and if one reaches the sync repo working tree anyway, such as a file edited directly in
-  the repo rather than through `~/.claude/`, the next `nomad pull` removes or restores it and warns
-  once, naming the file. Because the set is not only secrets, an ordinary directory inside one of
-  your shared names can collide with it (a `sessions` or `tasks` subfolder, for example) and
-  silently stop mirroring; only an exact directory name collides, so a file named `tasks.md` is
-  unaffected. Nothing in this gate can fail a pull outright: a hit is a warning and a revert, never
-  an error.
+  the repo rather than through `~/.claude/`, the next `nomad pull` removes it if git is not already
+  tracking it (snapshotting it to the backup dir first), and otherwise warns once, naming the file
+  and the exact git command to run, changing nothing itself. Because the set is not only secrets, an
+  ordinary directory inside one of your shared names can collide with it (a `sessions` or `tasks`
+  subfolder, for example) and silently stop mirroring; only an exact directory name collides, so a
+  file named `tasks.md` is unaffected. Nothing in this gate can fail a pull outright: a hit is a
+  warning, never an error.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 - **Synced skills** get the same divergence WARN as extras: if a file under `~/.claude/skills/`
