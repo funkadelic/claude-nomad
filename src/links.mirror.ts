@@ -95,8 +95,13 @@ function emitMirrorWet(
  * Declared here rather than imported so this module stays a leaf of that one:
  * `commands.pull.win32.ts` already depends on both, and the parser has no
  * business knowing about the backstop that consumes it.
+ *
+ * Module-private on purpose. Both call sites (the real one and every test) pass
+ * an object literal, so the name is only ever used positionally in the signature
+ * it is declared next to; exporting it would be an unused export for the
+ * dead-code analysis to report.
  */
-export type DeniedRevertStatus = {
+type DeniedRevertStatus = {
   /** Repo-relative tracked paths, including both halves of a rename. */
   tracked: readonly string[];
   /** Repo-relative untracked paths. */
@@ -337,6 +342,21 @@ export function stageLocalSharedEdits(
  * a nested git repository: a wholly untracked directory containing a `.git`
  * arrives as one record, and a non-recursive removal cannot act on it at all.
  *
+ * The snapshot gets its OWN try/catch, ahead of the removal's, and a snapshot
+ * that throws abandons the removal rather than proceeding without one. That is a
+ * decision, not statement placement: the removal is unrecoverable by
+ * construction, so the copy is the whole reason this branch is allowed to delete
+ * anything, and every way the copy can fail (no space in the cache directory, no
+ * permission on it, a destination over the Windows path limit, a non-regular
+ * file inside a denied directory) says nothing at all about whether the path is
+ * a genuine leak. Leaving the path in place is a bounded, reported exposure the
+ * user can act on, and the copy-time filter in `mirrorOneSharedName` is still
+ * the layer that keeps such a path from being written in the first place;
+ * removing it unbacked trades that for irreversible loss of the user's only
+ * copy. The two failures also get separate WARNs, because a gate whose whole
+ * output is its record of what it did cannot afford to blame the file for a
+ * failure that happened in the cache directory.
+ *
  * The success WARN is emitted only after `existsSync` confirms the path is
  * actually gone. `force` makes `rmSync` treat an absent path as success, so an
  * unconditional WARN would report a removal that never happened, which is the
@@ -346,9 +366,16 @@ export function stageLocalSharedEdits(
  * whose bytes do not round-trip through the UTF-8 decode git's stdout goes
  * through, and a path removed between the snapshot and this call.
  *
- * Wrapped in its own try/catch so one unremovable path (an antivirus lock, a
- * read-only file, a path over the Windows limit) does not abandon the rest of
- * the sweep.
+ * That same WARN names the snapshot only when there is one to name.
+ * `backupUnder` copies only a source it can resolve, so a path that vanished
+ * between the status snapshot and this call, and a link whose target is gone,
+ * both leave nothing under `backup/<ts>/repo/`, and pointing the user at a
+ * directory that holds no copy of their file is the one claim worse than making
+ * no claim.
+ *
+ * The removal is wrapped in its own try/catch so one unremovable path (an
+ * antivirus lock, a read-only file, a path over the Windows limit) does not
+ * abandon the rest of the sweep.
  *
  * @param repo - Absolute path to the sync repo.
  * @param path - Repo-relative path to remove.
@@ -358,18 +385,26 @@ export function stageLocalSharedEdits(
  */
 function removeUntrackedDenied(repo: string, path: string, segment: string, ts: string): void {
   const abs = join(repo, path);
+  const denied = `the path segment "${segment}" is on the never-sync list`;
+  // Read before anything is written, and the same test `backupUnder` itself
+  // applies, so it answers whether a copy will exist to name afterwards.
+  const snapshotted = existsSync(abs);
   try {
     backupRepoWrite(abs, ts, repo);
+  } catch (err) {
+    warn(
+      `could not snapshot ${abs} before removing it (${(err as Error).message}), so it was left in place: ${denied}, so remove it by hand`,
+    );
+    return;
+  }
+  try {
     rmSync(abs, { recursive: true, force: true });
     if (existsSync(abs)) {
-      warn(
-        `could not remove ${abs}: the path segment "${segment}" is on the never-sync list, so remove it by hand`,
-      );
+      warn(`could not remove ${abs}: ${denied}, so remove it by hand`);
       return;
     }
-    warn(
-      `removed ${path} from the sync repo working tree: the path segment "${segment}" is on the never-sync list. A copy was snapshotted under backup/${ts}/repo/ first`,
-    );
+    const where = snapshotted ? `. A copy was snapshotted under backup/${ts}/repo/ first` : '';
+    warn(`removed ${path} from the sync repo working tree: ${denied}${where}`);
   } catch (err) {
     warn(`could not remove ${abs}: ${(err as Error).message}`);
   }

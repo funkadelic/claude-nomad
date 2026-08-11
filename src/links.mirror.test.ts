@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import type * as fsModule from 'node:fs';
 import type * as gitProbeModule from './git-probe.ts';
+import type * as utilsFsModule from './utils.fs.ts';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -602,6 +603,7 @@ describe('revertDeniedMirrorPaths', () => {
   let testHome: string;
   let repo: string;
   let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
   let errSpy: MockInstance<(...args: unknown[]) => void>;
   const TS = '20260810-030000';
 
@@ -609,9 +611,14 @@ describe('revertDeniedMirrorPaths', () => {
     testHome = mkdtempSync(join(tmpdir(), 'nomad-revert-denied-'));
     // HOME drives backupBase(), which the removal branch now snapshots into.
     // Without this the snapshots would land in the developer's real
-    // ~/.cache/claude-nomad/backup/.
+    // ~/.cache/claude-nomad/backup/. USERPROFILE is set alongside it because
+    // `home()` prefers USERPROFILE on win32 and this suite does not stub the
+    // platform, so on a native-Windows or Git Bash checkout HOME alone would
+    // not redirect anything.
     originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = testHome;
+    process.env.USERPROFILE = testHome;
     repo = join(testHome, 'repo');
     mkdirSync(join(repo, 'shared', 'commands'), { recursive: true });
     vi.resetModules();
@@ -624,8 +631,11 @@ describe('revertDeniedMirrorPaths', () => {
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
     vi.doUnmock('./git-probe.ts');
+    vi.doUnmock('./utils.fs.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
+    if (originalUserProfile !== undefined) process.env.USERPROFILE = originalUserProfile;
+    else delete process.env.USERPROFILE;
     rmSync(testHome, { recursive: true, force: true });
   });
 
@@ -740,6 +750,53 @@ describe('revertDeniedMirrorPaths', () => {
     // The WARN is the gate's only user-facing record, so it has to name where
     // the copy went or the snapshot may as well not exist.
     expect(warnings()).toContain(`backup/${TS}/repo/`);
+  });
+
+  it('leaves an untracked hit in place when it cannot be snapshotted, and says so', async () => {
+    // The snapshot is the whole reason this branch is allowed to delete
+    // anything, and every way it can fail (no space in the cache directory, no
+    // permission on it, a destination over the Windows path limit) says nothing
+    // about whether the path is a genuine leak. So the removal is abandoned
+    // rather than performed unbacked, and the WARN names the cache failure
+    // instead of blaming the file, which would send the user to check the wrong
+    // thing entirely.
+    const dir = join(repo, 'shared', 'commands', 'sessions');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return {
+        ...actual,
+        backupRepoWrite: () => {
+          throw new Error('ENOSPC: no space left on device');
+        },
+      };
+    });
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+
+    expect(readFileSync(join(dir, 'notes.md'), 'utf8')).toBe('token=abc\n');
+    expect(warnings()).toContain('could not snapshot');
+    expect(warnings()).toContain('ENOSPC');
+    expect(warnings()).toContain('left in place');
+    expect(warnings()).toContain('remove it by hand');
+    expect(warnings()).not.toContain('could not remove');
+    expect(warnings()).not.toContain('removed shared/');
+  });
+
+  it('does not name a snapshot for a path that was already gone', async () => {
+    // `backupUnder` copies only a source it can resolve, and `force` makes
+    // rmSync treat an absent path as success, so a path that vanished between
+    // the git status snapshot and this call leaves nothing under
+    // backup/<ts>/repo/. Pointing the user at a directory holding no copy of
+    // their file is the one claim worse than making no claim.
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+
+    expect(warnings()).toContain('shared/commands/sessions');
+    expect(warnings()).not.toContain('snapshotted');
+    expect(existsSync(backupOf(join('shared', 'commands', 'sessions')))).toBe(false);
   });
 
   it('lands the snapshot outside the sync repo, where no push can stage or scan it', async () => {
