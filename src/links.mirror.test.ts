@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import type * as fsModule from 'node:fs';
+import type * as gitProbeModule from './git-probe.ts';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -880,17 +881,82 @@ describe('revertDeniedMirrorPaths', () => {
     },
   );
 
+  it.skipIf(!hasGit)(
+    'restores a committed gitlink rather than unstaging it, where a blob probe fails open',
+    async () => {
+      // The concrete deterministic trigger for the fail-open: a gitlink under
+      // shared/ IS committed, but its commit object lives in the submodule's
+      // object store, so a `cat-file -e HEAD:<path>` blob probe fails on it.
+      // Reading that failure as "no committed content to protect" stages a
+      // deletion of a committed entry. A tree lookup answers correctly.
+      writeFileSync(join(repo, 'shared', 'commands', 'keep.md'), '# keep\n');
+      gitInit(repo);
+      g(['add', '-A'], repo);
+      g(['commit', '-qm', 'base'], repo);
+      g(
+        [
+          'update-index',
+          '--add',
+          '--cacheinfo',
+          `160000,${'1'.repeat(40)},shared/commands/sessions`,
+        ],
+        repo,
+      );
+      g(['commit', '-qm', 'gitlink'], repo);
+      mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+      writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+
+      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+      revertDeniedMirrorPaths(repo, { tracked: ['shared/commands/sessions'], untracked: [] }, TS);
+
+      // No staged deletion of the committed gitlink entry.
+      expect(gitOut(['diff', '--cached', '--name-status'], repo)).toBe('');
+      expect(warnings()).not.toContain('unstaged');
+    },
+  );
+
+  it.skipIf(!hasGit)('leaves the index alone when the HEAD probe cannot answer', async () => {
+    // Every failure mode of the probe collapses to null: git absent, the probe
+    // timeout, an unborn or corrupt HEAD, a promisor clone that cannot
+    // materialize the object. Only one of those means "nothing committed is at
+    // risk", so null must never select the mutating branch. gitTryMutate is
+    // left real here, so a regression genuinely stages the deletion.
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+    writeFileSync(abs, '# committed\n');
+    gitInit(repo);
+    g(['add', '-A'], repo);
+    g(['commit', '-qm', 'base'], repo);
+    writeFileSync(abs, 'token=abc\n');
+    vi.doMock('./git-probe.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof gitProbeModule>()),
+      gitProbe: () => null,
+    }));
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+      TS,
+    );
+
+    expect(gitOut(['diff', '--cached', '--name-status'], repo)).toBe('');
+    expect(readFileSync(abs, 'utf8')).toBe('token=abc\n');
+    expect(warnings()).toContain('could not check shared/commands/sessions/notes.md against HEAD');
+    expect(warnings()).not.toContain('unstaged');
+  });
+
   it('warns that it could not restore when HEAD has the content but the checkout fails', async () => {
     // The two git calls in this branch answer different questions and are
-    // spelled differently for that reason: the read-only existence check says
-    // HEAD carries the content, so the path is not a staged add, and the
-    // mutating checkout is then the step that fails. Fail-open means the file
-    // is left exactly as it was found, so the WARN has to send the user to it.
+    // spelled differently for that reason: the read-only tree lookup says HEAD
+    // carries the path, so it is not a staged add, and the mutating checkout is
+    // then the step that fails. Fail-open means the file is left exactly as it
+    // was found, so the WARN has to send the user to it.
     mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
     const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
     writeFileSync(abs, 'token=abc\n');
     vi.doMock('./git-probe.ts', () => ({
-      gitProbe: () => '',
+      gitProbe: () => 'shared/commands/sessions/notes.md\n',
       gitTryMutate: () => null,
     }));
 
@@ -906,9 +972,10 @@ describe('revertDeniedMirrorPaths', () => {
     expect(readFileSync(abs, 'utf8')).toBe('token=abc\n');
   });
 
-  it('warns that it could not unstage when git cannot answer at all', async () => {
-    // No git checkout here, so both probes return null. Claiming the path was
-    // unstaged would be the same false record the removal branch avoids.
+  it('says it could not check HEAD when the path is not in a git checkout at all', async () => {
+    // No git repo here, so the HEAD probe fails. Claiming the path was unstaged
+    // would be the same false record the removal branch avoids, and acting on
+    // the guess would be the fail-open the probe branch exists to close.
     mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
     writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
 
@@ -919,7 +986,8 @@ describe('revertDeniedMirrorPaths', () => {
       TS,
     );
 
-    expect(warnings()).toContain('could not unstage');
+    expect(warnings()).toContain('could not check shared/commands/sessions/notes.md against HEAD');
+    expect(warnings()).toContain('by hand');
     expect(existsSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'))).toBe(true);
   });
 });

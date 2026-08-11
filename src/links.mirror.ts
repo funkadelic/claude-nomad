@@ -454,11 +454,28 @@ function unstageDeniedAdd(repo: string, path: string, segment: string, source?: 
  * target, neither of which has committed content to protect. Those go to
  * `unstageDeniedAdd` instead, since the reasoning above does not apply to them.
  *
- * The restore runs through `gitTryMutate` (and the HEAD existence check through
- * its read-only sibling `gitProbe`) rather than `gitOrFatal` because nothing in
- * the pre-rebase path may fail a pull; a call that cannot answer leaves the file
- * as it found it and says so, so the user knows to remove it by hand. No
- * try/catch: both are the same never-throwing invoker, so a catch here would be
+ * That question is asked with a TREE lookup (`git ls-tree HEAD -- <path>`) and
+ * answered only on a POSITIVE result, because the destructive branch is the one
+ * a wrong answer selects. `gitProbe` collapses every failure to `null`: git
+ * absent, the probe timeout expiring, an unborn or corrupt HEAD, an unreadable
+ * repo, a promisor clone that cannot materialize an object. Exactly one of those
+ * means "nothing committed is at risk", so a `null` must leave the path alone
+ * and say so rather than unstage on a guess.
+ *
+ * A tree lookup rather than a blob probe for the same reason. `cat-file -e
+ * HEAD:<path>` has to materialize the object, so it fails on a committed GITLINK
+ * (whose commit lives in the submodule's object store) and on a partial clone
+ * that has not fetched the blob, reporting a committed entry as absent from HEAD.
+ * `ls-tree` reads the tree entry itself: empty stdout means the path really is
+ * not in HEAD, and non-empty means it is, gitlink included. Gitlinks under
+ * `shared/` are a state this repo already handles elsewhere (`guardGitlinks` on
+ * the push path), so this is a reachable case, not a hypothetical one.
+ *
+ * The restore runs through `gitTryMutate` (and the HEAD lookup through its
+ * read-only sibling `gitProbe`) rather than `gitOrFatal` because nothing in the
+ * pre-rebase path may fail a pull; a call that cannot answer leaves the file as
+ * it found it and says so, so the user knows to remove it by hand. No try/catch:
+ * both are the same never-throwing invoker, so a catch here would be
  * unreachable.
  *
  * @param repo - Absolute path to the sync repo.
@@ -477,7 +494,14 @@ function restoreTrackedDenied(
   source?: string,
 ): void {
   if (!existsSync(join(repo, path))) return;
-  if (gitProbe(['cat-file', '-e', `HEAD:${path}`], repo) === null) {
+  const inHead = gitProbe(['ls-tree', '--name-only', 'HEAD', '--', path], repo);
+  if (inHead === null) {
+    warn(
+      `could not check ${path} against HEAD: the path segment "${segment}" is on the never-sync list, so handle it by hand before committing`,
+    );
+    return;
+  }
+  if (inHead.trim() === '') {
     unstageDeniedAdd(repo, path, segment, source);
     return;
   }
