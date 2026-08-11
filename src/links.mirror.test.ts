@@ -10,6 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -608,6 +609,7 @@ describe('revertDeniedMirrorPaths', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.doUnmock('node:fs');
     rmSync(testHome, { recursive: true, force: true });
   });
 
@@ -617,16 +619,64 @@ describe('revertDeniedMirrorPaths', () => {
   }
 
   it('warns and moves on when an untracked hit cannot be removed', async () => {
-    // A directory: rmSync without `recursive` refuses it. Stands in for the
-    // real cases (antivirus lock, read-only file, over-long Windows path).
+    // Stands in for the real throwing cases: an antivirus lock, a read-only
+    // file, a path over the Windows limit.
     mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
     writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        rmSync: () => {
+          throw new Error('EPERM: operation not permitted');
+        },
+      };
+    });
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     expect(() => revertDeniedMirrorPaths(repo, [], ['shared/commands/sessions'], TS)).not.toThrow();
 
     expect(warnings()).toContain('could not remove');
+    expect(warnings()).toContain('EPERM');
     expect(existsSync(join(repo, 'shared', 'commands', 'sessions'))).toBe(true);
+  });
+
+  it('says the path survived rather than claiming a removal that did not happen', async () => {
+    // `force` makes rmSync treat an absent path as success, so a no-op removal
+    // is indistinguishable from a real one at the call. A path that survives it
+    // (a name whose bytes do not round-trip through git's stdout decode, or a
+    // path that moved between the snapshot and here) must not be reported as
+    // removed: the user would believe a denylisted file left the working tree
+    // while it is still one `git add` from the remote.
+    const abs = join(repo, 'shared', 'commands', 'settings.local.json');
+    writeFileSync(abs, '{"apiKey":"x"}\n');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, rmSync: () => undefined };
+    });
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, [], ['shared/commands/settings.local.json'], TS);
+
+    expect(warnings()).toContain('could not remove');
+    expect(warnings()).toContain('remove it by hand');
+    expect(warnings()).not.toContain('removed shared/');
+    expect(existsSync(abs)).toBe(true);
+  });
+
+  it('removes a denylisted untracked directory, which git reports as one record', async () => {
+    // `--untracked-files=all` does not descend into a nested git repository, so
+    // an untracked directory can arrive as a single record and the removal has
+    // to be recursive to act on it at all.
+    const dir = join(repo, 'shared', 'commands', 'sessions');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, [], ['shared/commands/sessions'], TS);
+
+    expect(existsSync(dir)).toBe(false);
+    expect(warnings()).toContain('removed shared/commands/sessions');
   });
 
   it('leaves a tracked hit that is no longer in the working tree alone, silently', async () => {

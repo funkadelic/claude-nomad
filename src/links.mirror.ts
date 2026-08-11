@@ -303,6 +303,19 @@ export function stageLocalSharedEdits(
  * Drop an untracked denylisted path out of the repo working tree. Git never had
  * it, so nothing is lost by removing it outright.
  *
+ * `recursive` because `git status --untracked-files=all` does not descend into
+ * a nested git repository: a wholly untracked directory containing a `.git`
+ * arrives as one record, and a non-recursive removal cannot act on it at all.
+ *
+ * The success WARN is emitted only after `existsSync` confirms the path is
+ * actually gone. `force` makes `rmSync` treat an absent path as success, so an
+ * unconditional WARN would report a removal that never happened, which is the
+ * worst possible reading of a security gate's own record of what it did: the
+ * user is told a denylisted file left the working tree while it is still
+ * sitting there one `git add` from the remote. Two ways to reach that: a path
+ * whose bytes do not round-trip through the UTF-8 decode git's stdout goes
+ * through, and a path removed between the snapshot and this call.
+ *
  * Wrapped in its own try/catch so one unremovable path (an antivirus lock, a
  * read-only file, a path over the Windows limit) does not abandon the rest of
  * the sweep.
@@ -314,7 +327,13 @@ export function stageLocalSharedEdits(
 function removeUntrackedDenied(repo: string, path: string, segment: string): void {
   const abs = join(repo, path);
   try {
-    rmSync(abs, { force: true });
+    rmSync(abs, { recursive: true, force: true });
+    if (existsSync(abs)) {
+      warn(
+        `could not remove ${abs}: the path segment "${segment}" is on the never-sync list, so remove it by hand`,
+      );
+      return;
+    }
     warn(
       `removed ${path} from the sync repo working tree: the path segment "${segment}" is on the never-sync list`,
     );
