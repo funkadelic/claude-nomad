@@ -330,7 +330,6 @@ export {
   isDeniedName,
   isClaudeExtraName,
   stripTrailingDotsAndWhitespace,
-  blockSetFor,
   deniedSegmentFor,
   isNeverSync,
 } from './config.never-sync.ts';
