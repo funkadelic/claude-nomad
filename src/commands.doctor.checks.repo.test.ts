@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type * as diffModule from './extras-sync.diff.ts';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { failGlyph, okGlyph, warnGlyph } from './color.ts';
@@ -611,6 +613,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     process.exitCode = 0;
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
+    vi.doUnmock('./extras-sync.diff.ts');
     restoreEnv('HOME', originalHome);
     restoreEnv('USERPROFILE', originalUserProfile);
     restoreEnv('NOMAD_REPO', originalNomadRepo);
@@ -781,6 +784,10 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     expect(row).toBeDefined();
     expect(row).toContain(okGlyph);
     expect(row).not.toContain('diverge from shared/');
+    // The exemption is permanent (the mirror will never copy it and the pull is
+    // silent about it), so the row that stays OK is the only place the user
+    // could learn the divergence exists at all.
+    expect(row).toContain('1 never-synced path(s) not compared');
     expect(process.exitCode).toBe(0);
   });
 
@@ -805,6 +812,54 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     expect(row).toBeDefined();
     expect(row).toContain(okGlyph);
     expect(row).not.toContain('diverge from shared/');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('says nothing about exempted paths when the compare threw none out', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes('commands') && !item.startsWith('\t'));
+    expect(row).toContain(okGlyph);
+    expect(row).not.toContain('not compared');
+  });
+
+  it('does not exempt a diverging path it cannot place under either compare root', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
+    // A win32 host whose sync repo sits on a different drive from the compare
+    // root: relative() across drive letters returns the destination verbatim
+    // and absolute rather than a `..` walk, so a path that is under neither
+    // root can carry the repo's own location into the segment scan. Every
+    // segment of `D:\sessions\...` would then be tested, exempting every
+    // repo-only file on that host. Unplaceable means not exempt.
+    vi.doMock('./extras-sync.diff.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof diffModule>()),
+      listDivergingFiles: () => ['D:\\sessions\\claude-nomad\\shared\\commands\\b.md (repo only)'],
+    }));
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes('commands') && !item.startsWith('\t'));
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('diverge from shared/');
+    expect(row).not.toContain('not compared');
     expect(process.exitCode).toBe(0);
   });
 
