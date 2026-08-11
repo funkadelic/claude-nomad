@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -594,11 +595,17 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
 describe('revertDeniedMirrorPaths', () => {
   let testHome: string;
   let repo: string;
+  let originalHome: string | undefined;
   let errSpy: MockInstance<(...args: unknown[]) => void>;
   const TS = '20260810-030000';
 
   beforeEach(() => {
     testHome = mkdtempSync(join(tmpdir(), 'nomad-revert-denied-'));
+    // HOME drives backupBase(), which the removal branch now snapshots into.
+    // Without this the snapshots would land in the developer's real
+    // ~/.cache/claude-nomad/backup/.
+    originalHome = process.env.HOME;
+    process.env.HOME = testHome;
     repo = join(testHome, 'repo');
     mkdirSync(join(repo, 'shared', 'commands'), { recursive: true });
     vi.resetModules();
@@ -611,12 +618,19 @@ describe('revertDeniedMirrorPaths', () => {
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
     vi.doUnmock('./git-probe.ts');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
     rmSync(testHome, { recursive: true, force: true });
   });
 
   /** Every captured stderr line joined, for substring assertions. */
   function warnings(): string {
     return errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+  }
+
+  /** Absolute path of the pull-side repo snapshot for `rel` under this run's ts. */
+  function backupOf(rel: string): string {
+    return join(testHome, '.cache', 'claude-nomad', 'backup', TS, 'repo', rel);
   }
 
   it('warns and moves on when an untracked hit cannot be removed', async () => {
@@ -678,6 +692,44 @@ describe('revertDeniedMirrorPaths', () => {
 
     expect(existsSync(dir)).toBe(false);
     expect(warnings()).toContain('removed shared/commands/sessions');
+  });
+
+  it('snapshots an untracked hit into the pull backup before removing it', async () => {
+    // The only destructive branch in the pre-pull reconcile that had no
+    // snapshot behind it. Git never had the path, so without one the removal is
+    // unrecoverable, which is a strictly worse failure than the leak the gate
+    // prevents when it fires on a false positive.
+    const dir = join(repo, 'shared', 'commands', 'sessions');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, [], ['shared/commands/sessions'], TS);
+
+    expect(existsSync(dir)).toBe(false);
+    const snapshot = backupOf(join('shared', 'commands', 'sessions', 'notes.md'));
+    expect(readFileSync(snapshot, 'utf8')).toBe('token=abc\n');
+    // The WARN is the gate's only user-facing record, so it has to name where
+    // the copy went or the snapshot may as well not exist.
+    expect(warnings()).toContain(`backup/${TS}/repo/`);
+  });
+
+  it('lands the snapshot outside the sync repo, where no push can stage or scan it', async () => {
+    // The snapshotted bytes are denylisted by definition (a credential-shaped
+    // name, or a never-synced directory). A snapshot inside the repo would hand
+    // the next push exactly the content this gate just removed.
+    const abs = join(repo, 'shared', 'commands', 'settings.local.json');
+    writeFileSync(abs, '{"apiKey":"x"}\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, [], ['shared/commands/settings.local.json'], TS);
+
+    expect(existsSync(abs)).toBe(false);
+    expect(existsSync(backupOf(join('shared', 'commands', 'settings.local.json')))).toBe(true);
+    // Nothing under the repo, at any depth, holds a copy.
+    const survivors = readdirSync(repo, { recursive: true, encoding: 'utf8' });
+    expect(survivors.some((p) => p.includes('settings.local.json'))).toBe(false);
+    expect(survivors.some((p) => p.includes('backup'))).toBe(false);
   });
 
   it('leaves a tracked hit that is no longer in the working tree alone, silently', async () => {

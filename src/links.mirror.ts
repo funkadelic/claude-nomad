@@ -300,8 +300,22 @@ export function stageLocalSharedEdits(
 }
 
 /**
- * Drop an untracked denylisted path out of the repo working tree. Git never had
- * it, so nothing is lost by removing it outright.
+ * Drop an untracked denylisted path out of the repo working tree, after
+ * snapshotting it into this pull's own backup cache.
+ *
+ * Git never had the path, so git cannot recover it and the removal would
+ * otherwise be permanent. That makes this the one destructive step in the
+ * pre-pull reconcile with nothing behind it: its sibling `restoreTrackedDenied`
+ * names a snapshot in its own WARN, and the deletion pass snapshots every file
+ * it removes. A gate that fires on a false positive (an ordinary directory
+ * spelled like a never-synced one) must not be the thing that loses the user's
+ * work, so the snapshot lands first and the WARN names where it went.
+ *
+ * `backupRepoWrite` resolves under `~/.cache/claude-nomad/backup/<ts>/repo/`,
+ * which is host-local and outside both the sync repo and `~/.claude/`. That
+ * placement is load-bearing rather than incidental: the bytes being snapshotted
+ * are denylisted by definition, so a copy anywhere the push stages from, scans,
+ * or mirrors would hand the next publish exactly the content this call removed.
  *
  * `recursive` because `git status --untracked-files=all` does not descend into
  * a nested git repository: a wholly untracked directory containing a `.git`
@@ -323,10 +337,13 @@ export function stageLocalSharedEdits(
  * @param repo - Absolute path to the sync repo.
  * @param path - Repo-relative path to remove.
  * @param segment - The path segment that matched the never-sync list.
+ * @param ts - Backup timestamp, both the snapshot namespace and the location
+ *   named in the WARN so the user can find the copy.
  */
-function removeUntrackedDenied(repo: string, path: string, segment: string): void {
+function removeUntrackedDenied(repo: string, path: string, segment: string, ts: string): void {
   const abs = join(repo, path);
   try {
+    backupRepoWrite(abs, ts, repo);
     rmSync(abs, { recursive: true, force: true });
     if (existsSync(abs)) {
       warn(
@@ -335,7 +352,7 @@ function removeUntrackedDenied(repo: string, path: string, segment: string): voi
       return;
     }
     warn(
-      `removed ${path} from the sync repo working tree: the path segment "${segment}" is on the never-sync list`,
+      `removed ${path} from the sync repo working tree: the path segment "${segment}" is on the never-sync list. A copy was snapshotted under backup/${ts}/repo/ first`,
     );
   } catch (err) {
     warn(`could not remove ${abs}: ${(err as Error).message}`);
@@ -451,7 +468,7 @@ export function revertDeniedMirrorPaths(
 ): void {
   for (const path of untracked) {
     const segment = deniedSegmentFor(path);
-    if (segment !== null) removeUntrackedDenied(repo, path, segment);
+    if (segment !== null) removeUntrackedDenied(repo, path, segment, ts);
   }
   for (const path of tracked) {
     const segment = deniedSegmentFor(path);
