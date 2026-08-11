@@ -179,29 +179,43 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
  * non-null) and threaded into both `stageLocalSharedEdits` and
  * `applySharedLinkDeletions`, which otherwise each derive it independently and
  * would double- or triple-emit a `sharedDirs` rejection WARN for the same
- * invalid entry within a single pre-rebase reconcile. It is also returned so
- * `runPullCore` can thread the SAME list into the post-rebase
- * `applySharedLinks` call, making one derivation cover the entire wet pull.
+ * invalid entry within a single pre-rebase reconcile. Both of those run at
+ * this same point in the run, against this same pre-rebase repo state, so one
+ * shared list is correct for them.
+ *
+ * The list itself is deliberately NOT returned. The post-rebase
+ * `applySharedLinks` acts on the repo state the rebase left behind, so it has
+ * to derive its own list from the post-rebase map; handing it this one would
+ * freeze a pull that ADDS a `sharedDirs` entry (or its `shared/<name>`
+ * content) to the names known before the fetch. What is returned instead is
+ * `namesDerived`, which only tells the caller that this step already emitted
+ * any `sharedDirs` rejection WARN for the run, so the post-rebase derivation
+ * can be quiet rather than duplicating it.
  *
  * @param repo - `repoHome()`, resolved once by `runPullCore`.
  * @param ts - Backup timestamp, resolved once by `runPullCore`.
  * @returns `mirrored` (repo-relative paths this run newly created under
  *   `shared/`), `events` (one `MirrorPreviewEvent` per name the mirror
- *   copied), and `linkNames` (the derived name list, empty when `map` could
- *   not be read). All empty on darwin and linux; `mirrored` is also empty
- *   whenever the untracked-file snapshots could not be taken.
+ *   copied), and `namesDerived` (whether the shared-name list was derived
+ *   here, and so whether its rejection WARNs have already been emitted).
+ *   All empty/false on darwin and linux; `mirrored` is also empty whenever the
+ *   untracked-file snapshots could not be taken.
  */
 export function reconcileSharedLinksBeforePull(
   repo: string,
   ts: string,
-): { mirrored: string[]; events: MirrorPreviewEvent[]; linkNames: string[] } {
-  if (process.platform !== 'win32') return { mirrored: [], events: [], linkNames: [] };
+): { mirrored: string[]; events: MirrorPreviewEvent[]; namesDerived: boolean } {
+  if (process.platform !== 'win32') return { mirrored: [], events: [], namesDerived: false };
   const before = untrackedUnderShared(repo);
   const events: MirrorPreviewEvent[] = [];
   let linkNames: string[] = [];
+  let namesDerived = false;
   try {
     const map = readMapForMirror(join(repo, 'path-map.json'));
-    if (map !== null) linkNames = allSharedLinks(map);
+    if (map !== null) {
+      linkNames = allSharedLinks(map);
+      namesDerived = true;
+    }
     stageLocalSharedEdits(map, ts, { onPreview: (e) => events.push(e), linkNames });
     applySharedLinkDeletions(map, ts, { linkNames });
   } catch (err) {
@@ -220,7 +234,7 @@ export function reconcileSharedLinksBeforePull(
   // "after" snapshot, so a path it removed is not then reported as one this run
   // created.
   revertDeniedUnderShared(repo, ts);
-  return { mirrored: newlyUntracked(before, untrackedUnderShared(repo)), events, linkNames };
+  return { mirrored: newlyUntracked(before, untrackedUnderShared(repo)), events, namesDerived };
 }
 
 /**

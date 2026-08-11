@@ -35,8 +35,14 @@ export type LinkPreviewEvent =
 type LinkOpts = {
   dryRun?: boolean;
   onPreview?: (e: LinkPreviewEvent) => void;
-  /** Pre-derived name list; falls back to `allSharedLinks(map)` when absent. */
-  linkNames?: readonly string[];
+  /**
+   * Suppress the `sharedDirs` rejection WARNs this call's own
+   * `allSharedLinks(map)` derivation would emit, for a caller that already
+   * derived the same list once earlier in the same command. Suppresses nothing
+   * else: the name list itself is still derived here, from the map this call
+   * was handed.
+   */
+  quietNames?: boolean;
 };
 
 /** Emit a dry-run auto-move event via onPreview or fall back to log(). */
@@ -217,13 +223,15 @@ function applySharedLinksWin32(
  * symlinks (see that function's doc comment). macOS/Linux fall through to the
  * symlink path below, byte-identical to before this branch existed.
  *
- * `opts.linkNames`, when supplied, is used verbatim instead of deriving the
- * name list from `map` internally. This is what lets a caller (`runPullCore`)
- * derive `allSharedLinks(map)` once per command invocation and thread the
- * same list through both the pre-rebase mirror and this apply step, so an
- * invalid `sharedDirs` entry WARNs exactly once per pull instead of once per
- * derivation. Omitting it keeps today's behavior: derive internally, once per
- * call, exactly as documented below.
+ * The name list is ALWAYS derived here, from the `map` this call was handed.
+ * It is deliberately not accepted as an argument: on a pull this step runs
+ * AFTER the rebase, and the repo state it materializes is the post-rebase one,
+ * so a list derived from a pre-rebase map would miss a `sharedDirs` entry (and
+ * its `shared/<name>` content) that the pull itself just delivered. A caller
+ * that already derived the same list earlier in the same command passes
+ * `opts.quietNames` instead, which suppresses the duplicate rejection WARN
+ * without letting this step act on a list computed against a different repo
+ * state.
  */
 export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}): void {
   const dryRun = opts.dryRun === true;
@@ -231,7 +239,7 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
   const repo = repoHome();
   // Derive once: allSharedLinks emits a WARN per invalid sharedDirs entry, so
   // calling it per loop would double every such warning in a single run.
-  const linkNames = opts.linkNames ?? allSharedLinks(map);
+  const linkNames = allSharedLinks(map, { quiet: opts.quietNames === true });
   if (process.platform === 'win32') {
     applySharedLinksWin32(linkNames, claude, repo, ts, dryRun, opts.onPreview);
     return;

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as wedgeModule from './commands.pull.wedge.ts';
 import type * as recoveryModule from './commands.pull.recovery.ts';
@@ -2137,5 +2137,177 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     // missing settings.base.json) cannot masquerade as this assertion passing.
     expect(() => runPullCore()).toThrow(/path-map\.json/);
     expectMirrorCalledWith(mirrorSpy, null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runPullCore: shared-name derivation across the rebase boundary
+// ---------------------------------------------------------------------------
+
+/**
+ * The pre-rebase win32 reconcile and the post-rebase shared-link apply act on
+ * two DIFFERENT repo states, because the rebase between them can add or remove
+ * both a `sharedDirs` entry and its `shared/<name>` content. These tests run
+ * the real `links.ts`, `links.mirror.ts` and `preview.ts` (only the git call,
+ * the session/extras/skills copies and the baseline write are mocked) so they
+ * assert the observable outcome: what ends up in `~/.claude/`, and how many
+ * times one invalid entry is reported.
+ */
+describe('runPullCore: shared-name derivation across the rebase boundary', () => {
+  const realPlatform = process.platform;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let errSpy: MockInstance<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-pull-names-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.resetModules();
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(() => 0),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({ syncSkillsPull: vi.fn(), syncSkillsPush: vi.fn() }));
+    vi.doMock('./links.baseline.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof baselineModule>();
+      return { ...actual, writeSharedBaseline: vi.fn() };
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('./skills-sync.ts');
+    vi.doUnmock('./links.baseline.ts');
+    process.exitCode = 0;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Mock `git pull --rebase` with an optional side effect standing in for what
+   * the fetch delivered, so a test can make the repo change underneath the run
+   * exactly where a real rebase would.
+   *
+   * @param onRebase - Side effect applied when the mocked pull runs.
+   */
+  function mockRebase(onRebase?: () => void): void {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: vi.fn(() => {
+          onRebase?.();
+        }),
+        gitCaptureRaw: vi.fn(() => 'sha'),
+      };
+    });
+  }
+
+  /** Every captured `sharedDirs` rejection WARN line for the run. */
+  function rejectionWarns(): string[] {
+    return errSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .filter((line) => line.includes('sharedDirs entry'));
+  }
+
+  it('materializes a sharedDirs entry that arrived IN this pull, on win32', async () => {
+    stubPlatform('win32');
+    // The rebase delivers both halves of a new shared dir: the path-map entry
+    // that authorizes it and the shared/<name> content itself. A name list
+    // derived before the fetch cannot contain it, so the apply would skip the
+    // directory and the pull would report success having created nothing.
+    mockRebase(() => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['snippets'] }) + '\n',
+      );
+      mkdirSync(join(repoUnderHome, 'shared', 'snippets'), { recursive: true });
+      writeFileSync(join(repoUnderHome, 'shared', 'snippets', 'note.md'), '# incoming\n');
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    expect(existsSync(join(claudeDir, 'snippets', 'note.md'))).toBe(true);
+    expect(readFileSync(join(claudeDir, 'snippets', 'note.md'), 'utf8')).toBe('# incoming\n');
+  });
+
+  it('reports one invalid sharedDirs entry exactly once on a posix wet pull', async () => {
+    // Posix never runs the pre-rebase reconcile, so the post-rebase apply's
+    // own derivation is the ONLY one that ever reports a rejected entry there.
+    // Silencing it unconditionally would leave posix users with no signal at
+    // all.
+    stubPlatform('linux');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    mockRebase();
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    expect(rejectionWarns()).toHaveLength(1);
+  });
+
+  it('reports one invalid sharedDirs entry exactly once on a win32 wet pull', async () => {
+    stubPlatform('win32');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    mockRebase();
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    expect(rejectionWarns()).toHaveLength(1);
   });
 });

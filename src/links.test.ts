@@ -1340,7 +1340,7 @@ describe('applySharedLinks sharedDirs support', () => {
   );
 
   it.skipIf(isWin)(
-    'a supplied opts.linkNames is used verbatim, bypassing allSharedLinks(map) entirely',
+    'opts.quietNames silences the rejection WARN while still linking every valid name from the map it was handed',
     async () => {
       writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
       mkdirSync(join(sharedDir, 'gsd'), { recursive: true });
@@ -1349,20 +1349,17 @@ describe('applySharedLinks sharedDirs support', () => {
         /* captured */
       });
       const { applySharedLinks } = await import('./links.ts');
-      // The map's own (invalid) sharedDirs entry is never consulted: only the
-      // caller-supplied linkNames list drives which names get linked.
+      // quietNames says only "a caller already reported this map's rejected
+      // entries"; the name list itself still comes from this map, so both the
+      // static entry and the valid sharedDirs entry are materialized.
       applySharedLinks(
         '20260516-000000',
-        { projects: {}, sharedDirs: ['../escape'] },
-        { linkNames: ['gsd'] },
+        { projects: {}, sharedDirs: ['gsd', '../escape'] },
+        { quietNames: true },
       );
       expect(errSpy).not.toHaveBeenCalled();
-      const linkPath = join(claudeDir, 'gsd');
-      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
-      // CLAUDE.md has a shared/ counterpart but is NOT in the supplied
-      // linkNames list, so it must be left untouched even though it is a
-      // normal SHARED_LINKS static entry.
-      expect(existsSync(join(claudeDir, 'CLAUDE.md'))).toBe(false);
+      expect(lstatSync(join(claudeDir, 'gsd')).isSymbolicLink()).toBe(true);
+      expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
     },
   );
 });
