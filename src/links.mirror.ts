@@ -75,9 +75,11 @@ function emitMirror(
 
 /**
  * Emit the wet-path mirror event when a sink is supplied. Deliberately no
- * `log()` fallback: a wet run with no sink attached must stay byte-silent, so
- * `syncSharedLinksPush(map)`'s existing call site and every direct-call test
- * are unaffected by this event's introduction.
+ * `log()` fallback: a wet run with no sink attached stays byte-silent on the
+ * SUCCESS path, so `syncSharedLinksPush(map)`'s existing call site and every
+ * direct-call test are unaffected by this event's introduction. The silence is
+ * success-only: an unreadable name still WARNs from `mirrorOneSharedName`,
+ * sink or no sink, since a skipped capture has to reach the operator somehow.
  */
 function emitMirrorWet(
   onPreview: MirrorOpts['onPreview'],
@@ -117,6 +119,20 @@ type SharedMirrorPolicy = {
   /** When set, snapshot the repo copy under `backup/<ts>/repo/` before writing. */
   backupTs?: string;
 };
+
+/**
+ * True when `policy` would leave this name alone because the repo does not
+ * already carry a `shared/<name>` counterpart. The pull policy runs with
+ * `adoptNew: false` so a host-private name is never published by a pull; the
+ * push policy adopts, so nothing is unshared from its point of view.
+ *
+ * @param policy - Repo-side treatment; see {@link SharedMirrorPolicy}.
+ * @param target - Absolute `shared/<name>` path for the name under test.
+ * @returns `true` when the name should be skipped as not shared.
+ */
+function notShared(policy: SharedMirrorPolicy, target: string): boolean {
+  return !policy.adoptNew && !existsSync(target);
+}
 
 /**
  * Mirror one `~/.claude/<name>` into `shared/<name>` under `policy`. Extracted
@@ -159,7 +175,11 @@ type SharedMirrorPolicy = {
  * is written, but a wet pull that fails to capture a local shared-config edit
  * and says nothing about it is exactly the silence this mirror was made visible
  * to remove. Only a real error reaches the warning, since `throwIfNoEntry`
- * already absorbs the ordinary absent-path case.
+ * already absorbs the ordinary absent-path case, and only a name this pass
+ * would actually have captured: an unreadable name the repo does not share was
+ * never going to be copied under `adoptNew: false`, so reporting it would read
+ * as data loss on a directory that is deliberately host-private. The wording
+ * claims nothing about the rest of the command, only about this mirror pass.
  *
  * @param name - Shared name from `allSharedLinks`.
  * @param claude - `claudeHome()`, resolved once by the caller.
@@ -175,21 +195,24 @@ function mirrorOneSharedName(
   opts: MirrorOpts,
 ): void {
   const localPath = join(claude, name);
+  const target = join(repo, 'shared', name);
   let stat;
   try {
     stat = lstatSync(localPath, { throwIfNoEntry: false });
   } catch (err) {
     // Unreadable: the mirror cannot promise anything about it, so say so
-    // instead of dropping the name without a word.
+    // instead of dropping the name without a word. Silent for a name this pass
+    // would have skipped anyway, so an ACL change on ~/.claude/ reports the one
+    // name it actually cost rather than one line per shared name.
+    if (notShared(policy, target)) return;
     warn(
-      `could not read ${localPath} (${(err as Error).message}), so it was left out of shared/ and any local edit to it was not captured. Nothing was changed. Check its permissions, or whether another program has it open, and run the command again`,
+      `${name} could not be read (${(err as Error).message}), so it was left out of shared/ this run. Check its permissions, or whether another program has it open`,
     );
     return;
   }
   if (stat === undefined) return; // absent: nothing to mirror
   if (stat.isSymbolicLink()) return; // symlink-era live link; defer to next pull
-  const target = join(repo, 'shared', name);
-  if (!policy.adoptNew && !existsSync(target)) return; // repo does not share this name
+  if (notShared(policy, target)) return; // repo does not share this name
 
   if (opts.dryRun === true) {
     emitMirror(opts.onPreview, name, localPath, target);
