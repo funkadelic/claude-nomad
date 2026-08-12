@@ -27,7 +27,8 @@ import { remapPull, scanLocalOnly } from './remap.ts';
 import { withSpinner } from './spinner.ts';
 import { summaryRow } from './summary.ts';
 import {
-  classifyWedge,
+  classifyWedgeWithProbe,
+  cleanRepoForceRemoteMessage,
   unmergedIndexRunbookText,
   wedgeMarkerRunbookText,
 } from './commands.pull.wedge.ts';
@@ -190,7 +191,7 @@ function buildWetPullSections(
 
 /**
  * Handle the wedge state detected in `REPO_HOME`. Dispatches all three
- * `WedgeState` values returned by `classifyWedge`:
+ * `WedgeState` values returned by `classifyWedgeWithProbe`:
  *
  * - `'rebase'` / `'merge'`: under `--force-remote`, delegates to
  *   `recoverForceRemote` (abort + safety-diff + park + reset --hard), the
@@ -204,9 +205,12 @@ function buildWetPullSections(
  *   index and then dies if any formerly-unmerged file is still dirty, so
  *   conflict markers are never carried through into the pull. Without
  *   `--force-remote`, dies with the non-destructive manual-recovery runbook.
- * - `null`: no-op (clean repo), returning `false`. Under `--force-remote`,
- *   also emits a platform-agnostic info line stating there was nothing to
- *   recover, so the flag is never a silent no-op on a healthy repo.
+ * - `null`: no-op (not wedged), returning `false`. Under `--force-remote`,
+ *   also emits a platform-agnostic info line via `cleanRepoForceRemoteMessage`
+ *   so the flag is never a silent no-op: the wording honors the `IndexProbe`
+ *   that produced `null`, asserting the repo is clean only when the probe
+ *   actually verified that, not when it merely could not determine wedge
+ *   state (git absent, non-git dir, or a stuck index lock).
  *
  * Called inside the `cmdPull` try block so any `NomadFatal` thrown propagates
  * to the existing catch and the lock is released in `finally`.
@@ -220,9 +224,9 @@ function buildWetPullSections(
  *   only a real discard warrants skipping it.
  */
 function handleWedge(repo: string, forceRemote: boolean): boolean {
-  const wedge = classifyWedge(repo);
+  const { state: wedge, probe } = classifyWedgeWithProbe(repo);
   if (wedge === null) {
-    if (forceRemote) log('repo is clean, nothing to recover; continuing with a normal pull');
+    if (forceRemote) log(cleanRepoForceRemoteMessage(probe));
     return false;
   }
   if (wedge === 'unmerged-index') {
