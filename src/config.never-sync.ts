@@ -198,6 +198,20 @@ export function isClaudeExtraName(name: string): boolean {
 }
 
 /**
+ * True when a repo-relative path's segments land inside the extras tree, which
+ * is the one region where the denylist narrows and the scan skips a prefix.
+ * Both decisions read this predicate rather than restating the test, since a
+ * narrow set paired with a full-path scan (or the reverse) silently changes
+ * what the gate blocks.
+ *
+ * @param segments A repo-relative path already split on `/`.
+ * @returns Whether the path sits under `shared/extras/`.
+ */
+function isExtrasScoped(segments: string[]): boolean {
+  return segments[0] === 'shared' && segments[1] === 'extras';
+}
+
+/**
  * Choose the hard-block denylist for a repo-relative path's segments. Outside
  * the extras tree the full `NEVER_SYNC` set applies. Inside `shared/extras/`
  * the narrow `ALWAYS_NEVER_SYNC` subset applies, so legitimate GSD content such
@@ -215,7 +229,7 @@ export function isClaudeExtraName(name: string): boolean {
  * @returns The exact-name denylist that applies to that path.
  */
 export function blockSetFor(segments: string[]): Set<string> {
-  if (segments[0] !== 'shared' || segments[1] !== 'extras') return NEVER_SYNC;
+  if (!isExtrasScoped(segments)) return NEVER_SYNC;
   return isClaudeExtraName(segments[3] ?? '') ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
 }
 
@@ -243,7 +257,7 @@ export function blockSetFor(segments: string[]): Set<string> {
 export function deniedSegmentFor(path: string): string | null {
   const segments = path.split('/');
   const blockSet = blockSetFor(segments);
-  const scan = segments[0] === 'shared' && segments[1] === 'extras' ? segments.slice(4) : segments;
+  const scan = isExtrasScoped(segments) ? segments.slice(4) : segments;
   for (const segment of scan) {
     if (isDeniedName(blockSet, segment)) return segment;
   }
