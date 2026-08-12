@@ -10,6 +10,7 @@ import type * as recoveryModule from './commands.pull.recovery.ts';
 import type * as recoveryUnmergedModule from './commands.pull.recovery.unmerged.ts';
 
 import type * as baselineModule from './links.baseline.ts';
+import type * as linksModule from './links.ts';
 import type * as linksMirrorModule from './links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
@@ -2209,10 +2210,10 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
  * The pre-rebase win32 reconcile and the post-rebase shared-link apply act on
  * two DIFFERENT repo states, because the rebase between them can add or remove
  * both a `sharedDirs` entry and its `shared/<name>` content. These tests run
- * the real `links.ts`, `links.mirror.ts` and `preview.ts` (only the git call,
- * the session/extras/skills copies and the baseline write are mocked) so they
- * assert the observable outcome: what ends up in `~/.claude/`, and how many
- * times one invalid entry is reported.
+ * the real `applySharedLinks`, `links.mirror.ts`, `links.baseline.ts` and
+ * `preview.ts` (only the git call, the session/extras/skills copies and the
+ * settings write are mocked) so they assert the observable outcome: what ends
+ * up in `~/.claude/`, and how many times one invalid entry is reported.
  */
 describe('runPullCore: shared-name derivation across the rebase boundary', () => {
   const realPlatform = process.platform;
@@ -2259,6 +2260,19 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
       divergenceCheckExtras: vi.fn(() => 0),
     }));
     vi.doMock('./skills-sync.ts', () => ({ syncSkillsPull: vi.fn(), syncSkillsPush: vi.fn() }));
+    // Only the settings write is replaced; applySharedLinks stays real because
+    // its derivation is what these counts are about. The wet pull regenerates
+    // settings.json through the atomic writer, whose last step fsyncs the
+    // parent directory, and Windows answers that syscall with EPERM. The
+    // product code skips the step when `process.platform === 'win32'`, but a
+    // test that stubs the platform to linux to pin posix behavior turns that
+    // guard off while the real syscall still runs, so a real Windows host
+    // failed the posix case here on a durability step none of these tests
+    // assert on.
+    vi.doMock('./links.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksModule>();
+      return { ...actual, regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })) };
+    });
     // links.baseline.ts is deliberately NOT mocked here. It carries a
     // shared-name derivation of its own on the wet path (writeSharedBaseline),
     // and stubbing it out is what let an "exactly once" count pass while the
@@ -2280,6 +2294,7 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     vi.restoreAllMocks();
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     vi.doUnmock('./skills-sync.ts');
