@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import type * as linksDeletionsModule from './links.deletions.ts';
 import type * as linksMirrorModule from './links.mirror.ts';
 
 import { SHARED_LINKS } from './config.ts';
@@ -114,7 +115,14 @@ describe('reconcileSharedLinksBeforePull', () => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return { ...actual, stageLocalSharedEdits: mirror };
     });
-    vi.doMock('./links.deletions.ts', () => ({ applySharedLinkDeletions: deletions }));
+    // Spread here for the same reason as above: planSharedLinkDeletions is the
+    // other half of this module and is reachable from the plan-only entry
+    // point, so a bare `{ applySharedLinkDeletions }` factory would leave it
+    // undefined and fail on a real Windows runner rather than off it.
+    vi.doMock('./links.deletions.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksDeletionsModule>();
+      return { ...actual, applySharedLinkDeletions: deletions };
+    });
     return { mirror, deletions };
   }
 
