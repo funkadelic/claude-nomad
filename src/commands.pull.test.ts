@@ -939,10 +939,10 @@ describe('cmdPull forceRemote routing', () => {
 
     // The WET reconcile step (reconcileSharedLinksBeforePull) never ran. The
     // one call the mirror spy did see is describeSkippedMirrorDiscard's own
-    // read-only tally of what that skip is about to cost (D-02), which is
-    // always dryRun: true; asserting on the flag rather than a zero call
-    // count is what keeps this test from regressing every time the D-02
-    // warning computes its own tally.
+    // read-only tally of what that skip covers, which is always dryRun: true;
+    // asserting on the flag rather than a zero call count is what keeps this
+    // test from regressing every time the discard warning computes its own
+    // tally.
     expect(mirrorSpy).toHaveBeenCalledTimes(1);
     const mirrorCall = mirrorSpy.mock.calls[0] as [unknown, unknown, { dryRun?: unknown }];
     expect(mirrorCall[2]?.dryRun).toBe(true);
@@ -1011,8 +1011,8 @@ describe('cmdPull forceRemote routing', () => {
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull({ forceRemote: true })).not.toThrow();
     expect(process.exitCode).toBe(0);
-    // D-04: a clean repo under --force-remote is not a silent no-op; it
-    // reports that there was nothing to recover before proceeding.
+    // A clean repo under --force-remote is not a silent no-op; it reports
+    // that there was nothing to recover before proceeding.
     const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
     expect(combined).toContain('nothing to recover');
     vi.doUnmock('./commands.pull.wedge.ts');
@@ -2116,7 +2116,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(mirrorSpy).toHaveBeenCalled();
   });
 
-  it('emits the clean-repo info line under forceRemote with no platform stub (D-05: platform-agnostic)', async () => {
+  it('emits the clean-repo info line under forceRemote with no platform stub (platform-agnostic)', async () => {
     // No stubPlatform call anywhere in this test: the absence is the
     // assertion. handleWedge has no win32 branch, so the clean-repo info
     // line must fire identically on whatever real platform this test runs
@@ -2194,7 +2194,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expectMirrorCalledWith(mirrorSpy, null);
   });
 
-  it('renders the D-02 discard warning in the wet Symlinks section when recovery genuinely ran', async () => {
+  it('renders the discard warning in the wet Symlinks section when recovery genuinely ran', async () => {
     stubPlatform('win32');
     // Override the beforeEach's clean-repo wedge mock: this test needs a
     // genuine wedge so handleWedge's recoverForceRemote arm runs and

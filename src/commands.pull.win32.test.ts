@@ -568,7 +568,7 @@ describe('describeSkippedMirrorDiscard', () => {
 });
 
 /**
- * `buildMirrorSection`'s second, optional `discard` parameter: the D-02
+ * `buildMirrorSection`'s second, optional `discard` parameter: the discard
  * warning row rendered when a recovery run genuinely skipped the mirror.
  * Pinned separately from the `describeSkippedMirrorDiscard` describe above
  * since these tests care about the RENDERED STRING, not the tally itself.
