@@ -1079,6 +1079,12 @@ describe('revertDeniedMirrorPaths', () => {
     );
     expect(warnings()).toContain('git checkout HEAD -- shared/commands/sessions/notes.md');
     expect(warnings()).not.toContain('restored');
+    // Both options the WARN opened with leave the denylisted content committed,
+    // so the third one has to say how it comes out and be honest that nothing
+    // local reaches a copy a previous push already published.
+    expect(warnings()).toContain('git rm -- shared/commands/sessions/notes.md');
+    expect(warnings()).toContain('rotate');
+    expect(warnings()).toContain('cannot scrub what a previous push already sent to the remote');
   });
 
   it.skipIf(!hasGit)(

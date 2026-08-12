@@ -441,6 +441,18 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
  * - Present in HEAD (an ordinary modification, a staged edit, a gitlink). The
  *   committed content is what `git checkout HEAD --` puts back.
  *
+ * Every path that reaches the in-HEAD branch carries a denied segment AND is
+ * committed, so both options that branch offers leave the denylisted content in
+ * the repo: the checkout puts it back over whatever the user has now, and
+ * moving the file aside leaves the committed copy where it was. That is this
+ * gate's scope by design, not an oversight, so the WARN names the way out
+ * rather than acting on it: `git rm` plus a commit takes the path out going
+ * forward, and a real secret needs rotating on top, because everything nomad
+ * touches is the local worktree and index (see `commands.pushed-history.ts` for
+ * the same caveat on the session commands). Nothing local reaches a copy a
+ * previous push already published; that needs a history rewrite and a
+ * force-push.
+ *
  * That question is asked with a TREE lookup rather than a blob probe.
  * `cat-file -e HEAD:<path>` has to materialize the object, so it fails on a
  * committed GITLINK (whose commit lives in the submodule's object store) and on
@@ -481,7 +493,7 @@ function reportTrackedDenied(repo: string, path: string, segment: string): void 
   }
   if (!existsSync(join(repo, path))) return;
   warn(
-    `${path} is tracked and has changes against HEAD: ${denied}. Nothing was changed. Run "git checkout HEAD -- ${path}" to put the committed content back, or move the file outside shared/ if you want to keep it`,
+    `${path} is tracked and has changes against HEAD: ${denied}. Nothing was changed. Run "git checkout HEAD -- ${path}" to put the committed content back, or move the file outside shared/ if you want to keep it. Neither of those takes the committed copy out of the repo: "git rm -- ${path}" and a commit does that going forward, and if it holds a real secret, rotate it and rewrite history, because nomad only changes your local worktree and index and cannot scrub what a previous push already sent to the remote`,
   );
 }
 
