@@ -48,6 +48,7 @@ const isWin = process.platform === 'win32';
 describe('syncSharedLinksPush (win32 push mirror)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
   let testHome: string;
   let repoUnderHome: string;
   let claudeDir: string;
@@ -57,9 +58,13 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
   beforeEach(() => {
     originalHome = process.env.HOME;
     originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-test-push-mirror-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
+    // repoHome() prefers NOMAD_REPO over the $HOME fallback these fixtures
+    // assume, so an ambient override would aim the mirror at a real checkout.
+    delete process.env.NOMAD_REPO;
     repoUnderHome = join(testHome, 'claude-nomad');
     sharedDir = join(repoUnderHome, 'shared');
     claudeDir = join(testHome, '.claude');
@@ -75,6 +80,8 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
     else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     rmSync(testHome, { recursive: true, force: true });
   });
 
