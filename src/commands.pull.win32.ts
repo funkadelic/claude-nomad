@@ -243,10 +243,14 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
  * `stageLocalSharedEdits` for why a pull cannot reuse the push policy.
  *
  * Skipped in three cases: on darwin/linux (both passes return immediately),
- * under `dryRun` (zero-mutation preview contract), and under `forceRemote`,
- * which is the deliberate "discard local, take the remote" escape hatch
- * (`recoverForceRemote` resets to `origin/main`) that reconciling host content
- * in would fight. Also a no-op when `path-map.json` is malformed.
+ * under `dryRun` (zero-mutation preview contract), and when the caller reports
+ * that a recovery actually ran, since `recoverForceRemote` ends in
+ * `git reset --hard origin/main` and re-staging host content immediately after
+ * that reset would undo it. The gate keys on the recovery having happened, NOT
+ * on `--force-remote` being passed: the flag on a healthy repo, or on one
+ * recovered from an unmerged index (`git reset --mixed HEAD`, which preserves
+ * the working tree), leaves this pass running so an unpublished host edit is
+ * still captured. Also a no-op when `path-map.json` is malformed.
  *
  * The map is read ONCE and shared by both passes, so they cannot disagree about
  * which names are shared. Mirror first, then deletions, so the backup cache

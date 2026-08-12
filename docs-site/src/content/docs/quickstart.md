@@ -137,8 +137,8 @@ other side:
   nothing to compare against yet, so a deletion made before that pull comes back once, and deleting
   it again sticks. `nomad pull --force-remote` recovers a wedged sync repo. When the repo is stuck
   mid-rebase or mid-merge, recovery resets it to match the shared repo, and on native Windows that
-  reset also replaces your shared config with the repo's copy; the pull now warns naming what was
-  reverted, with the copy it replaces snapshotted to the backup dir first. A different stuck state,
+  reset also replaces your shared config with the repo's copy; the pull warns naming how many shared
+  names it restored and where your previous copies were saved. A different stuck state,
   an unfinished index with nothing to abort, recovers by clearing the index without touching your
   working files, so on native Windows your shared config is left exactly as it was. This is the
   same behavior claude-nomad's `skills/` sync already has on every platform.

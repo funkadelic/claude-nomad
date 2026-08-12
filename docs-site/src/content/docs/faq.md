@@ -142,8 +142,10 @@ missing or the sync repo's index lock is still held when the check times out, it
 determine whether the repo is wedged rather than telling you the repo is clean, and continues with
 a normal pull either way. On native Windows, when this recovery genuinely runs, the
 `reset --hard origin/main` step above also reverts any unpublished edit you had made to your shared
-config on this host; the pull now warns about that, naming how many names were reverted and the
-backup directory holding their previous copies, recoverable from there.
+config on this host; the pull now warns about that, naming how many shared names it restored from
+the repo copy and the backup directory holding your previous copies, recoverable from there. That
+count is every shared name it restored, not a count of files you had actually edited, so seeing a
+number there does not by itself mean you lost work.
 
 **Manual fallback** (use if `--force-remote` refuses due to synced-config changes):
 

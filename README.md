@@ -192,10 +192,11 @@ other side:
   update simply waits for the next pull. `nomad pull --force-remote` recovers a wedged sync repo.
   When the repo is stuck mid-rebase or mid-merge, recovery resets it to match the shared repo, and
   on native Windows that reset also replaces your shared config with the repo's copy; the pull now
-  warns naming what was reverted, with the copy it replaces snapshotted to the backup dir first. A
-  different stuck state, an unfinished index with nothing to abort, recovers by clearing the index
-  without touching your working files, so on native Windows your shared config is left exactly as it
-  was. This is the same behavior claude-nomad's `skills/` sync already has on every platform.
+  warns naming how many shared names it restored from the repo copy, with your previous copies
+  snapshotted to the backup dir first. A different stuck state, an unfinished index with nothing to
+  abort, recovers by clearing the index without touching your working files, so on native Windows
+  your shared config is left exactly as it was. This is the same behavior claude-nomad's `skills/`
+  sync already has on every platform.
 - **The copy-in never carries your Claude secrets or session history.** The same mirror that
   captures your Windows edits into the sync repo refuses to copy any path with a part on
   claude-nomad's never-sync list, whether that part is a directory along the way or the file name
