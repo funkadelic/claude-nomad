@@ -60,8 +60,15 @@ already makes a local edit (and a local deletion) an uncommitted change in the s
 step is a no-op there and both platforms behave the same way. It is also skipped under `--dry-run`,
 which writes nothing to `~/.claude/` or to your shared config (though it still runs the
 `git pull --rebase` that refreshes the sync repo, so the preview reflects the remote), and under
-`--force-remote`, whose whole purpose is to take the remote's version. If the mirror or removal step
-itself fails (an antivirus lock, or a path over the native Windows length limit), the pull warns and
+`--force-remote`, but only when that flag actually recovers a repo stuck mid-rebase or mid-merge:
+that recovery resets the sync repo to `origin/main`, and re-staging local copies right after the
+reset would immediately undo it. On a repo that is not wedged, `--force-remote` no longer skips the
+mirror, so an unpublished edit is captured exactly as on a plain pull, and the command prints an
+info line reporting there was nothing to recover before continuing. When the mirror is skipped
+because recovery genuinely ran, the pull also prints a warning naming how many shared names were
+reverted and the backup directory their previous copies were snapshotted to. If the mirror or
+removal step itself fails (an antivirus lock, or a path over the native Windows length limit), the
+pull warns and
 carries on instead of aborting, so you can still fetch; your unpublished edit or deletion stays
 pending on the host. A file you had just created inside a shared directory is the exception: the
 repo-to-local overlay later in the same pull removes it from `~/.claude/`, after snapshotting it to
@@ -75,7 +82,7 @@ you.
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). On native Windows the same tree also shows every shared-config capture the pre-rebase mirror would perform and every removal the same step would make in the repo, so the preview matches the wet run in both directions. Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
-| `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
+| `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. On a repo that is not wedged, prints an info line reporting there is nothing to recover and continues as a normal pull (exit status success). On native Windows, when recovery genuinely runs via path (1), the pre-pull shared-config mirror is skipped because the reset to `origin/main` would otherwise be undone immediately after; the pull warns, naming the count of discarded unpublished shared-config edits and the backup directory holding their previous copies. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
 
 ## `diff`
 
