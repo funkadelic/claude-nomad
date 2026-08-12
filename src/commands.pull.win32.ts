@@ -7,8 +7,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { yellow, warnGlyph } from './color.ts';
 import { parsePorcelainZ } from './commands.pull.recovery.git.ts';
-import { allSharedLinks, type PathMap } from './config.ts';
+import { allSharedLinks, backupBase, type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
 import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
 import {
@@ -356,15 +357,104 @@ export function reconcileSharedLinksBeforePull(
  * by the time this renders.
  *
  * @param events - Mirror events collected during the pre-rebase reconcile.
- * @returns A `DoctorSection` with zero items when `events` is empty, so
- *   `renderTree` omits it entirely and posix output stays byte-identical.
+ * @param discard - When the win32 mirror was legitimately skipped because
+ *   recovery genuinely ran, the read-only tally of what it would have
+ *   captured; see {@link describeSkippedMirrorDiscard}. Omitted, or `null`,
+ *   on every other pull, in which case this section renders exactly as it
+ *   did before this parameter existed.
+ * @returns A `DoctorSection` with zero items when both `events` is empty and
+ *   `discard` is absent, so `renderTree` omits it entirely and posix output
+ *   stays byte-identical.
  */
-export function buildMirrorSection(events: readonly MirrorPreviewEvent[]): DoctorSection {
+export function buildMirrorSection(
+  events: readonly MirrorPreviewEvent[],
+  discard?: MirrorDiscardSummary | null,
+): DoctorSection {
   const s = section('Symlinks');
   for (const e of events) {
     addItem(s, `captured  ${e.localPath} -> ${e.repoPath}`);
   }
+  if (discard) {
+    const edits = discard.count === 1 ? 'edit was' : 'edits were';
+    addItem(
+      s,
+      `${yellow(warnGlyph)} recovered from a wedged repo, ${discard.count} unpublished shared-config ${edits} discarded, backed up to ${discard.backupPath}`,
+    );
+  }
   return s;
+}
+
+/**
+ * The read-only tally `describeSkippedMirrorDiscard` returns: how many
+ * shared names would have been captured by the pre-pull mirror this
+ * recovery run skipped, and where their pre-overwrite bytes were snapshotted.
+ */
+export type MirrorDiscardSummary = {
+  /** Number of shared names that would have been captured. */
+  count: number;
+  /** Absolute path under `~/.cache/claude-nomad/backup/<ts>/` holding the
+   * pre-overwrite host-side bytes, the same location `applySharedLinksWin32`'s
+   * own `backupBeforeWrite` call snapshots them to later in the same pull. */
+  backupPath: string;
+};
+
+/**
+ * Read-only counterpart to the mirror gate's skip: what
+ * `reconcileSharedLinksBeforePull` WOULD have captured on this run, for
+ * reporting only. Never writes anything, and never calls the wet form of the
+ * mirror.
+ *
+ * `runPullCore` calls this only when `recovered` is `true`, i.e. only when
+ * `recoverForceRemote` genuinely reset the repo to `origin/main` and the
+ * mirror was therefore skipped to avoid fighting that reset. The count this
+ * returns describes exactly the host-side shared-config edits that skip is
+ * about to cost: `applySharedLinksWin32` backs each of them up and then
+ * overwrites it later in the same pull (see that function's own doc comment),
+ * and until this helper existed nothing told the user that happened or where
+ * the backup landed.
+ *
+ * Implemented by copying `planSharedReconcileBeforePull`'s call shape
+ * exactly: read the map via the same fail-safe reader, derive `linkNames`
+ * once, and invoke `stageLocalSharedEdits` with its dry-run flag on and a
+ * collecting `onPreview` sink. The dry-run flag is load-bearing and
+ * non-negotiable: a second backup mechanism is explicitly out of scope, and
+ * the wet form of the mirror would write.
+ *
+ * Wrapped in its own try/catch, degrading to `null` on any throw. This is a
+ * reporting step on a recovery path, and a reporting step must never be the
+ * thing that fails a pull; unlike `reconcileSharedLinksBeforePull`'s own
+ * catch, this degrades silently rather than warning, since the user is
+ * already being told about the recovery by `recoverForceRemote` itself and a
+ * second failure line here would only be noise.
+ *
+ * The platform gate lives inside this helper (an early `null` return) so
+ * `runPullCore` gains no platform branch of its own, matching how the mirror
+ * gate itself already stays platform-agnostic.
+ *
+ * @param repo - `repoHome()`, already resolved once by `runPullCore`.
+ * @param ts - Backup timestamp, already resolved once by `runPullCore`.
+ * @returns `null` on darwin/linux, when nothing would have been captured, or
+ *   when the computation itself threw; otherwise the count and backup path.
+ */
+export function describeSkippedMirrorDiscard(
+  repo: string,
+  ts: string,
+): MirrorDiscardSummary | null {
+  if (process.platform !== 'win32') return null;
+  try {
+    const map = readMapForMirror(join(repo, 'path-map.json'));
+    const linkNames = map !== null ? allSharedLinks(map) : undefined;
+    const captures: MirrorPreviewEvent[] = [];
+    stageLocalSharedEdits(map, ts, {
+      dryRun: true,
+      onPreview: (e) => captures.push(e),
+      linkNames,
+    });
+    if (captures.length === 0) return null;
+    return { count: captures.length, backupPath: join(backupBase(), ts) };
+  } catch {
+    return null;
+  }
 }
 
 /**
