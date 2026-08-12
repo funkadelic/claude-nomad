@@ -431,26 +431,6 @@ export function runPullCore(
   } = !dryRun && !recovered
     ? reconcileSharedLinksBeforePull(repo, ts)
     : { mirrored: [], events: [], namesDerived: false, derivedSharedDirs: undefined };
-  // The discard the warning below names does not happen here; it happens
-  // later in this same pull, inside applySharedLinksWin32, which backs up
-  // and then overwrites every shared name whose repo-side target exists. On
-  // a normal pull that overwrite is a content no-op, since the mirror staged
-  // the same bytes moments earlier; on a recovered pull it is a real content
-  // change, and nothing in the output told the user that before this
-  // warning existed. Gated on `recovered && !dryRun` (the flag alone is not
-  // enough, for the same reason the mirror gate above isn't): `--force-remote`
-  // cannot combine with `--dry-run`, so the `!dryRun` half is unreachable in
-  // practice, but the gate must not depend on that.
-  //
-  // Computed here, before the rebase, for the same reason
-  // `planSharedReconcileBeforePull` is: it describes repo state at the
-  // moment the mirror would have acted. After `git reset --hard
-  // origin/main` the repo already sits at the remote tip, so the
-  // `git pull --rebase` that follows is normally a fast-forward no-op and
-  // the count holds; a rebase that did move HEAD could change which names
-  // differ, in which case the count is a close approximation rather than an
-  // exact tally.
-  const discardedMirror = recovered && !dryRun ? describeSkippedMirrorDiscard(repo, ts) : undefined;
   // A dry run applies nothing, but its preview has to describe the same repo
   // state the wet step above acts on, and the rebase below moves that state.
   // Both plans are read-only and empty on darwin and linux, so a posix host
@@ -503,6 +483,29 @@ export function runPullCore(
     computePreview(ts, map, 'pull', plansAgainst(sharedPlans, map));
     return { tag: 'dry' };
   }
+  // The discard the warning below names does not happen here; it happens a
+  // few lines down, inside `buildWetPullSections`'s call to
+  // `applySharedLinks`, which backs up and then overwrites every shared name
+  // whose repo-side target exists. On a normal pull that overwrite is a
+  // content no-op, since the mirror staged the same bytes moments earlier;
+  // on a recovered pull it is a real content change, and nothing in the
+  // output told the user that before this warning existed. Gated on
+  // `recovered && !dryRun` (the flag alone is not enough, for the same
+  // reason the mirror gate above isn't): `--force-remote` cannot combine
+  // with `--dry-run`, so the `!dryRun` half is unreachable in practice, but
+  // the gate must not depend on that.
+  //
+  // Computed here, AFTER the rebase and the post-rebase `map` read just
+  // above, rather than back where `recovered` was first learned. This
+  // function re-reads `path-map.json` from disk itself, so calling it here
+  // is what makes it observe the exact repo state `applySharedLinks` is
+  // about to act on: `recoverForceRemote` fetches once before its own reset,
+  // and the `git pull --rebase` a few lines up fetches again, so a push
+  // landing between those two fetches can change which shared names exist or
+  // which `sharedDirs` entries are valid. Computing the tally before that
+  // second fetch would describe a repo state the apply step never acts on;
+  // computing it here keeps the two in lockstep.
+  const discardedMirror = recovered && !dryRun ? describeSkippedMirrorDiscard(repo, ts) : undefined;
   // The apply below derives its own name list from the POST-rebase map (the
   // only repo state it can act on); `namesDerived` only tells it whether the
   // pre-rebase reconcile already emitted this pull's sharedDirs rejection

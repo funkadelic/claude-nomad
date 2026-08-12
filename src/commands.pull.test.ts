@@ -2640,6 +2640,65 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     expect(rejectionWarns()).toHaveLength(1);
   });
 
+  it('sizes the discard tally from the post-rebase repo state, not the pre-rebase one, on a recovered win32 pull', async () => {
+    // The discard tally used to be computed right after recovery's own
+    // reset, before the second fetch (this same pull's `git pull --rebase`)
+    // ever ran. A push landing between those two fetches changes which
+    // shared names exist, exactly like `mockRebase`'s side effect below
+    // simulates, and a tally read before that fetch describes a repo state
+    // `applySharedLinks` never acts on. `before` exists on both sides from
+    // the start; `after` only becomes a shared name once the mocked rebase
+    // delivers it, so a tally computed too early reports 1 name here
+    // instead of the 2 the apply step (fed the post-rebase map) actually
+    // restores.
+    stubPlatform('win32');
+    mkdirSync(join(repoUnderHome, 'shared', 'before'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'before', 'note.md'), '# before\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['before'] }) + '\n',
+    );
+    mkdirSync(join(claudeDir, 'before'), { recursive: true });
+    writeFileSync(join(claudeDir, 'before', 'note.md'), '# host before\n');
+    mkdirSync(join(claudeDir, 'after'), { recursive: true });
+    writeFileSync(join(claudeDir, 'after', 'note.md'), '# host after\n');
+
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'rebase', probe: 'clean' })),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return { ...actual, recoverForceRemote: vi.fn() };
+    });
+    // The second fetch delivers a new shared name: both the path-map entry
+    // and the `shared/` content that authorizes it. `before` is untouched;
+    // `after` becomes visible only here, standing in for a push that landed
+    // between recovery's own fetch and this one.
+    mockRebase(() => {
+      mkdirSync(join(repoUnderHome, 'shared', 'after'), { recursive: true });
+      writeFileSync(join(repoUnderHome, 'shared', 'after', 'note.md'), '# after\n');
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['before', 'after'] }) + '\n',
+      );
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore({ forceRemote: true });
+    if (result.tag !== 'wet') throw new Error('expected a wet pull result');
+
+    const symlinks = result.sections.find((s) => s.header === 'Symlinks');
+    const rendered = symlinks?.items.join('\n') ?? '';
+    expect(rendered).toContain('2 shared names were restored from the repo copy');
+  });
+
   it('reports one invalid sharedDirs entry exactly once on a win32 pull --dry-run', async () => {
     // The dry run adds two more derivations of its own (the pre-rebase plan
     // pair), and a user reading a preview has to be able to count rejected
