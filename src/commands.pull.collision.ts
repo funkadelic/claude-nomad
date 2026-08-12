@@ -287,7 +287,9 @@ function removeMirroredCopies(repo: string, repoRelPaths: readonly string[]): bo
  *
  * @param repo - Absolute path to the sync repo.
  * @param mirrored - Repo-relative paths this run's pre-pull mirror created
- *   under `shared/`; empty on posix, under dry-run, and under force-remote.
+ *   under `shared/`; empty on posix, under dry-run, and when a recovery
+ *   actually ran (which is what skips the mirror, not `--force-remote` by
+ *   itself).
  */
 export function pullWithCollisionRunbook(repo: string, mirrored: readonly string[]): void {
   try {
