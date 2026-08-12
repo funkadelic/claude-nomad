@@ -299,8 +299,8 @@ function divergingRepoPath(line: string, name: string, local: string, shared: st
  * swallowed. Such a path is a genuine, permanent one-way divergence: the mirror
  * will never copy it, and the pull is silent about it by design, so with the
  * exemption in place no surface reports it at all. The row still reads OK,
- * because no command can clear it, but it says how many there were; see
- * {@link exemptNote}.
+ * because no command can clear it, but it says how many there were; the count
+ * is rendered by {@link win32CopyOkRow}.
  *
  * Extracted out of `classifySharedLink` so adding this compare does not push
  * that already branch-dense function over the cognitive-complexity gate.
