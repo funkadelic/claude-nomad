@@ -179,26 +179,27 @@ other side:
   synced is never touched. That record is also why the first pull after you upgrade to this version
   is an exception: there is nothing to compare against yet, so a deletion made before that pull
   comes back once, and deleting it again sticks. If a file you created has the same name as one
-  another machine just created, the pull stops before it changes anything and tells you which file
+  another machine just created, the pull stops before it overlays your copy: the only thing it
+  removes is the temporary copy it had just made inside the sync repo, and it tells you which file
   under `~/.claude/` to move or rename, with the two ways to finish. Nothing is lost either way:
   your file stays exactly as you left it and the update simply waits for the next pull. The one
   command that deliberately takes the repo's version is `nomad pull --force-remote`, which is what
   that flag is for; the copy it replaces is snapshotted to the backup dir first. This is the same
   behavior claude-nomad's `skills/` sync already has on every platform.
 - **The copy-in never carries your Claude secrets or session history.** The same mirror that
-  captures your Windows edits into the sync repo refuses to copy anything sitting under a directory
-  name on claude-nomad's never-sync list (session transcripts, credentials, caches, and other
-  ephemeral `~/.claude/` state; see `NEVER_SYNC` in `src/config.never-sync.ts` for the exact set).
-  If something on that list somehow lands in the sync repo working tree anyway, such as a file
-  edited directly in the repo rather than through `~/.claude/`, what happens next depends on whether
-  you have already staged it with `git add`. If you have not, the next `nomad pull` deletes it,
-  snapshotting it to the backup dir first, and prints a warning naming the file. If you have, pull
-  leaves the file untouched and prints a warning naming the file and the exact command to run to
-  finish clearing it yourself. One thing worth knowing: that list is not only secrets, it also uses
-  a few ordinary-sounding directory names (`sessions`, `tasks`, `plans`, `cache`, and others) that
-  Claude Code itself uses under `~/.claude/`. If a directory inside one of your shared names happens
-  to be spelled exactly like one of those, it silently stops mirroring; only an exact directory name
-  collides, so a file named `tasks.md` is unaffected.
+  captures your Windows edits into the sync repo refuses to copy any path with a part on
+  claude-nomad's never-sync list, whether that part is a directory along the way or the file name
+  itself (session transcripts, credentials, caches, and other ephemeral `~/.claude/` state; see
+  `NEVER_SYNC` in `src/config.never-sync.ts` for the exact set). If something on that list somehow
+  lands in the sync repo working tree anyway, such as a file edited directly in the repo rather than
+  through `~/.claude/`, what happens next depends on whether Git already tracks it. If it does not,
+  the next `nomad pull` deletes it, snapshotting it to the backup dir first, and prints a warning
+  naming the file. If it does, pull leaves the file untouched and prints a warning naming the file
+  and the exact command to run to finish clearing it yourself. One thing worth knowing: that list is
+  not only secrets, it also uses a few ordinary-sounding names (`sessions`, `tasks`, `plans`,
+  `cache`, and others) that Claude Code itself uses under `~/.claude/`. A path inside one of your
+  shared names stops mirroring as soon as any part of it is spelled exactly like one of those; the
+  spelling has to match in full, so a file named `tasks.md` is unaffected.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
   on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native

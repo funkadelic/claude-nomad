@@ -103,8 +103,8 @@ Pointers and specifics:
   tracking it (snapshotting it to the backup dir first), and otherwise warns once, naming the file
   and the exact git command to run, changing nothing itself. Because the set is not only secrets, an
   ordinary directory inside one of your shared names can collide with it (a `sessions` or `tasks`
-  subfolder, for example) and silently stop mirroring; only an exact directory name collides, so a
-  file named `tasks.md` is unaffected. Nothing in this gate can fail a pull outright: a hit is a
+  subfolder, for example) and silently stop mirroring; the match is on a whole path segment,
+  directory or file name alike, so a file named `tasks.md` is unaffected. Nothing in this gate can fail a pull outright: a hit is a
   warning, never an error.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
