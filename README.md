@@ -71,7 +71,8 @@ survives different file paths and your secrets never ride along.
   parks stranded work on a branch, refuses if shared config is at risk), and a repo where the rebase
   was interrupted but the git index was left with unmerged entries and no active operation (clears
   the index via `git reset --mixed HEAD`, surfaces any orphaned stash entry left by the interrupted
-  autostash, never discards working-tree edits).
+  autostash, never discards working-tree edits). On a repo that is not stuck, the flag reports there
+  is nothing to recover and pulls normally instead of doing nothing silently.
 - **Easy off.** `nomad eject` replaces every managed `~/.claude/` symlink with a real copy in one
   step, so your setup keeps working after you delete the sync checkout and uninstall the CLI.
 
@@ -188,10 +189,11 @@ other side:
   stops before it overlays your copy: the only thing it removes is the temporary copy it had just
   made inside the sync repo, and it tells you which file under `~/.claude/` to move or rename, with
   the two ways to finish. Nothing is lost either way: your file stays exactly as you left it and the
-  update simply waits for the next pull. The one command that deliberately takes the repo's version
-  is `nomad pull --force-remote`, which is what that flag is for; the copy it replaces is
-  snapshotted to the backup dir first. This is the same behavior claude-nomad's `skills/` sync
-  already has on every platform.
+  update simply waits for the next pull. `nomad pull --force-remote` recovers a wedged sync repo; on
+  native Windows, when that recovery genuinely runs, it takes the repo's version of your shared
+  config as a consequence of the reset it performs, the pull now warns naming what was reverted, and
+  the copy it replaces is snapshotted to the backup dir first. This is the same behavior
+  claude-nomad's `skills/` sync already has on every platform.
 - **The copy-in never carries your Claude secrets or session history.** The same mirror that
   captures your Windows edits into the sync repo refuses to copy any path with a part on
   claude-nomad's never-sync list, whether that part is a directory along the way or the file name
