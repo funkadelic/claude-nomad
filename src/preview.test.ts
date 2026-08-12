@@ -1068,7 +1068,7 @@ describe('computePreview orchestration', () => {
 
     const realPlatform = process.platform;
     stubPlatform('win32');
-    vi.spyOn(console, 'log').mockImplementation(() => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
     });
 
@@ -1079,6 +1079,13 @@ describe('computePreview orchestration', () => {
       stubPlatform(realPlatform);
     }
 
+    // The capture row proves the mirror RAN. Without it, a future gate that
+    // skipped CLAUDE.md would leave both write assertions below passing on a
+    // mirror that never executed, and the dryRun contract would go uncovered.
+    const rows = logSpy.mock.calls.map((call: unknown[]) => String(call[0]));
+    expect(rows.some((row) => row.includes('would capture') && row.includes('CLAUDE.md'))).toBe(
+      true,
+    );
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# shared-old\n');
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260810-000010');
     expect(existsSync(backupRoot)).toBe(false);
