@@ -16,15 +16,15 @@ import { SHARED_BASELINE_KIND } from '../links.baseline.ts';
  *
  * @param testHome - The fixture HOME (what `process.env.HOME` is set to).
  * @param files - Baseline entries, keyed by `claudeHome()`-relative POSIX path.
- *   Defaults to a single entry, which is all a test needs to get past the
- *   trust gate.
+ *   Omit it for a single entry, which is all a test needs to get past the trust
+ *   gate. Resolved inside the body rather than as a parameter default so no two
+ *   callers can ever share one object.
  */
 export function plantSharedBaseline(
   testHome: string,
-  files: Record<string, { size: number; mtime: number; hash: string }> = {
-    'CLAUDE.md': { size: 1, mtime: 1, hash: 'x' },
-  },
+  files?: Record<string, { size: number; mtime: number; hash: string }>,
 ): void {
+  const entries = files ?? { 'fixture.md': { size: 1, mtime: 1, hash: 'x' } };
   const cacheDir = join(testHome, '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   writeFileSync(
@@ -33,7 +33,7 @@ export function plantSharedBaseline(
       schema: 1,
       scannerVersion: SHARED_BASELINE_KIND,
       configHash: 'not-applicable',
-      files,
+      files: entries,
     }) + '\n',
   );
 }
