@@ -222,7 +222,7 @@ function buildWetPullSections(
 function handleWedge(repo: string, forceRemote: boolean): boolean {
   const wedge = classifyWedge(repo);
   if (wedge === null) {
-    if (forceRemote) log('repo is clean; nothing to recover, continuing with a normal pull');
+    if (forceRemote) log('repo is clean, nothing to recover; continuing with a normal pull');
     return false;
   }
   if (wedge === 'unmerged-index') {
