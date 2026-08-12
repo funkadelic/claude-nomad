@@ -13,6 +13,7 @@ import { applySharedLinks, regenerateSettings } from './links.ts';
 import { writeSharedBaseline } from './links.baseline.ts';
 import {
   buildMirrorSection,
+  describeSkippedMirrorDiscard,
   namesAlreadyReported,
   plansAgainst,
   planSharedReconcileBeforePull,
@@ -414,7 +415,10 @@ export function runPullCore(
   // Gated on `recovered`, not on `forceRemote` itself: the flag alone no
   // longer suppresses the mirror, only an actual `recoverForceRemote` discard
   // does, so a clean repo or an unmerged-index recovery under
-  // `--force-remote` both still run the mirror.
+  // `--force-remote` both still run the mirror. When the mirror IS skipped
+  // for that reason, the discard it would have prevented is made visible
+  // separately below, since this gate itself has no way to describe what it
+  // didn't do.
   const {
     mirrored,
     events: mirrorEvents,
@@ -423,6 +427,26 @@ export function runPullCore(
   } = !dryRun && !recovered
     ? reconcileSharedLinksBeforePull(repo, ts)
     : { mirrored: [], events: [], namesDerived: false, derivedSharedDirs: undefined };
+  // The discard the warning below names does not happen here; it happens
+  // later in this same pull, inside applySharedLinksWin32, which backs up
+  // and then overwrites every shared name whose repo-side target exists. On
+  // a normal pull that overwrite is a content no-op, since the mirror staged
+  // the same bytes moments earlier; on a recovered pull it is a real content
+  // change, and nothing in the output told the user that before this
+  // warning existed. Gated on `recovered && !dryRun` (the flag alone is not
+  // enough, for the same reason the mirror gate above isn't): `--force-remote`
+  // cannot combine with `--dry-run`, so the `!dryRun` half is unreachable in
+  // practice, but the gate must not depend on that.
+  //
+  // Computed here, before the rebase, for the same reason
+  // `planSharedReconcileBeforePull` is: it describes repo state at the
+  // moment the mirror would have acted. After `git reset --hard
+  // origin/main` the repo already sits at the remote tip, so the
+  // `git pull --rebase` that follows is normally a fast-forward no-op and
+  // the count holds; a rebase that did move HEAD could change which names
+  // differ, in which case the count is a close approximation rather than an
+  // exact tally.
+  const discardedMirror = recovered && !dryRun ? describeSkippedMirrorDiscard(repo, ts) : undefined;
   // A dry run applies nothing, but its preview has to describe the same repo
   // state the wet step above acts on, and the rebase below moves that state.
   // Both plans are read-only and empty on darwin and linux, so a posix host
@@ -497,11 +521,11 @@ export function runPullCore(
     prePostHeads === undefined ? true : prePostHeads.pre !== prePostHeads.post;
   // Spliced at the head so the wet tree reads in the order the pull executes
   // and matches the preview tree, which already puts Symlinks first. Empty on
-  // darwin, linux, and whenever nothing was mirrored, so renderTree drops it
-  // and posix output stays byte-identical.
+  // darwin, linux, and whenever nothing was mirrored (and nothing was
+  // discarded), so renderTree drops it and posix output stays byte-identical.
   return {
     tag: 'wet',
-    sections: [buildMirrorSection(mirrorEvents), ...sections],
+    sections: [buildMirrorSection(mirrorEvents, discardedMirror), ...sections],
     localOnly,
     divergedKeptLocal,
     incomingChanges,

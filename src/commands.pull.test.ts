@@ -15,6 +15,7 @@ import type * as linksMirrorModule from './links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 
+import { warnGlyph } from './color.ts';
 import { plantSharedBaseline } from './test-support/baseline.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
@@ -926,7 +927,7 @@ describe('cmdPull forceRemote routing', () => {
     expect(process.exitCode).not.toBe(1);
 
     // Recovery genuinely ran: the reset --hard origin/main discard is what
-    // makes skipping the mirror correct here, so pin both signals in one
+    // makes skipping the WET mirror correct here, so pin both signals in one
     // test rather than trusting the mirror-skip assertion alone (a run that
     // never actually recovered would also leave the mirror uncalled, and
     // that would be the exact regression this test exists to catch).
@@ -936,7 +937,15 @@ describe('cmdPull forceRemote routing', () => {
     const branches = gitOut(['branch', '--list', 'nomad/stranded-*'], local);
     expect(branches.trim().length).toBeGreaterThan(0);
 
-    expect(mirrorSpy).not.toHaveBeenCalled();
+    // The WET reconcile step (reconcileSharedLinksBeforePull) never ran. The
+    // one call the mirror spy did see is describeSkippedMirrorDiscard's own
+    // read-only tally of what that skip is about to cost (D-02), which is
+    // always dryRun: true; asserting on the flag rather than a zero call
+    // count is what keeps this test from regressing every time the D-02
+    // warning computes its own tally.
+    expect(mirrorSpy).toHaveBeenCalledTimes(1);
+    const mirrorCall = mirrorSpy.mock.calls[0] as [unknown, unknown, { dryRun?: unknown }];
+    expect(mirrorCall[2]?.dryRun).toBe(true);
     vi.doUnmock('./links.ts');
     vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
@@ -1896,6 +1905,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
     vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./commands.pull.recovery.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./links.mirror.ts');
@@ -2182,6 +2192,86 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     // missing settings.base.json) cannot masquerade as this assertion passing.
     expect(() => runPullCore()).toThrow(/path-map\.json/);
     expectMirrorCalledWith(mirrorSpy, null);
+  });
+
+  it('renders the D-02 discard warning in the wet Symlinks section when recovery genuinely ran', async () => {
+    stubPlatform('win32');
+    // Override the beforeEach's clean-repo wedge mock: this test needs a
+    // genuine wedge so handleWedge's recoverForceRemote arm runs and
+    // `recovered` comes back true, which is the only condition that gates
+    // describeSkippedMirrorDiscard.
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return { ...actual, recoverForceRemote: vi.fn() };
+    });
+    // A discard-describing mirror spy: unlike mockPipelineRecording's default
+    // (which never calls onPreview), this one reports one captured name, so
+    // the tally the warning row names is non-zero and checkable. This is the
+    // ONLY stageLocalSharedEdits call reachable on this run: the wet
+    // reconcile step is skipped because `recovered` is true, and the dry-run
+    // plan step is skipped because `dryRun` is false.
+    const discardMirrorSpy = vi.fn(
+      (_map: unknown, _ts: unknown, opts?: { onPreview?: (e: unknown) => void }) => {
+        opts?.onPreview?.({
+          kind: 'mirror',
+          name: 'CLAUDE.md',
+          localPath: join(testHome, '.claude', 'CLAUDE.md'),
+          repoPath: join(repoUnderHome, 'shared', 'CLAUDE.md'),
+        });
+      },
+    );
+    mockMirrorModule(discardMirrorSpy);
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(() => 0),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore({ forceRemote: true });
+    if (result.tag !== 'wet') throw new Error('expected a wet pull result');
+
+    const symlinks = result.sections.find((s) => s.header === 'Symlinks');
+    const rendered = symlinks?.items.join('\n') ?? '';
+    expect(rendered).toContain(warnGlyph);
+    expect(rendered).toContain('1 unpublished shared-config edit was discarded');
+    expect(discardMirrorSpy).toHaveBeenCalledTimes(1);
+    const call = discardMirrorSpy.mock.calls[0] as [unknown, unknown, { dryRun?: unknown }];
+    expect(call[2]?.dryRun).toBe(true);
+  });
+
+  it('renders no discard warning in the wet Symlinks section when the mirror was not skipped', async () => {
+    stubPlatform('win32');
+    const order: string[] = [];
+    mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore();
+    if (result.tag !== 'wet') throw new Error('expected a wet pull result');
+
+    const symlinks = result.sections.find((s) => s.header === 'Symlinks');
+    const rendered = symlinks?.items.join('\n') ?? '';
+    expect(rendered).not.toContain(warnGlyph);
+    expect(rendered).not.toContain('discarded');
   });
 });
 
