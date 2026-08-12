@@ -2462,6 +2462,42 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     expect(rejectionWarns()).toHaveLength(1);
   });
 
+  it('reports one invalid sharedDirs entry exactly once on a recovered win32 pull', async () => {
+    // On the recovered path, describeSkippedMirrorDiscard runs its own
+    // allSharedLinks derivation purely to size its report-only tally; it must
+    // stay quiet there, since the post-rebase apply's own derivation is the
+    // only one whose job is to report a rejected entry. Both derivations run
+    // within the same pull, so a loud report-only one duplicates the WARN.
+    stubPlatform('win32');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    // Override the beforeEach's clean-repo wedge mock with a genuine wedge, as
+    // above: unmock first, since re-registering vi.doMock for a specifier the
+    // beforeEach already mocked, without an interceding vi.doUnmock, is a
+    // documented race.
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return { ...actual, recoverForceRemote: vi.fn() };
+    });
+    mockRebase();
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ forceRemote: true });
+
+    expect(rejectionWarns()).toHaveLength(1);
+  });
+
   it('reports one invalid sharedDirs entry exactly once on a win32 pull --dry-run', async () => {
     // The dry run adds two more derivations of its own (the pre-rebase plan
     // pair), and a user reading a preview has to be able to count rejected

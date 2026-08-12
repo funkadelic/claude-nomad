@@ -422,12 +422,15 @@ export type MirrorDiscardSummary = {
  * until this helper existed nothing told the user that happened or where the
  * backup landed.
  *
- * Implemented by copying `planSharedReconcileBeforePull`'s call shape
- * exactly: read the map via the same fail-safe reader, derive `linkNames`
+ * Implemented by largely copying `planSharedReconcileBeforePull`'s call
+ * shape: read the map via the same fail-safe reader, derive `linkNames`
  * once, and invoke `stageLocalSharedEdits` with its dry-run flag on and a
  * collecting `onPreview` sink. The dry-run flag is load-bearing and
  * non-negotiable: a second backup mechanism is explicitly out of scope, and
- * the wet form of the mirror would write.
+ * the wet form of the mirror would write. One deliberate difference from
+ * that sibling: `linkNames` is derived with `{ quiet: true }` here, since
+ * this is a report-only step and the post-rebase `applySharedLinks` owns
+ * the `sharedDirs` rejection WARN for this pull.
  *
  * Wrapped in its own try/catch, degrading to `null` on any throw. This is a
  * reporting step on a recovery path, and a reporting step must never be the
@@ -452,7 +455,11 @@ export function describeSkippedMirrorDiscard(
   if (process.platform !== 'win32') return null;
   try {
     const map = readMapForMirror(join(repo, 'path-map.json'));
-    const linkNames = map !== null ? allSharedLinks(map) : undefined;
+    // quiet: true, this is a report-only step. The post-rebase
+    // `applySharedLinks` derives its own list against the post-rebase map and
+    // owns the `sharedDirs` rejection WARN for this pull; deriving loudly here
+    // duplicated that WARN.
+    const linkNames = map !== null ? allSharedLinks(map, { quiet: true }) : undefined;
     const captures: MirrorPreviewEvent[] = [];
     stageLocalSharedEdits(map, ts, {
       dryRun: true,
