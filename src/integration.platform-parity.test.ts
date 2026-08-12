@@ -381,6 +381,11 @@ describe.skipIf(!hasGit)(
         onPreview: (e) => dryEvents.push(e),
       });
       const dryNames = new Set(dryEvents.map((e) => e.name));
+      // The final equality holds because every seeded name carries a real host
+      // edit. The mirror emits one dry-run event per name that passes its
+      // gates, not per name whose bytes change, so seeding a name whose host
+      // copy already matches the repo copy would add an event with no wet-pass
+      // delta behind it and fail the comparison as a fixture artifact.
       // dryRun must not have written anything, so the wet pass below is the
       // only source of the "actually wrote" side of the comparison.
       expect(snapshotFiles(sandbox.sharedDir)).toEqual(before);
