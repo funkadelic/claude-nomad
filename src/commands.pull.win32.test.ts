@@ -502,6 +502,32 @@ describe('describeSkippedMirrorDiscard', () => {
     expect(readFileSync(repoClaudeMd, 'utf8')).toBe('# repo copy\n');
   });
 
+  it('still counts a shared name whose host and repo copies are byte-identical', async () => {
+    // The mirror performs no content comparison anywhere on this path (see
+    // this function's own doc comment), so the tally is a count of shared
+    // names present on both sides, not a count of edited files. A host whose
+    // ~/.claude/ already matches the repo, the common steady state, still
+    // contributes its full shared-name count here. This is the regression
+    // guard for the corrected discard-row wording: it must remain accurate
+    // ("restored from the repo copy") for exactly this case, where no edit
+    // was ever lost.
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# same\n');
+    writeFileSync(localClaudeMd, '# same\n');
+
+    stubPlatform('win32');
+    const { describeSkippedMirrorDiscard, buildMirrorSection } =
+      await import('./commands.pull.win32.ts');
+    const result = describeSkippedMirrorDiscard(repoUnderHome, TS);
+
+    expect(result).toEqual({ count: 1, backupPath: join(backupBase(), TS) });
+
+    const rendered = buildMirrorSection([], result).items.join('\n');
+    expect(rendered).toContain('restored from the repo copy');
+    expect(rendered).not.toContain('discarded');
+  });
+
   it('counts every captured name, pluralizing in the caller-facing text separately', async () => {
     const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
     const localClaudeMd = join(claudeDir, 'CLAUDE.md');
