@@ -170,9 +170,12 @@ other side:
   behaves like Linux. What this means for you: nothing extra. On native Windows both `nomad pull`
   and `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit
   is captured rather than reverted, and a real `nomad pull` now prints a `Symlinks` line for each
-  name it captured, so the copy is visible instead of silent. A file you delete from a shared
-  directory is handled the same way: it is removed from the sync repo by the next pull, exactly as
-  deleting inside a symlinked directory already removes it on macOS or Linux. The removal is left
+  name it captured, so the copy is visible instead of silent. If one of those names cannot be read
+  at all, because another program is holding it open or its permissions changed, that name is
+  skipped and you get a warning naming it and the reason, rather than a silent gap in what was
+  captured. Nothing is written for a name in that state. A file you delete from a shared directory
+  is handled the same way: it is removed from the sync repo by the next pull, exactly as deleting
+  inside a symlinked directory already removes it on macOS or Linux. The removal is left
   uncommitted, so it publishes on your next push and passes the same secret scan as everything else,
   and the file is snapshotted to the backup dir first. The safety rule behind this: nomad only
   removes a file it has a record of having given this machine, so a repo file this machine has never

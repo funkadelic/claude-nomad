@@ -155,6 +155,11 @@ type SharedMirrorPolicy = {
  * whole value is being safe to run. On the wet path this also narrows the
  * blast radius of a locked file from aborting the entire mirror pass (the
  * outer catch in `reconcileSharedLinksBeforePull`) to skipping just this name.
+ * The skip WARNs rather than returning silently: the direction is safe, nothing
+ * is written, but a wet pull that fails to capture a local shared-config edit
+ * and says nothing about it is exactly the silence this mirror was made visible
+ * to remove. Only a real error reaches the warning, since `throwIfNoEntry`
+ * already absorbs the ordinary absent-path case.
  *
  * @param name - Shared name from `allSharedLinks`.
  * @param claude - `claudeHome()`, resolved once by the caller.
@@ -173,8 +178,13 @@ function mirrorOneSharedName(
   let stat;
   try {
     stat = lstatSync(localPath, { throwIfNoEntry: false });
-  } catch {
-    return; // unreadable: the mirror cannot promise anything about it
+  } catch (err) {
+    // Unreadable: the mirror cannot promise anything about it, so say so
+    // instead of dropping the name without a word.
+    warn(
+      `could not read ${localPath} (${(err as Error).message}), so it was left out of shared/ and any local edit to it was not captured. Nothing was changed. Check its permissions, or whether another program has it open, and run the command again`,
+    );
+    return;
   }
   if (stat === undefined) return; // absent: nothing to mirror
   if (stat.isSymbolicLink()) return; // symlink-era live link; defer to next pull

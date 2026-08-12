@@ -76,6 +76,9 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
+    // restoreAllMocks does not clear a doMock registration, so an un-mirrored
+    // doMock leaks the throwing lstatSync into every later file in the project.
+    vi.doUnmock('node:fs');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -141,6 +144,43 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     const { syncSharedLinksPush } = await import('./links.mirror.ts');
     expect(() => syncSharedLinksPush(null)).not.toThrow();
     expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+  });
+
+  it('warns and keeps going when a local name cannot be stat-ed', async () => {
+    // `throwIfNoEntry: false` already absorbs ENOENT, so only a real error
+    // reaches the catch: a permissions failure, a file another process holds
+    // open on Windows, a broken mount. The name is skipped either way, but
+    // skipping it silently would lose a local edit with no output at all.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unreadable local edit\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
+    const blocked = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(p) === blocked) throw new Error('EPERM: operation not permitted');
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    expect(() => syncSharedLinksPush({ projects: {} })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(said).toContain('could not read');
+    expect(said).toContain(blocked);
+    expect(said).toContain('EPERM');
+    // Nothing was written for the unreadable name, and the pass carried on to
+    // the rest of the list rather than aborting at the first bad entry.
+    expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    expect(existsSync(join(sharedDir, 'commands', 'foo.md'))).toBe(true);
   });
 
   it.skipIf(isWin)('is a no-op on a non-win32 stub', async () => {

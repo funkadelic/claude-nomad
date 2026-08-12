@@ -67,7 +67,10 @@ Developer Mode or admin rights, so `nomad pull` materializes those names as real
 `nomad push` mirrors your local edits back into `shared/`. On Windows `nomad pull` runs that mirror
 before it fetches (and `nomad sync` inherits it), so an unpublished edit is captured rather than
 overlaid, and a real (non-dry-run) `nomad pull` now prints a `Symlinks` section naming what it
-captured, so the copy is visible in the pull output instead of silent. A file you delete from
+captured, so the copy is visible in the pull output instead of silent. A name the mirror cannot read
+at all, held open by another program or changed out from under it by a permissions edit, is skipped
+with a warning naming the file and the reason instead of vanishing from the capture list without
+comment; nothing is written for it. A file you delete from
 inside one of these directories is mirrored the same way: it is
 removed from `shared/` by the next pull, the same as deleting inside a symlinked directory already
 removes it on macOS or Linux. The removal is left uncommitted (it publishes on your next push,
