@@ -174,13 +174,17 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: npm ci
 
+      # The default shell here is `bash -e`, so a failed curl aborts the step
+      # on its own error and never reaches sha256sum: a network failure cannot
+      # masquerade as a checksum mismatch the way it could on the pwsh leg
+      # below. The retry flags only stop a transient reset from failing the job.
       - name: Install gitleaks (Linux)
         if: steps.gate.outputs.skip != 'true' && matrix.os == 'ubuntu-latest'
         env:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
-          curl -fsSL \
+          curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             -o /tmp/gitleaks.tar.gz
           echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
@@ -195,6 +199,12 @@ jobs:
       # to PATH for later steps in this job. The explicit `shell: pwsh`
       # matches the windows runner default; it is declared so static tools
       # (actionlint) do not assume bash for a matrix-valued runs-on.
+      #
+      # curl.exe is a NATIVE command, so a non-zero exit does NOT trip
+      # `$ErrorActionPreference = "Stop"`. Without the explicit $LASTEXITCODE
+      # test below, a dropped connection falls through to Get-FileHash on a
+      # missing or truncated file and reports a checksum mismatch, which reads
+      # as possible tampering when the real cause is the network.
       - name: Install gitleaks (Windows)
         if: steps.gate.outputs.skip != 'true' && matrix.os == 'windows-latest'
         shell: pwsh
@@ -205,9 +215,13 @@ jobs:
           $ErrorActionPreference = "Stop"
           $zipPath = "$env:RUNNER_TEMP\gitleaks.zip"
           $destDir = "$env:RUNNER_TEMP\gitleaks"
-          curl.exe -fsSL `
+          curl.exe -fsSL --retry 3 --retry-delay 2 --retry-all-errors `
             "https://github.com/gitleaks/gitleaks/releases/download/v$env:GITLEAKS_VERSION/gitleaks_${env:GITLEAKS_VERSION}_windows_x64.zip" `
             -o $zipPath
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "gitleaks windows_x64.zip download failed after retries (curl.exe exit $LASTEXITCODE). This is a download failure, not a checksum failure; re-run the job."
+            exit 1
+          }
           $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
           if ($actualHash -ne $env:GITLEAKS_SHA256_WINDOWS) {
             Write-Error "gitleaks windows_x64.zip checksum mismatch: expected $env:GITLEAKS_SHA256_WINDOWS, got $actualHash"
