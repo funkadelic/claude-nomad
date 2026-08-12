@@ -192,41 +192,52 @@ function buildWetPullSections(
  * `WedgeState` values returned by `classifyWedge`:
  *
  * - `'rebase'` / `'merge'`: under `--force-remote`, delegates to
- *   `recoverForceRemote` (abort + safety-diff + park + reset --hard).
- *   Without `--force-remote`, dies with an actionable message.
+ *   `recoverForceRemote` (abort + safety-diff + park + reset --hard), the
+ *   only branch that returns `true`. Without `--force-remote`, dies with an
+ *   actionable message.
  * - `'unmerged-index'`: under `--force-remote`, delegates to
  *   `recoverUnmergedIndex` (reset --mixed HEAD + autostash surface only;
  *   deliberately not recoverForceRemote, which is scoped to rebase/merge
- *   wedges). That call repairs the index and then dies if any formerly-unmerged
- *   file is still dirty, so conflict markers are never carried through into the
- *   pull. Without `--force-remote`, dies with the non-destructive
- *   manual-recovery runbook.
- * - `null`: no-op (clean repo).
+ *   wedges) and returns `false`, because that recovery preserves the working
+ *   tree, so no shared-config discard is warranted. That call repairs the
+ *   index and then dies if any formerly-unmerged file is still dirty, so
+ *   conflict markers are never carried through into the pull. Without
+ *   `--force-remote`, dies with the non-destructive manual-recovery runbook.
+ * - `null`: no-op (clean repo), returning `false`. Under `--force-remote`,
+ *   also emits a platform-agnostic info line stating there was nothing to
+ *   recover, so the flag is never a silent no-op on a healthy repo.
  *
  * Called inside the `cmdPull` try block so any `NomadFatal` thrown propagates
  * to the existing catch and the lock is released in `finally`.
  *
  * @param repo        Absolute path to `REPO_HOME`.
  * @param forceRemote Whether `--force-remote` was passed.
+ * @returns `true` only when `recoverForceRemote` actually ran (a genuine
+ *   `git reset --hard origin/main` discard); `false` on every other path,
+ *   including a clean repo and an unmerged-index recovery. `runPullCore`
+ *   uses this to decide whether the win32 pre-pull mirror should be skipped:
+ *   only a real discard warrants skipping it.
  */
-function handleWedge(repo: string, forceRemote: boolean): void {
+function handleWedge(repo: string, forceRemote: boolean): boolean {
   const wedge = classifyWedge(repo);
-  if (wedge === null) return;
+  if (wedge === null) {
+    if (forceRemote) log('repo is clean; nothing to recover, continuing with a normal pull');
+    return false;
+  }
   if (wedge === 'unmerged-index') {
     if (forceRemote) {
       recoverUnmergedIndex(repo);
-    } else {
-      die(unmergedIndexRunbookText('nomad pull'), { code: EXIT.CONFLICT });
+      return false;
     }
-    return;
+    return die(unmergedIndexRunbookText('nomad pull'), { code: EXIT.CONFLICT });
   }
   // wedge is 'rebase' or 'merge': NonNullable<WedgeMode> contract satisfied.
   if (forceRemote) {
     recoverForceRemote(wedge, repo);
-    return;
+    return true;
   }
   const state = wedge === 'rebase' ? 'mid-rebase' : 'mid-merge';
-  die(wedgeMarkerRunbookText(state), { code: EXIT.CONFLICT });
+  return die(wedgeMarkerRunbookText(state), { code: EXIT.CONFLICT });
 }
 
 /**
@@ -315,7 +326,11 @@ export type PullCoreResult =
  * tracked changes against `origin/main`, refuses (listing paths) if any
  * touch synced config, otherwise parks stranded commits on
  * `nomad/stranded-<ts>` and resets hard to `origin/main`, then falls through
- * to the normal pull. Cannot combine with `--dry-run`.
+ * to the normal pull. Cannot combine with `--dry-run`. The flag itself does
+ * not suppress the win32 pre-pull mirror: only an actual `recoverForceRemote`
+ * discard does (see `handleWedge`'s `recovered` return value below). On a
+ * clean repo, or a repo recovered from an unmerged-index wedge, the mirror
+ * still runs, so an unpublished host edit survives.
  *
  * `opts.compose` (default `false`): when `true`, a composing caller owns the
  * header, so the `pull on host=... (backup=<ts>)` line is suppressed. The
@@ -352,7 +367,11 @@ export function runPullCore(
   // safety-diffs, parks stranded commits, resets to origin/main). Without
   // it, handleWedge dies fatally (via die()), which propagates to the
   // caller's catch/finally. No backup dir or git pull runs before this check.
-  handleWedge(repo, forceRemote);
+  // `recovered` is `true` only when recoverForceRemote actually ran (a
+  // genuine discard); a clean repo or an unmerged-index recovery both leave
+  // it `false`, since neither one discards a host's unpublished shared-config
+  // edit.
+  const recovered = handleWedge(repo, forceRemote);
   if (!dryRun) {
     // Fail-fast: create backup root BEFORE any mutation. If mkdir fails
     // (out of disk, permission denied), die() throws fatally, which
@@ -391,12 +410,17 @@ export function runPullCore(
   // `Symlinks` section built just before this function returns; it must be
   // captured here (before the rebase) rather than rebuilt inside
   // `buildWetPullSections` (after the rebase), so the mirror runs once.
+  //
+  // Gated on `recovered`, not on `forceRemote` itself: the flag alone no
+  // longer suppresses the mirror, only an actual `recoverForceRemote` discard
+  // does, so a clean repo or an unmerged-index recovery under
+  // `--force-remote` both still run the mirror.
   const {
     mirrored,
     events: mirrorEvents,
     namesDerived,
     derivedSharedDirs,
-  } = !dryRun && !forceRemote
+  } = !dryRun && !recovered
     ? reconcileSharedLinksBeforePull(repo, ts)
     : { mirrored: [], events: [], namesDerived: false, derivedSharedDirs: undefined };
   // A dry run applies nothing, but its preview has to describe the same repo

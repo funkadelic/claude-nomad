@@ -951,9 +951,16 @@ describe('cmdPull forceRemote routing', () => {
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(),
     }));
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull({ forceRemote: true })).not.toThrow();
     expect(process.exitCode).toBe(0);
+    // D-04: a clean repo under --force-remote is not a silent no-op; it
+    // reports that there was nothing to recover before proceeding.
+    const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).toContain('nothing to recover');
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
@@ -2005,13 +2012,41 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(order.indexOf('baseline')).toBeGreaterThan(order.indexOf('gitOrFatal'));
   });
 
-  it('does not mirror under forceRemote on win32 (that flag means take the remote)', async () => {
+  it('mirrors on a clean repo even under forceRemote (nothing to recover)', async () => {
     stubPlatform('win32');
     const order: string[] = [];
     const mirrorSpy = mockPipelineRecording(order);
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore({ forceRemote: true });
-    expect(mirrorSpy).not.toHaveBeenCalled();
+    expect(mirrorSpy).toHaveBeenCalled();
+  });
+
+  it('emits the clean-repo info line under forceRemote with no platform stub (D-05: platform-agnostic)', async () => {
+    // No stubPlatform call anywhere in this test: the absence is the
+    // assertion. handleWedge has no win32 branch, so the clean-repo info
+    // line must fire identically on whatever real platform this test runs
+    // on, not just when win32 is stubbed in.
+    const order: string[] = [];
+    mockPipelineRecording(order);
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ forceRemote: true });
+    const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).toContain('nothing to recover');
+  });
+
+  it('does not emit the clean-repo info line on a plain pull (no forceRemote)', async () => {
+    const order: string[] = [];
+    mockPipelineRecording(order);
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+    const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).not.toContain('nothing to recover');
   });
 
   it('warns and still pulls when the staging copy throws on win32', async () => {
