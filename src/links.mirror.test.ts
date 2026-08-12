@@ -985,6 +985,75 @@ describe('revertDeniedMirrorPaths', () => {
     },
   );
 
+  it.skipIf(!hasGit)('reports a copy source once, though git reports it twice', async () => {
+    // A `C` record carries its source as a second field AND git emits the
+    // source's own `M` record alongside it, so the parsed tracked list holds
+    // that path twice. Both halves have to sit under a denied segment to reach
+    // this, which is why it took a copy to surface: nothing is mutated and the
+    // assertion is true in this shape, so the whole defect is one user-facing
+    // line printed twice, which reads as two separate hits.
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    const src = join(repo, 'shared', 'commands', 'sessions', 'src.md');
+    writeFileSync(src, 'body\n');
+    commitBase();
+    writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'copy.md'), 'body\n');
+    // Copy detection only pairs against a source the same change touched.
+    writeFileSync(src, 'body\nedited\n');
+    g(['add', '-A'], repo);
+    const raw = execFileSync(
+      'git',
+      ['-c', 'status.renames=copies', 'status', '--porcelain=v1', '-z', '-uall', '--', 'shared/'],
+      { cwd: repo },
+    ).toString();
+    // Guard the fixture: without a real C record this case proves nothing.
+    expect(raw).toContain('C  shared/commands/sessions/copy.md');
+    const before = stagedIndex();
+
+    const { parsePorcelainZ } = await import('./commands.pull.recovery.git.ts');
+    const status = parsePorcelainZ(raw);
+    // The duplicate is in the parse, which three other consumers depend on, so
+    // it is the dispatch that has to absorb it.
+    expect(status.tracked.filter((p) => p === 'shared/commands/sessions/src.md')).toHaveLength(2);
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, status, TS);
+
+    expect(stagedIndex()).toBe(before);
+    const lines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(
+      lines.filter((l) => l.includes('shared/commands/sessions/src.md is tracked')),
+    ).toHaveLength(1);
+    expect(
+      lines.filter((l) => l.includes('shared/commands/sessions/copy.md is staged')),
+    ).toHaveLength(1);
+  });
+
+  it('keeps a path listed as both tracked and untracked on both halves', async () => {
+    // The de-duplication is per list, never across them: the two halves do
+    // different things, so collapsing one path reported in both classifications
+    // into a single visit would silently drop whichever half lost. git does not
+    // emit that pairing today, which is exactly why the boundary has to be
+    // pinned rather than assumed.
+    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+    writeFileSync(abs, 'token=abc\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(
+      repo,
+      {
+        tracked: ['shared/commands/sessions/notes.md'],
+        untracked: ['shared/commands/sessions/notes.md'],
+      },
+      TS,
+    );
+
+    // Untracked half ran (the file is gone, snapshotted first)...
+    expect(existsSync(abs)).toBe(false);
+    expect(warnings()).toContain('removed shared/commands/sessions/notes.md');
+    // ...and so did the tracked half, which cannot answer outside a checkout.
+    expect(warnings()).toContain('could not check shared/commands/sessions/notes.md against HEAD');
+  });
+
   it.skipIf(!hasGit)('reports a plain tracked modification without restoring it', async () => {
     // The committed case: the content IS in HEAD, so `git checkout HEAD --` is
     // the right command and the WARN names it. Running it here would discard a

@@ -511,6 +511,20 @@ function reportTrackedDenied(repo: string, path: string, segment: string): void 
  * instead, which is right for an explicit publish the user can retry and wrong
  * for a step that runs on every shell start on some hosts.
  *
+ * Each list is visited as a set, because a status snapshot can name the same
+ * path twice: a copy record carries its source as a second field, and git emits
+ * that source's own modification record alongside it, so a snapshot taken with
+ * `status.renames=copies` reports the source twice when both halves sit under a
+ * denied segment. Nothing is mutated twice by that (the removing half acts only
+ * on untracked paths, and a second removal of a path already gone is a no-op),
+ * but the user is shown one hit as two, which reads as two files.
+ *
+ * The two sets are deliberately separate rather than one union. A path in both
+ * lists gets both treatments, since the halves answer different questions and
+ * merging them would silently drop whichever lost. Git does not pair a path
+ * with itself across the two classifications today, which is the reason to fix
+ * the boundary in place rather than rely on it.
+ *
  * @param repo - Absolute path to the sync repo.
  * @param status - The `git status` snapshot, as `parsePorcelainZ` returns it.
  * @param ts - Backup timestamp, resolved once by the caller. Used only by the
@@ -521,11 +535,11 @@ export function revertDeniedMirrorPaths(
   status: DeniedRevertStatus,
   ts: string,
 ): void {
-  for (const path of status.untracked) {
+  for (const path of new Set(status.untracked)) {
     const segment = deniedSegmentFor(path);
     if (segment !== null) removeUntrackedDenied(repo, path, segment, ts);
   }
-  for (const path of status.tracked) {
+  for (const path of new Set(status.tracked)) {
     const segment = deniedSegmentFor(path);
     if (segment !== null) reportTrackedDenied(repo, path, segment);
   }
