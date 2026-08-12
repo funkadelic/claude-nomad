@@ -2199,7 +2199,12 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     // Override the beforeEach's clean-repo wedge mock: this test needs a
     // genuine wedge so handleWedge's recoverForceRemote arm runs and
     // `recovered` comes back true, which is the only condition that gates
-    // describeSkippedMirrorDiscard.
+    // describeSkippedMirrorDiscard. Unmock first: re-registering vi.doMock for
+    // a specifier the beforeEach already mocked, without an interceding
+    // vi.doUnmock, is a documented race (see this describe block's own
+    // `mockPipelineRecording` doc comment) that intermittently loses to the
+    // stale factory and leaves classifyWedge resolving to null here.
+    vi.doUnmock('./commands.pull.wedge.ts');
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
       return {
