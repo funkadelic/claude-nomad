@@ -265,7 +265,10 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
   });
 
-  it.skipIf(isWin)(
+  // Root reads through mode 0o000, so under a root runner (common in
+  // containers) the mirror would stat the path fine and copy the local edit,
+  // failing an assertion that exists for the locked-path branch alone.
+  it.skipIf(isWin || process.getuid?.() === 0)(
     'skips a name whose local path cannot be stat-ed at all, degrading rather than throwing',
     async () => {
       // `throwIfNoEntry: false` suppresses ENOENT only, so a locked path still
