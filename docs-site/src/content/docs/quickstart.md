@@ -125,7 +125,9 @@ other side:
   are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected and
   behaves like Linux. What this means for you: nothing extra. On native Windows both `nomad pull`
   and `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit
-  is captured rather than reverted. A file you delete from a shared directory is handled the same
+  is captured rather than reverted, and a real `nomad pull` now prints a `Symlinks` line for each
+  name it captured, so the copy is visible instead of silent. A file you delete from a shared
+  directory is handled the same
   way: it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked
   directory already removes it on macOS or Linux. The removal is left uncommitted, so it publishes
   on your next push and passes the same secret scan as everything else, and the file is snapshotted
@@ -137,6 +139,20 @@ other side:
   `nomad pull --force-remote`, which is what that flag is for; the copy it replaces is snapshotted
   to the backup dir first. This is the same behavior claude-nomad's `skills/` sync already has on
   every platform.
+- **The copy-in never carries your Claude secrets or session history.** The same mirror that
+  captures your Windows edits into the sync repo refuses to copy any path with a part on
+  claude-nomad's never-sync list, whether that part is a directory along the way or the file name
+  itself (session transcripts, credentials, caches, and other ephemeral `~/.claude/` state; see
+  `NEVER_SYNC` in `src/config.never-sync.ts` for the exact set). If something on that list somehow
+  lands in the sync repo working tree anyway, such as a file edited directly in the repo rather
+  than through `~/.claude/`, what happens next depends on whether Git already tracks it. If it does
+  not, the next `nomad pull` deletes it, snapshotting it to the backup dir first, and prints a
+  warning naming the file. If it does, pull leaves the file untouched and prints a warning naming
+  the file and the exact command to run to finish clearing it yourself. One thing worth knowing:
+  that list is not only secrets, it also uses a few ordinary-sounding names (`sessions`, `tasks`,
+  `plans`, `cache`, and others) that Claude Code itself uses under `~/.claude/`. A path inside one
+  of your shared names stops mirroring as soon as any part of it is spelled exactly like one of
+  those; the spelling has to match in full, so a file named `tasks.md` is unaffected.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
   on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native

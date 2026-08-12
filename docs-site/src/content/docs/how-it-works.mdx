@@ -104,8 +104,8 @@ Pointers and specifics:
   and the exact git command to run, changing nothing itself. Because the set is not only secrets, an
   ordinary directory inside one of your shared names can collide with it (a `sessions` or `tasks`
   subfolder, for example) and silently stop mirroring; the match is on a whole path segment,
-  directory or file name alike, so a file named `tasks.md` is unaffected. Nothing in this gate can fail a pull outright: a hit is a
-  warning, never an error.
+  directory or file name alike, so a file named `tasks.md` is unaffected. Nothing in this gate can
+  fail a pull outright: a hit is a warning, never an error.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 - **Synced skills** get the same divergence WARN as extras: if a file under `~/.claude/skills/`
@@ -272,7 +272,11 @@ field in `path-map.json` opts it into symlink sync:
 What this means for you: each listed name is symlinked from `shared/<name>` into
 `~/.claude/<name>` (the same model as the built-in synced links, not a copy), so editing it on
 any host updates the one shared copy. On native Windows these names are real copies, like every
-synced link there, so `nomad push` is what captures a local edit. The field is additive and back-compatible: a `path-map.json`
+synced link there, so both `nomad pull` (which mirrors before it fetches, naming each capture in
+its `Symlinks` section) and `nomad push` carry a local edit into the repo. One caveat specific to
+that modality: a path inside the directory whose segments include a never-synced name (`cache`,
+`sessions`, `tasks`, `plans`, and the rest) is not mirrored, per the never-synced bullet above.
+The field is additive and back-compatible: a `path-map.json`
 without it behaves exactly as before.
 
 Entries are validated before anything is linked. A name is accepted only if it is a single path

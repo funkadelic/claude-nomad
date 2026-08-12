@@ -40,9 +40,16 @@ is kept (not overwritten) when it diverges from the incoming copy, with a warnin
 reconcile.
 
 On native Windows, where shared config is a real copy rather than a symlink, pull first mirrors
-those copies into the repo, before the rebase. Without that step the rebase-then-overlay sequence
-would overwrite an edit you had not published yet. The same pre-rebase step also removes a file you
-deleted from a shared directory from the repo, the same as deleting inside a symlinked directory
+those copies into the repo, before the rebase, and reports what it took in a leading `Symlinks`
+section (one `captured  <local> -> <repo>` row per name), so the copy is visible rather than
+silent. Without that step the rebase-then-overlay sequence would overwrite an edit you had not
+published yet. That mirror skips any path carrying a never-sync segment (see `NEVER_SYNC` in
+`src/config.never-sync.ts`, which holds ordinary names such as `sessions`, `tasks`, `plans`, and
+`cache` alongside the obvious credential entries); if such a path is already sitting in the sync
+repo working tree, pull removes it when git does not track it (snapshotting it to the backup dir
+first) and otherwise leaves it exactly as it found it, warning with the file name and the git
+command that clears it. Neither case fails the pull. The same pre-rebase step also removes a file
+you deleted from a shared directory from the repo, the same as deleting inside a symlinked directory
 already removes it on macOS or Linux; the removal is left uncommitted (it publishes on your next
 push, through the same secret scan as everything else) and the repo copy is snapshotted to the
 backup dir first, gated on a per-host record of what this machine last had, so a repo file this
@@ -119,9 +126,10 @@ write.
 
 Output is compact by default, matching `nomad doctor`: a run prints its `sync on host=<HOST>`
 header, then a single Sync summary composed from the run's outcome, not the full status tree.
-Pass `--verbose` (or `--all` / `-v`) to also print the full merged status tree (Settings, Global
-config, Sessions, Extras, and Leak scan, as applicable) before the summary, the same tree every
-`nomad sync` run used to print unconditionally.
+Pass `--verbose` (or `--all` / `-v`) to also print the full merged status tree (on native Windows a
+leading `Symlinks` section naming what the pre-fetch mirror captured, then Settings, Global config,
+Sessions, Extras, and Leak scan, as applicable) before the summary, the same tree every `nomad sync`
+run used to print unconditionally.
 
 A pull-half failure (for example a wedged repo) stops the run immediately; no push is attempted.
 Run `nomad pull --force-remote` to recover, then re-run `nomad sync` (`sync` itself has no
@@ -333,6 +341,9 @@ verbose-only. On native Windows, the per-name shared-link row (the same one cove
 `commands/`, `rules/`, and any `sharedDirs` entries) also byte-compares the real copy against its
 `shared/` counterpart and warns (`⚠︎`, exit code untouched) with the diverging files listed when it
 has drifted, instead of reporting it healthy on presence alone; a matching copy still reads `✓`.
+Paths the mirror will never sync are thrown out of that comparison rather than reported as drift,
+since no command could reconcile them; when any were excluded, the passing row carries a dim
+`(N never-synced path(s) not compared)` note under `--verbose`.
 A CRLF-guard
 check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
 wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or

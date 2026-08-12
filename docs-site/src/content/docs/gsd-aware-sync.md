@@ -55,7 +55,8 @@ This behavior is implemented in `src/extras-sync.ts`. It applies to any project 
   `@opengsd/gsd-core` install.
 - The sync repo does not accumulate gsd-generated hook and agent churn.
 
-This is implemented in `src/links.ts` (the `SHARED_LINKS` constant). The names `hooks` and
+This is implemented via the `SHARED_LINKS` constant in `src/config.ts`, applied by `src/links.ts`
+(with the win32 mirror in `src/links.mirror.ts`). The names `hooks` and
 `agents` are also reserved in the `sharedDirs` validation logic, so you cannot accidentally
 re-add them through the opt-in path.
 

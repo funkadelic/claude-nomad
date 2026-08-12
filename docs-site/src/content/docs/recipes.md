@@ -219,7 +219,10 @@ directory into symlink sync with the top-level `sharedDirs` field:
 
 Each listed name is symlinked from `shared/<name>` into `~/.claude/<name>` (a real copy on native
 Windows, where `nomad pull` and `nomad push` both keep that copy and the repo in step, so edits and
-deletions travel either way round). Entries are validated before linking: a name must be a single
+deletions travel either way round, except for paths whose segments include a never-synced name: a
+`cache/`, `sessions/`, `tasks/`, or `plans/` sub-directory inside your tool's directory is skipped
+by the win32 mirror, and `nomad doctor` leaves it out of the drift comparison rather than warning
+about it). Entries are validated before linking: a name must be a single
 path segment (no `/` or `..`, and no trailing `.`), must not be one of the never-synced names, must
 not collide with a reserved name, must not look like a credential file (`.env`, `id_rsa`,
 `credentials`, `*.pem`, and `*.key` are all refused), and must not be a Windows device name with or
