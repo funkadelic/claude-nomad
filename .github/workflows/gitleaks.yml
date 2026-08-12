@@ -32,8 +32,12 @@ jobs:
           # Bump in lockstep with tests.yml when upgrading.
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        # The default shell here is `bash -e`, so a failed curl aborts the step
+        # on its own error and never reaches sha256sum: a network failure cannot
+        # be reported as a checksum mismatch. The retry flags only stop a
+        # transient reset from failing the job.
         run: |
-          curl -fsSL \
+          curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             -o /tmp/gitleaks.tar.gz
           echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
