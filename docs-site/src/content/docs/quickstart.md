@@ -135,10 +135,13 @@ other side:
   having given this machine, so a repo file this machine has never synced is never touched. That
   record is also why the first pull after you upgrade to this version is an exception: there is
   nothing to compare against yet, so a deletion made before that pull comes back once, and deleting
-  it again sticks. The one command that deliberately takes the repo's version is
-  `nomad pull --force-remote`, which is what that flag is for; the copy it replaces is snapshotted
-  to the backup dir first. This is the same behavior claude-nomad's `skills/` sync already has on
-  every platform.
+  it again sticks. `nomad pull --force-remote` recovers a wedged sync repo. When the repo is stuck
+  mid-rebase or mid-merge, recovery resets it to match the shared repo, and on native Windows that
+  reset also replaces your shared config with the repo's copy; the pull now warns naming what was
+  reverted, with the copy it replaces snapshotted to the backup dir first. A different stuck state,
+  an unfinished index with nothing to abort, recovers by clearing the index without touching your
+  working files, so on native Windows your shared config is left exactly as it was. This is the
+  same behavior claude-nomad's `skills/` sync already has on every platform.
 - **The copy-in never carries your Claude secrets or session history.** The same mirror that
   captures your Windows edits into the sync repo refuses to copy any path with a part on
   claude-nomad's never-sync list, whether that part is a directory along the way or the file name

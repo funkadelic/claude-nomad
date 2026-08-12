@@ -135,7 +135,15 @@ It aborts the in-progress rebase or merge, safety-diffs stranded commits and dir
 changes against `origin/main`, parks stranded commits on a `nomad/stranded-<ts>` branch, resets
 hard to `origin/main`, and re-pulls. If any stranded or dirty tracked changes touch synced config
 (shared/, hosts/, path-map.json), it refuses and lists the at-risk paths so nothing config-related
-is silently discarded. The parking branch stays in the repo as a recoverable ref.
+is silently discarded. The parking branch stays in the repo as a recoverable ref. Run it on a repo
+that is not actually wedged and it reports there is nothing to recover, then pulls normally instead
+of doing anything to your shared config. If nomad cannot run that check at all, because git is
+missing or the sync repo's index lock is still held when the check times out, it says it could not
+determine whether the repo is wedged rather than telling you the repo is clean, and continues with
+a normal pull either way. On native Windows, when this recovery genuinely runs, the
+`reset --hard origin/main` step above also reverts any unpublished edit you had made to your shared
+config on this host; the pull now warns about that, naming how many names were reverted and the
+backup directory holding their previous copies, recoverable from there.
 
 **Manual fallback** (use if `--force-remote` refuses due to synced-config changes):
 
@@ -184,6 +192,9 @@ $ git stash list   # look for a line containing "autostash"
 clears the stuck index via `git reset --mixed HEAD` (preserving your working-tree edits), reports
 any orphaned autostash entry with a hint so you can decide what to do with it, then re-pulls.
 Unlike State 1, there is nothing to abort and no stranded commits to park, so recovery is simpler.
+`git reset --mixed` preserves the working tree, so on native Windows this recovery does not revert
+any unpublished shared-config edit the way State 1's `reset --hard` can. Running `--force-remote`
+on a repo that is not actually wedged reports there is nothing to recover and pulls normally.
 
 Clearing the index does not remove conflict markers that were already written into your files. If
 any of the conflicted files still carry `<<<<<<<` / `=======` / `>>>>>>>` after the reset,

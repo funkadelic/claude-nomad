@@ -114,26 +114,76 @@ export function unmergedIndexPresent(repo: string): boolean {
 }
 
 /**
- * Classify the current wedge state, extending `detectWedge` with the
- * unmerged-index-no-active-rebase case.
+ * Classify the current wedge state AND report the raw {@link IndexProbe}
+ * outcome that produced it, in one pass, so a caller that needs both (the
+ * `--force-remote` clean-repo info line) never probes the index twice.
  *
  * Precedence (marker states always take priority over the index-only check):
  * 1. If `detectWedge` returns a non-null marker state (`'rebase'` or
  *    `'merge'`), return it verbatim. An active rebase/merge that also has
- *    unmerged index entries is still a marker state.
- * 2. If the index has unmerged entries (`unmergedIndexPresent`), return
- *    `'unmerged-index'`.
- * 3. Otherwise return `null` (clean).
+ *    unmerged index entries is still a marker state. `detectWedge` is a pure
+ *    `existsSync` marker probe (no git exec, cannot itself fail), so the
+ *    index probe is never run in this branch; `probe` is reported as
+ *    `'clean'` here, not because the index was checked and found clean, but
+ *    because marker precedence means no caller ever reads `probe` when
+ *    `state` is non-null (see `cleanRepoForceRemoteMessage`, the only
+ *    reader, which is only called when `state` is `null`).
+ * 2. Otherwise probe the index (`probeUnmergedIndex`): `'unmerged'` maps to
+ *    `state: 'unmerged-index'`; both `'clean'` and `'error'` (probe could not
+ *    run: git absent, non-git dir, or the {@link INDEX_PROBE_TIMEOUT_MS}
+ *    timeout) map to `state: null` (fail-open, deferring to `gitOrFatal`),
+ *    but `probe` reports which of the two it actually was.
  *
  * `detectWedge` is unchanged (pure file-marker probe, no git exec).
+ *
+ * @param repo Absolute path to the repository root.
+ * @returns The active wedge state (identical to `classifyWedge`'s return)
+ *   paired with the `IndexProbe` outcome that produced it.
+ */
+export function classifyWedgeWithProbe(repo: string): { state: WedgeState; probe: IndexProbe } {
+  const mode = detectWedge(repo);
+  if (mode !== null) return { state: mode, probe: 'clean' };
+  const probe = probeUnmergedIndex(repo);
+  return { state: probe === 'unmerged' ? 'unmerged-index' : null, probe };
+}
+
+/**
+ * Classify the current wedge state, extending `detectWedge` with the
+ * unmerged-index-no-active-rebase case. Thin wrapper over
+ * {@link classifyWedgeWithProbe} for the three callers
+ * (`commands.doctor.checks.git-state.ts`, `push-checks.ts`, and the wedge
+ * preflight) that only need the state, not the raw probe outcome.
  *
  * @param repo Absolute path to the repository root.
  * @returns The active wedge state, or `null` if the repo is clean.
  */
 export function classifyWedge(repo: string): WedgeState {
-  const mode = detectWedge(repo);
-  if (mode !== null) return mode;
-  return unmergedIndexPresent(repo) ? 'unmerged-index' : null;
+  return classifyWedgeWithProbe(repo).state;
+}
+
+/**
+ * Build the `--force-remote` info line for the non-wedged (`state === null`)
+ * case, honoring the {@link IndexProbe} that produced it.
+ *
+ * `'clean'` is a verified fact: the index probe ran and found nothing, so the
+ * approved "repo is clean" wording is accurate. `'error'` means the probe
+ * itself could not run (git absent, non-git dir, or a stuck
+ * `.git/index.lock` hitting {@link INDEX_PROBE_TIMEOUT_MS}), so the wording
+ * must NOT assert the repo is clean when nomad never actually determined
+ * that; it states plainly that the wedge state could not be determined.
+ * Both variants end identically: the flag's fail-open bias means the pull
+ * proceeds normally either way.
+ *
+ * @param probe The `IndexProbe` outcome from `classifyWedgeWithProbe` (only
+ *   meaningful when its `state` is `null`; a marker state never reaches this
+ *   helper).
+ * @returns The info-line text to log under `--force-remote`.
+ */
+export function cleanRepoForceRemoteMessage(probe: IndexProbe): string {
+  if (probe === 'error') {
+    return 'could not determine whether the repo is wedged; continuing with a normal pull';
+  }
+  return 'repo is clean, nothing to recover; continuing with a normal pull';
 }
 
 /**

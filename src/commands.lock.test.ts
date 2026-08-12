@@ -44,6 +44,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });

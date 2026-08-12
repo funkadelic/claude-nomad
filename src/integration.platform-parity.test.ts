@@ -55,6 +55,16 @@ const hasGit = ((): boolean => {
 const ORIGINAL_MD = '# shared claude md (from the repo)\n';
 /** The unpublished host-side edit whose survival across a pull is the invariant. */
 const EDITED_MD = '# shared claude md (edited locally, not yet pushed)\n';
+/**
+ * A THIRD, distinct edit written after the second pull's mirror already ran.
+ * Reusing EDITED_MD for the `--force-remote` pull below would make the
+ * assertion a tautology: the repo working tree already carries EDITED_MD by
+ * that point, so a pull that skipped the mirror entirely would still read
+ * back the same bytes. Only an edit made AFTER the last mirror run
+ * distinguishes "the mirror ran" from "the mirror was skipped and nothing
+ * changed to notice."
+ */
+const FORCED_MD = '# shared claude md (edited again, clean repo, force-remote)\n';
 
 describe.skipIf(!hasGit)('parity: pull preserves an unpublished shared-config edit', () => {
   let tmp: string;
@@ -110,6 +120,26 @@ describe.skipIf(!hasGit)('parity: pull preserves an unpublished shared-config ed
       readFileSync(join(b.repo, 'shared', 'CLAUDE.md'), 'utf8'),
       'the local edit never reached shared/ in the repo',
     ).toBe(EDITED_MD);
+
+    // A THIRD pull, this time with --force-remote on a clean repo (host B was
+    // never wedged). This is the regression this file exists to prove: before
+    // this phase, --force-remote unconditionally skipped the win32 mirror, so
+    // this pull would have republished the repo's stale content over the
+    // fresh edit below. After the fix, the mirror gate is keyed on whether a
+    // wedge was actually recovered, not on the flag itself, so a clean repo
+    // under --force-remote still runs the mirror.
+    writeFileSync(claudeMd, FORCED_MD);
+    const thirdPull = runNomad(b, ['pull', '--force-remote']);
+    expect(thirdPull.status, `force-remote pull failed:\n${thirdPull.stderr}`).toBe(0);
+
+    expect(
+      readFileSync(claudeMd, 'utf8'),
+      'the force-remote pull reverted the local edit on a clean repo',
+    ).toBe(FORCED_MD);
+    expect(
+      readFileSync(join(b.repo, 'shared', 'CLAUDE.md'), 'utf8'),
+      'the force-remote pull never staged the local edit into shared/',
+    ).toBe(FORCED_MD);
   });
 });
 

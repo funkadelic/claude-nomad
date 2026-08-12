@@ -32,7 +32,12 @@ copies into the repo before it fetches, so an unpublished edit is captured rathe
 and it names what it captured in a `Symlinks` section at the top of the pull output. Paths carrying
 a never-sync segment (`sessions`, `tasks`, `plans`, `cache`, and the rest of `NEVER_SYNC`) are
 skipped by that mirror; see [How it works](/claude-nomad/how-it-works/).
-Use `--force-remote` when you do want the repo's version. See
+`--force-remote` recovers a wedged sync repo; it is not a way to fetch the repo's version of a
+file on demand. When the repo is stuck mid-rebase or mid-merge, that recovery ends in a reset
+that, on native Windows, also takes the repo's version of your shared config, and the pull warns
+naming what was reverted and the backup directory their previous copies were saved to. The other
+stuck state it recovers, an unfinished index with nothing to abort, preserves your working files
+instead, so on native Windows your shared config is left untouched. See
 [Windows](/claude-nomad/quickstart/#windows).
 
 If the remote has not been populated yet (you skipped `nomad init --snapshot` and `nomad push`),

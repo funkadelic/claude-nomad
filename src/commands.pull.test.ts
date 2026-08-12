@@ -15,6 +15,7 @@ import type * as linksMirrorModule from './links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 
+import { warnGlyph } from './color.ts';
 import { plantSharedBaseline } from './test-support/baseline.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
@@ -177,6 +178,7 @@ describe('cmdPull: extras integration', () => {
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
@@ -638,7 +640,11 @@ describe('cmdPull wedge preflight', () => {
     const backupBase = join(testHome, '.cache', 'claude-nomad', 'backup');
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => 'rebase') };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'rebase', probe: 'clean' })),
+      };
     });
     const { cmdPull } = await import('./commands.pull.ts');
     cmdPull();
@@ -650,7 +656,11 @@ describe('cmdPull wedge preflight', () => {
   it('emits a message naming the mid-rebase state and pointing at --force-remote', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => 'rebase') };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'rebase', probe: 'clean' })),
+      };
     });
     // fail() routes through console.error; capture it here.
     const errorLines: string[] = [];
@@ -668,7 +678,11 @@ describe('cmdPull wedge preflight', () => {
   it('emits a message naming the mid-merge state on a mid-merge repo', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => 'merge') };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'merge'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'merge', probe: 'clean' })),
+      };
     });
     const errorLines: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
@@ -684,7 +698,11 @@ describe('cmdPull wedge preflight', () => {
   it('does NOT call git pull when the repo is wedged', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => 'rebase') };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'rebase', probe: 'clean' })),
+      };
     });
     const gitOrFatalSpy = vi.fn();
     vi.doMock('./utils.ts', async (importOriginal) => {
@@ -705,6 +723,7 @@ describe('cmdPull wedge preflight', () => {
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
@@ -823,6 +842,7 @@ function buildWedgedRepo(tmp: string, file = 'tool.ts'): { local: string; origin
 }
 
 describe('cmdPull forceRemote routing', () => {
+  const realPlatform = process.platform;
   let tmp: string;
   let originalHome: string | undefined;
   let originalNomadRepo: string | undefined;
@@ -846,6 +866,7 @@ describe('cmdPull forceRemote routing', () => {
   });
 
   afterEach(() => {
+    stubPlatform(realPlatform);
     vi.restoreAllMocks();
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
@@ -898,6 +919,57 @@ describe('cmdPull forceRemote routing', () => {
     vi.doUnmock('./extras-sync.ts');
   });
 
+  it('forceRemote: true on a REAL win32 rebase wedge skips the mirror (genuine discard, not a flag check)', async () => {
+    stubPlatform('win32');
+    const { local } = buildWedgedRepo(tmp);
+    process.env.NOMAD_REPO = local;
+    // Do NOT mock utils.ts/gitOrFatal here: recoverForceRemote needs to run
+    // real git ops (abort, fetch, branch, reset).
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    const mirrorSpy = mockMirrorModule();
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull({ forceRemote: true });
+    expect(process.exitCode).not.toBe(1);
+
+    // Recovery genuinely ran: the reset --hard origin/main discard is what
+    // makes skipping the WET mirror correct here, so pin both signals in one
+    // test rather than trusting the mirror-skip assertion alone (a run that
+    // never actually recovered would also leave the mirror uncalled, and
+    // that would be the exact regression this test exists to catch).
+    const head = gitOut(['rev-parse', 'HEAD'], local);
+    const originMain = gitOut(['rev-parse', 'origin/main'], local);
+    expect(head).toBe(originMain);
+    const branches = gitOut(['branch', '--list', 'nomad/stranded-*'], local);
+    expect(branches.trim().length).toBeGreaterThan(0);
+
+    // The WET reconcile step (reconcileSharedLinksBeforePull) never ran. The
+    // one call the mirror spy did see is describeSkippedMirrorDiscard's own
+    // read-only tally of what that skip covers, which is always dryRun: true;
+    // asserting on the flag rather than a zero call count is what keeps this
+    // test from regressing every time the discard warning computes its own
+    // tally.
+    expect(mirrorSpy).toHaveBeenCalledTimes(1);
+    const mirrorCall = mirrorSpy.mock.calls[0] as [unknown, unknown, { dryRun?: unknown }];
+    expect(mirrorCall[2]?.dryRun).toBe(true);
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+  });
+
   it('forceRemote: false on wedged repo still refuses (exitCode 4 CONFLICT, no recovery)', async () => {
     const { local } = buildWedgedRepo(tmp);
     process.env.NOMAD_REPO = local;
@@ -929,6 +1001,7 @@ describe('cmdPull forceRemote routing', () => {
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
@@ -951,9 +1024,76 @@ describe('cmdPull forceRemote routing', () => {
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(),
     }));
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull({ forceRemote: true })).not.toThrow();
     expect(process.exitCode).toBe(0);
+    // A clean repo under --force-remote is not a silent no-op; it reports
+    // that there was nothing to recover before proceeding, verbatim (the
+    // approved wording from the locked decision, not a substring match).
+    const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).toContain('repo is clean, nothing to recover; continuing with a normal pull');
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
+    vi.doUnmock('./links.baseline.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+  });
+
+  it('probe error under --force-remote on a non-wedged repo: indeterminate wording, pull still proceeds', async () => {
+    // REPO_HOME has no .git/ directory at all (mkdirSync below only creates
+    // shared/), so handleWedge's REAL classifyWedgeWithProbe (left unmocked:
+    // its internal detectWedge/probeUnmergedIndex calls are same-module
+    // references a named-export mock cannot intercept) sees a real
+    // detectWedge null and a real probeUnmergedIndex 'error' (non-git dir),
+    // producing state: null, probe: 'error' exactly like a stuck
+    // .git/index.lock would in production. Only the probeUnmergedIndex NAMED
+    // EXPORT is overridden here, so the unrelated post-pull autostash guard
+    // (a different module that imports probeUnmergedIndex directly) sees
+    // 'clean' and does not also trip fail-closed on this same fixture.
+    const testHome = join(tmp, 'home-probe-error');
+    process.env.HOME = testHome;
+    delete process.env.NOMAD_REPO;
+    const repoHome = join(testHome, 'claude-nomad');
+    mkdirSync(join(repoHome, 'shared'), { recursive: true });
+    writeFileSync(join(repoHome, 'shared', 'settings.base.json'), '{}\n');
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return { ...actual, probeUnmergedIndex: vi.fn(() => 'clean') };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    mockMirrorModule();
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull({ forceRemote: true })).not.toThrow();
+    expect(process.exitCode).toBe(0);
+    const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).not.toContain('repo is clean');
+    expect(combined).toMatch(/could not determine/);
+    expect(combined).toMatch(/continuing with a normal pull/);
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
@@ -974,6 +1114,7 @@ describe('cmdPull forceRemote routing', () => {
  * repo is needed; behavior under forceRemote=true/false is isolated cleanly.
  */
 describe('handleWedge unmerged-index dispatch', () => {
+  const realPlatform = process.platform;
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let testHome: string;
@@ -1000,6 +1141,7 @@ describe('handleWedge unmerged-index dispatch', () => {
   });
 
   afterEach(() => {
+    stubPlatform(realPlatform);
     vi.restoreAllMocks();
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./commands.pull.recovery.ts');
@@ -1020,7 +1162,11 @@ describe('handleWedge unmerged-index dispatch', () => {
   it('default path (forceRemote=false) dies with the runbook and does NOT mutate the index', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => 'unmerged-index') };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'unmerged-index'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'unmerged-index', probe: 'clean' })),
+      };
     });
     const errorLines: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
@@ -1040,7 +1186,11 @@ describe('handleWedge unmerged-index dispatch', () => {
   it('default path does NOT call recoverUnmergedIndex (non-destructive default)', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => 'unmerged-index') };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'unmerged-index'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'unmerged-index', probe: 'clean' })),
+      };
     });
     const recoverUnmergedIndexSpy = vi.fn();
     vi.doMock('./commands.pull.recovery.unmerged.ts', async (importOriginal) => {
@@ -1055,7 +1205,11 @@ describe('handleWedge unmerged-index dispatch', () => {
   it('forceRemote=true calls recoverUnmergedIndex and NOT recoverForceRemote', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => 'unmerged-index') };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'unmerged-index'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'unmerged-index', probe: 'clean' })),
+      };
     });
     const recoverUnmergedIndexSpy = vi.fn();
     const recoverForceRemoteSpy = vi.fn();
@@ -1092,10 +1246,56 @@ describe('handleWedge unmerged-index dispatch', () => {
     expect(recoverForceRemoteSpy).not.toHaveBeenCalled();
   });
 
+  it('mirrors after an unmerged-index recovery on win32 (reset --mixed preserves the working tree, nothing was discarded)', async () => {
+    stubPlatform('win32');
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'unmerged-index'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'unmerged-index', probe: 'clean' })),
+      };
+    });
+    vi.doMock('./commands.pull.recovery.unmerged.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryUnmergedModule>();
+      return { ...actual, recoverUnmergedIndex: vi.fn() };
+    });
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    const mirrorSpy = mockMirrorModule();
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    const { cmdPull } = await import('./commands.pull.ts');
+    cmdPull({ forceRemote: true });
+    // This is the test that fails if a future change rewires `recovered` to
+    // forceRemote truthiness instead of scoping it to recoverForceRemote: an
+    // unmerged-index recovery never discards win32 shared-config content, so
+    // the mirror must still run.
+    expect(mirrorSpy).toHaveBeenCalled();
+  });
+
   it('forceRemote=true on a rebase-marker state routes to recoverForceRemote, NOT recoverUnmergedIndex', async () => {
     vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof wedgeModule>();
-      return { ...actual, classifyWedge: vi.fn(() => 'rebase') };
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'rebase', probe: 'clean' })),
+      };
     });
     const recoverUnmergedIndexSpy = vi.fn();
     const recoverForceRemoteSpy = vi.fn();
@@ -1141,6 +1341,7 @@ describe('handleWedge unmerged-index dispatch', () => {
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
@@ -1251,6 +1452,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
@@ -1576,6 +1778,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
@@ -1788,6 +1991,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
@@ -1804,6 +2008,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
     vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./commands.pull.recovery.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./links.mirror.ts');
@@ -2005,13 +2210,72 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(order.indexOf('baseline')).toBeGreaterThan(order.indexOf('gitOrFatal'));
   });
 
-  it('does not mirror under forceRemote on win32 (that flag means take the remote)', async () => {
+  it('mirrors on a clean repo even under forceRemote (nothing to recover)', async () => {
     stubPlatform('win32');
     const order: string[] = [];
     const mirrorSpy = mockPipelineRecording(order);
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore({ forceRemote: true });
-    expect(mirrorSpy).not.toHaveBeenCalled();
+    expect(mirrorSpy).toHaveBeenCalled();
+  });
+
+  it('mirrors on a probe-error repo even under forceRemote (indeterminate is not a recovery either)', async () => {
+    stubPlatform('win32');
+    // Override the beforeEach's clean-repo wedge mock: unmock first, since
+    // re-registering vi.doMock for a specifier the beforeEach already
+    // mocked, without an interceding vi.doUnmock, is a documented race that
+    // intermittently loses to the stale factory (see the
+    // 'renders the discard warning...' test above for the same pattern).
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'error' })),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    const order: string[] = [];
+    const mirrorSpy = mockPipelineRecording(order);
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ forceRemote: true });
+    // Neither a verified-clean repo nor an undeterminable one is a recovery,
+    // so the win32 pre-pull mirror runs identically in both cases.
+    expect(mirrorSpy).toHaveBeenCalled();
+    const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).not.toContain('repo is clean');
+    expect(combined).toMatch(/could not determine/);
+  });
+
+  it('emits the clean-repo info line under forceRemote with no platform stub (platform-agnostic)', async () => {
+    // No stubPlatform call anywhere in this test: the absence is the
+    // assertion. handleWedge has no win32 branch, so the clean-repo info
+    // line must fire identically on whatever real platform this test runs
+    // on, not just when win32 is stubbed in.
+    const order: string[] = [];
+    mockPipelineRecording(order);
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ forceRemote: true });
+    const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).toContain('nothing to recover');
+  });
+
+  it('does not emit the clean-repo info line on a plain pull (no forceRemote)', async () => {
+    const order: string[] = [];
+    mockPipelineRecording(order);
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+    const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(combined).not.toContain('nothing to recover');
   });
 
   it('warns and still pulls when the staging copy throws on win32', async () => {
@@ -2063,6 +2327,92 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(() => runPullCore()).toThrow(/path-map\.json/);
     expectMirrorCalledWith(mirrorSpy, null);
   });
+
+  it('renders the discard warning in the wet Symlinks section when recovery genuinely ran', async () => {
+    stubPlatform('win32');
+    // Override the beforeEach's clean-repo wedge mock: this test needs a
+    // genuine wedge so handleWedge's recoverForceRemote arm runs and
+    // `recovered` comes back true, which is the only condition that gates
+    // describeSkippedMirrorDiscard. Unmock first: re-registering vi.doMock for
+    // a specifier the beforeEach already mocked, without an interceding
+    // vi.doUnmock, is a documented race (see this describe block's own
+    // `mockPipelineRecording` doc comment) that intermittently loses to the
+    // stale factory and leaves classifyWedge resolving to null here.
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'rebase', probe: 'clean' })),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return { ...actual, recoverForceRemote: vi.fn() };
+    });
+    // A discard-describing mirror spy: unlike mockPipelineRecording's default
+    // (which never calls onPreview), this one reports one captured name, so
+    // the tally the warning row names is non-zero and checkable. This is the
+    // ONLY stageLocalSharedEdits call reachable on this run: the wet
+    // reconcile step is skipped because `recovered` is true, and the dry-run
+    // plan step is skipped because `dryRun` is false.
+    const discardMirrorSpy = vi.fn(
+      (_map: unknown, _ts: unknown, opts?: { onPreview?: (e: unknown) => void }) => {
+        opts?.onPreview?.({
+          kind: 'mirror',
+          name: 'CLAUDE.md',
+          localPath: join(testHome, '.claude', 'CLAUDE.md'),
+          repoPath: join(repoUnderHome, 'shared', 'CLAUDE.md'),
+        });
+      },
+    );
+    mockMirrorModule(discardMirrorSpy);
+    vi.doMock('./links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    }));
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(() => 0),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore({ forceRemote: true });
+    if (result.tag !== 'wet') throw new Error('expected a wet pull result');
+
+    const symlinks = result.sections.find((s) => s.header === 'Symlinks');
+    const rendered = symlinks?.items.join('\n') ?? '';
+    expect(rendered).toContain(warnGlyph);
+    expect(rendered).toContain('1 shared name was restored from the repo copy');
+    expect(discardMirrorSpy).toHaveBeenCalledTimes(1);
+    const call = discardMirrorSpy.mock.calls[0] as [unknown, unknown, { dryRun?: unknown }];
+    expect(call[2]?.dryRun).toBe(true);
+  });
+
+  it('renders no discard warning in the wet Symlinks section when the mirror was not skipped', async () => {
+    stubPlatform('win32');
+    const order: string[] = [];
+    mockPipelineRecording(order);
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore();
+    if (result.tag !== 'wet') throw new Error('expected a wet pull result');
+
+    const symlinks = result.sections.find((s) => s.header === 'Symlinks');
+    const rendered = symlinks?.items.join('\n') ?? '';
+    expect(rendered).not.toContain(warnGlyph);
+    expect(rendered).not.toContain('restored from the repo copy');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2109,6 +2459,7 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
       return {
         ...actual,
         classifyWedge: vi.fn(() => null),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
@@ -2250,6 +2601,102 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     runPullCore();
 
     expect(rejectionWarns()).toHaveLength(1);
+  });
+
+  it('reports one invalid sharedDirs entry exactly once on a recovered win32 pull', async () => {
+    // On the recovered path, describeSkippedMirrorDiscard runs its own
+    // allSharedLinks derivation purely to size its report-only tally; it must
+    // stay quiet there, since the post-rebase apply's own derivation is the
+    // only one whose job is to report a rejected entry. Both derivations run
+    // within the same pull, so a loud report-only one duplicates the WARN.
+    stubPlatform('win32');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    // Override the beforeEach's clean-repo wedge mock with a genuine wedge, as
+    // above: unmock first, since re-registering vi.doMock for a specifier the
+    // beforeEach already mocked, without an interceding vi.doUnmock, is a
+    // documented race.
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'rebase', probe: 'clean' })),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return { ...actual, recoverForceRemote: vi.fn() };
+    });
+    mockRebase();
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ forceRemote: true });
+
+    expect(rejectionWarns()).toHaveLength(1);
+  });
+
+  it('sizes the discard tally from the post-rebase repo state, not the pre-rebase one, on a recovered win32 pull', async () => {
+    // The discard tally used to be computed right after recovery's own
+    // reset, before the second fetch (this same pull's `git pull --rebase`)
+    // ever ran. A push landing between those two fetches changes which
+    // shared names exist, exactly like `mockRebase`'s side effect below
+    // simulates, and a tally read before that fetch describes a repo state
+    // `applySharedLinks` never acts on. `before` exists on both sides from
+    // the start; `after` only becomes a shared name once the mocked rebase
+    // delivers it, so a tally computed too early reports 1 name here
+    // instead of the 2 the apply step (fed the post-rebase map) actually
+    // restores.
+    stubPlatform('win32');
+    mkdirSync(join(repoUnderHome, 'shared', 'before'), { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'before', 'note.md'), '# before\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['before'] }) + '\n',
+    );
+    mkdirSync(join(claudeDir, 'before'), { recursive: true });
+    writeFileSync(join(claudeDir, 'before', 'note.md'), '# host before\n');
+    mkdirSync(join(claudeDir, 'after'), { recursive: true });
+    writeFileSync(join(claudeDir, 'after', 'note.md'), '# host after\n');
+
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => 'rebase'),
+        classifyWedgeWithProbe: vi.fn(() => ({ state: 'rebase', probe: 'clean' })),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.doMock('./commands.pull.recovery.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof recoveryModule>();
+      return { ...actual, recoverForceRemote: vi.fn() };
+    });
+    // The second fetch delivers a new shared name: both the path-map entry
+    // and the `shared/` content that authorizes it. `before` is untouched;
+    // `after` becomes visible only here, standing in for a push that landed
+    // between recovery's own fetch and this one.
+    mockRebase(() => {
+      mkdirSync(join(repoUnderHome, 'shared', 'after'), { recursive: true });
+      writeFileSync(join(repoUnderHome, 'shared', 'after', 'note.md'), '# after\n');
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['before', 'after'] }) + '\n',
+      );
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    const result = runPullCore({ forceRemote: true });
+    if (result.tag !== 'wet') throw new Error('expected a wet pull result');
+
+    const symlinks = result.sections.find((s) => s.header === 'Symlinks');
+    const rendered = symlinks?.items.join('\n') ?? '';
+    expect(rendered).toContain('2 shared names were restored from the repo copy');
   });
 
   it('reports one invalid sharedDirs entry exactly once on a win32 pull --dry-run', async () => {

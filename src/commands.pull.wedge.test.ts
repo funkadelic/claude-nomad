@@ -9,6 +9,8 @@ import { buildUnmergedIndexNoMarker, gitInit, makeCommit } from './test-support/
 
 import {
   classifyWedge,
+  classifyWedgeWithProbe,
+  cleanRepoForceRemoteMessage,
   detectWedge,
   orphanedAutostashPresent,
   probeUnmergedIndex,
@@ -161,6 +163,89 @@ describe('classifyWedge', () => {
     makeCommit(tmp, 'a.ts', 'x\n', 'initial');
     writeFileSync(join(tmp, '.git', 'MERGE_HEAD'), 'deadbeef\n');
     expect(classifyWedge(tmp)).toBe('merge');
+  });
+
+  it('returns null on a non-git directory (index probe errors; fail-open bias)', () => {
+    // tmp is a bare mkdtempSync directory: no gitInit call, so the index
+    // probe cannot run at all (probeUnmergedIndex returns 'error'). This is
+    // the characterization case: classifyWedge's fail-open bias collapses
+    // 'error' into null exactly like a genuinely clean repo, which is
+    // deliberate and must survive future refactors untouched.
+    expect(classifyWedge(tmp)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyWedgeWithProbe
+// ---------------------------------------------------------------------------
+
+/**
+ * `classifyWedgeWithProbe` pairs `classifyWedge`'s state with the raw
+ * `IndexProbe` outcome that produced it. These tests pin two things at once:
+ * the `state` matches `classifyWedge`'s existing values (a characterization
+ * check, run in parallel to the dedicated `classifyWedge` describe above),
+ * and the `probe` field distinguishes a verified-clean repo from one nomad
+ * could not determine, the distinction `handleWedge`'s `--force-remote` info
+ * line depends on.
+ */
+describe('classifyWedgeWithProbe', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'nomad-classify-probe-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('returns { state: null, probe: "clean" } on a genuinely clean committed repo', () => {
+    gitInit(tmp);
+    makeCommit(tmp, 'a.ts', 'x\n', 'initial');
+    expect(classifyWedgeWithProbe(tmp)).toEqual({ state: null, probe: 'clean' });
+  });
+
+  it('returns { state: null, probe: "error" } on a non-git directory (probe cannot run)', () => {
+    // No gitInit: the index probe fails outright, distinct from a verified
+    // clean state even though both collapse to state: null.
+    expect(classifyWedgeWithProbe(tmp)).toEqual({ state: null, probe: 'error' });
+  });
+
+  it('returns { state: "unmerged-index", probe: "unmerged" } when the index has unmerged entries', () => {
+    buildUnmergedIndexNoMarker(tmp);
+    expect(classifyWedgeWithProbe(tmp)).toEqual({ state: 'unmerged-index', probe: 'unmerged' });
+  });
+
+  it('returns { state: "rebase", probe: "clean" } on a rebase marker (index probe never runs)', () => {
+    mkdirSync(join(tmp, '.git'));
+    mkdirSync(join(tmp, '.git', 'rebase-merge'));
+    expect(classifyWedgeWithProbe(tmp)).toEqual({ state: 'rebase', probe: 'clean' });
+  });
+
+  it('returns { state: "merge", probe: "clean" } on MERGE_HEAD (index probe never runs)', () => {
+    gitInit(tmp);
+    makeCommit(tmp, 'a.ts', 'x\n', 'initial');
+    writeFileSync(join(tmp, '.git', 'MERGE_HEAD'), 'deadbeef\n');
+    expect(classifyWedgeWithProbe(tmp)).toEqual({ state: 'merge', probe: 'clean' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cleanRepoForceRemoteMessage
+// ---------------------------------------------------------------------------
+
+describe('cleanRepoForceRemoteMessage', () => {
+  it('prints the approved verbatim string when the probe verified the repo is clean', () => {
+    expect(cleanRepoForceRemoteMessage('clean')).toBe(
+      'repo is clean, nothing to recover; continuing with a normal pull',
+    );
+  });
+
+  it('does NOT claim the repo is clean when the probe could not determine wedge state', () => {
+    const message = cleanRepoForceRemoteMessage('error');
+    expect(message).not.toContain('repo is clean');
+    expect(message).toMatch(/could not determine/);
+    expect(message).toMatch(/continuing with a normal pull/);
   });
 });
 

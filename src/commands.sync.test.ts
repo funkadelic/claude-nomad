@@ -830,10 +830,11 @@ type DrySeams = {
  * Mock the seams the REAL `runPullCore` dry path reaches, recording the order
  * they fire in. `onFetch` runs inside the mocked `git pull --rebase` so a test
  * can mutate repo state mid-run and prove the preview observed the post-fetch
- * value. `classifyWedge` returns `wedge` (default `null`, a clean repo).
+ * value. `classifyWedgeWithProbe` (the combinator `handleWedge` calls) returns
+ * `{ state: wedge, probe: 'clean' }` (default `wedge: null`, a clean repo).
  *
  * @param env - The active sandbox.
- * @param opts.wedge - `classifyWedge`'s return value.
+ * @param opts.wedge - `classifyWedgeWithProbe`'s `state` return value.
  * @param opts.onFetch - Side effect performed by the mocked fetch.
  * @returns The recorded order array and the individual spies.
  */
@@ -846,7 +847,7 @@ function mockDrySeams(
   const seenAtPreview = { value: '' };
   const classifyWedgeSpy = vi.fn(() => {
     order.push('classifyWedge');
-    return opts.wedge ?? null;
+    return { state: opts.wedge ?? null, probe: 'clean' as const };
   });
   const divergenceSpy = vi.fn(() => {
     order.push('divergenceCheckExtras');
@@ -865,7 +866,11 @@ function mockDrySeams(
     const actual = await importOriginal<typeof wedgeModule>();
     // probeUnmergedIndex 'clean' keeps the post-pull autostash guard from
     // failing closed on the non-git fixture (git pull is mocked away here).
-    return { ...actual, classifyWedge: classifyWedgeSpy, probeUnmergedIndex: vi.fn(() => 'clean') };
+    return {
+      ...actual,
+      classifyWedgeWithProbe: classifyWedgeSpy,
+      probeUnmergedIndex: vi.fn(() => 'clean'),
+    };
   });
   vi.doMock('./utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();

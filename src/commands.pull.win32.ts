@@ -7,8 +7,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { yellow, warnGlyph } from './color.ts';
 import { parsePorcelainZ } from './commands.pull.recovery.git.ts';
-import { allSharedLinks, type PathMap } from './config.ts';
+import { allSharedLinks, backupBase, type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
 import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
 import {
@@ -356,15 +357,120 @@ export function reconcileSharedLinksBeforePull(
  * by the time this renders.
  *
  * @param events - Mirror events collected during the pre-rebase reconcile.
- * @returns A `DoctorSection` with zero items when `events` is empty, so
- *   `renderTree` omits it entirely and posix output stays byte-identical.
+ * @param discard - When the win32 mirror was legitimately skipped because
+ *   recovery genuinely ran, the read-only tally of what it would have
+ *   captured; see {@link describeSkippedMirrorDiscard}. Omitted, or `null`,
+ *   on every other pull, in which case this section renders exactly as it
+ *   did before this parameter existed.
+ * @returns A `DoctorSection` with zero items when both `events` is empty and
+ *   `discard` is absent, so `renderTree` omits it entirely and posix output
+ *   stays byte-identical.
  */
-export function buildMirrorSection(events: readonly MirrorPreviewEvent[]): DoctorSection {
+export function buildMirrorSection(
+  events: readonly MirrorPreviewEvent[],
+  discard?: MirrorDiscardSummary | null,
+): DoctorSection {
   const s = section('Symlinks');
   for (const e of events) {
     addItem(s, `captured  ${e.localPath} -> ${e.repoPath}`);
   }
+  if (discard) {
+    const names = discard.count === 1 ? 'name was' : 'names were';
+    addItem(
+      s,
+      `${yellow(warnGlyph)} recovered from a wedged repo, ${discard.count} shared ${names} restored from the repo copy, previous host copies backed up to ${discard.backupPath}`,
+    );
+  }
   return s;
+}
+
+/**
+ * The read-only tally `describeSkippedMirrorDiscard` returns: how many
+ * shared names would have been captured by the pre-pull mirror this
+ * recovery run skipped, and where their pre-overwrite bytes were snapshotted.
+ *
+ * The mirror performs no content comparison anywhere on this path, so `count`
+ * is the number of shared names present on BOTH sides (host and repo), not
+ * the number of names whose bytes actually differ. A host whose `~/.claude/`
+ * already matches the repo still contributes its full shared-name count here.
+ */
+export type MirrorDiscardSummary = {
+  /** Number of shared names present on both the host and the repo, counted
+   * without any content comparison; not a count of changed files. */
+  count: number;
+  /** Absolute path under `~/.cache/claude-nomad/backup/<ts>/` holding the
+   * pre-overwrite host-side bytes, the same location `applySharedLinksWin32`'s
+   * own `backupBeforeWrite` call snapshots them to later in the same pull. */
+  backupPath: string;
+};
+
+/**
+ * Read-only counterpart to the mirror gate's skip: what
+ * `reconcileSharedLinksBeforePull` WOULD have captured on this run, for
+ * reporting only. Never writes anything, and never calls the wet form of the
+ * mirror.
+ *
+ * `runPullCore` calls this only when `recovered` is `true`, i.e. only when
+ * `recoverForceRemote` genuinely reset the repo to `origin/main` and the
+ * mirror was therefore skipped to avoid fighting that reset. The count this
+ * returns is the number of shared names present on both the host and the
+ * repo, with NO content comparison anywhere on this path: it is not a count
+ * of edited or changed files, and is a roughly constant number on a healthy
+ * host whether or not the user changed anything. `applySharedLinksWin32`
+ * backs each of those names up and then overwrites the host copy with the
+ * repo's later in the same pull (see that function's own doc comment), and
+ * until this helper existed nothing told the user that happened or where the
+ * backup landed.
+ *
+ * Implemented by largely copying `planSharedReconcileBeforePull`'s call
+ * shape: read the map via the same fail-safe reader, derive `linkNames`
+ * once, and invoke `stageLocalSharedEdits` with its dry-run flag on and a
+ * collecting `onPreview` sink. The dry-run flag is load-bearing and
+ * non-negotiable: a second backup mechanism is explicitly out of scope, and
+ * the wet form of the mirror would write. One deliberate difference from
+ * that sibling: `linkNames` is derived with `{ quiet: true }` here, since
+ * this is a report-only step and the post-rebase `applySharedLinks` owns
+ * the `sharedDirs` rejection WARN for this pull.
+ *
+ * Wrapped in its own try/catch, degrading to `null` on any throw. This is a
+ * reporting step on a recovery path, and a reporting step must never be the
+ * thing that fails a pull; unlike `reconcileSharedLinksBeforePull`'s own
+ * catch, this degrades silently rather than warning, since the user is
+ * already being told about the recovery by `recoverForceRemote` itself and a
+ * second failure line here would only be noise.
+ *
+ * The platform gate lives inside this helper (an early `null` return) so
+ * `runPullCore` gains no platform branch of its own, matching how the mirror
+ * gate itself already stays platform-agnostic.
+ *
+ * @param repo - `repoHome()`, already resolved once by `runPullCore`.
+ * @param ts - Backup timestamp, already resolved once by `runPullCore`.
+ * @returns `null` on darwin/linux, when nothing would have been captured, or
+ *   when the computation itself threw; otherwise the count and backup path.
+ */
+export function describeSkippedMirrorDiscard(
+  repo: string,
+  ts: string,
+): MirrorDiscardSummary | null {
+  if (process.platform !== 'win32') return null;
+  try {
+    const map = readMapForMirror(join(repo, 'path-map.json'));
+    // quiet: true, this is a report-only step. The post-rebase
+    // `applySharedLinks` derives its own list against the post-rebase map and
+    // owns the `sharedDirs` rejection WARN for this pull; deriving loudly here
+    // duplicated that WARN.
+    const linkNames = map !== null ? allSharedLinks(map, { quiet: true }) : undefined;
+    const captures: MirrorPreviewEvent[] = [];
+    stageLocalSharedEdits(map, ts, {
+      dryRun: true,
+      onPreview: (e) => captures.push(e),
+      linkNames,
+    });
+    if (captures.length === 0) return null;
+    return { count: captures.length, backupPath: join(backupBase(), ts) };
+  } catch {
+    return null;
+  }
 }
 
 /**

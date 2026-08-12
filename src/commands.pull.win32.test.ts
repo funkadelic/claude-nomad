@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type * as linksDeletionsModule from './links.deletions.ts';
 import type * as linksMirrorModule from './links.mirror.ts';
 
-import { SHARED_LINKS } from './config.ts';
+import { backupBase, SHARED_LINKS } from './config.ts';
 import { renderTree } from './output-tree.ts';
 import { plantSharedBaseline } from './test-support/baseline.ts';
 import { g, gitInit, gitOut } from './test-support/git.ts';
@@ -432,6 +432,265 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
       String(c[0]).includes('sharedDirs entry'),
     );
     expect(rejectionCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * `describeSkippedMirrorDiscard` is the read-only counterpart to a legitimate
+ * mirror skip: what `reconcileSharedLinksBeforePull` WOULD have captured on
+ * this run, for reporting only, computed entirely through the mirror's own
+ * dry-run mode. Nothing here mocks `stageLocalSharedEdits`: the whole point is
+ * to prove the real read-only call leaves the repo-side file untouched and
+ * produces exactly the tally `buildMirrorSection`'s warning row renders.
+ */
+describe('describeSkippedMirrorDiscard', () => {
+  const realPlatform = process.platform;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  const TS = '20260812-000000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-discard-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    // See the top describe block's afterEach: vi.restoreAllMocks does NOT
+    // clear a vi.doMock registration, and a leaked one fails an unrelated
+    // test in a different file in the same worker.
+    vi.doUnmock('./links.mirror.ts');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('returns the count and backup path when a shared edit would have been captured', async () => {
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# repo copy\n');
+    writeFileSync(localClaudeMd, '# host edit\n');
+
+    stubPlatform('win32');
+    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    const result = describeSkippedMirrorDiscard(repoUnderHome, TS);
+
+    expect(result).toEqual({ count: 1, backupPath: join(backupBase(), TS) });
+    // Read-only: the repo-side file must stay byte-unchanged.
+    expect(readFileSync(repoClaudeMd, 'utf8')).toBe('# repo copy\n');
+  });
+
+  it('still counts a shared name whose host and repo copies are byte-identical', async () => {
+    // The mirror performs no content comparison anywhere on this path (see
+    // this function's own doc comment), so the tally is a count of shared
+    // names present on both sides, not a count of edited files. A host whose
+    // ~/.claude/ already matches the repo, the common steady state, still
+    // contributes its full shared-name count here. This is the regression
+    // guard for the corrected discard-row wording: it must remain accurate
+    // ("restored from the repo copy") for exactly this case, where no edit
+    // was ever lost.
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# same\n');
+    writeFileSync(localClaudeMd, '# same\n');
+
+    stubPlatform('win32');
+    const { describeSkippedMirrorDiscard, buildMirrorSection } =
+      await import('./commands.pull.win32.ts');
+    const result = describeSkippedMirrorDiscard(repoUnderHome, TS);
+
+    expect(result).toEqual({ count: 1, backupPath: join(backupBase(), TS) });
+
+    const rendered = buildMirrorSection([], result).items.join('\n');
+    expect(rendered).toContain('restored from the repo copy');
+    expect(rendered).not.toContain('discarded');
+  });
+
+  it('counts every captured name, pluralizing in the caller-facing text separately', async () => {
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# repo copy\n');
+    writeFileSync(localClaudeMd, '# host edit\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'deploy.md'), '# repo deploy\n');
+    writeFileSync(join(claudeDir, 'commands', 'deploy.md'), '# host deploy\n');
+
+    stubPlatform('win32');
+    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    expect(describeSkippedMirrorDiscard(repoUnderHome, TS)?.count).toBe(2);
+  });
+
+  it('returns null when nothing would have been captured', async () => {
+    // No local CLAUDE.md at all, so the mirror has nothing to stage.
+    stubPlatform('win32');
+    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    expect(describeSkippedMirrorDiscard(repoUnderHome, TS)).toBeNull();
+  });
+
+  it('degrades to a null-map read, and so to null, on a malformed path-map.json', async () => {
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# repo copy\n');
+    writeFileSync(localClaudeMd, '# host edit\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), '{ not json\n');
+
+    stubPlatform('win32');
+    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    // A null map short-circuits mirrorSharedNames before any name is
+    // enumerated, matching readMapForMirror's own "skip me" contract.
+    expect(describeSkippedMirrorDiscard(repoUnderHome, TS)).toBeNull();
+  });
+
+  it("returns null on darwin and linux, matching the wet reconcile step's own platform guard", async () => {
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    writeFileSync(repoClaudeMd, '# repo copy\n');
+    writeFileSync(localClaudeMd, '# host edit\n');
+
+    stubPlatform('linux');
+    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    expect(describeSkippedMirrorDiscard(repoUnderHome, TS)).toBeNull();
+    expect(readFileSync(repoClaudeMd, 'utf8')).toBe('# repo copy\n');
+  });
+
+  it('returns null rather than throwing when the underlying mirror computation fails', async () => {
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return {
+        ...actual,
+        stageLocalSharedEdits: () => {
+          throw new Error('EPERM: operation not permitted');
+        },
+      };
+    });
+    stubPlatform('win32');
+    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    expect(() => describeSkippedMirrorDiscard(repoUnderHome, TS)).not.toThrow();
+    expect(describeSkippedMirrorDiscard(repoUnderHome, TS)).toBeNull();
+  });
+});
+
+/**
+ * `buildMirrorSection`'s second, optional `discard` parameter: the discard
+ * warning row rendered when a recovery run genuinely skipped the mirror.
+ * Pinned separately from the `describeSkippedMirrorDiscard` describe above
+ * since these tests care about the RENDERED STRING, not the tally itself.
+ */
+describe('buildMirrorSection discard row', () => {
+  const realPlatform = process.platform;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let sharedDir: string;
+  let logSpy: MockInstance<(...args: unknown[]) => void>;
+  const TS = '20260812-010000';
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-discard-row-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    sharedDir = join(repoUnderHome, 'shared');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(sharedDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.resetModules();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  it('renders exactly one warning row with the count and backup path, never the host file contents', async () => {
+    const repoClaudeMd = join(sharedDir, 'CLAUDE.md');
+    const localClaudeMd = join(claudeDir, 'CLAUDE.md');
+    const hostContent = '# secret host edit, never printed\n';
+    writeFileSync(repoClaudeMd, '# repo copy\n');
+    writeFileSync(localClaudeMd, hostContent);
+
+    stubPlatform('win32');
+    const { describeSkippedMirrorDiscard, buildMirrorSection } =
+      await import('./commands.pull.win32.ts');
+    const discard = describeSkippedMirrorDiscard(repoUnderHome, TS);
+
+    renderTree([buildMirrorSection([], discard)]);
+    const rendered = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+
+    expect(rendered).toContain('Symlinks');
+    expect(rendered).toContain('1 shared name was restored from the repo copy');
+    expect(rendered).toContain(join(backupBase(), TS));
+    expect(rendered).not.toContain(hostContent);
+  });
+
+  it('pluralizes the row text for more than one captured name', async () => {
+    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    renderTree([buildMirrorSection([], { count: 2, backupPath: join(backupBase(), TS) })]);
+    const rendered = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(rendered).toContain('2 shared names were restored from the repo copy');
+  });
+
+  it('renders no warning row when called with only the events argument', async () => {
+    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const events = [
+      {
+        kind: 'mirror' as const,
+        name: 'CLAUDE.md',
+        localPath: '/a/CLAUDE.md',
+        repoPath: '/b/CLAUDE.md',
+      },
+    ];
+
+    const section = buildMirrorSection(events);
+
+    expect(section.items).toEqual(['captured  /a/CLAUDE.md -> /b/CLAUDE.md']);
+  });
+
+  it('renders no warning row when the discard argument is explicitly null', async () => {
+    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const section = buildMirrorSection([], null);
+    expect(section.items).toEqual([]);
   });
 });
 
