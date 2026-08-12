@@ -76,6 +76,10 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
+    // Later cases in this describe re-import links.mirror.ts after
+    // resetModules, and restoreAllMocks does not clear a doMock registration,
+    // so without this they would get the throwing lstatSync too.
+    vi.doUnmock('node:fs');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -127,12 +131,19 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     expect(existsSync(join(sharedDir, 'commands', 'settings.local.json'))).toBe(false);
   });
 
-  it('skips a name absent from ~/.claude/ without throwing', async () => {
-    // No CLAUDE.md, commands, or rules under claudeDir at all.
+  it('skips a name absent from ~/.claude/ silently, without throwing', async () => {
+    // No CLAUDE.md, commands, or rules under claudeDir at all. The silence is
+    // load-bearing: `throwIfNoEntry: false` is what keeps an ordinary fresh
+    // host from warning once per shared name, so dropping the option (or
+    // switching to statSync) must fail here rather than in the field.
     stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
     const { syncSharedLinksPush } = await import('./links.mirror.ts');
     expect(() => syncSharedLinksPush({ projects: {} })).not.toThrow();
     expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
   });
 
   it('is a no-op when path-map.json is absent (map is null)', async () => {
@@ -141,6 +152,50 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     const { syncSharedLinksPush } = await import('./links.mirror.ts');
     expect(() => syncSharedLinksPush(null)).not.toThrow();
     expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+  });
+
+  it('warns and keeps going when a local name cannot be stat-ed', async () => {
+    // `throwIfNoEntry: false` already absorbs ENOENT, so only a real error
+    // reaches the catch: a permissions failure, a file another process holds
+    // open on Windows, a broken mount. The name is skipped either way, but
+    // skipping it silently would lose a local edit with no output at all.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unreadable local edit\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
+    const blocked = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(p) === blocked) throw new Error('EPERM: operation not permitted');
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    expect(() => syncSharedLinksPush({ projects: {} })).not.toThrow();
+
+    // Exactly one line for one unreadable name: a per-name warning that
+    // multiplies across the shared list is what makes the output unreadable
+    // when the real cause is an ACL change on the parent directory.
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('CLAUDE.md could not be read');
+    expect(said[0]).toContain('EPERM');
+    // The actionable half of the advisory is the point of the warning, so pin
+    // it: a truncation back to the bare first clause must fail here.
+    expect(said[0]).toContain('left out of shared/ this run');
+    expect(said[0]).toContain('another program has it open');
+    // Nothing was written for the unreadable name, and the pass carried on to
+    // the rest of the list rather than aborting at the first bad entry.
+    expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    expect(existsSync(join(sharedDir, 'commands', 'foo.md'))).toBe(true);
   });
 
   it.skipIf(isWin)('is a no-op on a non-win32 stub', async () => {
@@ -194,6 +249,10 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     else delete process.env.NOMAD_HOST;
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
+    // Later cases in this describe re-import links.mirror.ts after
+    // resetModules, and restoreAllMocks does not clear a doMock registration,
+    // so without this they would get the throwing lstatSync too.
+    vi.doUnmock('node:fs');
     rmSync(testHome, { recursive: true, force: true });
   });
 
@@ -280,6 +339,9 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
       writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
       chmodSync(claudeDir, 0o000);
       stubPlatform('win32');
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        /* captured */
+      });
       try {
         const { stageLocalSharedEdits } = await import('./links.mirror.ts');
         expect(() => stageLocalSharedEdits({ projects: {} }, TS)).not.toThrow();
@@ -287,8 +349,45 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
         chmodSync(claudeDir, 0o700);
       }
       expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
+      // The unreadable parent takes down the stat for every shared name, but
+      // only CLAUDE.md has a shared/ counterpart this pull would have
+      // captured. The other three are host-private under `adoptNew: false`, so
+      // warning about them would report a loss that was never going to happen.
+      const said = errSpy.mock.calls.map((c) => String(c[0]));
+      expect(said).toHaveLength(1);
+      expect(said[0]).toContain('CLAUDE.md could not be read');
+      expect(said[0]).toContain('left out of shared/ this run');
     },
   );
+
+  it('stays silent for an unreadable name the repo does not share', async () => {
+    // `adoptNew: false` means a host-private name is never published by a
+    // pull, readable or not, so an unreadable one costs nothing and must not
+    // be reported as a lost capture.
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
+    const blocked = join(claudeDir, 'commands');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(p) === blocked) throw new Error('EBUSY: resource busy or locked');
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    expect(() => stageLocalSharedEdits({ projects: {} }, TS)).not.toThrow();
+
+    expect(errSpy).not.toHaveBeenCalled();
+    expect(existsSync(join(sharedDir, 'commands'))).toBe(false);
+  });
 
   it('omitting opts.linkNames derives allSharedLinks(map) internally, WARNing once for an invalid entry', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
@@ -443,11 +542,18 @@ describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
     });
+    // The byte-silence contract is success-only: an unreadable name warns
+    // whether or not a sink is attached. Spying stderr as well pins which half
+    // of that contract this case is actually guarding.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
 
     const { stageLocalSharedEdits } = await import('./links.mirror.ts');
     stageLocalSharedEdits({ projects: {} }, TS);
 
     expect(logSpy).not.toHaveBeenCalled();
+    expect(errSpy).not.toHaveBeenCalled();
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# host edit\n');
   });
 
