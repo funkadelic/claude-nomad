@@ -68,16 +68,15 @@ info line reporting there was nothing to recover before continuing. When the mir
 because recovery genuinely ran, the pull also prints a warning naming how many shared names were
 reverted and the backup directory their previous copies were snapshotted to. If the mirror or
 removal step itself fails (an antivirus lock, or a path over the native Windows length limit), the
-pull warns and
-carries on instead of aborting, so you can still fetch; your unpublished edit or deletion stays
-pending on the host. A file you had just created inside a shared directory is the exception: the
-repo-to-local overlay later in the same pull removes it from `~/.claude/`, after snapshotting it to
-the backup dir, so recover it from there and pull again. Separately, if a file you created inside a
-shared directory has the same name as one the incoming update adds, the pull stops before applying
-anything and, underneath git's own untracked-file error, prints the file under `~/.claude/` to move
-or rename plus the two ways to finish; nothing is lost either way, since your file is untouched,
-the update simply has not landed yet, and the copy nomad had made in the sync repo is cleaned up for
-you.
+pull warns and carries on instead of aborting, so you can still fetch; your unpublished edit or
+deletion stays pending on the host. A file you had just created inside a shared directory is the
+exception: the repo-to-local overlay later in the same pull removes it from `~/.claude/`, after
+snapshotting it to the backup dir, so recover it from there and pull again. Separately, if a file
+you created inside a shared directory has the same name as one the incoming update adds, the pull
+stops before applying anything and, underneath git's own untracked-file error, prints the file under
+`~/.claude/` to move or rename plus the two ways to finish; nothing is lost either way, since your
+file is untouched, the update simply has not landed yet, and the copy nomad had made in the sync
+repo is cleaned up for you.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
