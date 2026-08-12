@@ -35,7 +35,7 @@ skipped by that mirror; see [How it works](/claude-nomad/how-it-works/).
 `--force-remote` recovers a wedged sync repo; it is not a way to fetch the repo's version of a
 file on demand. When the repo is stuck mid-rebase or mid-merge, that recovery ends in a reset
 that, on native Windows, also takes the repo's version of your shared config, and the pull warns
-naming what was reverted and the backup directory their previous copies were saved to. The other
+naming how many shared names it restored and where your previous copies were saved. The other
 stuck state it recovers, an unfinished index with nothing to abort, preserves your working files
 instead, so on native Windows your shared config is left untouched. See
 [Windows](/claude-nomad/quickstart/#windows).

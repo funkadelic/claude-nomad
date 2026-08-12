@@ -65,8 +65,8 @@ that recovery resets the sync repo to `origin/main`, and re-staging local copies
 reset would immediately undo it. On a repo that is not wedged, `--force-remote` no longer skips the
 mirror, so an unpublished edit is captured exactly as on a plain pull, and the command prints an
 info line reporting there was nothing to recover before continuing. When the mirror is skipped
-because recovery genuinely ran, the pull also prints a warning naming how many shared names were
-reverted and the backup directory their previous copies were snapshotted to. If the mirror or
+because recovery genuinely ran, the pull also prints a warning naming how many shared names it
+restored from the repo copy, and where their previous host copies were saved. If the mirror or
 removal step itself fails (an antivirus lock, or a path over the native Windows length limit), the
 pull warns and carries on instead of aborting, so you can still fetch; your unpublished edit or
 deletion stays pending on the host. A file you had just created inside a shared directory is the
