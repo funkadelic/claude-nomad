@@ -137,7 +137,10 @@ hard to `origin/main`, and re-pulls. If any stranded or dirty tracked changes to
 (shared/, hosts/, path-map.json), it refuses and lists the at-risk paths so nothing config-related
 is silently discarded. The parking branch stays in the repo as a recoverable ref. Run it on a repo
 that is not actually wedged and it reports there is nothing to recover, then pulls normally instead
-of doing anything to your shared config. On native Windows, when this recovery genuinely runs, the
+of doing anything to your shared config. If nomad cannot run that check at all, because git is
+missing or the sync repo's index lock is still held when the check times out, it says it could not
+determine whether the repo is wedged rather than telling you the repo is clean, and continues with
+a normal pull either way. On native Windows, when this recovery genuinely runs, the
 `reset --hard origin/main` step above also reverts any unpublished edit you had made to your shared
 config on this host; the pull now warns about that, naming how many names were reverted and the
 backup directory holding their previous copies, recoverable from there.
