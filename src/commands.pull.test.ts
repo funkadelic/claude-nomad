@@ -2254,7 +2254,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const symlinks = result.sections.find((s) => s.header === 'Symlinks');
     const rendered = symlinks?.items.join('\n') ?? '';
     expect(rendered).toContain(warnGlyph);
-    expect(rendered).toContain('1 unpublished shared-config edit was discarded');
+    expect(rendered).toContain('1 shared name was restored from the repo copy');
     expect(discardMirrorSpy).toHaveBeenCalledTimes(1);
     const call = discardMirrorSpy.mock.calls[0] as [unknown, unknown, { dryRun?: unknown }];
     expect(call[2]?.dryRun).toBe(true);
@@ -2271,7 +2271,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     const symlinks = result.sections.find((s) => s.header === 'Symlinks');
     const rendered = symlinks?.items.join('\n') ?? '';
     expect(rendered).not.toContain(warnGlyph);
-    expect(rendered).not.toContain('discarded');
+    expect(rendered).not.toContain('restored from the repo copy');
   });
 });
 

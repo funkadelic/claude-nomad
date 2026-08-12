@@ -633,7 +633,7 @@ describe('buildMirrorSection discard row', () => {
     const rendered = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
 
     expect(rendered).toContain('Symlinks');
-    expect(rendered).toContain('1 unpublished shared-config edit was discarded');
+    expect(rendered).toContain('1 shared name was restored from the repo copy');
     expect(rendered).toContain(join(backupBase(), TS));
     expect(rendered).not.toContain(hostContent);
   });
@@ -642,7 +642,7 @@ describe('buildMirrorSection discard row', () => {
     const { buildMirrorSection } = await import('./commands.pull.win32.ts');
     renderTree([buildMirrorSection([], { count: 2, backupPath: join(backupBase(), TS) })]);
     const rendered = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
-    expect(rendered).toContain('2 unpublished shared-config edits were discarded');
+    expect(rendered).toContain('2 shared names were restored from the repo copy');
   });
 
   it('renders no warning row when called with only the events argument', async () => {

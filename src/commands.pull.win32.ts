@@ -375,10 +375,10 @@ export function buildMirrorSection(
     addItem(s, `captured  ${e.localPath} -> ${e.repoPath}`);
   }
   if (discard) {
-    const edits = discard.count === 1 ? 'edit was' : 'edits were';
+    const names = discard.count === 1 ? 'name was' : 'names were';
     addItem(
       s,
-      `${yellow(warnGlyph)} recovered from a wedged repo, ${discard.count} unpublished shared-config ${edits} discarded, backed up to ${discard.backupPath}`,
+      `${yellow(warnGlyph)} recovered from a wedged repo, ${discard.count} shared ${names} restored from the repo copy, previous host copies backed up to ${discard.backupPath}`,
     );
   }
   return s;
@@ -388,9 +388,15 @@ export function buildMirrorSection(
  * The read-only tally `describeSkippedMirrorDiscard` returns: how many
  * shared names would have been captured by the pre-pull mirror this
  * recovery run skipped, and where their pre-overwrite bytes were snapshotted.
+ *
+ * The mirror performs no content comparison anywhere on this path, so `count`
+ * is the number of shared names present on BOTH sides (host and repo), not
+ * the number of names whose bytes actually differ. A host whose `~/.claude/`
+ * already matches the repo still contributes its full shared-name count here.
  */
 export type MirrorDiscardSummary = {
-  /** Number of shared names that would have been captured. */
+  /** Number of shared names present on both the host and the repo, counted
+   * without any content comparison; not a count of changed files. */
   count: number;
   /** Absolute path under `~/.cache/claude-nomad/backup/<ts>/` holding the
    * pre-overwrite host-side bytes, the same location `applySharedLinksWin32`'s
@@ -407,11 +413,14 @@ export type MirrorDiscardSummary = {
  * `runPullCore` calls this only when `recovered` is `true`, i.e. only when
  * `recoverForceRemote` genuinely reset the repo to `origin/main` and the
  * mirror was therefore skipped to avoid fighting that reset. The count this
- * returns describes exactly the host-side shared-config edits that skip is
- * about to cost: `applySharedLinksWin32` backs each of them up and then
- * overwrites it later in the same pull (see that function's own doc comment),
- * and until this helper existed nothing told the user that happened or where
- * the backup landed.
+ * returns is the number of shared names present on both the host and the
+ * repo, with NO content comparison anywhere on this path: it is not a count
+ * of edited or changed files, and is a roughly constant number on a healthy
+ * host whether or not the user changed anything. `applySharedLinksWin32`
+ * backs each of those names up and then overwrites the host copy with the
+ * repo's later in the same pull (see that function's own doc comment), and
+ * until this helper existed nothing told the user that happened or where the
+ * backup landed.
  *
  * Implemented by copying `planSharedReconcileBeforePull`'s call shape
  * exactly: read the map via the same fail-safe reader, derive `linkNames`
