@@ -176,22 +176,31 @@ function newlyUntracked(before: Set<string> | null, after: Set<string> | null): 
 /**
  * Run the denylist backstop over the repo working tree's `shared/` subtree.
  *
+ * The sweep treats its two halves differently, and
+ * {@link revertDeniedMirrorPaths} owns the reasoning: an untracked hit is
+ * snapshotted and then removed, while a tracked hit is reported and left
+ * exactly as it was found. So a hit here is always a WARN, and only sometimes
+ * a write.
+ *
  * Fed by a `git status` snapshot rather than the untracked-file diff the
  * reconcile already computes, because `git ls-files --others` only ever lists
  * untracked paths: a credential appended to an already-tracked
  * `shared/<name>` file appears in neither the before nor the after snapshot,
  * so that diff is empty for exactly the case this gate most needs to see.
  * `--untracked-files=all` is required too, since without it a wholly untracked
- * new subtree collapses to a single directory record and the per-file revert
- * has nothing to act on.
+ * new subtree collapses to a single directory record, and per-file removal is
+ * what the untracked half does.
  *
  * A `null` probe means git could not answer, and degrades to a silent skip:
- * revert nothing, warn nothing. Every other `gitProbe` consumer in this file
- * has the same fail-open contract, and inventing a revert from an unanswerable
- * snapshot is how a gate deletes the wrong path.
+ * remove nothing, report nothing, warn nothing. Every other `gitProbe` consumer
+ * in this file has the same fail-open contract, and the removing half is why it
+ * has to be this one: acting on an unanswerable snapshot is how a gate deletes
+ * the wrong path, and a report built from the same snapshot would send the user
+ * after the wrong one.
  *
  * @param repo - Absolute path to the sync repo.
- * @param ts - Backup timestamp, resolved once by `runPullCore`.
+ * @param ts - Backup timestamp, resolved once by `runPullCore`. Reaches only
+ *   the untracked half, which is the only half that writes anything.
  */
 function revertDeniedUnderShared(repo: string, ts: string): void {
   const out = gitProbe(
