@@ -1336,6 +1336,9 @@ describe('applySharedLinks sharedDirs support', () => {
         String(c[0]).includes('sharedDirs entry'),
       );
       expect(rejectionCalls).toHaveLength(1);
+      // The rejection must not cost the valid names their link: the derived
+      // list is the built-in set plus whatever survived validation.
+      expect(lstatSync(join(claudeDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
     },
   );
 
