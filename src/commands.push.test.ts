@@ -12,7 +12,7 @@ import {
 import { stubPlatform } from './test-helpers.platform.ts';
 
 import type * as childProcessModule from 'node:child_process';
-import type * as linksModule from './links.ts';
+import type * as linksMirrorModule from './links.mirror.ts';
 import type * as pushChecksModule from './push-checks.ts';
 import type * as pushAllowlistModule from './commands.push.allowlist.ts';
 import type * as pushGlobalConfigModule from './push-global-config.ts';
@@ -827,11 +827,61 @@ describe('cmdPush: shared-links push mirror integration', () => {
     );
   });
 
+  it('WET push: one invalid sharedDirs entry WARNs exactly once (linkNames derived once)', async () => {
+    // Before the fix, allSharedLinks(map) was called once inside
+    // syncSharedLinksPush's own mirrorSharedNames loop; nothing else in the
+    // push pipeline re-derived it, so the count was already 1 here today. The
+    // real regression this pins is `runPushCore` deriving `linkNames` once and
+    // threading it through rather than letting `syncSharedLinksPush` re-derive
+    // internally, which stays true even if a future caller adds a second
+    // reachable derivation point.
+    writeFileSync(
+      join(env.repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    stubPlatform('win32');
+
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPull: vi.fn(),
+      syncSkillsPush: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    const rejectionCalls = env.errSpy.mock.calls.filter((c) =>
+      String(c[0]).includes('sharedDirs entry'),
+    );
+    expect(rejectionCalls).toHaveLength(1);
+  });
+
   it('dry-run push: syncSharedLinksPush is NOT called (zero-mutation contract)', async () => {
     const syncSharedLinksPushMock = vi.fn();
     stubPlatform('win32');
-    vi.doMock('./links.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof linksModule>();
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
       return { ...actual, syncSharedLinksPush: syncSharedLinksPushMock };
     });
     vi.doMock('./push-checks.ts', async (importOriginal) => {
@@ -874,8 +924,8 @@ describe('cmdPush: shared-links push mirror integration', () => {
   it('WET push: syncSharedLinksPush is called after syncSkillsPush and before the gitlink walk (call order)', async () => {
     const callOrder: string[] = [];
     stubPlatform('win32');
-    vi.doMock('./links.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof linksModule>();
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
       return {
         ...actual,
         syncSharedLinksPush: vi.fn(() => {

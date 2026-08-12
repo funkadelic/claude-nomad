@@ -16,6 +16,7 @@ import type * as lockfileModule from './utils.lockfile.ts';
 import type * as utilsModule from './utils.ts';
 
 import { EXIT } from './exit-codes.ts';
+import { stubPlatform } from './test-helpers.platform.ts';
 
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
@@ -890,6 +891,7 @@ function mockDrySeams(
 }
 
 describe('cmdSync --dry-run: real pull half', () => {
+  const realPlatform = process.platform;
   let env: SyncEnv;
 
   beforeEach(() => {
@@ -897,6 +899,7 @@ describe('cmdSync --dry-run: real pull half', () => {
   });
 
   afterEach(() => {
+    stubPlatform(realPlatform);
     teardownSyncEnv(env);
     vi.doUnmock('./commands.pull.wedge.ts');
   });
@@ -964,7 +967,12 @@ describe('cmdSync --dry-run: real pull half', () => {
     expect(completeAt).toBeGreaterThan(pushNoticeAt);
   });
 
-  it('falls back to an empty path-map when path-map.json is absent', async () => {
+  it('falls back to an empty path-map when path-map.json is absent, on posix', async () => {
+    // Stubbed rather than inherited from the runner: the platform decides
+    // whether the pre-rebase planners derive anything at all, so an unstubbed
+    // run asserts posix behavior on posix and win32 behavior on Windows. The
+    // win32 case is pinned separately below.
+    stubPlatform('linux');
     rmSync(join(env.repoUnderHome, 'path-map.json'), { force: true });
     const seams = mockDrySeams(env);
     const { cmdSync } = await import('./commands.sync.ts');
@@ -974,6 +982,30 @@ describe('cmdSync --dry-run: real pull half', () => {
     expect(seams.previewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull', {
       captures: [],
       deletions: [],
+      // Nothing derived the shared-name list off win32, so the preview's own
+      // derivation stays audible.
+      namesDerived: false,
+      derivedSharedDirs: undefined,
+    });
+  });
+
+  it('falls back to an empty path-map when path-map.json is absent, on win32', async () => {
+    stubPlatform('win32');
+    rmSync(join(env.repoUnderHome, 'path-map.json'), { force: true });
+    const seams = mockDrySeams(env);
+    const { cmdSync } = await import('./commands.sync.ts');
+    await cmdSync({ dryRun: true });
+    // An absent path-map is read as `{ projects: {} }` rather than as "skip
+    // me", so the pre-rebase reconcile still derives the static shared-name
+    // set here and the preview must stay quiet about it. Both plans are empty
+    // for the same reason as on posix: nothing is pending in the sandbox.
+    expect(seams.previewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull', {
+      captures: [],
+      deletions: [],
+      namesDerived: true,
+      // No `sharedDirs` field on the fallback map, so the suppression carries
+      // nothing across the rebase boundary.
+      derivedSharedDirs: undefined,
     });
   });
 });

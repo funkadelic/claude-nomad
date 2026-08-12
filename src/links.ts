@@ -15,14 +15,10 @@ import {
   describeSettings,
   partitionByCaptureExclusion,
 } from './commands.capture-settings.core.ts';
-import {
-  copyExtrasFiltered,
-  copyExtrasFilteredPreservingBy,
-  copyExtrasOverlayFiltered,
-} from './extras-sync.core.ts';
+import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import { die, log, warn } from './utils.ts';
-import { backupBeforeWrite, backupRepoWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
+import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from './utils.fs.ts';
 import { deepMerge, readJson } from './utils.json.ts';
 
 /**
@@ -36,7 +32,18 @@ export type LinkPreviewEvent =
   | { kind: 'auto-move'; from: string; to: string }
   | { kind: 'copy'; from: string; to: string };
 
-type LinkOpts = { dryRun?: boolean; onPreview?: (e: LinkPreviewEvent) => void };
+type LinkOpts = {
+  dryRun?: boolean;
+  onPreview?: (e: LinkPreviewEvent) => void;
+  /**
+   * Suppress the `sharedDirs` rejection WARNs this call's own
+   * `allSharedLinks(map)` derivation would emit, for a caller that already
+   * derived the same list once earlier in the same command. Suppresses nothing
+   * else: the name list itself is still derived here, from the map this call
+   * was handed.
+   */
+  quietNames?: boolean;
+};
 
 /** Emit a dry-run auto-move event via onPreview or fall back to log(). */
 function emitAutoMove(
@@ -122,6 +129,16 @@ function runAutoMovePasses(
  * `~/.claude/` from a poisoned repo. `src` may be a single file (`CLAUDE.md`,
  * `my-statusline.cjs`) or a directory (`commands`, `rules`); the underlying
  * `cpSync` handles both.
+ *
+ * The narrower set here is deliberate, and the asymmetry with the host-to-repo
+ * mirror (which filters on the full `NEVER_SYNC`; see `mirrorOneSharedName` in
+ * `links.mirror.ts`) is not an oversight. This is the READ half: widening it
+ * changes what an already-synced host RECEIVES on its next pull, so a host that
+ * has been getting a directory spelled like a `NEVER_SYNC` entry (`sessions`,
+ * `tasks`, ...) under a shared name would silently stop getting it, with no
+ * signal at pull time. That is a migration with its own blast radius, not a
+ * symmetry tidy-up: what the mirror WRITES into the repo is a separate
+ * decision from what a pull is allowed to land on the host.
  *
  * @param src - Source path (`shared/<name>`, repo side).
  * @param dst - Destination path (`~/.claude/<name>`, host side).
@@ -215,6 +232,16 @@ function applySharedLinksWin32(
  * `applySharedLinksWin32`, which materializes real copies instead of
  * symlinks (see that function's doc comment). macOS/Linux fall through to the
  * symlink path below, byte-identical to before this branch existed.
+ *
+ * The name list is ALWAYS derived here, from the `map` this call was handed.
+ * It is deliberately not accepted as an argument: on a pull this step runs
+ * AFTER the rebase, and the repo state it materializes is the post-rebase one,
+ * so a list derived from a pre-rebase map would miss a `sharedDirs` entry (and
+ * its `shared/<name>` content) that the pull itself just delivered. A caller
+ * that already derived the same list earlier in the same command passes
+ * `opts.quietNames` instead, which suppresses the duplicate rejection WARN
+ * without letting this step act on a list computed against a different repo
+ * state.
  */
 export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}): void {
   const dryRun = opts.dryRun === true;
@@ -222,7 +249,7 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
   const repo = repoHome();
   // Derive once: allSharedLinks emits a WARN per invalid sharedDirs entry, so
   // calling it per loop would double every such warning in a single run.
-  const linkNames = allSharedLinks(map);
+  const linkNames = allSharedLinks(map, { quiet: opts.quietNames === true });
   if (process.platform === 'win32') {
     applySharedLinksWin32(linkNames, claude, repo, ts, dryRun, opts.onPreview);
     return;
@@ -240,137 +267,6 @@ export function applySharedLinks(ts: string, map: PathMap, opts: LinkOpts = {}):
       continue;
     }
     ensureSymlink(linkPath, target);
-  }
-}
-
-/**
- * Win32 push-mirror for `allSharedLinks(map)` names: copies each real local
- * copy at `~/.claude/<name>` back into `shared/<name>` (repo side), so an
- * edit made through the win32 copy model (`applySharedLinksWin32`) reaches
- * the repo at the next push. This is the write half of the copy-sync model;
- * `copySharedLinkPull` is the read half.
- *
- * Mirrors `syncSkillsPush`'s pattern exactly: skip a name absent from
- * `~/.claude/` (nothing to mirror), skip a name that is still a live symlink
- * (a symlink-era leftover, or a host sharing `~/.claude` with a
- * symlink-capable OS; mirroring through it would rm the copy target from
- * under the `cpSync` source and crash), otherwise mirror via
- * `copyExtrasFiltered` with a blockSet seeded from `ALWAYS_NEVER_SYNC` (the
- * same deny-set boundary `copySharedLinkPull` uses on the pull side), so a
- * host-local sensitive name cannot ride from `~/.claude/` into the repo.
- *
- * On darwin/linux this is a no-op: the symlink means an edit at
- * `~/.claude/<name>` already lands in `shared/<name>` directly, so push has
- * nothing to mirror. The platform gate lives inside the function (an early
- * return) so callers can invoke it unconditionally with no branch of their
- * own, matching `applySharedLinks`'s win32-gating convention.
- *
- * `map` is nullable to match `loadSelectionForPush`'s return shape (a missing
- * `path-map.json` yields `map: null`); a null map skips the mirror entirely
- * rather than crashing on `allSharedLinks(null)`. The caller's own
- * `path-map.json missing` fatal fires later in the real-push pipeline.
- *
- * @param map - Parsed `path-map.json`, or `null` when the file is absent.
- */
-export function syncSharedLinksPush(map: PathMap | null): void {
-  mirrorSharedNames(map, { adoptNew: true, overlay: false });
-}
-
-/**
- * Pull-side counterpart of `syncSharedLinksPush`: make the host's own
- * `~/.claude/<name>` edits visible in the repo working tree BEFORE
- * `git pull --rebase --autostash` runs, so the autostash carries them through
- * the rebase exactly as a posix symlink already does. See
- * `mirrorSharedLinksBeforePull` in `commands.pull.ts` for why the pull needs
- * this at all.
- *
- * Deliberately does NOT reuse the push policy. A push is an explicit publish
- * that the user asked for, and it is followed by the allow-list gate and the
- * gitleaks scan; a pull is neither, so it runs under the two conservative
- * settings instead:
- *
- * - `adoptNew: false`, so a name the repo does not already share is left alone.
- *   Creating `shared/<name>` from a purely host-local dir would turn a pull
- *   into a publish trigger (under `nomad sync` the push half would ship it to
- *   every other host), and it would invert the guarantee `applySharedLinks`
- *   enforces: a host with no `shared/<name>` counterpart keeps its private
- *   local copy.
- * - `overlay: true`, so a repo-side file the host copy happens to lack is not
- *   deleted. The goal here is only that a host EDIT is present for the rebase,
- *   not that the repo becomes a byte-exact mirror of the host; byte-exact
- *   mirroring belongs to the push, where the user asked for it.
- *
- * `backupTs` additionally snapshots each repo-side copy under
- * `backup/<ts>/repo/` first, so an uncommitted working-tree edit under
- * `shared/` stays recoverable (git cannot recover it: it was never committed).
- *
- * @param map - Parsed `path-map.json`, or `null` when it could not be read.
- * @param ts - Backup timestamp, already resolved by `runPullCore`.
- */
-export function stageLocalSharedEdits(map: PathMap | null, ts: string): void {
-  mirrorSharedNames(map, { adoptNew: false, overlay: true, backupTs: ts });
-}
-
-/** How one mirror pass treats the repo side. See the two exported wrappers. */
-type SharedMirrorPolicy = {
-  /** Create `shared/<name>` when the repo has no counterpart yet. */
-  adoptNew: boolean;
-  /** Overlay onto the repo copy instead of replacing it wholesale. */
-  overlay: boolean;
-  /** When set, snapshot the repo copy under `backup/<ts>/repo/` before writing. */
-  backupTs?: string;
-};
-
-/**
- * Mirror one `~/.claude/<name>` into `shared/<name>` under `policy`. Extracted
- * from the loop so each of the two wrappers stays readable and the per-name
- * branch set stays well inside the cognitive-complexity threshold.
- *
- * @param name - Shared name from `allSharedLinks`.
- * @param claude - `claudeHome()`, resolved once by the caller.
- * @param repo - `repoHome()`, resolved once by the caller.
- * @param policy - Repo-side treatment; see {@link SharedMirrorPolicy}.
- */
-function mirrorOneSharedName(
-  name: string,
-  claude: string,
-  repo: string,
-  policy: SharedMirrorPolicy,
-): void {
-  const localPath = join(claude, name);
-  const stat = lstatSync(localPath, { throwIfNoEntry: false });
-  if (stat === undefined) return; // absent: nothing to mirror
-  if (stat.isSymbolicLink()) return; // symlink-era live link; defer to next pull
-  const target = join(repo, 'shared', name);
-  if (!policy.adoptNew && !existsSync(target)) return; // repo does not share this name
-  if (policy.backupTs !== undefined) backupRepoWrite(target, policy.backupTs, repo);
-  // Overlay is directory-only (`copyExtrasOverlayFiltered` walks the source with
-  // readdirSync). A SHARED_LINKS FILE entry like CLAUDE.md has no repo-only
-  // sibling to preserve in the first place, so the plain filtered copy IS the
-  // overlay for it, and routing files here keeps the primitive's contract intact.
-  if (policy.overlay && stat.isDirectory()) {
-    copyExtrasOverlayFiltered(localPath, target, ALWAYS_NEVER_SYNC);
-  } else {
-    copyExtrasFiltered(localPath, target, ALWAYS_NEVER_SYNC);
-  }
-}
-
-/**
- * Shared win32 host-to-repo mirror driving both `syncSharedLinksPush` and
- * `stageLocalSharedEdits`. The platform and null-map gates live here so both
- * callers can invoke their wrapper unconditionally with no branch of their own,
- * matching `applySharedLinks`'s win32-gating convention.
- *
- * @param map - Parsed `path-map.json`, or `null` to skip the pass entirely.
- * @param policy - Repo-side treatment; see {@link SharedMirrorPolicy}.
- */
-function mirrorSharedNames(map: PathMap | null, policy: SharedMirrorPolicy): void {
-  if (process.platform !== 'win32') return;
-  if (map === null) return;
-  const claude = claudeHome();
-  const repo = repoHome();
-  for (const name of allSharedLinks(map)) {
-    mirrorOneSharedName(name, claude, repo, policy);
   }
 }
 

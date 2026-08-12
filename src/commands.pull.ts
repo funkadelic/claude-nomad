@@ -12,6 +12,9 @@ import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';
 import { writeSharedBaseline } from './links.baseline.ts';
 import {
+  buildMirrorSection,
+  namesAlreadyReported,
+  plansAgainst,
   planSharedReconcileBeforePull,
   reconcileSharedLinksBeforePull,
 } from './commands.pull.win32.ts';
@@ -110,6 +113,13 @@ function capturePrePostHeads(
  *   decision (a never-pushed local skill survives; a skill tracked at the
  *   pre-rebase HEAD but genuinely deleted upstream is still pruned).
  *   `undefined` when the pre-rebase capture failed (fresh clone).
+ * @param namesDerived - Whether the pre-rebase win32 reconcile already derived
+ *   the shared-name list, and so already emitted any `sharedDirs` rejection
+ *   WARN for this pull. Only silences the duplicate WARN: `applySharedLinks`
+ *   still derives its own list from the POST-rebase map, which is the only
+ *   state it can correctly act on. `false` on darwin/linux, where the
+ *   reconcile step never runs, so the derivation below is the only one posix
+ *   performs and must stay audible.
  * @returns The ordered `Settings`/`Sessions`/`Extras`/`Pull summary` sections
  *   plus `localOnly` (retained local-only session files), `settingsLabel` (the
  *   `regenerateSettings` override-source tag), the combined session+extras
@@ -121,6 +131,7 @@ function buildWetPullSections(
   ts: string,
   map: PathMap,
   prePostHeads?: { pre: string; post: string },
+  namesDerived = false,
 ): {
   sections: DoctorSection[];
   localOnly: number;
@@ -128,7 +139,15 @@ function buildWetPullSections(
   unmapped: number;
   extrasSkipped: number;
 } {
-  applySharedLinks(ts, map);
+  applySharedLinks(ts, map, { quietNames: namesDerived });
+  // `quiet` unconditionally, because the apply on the line above ALWAYS derives
+  // the shared-name list from this same `map`, whether audibly or not. The
+  // baseline walk derives a second time off the identical input, so leaving it
+  // loud reports one rejected sharedDirs entry twice on every win32 wet pull.
+  // This is not the flag above under another name: that one is about a
+  // derivation against a DIFFERENT (pre-rebase) map, which is why it can be
+  // false while this stays true.
+  //
   // Record what this host now has under ~/.claude/, so the next run can tell a
   // file the user deleted apart from a file this host has never received. The
   // placement is the invariant, not a convenience: this function is reachable
@@ -138,7 +157,7 @@ function buildWetPullSections(
   // literally true. A run that dies before this line deliberately leaves the
   // previous record in place, so it replays the same already-authorized
   // removals next time instead of inventing new ones.
-  writeSharedBaseline(map);
+  writeSharedBaseline(map, { quiet: true });
   const { label } = regenerateSettings(ts);
   syncSkillsPull(ts, prePostHeads);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
@@ -367,13 +386,24 @@ export function runPullCore(
   //
   // The paths it reports back are the copies THIS run added to the repo working
   // tree, which is what lets the rebase below tell a name collision against
-  // nomad's own copy apart from any other reason a pull can fail.
-  const mirrored = !dryRun && !forceRemote ? reconcileSharedLinksBeforePull(repo, ts) : [];
+  // nomad's own copy apart from any other reason a pull can fail. `events` is
+  // the typed record of what the mirror captured, threaded into the wet
+  // `Symlinks` section built just before this function returns; it must be
+  // captured here (before the rebase) rather than rebuilt inside
+  // `buildWetPullSections` (after the rebase), so the mirror runs once.
+  const {
+    mirrored,
+    events: mirrorEvents,
+    namesDerived,
+    derivedSharedDirs,
+  } = !dryRun && !forceRemote
+    ? reconcileSharedLinksBeforePull(repo, ts)
+    : { mirrored: [], events: [], namesDerived: false, derivedSharedDirs: undefined };
   // A dry run applies nothing, but its preview has to describe the same repo
   // state the wet step above acts on, and the rebase below moves that state.
   // Both plans are read-only and empty on darwin and linux, so a posix host
   // pays nothing for computing them here.
-  const sharedPlans = dryRun ? planSharedReconcileBeforePull(repo) : undefined;
+  const sharedPlans = dryRun ? planSharedReconcileBeforePull(repo, ts) : undefined;
   // Capture the pre/post-rebase REPO_HOME HEADs and run git pull --rebase
   // --autostash between them. capturePrePostHeads handles the unborn-HEAD
   // case (fresh clone, no commits) by returning undefined; when undefined
@@ -418,13 +448,21 @@ export function runPullCore(
     // sections for cmdPull to render: a composing caller (cmdSync) continues
     // with its own output afterwards, and a 'complete' line mid-stream reads
     // as if the command had ended.
-    computePreview(ts, map, 'pull', sharedPlans);
+    computePreview(ts, map, 'pull', plansAgainst(sharedPlans, map));
     return { tag: 'dry' };
   }
+  // The apply below derives its own name list from the POST-rebase map (the
+  // only repo state it can act on); `namesDerived` only tells it whether the
+  // pre-rebase reconcile already emitted this pull's sharedDirs rejection
+  // WARNs. False on darwin/linux, where that reconcile never runs, so the
+  // apply's derivation stays audible there, and cleared whenever the rebase
+  // moved `sharedDirs` out from under those WARNs, so an entry the fetch
+  // delivered is still reported rather than silently dropped.
   const { sections, localOnly, settingsLabel, unmapped, extrasSkipped } = buildWetPullSections(
     ts,
     map,
     prePostHeads,
+    namesAlreadyReported(namesDerived, derivedSharedDirs, map),
   );
   // An unborn/uncapturable pre-rebase HEAD (fresh clone) is treated as
   // "changes present" so a first-ever pull is never collapsed to a no-op;
@@ -433,9 +471,13 @@ export function runPullCore(
   // not mean anything actually changed upstream).
   const incomingChanges =
     prePostHeads === undefined ? true : prePostHeads.pre !== prePostHeads.post;
+  // Spliced at the head so the wet tree reads in the order the pull executes
+  // and matches the preview tree, which already puts Symlinks first. Empty on
+  // darwin, linux, and whenever nothing was mirrored, so renderTree drops it
+  // and posix output stays byte-identical.
   return {
     tag: 'wet',
-    sections,
+    sections: [buildMirrorSection(mirrorEvents), ...sections],
     localOnly,
     divergedKeptLocal,
     incomingChanges,

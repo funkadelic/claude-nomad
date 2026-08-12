@@ -51,6 +51,26 @@ export const NEVER_SYNC = new Set([
 export const CLAUDE_EXTRA_NEVER_SYNC = new Set([...NEVER_SYNC, 'projects']);
 
 /**
+ * Credential and host-config file names blocked even under `shared/extras/`,
+ * where the broader `NEVER_SYNC` segment scan is narrowed to avoid
+ * false-blocking ephemeral dir names (`todos`, `plans`, etc.) inside synced
+ * `.planning/` trees. Strict subset of `NEVER_SYNC`; doctor display and the
+ * sharedDirs guard use the full set.
+ *
+ * Lives beside its two siblings in this dependency-free leaf rather than in
+ * `config.ts`, so `blockSetFor` below can choose between all three without the
+ * leaf taking an import. `config.ts` re-exports it, so every existing
+ * `from './config.ts'` import keeps resolving.
+ */
+export const ALWAYS_NEVER_SYNC = new Set([
+  '.claude.json',
+  '.credentials.json',
+  'settings.local.json',
+  'history.jsonl',
+  'stats-cache.json',
+]);
+
+/**
  * Credential-bearing filename patterns that must never cross the sync boundary,
  * independent of the exact-name denylists above. The exact-name sets enumerate
  * known Claude Code host-state files; these patterns catch the broader family of
@@ -164,7 +184,7 @@ export function isDeniedName(blockSet: Set<string>, name: string): boolean {
  * lowercase name after normalizing trailing dots/whitespace and case-folding.
  * `isDeniedName` hardened *membership* in a deny set on the case and
  * trailing-character axes; this closes the same two axes for the sibling
- * *selection* comparisons in `commands.push.allowlist.ts` and
+ * *selection* comparisons in `blockSetFor` below and in
  * `extras-sync.core.ts` that choose WHICH deny set (`CLAUDE_EXTRA_NEVER_SYNC`
  * vs `ALWAYS_NEVER_SYNC`) applies to a `.claude` extra's contents. Without
  * this, a spelling like `.Claude` (same directory as `.claude` on
@@ -175,4 +195,83 @@ export function isDeniedName(blockSet: Set<string>, name: string): boolean {
  */
 export function isClaudeExtraName(name: string): boolean {
   return stripTrailingDotsAndWhitespace(name).toLowerCase() === '.claude';
+}
+
+/**
+ * True when a repo-relative path's segments land inside the extras tree, which
+ * is the one region where the denylist narrows and the scan skips a prefix.
+ * Both decisions read this predicate rather than restating the test, since a
+ * narrow set paired with a full-path scan (or the reverse) silently changes
+ * what the gate blocks.
+ *
+ * @param segments A repo-relative path already split on `/`.
+ * @returns Whether the path sits under `shared/extras/`.
+ */
+function isExtrasScoped(segments: string[]): boolean {
+  return segments[0] === 'shared' && segments[1] === 'extras';
+}
+
+/**
+ * Choose the hard-block denylist for a repo-relative path's segments. Outside
+ * the extras tree the full `NEVER_SYNC` set applies. Inside `shared/extras/`
+ * the narrow `ALWAYS_NEVER_SYNC` subset applies, so legitimate GSD content such
+ * as `.planning/todos/` passes, EXCEPT for the `.claude` extra:
+ * its subtree mirrors `~/.claude/` semantics, so its ephemeral segment names
+ * (`projects`, `shell-snapshots`, `sessions`, `todos`, ...) get the full
+ * `NEVER_SYNC` boundary. Mirrors `extrasDenySet` in `extras-sync.core.ts` so
+ * the push gate and the copy filter agree on the boundary. The `.claude`
+ * comparison runs through `isClaudeExtraName` (case-insensitive, trailing
+ * dot/whitespace normalized) rather than a raw `===`, so a spelling like
+ * `.Claude` or `.claude.` cannot silently downgrade to the narrower
+ * `ALWAYS_NEVER_SYNC` set.
+ *
+ * @param segments A repo-relative path already split on `/`.
+ * @returns The exact-name denylist that applies to that path.
+ */
+export function blockSetFor(segments: string[]): Set<string> {
+  if (!isExtrasScoped(segments)) return NEVER_SYNC;
+  return isClaudeExtraName(segments[3] ?? '') ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+}
+
+/**
+ * The first path segment of `path` that matches the hard-block denylist for
+ * that path (see `blockSetFor`), or `null` when no segment matches. Tested via
+ * `isDeniedName` so the match is case-insensitive (macOS case-fold) and also
+ * covers credential-file patterns (dotenv, private keys, npm/netrc auth) the
+ * exact sets do not enumerate. Genuinely-sensitive host-local files stay
+ * blocked even when nested inside a synced extras dir. Inside
+ * `shared/extras/<logical>/<dirname>/` only the content segments (index 4+) are
+ * scanned: the `<logical>` and `<dirname>` names are not denylist tokens, and a
+ * logical that happens to equal a `NEVER_SYNC` token (e.g. a project named
+ * `sessions`) must not hard-block its own legitimate files.
+ *
+ * Returns the segment rather than a bare boolean because the denylists hold
+ * ordinary-looking directory names (`tasks`, `plans`, `sessions`, ...), so a
+ * caller telling a user their path was refused has to be able to say WHICH name
+ * did it or the user has no action to take. `isNeverSync` is the boolean view
+ * of this same scan.
+ *
+ * @param path A repo-relative, forward-slashed path.
+ * @returns The matching segment, or `null` when the path is clean.
+ */
+export function deniedSegmentFor(path: string): string | null {
+  const segments = path.split('/');
+  const blockSet = blockSetFor(segments);
+  const scan = isExtrasScoped(segments) ? segments.slice(4) : segments;
+  for (const segment of scan) {
+    if (isDeniedName(blockSet, segment)) return segment;
+  }
+  return null;
+}
+
+/**
+ * True when any segment of `path` matches the hard-block denylist for that path.
+ * The boolean view of {@link deniedSegmentFor}, which owns the scan; both the
+ * push allow-list gate and the pull-side mirror gate run through this one
+ * implementation so they cannot drift apart.
+ *
+ * @param path A repo-relative, forward-slashed path.
+ */
+export function isNeverSync(path: string): boolean {
+  return deniedSegmentFor(path) !== null;
 }

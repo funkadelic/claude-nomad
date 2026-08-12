@@ -28,7 +28,10 @@ data on the destination host.
 On native Windows the same two-pass scan runs, but the names are materialized as real copies
 instead of symlinks (creating a symlink there needs Developer Mode or admin rights); the backup
 semantics are identical, and so is the guidance: on native Windows the pull mirrors your local
-copies into the repo before it fetches, so an unpublished edit is captured rather than overwritten.
+copies into the repo before it fetches, so an unpublished edit is captured rather than overwritten,
+and it names what it captured in a `Symlinks` section at the top of the pull output. Paths carrying
+a never-sync segment (`sessions`, `tasks`, `plans`, `cache`, and the rest of `NEVER_SYNC`) are
+skipped by that mirror; see [How it works](/claude-nomad/how-it-works/).
 Use `--force-remote` when you do want the repo's version. See
 [Windows](/claude-nomad/quickstart/#windows).
 
@@ -132,7 +135,8 @@ scan as a read-only preview (nothing is written to the sync repo) and exits non-
 preview finds anything.
 
 A `nomad pull` is the mirror image, leading with the settings file it regenerated and then the
-sessions and extras it copied down for this host:
+sessions and extras it copied down for this host (on native Windows a `Symlinks` section comes
+first, listing each `captured  <local> -> <repo>` the pre-fetch mirror performed):
 
 ```text
 pull on host=workstation (backup=2026-05-27T14-02-09Z)

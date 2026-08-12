@@ -66,7 +66,9 @@ On native Windows the two symlinked rows are copy-synced instead: creating a sym
 Developer Mode or admin rights, so `nomad pull` materializes those names as real copies and
 `nomad push` mirrors your local edits back into `shared/`. On Windows `nomad pull` runs that mirror
 before it fetches (and `nomad sync` inherits it), so an unpublished edit is captured rather than
-overlaid. A file you delete from inside one of these directories is mirrored the same way: it is
+overlaid, and a real (non-dry-run) `nomad pull` now prints a `Symlinks` section naming what it
+captured, so the copy is visible in the pull output instead of silent. A file you delete from
+inside one of these directories is mirrored the same way: it is
 removed from `shared/` by the next pull, the same as deleting inside a symlinked directory already
 removes it on macOS or Linux. The removal is left uncommitted (it publishes on your next push,
 through the same secret scan as everything else) and the repo copy is snapshotted to the backup dir
@@ -86,7 +88,7 @@ Pointers and specifics:
   `path-map.json`); the **skills filtered copy** is driven by `src/skills-sync.ts`
   (`syncSkillsPull`/`syncSkillsPush`); **whitelisted extras** names in `SUPPORTED_EXTRAS`
   (currently `.planning`, `CLAUDE.md`, and `.claude`); and the full **never-synced** set in
-  `NEVER_SYNC` (all in `src/config.ts`).
+  `NEVER_SYNC` (in `src/config.never-sync.ts`; the other three are in `src/config.ts`).
 - **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `.credentials.json` (OAuth
   credential store), `history.jsonl`, `settings.local.json` (per-host overrides),
   `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,
@@ -94,6 +96,16 @@ Pointers and specifics:
   (`cache/`, `backups/`, `paste-cache/`, `daemon/`, `jobs/`, `tasks/`, `security/`,
   `sessions/`). This set is also the deny-list the `sharedDirs` opt-in is checked against, so
   one of these names cannot be symlinked into the shared repo by mistake.
+- **The win32 mirror is filtered against this same never-synced set.** Copying your local edits
+  into `shared/` (the previous bullet) never writes a path carrying one of these names as a
+  segment, and if one reaches the sync repo working tree anyway, such as a file edited directly in
+  the repo rather than through `~/.claude/`, the next `nomad pull` removes it if git is not already
+  tracking it (snapshotting it to the backup dir first), and otherwise warns once, naming the file
+  and the exact git command to run, changing nothing itself. Because the set is not only secrets, an
+  ordinary directory inside one of your shared names can collide with it (a `sessions` or `tasks`
+  subfolder, for example) and silently stop mirroring; the match is on a whole path segment,
+  directory or file name alike, so a file named `tasks.md` is unaffected. Nothing in this gate can
+  fail a pull outright: a hit is a warning, never an error.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 - **Synced skills** get the same divergence WARN as extras: if a file under `~/.claude/skills/`
@@ -260,7 +272,11 @@ field in `path-map.json` opts it into symlink sync:
 What this means for you: each listed name is symlinked from `shared/<name>` into
 `~/.claude/<name>` (the same model as the built-in synced links, not a copy), so editing it on
 any host updates the one shared copy. On native Windows these names are real copies, like every
-synced link there, so `nomad push` is what captures a local edit. The field is additive and back-compatible: a `path-map.json`
+synced link there, so both `nomad pull` (which mirrors before it fetches, naming each capture in
+its `Symlinks` section) and `nomad push` carry a local edit into the repo. One caveat specific to
+that modality: a path inside the directory whose segments include a never-synced name (`cache`,
+`sessions`, `tasks`, `plans`, and the rest) is not mirrored, per the never-synced bullet above.
+The field is additive and back-compatible: a `path-map.json`
 without it behaves exactly as before.
 
 Entries are validated before anything is linked. A name is accepted only if it is a single path

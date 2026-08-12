@@ -3,11 +3,17 @@
  *
  * The pull's mirror-collision path asks git several read-only questions around
  * a failing `git pull`: which files under `shared/` are untracked, and whether
- * the fetched update adds a given path. Every one of them is advisory. A probe
- * that throws would turn a diagnostic into the thing that fails the command,
- * and a probe with no timeout would let a hung git binary block a pull that has
- * already finished its real work. Both properties are enforced here once rather
- * than re-derived at each call site.
+ * the fetched update adds a given path. The pull's denylist backstop asks one
+ * more, whether a path is in HEAD, purely to decide which command to name in a
+ * WARN. Every one of them is advisory. A probe that throws would turn a
+ * diagnostic into the thing that fails the command, and a probe with no timeout
+ * would let a hung git binary block a pull that has already finished its real
+ * work. Both properties are enforced here once rather than re-derived at each
+ * call site.
+ *
+ * Read-only by contract, not just by current usage: nothing in the tree routes
+ * a mutating git invocation through here, and nothing should. A caller that
+ * needs to change the repository has `gitOrFatal`, whose failures are visible.
  *
  * Deliberately NOT folded into `gitCaptureRaw`: that helper is unbounded and
  * propagates failures, which is correct for the callers that need the output to

@@ -13,6 +13,7 @@ import { join, relative } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { plantSharedBaseline } from './test-support/baseline.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 
 // The "non-win32" test below asserts `process.platform !== 'win32'` directly
@@ -986,19 +987,11 @@ describe('computePreview orchestration', () => {
     },
   );
 
-  /** Plant a shared-links baseline by hand, matching links.deletions.test.ts. */
-  function plantBaseline(files: Record<string, unknown>): void {
-    const cacheDir = join(testHome, '.cache', 'claude-nomad');
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(
-      join(cacheDir, 'shared-baseline-test-host.json'),
-      JSON.stringify({
-        schema: 1,
-        scannerVersion: 'shared-links-baseline/1',
-        configHash: 'not-applicable',
-        files,
-      }) + '\n',
-    );
+  /** Plant a shared-links baseline into this suite's fixture HOME. */
+  function plantBaseline(
+    files: Record<string, { size: number; mtime: number; hash: string }>,
+  ): void {
+    plantSharedBaseline(testHome, files);
   }
 
   it('renders would-capture and would-remove rows on a win32 dry-run, matching the wet predicates', async () => {
@@ -1064,6 +1057,40 @@ describe('computePreview orchestration', () => {
     expect(snapshotTree(cacheRoot)).toEqual(beforeCache);
   });
 
+  it('under a win32 dry-run capture, leaves the repo-side file byte-unchanged and creates no backup directory', async () => {
+    // Now that the Symlinks capture row is sourced from the real mirror
+    // (stageLocalSharedEdits under dryRun) instead of a read-only predictor,
+    // this asserts the dryRun contract directly rather than assuming it: a
+    // regression here would turn the read-only `nomad diff` into a writer.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const realPlatform = process.platform;
+    stubPlatform('win32');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+
+    try {
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260810-000010', { projects: {} });
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    // The capture row proves the mirror RAN. Without it, a future gate that
+    // skipped CLAUDE.md would leave both write assertions below passing on a
+    // mirror that never executed, and the dryRun contract would go uncovered.
+    const rows = logSpy.mock.calls.map((call: unknown[]) => String(call[0]));
+    expect(rows.some((row) => row.includes('would capture') && row.includes('CLAUDE.md'))).toBe(
+      true,
+    );
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# shared-old\n');
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260810-000010');
+    expect(existsSync(backupRoot)).toBe(false);
+  });
+
   it('writes no shared-links baseline file when none existed before a win32 dry-run', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared-old\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local-new\n');
@@ -1095,6 +1122,7 @@ describe('computePreview orchestration', () => {
     computePreview('20260803-000004', { projects: {} }, 'pull', {
       captures: [
         {
+          kind: 'mirror',
           name: 'CLAUDE.md',
           localPath: '/pre/rebase/CLAUDE.md',
           repoPath: '/pre/shared/CLAUDE.md',
@@ -1103,6 +1131,8 @@ describe('computePreview orchestration', () => {
       deletions: [
         { name: 'commands', localPath: '/pre/rebase/commands/a.md', repoPath: '/pre/shared/a.md' },
       ],
+      namesDerived: false,
+      derivedSharedDirs: undefined,
     });
 
     const joined = logs.join('\n');
@@ -1158,6 +1188,71 @@ describe('computePreview orchestration', () => {
       const joined = logs.join('\n');
       expect(joined).not.toContain('would capture');
       expect(joined).not.toContain('would remove');
+    },
+  );
+
+  it('reports one invalid sharedDirs entry exactly once on a win32 nomad diff', async () => {
+    // Three derivations run on this surface (the dry-run mirror, the deletion
+    // planner, and the shared-link apply), so before the fix `nomad diff`
+    // printed the same rejection line three times and a user reasonably read
+    // it as three rejected entries.
+    //
+    // The planted baseline is what makes the deletion planner enumerate at all.
+    // Without one it returns early, so the assertion would pass on a host that
+    // has never completed a pull and fail on every host that has.
+    plantBaseline({ 'CLAUDE.md': { size: 1, mtime: 1, hash: 'x' } });
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local\n');
+    const map = { projects: {}, sharedDirs: ['../escape'] };
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify(map) + '\n');
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const realPlatform = process.platform;
+    stubPlatform('win32');
+    try {
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260810-000020', map, 'diff');
+    } finally {
+      stubPlatform(realPlatform);
+    }
+
+    const rejections = errSpy.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).includes('sharedDirs entry'),
+    );
+    expect(rejections).toHaveLength(1);
+  });
+
+  it.skipIf(isWin)(
+    'reports one invalid sharedDirs entry exactly once on a posix nomad diff',
+    async () => {
+      // Both win32 halves return before deriving anything on posix, but
+      // `appendMirrorPlanRows` derives the shared-name list on every platform,
+      // so on this path the single WARN comes from there and the preview's own
+      // apply step is the one that stays quiet. Exactly one either way, which
+      // is the property being pinned; the site it comes from is an asymmetry
+      // documented on both sibling functions.
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      const map = { projects: {}, sharedDirs: ['../escape'] };
+      writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify(map) + '\n');
+      vi.spyOn(console, 'log').mockImplementation(() => {
+        /* captured */
+      });
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        /* captured */
+      });
+
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260810-000021', map, 'diff');
+
+      const rejections = errSpy.mock.calls.filter((c: unknown[]) =>
+        String(c[0]).includes('sharedDirs entry'),
+      );
+      expect(rejections).toHaveLength(1);
     },
   );
 });

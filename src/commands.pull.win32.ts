@@ -7,11 +7,16 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { type PathMap } from './config.ts';
+import { parsePorcelainZ } from './commands.pull.recovery.git.ts';
+import { allSharedLinks, type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
-import { planSharedLinkCaptures } from './links.captures.ts';
 import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
-import { stageLocalSharedEdits } from './links.ts';
+import {
+  revertDeniedMirrorPaths,
+  stageLocalSharedEdits,
+  type MirrorPreviewEvent,
+} from './links.mirror.ts';
+import { addItem, section, type DoctorSection } from './output-tree.ts';
 import { type SharedLinkPlans } from './preview.ts';
 import { warn } from './utils.ts';
 import { readPathMap } from './utils.json.ts';
@@ -41,6 +46,88 @@ function readMapForMirror(mapPath: string): PathMap | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether two `sharedDirs` values describe the same configuration.
+ *
+ * The pre-rebase reconcile reports whether it already emitted this run's
+ * `sharedDirs` rejection WARNs, so the post-rebase derivation can stay quiet
+ * instead of repeating them. That report is only sound while both derivations
+ * see the same field: the rebase in between can add, remove or replace entries,
+ * and a suppression carried across it silences a derivation that had something
+ * different to say. Two concrete failures, both reachable on win32: an invalid
+ * entry the rebase DELIVERS is reported zero times (the pre-rebase map had
+ * nothing to reject), and an entry the rebase REPLACES is reported under the old
+ * spelling and never the new one.
+ *
+ * Compared by serialization rather than field-by-field because the field is
+ * unvalidated runtime input: `validatePathMapShape` deliberately leaves it
+ * alone, so it can be an array, a string, a number, or absent, and every one of
+ * those shapes changes what `allSharedLinks` reports. Serializing compares them
+ * all with one rule. Both absent serializes to `undefined` on both sides and
+ * compares equal, which is the common case on a host with no `sharedDirs` at
+ * all.
+ *
+ * @param before - The `sharedDirs` value the earlier derivation ran against.
+ * @param after - The `sharedDirs` value the later derivation will run against.
+ * @returns `true` when a WARN emitted about `before` also covers `after`.
+ */
+function sharedDirsUnchanged(before: unknown, after: unknown): boolean {
+  return JSON.stringify(before) === JSON.stringify(after);
+}
+
+/**
+ * Whether a pre-rebase derivation's `sharedDirs` rejection WARNs still cover
+ * what a derivation against `map` would report, so the later one can stay quiet.
+ *
+ * Both halves have to hold. The earlier derivation must have happened at all
+ * (it does not on darwin or linux, where the win32 reconcile returns
+ * immediately, nor on an unreadable map), and the field it reported on must not
+ * have moved. The rebase sits between the two, so it can add, remove or replace
+ * `sharedDirs` entries; a suppression carried across that blindly hides an
+ * entry the fetch just delivered, which reports it ZERO times, worse than the
+ * duplicate the suppression exists to remove. See {@link sharedDirsUnchanged}.
+ *
+ * @param namesDerived - Whether the pre-rebase step derived the name list.
+ * @param derivedSharedDirs - The `sharedDirs` value it derived against.
+ * @param map - The post-rebase path-map the later derivation will read.
+ * @returns `true` when the later derivation can safely be silenced.
+ */
+export function namesAlreadyReported(
+  namesDerived: boolean,
+  derivedSharedDirs: unknown,
+  map: PathMap,
+): boolean {
+  return namesDerived && sharedDirsUnchanged(derivedSharedDirs, map.sharedDirs);
+}
+
+/**
+ * The pre-rebase plans, re-stated against the POST-rebase map the preview will
+ * actually describe.
+ *
+ * Only `namesDerived` can go stale across the rebase: the plans themselves are
+ * deliberately computed against pre-rebase repo state (see
+ * {@link SharedLinkPlans}), but the WARNs they claim to have already emitted
+ * were emitted about a `sharedDirs` field the rebase may have since changed.
+ *
+ * Takes and returns `undefined` unchanged so the wet path, which computes no
+ * plans, needs no branch of its own at the call site.
+ *
+ * @param plans - Plans from the pre-rebase `planSharedReconcileBeforePull`, or
+ *   `undefined` on the wet path.
+ * @param map - The post-rebase path-map the preview is rendered against.
+ * @returns The same plans, with `namesDerived` re-evaluated against `map`.
+ */
+export function plansAgainst(
+  plans: SharedLinkPlans | undefined,
+  map: PathMap,
+): SharedLinkPlans | undefined {
+  if (plans === undefined) return undefined;
+  return {
+    ...plans,
+    namesDerived: namesAlreadyReported(plans.namesDerived, plans.derivedSharedDirs, map),
+  };
 }
 
 /**
@@ -84,6 +171,44 @@ function untrackedUnderShared(repo: string): Set<string> | null {
 function newlyUntracked(before: Set<string> | null, after: Set<string> | null): string[] {
   if (before === null || after === null) return [];
   return [...after].filter((p) => !before.has(p));
+}
+
+/**
+ * Run the denylist backstop over the repo working tree's `shared/` subtree.
+ *
+ * The sweep treats its two halves differently, and
+ * {@link revertDeniedMirrorPaths} owns the reasoning: an untracked hit is
+ * snapshotted and then removed, while a tracked hit is reported and left
+ * exactly as it was found. So a hit here is always a WARN, and only sometimes
+ * a write.
+ *
+ * Fed by a `git status` snapshot rather than the untracked-file diff the
+ * reconcile already computes, because `git ls-files --others` only ever lists
+ * untracked paths: a credential appended to an already-tracked
+ * `shared/<name>` file appears in neither the before nor the after snapshot,
+ * so that diff is empty for exactly the case this gate most needs to see.
+ * `--untracked-files=all` is required too, since without it a wholly untracked
+ * new subtree collapses to a single directory record, and per-file removal is
+ * what the untracked half does.
+ *
+ * A `null` probe means git could not answer, and degrades to a silent skip:
+ * remove nothing, report nothing, warn nothing. Every other `gitProbe` consumer
+ * in this file has the same fail-open contract, and the removing half is why it
+ * has to be this one: acting on an unanswerable snapshot is how a gate deletes
+ * the wrong path, and a report built from the same snapshot would send the user
+ * after the wrong one.
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @param ts - Backup timestamp, resolved once by `runPullCore`. Reaches only
+ *   the untracked half, which is the only half that writes anything.
+ */
+function revertDeniedUnderShared(repo: string, ts: string): void {
+  const out = gitProbe(
+    ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', 'shared/'],
+    repo,
+  );
+  if (out === null) return;
+  revertDeniedMirrorPaths(repo, parsePorcelainZ(out), ts);
 }
 
 /**
@@ -132,18 +257,73 @@ function newlyUntracked(before: Set<string> | null, after: Set<string> | null): 
  * passes, including the containment below: a mirror that throws part way can
  * still have written files, and those are this run's to account for.
  *
+ * `events` is collected via an `onPreview` sink passed into
+ * `stageLocalSharedEdits`, and is what lets a wet pull render a `Symlinks` row
+ * naming what the mirror captured. It answers a different question than
+ * `mirrored`: `mirrored` is the flat set of repo-relative paths this run
+ * newly created (from the untracked-file snapshot diff, used by the collision
+ * runbook), while `events` is one entry per name the mirror actually copied,
+ * whether or not the repo-side path was already tracked.
+ *
+ * `linkNames` is derived here ONCE (`allSharedLinks(map)`, when `map` is
+ * non-null) and threaded into both `stageLocalSharedEdits` and
+ * `applySharedLinkDeletions`, which otherwise each derive it independently and
+ * would double- or triple-emit a `sharedDirs` rejection WARN for the same
+ * invalid entry within a single pre-rebase reconcile. Both of those run at
+ * this same point in the run, against this same pre-rebase repo state, so one
+ * shared list is correct for them.
+ *
+ * The list itself is deliberately NOT returned. The post-rebase
+ * `applySharedLinks` acts on the repo state the rebase left behind, so it has
+ * to derive its own list from the post-rebase map; handing it this one would
+ * freeze a pull that ADDS a `sharedDirs` entry (or its `shared/<name>`
+ * content) to the names known before the fetch. What is returned instead is
+ * `namesDerived`, which only tells the caller that this step already emitted
+ * any `sharedDirs` rejection WARN for the run, so the post-rebase derivation
+ * can be quiet rather than duplicating it.
+ *
+ * That claim expires at the rebase, so `derivedSharedDirs` comes back with it:
+ * the raw `sharedDirs` value this step derived against. The caller compares it
+ * to the post-rebase map's own before honoring the suppression, because a WARN
+ * about the pre-rebase field says nothing about a field the rebase changed. See
+ * {@link sharedDirsUnchanged}.
+ *
  * @param repo - `repoHome()`, resolved once by `runPullCore`.
  * @param ts - Backup timestamp, resolved once by `runPullCore`.
- * @returns Repo-relative paths this run newly created under `shared/`. Empty on
- *   darwin and linux, and empty whenever the snapshots could not be taken.
+ * @returns `mirrored` (repo-relative paths this run newly created under
+ *   `shared/`), `events` (one `MirrorPreviewEvent` per name the mirror
+ *   copied), `namesDerived` (whether the shared-name list was derived here, and
+ *   so whether its rejection WARNs have already been emitted), and
+ *   `derivedSharedDirs` (the field those WARNs describe). All empty/false on
+ *   darwin and linux; `mirrored` is also empty whenever the untracked-file
+ *   snapshots could not be taken.
  */
-export function reconcileSharedLinksBeforePull(repo: string, ts: string): string[] {
-  if (process.platform !== 'win32') return [];
+export function reconcileSharedLinksBeforePull(
+  repo: string,
+  ts: string,
+): {
+  mirrored: string[];
+  events: MirrorPreviewEvent[];
+  namesDerived: boolean;
+  derivedSharedDirs: unknown;
+} {
+  if (process.platform !== 'win32') {
+    return { mirrored: [], events: [], namesDerived: false, derivedSharedDirs: undefined };
+  }
   const before = untrackedUnderShared(repo);
+  const events: MirrorPreviewEvent[] = [];
+  let linkNames: string[] = [];
+  let namesDerived = false;
+  let derivedSharedDirs: unknown;
   try {
     const map = readMapForMirror(join(repo, 'path-map.json'));
-    stageLocalSharedEdits(map, ts);
-    applySharedLinkDeletions(map, ts);
+    if (map !== null) {
+      linkNames = allSharedLinks(map);
+      namesDerived = true;
+      derivedSharedDirs = map.sharedDirs;
+    }
+    stageLocalSharedEdits(map, ts, { onPreview: (e) => events.push(e), linkNames });
+    applySharedLinkDeletions(map, ts, { linkNames });
   } catch (err) {
     // A pre-step must never be the thing that fails a pull. Either pass can
     // throw for reasons unrelated to the user's intent (a path over the Windows
@@ -155,7 +335,36 @@ export function reconcileSharedLinksBeforePull(repo: string, ts: string): string
     // simply replanned on the next run.
     warn(`could not reconcile local shared edits before the pull: ${(err as Error).message}`);
   }
-  return newlyUntracked(before, untrackedUnderShared(repo));
+  // Outside the try on purpose: a pass that threw part way can still have
+  // written, so the gate has to see the tree as it actually stands. Before the
+  // "after" snapshot, so a path it removed is not then reported as one this run
+  // created.
+  revertDeniedUnderShared(repo, ts);
+  return {
+    mirrored: newlyUntracked(before, untrackedUnderShared(repo)),
+    events,
+    namesDerived,
+    derivedSharedDirs,
+  };
+}
+
+/**
+ * Build the wet-pull `Symlinks` section from the mirror events collected by
+ * `reconcileSharedLinksBeforePull`. Reuses the `Symlinks` header the dry-run
+ * preview tree already uses for the same concept (locked decision: no third
+ * name for one idea). Row text is past tense since the copy already happened
+ * by the time this renders.
+ *
+ * @param events - Mirror events collected during the pre-rebase reconcile.
+ * @returns A `DoctorSection` with zero items when `events` is empty, so
+ *   `renderTree` omits it entirely and posix output stays byte-identical.
+ */
+export function buildMirrorSection(events: readonly MirrorPreviewEvent[]): DoctorSection {
+  const s = section('Symlinks');
+  for (const e of events) {
+    addItem(s, `captured  ${e.localPath} -> ${e.repoPath}`);
+  }
+  return s;
 }
 
 /**
@@ -163,18 +372,62 @@ export function reconcileSharedLinksBeforePull(repo: string, ts: string): string
  * that step WOULD do, for a caller previewing instead of applying.
  *
  * Exists so `pull --dry-run` can compute both plans at the same point in the
- * run the wet reconcile acts, which is before the rebase. Both planners gate on
- * repo-side existence, so computing them after the rebase would let the preview
- * and the run disagree about a file the rebase deleted or added upstream.
+ * run the wet reconcile acts, which is before the rebase. Both the deletion
+ * planner and the dry-run mirror gate on repo-side existence, so computing
+ * them after the rebase would let the preview and the run disagree about a
+ * file the rebase deleted or added upstream.
+ *
+ * The capture half runs the real mirror (`stageLocalSharedEdits`) under
+ * `dryRun: true` with a collecting `onPreview` sink, instead of a separate
+ * predictor: this is the single source `computePreview` and a real pull share,
+ * so a gate added to one can no longer be missed on the other. No disk
+ * mutation occurs under `dryRun`, so `ts` here is only ever used for event
+ * phrasing, matching `applySharedLinks`'s existing `dryRun` contract.
  *
  * Reads the map through the same fail-safe reader the wet step uses, so the two
  * cannot disagree about which names are shared, and returns empty plans on
- * darwin and linux because both planners do.
+ * darwin and linux because both sources do.
+ *
+ * The shared-name list is derived ONCE here and threaded into both halves, for
+ * the same reason the wet step does it: each half would otherwise derive its
+ * own and re-emit every `sharedDirs` rejection WARN, so a user reading
+ * `pull --dry-run` would count one rejected entry twice.
+ *
+ * The derivation is gated on win32, and the reason is the rebase rather than
+ * the platform. Both halves return before deriving anything on darwin and
+ * linux, so a derivation here would be pure WARN accounting; and because the
+ * real rebase runs between this call and the preview that consumes the result,
+ * that accounting would move posix's only rejection WARN off the preview's own
+ * apply step, which reads the POST-rebase map, onto this one, which read the
+ * map as it stood before the fetch. The user would be told about a `sharedDirs`
+ * field the same command has already replaced.
+ *
+ * The sibling that renders those plans, `appendMirrorPlanRows` in `preview.ts`,
+ * deliberately does the opposite and derives on EVERY platform. That is not a
+ * contradiction: it only derives on the `nomad diff` path, which has no rebase
+ * of its own, so its derivation and the apply's read the same map and there is
+ * no stale field to report against.
+ *
+ * `derivedSharedDirs` travels with `namesDerived` for the same reason the wet
+ * step returns it: `pull --dry-run` runs the real rebase between this call and
+ * the preview that consumes the result, so the suppression is only sound while
+ * the field the WARNs are about has not moved.
  *
  * @param repo - `repoHome()`, resolved once by the caller.
- * @returns The capture and deletion plans for the current repo state.
+ * @param ts - Backup timestamp, resolved once by the caller; unused for
+ *   mutation under `dryRun`, only for event phrasing.
+ * @returns The capture and deletion plans for the current repo state, plus
+ *   `namesDerived` (see {@link SharedLinkPlans}).
  */
-export function planSharedReconcileBeforePull(repo: string): SharedLinkPlans {
+export function planSharedReconcileBeforePull(repo: string, ts: string): SharedLinkPlans {
   const map = readMapForMirror(join(repo, 'path-map.json'));
-  return { captures: planSharedLinkCaptures(map), deletions: planSharedLinkDeletions(map) };
+  const captures: MirrorPreviewEvent[] = [];
+  const linkNames = process.platform === 'win32' && map !== null ? allSharedLinks(map) : undefined;
+  stageLocalSharedEdits(map, ts, { dryRun: true, onPreview: (e) => captures.push(e), linkNames });
+  return {
+    captures,
+    deletions: planSharedLinkDeletions(map, { linkNames }),
+    namesDerived: linkNames !== undefined,
+    derivedSharedDirs: map?.sharedDirs,
+  };
 }

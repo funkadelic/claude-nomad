@@ -128,10 +128,11 @@ describe('enforceAllowList: extras prefix', () => {
 // regression guard below proves the original surface still blocks.
 describe('isNeverSync: extras scope', () => {
   it('returns false for shared/extras/<logical>/.planning/todos/... paths', async () => {
-    // Re-import via a small wrapper because isNeverSync is not exported.
-    // The acceptance signal is end-to-end via enforceAllowList: a path that
-    // would otherwise hit the `todos` segment hard-block must pass when it
-    // lives under `shared/extras/`.
+    // Asserted on the predicate directly and end-to-end through the gate: a
+    // path that would otherwise hit the `todos` segment hard-block must pass
+    // when it lives under `shared/extras/`.
+    const { isNeverSync } = await import('./config.never-sync.ts');
+    expect(isNeverSync('shared/extras/foo/.planning/todos/2026-05-22-task.md')).toBe(false);
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
     expect(() =>

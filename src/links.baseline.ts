@@ -63,6 +63,32 @@ const SHARED_BASELINE_CONFIG_HASH = 'not-applicable';
 export type LocalFileStat = { size: number; mtime: number };
 
 /**
+ * How a caller supplies, or silences, the shared-name derivation this module's
+ * walk needs.
+ *
+ * `allSharedLinks` WARNs once per rejected `sharedDirs` entry, so every function
+ * that calls it is an audible reporting site. The stated contract is that one
+ * invalid entry is reported exactly once per `nomad pull`, `nomad push` or
+ * `nomad diff`, and a walk buried three calls deep inside a baseline write is
+ * still a reporting site: nothing about being internal makes it quiet. Either
+ * option satisfies the contract, and which one fits depends on what the caller
+ * has in hand.
+ *
+ * `linkNames` is for a caller that already derived the list at the same point in
+ * the run and can hand it over, which also guarantees the two agree on which
+ * names are shared. `quiet` is for a caller that knows the derivation has
+ * already happened against the same map but does not hold the result, which is
+ * the wet pull's position: `applySharedLinks` derives from the post-rebase map
+ * internally, and the baseline write on the next line needs the same map.
+ */
+export type SharedScanOpts = {
+  /** Pre-derived name list; falls back to deriving from `map`. */
+  linkNames?: readonly string[];
+  /** Suppress the rejection WARNs of an internal derivation. */
+  quiet?: boolean;
+};
+
+/**
  * One walk of the configured shared names: the files it recorded, plus every
  * path it DECLINED to walk.
  *
@@ -210,12 +236,13 @@ function collectSharedFiles(dir: string, claude: string, scan: LocalSharedScan):
  * implementations of it would eventually disagree.
  *
  * @param map - Parsed `path-map.json`, for the configured shared names.
+ * @param opts - `linkNames`/`quiet`; see {@link SharedScanOpts}.
  * @returns The recorded files plus the relative paths the walk declined.
  */
-export function enumerateLocalSharedScan(map: PathMap): LocalSharedScan {
+export function enumerateLocalSharedScan(map: PathMap, opts: SharedScanOpts = {}): LocalSharedScan {
   const claude = claudeHome();
   const scan: LocalSharedScan = { files: {}, declined: [] };
-  for (const name of allSharedLinks(map)) {
+  for (const name of opts.linkNames ?? allSharedLinks(map, { quiet: opts.quiet === true })) {
     /* c8 ignore next 4 -- unreachable defense-in-depth; the sharedDirs guard rejects a superset of this deny set (see above) */
     if (isDeniedName(ALWAYS_NEVER_SYNC, name)) {
       scan.declined.push(name);
@@ -236,10 +263,14 @@ export function enumerateLocalSharedScan(map: PathMap): LocalSharedScan {
  * them.
  *
  * @param map - Parsed `path-map.json`, for the configured shared names.
+ * @param opts - `linkNames`/`quiet`; see {@link SharedScanOpts}.
  * @returns Map from relative POSIX key to `{size, mtime}` for each local file.
  */
-export function enumerateLocalSharedFiles(map: PathMap): Record<string, LocalFileStat> {
-  return enumerateLocalSharedScan(map).files;
+export function enumerateLocalSharedFiles(
+  map: PathMap,
+  opts: SharedScanOpts = {},
+): Record<string, LocalFileStat> {
+  return enumerateLocalSharedScan(map, opts).files;
 }
 
 /**
@@ -250,12 +281,13 @@ export function enumerateLocalSharedFiles(map: PathMap): Record<string, LocalFil
  * direction.
  *
  * @param map - Parsed `path-map.json`, for the configured shared names.
+ * @param opts - `linkNames`/`quiet`; see {@link SharedScanOpts}.
  * @returns A manifest tagged with {@link SHARED_BASELINE_KIND}.
  */
-export function buildSharedBaseline(map: PathMap): Manifest {
+export function buildSharedBaseline(map: PathMap, opts: SharedScanOpts = {}): Manifest {
   const claude = claudeHome();
   const files: Record<string, ManifestEntry> = {};
-  for (const [key, st] of Object.entries(enumerateLocalSharedFiles(map))) {
+  for (const [key, st] of Object.entries(enumerateLocalSharedFiles(map, opts))) {
     try {
       files[key] = { size: st.size, mtime: st.mtime, hash: hashFile(join(claude, key)) };
     } catch {
@@ -281,12 +313,21 @@ export function buildSharedBaseline(map: PathMap): Manifest {
  * invoke it unconditionally with no branch of their own, matching the
  * `applySharedLinks` convention.
  *
+ * Its shared-name walk is an audible derivation site like any other, and this
+ * one runs on the wet pull immediately after `applySharedLinks` has already
+ * derived from the SAME post-rebase map. That is why the caller passes
+ * `quiet: true` rather than leaving it loud: it is not that a baseline write has
+ * nothing to report, it is that the report has already been made about the same
+ * map moments earlier, and repeating it would make a user reading one rejected
+ * entry count two.
+ *
  * @param map - Parsed `path-map.json`, for the configured shared names.
+ * @param opts - `linkNames`/`quiet`; see {@link SharedScanOpts}.
  */
-export function writeSharedBaseline(map: PathMap): void {
+export function writeSharedBaseline(map: PathMap, opts: SharedScanOpts = {}): void {
   if (process.platform !== 'win32') return;
   try {
-    writeManifest(sharedBaselinePath(), buildSharedBaseline(map));
+    writeManifest(sharedBaselinePath(), buildSharedBaseline(map, opts));
   } catch (err) {
     warn(`could not record the shared-config baseline: ${(err as Error).message}`);
   }

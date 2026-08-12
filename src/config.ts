@@ -316,32 +316,22 @@ export function sharedDirEntries(map: PathMap): unknown[] {
  */
 export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md', '.claude'] as const;
 
-/**
- * Credential and host-config file names blocked even under `shared/extras/`,
- * where the broader `NEVER_SYNC` segment scan is narrowed to avoid
- * false-blocking ephemeral dir names (`todos`, `plans`, etc.) inside synced
- * `.planning/` trees. Strict subset of `NEVER_SYNC`; doctor
- * display and sharedDirs guard use the full set.
- */
-export const ALWAYS_NEVER_SYNC = new Set([
-  '.claude.json',
-  '.credentials.json',
-  'settings.local.json',
-  'history.jsonl',
-  'stats-cache.json',
-]);
-
-// Path segments that must never cross the sync boundary. Defined in
+// Path segments that must never cross the sync boundary, plus the predicates
+// that decide which denylist applies to a given path. Defined in
 // ./config.never-sync.ts (a dependency-free leaf) so config.sharedDirs.guard.ts
-// can import it without importing config.ts (which would re-form a cycle);
+// can import them without importing config.ts (which would re-form a cycle),
+// and so the push gate and the pull-side mirror gate share one implementation;
 // re-exported here so existing `from './config.ts'` imports keep resolving.
 export {
   NEVER_SYNC,
   CLAUDE_EXTRA_NEVER_SYNC,
+  ALWAYS_NEVER_SYNC,
   isSecretFileName,
   isDeniedName,
   isClaudeExtraName,
   stripTrailingDotsAndWhitespace,
+  deniedSegmentFor,
+  isNeverSync,
 } from './config.never-sync.ts';
 
 // Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in

@@ -1,7 +1,15 @@
 import { execFileSync } from 'node:child_process';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -307,3 +315,92 @@ describe.skipIf(!hasGit)('parity: adopt then eject round-trip', () => {
     expect(readFileSync(localPath, 'utf8'), 'eject lost the shared content').toBe(ORIGINAL_MD);
   });
 });
+
+/**
+ * Recursively snapshot `{ relativePath: content }` for every regular file
+ * under `root`, POSIX-separated so the map is comparable regardless of which
+ * OS produced the paths. Used to derive the set of names the wet mirror pass
+ * actually wrote, by diffing a before/after pair.
+ */
+function snapshotFiles(root: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (dir: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const abs = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      try {
+        out.set(relative(root, abs).split(sep).join('/'), readFileSync(abs, 'utf8'));
+      } catch {
+        /* vanished between the directory read and the file read */
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
+describe.skipIf(!hasGit)(
+  'parity: the mirror dry-run preview agrees with what the wet pass writes',
+  () => {
+    let sandbox: Sandbox;
+
+    beforeEach(() => {
+      sandbox = makeSandbox();
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      restoreSandbox(sandbox);
+    });
+
+    it('the dry-run name set equals the set of names the wet pass actually wrote to disk', async () => {
+      // A capturable shared name: a repo-side counterpart exists, and the host
+      // copy carries an unpublished edit. On posix this proves the trivial
+      // case (both sides empty, the mirror is a no-op); on the windows-latest
+      // CI leg the real copy-sync branch runs, which is the point of this
+      // file: nothing here stubs process.platform.
+      seedShared(sandbox.sharedDir, 'CLAUDE.md');
+      writeFileSync(join(sandbox.claudeHome, 'CLAUDE.md'), '# host edit, not yet pushed\n');
+
+      const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+      const before = snapshotFiles(sandbox.sharedDir);
+
+      const dryEvents: { name: string }[] = [];
+      stageLocalSharedEdits({ projects: {} }, '20260810-040000', {
+        dryRun: true,
+        onPreview: (e) => dryEvents.push(e),
+      });
+      const dryNames = new Set(dryEvents.map((e) => e.name));
+      // The final equality holds because every seeded name carries a real host
+      // edit. The mirror emits one dry-run event per name that passes its
+      // gates, not per name whose bytes change, so seeding a name whose host
+      // copy already matches the repo copy would add an event with no wet-pass
+      // delta behind it and fail the comparison as a fixture artifact.
+      // dryRun must not have written anything, so the wet pass below is the
+      // only source of the "actually wrote" side of the comparison.
+      expect(snapshotFiles(sandbox.sharedDir)).toEqual(before);
+
+      stageLocalSharedEdits({ projects: {} }, '20260810-040000');
+      const after = snapshotFiles(sandbox.sharedDir);
+      const wetWrittenNames = new Set<string>();
+      for (const [relPath, content] of after) {
+        if (before.get(relPath) !== content) wetWrittenNames.add(relPath.split('/')[0]);
+      }
+      for (const relPath of before.keys()) {
+        if (!after.has(relPath)) wetWrittenNames.add(relPath.split('/')[0]);
+      }
+
+      expect([...dryNames].sort()).toEqual([...wetWrittenNames].sort());
+    });
+  },
+);

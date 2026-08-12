@@ -3,17 +3,41 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as wedgeModule from './commands.pull.wedge.ts';
 import type * as recoveryModule from './commands.pull.recovery.ts';
 import type * as recoveryUnmergedModule from './commands.pull.recovery.unmerged.ts';
 
 import type * as baselineModule from './links.baseline.ts';
+import type * as linksModule from './links.ts';
+import type * as linksMirrorModule from './links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 
+import { plantSharedBaseline } from './test-support/baseline.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
+
+/**
+ * Partially mock `links.mirror.ts`, keeping every real export and replacing
+ * only `stageLocalSharedEdits`.
+ *
+ * Spreading the real module matters rather than replacing it outright: the
+ * win32 denylist backstop (revertDeniedUnderShared) reaches
+ * revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's try/catch,
+ * and a bare `{ stageLocalSharedEdits }` factory leaves that export undefined
+ * there.
+ *
+ * @param impl - The replacement spy. Defaults to a fresh `vi.fn()`.
+ * @returns The spy installed as `stageLocalSharedEdits`.
+ */
+function mockMirrorModule(impl: ReturnType<typeof vi.fn> = vi.fn()): ReturnType<typeof vi.fn> {
+  vi.doMock('./links.mirror.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof linksMirrorModule>();
+    return { ...actual, stageLocalSharedEdits: impl };
+  });
+  return impl;
+}
 
 /**
  * Covers the two scattered branches in cmdPull that the existing
@@ -170,6 +194,7 @@ describe('cmdPull: extras integration', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -208,11 +233,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: remapPullMock,
@@ -263,11 +285,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -314,11 +333,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -362,11 +378,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -402,11 +415,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -446,11 +456,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 1, pulled: ['proj-a'], wouldPull: [] })),
@@ -501,11 +508,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 2, pulled: [], wouldPull: [] })),
@@ -542,8 +546,8 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'test-host.json' })),
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] })),
@@ -712,11 +716,8 @@ describe('cmdPull wedge preflight', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -866,11 +867,8 @@ describe('cmdPull forceRemote routing', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -895,6 +893,7 @@ describe('cmdPull forceRemote routing', () => {
     const branches = gitOut(['branch', '--list', 'nomad/stranded-*'], local);
     expect(branches.trim().length).toBeGreaterThan(0);
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
   });
@@ -940,11 +939,8 @@ describe('cmdPull forceRemote routing', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -961,6 +957,7 @@ describe('cmdPull forceRemote routing', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -1009,6 +1006,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doUnmock('./commands.pull.recovery.unmerged.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     process.exitCode = 0;
@@ -1076,11 +1074,8 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1119,11 +1114,8 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1159,11 +1151,8 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1278,6 +1267,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -1329,11 +1319,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1363,11 +1350,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1411,11 +1395,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1438,6 +1419,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(existsSync(join(localSkills, 'gsd-executor'))).toBe(true);
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
   });
@@ -1468,11 +1450,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1494,6 +1473,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(existsSync(localSkills3)).toBe(false);
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     vi.doUnmock('./preview.ts');
@@ -1526,11 +1506,8 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1610,11 +1587,8 @@ describe('runPullCore: return shape and lock-free contract', () => {
     vi.doMock('./links.ts', () => ({
       applySharedLinks: vi.fn(),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      // Required even where the test does not assert on it: runPullCore calls
-      // this on win32, so a mock omitting it passes on posix (the pre-pull
-      // mirror early-returns there) and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    mockMirrorModule();
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 2),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] })),
@@ -1639,6 +1613,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -1669,6 +1644,35 @@ describe('runPullCore: return shape and lock-free contract', () => {
     expect(result.incomingChanges).toBe(false);
     // runPullCore never calls acquireLock: no lockfile is written.
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('renders no Symlinks group when the mirror produced no events (posix / mocked-mirror parity)', async () => {
+    // The mocked stageLocalSharedEdits never calls onPreview, so
+    // reconcileSharedLinksBeforePull's events array stays empty regardless of
+    // the runner's real platform. runPullCore always splices a Symlinks
+    // section into the returned array (buildMirrorSection(events), even when
+    // events is empty), but renderTree drops any section with zero items at
+    // render time; this asserts what actually reaches the terminal, which is
+    // the guard against the head-of-array splice leaking an empty group into
+    // every posix user's output. Extras does not render either in this
+    // fixture: the mocked remapExtrasPull returns nothing pulled, which is
+    // unrelated to the mirror and just this fixture's own empty data.
+    const { runPullCore } = await import('./commands.pull.ts');
+    const { renderTree } = await import('./output-tree.ts');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    const result = runPullCore();
+    expect(result.tag).toBe('wet');
+    if (result.tag !== 'wet') throw new Error('unreachable');
+    renderTree(result.sections);
+    const renderedHeaders = logSpy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((line) =>
+        ['Settings', 'Sessions', 'Extras', 'Pull summary', 'Symlinks'].includes(line),
+      );
+    expect(renderedHeaders).not.toContain('Symlinks');
+    expect(renderedHeaders).toEqual(['Settings', 'Sessions', 'Pull summary']);
   });
 
   it('reports incomingChanges: true when the pre-rebase HEAD cannot be captured (fresh clone)', async () => {
@@ -1802,6 +1806,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     vi.doUnmock('./commands.pull.wedge.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./links.baseline.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
@@ -1858,8 +1863,8 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
         order.push('apply');
       }),
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
-      stageLocalSharedEdits: mirrorSpy,
     }));
+    mockMirrorModule(mirrorSpy);
     vi.doMock('./remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
       remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
@@ -1884,6 +1889,23 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     return mirrorSpy;
   }
 
+  /**
+   * Assert the mirror spy's first call matches `(map, <backup timestamp>, { onPreview: <fn> })`.
+   * Written as positional-argument checks rather than
+   * `toHaveBeenCalledWith(..., expect.objectContaining(...))` so the untyped
+   * `vi.fn()` spy's `any`-typed call args never flow through a nested
+   * `expect.any()` matcher, which trips `no-unsafe-assignment`.
+   *
+   * @param mirror - The mirror spy returned by `mockPipelineRecording`.
+   * @param map - Expected first argument (the path map passed through).
+   */
+  function expectMirrorCalledWith(mirror: ReturnType<typeof vi.fn>, map: unknown): void {
+    const call = mirror.mock.calls[0] as [unknown, unknown, { onPreview?: unknown } | undefined];
+    expect(call[0]).toEqual(map);
+    expect(typeof call[1]).toBe('string');
+    expect(typeof call[2]?.onPreview).toBe('function');
+  }
+
   it('mirrors the host-side copies into the repo BEFORE git pull --rebase on win32', async () => {
     stubPlatform('win32');
     const order: string[] = [];
@@ -1893,7 +1915,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(order).toEqual(['mirror', 'gitOrFatal', 'apply', 'baseline']);
     // The backup timestamp is threaded through so the mirror can snapshot the
     // repo-side copy it is about to overwrite.
-    expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} }, expect.any(String));
+    expectMirrorCalledWith(mirrorSpy, { projects: {} });
   });
 
   it('does not mirror on a posix platform, where the symlink already made the edit live', async () => {
@@ -1906,15 +1928,30 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     expect(mirrorSpy).not.toHaveBeenCalled();
   });
 
-  it('does not mirror under dryRun on win32 (zero-mutation preview contract)', async () => {
+  it('runs the mirror in dryRun mode only under dryRun on win32 (zero-mutation preview contract)', async () => {
     stubPlatform('win32');
     const order: string[] = [];
     const mirrorSpy = mockPipelineRecording(order);
     const { runPullCore } = await import('./commands.pull.ts');
     runPullCore({ dryRun: true });
-    expect(mirrorSpy).not.toHaveBeenCalled();
-    // The baseline write lives inside the wet-only section builder, so a dry run
-    // is excluded structurally rather than by a flag anyone can later get wrong.
+    // The mirror now runs under dry-run too, via planSharedReconcileBeforePull
+    // computing the pre-rebase capture plan the preview renders, but it is
+    // always called with dryRun: true, so no disk mutation occurs. The
+    // WET-only reconcile (reconcileSharedLinksBeforePull) does not run, so the
+    // mirror is called exactly once here rather than the twice a wet pull on
+    // win32 would produce.
+    expect(mirrorSpy).toHaveBeenCalledTimes(1);
+    const call = mirrorSpy.mock.calls[0] as [
+      unknown,
+      unknown,
+      { dryRun?: unknown; onPreview?: unknown } | undefined,
+    ];
+    expect(call[2]?.dryRun).toBe(true);
+    expect(typeof call[2]?.onPreview).toBe('function');
+    // The baseline write and the shared-link apply both live on the wet-only
+    // path, so a dry run is excluded structurally rather than by a flag anyone
+    // can later get wrong.
+    expect(order).not.toContain('apply');
     expect(order).not.toContain('baseline');
   });
 
@@ -2009,7 +2046,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     // allSharedLinks({projects:{}}) is exactly SHARED_LINKS, so the mirror must
     // still run: skipping it here would silently disable the fix in the very
     // case it exists to cover.
-    expect(mirrorSpy).toHaveBeenCalledWith({ projects: {} }, expect.any(String));
+    expectMirrorCalledWith(mirrorSpy, { projects: {} });
     expect(order).toEqual(['mirror', 'gitOrFatal', 'apply', 'baseline']);
   });
 
@@ -2024,6 +2061,280 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     // Matched on the message so an unrelated failure (a mis-wired doMock, a
     // missing settings.base.json) cannot masquerade as this assertion passing.
     expect(() => runPullCore()).toThrow(/path-map\.json/);
-    expect(mirrorSpy).toHaveBeenCalledWith(null, expect.any(String));
+    expectMirrorCalledWith(mirrorSpy, null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runPullCore: shared-name derivation across the rebase boundary
+// ---------------------------------------------------------------------------
+
+/**
+ * The pre-rebase win32 reconcile and the post-rebase shared-link apply act on
+ * two DIFFERENT repo states, because the rebase between them can add or remove
+ * both a `sharedDirs` entry and its `shared/<name>` content. These tests run
+ * the real `applySharedLinks`, `links.mirror.ts`, `links.baseline.ts` and
+ * `preview.ts` (only the git call, the session/extras/skills copies and the
+ * settings write are mocked) so they assert the observable outcome: what ends
+ * up in `~/.claude/`, and how many times one invalid entry is reported.
+ */
+describe('runPullCore: shared-name derivation across the rebase boundary', () => {
+  const realPlatform = process.platform;
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let repoUnderHome: string;
+  let claudeDir: string;
+  let errSpy: MockInstance<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    process.exitCode = 0;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-pull-names-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_HOST = 'test-host';
+    delete process.env.NOMAD_REPO;
+    repoUnderHome = join(testHome, 'claude-nomad');
+    claudeDir = join(testHome, '.claude');
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(repoUnderHome, 'shared', 'settings.base.json'), '{}\n');
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    vi.resetModules();
+    vi.doMock('./commands.pull.wedge.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof wedgeModule>();
+      return {
+        ...actual,
+        classifyWedge: vi.fn(() => null),
+        probeUnmergedIndex: vi.fn(() => 'clean'),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+      divergenceCheckExtras: vi.fn(() => 0),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({ syncSkillsPull: vi.fn(), syncSkillsPush: vi.fn() }));
+    // Only the settings write is replaced; applySharedLinks stays real because
+    // its derivation is what these counts are about. The wet pull regenerates
+    // settings.json through the atomic writer, whose last step fsyncs the
+    // parent directory, and Windows answers that syscall with EPERM. The
+    // product code skips the step when `process.platform === 'win32'`, but a
+    // test that stubs the platform to linux to pin posix behavior turns that
+    // guard off while the real syscall still runs, so a real Windows host
+    // failed the posix case here on a durability step none of these tests
+    // assert on.
+    vi.doMock('./links.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksModule>();
+      return { ...actual, regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })) };
+    });
+    // links.baseline.ts is deliberately NOT mocked here. It carries a
+    // shared-name derivation of its own on the wet path (writeSharedBaseline),
+    // and stubbing it out is what let an "exactly once" count pass while the
+    // real win32 host emitted more. Same reason a baseline manifest is planted:
+    // without one the deletion planner returns before enumerating, so a second
+    // derivation site never runs and the count is pinned for the wrong reason.
+    plantSharedBaseline(testHome);
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.restoreAllMocks();
+    vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('./skills-sync.ts');
+    process.exitCode = 0;
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
+    else delete process.env.NOMAD_HOST;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Mock `git pull --rebase` with an optional side effect standing in for what
+   * the fetch delivered, so a test can make the repo change underneath the run
+   * exactly where a real rebase would.
+   *
+   * @param onRebase - Side effect applied when the mocked pull runs.
+   */
+  function mockRebase(onRebase?: () => void): void {
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: vi.fn(() => {
+          onRebase?.();
+        }),
+        gitCaptureRaw: vi.fn(() => 'sha'),
+      };
+    });
+  }
+
+  /** Every captured `sharedDirs` rejection WARN line for the run. */
+  function rejectionWarns(): string[] {
+    return errSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .filter((line) => line.includes('sharedDirs entry'));
+  }
+
+  it('materializes a sharedDirs entry that arrived IN this pull, on win32', async () => {
+    stubPlatform('win32');
+    // The rebase delivers both halves of a new shared dir: the path-map entry
+    // that authorizes it and the shared/<name> content itself. A name list
+    // derived before the fetch cannot contain it, so the apply would skip the
+    // directory and the pull would report success having created nothing.
+    mockRebase(() => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['snippets'] }) + '\n',
+      );
+      mkdirSync(join(repoUnderHome, 'shared', 'snippets'), { recursive: true });
+      writeFileSync(join(repoUnderHome, 'shared', 'snippets', 'note.md'), '# incoming\n');
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    expect(existsSync(join(claudeDir, 'snippets', 'note.md'))).toBe(true);
+    expect(readFileSync(join(claudeDir, 'snippets', 'note.md'), 'utf8')).toBe('# incoming\n');
+  });
+
+  it('reports one invalid sharedDirs entry exactly once on a posix wet pull', async () => {
+    // Posix never runs the pre-rebase reconcile, so the post-rebase apply's
+    // own derivation is the ONLY one that ever reports a rejected entry there.
+    // Silencing it unconditionally would leave posix users with no signal at
+    // all.
+    stubPlatform('linux');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    mockRebase();
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    expect(rejectionWarns()).toHaveLength(1);
+  });
+
+  it('reports one invalid sharedDirs entry exactly once on a win32 wet pull', async () => {
+    stubPlatform('win32');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    mockRebase();
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    expect(rejectionWarns()).toHaveLength(1);
+  });
+
+  it('reports one invalid sharedDirs entry exactly once on a win32 pull --dry-run', async () => {
+    // The dry run adds two more derivations of its own (the pre-rebase plan
+    // pair), and a user reading a preview has to be able to count rejected
+    // entries by counting lines.
+    stubPlatform('win32');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+    );
+    mockRebase();
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ dryRun: true });
+
+    expect(rejectionWarns()).toHaveLength(1);
+  });
+
+  it('still reports an invalid sharedDirs entry the rebase itself delivered, on win32', async () => {
+    // The suppression decision is computed against the PRE-rebase map. When the
+    // rebase brings the invalid entry in, the pre-rebase derivation had nothing
+    // to say and the post-rebase one is the only one that can say it, so a
+    // suppression carried blindly across the boundary silently drops the entry
+    // and reports it ZERO times. Zero is a worse outcome than the duplicate the
+    // suppression exists to remove.
+    stubPlatform('win32');
+    mockRebase(() => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+      );
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    expect(rejectionWarns()).toHaveLength(1);
+    expect(rejectionWarns()[0]).toContain('../escape');
+  });
+
+  it('reports the entry that survived the rebase, not the one it replaced, on win32', async () => {
+    // Pre-rebase the map rejects A; the rebase swaps it for B. Both are worth
+    // reporting (they describe two real repo states), but reporting A and never
+    // B would leave the user chasing an entry that no longer exists while the
+    // one actually being dropped goes unmentioned.
+    stubPlatform('win32');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: {}, sharedDirs: ['../before'] }) + '\n',
+    );
+    mockRebase(() => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['../after'] }) + '\n',
+      );
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore();
+
+    // Two lines here is the honest count, not a regression of the duplicate
+    // this suppression exists to remove: they name two different entries
+    // against two different repo states, and the win32 pre-rebase reconcile
+    // genuinely did reject the first one.
+    expect(rejectionWarns()).toHaveLength(2);
+    expect(rejectionWarns()[0]).toContain('../before');
+    expect(rejectionWarns()[1]).toContain('../after');
+  });
+
+  it('still reports an invalid sharedDirs entry the rebase delivered, on a win32 dry run', async () => {
+    // Same staleness, reached through the preview's plans object rather than
+    // the wet path's flag.
+    stubPlatform('win32');
+    mockRebase(() => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
+      );
+    });
+
+    const { runPullCore } = await import('./commands.pull.ts');
+    runPullCore({ dryRun: true });
+
+    expect(rejectionWarns()).toHaveLength(1);
+    expect(rejectionWarns()[0]).toContain('../escape');
   });
 });

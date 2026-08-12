@@ -63,8 +63,8 @@ You do not have to do anything. Two options if you want to tidy up:
 Credentials and ephemeral state are excluded by a hard-coded block list: OAuth tokens and MCP
 state (`.claude.json`, `.credentials.json`), your prompt history (`history.jsonl`), per-host
 overrides (`settings.local.json`), and runtime dirs like `todos/`, `shell-snapshots/`, caches,
-and telemetry. The authoritative list is the `NEVER_SYNC` set in `src/config.ts`, and the
-sensitive subset stays blocked even inside an opted-in extras directory. On top of that, only an
+and telemetry. The authoritative list is the `NEVER_SYNC` set in `src/config.never-sync.ts`, and
+the sensitive subset stays blocked even inside an opted-in extras directory. On top of that, only an
 explicit allow-list of paths can be pushed at all, and everything that is pushed gets scanned by
 gitleaks first. See [Security](/claude-nomad/security/) for the full trust model.
 

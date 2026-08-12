@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as childProcessModule from 'node:child_process';
+import type * as linksMirrorModule from './links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 import type * as wedgeModule from './commands.pull.wedge.ts';
@@ -72,6 +73,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./utils.lockfile.ts');
     vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
     vi.doUnmock('./push-checks.ts');
     vi.doUnmock('./push-gitleaks.ts');
     vi.doUnmock('./remap.ts');
@@ -136,10 +138,19 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
         throw new TypeError('synthetic non-NomadFatal');
       }),
       regenerateSettings: vi.fn(),
-      // See the note in commands.pull.test.ts: omitting this passes on posix
-      // and throws on a real Windows runner.
-      stageLocalSharedEdits: vi.fn(),
     }));
+    // Spread the real module rather than replacing it outright. The denylist
+    // backstop inside the pre-pull reconcile reaches revertDeniedMirrorPaths,
+    // and the child_process mock above makes its git probe answer (an empty
+    // porcelain), so the call is live on a real Windows host. A bare
+    // `{ stageLocalSharedEdits }` factory leaves that export undefined and the
+    // run dies on the missing export before it ever reaches the synthetic
+    // TypeError this test is about. Off win32 the reconcile returns first,
+    // which is the only reason the omission was invisible on posix.
+    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksMirrorModule>();
+      return { ...actual, stageLocalSharedEdits: vi.fn() };
+    });
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull()).toThrow(TypeError);
     expect(existsSync(lockPath)).toBe(false);

@@ -28,9 +28,11 @@ Your skills, slash commands, rules, statusline, and global `CLAUDE.md` live once
 Slash commands, rules, statusline, and `CLAUDE.md` are symlinked into `~/.claude/`; skills are
 copy-synced (gsd-owned `gsd-*` skills excluded). On native Windows, where symlinks need Developer
 Mode or admin rights, the symlinked names are real copies instead, kept in step for you by
-`nomad pull` and `nomad push` (WSL2 gets the symlink behavior, like Linux; see
-[Quickstart](/claude-nomad/quickstart/#windows)). Edit a skill anywhere and every machine gets it on
-the next pull. (`agents/` and `hooks/` are intentionally left to gsd; see GSD-aware sync.)
+`nomad pull` and `nomad push` (except for paths carrying a never-synced name, which the mirror
+skips; see [How it works](/claude-nomad/how-it-works/)). WSL2 gets the symlink behavior, like
+Linux; see [Quickstart](/claude-nomad/quickstart/#windows). Edit a skill anywhere and every machine
+gets it on the next pull. (`agents/` and `hooks/` are intentionally left to gsd; see GSD-aware
+sync.)
 
 Settings are smarter than a straight copy: every pull regenerates `~/.claude/settings.json` by
 merging a shared base file with a per-host override file. One machine can run a different model,
@@ -43,9 +45,14 @@ itself.
 
 Sync is allow-list driven: only paths **claude-nomad** knows about ever leave the machine.
 Credentials, OAuth state, MCP runtime state, shell history, and per-host local settings are on a
-hard never-sync list (the authoritative list is `NEVER_SYNC` in `src/config.ts`) and are blocked
-even when they appear nested inside a directory you opted into syncing. Projects not listed in
-`path-map.json` are left alone in both directions.
+hard never-sync list (the authoritative list is `NEVER_SYNC` in `src/config.never-sync.ts`, which
+also holds ordinary ephemeral names such as `sessions`, `tasks`, `plans`, and `cache`). The match
+is on a whole path segment, directory or file name alike, so a file named `tasks.md` is unaffected.
+Inside a directory you opted into syncing the list narrows to its sensitive subset (credentials,
+OAuth state, per-host settings), which stays blocked however deeply it is nested, so legitimate
+content like a `.planning/tasks/` folder still travels; the project-local `.claude/` extra is the
+exception and is checked against the full list. Projects not listed in `path-map.json` are left
+alone in both directions.
 
 ## Opt-in per-project extras
 

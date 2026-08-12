@@ -43,6 +43,14 @@ export function gitCapture(args: readonly string[], cwd: string): string {
  * would corrupt the path and could let a renamed synced-config path evade the
  * safety gate).
  *
+ * The destination-to-source pairing is deliberately NOT reported. It cannot be
+ * relied on by a consumer that matches on the destination: git computes rename
+ * detection over the diff the caller's PATHSPEC produced, so a rename with one
+ * half outside that pathspec arrives here as a plain staged add with no pairing
+ * to report, and a `C` record pairs two paths that no single index operation
+ * links (a copy stages no deletion of its source). A consumer needing the other
+ * half has to ask git for it over the whole repo.
+ *
  * @param raw Raw stdout from `git status --porcelain=v1 -z`.
  * @returns Object with `tracked` and `untracked` path arrays.
  */

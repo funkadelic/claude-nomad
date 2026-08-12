@@ -420,7 +420,8 @@ export function remapExtrasPush(
     //     The filter prevents ALWAYS_NEVER_SYNC files from landing in the repo
     //     working tree before the allow-list gate fires, eliminating the
     //     "residue wedges repeat push" regression. The allow-list gate
-    //     (enforceAllowList / blockSetFor in commands.push.allowlist.ts)
+    //     (enforceAllowList in commands.push.allowlist.ts, blockSetFor in
+    //     config.never-sync.ts)
     //     remains the hard security boundary.
     //   All others: copyExtrasFiltered with per-extra denylist.
     (src, dst, dirname) =>

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { backupBase, HOST, manifestPath, repoHome } from './config.ts';
+import { allSharedLinks, backupBase, HOST, manifestPath, repoHome } from './config.ts';
 import { computeConfigHash, readManifest } from './push-manifest.ts';
 import { loadSelectionForPush } from './commands.push.selection.ts';
 import { enforceAllowList } from './commands.push.allowlist.ts';
@@ -11,7 +11,7 @@ import { guardGitlinks, guardResolutionModeConflicts } from './commands.push.gua
 import { commitAndPush, runDryRunPreview } from './commands.push.steps.ts';
 import type { DoctorSection } from './output-tree.ts';
 import { remapExtrasPush } from './extras-sync.ts';
-import { syncSharedLinksPush } from './links.ts';
+import { syncSharedLinksPush } from './links.mirror.ts';
 import { syncSkillsPush } from './skills-sync.ts';
 import { probeGitleaks, rebaseBeforePush } from './push-checks.ts';
 import { remapPush } from './remap.ts';
@@ -326,7 +326,11 @@ export async function runPushCore(
   // no allow-list change is needed. Both calls are idempotent.
   if (!dryRun) {
     syncSkillsPush();
-    syncSharedLinksPush(map);
+    // Derive once here rather than let syncSharedLinksPush derive it
+    // internally, so an invalid sharedDirs entry WARNs exactly once per push
+    // instead of once per call site.
+    const linkNames = map !== null ? allSharedLinks(map) : undefined;
+    syncSharedLinksPush(map, { linkNames });
     stripGsdHooksFromBase(repo, backup);
   }
   const st: PushState = { dryRun, remap, extras, globalConfig: [] };

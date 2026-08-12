@@ -106,10 +106,22 @@ describe('parsePorcelainZ - rename and copy records', () => {
     expect(tracked).toEqual(expect.arrayContaining(['copy.ts', 'hosts/myhost.json']));
   });
 
+  it('reports no destination-to-source pairing, which is not reliable here', () => {
+    // Both halves are classified, and nothing more is claimed. Git computes
+    // rename detection over the diff the caller's pathspec produced, so a
+    // pairing reported for one snapshot is absent from another taken over a
+    // narrower scope, and a `C` record pairs two paths no single index
+    // operation links (a copy stages no deletion of its source).
+    const raw = 'R  shared/commands/tasks/foo.md\0shared/commands/foo.md\0C  copy.ts\0src/a.ts\0';
+    expect(parsePorcelainZ(raw)).toEqual({
+      tracked: ['shared/commands/tasks/foo.md', 'shared/commands/foo.md', 'copy.ts', 'src/a.ts'],
+      untracked: [],
+    });
+  });
+
   it('tolerates a rename record missing its source field', () => {
     // Truncated payload: R record whose trailing source field is empty.
-    const raw = 'R  tool.ts\0';
-    const { tracked } = parsePorcelainZ(raw);
+    const { tracked } = parsePorcelainZ('R  tool.ts\0');
     expect(tracked).toEqual(['tool.ts']);
   });
 
