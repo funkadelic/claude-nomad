@@ -903,18 +903,64 @@ describe('revertDeniedMirrorPaths', () => {
 
   it('reports no removal for a path git listed that is not on disk', async () => {
     // `force` makes rmSync treat an absent path as success, so the call cannot
-    // tell a no-op removal from a real one. Without the `snapshotted` guard
-    // this reads as a clean removal of a denylisted file that is in fact still
-    // wherever it was: worse than the silence the gate exists to remove.
+    // tell a no-op removal from a real one. Without a presence probe ahead of
+    // the write this reads as a clean removal of a denylisted file that is in
+    // fact still wherever it was: worse than the silence the gate exists to
+    // remove.
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
 
     expect(warnings()).toContain('nothing was removed for shared/commands/sessions');
     expect(warnings()).not.toContain('removed shared/commands/sessions');
-    expect(warnings()).toContain('shared/commands/sessions');
     expect(warnings()).not.toContain('snapshotted');
     expect(existsSync(backupOf(join('shared', 'commands', 'sessions')))).toBe(false);
   });
+
+  it.skipIf(isWin)('claims the removal of a dangling symlink it really did remove', async () => {
+    // The case that separates "is something here" from "does it resolve".
+    // existsSync answers for the target and says no, so probing with it skips
+    // the backup (correctly, there are no bytes to copy) and then reports that
+    // nothing was removed, while rmSync has already unlinked the link. Only
+    // the removal claim is true here, and only the snapshot clause is not.
+    const link = join(repo, 'shared', 'commands', 'sessions');
+    mkdirSync(dirname(link), { recursive: true });
+    symlinkSync(join(repo, 'shared', 'commands', 'gone-target'), link);
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+
+    expect(lstatSync(link, { throwIfNoEntry: false })).toBeUndefined();
+    expect(warnings()).toContain('removed shared/commands/sessions');
+    expect(warnings()).not.toContain('nothing was removed');
+    expect(warnings()).not.toContain('snapshotted');
+  });
+
+  // Root reads through mode 0o000, so under a root runner the probe would
+  // answer normally and never reach the branch this exists for.
+  it.skipIf(isWin || process.getuid?.() === 0)(
+    'does not claim a path is absent when it cannot be stat-ed at all',
+    async () => {
+      // `throwIfNoEntry: false` suppresses ENOENT only, so a locked parent
+      // still throws. Guessing absent there would report "nothing was
+      // removed" about a denylisted path nobody has looked at; the honest
+      // degradation is to attempt the removal and let it say what happened.
+      const parent = join(repo, 'shared', 'commands');
+      mkdirSync(parent, { recursive: true });
+      writeFileSync(join(parent, 'sessions'), 'token=abc\n');
+      chmodSync(parent, 0o000);
+
+      try {
+        const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+        revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+
+        expect(warnings()).toContain('could not remove');
+        expect(warnings()).not.toContain('nothing was removed');
+        expect(warnings()).not.toContain('removed shared/commands/sessions');
+      } finally {
+        chmodSync(parent, 0o700);
+      }
+    },
+  );
 
   it('lands the snapshot outside the sync repo, where no push can stage or scan it', async () => {
     // The snapshotted bytes are denylisted by definition (a credential-shaped

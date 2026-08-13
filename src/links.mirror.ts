@@ -353,6 +353,34 @@ export function stageLocalSharedEdits(
 }
 
 /**
+ * Whether a filesystem object occupies `abs`, without following it.
+ *
+ * `lstat` rather than `existsSync` because the two disagree on exactly the
+ * entry the denylist backstop is most likely to meet: a symlink whose target
+ * is gone. `existsSync` answers for the target and says no, `lstat` answers
+ * for the link and says yes, and the second is the true answer to "is there
+ * something here to remove". Asking the first deletes the link and then
+ * reports that nothing happened.
+ *
+ * `throwIfNoEntry: false` turns the ordinary absent case into `undefined`
+ * rather than a throw. A path that cannot be stat-ed for any OTHER reason (no
+ * permission on the parent directory, a name over the Windows limit) is
+ * reported PRESENT: the caller then attempts the removal and lets the
+ * post-write probe decide, which degrades to the honest "could not remove"
+ * WARN. Guessing absent would hand the caller a claim it cannot support.
+ *
+ * @param abs - Absolute path to probe.
+ * @returns `true` when something is there, or when it cannot be determined.
+ */
+function presentAt(abs: string): boolean {
+  try {
+    return lstatSync(abs, { throwIfNoEntry: false }) !== undefined;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Drop an untracked denylisted path out of the repo working tree, after
  * snapshotting it into this pull's own backup cache.
  *
@@ -390,24 +418,38 @@ export function stageLocalSharedEdits(
  * output is its record of what it did cannot afford to blame the file for a
  * failure that happened in the cache directory.
  *
- * The removal claim is reached only after two guards. `existsSync` after the
- * `rmSync` call covers the path-survived-the-removal direction: `force` makes
- * `rmSync` treat an absent path as success, so an unconditional WARN there
- * would report a removal that never happened. The `snapshotted` capture,
- * taken before anything is written, covers the never-resolved direction: a
- * path whose bytes do not round-trip through the UTF-8 decode git's stdout
- * goes through, or a path removed between the status snapshot and this call,
- * both leave `snapshotted` false, and a `force`d `rmSync` on such a path also
- * reports success with nothing to actually remove. Reporting a removal in
- * either case is the worst possible reading of a security gate's own record
- * of what it did: the user is told a denylisted file left the working tree
- * while it is still sitting there one `git add` from the remote, or it was
- * never there to begin with.
+ * The removal claim is reached only after two guards, and they ask two
+ * different questions of the path. `presentAt` asks whether a filesystem
+ * OBJECT is there, via `lstat`, and `existsSync` asks whether that object
+ * RESOLVES, which is the test `backupUnder` applies to decide whether it can
+ * copy anything. Keeping them apart is the whole correctness of this function:
+ * a dangling symlink answers false to the second and true to the first, and it
+ * is both unbackable and genuinely removable.
  *
- * Naming the snapshot is therefore subsumed by the `snapshotted` branch
- * rather than a separate condition: the removal claim is reached only when
- * `snapshotted` is true, and `backupUnder` uses that same `existsSync` test as
- * its own copy gate, so a true `snapshotted` here means a copy exists to name.
+ * `presentAt` runs BEFORE anything is written and returns early when nothing
+ * is there, which covers the never-resolved direction: a path whose bytes do
+ * not round-trip through the UTF-8 decode git's stdout goes through, or a path
+ * that went away between the status snapshot and this call. `force` makes
+ * `rmSync` report success on such a path with nothing actually removed, so a
+ * check placed after the write cannot tell that apart from a real removal, and
+ * the same placement would delete a dangling symlink and then report that it
+ * had not. `presentAt` runs again after the `rmSync` call for the
+ * path-survived-the-removal direction, where `existsSync` would answer for the
+ * target rather than the link.
+ *
+ * Reporting a removal that did not happen is the worst possible reading of a
+ * security gate's own record of what it did: the user is told a denylisted
+ * file left the working tree while it is still sitting there one `git add`
+ * from the remote. Reporting the reverse is no better, because the file is
+ * already gone by then and the record is the only thing left to go on.
+ *
+ * The snapshot is named only when there is one to name, which is why that
+ * clause is conditional while the removal claim around it is not. A dangling
+ * symlink is the case that separates them: `backupUnder` gates its copy on
+ * `existsSync`, so it copies nothing, while `rmSync` unlinks the link itself
+ * and the removal really did happen. Pointing the user at a backup directory
+ * that holds no copy of their file is the one claim worse than making no
+ * claim.
  *
  * The removal is wrapped in its own try/catch so one unremovable path (an
  * antivirus lock, a read-only file, a path over the Windows limit) does not
@@ -422,8 +464,16 @@ export function stageLocalSharedEdits(
 function removeUntrackedDenied(repo: string, path: string, segment: string, ts: string): void {
   const abs = join(repo, path);
   const denied = `the path segment "${segment}" is on the never-sync list`;
+  if (!presentAt(abs)) {
+    warn(
+      `nothing was removed for ${path}: ${denied}, but nothing is at that path now. Either it went away after git listed it, in which case there is nothing left to do, or its name did not survive the decode of git's output and the real file is still in the sync repo under a name nomad cannot address. Check with "git -C ${repo} status --untracked-files=all -- shared/"`,
+    );
+    return;
+  }
   // Read before anything is written, and the same test `backupUnder` itself
-  // applies, so it answers whether a copy will exist to name afterwards.
+  // applies, so it answers whether a copy will exist to name afterwards. Not
+  // the same question as `presentAt`: a dangling symlink is present and
+  // uncopyable at once.
   const snapshotted = existsSync(abs);
   try {
     backupRepoWrite(abs, ts, repo);
@@ -435,19 +485,12 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
   }
   try {
     rmSync(abs, { recursive: true, force: true });
-    if (existsSync(abs)) {
+    if (presentAt(abs)) {
       warn(`could not remove ${abs}: ${denied}, so remove it by hand`);
       return;
     }
-    if (!snapshotted) {
-      warn(
-        `nothing was removed for ${path}: ${denied}, but no such path is in the sync repo working tree. Either it moved after git listed it, or its name did not survive the UTF-8 decode of git's output. Find it with "git status --untracked-files=all -- shared/" and remove it by hand`,
-      );
-      return;
-    }
-    warn(
-      `removed ${path} from the sync repo working tree: ${denied}. A copy was snapshotted under backup/${ts}/repo/ first`,
-    );
+    const where = snapshotted ? `. A copy was snapshotted under backup/${ts}/repo/ first` : '';
+    warn(`removed ${path} from the sync repo working tree: ${denied}${where}`);
   } catch (err) {
     warn(`could not remove ${abs}: ${(err as Error).message}`);
   }
