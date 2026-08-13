@@ -9,7 +9,9 @@
  * color, so `NO_COLOR` has nothing to strip.
  *
  * Widest line is 42 columns, inside an 80-column terminal with room to spare.
- * Backslashes are escaped, so read the rendered output, not the source, when
+ * The middle row escapes its backslashes and so cannot be written as a raw
+ * string: it also contains a backtick, and `String.raw` keeps the backslash
+ * that has to escape one. Read the rendered output, not the source, when
  * judging the art.
  */
 const NOMAD_BANNER: readonly string[] = [
@@ -17,7 +19,7 @@ const NOMAD_BANNER: readonly string[] = [
   '   ____   ____   ____ ___   ____ _ ____/ /',
   '  / __ \\ / __ \\ / __ `__ \\ / __ `// __  /',
   ' / / / // /_/ // / / / / // /_/ // /_/ /',
-  '/_/ /_/ \\____//_/ /_/ /_/ \\__,_/ \\__,_/',
+  String.raw`/_/ /_/ \____//_/ /_/ /_/ \__,_/ \__,_/`,
 ];
 
 /**
