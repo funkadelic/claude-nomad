@@ -51,7 +51,9 @@ first, unless it is a symlink whose target is already gone and there is no conte
 otherwise leaves it exactly as it found it, warning with the file name and the git command that
 clears it. Neither case fails the pull. The same pre-rebase step also removes a file
 you deleted from a shared directory from the repo, the same as deleting inside a symlinked directory
-already removes it on macOS or Linux; the removal is left uncommitted (it publishes on your next
+already removes it on macOS or Linux, and the pull names that removal too, as a
+`removed  <repo> (gone from <local>)` row in the same `Symlinks` section, right after any captured
+rows; the removal is left uncommitted (it publishes on your next
 push, through the same secret scan as everything else) and the repo copy is snapshotted to the
 backup dir first, gated on a per-host record of what this machine last had, so a repo file this
 machine has never synced is never touched. That record is also why the first pull after a host
@@ -134,9 +136,9 @@ write.
 Output is compact by default, matching `nomad doctor`: a run prints its `sync on host=<HOST>`
 header, then a single Sync summary composed from the run's outcome, not the full status tree.
 Pass `--verbose` (or `--all` / `-v`) to also print the full merged status tree (on native Windows a
-leading `Symlinks` section naming what the pre-fetch mirror captured, then Settings, Global config,
-Sessions, Extras, and Leak scan, as applicable) before the summary, the same tree every `nomad sync`
-run used to print unconditionally.
+leading `Symlinks` section naming what the pre-fetch mirror captured and what it removed, then
+Settings, Global config, Sessions, Extras, and Leak scan, as applicable) before the summary, the
+same tree every `nomad sync` run used to print unconditionally.
 
 A pull-half failure (for example a wedged repo) stops the run immediately; no push is attempted.
 Run `nomad pull --force-remote` to recover, then re-run `nomad sync` (`sync` itself has no

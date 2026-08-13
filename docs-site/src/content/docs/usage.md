@@ -29,9 +29,9 @@ On native Windows the same two-pass scan runs, but the names are materialized as
 instead of symlinks (creating a symlink there needs Developer Mode or admin rights); the backup
 semantics are identical, and so is the guidance: on native Windows the pull mirrors your local
 copies into the repo before it fetches, so an unpublished edit is captured rather than overwritten,
-and it names what it captured in a `Symlinks` section at the top of the pull output. Paths carrying
-a never-sync segment (`sessions`, `tasks`, `plans`, `cache`, and the rest of `NEVER_SYNC`) are
-skipped by that mirror; see [How it works](/claude-nomad/how-it-works/).
+and it names what it captured, and what it removed, in a `Symlinks` section at the top of the pull
+output. Paths carrying a never-sync segment (`sessions`, `tasks`, `plans`, `cache`, and the rest of
+`NEVER_SYNC`) are skipped by that mirror; see [How it works](/claude-nomad/how-it-works/).
 `--force-remote` recovers a wedged sync repo; it is not a way to fetch the repo's version of a
 file on demand. When the repo is stuck mid-rebase or mid-merge, that recovery ends in a reset
 that, on native Windows, also takes the repo's version of your shared config, and the pull warns
@@ -141,7 +141,8 @@ preview finds anything.
 
 A `nomad pull` is the mirror image, leading with the settings file it regenerated and then the
 sessions and extras it copied down for this host (on native Windows a `Symlinks` section comes
-first, listing each `captured  <local> -> <repo>` the pre-fetch mirror performed):
+first, listing each `captured  <local> -> <repo>` the pre-fetch mirror performed, followed by a
+`removed  <repo> (gone from <local>)` row for any repo file a local deletion authorized removing):
 
 ```text
 pull on host=workstation (backup=2026-05-27T14-02-09Z)

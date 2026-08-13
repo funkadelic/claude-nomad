@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { PullCoreResult } from './commands.pull.ts';
+
 import { EXIT } from './exit-codes.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
 import {
@@ -97,11 +99,33 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
     }
   }
 
-  /** Run one real wet pull against the fixture, on the currently stubbed platform. */
-  async function pull(): Promise<void> {
+  /**
+   * Run one real wet pull against the fixture, on the currently stubbed
+   * platform, returning `runPullCore`'s result. Existing `await pull()`
+   * callers that ignore the return are unaffected.
+   */
+  async function pull(): Promise<PullCoreResult> {
     const { runPullCore } = await import('./commands.pull.ts');
-    runPullCore();
+    return runPullCore();
   }
+
+  it('names the removed repo path in the wet Symlinks section', async () => {
+    stubPlatform('win32');
+    // First pull: records the baseline from the genuinely synced state.
+    await pull();
+    // The user deletes one file from inside a shared directory.
+    rmSync(join(world.claudeDir, 'commands', 'doomed.md'), { force: true });
+    const result = await pull();
+
+    // Matched on the shipped result shape so a future shape change fails
+    // loudly instead of this assertion silently checking nothing.
+    if (result.tag !== 'wet') throw new Error('expected a wet pull result');
+    const symlinks = result.sections.find((s) => s.header === 'Symlinks');
+    const rendered = symlinks?.items.join('\n') ?? '';
+    expect(rendered).toContain(
+      `removed  ${join(world.sharedDir, 'commands', 'doomed.md')} (gone from`,
+    );
+  });
 
   it('propagates a local deletion into the repo worktree and does not resurrect it', async () => {
     stubPlatform('win32');

@@ -129,7 +129,8 @@ other side:
   name it captured, so the copy is visible instead of silent. A file you delete from a shared
   directory is handled the same
   way: it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked
-  directory already removes it on macOS or Linux. The removal is left uncommitted, so it publishes
+  directory already removes it on macOS or Linux, and that pull names the removal in the same
+  `Symlinks` section, on its own row right after any files it captured. The removal is left uncommitted, so it publishes
   on your next push and passes the same secret scan as everything else, and the file is snapshotted
   to the backup dir first. The safety rule behind this: nomad only removes a file it has a record of
   having given this machine, so a repo file this machine has never synced is never touched. That

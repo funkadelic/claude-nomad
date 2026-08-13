@@ -30,8 +30,18 @@ import { enumerateLocalSharedScan, readSharedBaseline } from './links.baseline.t
 import { warn } from './utils.ts';
 import { backupRepoWrite } from './utils.fs.ts';
 
-/** One repo file the pass will remove, with the local absence that authorized it. */
+/**
+ * One repo file the pass will remove, with the local absence that authorized
+ * it. `kind` is the discriminant that lets one deletion record serve both the
+ * dry-run plan row (`preview.ts`) and the wet pull row (`buildMirrorSection`
+ * in `commands.pull.win32.ts`), the way `MirrorPreviewEvent` already serves
+ * both mirror surfaces. There is deliberately no second, wet-only type: the
+ * plan and the record are the same shape in two tenses, and the renderer
+ * supplies the tense.
+ */
 export type SharedLinkDeletion = {
+  /** Discriminant; see the type-level comment above. */
+  kind: 'deletion';
   /** The shared name the file lives under (`commands`, `rules`, ...). */
   name: string;
   /** Absolute path the file no longer occupies under `~/.claude/`. */
@@ -103,7 +113,7 @@ function deletionFor(
   if (segments.some((segment) => segment === '' || segment === '.' || segment === '..'))
     return null;
   if (!existsSync(repoPath)) return null;
-  return { name, localPath: join(claude, key), repoPath };
+  return { kind: 'deletion', name, localPath: join(claude, key), repoPath };
 }
 
 /**
@@ -190,26 +200,42 @@ export function planSharedLinkDeletions(
  * it. Silently abandoning the rest would leave the repo half-reconciled while
  * the run reported nothing about the entries it never reached.
  *
+ * Returns the entries actually removed, which is the deletion-side counterpart
+ * of the mirror's post-copy wet emission (`emitMirrorWet` in
+ * `src/links.mirror.ts`), delivered by return value rather than by a sink:
+ * this function is itself the exported holder of the loop, and its dry-run
+ * counterpart, `planSharedLinkDeletions`, is already consumed as a plain array
+ * by `preview.ts` with no sink anywhere, so adding one here would introduce a
+ * channel with exactly one caller and no dry-run counterpart. The return is
+ * what was REMOVED, not what was planned: the `continue` arm (a repo path that
+ * turned out to be a directory) and the `catch` arm (a removal that threw)
+ * both diverge from the plan and neither is pushed, so a caller rendering the
+ * return cannot claim a removal that did not happen.
+ *
  * `opts.linkNames`, when supplied, is threaded through to `planSharedLinkDeletions`
  * verbatim; see that function's doc comment for why.
  *
  * @param map - Parsed `path-map.json`, or `null` when it could not be read.
  * @param ts - Backup timestamp, already resolved by the pull.
  * @param opts - `linkNames`; falls back to `allSharedLinks(map)` when absent.
+ * @returns One entry per repo file actually removed; empty when nothing was.
  */
 export function applySharedLinkDeletions(
   map: PathMap | null,
   ts: string,
   opts: { linkNames?: readonly string[] } = {},
-): void {
+): SharedLinkDeletion[] {
   const repo = repoHome();
+  const removed: SharedLinkDeletion[] = [];
   for (const entry of planSharedLinkDeletions(map, opts)) {
     try {
       if (!lstatSync(entry.repoPath).isFile()) continue;
       backupRepoWrite(entry.repoPath, ts, repo);
       rmSync(entry.repoPath, { force: true });
+      removed.push(entry);
     } catch (err) {
       warn(`could not remove ${entry.repoPath}: ${(err as Error).message}`);
     }
   }
+  return removed;
 }

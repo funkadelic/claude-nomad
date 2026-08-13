@@ -1129,7 +1129,12 @@ describe('computePreview orchestration', () => {
         },
       ],
       deletions: [
-        { name: 'commands', localPath: '/pre/rebase/commands/a.md', repoPath: '/pre/shared/a.md' },
+        {
+          kind: 'deletion',
+          name: 'commands',
+          localPath: '/pre/rebase/commands/a.md',
+          repoPath: '/pre/shared/a.md',
+        },
       ],
       namesDerived: false,
       derivedSharedDirs: undefined,

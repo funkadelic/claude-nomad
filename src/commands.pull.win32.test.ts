@@ -280,10 +280,12 @@ describe('reconcileSharedLinksBeforePull', () => {
  * End-to-end coverage of the tracer path this plan wires: a win32-stubbed
  * capture travels from the host file, through the real (unmocked)
  * `reconcileSharedLinksBeforePull`, into a rendered `Symlinks` row via
- * `buildMirrorSection` + `renderTree`. Neither `links.mirror.ts` nor
- * `links.deletions.ts` is mocked here, unlike the describe block above: this
- * block exists specifically to prove the real mirror's output reaches the
- * real renderer.
+ * `buildMirrorSection` + `renderTree`. `links.mirror.ts` is never mocked here,
+ * unlike the describe block above: this block exists specifically to prove the
+ * real mirror's output reaches the real renderer. The removed-row case is the
+ * one exception, and it stubs only the applier's return value so the real
+ * planner and the real renderer stay in the path; the applier's own unmocked
+ * cover lives in `commands.pull.win32-deletions.e2e.test.ts`.
  */
 describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', () => {
   const realPlatform = process.platform;
@@ -324,6 +326,9 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
+    // vi.restoreAllMocks does NOT clear a vi.doMock registration, and a leaked
+    // one fails an unrelated test in a different file in the same worker.
+    vi.doUnmock('./links.deletions.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -354,6 +359,43 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     expect(rendered).toContain('Symlinks');
     expect(rendered).toContain(localClaudeMd);
     expect(rendered).toContain(repoClaudeMd);
+  });
+
+  it('renders a removed row end to end', async () => {
+    const repoDoomed = join(sharedDir, 'commands', 'doomed.md');
+    // The deletion applier's real path needs a trusted baseline, which is out
+    // of scope for this end-to-end capture test; give the spy a return value
+    // instead of replacing the factory, so the real planner stays reachable.
+    vi.doMock('./links.deletions.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof linksDeletionsModule>();
+      return {
+        ...actual,
+        applySharedLinkDeletions: vi.fn(() => [
+          {
+            kind: 'deletion' as const,
+            name: 'commands',
+            localPath: join(claudeDir, 'commands', 'doomed.md'),
+            repoPath: repoDoomed,
+          },
+        ]),
+      };
+    });
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull, buildMirrorSection } =
+      await import('./commands.pull.win32.ts');
+    const { events } = reconcileSharedLinksBeforePull(repoUnderHome, TS);
+
+    expect(events).toContainEqual({
+      kind: 'deletion',
+      name: 'commands',
+      localPath: join(claudeDir, 'commands', 'doomed.md'),
+      repoPath: repoDoomed,
+    });
+
+    renderTree([buildMirrorSection(events)]);
+    const rendered = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(rendered).toContain(`removed  ${repoDoomed} (gone from`);
   });
 
   it('leaves the repo-side file byte-unchanged under dryRun while still producing the event', async () => {
@@ -691,6 +733,59 @@ describe('buildMirrorSection discard row', () => {
     const { buildMirrorSection } = await import('./commands.pull.win32.ts');
     const section = buildMirrorSection([], null);
     expect(section.items).toEqual([]);
+  });
+
+  it('renders a mixed capture and deletion pair in order', async () => {
+    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const section = buildMirrorSection([
+      {
+        kind: 'mirror' as const,
+        name: 'CLAUDE.md',
+        localPath: '/a/CLAUDE.md',
+        repoPath: '/b/CLAUDE.md',
+      },
+      {
+        kind: 'deletion' as const,
+        name: 'commands',
+        localPath: '/a/commands/gone.md',
+        repoPath: '/b/commands/gone.md',
+      },
+    ]);
+    expect(section.items).toEqual([
+      'captured  /a/CLAUDE.md -> /b/CLAUDE.md',
+      'removed  /b/commands/gone.md (gone from /a/commands/gone.md)',
+    ]);
+  });
+
+  it('renders only removal rows when given only deletion records', async () => {
+    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const section = buildMirrorSection([
+      {
+        kind: 'deletion' as const,
+        name: 'commands',
+        localPath: '/a/commands/gone.md',
+        repoPath: '/b/commands/gone.md',
+      },
+    ]);
+    expect(section.items).toEqual(['removed  /b/commands/gone.md (gone from /a/commands/gone.md)']);
+  });
+
+  it('renders removal rows before the discard warning row', async () => {
+    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const section = buildMirrorSection(
+      [
+        {
+          kind: 'deletion' as const,
+          name: 'commands',
+          localPath: '/a/commands/gone.md',
+          repoPath: '/b/commands/gone.md',
+        },
+      ],
+      { count: 1, backupPath: join(backupBase(), TS) },
+    );
+    expect(section.items).toHaveLength(2);
+    expect(section.items[0]).toBe('removed  /b/commands/gone.md (gone from /a/commands/gone.md)');
+    expect(section.items[1]).toContain('restored from the repo copy');
   });
 });
 
