@@ -47,8 +47,9 @@ published yet. That mirror skips any path carrying a never-sync segment (see `NE
 `src/config.never-sync.ts`, which holds ordinary names such as `sessions`, `tasks`, `plans`, and
 `cache` alongside the obvious credential entries); if such a path is already sitting in the sync
 repo working tree, pull removes it when git does not track it (snapshotting it to the backup dir
-first) and otherwise leaves it exactly as it found it, warning with the file name and the git
-command that clears it. Neither case fails the pull. The same pre-rebase step also removes a file
+first, unless it is a symlink whose target is already gone and there is no content to save) and
+otherwise leaves it exactly as it found it, warning with the file name and the git command that
+clears it. Neither case fails the pull. The same pre-rebase step also removes a file
 you deleted from a shared directory from the repo, the same as deleting inside a symlinked directory
 already removes it on macOS or Linux; the removal is left uncommitted (it publishes on your next
 push, through the same secret scan as everything else) and the repo copy is snapshotted to the
