@@ -280,10 +280,12 @@ describe('reconcileSharedLinksBeforePull', () => {
  * End-to-end coverage of the tracer path this plan wires: a win32-stubbed
  * capture travels from the host file, through the real (unmocked)
  * `reconcileSharedLinksBeforePull`, into a rendered `Symlinks` row via
- * `buildMirrorSection` + `renderTree`. Neither `links.mirror.ts` nor
- * `links.deletions.ts` is mocked here, unlike the describe block above: this
- * block exists specifically to prove the real mirror's output reaches the
- * real renderer.
+ * `buildMirrorSection` + `renderTree`. `links.mirror.ts` is never mocked here,
+ * unlike the describe block above: this block exists specifically to prove the
+ * real mirror's output reaches the real renderer. The removed-row case is the
+ * one exception, and it stubs only the applier's return value so the real
+ * planner and the real renderer stay in the path; the applier's own unmocked
+ * cover lives in `commands.pull.win32-deletions.e2e.test.ts`.
  */
 describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', () => {
   const realPlatform = process.platform;

@@ -384,6 +384,13 @@ export function reconcileSharedLinksBeforePull(
  * tense throughout since both the copy and the removal already happened by
  * the time this renders.
  *
+ * The row test names the deletion rather than the capture so that the capture
+ * row is what an unrecognized event falls back to. A section that renders a
+ * kind it does not know as a capture overstates what the run copied, which the
+ * next pull corrects; rendering it as a removal tells the user a file left
+ * their sync repo when nothing did, which is the claim nothing downstream can
+ * walk back.
+ *
  * @param events - Mirror and deletion events collected during the pre-rebase
  *   reconcile, in the order the reconcile produced them (captures, then
  *   removals).
@@ -404,9 +411,9 @@ export function buildMirrorSection(
   for (const e of events) {
     addItem(
       s,
-      e.kind === 'mirror'
-        ? `captured  ${e.localPath} -> ${e.repoPath}`
-        : `removed  ${e.repoPath} (gone from ${e.localPath})`,
+      e.kind === 'deletion'
+        ? `removed  ${e.repoPath} (gone from ${e.localPath})`
+        : `captured  ${e.localPath} -> ${e.repoPath}`,
     );
   }
   if (discard) {
