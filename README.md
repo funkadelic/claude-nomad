@@ -145,8 +145,9 @@ the same either way; the difference is under the hood.
 
 Native Windows cannot use symlinks, so claude-nomad keeps a real copy of your shared config in
 `~/.claude/` instead of a symlink. `nomad pull` and `nomad sync` both mirror your local copies into
-the repo before they fetch, so nothing you have not published yet gets lost. There is nothing extra
-for you to do.
+the repo before they fetch, so an edit you have not published yet is captured rather than
+overwritten. If a file cannot be read, the pull leaves it out and warns naming the file: fix that
+and run again before you rely on the result.
 
 ```powershell
 # 1. Install prerequisites and the CLI. (Using Scoop instead? scoop install gh gitleaks.)
