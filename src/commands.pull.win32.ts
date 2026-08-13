@@ -11,7 +11,11 @@ import { yellow, warnGlyph } from './color.ts';
 import { parsePorcelainZ } from './commands.pull.recovery.git.ts';
 import { allSharedLinks, backupBase, type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
-import { applySharedLinkDeletions, planSharedLinkDeletions } from './links.deletions.ts';
+import {
+  applySharedLinkDeletions,
+  planSharedLinkDeletions,
+  type SharedLinkDeletion,
+} from './links.deletions.ts';
 import {
   revertDeniedMirrorPaths,
   stageLocalSharedEdits,
@@ -213,6 +217,19 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
 }
 
 /**
+ * One row's worth of content for the wet `Symlinks` section: either a mirror
+ * capture or a deletion-pass removal, discriminated by `kind`. Both render
+ * into the same section because they are the two halves of one pre-rebase
+ * reconcile (see {@link reconcileSharedLinksBeforePull}).
+ *
+ * Module-private on purpose, following the precedent `DeniedRevertStatus`
+ * sets in `src/links.mirror.ts`: it is only ever named positionally in
+ * signatures declared in this same file, and exporting it would read as an
+ * unused export to the dead-code analysis.
+ */
+type MirrorSectionEvent = MirrorPreviewEvent | SharedLinkDeletion;
+
+/**
  * win32-only pre-pull step: make the host's own shared-config state visible in
  * the repo working tree BEFORE `git pull --rebase --autostash` runs, in both
  * directions. Additions and edits are staged into `shared/<name>`; files the
@@ -296,9 +313,11 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
  * @param repo - `repoHome()`, resolved once by `runPullCore`.
  * @param ts - Backup timestamp, resolved once by `runPullCore`.
  * @returns `mirrored` (repo-relative paths this run newly created under
- *   `shared/`), `events` (one `MirrorPreviewEvent` per name the mirror
- *   copied), `namesDerived` (whether the shared-name list was derived here, and
- *   so whether its rejection WARNs have already been emitted), and
+ *   `shared/`), `events` (one entry per name the mirror copied AND one per
+ *   repo file the deletion pass removed, in that order, matching the order
+ *   `pull --dry-run`'s preview renders its `would capture` and `would remove`
+ *   rows in), `namesDerived` (whether the shared-name list was derived here,
+ *   and so whether its rejection WARNs have already been emitted), and
  *   `derivedSharedDirs` (the field those WARNs describe). All empty/false on
  *   darwin and linux; `mirrored` is also empty whenever the untracked-file
  *   snapshots could not be taken.
@@ -308,7 +327,7 @@ export function reconcileSharedLinksBeforePull(
   ts: string,
 ): {
   mirrored: string[];
-  events: MirrorPreviewEvent[];
+  events: MirrorSectionEvent[];
   namesDerived: boolean;
   derivedSharedDirs: unknown;
 } {
@@ -316,7 +335,7 @@ export function reconcileSharedLinksBeforePull(
     return { mirrored: [], events: [], namesDerived: false, derivedSharedDirs: undefined };
   }
   const before = untrackedUnderShared(repo);
-  const events: MirrorPreviewEvent[] = [];
+  const events: MirrorSectionEvent[] = [];
   let linkNames: string[] = [];
   let namesDerived = false;
   let derivedSharedDirs: unknown;
@@ -328,7 +347,7 @@ export function reconcileSharedLinksBeforePull(
       derivedSharedDirs = map.sharedDirs;
     }
     stageLocalSharedEdits(map, ts, { onPreview: (e) => events.push(e), linkNames });
-    applySharedLinkDeletions(map, ts, { linkNames });
+    events.push(...applySharedLinkDeletions(map, ts, { linkNames }));
   } catch (err) {
     // A pre-step must never be the thing that fails a pull. Either pass can
     // throw for reasons unrelated to the user's intent (a path over the Windows
@@ -354,13 +373,20 @@ export function reconcileSharedLinksBeforePull(
 }
 
 /**
- * Build the wet-pull `Symlinks` section from the mirror events collected by
- * `reconcileSharedLinksBeforePull`. Reuses the `Symlinks` header the dry-run
- * preview tree already uses for the same concept (locked decision: no third
- * name for one idea). Row text is past tense since the copy already happened
- * by the time this renders.
+ * Build the wet-pull `Symlinks` section from the mirror and deletion events
+ * collected by `reconcileSharedLinksBeforePull`. Reuses the `Symlinks` header
+ * the dry-run preview tree already uses for the same concept (locked
+ * decision: no third name for one idea). This section now covers both halves
+ * of the pre-rebase reconcile: a `mirror` event renders the capture row it
+ * always has, and a `deletion` event renders the past-tensed counterpart of
+ * the dry-run `would remove` row, keeping the repo path first and the
+ * parenthetical intact so the two tenses read as one event. Row text is past
+ * tense throughout since both the copy and the removal already happened by
+ * the time this renders.
  *
- * @param events - Mirror events collected during the pre-rebase reconcile.
+ * @param events - Mirror and deletion events collected during the pre-rebase
+ *   reconcile, in the order the reconcile produced them (captures, then
+ *   removals).
  * @param discard - When the win32 mirror was legitimately skipped because
  *   recovery genuinely ran, the read-only tally of what it would have
  *   captured; see {@link describeSkippedMirrorDiscard}. Omitted, or `null`,
@@ -371,12 +397,17 @@ export function reconcileSharedLinksBeforePull(
  *   stays byte-identical.
  */
 export function buildMirrorSection(
-  events: readonly MirrorPreviewEvent[],
+  events: readonly MirrorSectionEvent[],
   discard?: MirrorDiscardSummary | null,
 ): DoctorSection {
   const s = section('Symlinks');
   for (const e of events) {
-    addItem(s, `captured  ${e.localPath} -> ${e.repoPath}`);
+    addItem(
+      s,
+      e.kind === 'mirror'
+        ? `captured  ${e.localPath} -> ${e.repoPath}`
+        : `removed  ${e.repoPath} (gone from ${e.localPath})`,
+    );
   }
   if (discard) {
     const names = discard.count === 1 ? 'name was' : 'names were';
