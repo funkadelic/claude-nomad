@@ -111,8 +111,13 @@ function renderSection(s: DoctorSection): void {
   }
 }
 
-/** True when the item was added via `addChildItem` (leading-tab marker). */
-function isChild(item: string): boolean {
+/**
+ * True when the item was added via `addChildItem` (leading-tab marker).
+ * Exported so `compactSections` can tell a child row from a top-level one
+ * without re-deriving the marker: a child carries no status glyph of its own,
+ * so its fate has to follow the row it hangs under.
+ */
+export function isChild(item: string): boolean {
   return item.startsWith('\t');
 }
 
