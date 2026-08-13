@@ -205,12 +205,14 @@ other side:
   lands in the sync repo working tree anyway, such as a file edited directly in the repo rather than
   through `~/.claude/`, what happens next depends on whether Git already tracks it. If it does not,
   the next `nomad pull` deletes it, snapshotting it to the backup dir first, and prints a warning
-  naming the file. If it does, pull leaves the file untouched and prints a warning naming the file
-  and the exact command to run to finish clearing it yourself. One thing worth knowing: that list is
-  not only secrets, it also uses a few ordinary-sounding names (`sessions`, `tasks`, `plans`,
-  `cache`, and others) that Claude Code itself uses under `~/.claude/`. A path inside one of your
-  shared names stops mirroring as soon as any part of it is spelled exactly like one of those; the
-  spelling has to match in full, so a file named `tasks.md` is unaffected.
+  naming the file. The warning names the backup location only when there was something to copy: a
+  symlink whose target is already gone is deleted without one, because there is no content to save.
+  If it does, pull leaves the file untouched and prints a warning naming the file and the exact
+  command to run to finish clearing it yourself. One thing worth knowing: that list is not only
+  secrets, it also uses a few ordinary-sounding names (`sessions`, `tasks`, `plans`, `cache`, and
+  others) that Claude Code itself uses under `~/.claude/`. A path inside one of your shared names
+  stops mirroring as soon as any part of it is spelled exactly like one of those; the spelling has
+  to match in full, so a file named `tasks.md` is unaffected.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
   on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native
