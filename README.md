@@ -119,114 +119,6 @@ export NOMAD_HOST=<your-host-label>   # add to ~/.zshrc or ~/.bashrc
 $ nomad pull
 ```
 
-### Windows
-
-claude-nomad runs natively on Windows (PowerShell or cmd), and WSL2 works too. The everyday loop is
-the same either way; the difference is under the hood.
-
-On macOS, Linux, and WSL2, claude-nomad symlinks your shared config into `~/.claude/`, so there is
-only ever one file: the one in your sync repo. Native Windows cannot use symlinks, because creating
-one there needs Developer Mode or admin rights, so claude-nomad keeps a real copy there instead.
-That leaves two files to keep in step, and claude-nomad does it for you: `nomad pull` and
-`nomad sync` both copy your edits into the repo before they fetch, so an unpublished edit is never
-overwritten. Enabling Developer Mode does not change this; copies are used on every native Windows
-host either way.
-
-Two things come from native Windows specifically, both covered in the bullets below: a
-`.gitleaksignore` allow entry may not travel to a macOS, Linux, or WSL2 host, and deep session paths
-can hit the native Windows 260-character path limit.
-
-The native Windows steps are the same as above with a couple of PowerShell-specific swaps:
-
-```powershell
-# 1. Install the CLI.
-> npm i -g claude-nomad
-
-# 2. Create your private sync repo and scaffold it.
-> nomad init
-
-# 3. Add a stable host label. PowerShell has no ~/.bashrc equivalent, so set it
-#    as a persistent user environment variable instead, then restart your
-#    terminal so the new value is picked up.
-> [System.Environment]::SetEnvironmentVariable('NOMAD_HOST', '<your-host-label>', 'User')
-#    Using cmd instead of PowerShell? The equivalent one-liner is:
-#    setx NOMAD_HOST <your-host-label>
-
-# 4. Publish the scaffold to your private repo.
-> nomad push
-```
-
-A few native Windows specifics worth knowing. WSL2 behaves like Linux, so the copy-sync and
-path-length items below do not apply to it; the `.gitleaksignore` one can still reach it, from the
-other side:
-
-- **Installing gh:** `winget install GitHub.cli` (or `scoop install gh`), then `gh auth login`.
-  Needed before `nomad init` on the first host; later hosts only clone with it.
-- **Installing gitleaks:** `winget install gitleaks.gitleaks` (or `scoop install gitleaks` if you
-  use Scoop). `nomad doctor` prints the same hint whenever gitleaks is missing from PATH.
-- **Shared config is copied, not symlinked.** On macOS and Linux, files like `CLAUDE.md` and your
-  skills live in the sync repo and are symlinked into `~/.claude/`, so there is one source of truth
-  on disk. Creating a symlink on native Windows needs Developer Mode or admin rights, so there these
-  are real copies instead, whether or not you have Developer Mode enabled. WSL2 is unaffected and
-  behaves like Linux. What this means for you: nothing extra. On native Windows both `nomad pull`
-  and `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit
-  is captured rather than reverted, and a real `nomad pull` now prints a `Symlinks` line for each
-  name it captured, so the copy is visible instead of silent. If one of those names cannot be read
-  at all, because another program is holding it open or its permissions changed, the mirror leaves
-  it out and warns, naming the file and the reason, instead of a silent gap in what was captured.
-  The same warning appears on `nomad push` and in the `nomad diff` and `--dry-run` previews, which
-  report what they could not read rather than dropping it from the plan. The warning covers the
-  mirror step only: fix the permissions before re-running, because a later step in the same pull
-  reads that file too. A file you delete from a shared directory is handled the same way: it is
-  removed from the sync repo by the next pull, exactly as deleting inside a symlinked directory
-  already removes it on macOS or Linux, and that pull names the removal in the same `Symlinks`
-  section, on its own row right after any files it captured. The removal is left uncommitted, so it
-  publishes on your next push and passes the same secret scan as everything else, and the file is
-  snapshotted to the backup dir first. The safety rule behind this: nomad only removes a file it has
-  a record of having given this machine, so a repo file this machine has never synced is never
-  touched. That record is also why the first pull after you upgrade to this version is an exception:
-  there is nothing to compare against yet, so a deletion made before that pull comes back once, and
-  deleting it again sticks. If a file you created has the same name as one another machine just
-  created, the pull stops before it overlays your copy: the only thing it removes is the temporary
-  copy it had just made inside the sync repo, and it tells you which file under `~/.claude/` to move
-  or rename, with the two ways to finish. Nothing is lost either way: your file stays exactly as you
-  left it and the update simply waits for the next pull. `nomad pull --force-remote` recovers a
-  wedged sync repo. When the repo is stuck mid-rebase or mid-merge, recovery resets it to match the
-  shared repo, and on native Windows that reset also replaces your shared config with the repo's
-  copy; the pull now warns naming how many shared names it restored from the repo copy, with your
-  previous copies snapshotted to the backup dir first. A different stuck state, an unfinished index
-  with nothing to abort, recovers by clearing the index without touching your working files, so on
-  native Windows your shared config is left exactly as it was. This is the same behavior
-  claude-nomad's `skills/` sync already has on every platform.
-- **The copy-in never carries your Claude secrets or session history.** The same mirror that
-  captures your Windows edits into the sync repo refuses to copy any path with a part on
-  claude-nomad's never-sync list, whether that part is a directory along the way or the file name
-  itself (session transcripts, credentials, caches, and other ephemeral `~/.claude/` state; see
-  `NEVER_SYNC` in `src/config.never-sync.ts` for the exact set). If something on that list somehow
-  lands in the sync repo working tree anyway, such as a file edited directly in the repo rather than
-  through `~/.claude/`, what happens next depends on whether Git already tracks it. If it does not,
-  the next `nomad pull` deletes it, snapshotting it to the backup dir first, and prints a warning
-  naming the file. The warning names the backup location only when there was something to copy: a
-  symlink whose target is already gone is deleted without one, because there is no content to save.
-  If it does, pull leaves the file untouched and prints a warning naming the file and the exact
-  command to run to finish clearing it yourself. One thing worth knowing: that list is not only
-  secrets, it also uses a few ordinary-sounding names (`sessions`, `tasks`, `plans`, `cache`, and
-  others) that Claude Code itself uses under `~/.claude/`. A path inside one of your shared names
-  stops mirroring as soon as any part of it is spelled exactly like one of those; the spelling has
-  to match in full, so a file named `tasks.md` is unaffected.
-- **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
-  finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
-  on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native
-  Windows, the identical finding can reappear as "new" the first time it is scanned from a macOS,
-  Linux, or WSL2 host, and the same happens in reverse. This is a known gitleaks limitation, not a
-  claude-nomad bug; just allow it again from the other host.
-- **Line endings stay put.** A fresh `nomad init` writes a `.gitattributes` with `* -text`, so Git
-  never converts line endings between hosts. If you are joining a sync repo created before this file
-  existed, add that one line from any host (or watch for the `nomad doctor` warning that nudges
-  you), otherwise a native Windows checkout with the common `core.autocrlf=true` Git default would
-  rewrite every text file's line endings, and every host would then see the whole tree as
-  permanently changed.
-
 Everyday loop on any host:
 
 ```bash
@@ -245,6 +137,40 @@ with `nomad pull --force-remote`, or resolving a detected secret without the int
 and [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/)). The
 [FAQ](https://funkadelic.github.io/claude-nomad/faq/) covers what `sync` does under the hood and the
 push/pull order it enforces.
+
+### Windows
+
+claude-nomad runs natively on Windows (PowerShell or cmd), and WSL2 works too. The everyday loop is
+the same either way; the difference is under the hood.
+
+Native Windows cannot use symlinks, so claude-nomad keeps a real copy of your shared config in
+`~/.claude/` instead of a symlink. `nomad pull` and `nomad sync` both mirror your local copies into
+the repo before they fetch, so nothing you have not published yet gets lost. There is nothing extra
+for you to do.
+
+```powershell
+# 1. Install prerequisites and the CLI. (Using Scoop instead? scoop install gh gitleaks.)
+> winget install GitHub.cli
+> winget install gitleaks.gitleaks
+> npm i -g claude-nomad
+
+# 2. Create your private sync repo and scaffold it.
+> nomad init
+
+# 3. Add a stable host label. PowerShell has no ~/.bashrc equivalent, so set it
+#    as a persistent user environment variable instead, then restart your
+#    terminal so the new value is picked up.
+> [System.Environment]::SetEnvironmentVariable('NOMAD_HOST', '<your-host-label>', 'User')
+#    Using cmd instead of PowerShell? The equivalent one-liner is:
+#    setx NOMAD_HOST <your-host-label>
+
+# 4. Publish the scaffold to your private repo.
+> nomad push
+```
+
+See the full explainer at <https://funkadelic.github.io/claude-nomad/quickstart/#windows> for how
+the copy-sync behaves on pull and push, why a `.gitleaksignore` allow entry may not travel to a
+macOS, Linux, or WSL2 host, the 260-character path limit, and the line-endings setting.
 
 ### Make your sessions follow you
 
@@ -351,8 +277,8 @@ independently from the CLI, but requires nomad `>= 0.35.0` because it calls rece
 - `gh` ([GitHub CLI](https://cli.github.com/)), required by `nomad init`
 
 Works on macOS, Linux (including WSL2), and native Windows (PowerShell or cmd). See
-[Windows](#windows) above for the native Windows equivalents of the install and host-label steps,
-the copy-sync trade-off, and the `.gitleaksignore` cross-host caveat.
+[Windows](#windows) above for the native Windows equivalents of the install and host-label steps and
+the copy-sync trade-off.
 
 **Optional:** [curl](https://curl.se/) or [wget](https://www.gnu.org/software/wget/) for the
 version-staleness check and `nomad doctor --check-schema`. The CLI works without them. The opt-in
