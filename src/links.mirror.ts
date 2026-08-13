@@ -390,21 +390,24 @@ export function stageLocalSharedEdits(
  * output is its record of what it did cannot afford to blame the file for a
  * failure that happened in the cache directory.
  *
- * The success WARN is emitted only after `existsSync` confirms the path is
- * actually gone. `force` makes `rmSync` treat an absent path as success, so an
- * unconditional WARN would report a removal that never happened, which is the
- * worst possible reading of a security gate's own record of what it did: the
- * user is told a denylisted file left the working tree while it is still
- * sitting there one `git add` from the remote. Two ways to reach that: a path
- * whose bytes do not round-trip through the UTF-8 decode git's stdout goes
- * through, and a path removed between the snapshot and this call.
+ * The removal claim is reached only after two guards. `existsSync` after the
+ * `rmSync` call covers the path-survived-the-removal direction: `force` makes
+ * `rmSync` treat an absent path as success, so an unconditional WARN there
+ * would report a removal that never happened. The `snapshotted` capture,
+ * taken before anything is written, covers the never-resolved direction: a
+ * path whose bytes do not round-trip through the UTF-8 decode git's stdout
+ * goes through, or a path removed between the status snapshot and this call,
+ * both leave `snapshotted` false, and a `force`d `rmSync` on such a path also
+ * reports success with nothing to actually remove. Reporting a removal in
+ * either case is the worst possible reading of a security gate's own record
+ * of what it did: the user is told a denylisted file left the working tree
+ * while it is still sitting there one `git add` from the remote, or it was
+ * never there to begin with.
  *
- * That same WARN names the snapshot only when there is one to name.
- * `backupUnder` copies only a source it can resolve, so a path that vanished
- * between the status snapshot and this call, and a link whose target is gone,
- * both leave nothing under `backup/<ts>/repo/`, and pointing the user at a
- * directory that holds no copy of their file is the one claim worse than making
- * no claim.
+ * Naming the snapshot is therefore subsumed by the `snapshotted` branch
+ * rather than a separate condition: the removal claim is reached only when
+ * `snapshotted` is true, and `backupUnder` uses that same `existsSync` test as
+ * its own copy gate, so a true `snapshotted` here means a copy exists to name.
  *
  * The removal is wrapped in its own try/catch so one unremovable path (an
  * antivirus lock, a read-only file, a path over the Windows limit) does not
@@ -436,8 +439,15 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
       warn(`could not remove ${abs}: ${denied}, so remove it by hand`);
       return;
     }
-    const where = snapshotted ? `. A copy was snapshotted under backup/${ts}/repo/ first` : '';
-    warn(`removed ${path} from the sync repo working tree: ${denied}${where}`);
+    if (!snapshotted) {
+      warn(
+        `nothing was removed for ${path}: ${denied}, but no such path is in the sync repo working tree. Either it moved after git listed it, or its name did not survive the UTF-8 decode of git's output. Find it with "git status --untracked-files=all -- shared/" and remove it by hand`,
+      );
+      return;
+    }
+    warn(
+      `removed ${path} from the sync repo working tree: ${denied}. A copy was snapshotted under backup/${ts}/repo/ first`,
+    );
   } catch (err) {
     warn(`could not remove ${abs}: ${(err as Error).message}`);
   }

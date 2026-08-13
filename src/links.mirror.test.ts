@@ -901,15 +901,16 @@ describe('revertDeniedMirrorPaths', () => {
     expect(warnings()).not.toContain('removed shared/');
   });
 
-  it('does not name a snapshot for a path that was already gone', async () => {
-    // `backupUnder` copies only a source it can resolve, and `force` makes
-    // rmSync treat an absent path as success, so a path that vanished between
-    // the git status snapshot and this call leaves nothing under
-    // backup/<ts>/repo/. Pointing the user at a directory holding no copy of
-    // their file is the one claim worse than making no claim.
+  it('reports no removal for a path git listed that is not on disk', async () => {
+    // `force` makes rmSync treat an absent path as success, so the call cannot
+    // tell a no-op removal from a real one. Without the `snapshotted` guard
+    // this reads as a clean removal of a denylisted file that is in fact still
+    // wherever it was: worse than the silence the gate exists to remove.
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
 
+    expect(warnings()).toContain('nothing was removed for shared/commands/sessions');
+    expect(warnings()).not.toContain('removed shared/commands/sessions');
     expect(warnings()).toContain('shared/commands/sessions');
     expect(warnings()).not.toContain('snapshotted');
     expect(existsSync(backupOf(join('shared', 'commands', 'sessions')))).toBe(false);
