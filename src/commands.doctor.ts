@@ -51,6 +51,7 @@ import { reportOptionalDeps } from './commands.doctor.checks.deps.ts';
 import { reportActionsDrift } from './commands.doctor.actions-drift.ts';
 import { reportVersionCheck } from './commands.doctor.version.ts';
 import { buildVerdictSection } from './commands.doctor.verdict.ts';
+import { printBanner } from './commands.doctor.banner.ts';
 import { compactSections } from './commands.doctor.compact.ts';
 
 /**
@@ -198,6 +199,10 @@ function gatherDoctorSections(opts: {
  * WARN/FAIL (OK/info rows stripped), and the Summary verdict. Filtering is
  * purely presentational and runs after gathering, so the FAIL exit code set by
  * reporters is unaffected in either mode.
+ *
+ * Ahead of everything else, `printBanner` draws the `nomad` wordmark on an
+ * interactive terminal (skipped when stdout is not a TTY, so captured output is
+ * the report alone).
  */
 export function cmdDoctor(
   opts: {
@@ -208,6 +213,7 @@ export function cmdDoctor(
     startSpinner?: (label: string) => SpinnerHandle;
   } = {},
 ): void {
+  printBanner(console.log, process.stdout);
   const makeSpinner = opts.startSpinner ?? realStartSpinner;
   // The spinner animates on stderr during the slow batched checks (gitleaks
   // probe, version curl, actions-drift). stop() runs in finally so a thrown

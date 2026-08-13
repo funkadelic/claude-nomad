@@ -13,6 +13,8 @@ const ok = (text: string): string => `${okGlyph} ${text}`;
 const info = (text: string): string => `${infoGlyph} ${text}`;
 const warn = (text: string): string => `${warnGlyph} ${text}`;
 const fail = (text: string): string => `${failGlyph} ${text}`;
+/** A nested child row, marked exactly as `addChildItem` marks one: leading tab, no glyph. */
+const child = (text: string): string => `\t${text}`;
 
 function sec(header: string, items: string[]): DoctorSection {
   return { header, items };
@@ -59,6 +61,45 @@ describe('compactSections', () => {
       sec('Repository', [ok('remote configured'), fail('gitlink found'), ok('rebase clean')]),
     ]);
     expect(out.items).toEqual([fail('gitlink found')]);
+  });
+
+  it('keeps the child rows of a retained WARN row', () => {
+    const [out] = compactSections([
+      sec('Skills', [
+        ok('agents: in sync'),
+        warn('skills: 2 file(s) diverge'),
+        child('a/SKILL.md'),
+        child('b/SKILL.md'),
+      ]),
+    ]);
+    expect(out.items).toEqual([
+      warn('skills: 2 file(s) diverge'),
+      child('a/SKILL.md'),
+      child('b/SKILL.md'),
+    ]);
+  });
+
+  it('drops the child rows of a dropped OK row', () => {
+    const [out] = compactSections([
+      sec('Path map', [
+        ok('Mapped projects: 1'),
+        child('nomad -> /home/n/nomad'),
+        fail('collision'),
+      ]),
+    ]);
+    expect(out.items).toEqual([fail('collision')]);
+  });
+
+  it('keeps child rows of a retained Environment row', () => {
+    const [out] = compactSections([
+      sec('Environment', [
+        info('NOMAD_HOST: host'),
+        child('ignored'),
+        warn('drift'),
+        child('CLAUDE.md'),
+      ]),
+    ]);
+    expect(out.items).toEqual([warn('drift'), child('CLAUDE.md')]);
   });
 
   it('does not mutate the input sections', () => {

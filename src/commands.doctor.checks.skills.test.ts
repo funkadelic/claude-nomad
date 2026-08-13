@@ -114,6 +114,22 @@ describe('reportSkillsDivergence (real git)', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
+  it('keeps the diverging filenames next to the count in the compact (non-verbose) view', async () => {
+    mkdirSync(join(sharedSkills, 'my-skill'), { recursive: true });
+    mkdirSync(join(localSkills, 'my-skill'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'my-skill', 'SKILL.md'), '# shared version\n');
+    writeFileSync(join(localSkills, 'my-skill', 'SKILL.md'), '# local edit\n');
+    const { section: makeSection } = await import('./commands.doctor.format.ts');
+    const { reportSkillsDivergence } = await import('./commands.doctor.checks.skills.ts');
+    const { compactSections } = await import('./commands.doctor.compact.ts');
+    const sec = makeSection('Skills');
+    reportSkillsDivergence(sec);
+    const [compact] = compactSections([sec]);
+    const out = compact.items.join('\n');
+    expect(out).toContain('1 file(s) diverge from shared/skills/');
+    expect(out).toContain('my-skill/SKILL.md');
+  });
+
   it('emits warnGlyph with (repo only) child item for a non-gsd skill absent locally', async () => {
     mkdirSync(join(sharedSkills, 'my-skill'), { recursive: true });
     mkdirSync(localSkills, { recursive: true });

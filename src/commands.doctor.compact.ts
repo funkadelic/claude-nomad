@@ -1,5 +1,5 @@
 import { failGlyph, warnGlyph } from './color.ts';
-import { type DoctorSection } from './output-tree.ts';
+import { isChild, type DoctorSection } from './output-tree.ts';
 
 /**
  * Section headers kept in full in the compact view. `Nomad Version` and
@@ -55,6 +55,38 @@ function isCopySyncModalityLine(item: string): boolean {
 }
 
 /**
+ * The Environment keep-rule: the repo-state row, the copy-sync modality row,
+ * and anything carrying a WARN or FAIL glyph.
+ */
+function isKeptEnvironmentRow(item: string): boolean {
+  return isRepoStateLine(item) || isCopySyncModalityLine(item) || isProblem(item);
+}
+
+/**
+ * Filter a section's items by `keep`, carrying each retained row's nested child
+ * rows along with it. Child rows (see `addChildItem`) carry no status glyph, so
+ * testing them against `keep` would drop every one of them and leave a WARN row
+ * stating a count with nothing to name it: `reportSkillsDivergence` and the
+ * win32 shared-copy drift check both render "N file(s) diverge" as the parent
+ * and the filenames as children. A child under a dropped row is dropped with
+ * it, so a surviving child can never re-attach its connector to an unrelated
+ * preceding row in `renderChildLine`.
+ */
+function keepWithChildren(items: string[], keep: (item: string) => boolean): string[] {
+  const out: string[] = [];
+  let parentKept = false;
+  for (const item of items) {
+    if (isChild(item)) {
+      if (parentKept) out.push(item);
+      continue;
+    }
+    parentKept = keep(item);
+    if (parentKept) out.push(item);
+  }
+  return out;
+}
+
+/**
  * Collapse the full doctor section list to the compact default view: only what
  * needs action plus minimal orientation. Pure transform over the rendered
  * section objects, so reporters and the `process.exitCode` contract are
@@ -65,6 +97,8 @@ function isCopySyncModalityLine(item: string): boolean {
  *   (see `isCopySyncModalityLine`), plus any WARN/FAIL rows.
  * - every other section keeps only its WARN/FAIL rows; an emptied section is
  *   skipped by `renderTree` (it renders no zero-item sections).
+ * - a retained row keeps its nested child rows (see `keepWithChildren`), so a
+ *   count and the names behind it stay together.
  *
  * @param sections - the full ordered section list (body sections + Summary).
  * @returns a new list; input sections are not mutated.
@@ -72,14 +106,7 @@ function isCopySyncModalityLine(item: string): boolean {
 export function compactSections(sections: DoctorSection[]): DoctorSection[] {
   return sections.map((s) => {
     if (ALWAYS_FULL.has(s.header)) return s;
-    if (s.header === 'Environment') {
-      return {
-        ...s,
-        items: s.items.filter(
-          (it) => isRepoStateLine(it) || isCopySyncModalityLine(it) || isProblem(it),
-        ),
-      };
-    }
-    return { ...s, items: s.items.filter(isProblem) };
+    const keep = s.header === 'Environment' ? isKeptEnvironmentRow : isProblem;
+    return { ...s, items: keepWithChildren(s.items, keep) };
   });
 }
