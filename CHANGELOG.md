@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.65.0](https://github.com/funkadelic/claude-nomad/compare/v0.64.1...v0.65.0) (2026-08-13)
+
+### What's new
+
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to
+it.
+
+- **`nomad pull --force-remote` no longer discards edits you have not published.** The flag exists
+  to rescue a sync repo that got stuck part-way through an update. On native Windows it also skipped
+  the step that saves your local shared-config edits into the repo, every time it ran, even on a
+  healthy machine with nothing to rescue. That was the flag's only visible effect on a healthy repo,
+  and nothing told you it had happened. It now rescues a stuck repo and nothing else, and when a
+  rescue genuinely does replace your copies, the pull says how many and where your previous ones
+  were saved.
+- **A pull now says what it did to your shared config.** On Windows your shared config is kept as
+  real file copies rather than symlinks, so every pull starts by copying your local edits into the
+  sync repo. That step used to be silent. It now prints a `Symlinks` section naming each file it
+  picked up, and each file it removed from the repo because you deleted it here. If a file cannot be
+  read at all, because another program is holding it open or its permissions changed, the pull names
+  it and says why rather than leaving a silent gap. `nomad diff` and `nomad pull --dry-run` read
+  from the same place, so a preview now matches what a real pull does.
+- **Windows keeps the same things out of your sync repo that your other machines do.** The Windows
+  copy step used to hold back only files whose names looked like passwords or keys. It now skips
+  everything on the never-sync list, so the folders Claude Code uses for its own state, named things
+  like `sessions`, `tasks`, `plans`, and `cache`, stay on the machine even when they sit inside a
+  folder you share. If one of them is already sitting in your sync repo, the pull tells you, and
+  takes a backup copy before removing it.
+
+**On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
+
+- **`nomad doctor` names the files that have drifted.** When it reports that your skills or your
+  shared config no longer match the repo, it lists them. Before, you got a count and had to run it
+  again with `--verbose` to find out which files it meant.
+- **`nomad pull --force-remote` tells you when there was nothing to rescue.** On a repo that is not
+  stuck it now says so and pulls normally, instead of appearing to do nothing. If it cannot tell
+  whether the repo is stuck, it says that too rather than reporting a clean repo. The help text,
+  README, and docs site now agree on what the flag does.
+
+
+### Added
+
+* **doctor:** open with the nomad wordmark and name the diverging files ([#508](https://github.com/funkadelic/claude-nomad/issues/508)) ([1fea0c7](https://github.com/funkadelic/claude-nomad/commit/1fea0c7913b38f934d529d888a0aef96dc1dfc08))
+* make the win32 pre-pull mirror visible and gate what it writes ([#503](https://github.com/funkadelic/claude-nomad/issues/503)) ([8d3a76d](https://github.com/funkadelic/claude-nomad/commit/8d3a76dd42c89efd38b2a76b2684b8b4014878ac))
+* **pull:** report the shared files a pull removes, not just the ones it captures ([#510](https://github.com/funkadelic/claude-nomad/issues/510)) ([9ab6ef5](https://github.com/funkadelic/claude-nomad/commit/9ab6ef5b9961a8542eb25a650ada27bd3bdf9de6))
+
+
+### Fixed
+
+* **mirror:** report what the never-sync cleanup actually removed ([#509](https://github.com/funkadelic/claude-nomad/issues/509)) ([6596ed3](https://github.com/funkadelic/claude-nomad/commit/6596ed341d4e764b29a56bb73f900aa6dd48fcc9))
+* **mirror:** warn when the win32 mirror skips a name it cannot stat ([#505](https://github.com/funkadelic/claude-nomad/issues/505)) ([5806db6](https://github.com/funkadelic/claude-nomad/commit/5806db6e2d2861747738d498d0255fe0483a6650))
+* **pull:** make --force-remote mean wedge recovery again ([#506](https://github.com/funkadelic/claude-nomad/issues/506)) ([2bf8d5d](https://github.com/funkadelic/claude-nomad/commit/2bf8d5d3b19e8c022ff1137be96b0f009e5503df))
+
+
+### Changed
+
+* fail the gitleaks install on a download error, not a checksum mismatch ([#504](https://github.com/funkadelic/claude-nomad/issues/504)) ([724dd3c](https://github.com/funkadelic/claude-nomad/commit/724dd3c276bdea113f9719e5b62ee0741a3c3885))
+
+
+### Documentation
+
+* describe what the force-remote recovery warning actually counts ([#507](https://github.com/funkadelic/claude-nomad/issues/507)) ([6235858](https://github.com/funkadelic/claude-nomad/commit/6235858e40459e136deff4b081187c89b9e7b670))
+* keep the Windows explainer in one place ([#511](https://github.com/funkadelic/claude-nomad/issues/511)) ([9a9287f](https://github.com/funkadelic/claude-nomad/commit/9a9287f87d86e2353ca4a0d936346482e37a1041))
+
+
+### Dependencies
+
+* bump @astrojs/starlight from 0.41.6 to 0.41.7 in /docs-site in the prod-dependencies group ([#499](https://github.com/funkadelic/claude-nomad/issues/499)) ([61ecb3f](https://github.com/funkadelic/claude-nomad/commit/61ecb3fef0213c6bc0f2a36713da0e166e356238))
+* bump astro from 7.1.6 to 7.2.0 in /docs-site ([#500](https://github.com/funkadelic/claude-nomad/issues/500)) ([4909e02](https://github.com/funkadelic/claude-nomad/commit/4909e02e5754081432e567cae2344989ab8b1309))
+* bump the codeql-action group across 1 directory with 2 updates ([#498](https://github.com/funkadelic/claude-nomad/issues/498)) ([ad3310d](https://github.com/funkadelic/claude-nomad/commit/ad3310d33e9662ae407d304ef949efd1bebf9c3e))
+* bump the dev-dependencies group across 1 directory with 4 updates ([#501](https://github.com/funkadelic/claude-nomad/issues/501)) ([446c6da](https://github.com/funkadelic/claude-nomad/commit/446c6dae3905609bef1d3ec4366d58e50651c44a))
+
 ## [0.64.1](https://github.com/funkadelic/claude-nomad/compare/v0.64.0...v0.64.1) (2026-08-07)
 
 ### What's new
