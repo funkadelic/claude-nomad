@@ -141,7 +141,8 @@ preview finds anything.
 
 A `nomad pull` is the mirror image, leading with the settings file it regenerated and then the
 sessions and extras it copied down for this host (on native Windows a `Symlinks` section comes
-first, listing each `captured  <local> -> <repo>` the pre-fetch mirror performed):
+first, listing each `captured  <local> -> <repo>` the pre-fetch mirror performed, followed by a
+`removed  <repo> (gone from <local>)` row for any repo file a local deletion authorized removing):
 
 ```text
 pull on host=workstation (backup=2026-05-27T14-02-09Z)
