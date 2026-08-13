@@ -466,7 +466,7 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
   const denied = `the path segment "${segment}" is on the never-sync list`;
   if (!presentAt(abs)) {
     warn(
-      `nothing was removed for ${path}: ${denied}, but nothing is at that path now. Either it went away after git listed it, in which case there is nothing left to do, or its name did not survive the decode of git's output and the real file is still in the sync repo under a name nomad cannot address. Check with "git -C ${repo} status --untracked-files=all -- shared/"`,
+      `nothing was removed for ${path}: ${denied}, but nothing is at that path now. Either it went away after git listed it, in which case there is nothing left to do, or its name did not survive the decode of git's output and the real file is still in the sync repo under a name nomad cannot address. Look for it in ${repo} with "git status --untracked-files=all -- shared/"`,
     );
     return;
   }
