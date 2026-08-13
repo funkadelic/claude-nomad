@@ -112,12 +112,13 @@ describe('shared-link deletions', () => {
   async function expectRepoUntouched(
     map: PathMap | null = { projects: {} },
     expected: Record<string, string> = { 'commands/a.md': '# a\n' },
-  ): Promise<void> {
+  ): Promise<unknown[]> {
     const { applySharedLinkDeletions } = await import('./links.deletions.ts');
-    applySharedLinkDeletions(map, TS);
+    const removed = applySharedLinkDeletions(map, TS);
     for (const [rel, content] of Object.entries(expected)) {
       expect(readFileSync(join(sharedDir, rel), 'utf8')).toBe(content);
     }
+    return removed;
   }
 
   describe('baseline integrity: every failure mode deletes nothing', () => {
@@ -181,7 +182,8 @@ describe('shared-link deletions', () => {
       stubPlatform('linux');
       const { planSharedLinkDeletions } = await import('./links.deletions.ts');
       expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
-      await expectRepoUntouched();
+      const removed = await expectRepoUntouched();
+      expect(removed).toEqual([]);
     });
   });
 
@@ -199,13 +201,15 @@ describe('shared-link deletions', () => {
       expect(plan[0]?.name).toBe('commands');
       expect(plan[0]?.repoPath).toBe(join(sharedDir, 'commands', 'a.md'));
 
-      applySharedLinkDeletions({ projects: {} }, TS);
+      const removed = applySharedLinkDeletions({ projects: {} }, TS);
       expect(existsSync(join(sharedDir, 'commands', 'a.md'))).toBe(false);
       expect(readFileSync(join(sharedDir, 'commands', 'b.md'), 'utf8')).toBe('# b\n');
       // Recoverable from the same timestamped cache the rest of the pull uses.
       expect(
         readFileSync(join(cacheDir, 'backup', TS, 'repo', 'shared', 'commands', 'a.md'), 'utf8'),
       ).toBe('# a\n');
+      expect(removed).toHaveLength(1);
+      expect(removed[0]?.repoPath).toBe(join(sharedDir, 'commands', 'a.md'));
     });
 
     it('gates per name: a baselined name propagates while an unbaselined one does not', async () => {
@@ -498,9 +502,14 @@ describe('shared-link deletions', () => {
       plantBaseline({ 'commands/a.md': entry(), 'commands/b.md': entry() });
       stubPlatform('win32');
       const { applySharedLinkDeletions } = await import('./links.deletions.ts');
-      expect(() => applySharedLinkDeletions({ projects: {} }, TS)).not.toThrow();
+      let removed: { repoPath: string }[] = [];
+      expect(() => {
+        removed = applySharedLinkDeletions({ projects: {} }, TS);
+      }).not.toThrow();
       expect(existsSync(join(sharedDir, 'commands', 'a.md'))).toBe(true);
       expect(existsSync(join(sharedDir, 'commands', 'b.md'))).toBe(false);
+      // Only the entry that was actually removed is in the return.
+      expect(removed.map((e) => e.repoPath)).toEqual([join(sharedDir, 'commands', 'b.md')]);
     });
 
     it.skipIf(isWin)('warns and continues when a repo file cannot be removed', async () => {
@@ -513,9 +522,13 @@ describe('shared-link deletions', () => {
       stubPlatform('win32');
       const { applySharedLinkDeletions } = await import('./links.deletions.ts');
       try {
-        expect(() => applySharedLinkDeletions({ projects: {} }, TS)).not.toThrow();
+        let removed: unknown[] = [];
+        expect(() => {
+          removed = applySharedLinkDeletions({ projects: {} }, TS);
+        }).not.toThrow();
         expect(vi.mocked(console.error).mock.calls.join('\n')).toContain('could not remove');
         expect(readFileSync(join(sharedDir, 'commands', 'a.md'), 'utf8')).toBe('# a\n');
+        expect(removed).toEqual([]);
       } finally {
         chmodSync(join(sharedDir, 'commands'), 0o700);
       }
