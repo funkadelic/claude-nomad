@@ -157,10 +157,12 @@ other side:
   snapshotted to the backup dir first. One guard sits in front of that reset, and it covers the
   sync repo rather than this machine: when the repo's own tracked copy of the shared config differs
   from the shared repo, the pull refuses before it resets anything and lists those repo paths
-  instead. The refusal clears only once the repo matches the shared repo again, so save a copy of
-  anything in that list you still want, then follow the manual steps in the
-  [FAQ](/claude-nomad/faq/#state-1-stuck-mid-rebase-or-mid-merge); moving or committing the files
-  does not clear it on its own. Two things are worth knowing before you retry: whichever operation
+  instead. That refusal comes before the commit parking described above, so at that point nothing
+  has been saved for you: put your own commits on a branch, and copy any uncommitted work out,
+  before you follow the manual steps in the
+  [FAQ](/claude-nomad/faq/#state-1-stuck-mid-rebase-or-mid-merge), because those end in a hard reset.
+  The refusal clears only once the repo matches the shared repo again; moving or committing the
+  files does not clear it on its own. Two things are worth knowing before you retry: whichever operation
   was stuck, the rebase or the merge, has already been unwound by the time it refuses, so running
   the same command again is now just an ordinary pull, and the list can also name paths where the
   shared repo is simply ahead of yours, which are nothing of yours at risk. The guard cannot help with an edit that exists only on this

@@ -381,6 +381,18 @@ describe('recoverForceRemote - synced-config refusal (committed paths)', () => {
     const message = (thrown as Error).message;
     expect(message).toContain('git reset --hard origin/main');
     expect(message).toContain('ALREADY been aborted');
+
+    // The refusal returns before the parking step, so the reset it recommends
+    // would discard local commits nothing has saved yet. The branch step has
+    // to come first, and has to be stated as non-optional.
+    const branchStep = message.indexOf('git branch nomad-rescue HEAD');
+    expect(branchStep).toBeGreaterThan(-1);
+    expect(branchStep).toBeLessThan(message.indexOf('git reset --hard origin/main'));
+    expect(message).toContain('BEFORE recovery parks your');
+
+    // Paths are quoted for display: a raw name carrying a newline would
+    // otherwise split the numbered steps printed below it.
+    expect(message).toContain('"path-map.json"');
     expect(message).not.toMatch(/Copy or cherry-pick those changes out before retrying/);
   });
 
