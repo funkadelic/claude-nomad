@@ -132,8 +132,8 @@ other side:
   was captured. The same warning appears on `nomad push` and in the `nomad diff` and `--dry-run`
   previews, which report what they could not read rather than dropping it from the plan.
   A later step in the same pull reads that file too, and it no longer stops there: it warns as
-  well, naming the file, saying whether the file is still in place, and pointing at the backup copy
-  when it made one, then skips that one name and finishes the rest of the pull. Close whatever is
+  well, naming the file, saying whether the file is gone or may be part-updated, and pointing at the
+  backup copy when it made one, then skips that one name and finishes the rest of the pull. Close whatever is
   holding the file, or fix its permissions, and run `nomad pull` again to pick it up. A file you
   delete from a shared directory is handled
   the same way: it is removed from the sync repo by the next pull, exactly as deleting inside a
