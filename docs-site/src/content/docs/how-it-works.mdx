@@ -71,8 +71,10 @@ captured, so the copy is visible in the pull output instead of silent. A name th
 read at all, held open by another program or changed out from under it by a permissions edit, is
 left out with a warning naming the file and the reason, instead of vanishing from the capture list
 without comment. The same warning appears on `nomad push` and in the `nomad diff` and `--dry-run`
-previews. It covers the mirror step only: fix the permissions before re-running, because a later
-step in the same pull reads that file too. A file you delete from inside one of these directories
+previews. A later step in the same pull reads that file too, and it no longer stops there: it warns
+as well, naming the file, saying whether the file is still in place, and pointing at the backup copy
+when it made one, then skips that one name and finishes the rest of the pull. A file you delete from
+inside one of these directories
 is mirrored the same way: it is removed from `shared/` by the next pull, the same as deleting
 inside a symlinked directory already removes it on macOS or Linux, and that pull names the removal
 too, in the same `Symlinks` section as the captured rows, right after them. The removal is left

@@ -131,8 +131,11 @@ other side:
   mirror leaves it out and warns, naming the file and the reason, instead of a silent gap in what
   was captured. The same warning appears on `nomad push` and in the `nomad diff` and `--dry-run`
   previews, which report what they could not read rather than dropping it from the plan.
-  The warning covers the mirror step only: fix the permissions before re-running, because a later
-  step in the same pull reads that file too. A file you delete from a shared directory is handled
+  A later step in the same pull reads that file too, and it no longer stops there: it warns as
+  well, naming the file, saying whether the file is still in place, and pointing at the backup copy
+  when it made one, then skips that one name and finishes the rest of the pull. Close whatever is
+  holding the file, or fix its permissions, and run `nomad pull` again to pick it up. A file you
+  delete from a shared directory is handled
   the same way: it is removed from the sync repo by the next pull, exactly as deleting inside a
   symlinked directory already removes it on macOS or Linux, and that pull names the removal in the
   same `Symlinks` section, on its own row right after any files it captured. The removal is left
