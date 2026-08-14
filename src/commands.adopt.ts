@@ -82,6 +82,58 @@ function isValidAdoptName(name: string): boolean {
 }
 
 /**
+ * Restore the host-side copy after a win32 move, failing loud rather than
+ * crashing when the destination cannot be written.
+ *
+ * By the time this runs the move itself has already succeeded: the content is
+ * in `shared/<name>` and the source is gone. So a failure here costs the local
+ * copy, never the content, and the honest report is a `NomadFatal` naming the
+ * path rather than either a crash report or a success message. `nomad adopt`
+ * takes exactly one name per invocation, so there is no rest-of-the-list to
+ * preserve by warning and continuing the way the pull's apply loop does
+ * (`applyOneSharedLinkWin32` in `links.ts`).
+ *
+ * The stage runs BEFORE the throw deliberately. Without it the caller's
+ * `git add` is skipped and the user is left with `shared/<name>` on disk but
+ * untracked, which no single command finishes; staging first means one
+ * `nomad push` still publishes what was adopted.
+ *
+ * The catch is deliberately broad, with no `err.code` dispatch: the copy
+ * bottoms out in several different syscalls, each of which can raise a
+ * different Windows errno for the same underlying lock, so narrowing would
+ * miss real cases rather than filter noise.
+ *
+ * @param name The name being adopted, for the message.
+ * @param linkPath Host-side path the copy could not be written to.
+ * @param sharedTarget Repo-side source of the copy.
+ * @param ts Backup timestamp, named only when a snapshot exists.
+ * @param snapshotted True when `backupBeforeWrite` actually wrote a snapshot.
+ * @param stage Stages `shared/<name>`; run before throwing.
+ */
+function restoreWin32LocalCopy(
+  name: string,
+  linkPath: string,
+  sharedTarget: string,
+  ts: string,
+  snapshotted: boolean,
+  stage: () => void,
+): void {
+  try {
+    copySharedLinkPull(sharedTarget, linkPath);
+  } catch (err) {
+    stage();
+    const recover = snapshotted ? ` A copy of what it held before is under backup/${ts}/.` : '';
+    throw new NomadFatal(
+      `adopted ${name} into shared/${name}, but could not restore the local copy at ` +
+        `${linkPath} (${(err as Error).message}). The content is safe in the repo and ` +
+        `staged, so \`nomad push\` still publishes it.${recover} Check its permissions, or ` +
+        `whether another program has it open, then run \`nomad pull\` to recreate it`,
+      { code: EXIT.GENERIC_FAILURE },
+    );
+  }
+}
+
+/**
  * Perform the actual backup -> copy -> remove -> relink -> stage sequence
  * once all preconditions have passed. Extracts the mutation block so the
  * top-level function stays under the cognitive-complexity threshold.
@@ -93,6 +145,11 @@ function isValidAdoptName(name: string): boolean {
  * support), `copySharedLinkPull` copies `sharedTarget` back into `linkPath`
  * as a real, deny-set-filtered copy so the host keeps a usable local
  * counterpart under the copy-sync model.
+ *
+ * The stage is a closure rather than a straight-line call because the win32
+ * arm has to run it on its own failure path (see `restoreWin32LocalCopy`).
+ * Handing it down means the success path still stages exactly once and the
+ * failure path never double-adds.
  *
  * @param name The validated, configured, real-directory name to adopt.
  * @param linkPath Absolute path of the source directory (`CLAUDE_HOME/<name>`).
@@ -107,25 +164,29 @@ function performAdoptMove(
 ): void {
   const ts = freshBackupTs(backup);
 
-  // Back up before any mutation
-  backupBeforeWrite(linkPath, ts);
+  // Back up before any mutation. The return value distinguishes a real
+  // snapshot from a no-op, so a later failure never advertises a backup dir
+  // that holds nothing.
+  const snapshotted = backupBeforeWrite(linkPath, ts);
 
   // Copy fully into shared/ BEFORE removing the source so a
   // mid-move crash cannot lose user content
   cpSync(linkPath, sharedTarget, { recursive: true, force: true, preserveTimestamps: true });
   rmSync(linkPath, { recursive: true, force: true });
 
+  // Targeted stage of shared/<name> only; never git add -A
+  const rel = join('shared', name);
+  const stage = (): void => gitOrFatal(['add', '--', rel], `git add shared/${name}`, repo);
+
   // Leave the host with a usable local counterpart: a real copy-back on
   // win32 (no unprivileged symlink support), a recreated symlink elsewhere.
   if (process.platform === 'win32') {
-    copySharedLinkPull(sharedTarget, linkPath);
+    restoreWin32LocalCopy(name, linkPath, sharedTarget, ts, snapshotted, stage);
   } else {
     ensureSymlink(linkPath, sharedTarget);
   }
 
-  // Targeted stage of shared/<name> only; never git add -A
-  const rel = join('shared', name);
-  gitOrFatal(['add', '--', rel], `git add shared/${name}`, repo);
+  stage();
 
   log(`adopted ${name}; ${ADOPT_PUSH_HINT}`);
 }
@@ -230,7 +291,10 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     return;
   }
 
-  /* c8 ignore start -- catch is defensive: performAdoptMove only throws on a git/fs fault */
+  // A NomadFatal is this command's own reported failure (a git fault, or the
+  // win32 copy-back guard in performAdoptMove), so it renders as one message
+  // and its own exit code. Anything else is genuinely unexpected and belongs
+  // in the crash report the top-level handler writes.
   try {
     performAdoptMove(name, linkPath, sharedTarget, repo, backup);
   } catch (err) {
@@ -238,5 +302,4 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     fail(err.message);
     process.exitCode = err.code;
   }
-  /* c8 ignore stop */
 }

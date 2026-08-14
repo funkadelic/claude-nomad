@@ -15,7 +15,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { EXIT } from './exit-codes.ts';
+import type * as linksModule from './links.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
+import type * as utilsFsModule from './utils.fs.ts';
 
 // Posix-only assertions (symlink creation, clobber-refusal wording) below
 // assume the process is genuinely running on a non-win32 host. On a real
@@ -764,4 +766,134 @@ describe('cmdAdopt win32 copy-back branch', () => {
       expect(out).not.toContain('would copy back');
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// win32 copy-back failure (locked or permission-denied destination)
+// ---------------------------------------------------------------------------
+
+/**
+ * A genuine OS-level Windows lock cannot be provoked from vitest (Node opens
+ * with full sharing by default), so the failure is injected at the module
+ * boundary instead, the same way Phase 77 proved the pull-side guard.
+ */
+function mockCopyBackFailure(message: string): void {
+  vi.doMock('./links.ts', async (importOriginal) => ({
+    ...(await importOriginal<typeof linksModule>()),
+    copySharedLinkPull: (): never => {
+      throw new Error(message);
+    },
+  }));
+}
+
+describe('cmdAdopt win32 copy-back failure', () => {
+  let env: Env;
+  const realPlatform = process.platform;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./utils.fs.ts');
+    teardownAdoptEnv(env);
+  });
+
+  it('win32: reports one failure and exits 1 instead of reaching the crash report', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+
+    // No rethrow past cmdAdopt: a NomadFatal renders as one message, so the
+    // top-level handler never writes a crash report for this.
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+
+    const out = errOutput(env);
+    expect(out).toContain(linkPath);
+    expect(out).toContain('EBUSY: resource busy or locked');
+    expect(out).toContain('nomad pull');
+  });
+
+  it('win32: stages shared/<name> anyway so one push still publishes the adopted content', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('EPERM: operation not permitted');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    // The move itself succeeded: content is in shared/ and it is staged.
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(readFileSync(join(sharedTarget, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(diffCached(env)).toContain('shared/my-tools');
+
+    // And the success line never printed, so nothing claims the adopt finished.
+    expect(logOutput(env)).not.toContain('adopted my-tools;');
+  });
+
+  it('win32: names the backup dir when a snapshot was written', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(errOutput(env)).toContain('under backup/');
+  });
+
+  it('win32: does not name a backup dir when the snapshot no-opped', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    // backupBeforeWrite no-ops (and reports it) when there is nothing to
+    // snapshot; the message must not advertise a directory holding nothing.
+    vi.doMock('./utils.fs.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof utilsFsModule>()),
+      backupBeforeWrite: (): boolean => false,
+    }));
+    mockCopyBackFailure('EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    expect(out).toContain('could not restore the local copy');
+    expect(out).not.toContain('backup/');
+  });
+
+  it.skipIf(isWin)('posix: an unexpected error still reaches the crash-report path', async () => {
+    // Not a NomadFatal, so cmdAdopt must rethrow rather than swallow it: the
+    // top-level handler is what turns an unexpected fault into a report.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof utilsFsModule>()),
+      ensureSymlink: (): never => {
+        throw new Error('ENOSPC: no space left on device');
+      },
+    }));
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+
+    expect(() => cmdAdopt('my-tools')).toThrow('ENOSPC: no space left on device');
+  });
 });
