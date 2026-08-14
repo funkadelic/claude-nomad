@@ -164,10 +164,18 @@ export function recoverForceRemote(mode: NonNullable<WedgeMode>, repo: string): 
 
   if (synced.length > 0) {
     die(
-      'force-remote refused: stranded or dirty tracked changes touch synced config.\n' +
-        'At-risk paths:\n' +
+      "force-remote refused: the sync repo's synced config differs from origin/main.\n" +
+        'Differing paths:\n' +
         synced.map((p) => `  ${p}`).join('\n') +
-        '\nCopy or cherry-pick those changes out before retrying.',
+        '\n\nManual recovery:\n' +
+        '  1. copy anything above you want to keep OUT of the repo (it may exist nowhere else)\n' +
+        '  2. git reset --hard origin/main   (this is what clears the refusal)\n' +
+        '  3. nomad pull\n\n' +
+        'Copying or moving the files alone does not clear it: git still reports a moved file as a\n' +
+        'deletion, and a committed change is still ahead of origin/main. The in-progress rebase or\n' +
+        "merge has ALREADY been aborted, so re-running 'nomad pull --force-remote' now behaves as\n" +
+        'an ordinary pull.\n' +
+        '(see FAQ: "Every pull fails with unmerged files")',
     );
   }
 

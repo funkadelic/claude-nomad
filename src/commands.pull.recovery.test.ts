@@ -372,6 +372,16 @@ describe('recoverForceRemote - synced-config refusal (committed paths)', () => {
     }
     expect(thrown).toBeInstanceOf(NomadFatal);
     expect((thrown as Error).message).toMatch(/path-map\.json/);
+
+    // The remedy has to name the step that actually clears the refusal.
+    // Copying or moving the files does not: git reports a moved file as a
+    // deletion, so the path stays dirty, and a committed change stays ahead
+    // of origin/main. Pinned because the old wording said the opposite and
+    // sent the user into a retry that silently became an ordinary pull.
+    const message = (thrown as Error).message;
+    expect(message).toContain('git reset --hard origin/main');
+    expect(message).toContain('ALREADY been aborted');
+    expect(message).not.toMatch(/Copy or cherry-pick those changes out before retrying/);
   });
 
   it('no parking branch created after refusal', async () => {
