@@ -833,6 +833,47 @@ describe('isDirectChildOf', () => {
   });
 });
 
+describe('removeAdoptSource containment bound', () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    teardownAdoptEnv(env);
+  });
+
+  it('refuses a path outside ~/.claude/ rather than removing it', async () => {
+    // Unreachable through cmdAdopt, which rejects any name carrying a path
+    // separator or a dot segment first. Asserted directly, the way
+    // isDirectChildOf is, because a test routed through the command could not
+    // tell a working bound from a missing one.
+    const outside = join(env.testHome, 'not-claude', 'tools');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'keep.txt'), 'keep me\n');
+
+    const { removeAdoptSource } = await import('./commands.adopt.recover.ts');
+
+    expect(removeAdoptSource(outside)).toEqual({
+      ok: false,
+      message: 'it is not a direct child of the configured Claude home',
+    });
+    expect(readFileSync(join(outside, 'keep.txt'), 'utf8')).toBe('keep me\n');
+  });
+
+  it('still removes a direct child, and confirms it is gone', async () => {
+    const inside = join(env.claudeHome, 'my-tools');
+    mkdirSync(inside, { recursive: true });
+    writeFileSync(join(inside, 'tool.sh'), '#!/bin/sh\n');
+
+    const { removeAdoptSource } = await import('./commands.adopt.recover.ts');
+
+    expect(removeAdoptSource(inside)).toEqual({ ok: true });
+    expect(existsSync(inside)).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // win32 copy-back failure (locked or permission-denied destination)
 // ---------------------------------------------------------------------------

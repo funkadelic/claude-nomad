@@ -395,16 +395,32 @@ export function copyIntoSharedOrFatal(
  * A discriminated result rather than an empty-string sentinel, so a throw
  * carrying an empty (or absent) message cannot be read as success.
  *
+ * Bounded to a direct child of `~/.claude/` for the reason spelled out on
+ * {@link clearIfDirectChild}: this is the most destructive call in the module,
+ * it is exported, and the rule that module states is that a recursive
+ * force-remove earns its containment check where the call is rather than at the
+ * entry point three guards away. `cmdAdopt` rejects any name carrying a path
+ * separator or a `.`/`..` segment long before it builds `linkPath`, so the
+ * refusal cannot fire through the command; it is here for a future caller that
+ * reaches this export by another route. Refusing reports as a removal failure,
+ * which is the safe direction: the caller then either stops (posix) or leaves
+ * the path in place and says so (win32), rather than deleting something outside
+ * the bound.
+ *
  * @param linkPath Host-side source directory to remove.
  * @returns `{ ok: true }` once the path is confirmed gone, otherwise the reason.
  */
 export function removeAdoptSource(linkPath: string): { ok: true } | { ok: false; message: string } {
+  const resolved = resolve(linkPath);
+  if (!isDirectChildOf(claudeHome(), resolved)) {
+    return { ok: false, message: 'it is not a direct child of the configured Claude home' };
+  }
   try {
-    rmSync(linkPath, { recursive: true, force: true });
+    rmSync(resolved, { recursive: true, force: true });
   } catch (err) {
     return { ok: false, message: String((err as Error | undefined)?.message ?? err) };
   }
-  if (lexists(linkPath)) {
+  if (lexists(resolved)) {
     return { ok: false, message: 'the delete was accepted but the entry is still there' };
   }
   return { ok: true };
