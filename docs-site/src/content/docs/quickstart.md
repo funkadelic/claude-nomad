@@ -157,10 +157,14 @@ other side:
   snapshotted to the backup dir first. One guard sits in front of that reset, and it covers the
   sync repo rather than this machine: when the repo's own tracked copy of the shared config differs
   from the shared repo, the pull refuses before it resets anything and lists those repo paths
-  instead. Move or cherry-pick that work out of the sync repo to clear it, since copying the files
-  elsewhere leaves the change in place; the [FAQ](/claude-nomad/faq/) has the manual steps. The
-  guard cannot help with an edit that exists only on this machine, which is what the warning above
-  is for. A different stuck state, an unfinished index with nothing to abort, recovers by clearing
+  instead. The refusal clears only once the repo matches the shared repo again, so save a copy of
+  anything in that list you still want, then follow the manual steps in the
+  [FAQ](/claude-nomad/faq/#state-1-stuck-mid-rebase-or-mid-merge); moving or committing the files
+  does not clear it on its own. Two things are worth knowing before you retry: the stuck rebase has
+  already been unwound by the time it refuses, so running the same command again is now just an
+  ordinary pull, and the list can also name paths where the shared repo is simply ahead of yours,
+  which are nothing of yours at risk. The guard cannot help with an edit that exists only on this
+  machine, which is what the warning above is for. A different stuck state, an unfinished index with nothing to abort, recovers by clearing
   the index without touching your working files, so on native Windows your shared config is left
   exactly as it was, and the usual pre-pull copy into the sync repo still runs, so an edit you have
   not pushed yet is still captured. If a file from that old conflict still carries conflict markers,
