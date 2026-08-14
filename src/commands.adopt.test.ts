@@ -794,6 +794,46 @@ describe('cmdAdopt win32 copy-back branch', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Containment bound behind the partial-copy cleanup
+// ---------------------------------------------------------------------------
+
+describe('isDirectChildOf', () => {
+  // Asserted directly because the guard it backs is unreachable through
+  // cmdAdopt: an invalid name is rejected before any path is built from it,
+  // so a test routed through the command could not tell a working bound from
+  // an inverted one.
+  it('accepts a direct child', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/commands')).toBe(true);
+  });
+
+  it('accepts a direct child when the root carries a trailing separator', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude/', '/home/u/.claude/commands')).toBe(true);
+  });
+
+  it('rejects the root itself', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude')).toBe(false);
+  });
+
+  it('rejects a nested grandchild, not just an escape', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/commands/nested')).toBe(false);
+  });
+
+  it('rejects a traversal that climbs out', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/../.ssh/id_rsa')).toBe(false);
+  });
+
+  it('rejects a sibling whose name merely starts with the root', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude-evil/x')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // win32 copy-back failure (locked or permission-denied destination)
 // ---------------------------------------------------------------------------
 
@@ -1005,6 +1045,39 @@ describe('cmdAdopt win32 copy-back failure', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('win32: reports a removal only when the path is actually gone afterwards', async () => {
+    // A win32 delete can be accepted and still leave the entry until the last
+    // handle closes, which is exactly the state this runs in. Reporting a
+    // removal that did not happen is what would let the next push mirror
+    // publish the remnant, so the result is a re-probe, not the absence of a
+    // throw. rmSync is stubbed to no-op on the cleanup call only.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      let calls = 0;
+      return {
+        ...actual,
+        rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
+          calls += 1;
+          // First call is the move's own source removal; second is the
+          // cleanup, which "succeeds" while leaving the entry in place.
+          if (calls === 1) actual.rmSync(...args);
+        },
+      };
+    });
+    mockCopyBackFailure('EBUSY: resource busy or locked', { partial: true });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(existsSync(linkPath)).toBe(true);
+    expect(errOutput(env)).toContain('do NOT run');
+  });
+
   it('win32: re-throws a deliberate failure untouched rather than wrapping it', async () => {
     // A NomadFatal from the copy carries its own message and exit code, and
     // names the one command that clears it. Wrapping it would append a second,
@@ -1026,6 +1099,34 @@ describe('cmdAdopt win32 copy-back failure', () => {
     expect(out).not.toContain('could not restore the local copy');
     // Still staged, so the repo half of the move is not left half-done.
     expect(diffCached(env)).toContain('shared/my-tools');
+  });
+
+  it('win32: a staging failure on the re-thrown arm is reported, not swallowed', async () => {
+    // The deliberate failure is re-thrown untouched, so a staging failure
+    // cannot ride along inside its message. It gets its own line instead of
+    // disappearing, which would leave the docs claiming it was staged.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: (): never => {
+          throw new actual.NomadFatal('git add shared/my-tools failed');
+        },
+      };
+    });
+    mockCopyBackFailure('cannot overlay a file onto a directory', { fatal: true });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    expect(out).toContain('cannot overlay a file onto a directory');
+    expect(out).toContain('not staged');
   });
 
   it('win32: a staging failure is reported alongside the copy-back failure, not instead of it', async () => {

@@ -12,7 +12,7 @@ import {
 import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { EXIT } from './exit-codes.ts';
 import { copySharedLinkPull } from './links.ts';
-import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
+import { fail, gitOrFatal, log, warn, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
 
@@ -79,6 +79,25 @@ function isConfiguredTarget(name: string, map: PathMap): boolean {
 function isValidAdoptName(name: string): boolean {
   if ((SHARED_LINKS as readonly string[]).includes(name)) return true;
   return isValidSharedDir(name);
+}
+
+/**
+ * Whether `abs` is a direct child of `root`, both resolved first.
+ *
+ * The containment bound for a recursive force-remove. Exported only so it can
+ * be asserted directly: the guard it backs is unreachable through `cmdAdopt`
+ * (the name is rejected long before a path is built from it), so a test that
+ * went through the command could not tell a working bound from an inverted
+ * one. Direct-child rather than prefix containment because the only paths this
+ * ever sees are `join(CLAUDE_HOME, <single name>)`, and prefix containment
+ * would also accept a nested path several levels down.
+ *
+ * @param root Directory the path must sit directly inside.
+ * @param abs Path to test.
+ * @returns True when `abs` is exactly one level under `root`.
+ */
+export function isDirectChildOf(root: string, abs: string): boolean {
+  return dirname(resolve(abs)) === resolve(root);
 }
 
 /**
@@ -168,19 +187,30 @@ function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): 
  * so the check compares against the configured root instead of against the
  * same value the path was built from, which would make it vacuous.
  *
+ * The result is a re-probe, not the absence of a throw. On win32 a delete can
+ * be accepted and still leave the entry in place until the last handle closes,
+ * which is precisely the case this runs in (the copy just failed because
+ * something holds the path), and reporting a removal that did not happen is
+ * what would let the next push mirror publish the remnant. Same discipline as
+ * `removeUntrackedDenied` in `links.mirror.ts`, which re-probes the identical
+ * call for the identical reason.
+ *
  * @param linkPath Host-side path to clear.
  * @returns True when the path is gone afterwards.
  */
 function clearPartialCopy(linkPath: string): boolean {
   const resolved = resolve(linkPath);
-  /* c8 ignore next -- unreachable: cmdAdopt's name guards run first */
-  if (dirname(resolved) !== resolve(claudeHome())) return false;
+  /* c8 ignore next -- unreachable via cmdAdopt; the predicate is tested directly */
+  if (!isDirectChildOf(claudeHome(), resolved)) return false;
   try {
     rmSync(resolved, { recursive: true, force: true });
-    return true;
   } catch {
     return false;
   }
+  // lstat-based, so a dangling symlink still counts as present: the question
+  // is whether an entry is there for the mirror to read, not whether it
+  // resolves.
+  return !lexists(resolved);
 }
 
 /**
@@ -256,12 +286,15 @@ function restoreWin32LocalCopy(
     copySharedLinkPull(sharedTarget, linkPath);
   } catch (err) {
     if (err instanceof NomadFatal) {
-      stageOrReport(stage);
+      // Re-thrown untouched, so a staging failure cannot ride along inside its
+      // message; it gets its own line rather than being dropped.
+      const fatalStageFailure = stageOrReport(stage);
+      if (fatalStageFailure !== '') warn(`${name}:${fatalStageFailure}`);
       throw err;
     }
     const leftover = clearPartialCopy(linkPath)
       ? ''
-      : ` A partial copy may still be at that path, so do NOT run \`nomad push\` before the pull succeeds: it would replace shared/${name} with the partial copy.`;
+      : ` A partial copy may still be at that path, so do NOT run \`nomad push\` or \`nomad sync\` yet: either one copies that path back over shared/${name}, and \`nomad sync\` pushes in the same run. Pull first, and check it does not warn about ${name} again, because a pull that cannot read the path warns and still exits 0.`;
     const stageFailure = stageOrReport(stage);
     const staged = stageFailure === '' ? ' and staged.' : `.${stageFailure}`;
     const recover = snapshotted ? ` A copy of what it held before is under backup/${ts}/.` : '';

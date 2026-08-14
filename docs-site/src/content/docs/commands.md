@@ -205,8 +205,10 @@ its permissions block it, adopt stops with an error naming the path and exits 1.
 is not lost: it is already in `shared/<name>`, and staged unless the same error also reports that
 staging failed. Run `nomad pull` to recreate the local copy before your next `nomad push`, because
 a push copies the local name back over `shared/<name>` first, so publishing while the local copy is
-missing is what would undo the adopt. If the error says a partial copy is still at the path, that
-pull matters more, not less: it is what replaces the partial copy, once the path is free.
+missing is what would undo the adopt. If the error says a partial copy is still at the path, hold
+off on `nomad sync` too, since it pushes in the same run: pull on its own first, and check it does
+not warn about that name again, because a pull that still cannot read the path warns and carries on
+rather than stopping.
 
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
