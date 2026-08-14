@@ -192,12 +192,19 @@ function clearPartialCopy(linkPath: string): boolean {
  * Clear the partial `shared/<name>` a failed copy-into-the-repo leaves behind.
  *
  * The repo-side counterpart of {@link clearPartialCopy}, and the reason it is
- * worth doing rather than reporting: `adoptStopsEarly` refuses any run whose
- * `shared/<name>` already exists (`would clobber. Remove it first.`), so a
- * remnant left here turns a plain re-run of the command that just failed into
- * a manual `rm` the user was never told about. Nothing is at risk in the other
- * direction, because that same refusal means the partial cannot be a path the
- * repo already tracked.
+ * worth doing rather than reporting: `adoptStopsEarly` turns any run whose
+ * `shared/<name>` already exists away (a `would clobber` refusal on posix, a
+ * false already-adopted report on win32), so a remnant left here turns a plain
+ * re-run of the command that just failed into a manual `rm` the user was never
+ * told about.
+ *
+ * That refusal is a worktree probe (`lexists`), so it says nothing about the
+ * index: `shared/<name>` can be tracked in HEAD while absent from the worktree,
+ * which is exactly the state a user reaches by doing what the refusal asks. The
+ * removal here does not create that deletion, it restores the state the user
+ * had already made, but it does not repair it either, and `push` stages with
+ * `git add -A`, so a deletion left standing is committed by the next push.
+ * `git checkout -- shared/<name>` in the repo is the way back.
  *
  * Best-effort and re-probed, for the same reasons spelled out on
  * {@link clearPartialCopy}; the caller reports the outcome rather than
@@ -276,16 +283,64 @@ function stageOrReport(stage: () => void): string {
 }
 
 /**
+ * Say what is at `linkPath` after a failed win32 copy-back, clearing it first
+ * when clearing it is the right thing to do.
+ *
+ * Three states, and the push advice differs in each:
+ *
+ * - The source was never removed, so the path holds the complete original.
+ *   Nothing is cleared (see {@link restoreWin32LocalCopy} for why that would be
+ *   destructive), and a push is not only safe but wanted: the mirror publishes
+ *   that original over `shared/<name>`, which is the same content the copy
+ *   already put there.
+ * - The source was removed and the remnant was cleared, so nothing is at the
+ *   path and there is nothing to say.
+ * - The source was removed and the remnant could not be cleared, so a push
+ *   would mirror a truncated copy over the fully adopted `shared/<name>` and
+ *   propagate that loss to every other host. That is the one case that earns a
+ *   do-not-push warning.
+ *
+ * @param name The name being adopted, for the message.
+ * @param linkPath Host-side path to describe.
+ * @param sourceRemoved False when the move's own removal of `linkPath` failed.
+ * @returns A clause to append to the failure message, or an empty string.
+ */
+function describeLeftoverAt(name: string, linkPath: string, sourceRemoved: boolean): string {
+  if (!sourceRemoved) {
+    return (
+      ` The original is still at ${linkPath}, because removing it failed too (warned above), ` +
+      `so this host keeps a complete local copy and a later \`nomad push\` publishes it.`
+    );
+  }
+  if (clearPartialCopy(linkPath)) return '';
+  return (
+    ` A partial copy may still be at that path, so do NOT run \`nomad push\` or \`nomad sync\` ` +
+    `yet: either one copies that path back over shared/${name}, and \`nomad sync\` pushes in the ` +
+    `same run. Pull first, and check it does not warn about ${name} again, because a pull that ` +
+    `cannot read the path warns and still exits 0.`
+  );
+}
+
+/**
  * Restore the host-side copy after a win32 move, failing loud rather than
  * crashing when the destination cannot be written.
  *
- * By the time this runs the move itself has already succeeded: the content is
- * in `shared/<name>` and the source is gone. So a failure here costs the local
- * copy, never the content, and the honest report is a `NomadFatal` naming the
- * path rather than either a crash report or a success message. `nomad adopt`
- * takes exactly one name per invocation, so there is no rest-of-the-list to
- * preserve by warning and continuing the way the pull's apply loop does
- * (`applyOneSharedLinkWin32` in `links.ts`).
+ * By the time this runs the copy into `shared/<name>` has already succeeded, so
+ * a failure here costs the local copy, never the content, and the honest report
+ * is a `NomadFatal` naming the path rather than either a crash report or a
+ * success message. `nomad adopt` takes exactly one name per invocation, so
+ * there is no rest-of-the-list to preserve by warning and continuing the way
+ * the pull's apply loop does (`applyOneSharedLinkWin32` in `links.ts`).
+ *
+ * The source is normally gone by now, which is what makes anything left at
+ * `linkPath` a truncated remnant worth clearing. `sourceRemoved` is false on
+ * the one arm where that is not true: `reportSourceRemovalFailure` warned that
+ * the removal failed and let the run continue, so `linkPath` still holds the
+ * complete original. Clearing there would recursively delete a healthy
+ * directory (and, since this arm is reached precisely when another process
+ * holds it open, anything that process wrote after the copy into the repo,
+ * which is in neither `shared/<name>` nor the backup). It also has no mirror
+ * safety to buy: the next push should publish that full original, not skip it.
  *
  * The stage runs BEFORE the throw deliberately. Without it the caller's
  * `git add` is skipped and the user is left with `shared/<name>` on disk but
@@ -313,6 +368,8 @@ function stageOrReport(stage: () => void): string {
  * @param ts Backup timestamp, named only when a snapshot exists.
  * @param snapshotted True when `backupBeforeWrite` actually wrote a snapshot.
  * @param stage Stages `shared/<name>`; run before throwing, either way.
+ * @param sourceRemoved False when the move's own removal of `linkPath` failed,
+ *   so whatever is there is the complete original rather than a remnant.
  */
 function restoreWin32LocalCopy(
   name: string,
@@ -321,6 +378,7 @@ function restoreWin32LocalCopy(
   ts: string,
   snapshotted: boolean,
   stage: () => void,
+  sourceRemoved: boolean,
 ): void {
   try {
     copySharedLinkPull(sharedTarget, linkPath);
@@ -332,9 +390,7 @@ function restoreWin32LocalCopy(
       if (fatalStageFailure !== '') warn(`${name}:${fatalStageFailure}`);
       throw err;
     }
-    const leftover = clearPartialCopy(linkPath)
-      ? ''
-      : ` A partial copy may still be at that path, so do NOT run \`nomad push\` or \`nomad sync\` yet: either one copies that path back over shared/${name}, and \`nomad sync\` pushes in the same run. Pull first, and check it does not warn about ${name} again, because a pull that cannot read the path warns and still exits 0.`;
+    const leftover = describeLeftoverAt(name, linkPath, sourceRemoved);
     const stageFailure = stageOrReport(stage);
     const staged = stageFailure === '' ? ' and staged.' : `.${stageFailure}`;
     const recover = snapshotted ? ` A copy of what it held before is under backup/${ts}/.` : '';
@@ -350,6 +406,38 @@ function restoreWin32LocalCopy(
 }
 
 /**
+ * Say what an uncleared partial `shared/<name>` will do to the NEXT run, which
+ * is not the same thing on both platforms.
+ *
+ * On posix `adoptStopsEarly` refuses outright (`would clobber`), so the
+ * instruction is simply to remove it. On win32 it never gets that far:
+ * `reportWin32AlreadyAdopted` runs first and fires on the mere existence of
+ * `shared/<name>`, so a re-run reports the name as already adopted and exits 0
+ * over a mid-copy fragment. Worse than the misreport is the hint that branch
+ * prints, since following it copies the fragment over a `~/.claude/<name>` that
+ * is still whole. Telling the user adopt would refuse, when on their platform
+ * it will cheerfully claim success, is the one wording that could cost content.
+ *
+ * @param name The name being adopted, for the message.
+ * @param linkPath Host-side path, still intact, named in the win32 warning.
+ * @returns A clause to append to the failure message.
+ */
+function describePartialShared(name: string, linkPath: string): string {
+  if (process.platform === 'win32') {
+    return (
+      ` A partial shared/${name} may still be in the repo. Remove it before re-running: ` +
+      `adopt reports any name whose shared/${name} already exists as adopted and does ` +
+      `nothing, and the \`nomad pull\` it suggests would copy that fragment over ${linkPath}, ` +
+      `which is still whole.`
+    );
+  }
+  return (
+    ` A partial shared/${name} may still be in the repo; remove it first, because adopt ` +
+    `refuses to run while it is there.`
+  );
+}
+
+/**
  * Copy `~/.claude/<name>` into `shared/<name>`, reporting a failure as this
  * command's own instead of as a crash.
  *
@@ -357,8 +445,9 @@ function restoreWin32LocalCopy(
  * next step, so the honest report is that the host is untouched and the
  * command can simply be run again. What stands in the way of that re-run is
  * the partial `shared/<name>` a mid-copy failure leaves in the repo, which
- * `adoptStopsEarly` refuses on sight, so the clear runs first and the message
- * only mentions the leftover when the clear did not take.
+ * `adoptStopsEarly` reacts to on sight (differently per platform, see
+ * {@link describePartialShared}), so the clear runs first and the message only
+ * describes the leftover when the clear did not take.
  *
  * The catch is deliberately broad, with no `err.code` dispatch, for the reason
  * given on `restoreWin32LocalCopy`: the copy bottoms out in several syscalls
@@ -380,7 +469,7 @@ function copyIntoSharedOrFatal(
   } catch (err) {
     const leftover = clearPartialShared(sharedTarget, repo)
       ? ''
-      : ` A partial shared/${name} may still be in the repo; remove it first, because adopt refuses to run while it is there.`;
+      : describePartialShared(name, linkPath);
     throw new NomadFatal(
       `could not copy ${linkPath} into shared/${name} (${(err as Error).message}). ` +
         `Nothing was removed from ${linkPath}. Check its permissions, or whether ` +
@@ -391,23 +480,37 @@ function copyIntoSharedOrFatal(
 }
 
 /**
- * Remove the adopted source, handing the caller the failure text instead of
+ * Remove the adopted source, handing the caller the outcome instead of
  * throwing it.
  *
  * Split out because what a failure MEANS differs by platform (see
  * {@link reportSourceRemovalFailure}), and that decision does not belong in
  * the same body as the call.
  *
+ * Answered by a re-probe rather than by the absence of a throw, the same
+ * discipline {@link clearIfDirectChild} follows and for the same reason: on
+ * win32 a delete can be accepted and still leave the entry in place until the
+ * last handle closes. Trusting the missing throw there would carry on to a
+ * copy-back onto a delete-pending directory, or on posix to `ensureSymlink`
+ * against a live path, and hand the user a downstream error instead of the
+ * specific report this decides between.
+ *
+ * A discriminated result rather than an empty-string sentinel, so a throw
+ * carrying an empty (or absent) message cannot be read as success.
+ *
  * @param linkPath Host-side source directory to remove.
- * @returns An empty string on success, or the caught error's message.
+ * @returns `{ ok: true }` once the path is confirmed gone, otherwise the reason.
  */
-function removeAdoptSource(linkPath: string): string {
+function removeAdoptSource(linkPath: string): { ok: true } | { ok: false; message: string } {
   try {
     rmSync(linkPath, { recursive: true, force: true });
-    return '';
   } catch (err) {
-    return (err as Error).message;
+    return { ok: false, message: String((err as Error | undefined)?.message ?? err) };
   }
+  if (lexists(linkPath)) {
+    return { ok: false, message: 'the delete was accepted but the entry is still there' };
+  }
+  return { ok: true };
 }
 
 /**
@@ -429,13 +532,17 @@ function removeAdoptSource(linkPath: string): string {
  *   host and invite the user to "fix" it by deleting content that should stay.
  *   The arm self-limits in practice: whatever blocked the delete usually
  *   blocks the copy-back too, which then fails through
- *   `restoreWin32LocalCopy`. What it saves is the case of a handle that blocks
- *   removing a directory while still allowing writes into it.
+ *   `restoreWin32LocalCopy` (told, via `sourceRemoved`, that what is at the
+ *   path is the intact original and not a remnant to clear). What this arm
+ *   saves is the case of a handle that blocks removing a directory while still
+ *   allowing writes into it.
  * - **posix** ends up in a state nothing downstream accepts: a real directory
  *   where a symlink belongs, which `ensureSymlink` refuses (`exists and is not
  *   a symlink`) and every later `applySharedLinks` refuses the same way. So
- *   this stages and then throws, naming the leftover and the two steps that
- *   clear it.
+ *   this stages and then throws, naming the leftover and pointing at the pull
+ *   that clears it (`runAutoMovePasses` in `links.ts` backs a non-symlink up
+ *   and removes it before linking, so the manual `rm` is the fallback, not the
+ *   instruction).
  *
  * Staging before the throw is the same discipline `restoreWin32LocalCopy`
  * follows: without it the repo half of the move is on disk and untracked, and
@@ -467,7 +574,8 @@ function reportSourceRemovalFailure(
       `${linkPath} (${message}). It is a real directory where a symlink belongs, ` +
       `so nothing links to shared/${name} yet. The content is safe in the repo` +
       `${staged} Check its permissions, or whether another program has it open, ` +
-      `then remove it and run \`nomad pull\` to create the symlink.`,
+      `then run \`nomad pull\`, which backs that directory up and replaces it with ` +
+      `the symlink. Remove it by hand only if the same problem blocks the pull.`,
     { code: EXIT.GENERIC_FAILURE },
   );
 }
@@ -524,13 +632,15 @@ function performAdoptMove(
   // Copy fully into shared/ BEFORE removing the source so a
   // mid-move crash cannot lose user content
   copyIntoSharedOrFatal(name, linkPath, sharedTarget, repo);
-  const removalFailure = removeAdoptSource(linkPath);
-  if (removalFailure !== '') reportSourceRemovalFailure(name, linkPath, removalFailure, stage);
+  const removal = removeAdoptSource(linkPath);
+  if (!removal.ok) reportSourceRemovalFailure(name, linkPath, removal.message, stage);
 
   // Leave the host with a usable local counterpart: a real copy-back on
   // win32 (no unprivileged symlink support), a recreated symlink elsewhere.
+  // Only win32 reaches here with a failed removal, and the copy-back guard
+  // has to know that so it never clears the intact original.
   if (process.platform === 'win32') {
-    restoreWin32LocalCopy(name, linkPath, sharedTarget, ts, snapshotted, stage);
+    restoreWin32LocalCopy(name, linkPath, sharedTarget, ts, snapshotted, stage, removal.ok);
   } else {
     ensureSymlink(linkPath, sharedTarget);
   }

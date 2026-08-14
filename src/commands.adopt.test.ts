@@ -868,6 +868,43 @@ function mockCopyBackFailure(
   });
 }
 
+/**
+ * Divert the CLEANUP removal of `linkPath` (the copy-back guard's
+ * `clearPartialCopy`) while letting the move's own removal of the same path
+ * through.
+ *
+ * Keyed on the path plus an explicit "already saw the move's removal" flag
+ * rather than on a call ordinal: an ordinal silently shifts if any earlier step
+ * (`backupBeforeWrite`, say) ever gains an `rmSync`, and the test would keep
+ * passing while exercising a different call than the one it names.
+ *
+ * @param linkPath Host-side path whose second removal is diverted.
+ * @param mode `'throw'` fails the cleanup; `'noop'` reports success while
+ *   leaving the entry in place, the win32 delete-pending case.
+ * @param message Error message for `'throw'`.
+ */
+function mockCleanupRemoval(linkPath: string, mode: 'throw' | 'noop', message = ''): void {
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof fsModule>();
+    let sawMoveRemoval = false;
+    return {
+      ...actual,
+      rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
+        if (String(args[0]) !== linkPath) {
+          actual.rmSync(...args);
+          return;
+        }
+        if (!sawMoveRemoval) {
+          sawMoveRemoval = true;
+          actual.rmSync(...args);
+          return;
+        }
+        if (mode === 'throw') throw new Error(message);
+      },
+    };
+  });
+}
+
 describe('cmdAdopt win32 copy-back failure', () => {
   let env: Env;
   const realPlatform = process.platform;
@@ -993,20 +1030,8 @@ describe('cmdAdopt win32 copy-back failure', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-    // Whatever blocks the copy usually blocks the cleanup too. The first
-    // rmSync is the move's own source removal; the second is the cleanup.
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      let calls = 0;
-      return {
-        ...actual,
-        rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
-          calls += 1;
-          if (calls > 1) throw new Error('EBUSY: resource busy or locked');
-          actual.rmSync(...args);
-        },
-      };
-    });
+    // Whatever blocks the copy usually blocks the cleanup too.
+    mockCleanupRemoval(linkPath, 'throw', 'EBUSY: resource busy or locked');
     mockCopyBackFailure('EBUSY: resource busy or locked', { partial: true });
     stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
@@ -1056,19 +1081,7 @@ describe('cmdAdopt win32 copy-back failure', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      let calls = 0;
-      return {
-        ...actual,
-        rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
-          calls += 1;
-          // First call is the move's own source removal; second is the
-          // cleanup, which "succeeds" while leaving the entry in place.
-          if (calls === 1) actual.rmSync(...args);
-        },
-      };
-    });
+    mockCleanupRemoval(linkPath, 'noop');
     mockCopyBackFailure('EBUSY: resource busy or locked', { partial: true });
     stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
@@ -1232,17 +1245,38 @@ function mockCopyIntoSharedFailure(
  * differs by platform. Keyed on the exact path so the copy-back's own
  * housekeeping removals still run.
  *
- * @param linkPath Host-side path whose removal should throw.
+ * @param linkPath Host-side path whose removal should fail.
  * @param message Error message the removal throws.
+ * @param opts.onlyFirst When true, divert only the move's own removal and let
+ *   any later removal of the same path through, so a test can prove what does
+ *   NOT get deleted afterwards rather than relying on a second failure to
+ *   protect it.
+ * @param opts.accepted When true, report success without removing anything,
+ *   the win32 delete-pending case the re-probe exists to catch.
+ * @param opts.thrown Throw this value verbatim instead of an `Error`, for the
+ *   non-`Error` throw the message formatting has to survive.
  */
-function mockSourceRemovalFailure(linkPath: string, message: string): void {
+function mockSourceRemovalFailure(
+  linkPath: string,
+  message: string,
+  opts: { onlyFirst?: boolean; accepted?: boolean; thrown?: unknown } = {},
+): void {
   vi.doMock('node:fs', async (importOriginal) => {
     const actual = await importOriginal<typeof fsModule>();
+    let diverted = false;
     return {
       ...actual,
       rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
-        if (String(args[0]) === linkPath) throw new Error(message);
-        actual.rmSync(...args);
+        if (String(args[0]) !== linkPath || (opts.onlyFirst === true && diverted)) {
+          actual.rmSync(...args);
+          return;
+        }
+        diverted = true;
+        if (opts.accepted === true) return;
+        // Throwing a non-Error is the point when opts.thrown is set: the
+        // message formatting has to survive a value with no `.message`.
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw opts.thrown ?? new Error(message);
       },
     };
   });
@@ -1311,7 +1345,7 @@ describe('cmdAdopt copy-into-shared failure', () => {
     expect(errOutput(env)).toContain('EACCES: permission denied');
   });
 
-  it('names the partial copy when it cannot be cleared', async () => {
+  it('posix: names the partial copy when it cannot be cleared', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
     mkdirSync(linkPath, { recursive: true });
@@ -1322,11 +1356,41 @@ describe('cmdAdopt copy-into-shared failure', () => {
       partial: true,
       unclearable: true,
     });
+    stubPlatform('linux');
     const { cmdAdopt } = await import('./commands.adopt.ts');
     cmdAdopt('my-tools');
 
     expect(existsSync(sharedTarget)).toBe(true);
-    expect(errOutput(env)).toContain('A partial shared/my-tools may still be in the repo');
+    const out = errOutput(env);
+    expect(out).toContain('A partial shared/my-tools may still be in the repo');
+    expect(out).toContain('adopt refuses to run while it is there');
+  });
+
+  it('win32: says a re-run would call the fragment adopted, not refuse it', async () => {
+    // adoptStopsEarly asks reportWin32AlreadyAdopted BEFORE the would-clobber
+    // refusal, and that helper fires on the mere existence of shared/<name>. So
+    // on win32 the next run reports success over a mid-copy fragment, and the
+    // `nomad pull` it suggests would copy that fragment over a host directory
+    // this failure left whole. Promising a refusal there is the one wording
+    // that could cost content.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+
+    mockCopyIntoSharedFailure(sharedTarget, 'EACCES: permission denied', {
+      partial: true,
+      unclearable: true,
+    });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    expect(out).toContain('already exists as adopted');
+    expect(out).toContain(linkPath);
+    expect(out).not.toContain('adopt refuses to run while it is there');
   });
 });
 
@@ -1392,6 +1456,68 @@ describe('cmdAdopt source-removal failure', () => {
     expect(out).toContain('could not restore the local copy');
     expect(out).toContain('nomad pull');
     expect(logOutput(env)).not.toContain('adopted my-tools;');
+  });
+
+  it('win32: leaves the intact original alone when the copy-back fails too', async () => {
+    // The regression this guards: the copy-back's cleanup exists to clear a
+    // TRUNCATED remnant, and on this arm the path holds the complete original
+    // instead. Running it here would recursively delete a healthy directory,
+    // and this arm is reached precisely when another process holds that
+    // directory open and may have written to it since the copy into the repo,
+    // which is content that is in neither shared/<name> nor the backup. The
+    // mock lets a later removal of the same path through, so the assertion
+    // fails if the cleanup is ever restored to this path.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockSourceRemovalFailure(linkPath, 'EBUSY: resource busy or locked', { onlyFirst: true });
+    mockCopyBackFailure('EPERM: operation not permitted');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    const out = errOutput(env);
+    expect(out).toContain('The original is still at');
+    // No do-not-push warning: publishing that original is the right outcome.
+    expect(out).not.toContain('do NOT run');
+  });
+
+  it('posix: treats an accepted but pending delete as a failure, not a removal', async () => {
+    // The move's own rmSync gets the same re-probe discipline as the cleanup:
+    // on win32 a delete can be accepted and leave the entry until the last
+    // handle closes, and trusting the missing throw would carry on to
+    // ensureSymlink against a live path for a vaguer error.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockSourceRemovalFailure(linkPath, '', { accepted: true });
+    stubPlatform('linux');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+    expect(errOutput(env)).toContain('the delete was accepted but the entry is still there');
+  });
+
+  it('posix: quotes a non-Error throw instead of reporting undefined', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockSourceRemovalFailure(linkPath, '', { thrown: 'EPERM: operation not permitted' });
+    stubPlatform('linux');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    expect(out).toContain('EPERM: operation not permitted');
+    expect(out).not.toContain('undefined');
   });
 
   it('posix: fails, because a real directory is where the symlink belongs', async () => {
