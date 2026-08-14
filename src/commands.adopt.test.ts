@@ -1156,22 +1156,292 @@ describe('cmdAdopt win32 copy-back failure', () => {
     expect(out).toContain('not staged');
   });
 
-  it.skipIf(isWin)('posix: an unexpected error still reaches the crash-report path', async () => {
-    // Not a NomadFatal, so cmdAdopt must rethrow rather than swallow it: the
-    // top-level handler is what turns an unexpected fault into a report.
+  it.skipIf(isWin)(
+    'posix: an unexpected error still reaches the crash-report path (copy-back)',
+    async () => {
+      // Not a NomadFatal, so cmdAdopt must rethrow rather than swallow it: the
+      // top-level handler is what turns an unexpected fault into a report.
+      addSharedDir(env, 'my-tools');
+      const linkPath = join(env.claudeHome, 'my-tools');
+      mkdirSync(linkPath, { recursive: true });
+      writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+      vi.doMock('./utils.fs.ts', async (importOriginal) => ({
+        ...(await importOriginal<typeof utilsFsModule>()),
+        ensureSymlink: (): never => {
+          throw new Error('ENOSPC: no space left on device');
+        },
+      }));
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+
+      expect(() => cmdAdopt('my-tools')).toThrow('ENOSPC: no space left on device');
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The two filesystem calls ahead of the copy-back: the copy into shared/<name>
+// and the removal of the source
+// ---------------------------------------------------------------------------
+
+/**
+ * Fail the move's copy INTO the repo, leaving the host untouched.
+ *
+ * Keyed on the destination rather than on a call count, because
+ * `backupBeforeWrite` copies first and would otherwise absorb the failure.
+ *
+ * @param sharedTarget Destination whose copy should throw.
+ * @param message Error message the copy throws.
+ * @param opts.partial When true, write a truncated destination before throwing,
+ *   reproducing the remnant that would otherwise block every retry.
+ * @param opts.unclearable When true, also fail the cleanup removal of that
+ *   destination, the state where the message has to name the path instead.
+ */
+function mockCopyIntoSharedFailure(
+  sharedTarget: string,
+  message: string,
+  opts: { partial?: boolean; unclearable?: boolean } = {},
+): void {
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof fsModule>();
+    return {
+      ...actual,
+      cpSync: (...args: Parameters<typeof actual.cpSync>): void => {
+        if (String(args[1]) !== sharedTarget) {
+          actual.cpSync(...args);
+          return;
+        }
+        if (opts.partial === true) {
+          actual.mkdirSync(sharedTarget, { recursive: true });
+          actual.writeFileSync(join(sharedTarget, 'partial.txt'), 'half a file\n');
+        }
+        throw new Error(message);
+      },
+      rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
+        if (opts.unclearable === true && String(args[0]) === sharedTarget) {
+          throw new Error(message);
+        }
+        actual.rmSync(...args);
+      },
+    };
+  });
+}
+
+/**
+ * Fail the move's removal of the source directory, the call whose meaning
+ * differs by platform. Keyed on the exact path so the copy-back's own
+ * housekeeping removals still run.
+ *
+ * @param linkPath Host-side path whose removal should throw.
+ * @param message Error message the removal throws.
+ */
+function mockSourceRemovalFailure(linkPath: string, message: string): void {
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof fsModule>();
+    return {
+      ...actual,
+      rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
+        if (String(args[0]) === linkPath) throw new Error(message);
+        actual.rmSync(...args);
+      },
+    };
+  });
+}
+
+describe('cmdAdopt copy-into-shared failure', () => {
+  let env: Env;
+  const realPlatform = process.platform;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.doUnmock('node:fs');
+    teardownAdoptEnv(env);
+  });
+
+  it('reports the failure and leaves the host untouched', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-    vi.doMock('./utils.fs.ts', async (importOriginal) => ({
-      ...(await importOriginal<typeof utilsFsModule>()),
-      ensureSymlink: (): never => {
-        throw new Error('ENOSPC: no space left on device');
-      },
-    }));
+    mockCopyIntoSharedFailure(
+      join(env.repoHome, 'shared', 'my-tools'),
+      'EACCES: permission denied',
+    );
     const { cmdAdopt } = await import('./commands.adopt.ts');
 
-    expect(() => cmdAdopt('my-tools')).toThrow('ENOSPC: no space left on device');
+    // A NomadFatal, so it renders as one message instead of a crash report.
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+
+    const out = errOutput(env);
+    expect(out).toContain('EACCES: permission denied');
+    expect(out).toContain('nomad adopt my-tools');
+    // Nothing was removed: the source is exactly as it was.
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('clears the partial copy so the retry it recommends is not refused', async () => {
+    // adoptStopsEarly refuses any run whose shared/<name> already exists, so a
+    // remnant left here would turn `re-run adopt` into a manual rm first.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+
+    mockCopyIntoSharedFailure(sharedTarget, 'EACCES: permission denied', { partial: true });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(existsSync(sharedTarget)).toBe(false);
+    expect(errOutput(env)).not.toContain('may still be in the repo');
+
+    // Second run, the one the message told the user to make: it reaches the
+    // copy again rather than being turned away by the clobber refusal.
+    env.errorSpy.mockClear();
+    process.exitCode = 0;
+    cmdAdopt('my-tools');
+    expect(errOutput(env)).not.toContain('would clobber');
+    expect(errOutput(env)).toContain('EACCES: permission denied');
+  });
+
+  it('names the partial copy when it cannot be cleared', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+
+    mockCopyIntoSharedFailure(sharedTarget, 'EACCES: permission denied', {
+      partial: true,
+      unclearable: true,
+    });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(existsSync(sharedTarget)).toBe(true);
+    expect(errOutput(env)).toContain('A partial shared/my-tools may still be in the repo');
+  });
+});
+
+describe('cmdAdopt source-removal failure', () => {
+  let env: Env;
+  const realPlatform = process.platform;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.doUnmock('node:fs');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./utils.ts');
+    teardownAdoptEnv(env);
+  });
+
+  it('win32: warns and finishes, because both copies IS the adopted state there', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockSourceRemovalFailure(linkPath, 'EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    // Exit 0 and the success line, because the host really is adopted: a real
+    // local copy beside a populated shared/<name> is what win32 adopt produces.
+    expect(process.exitCode).toBe(0);
+    expect(logOutput(env)).toContain('adopted my-tools;');
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(readFileSync(join(sharedTarget, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(diffCached(env)).toContain('shared/my-tools');
+
+    // The warning still names the path and quotes the errno, so the user can
+    // tell this run apart from an ordinary one.
+    const out = errOutput(env);
+    expect(out).toContain(linkPath);
+    expect(out).toContain('EBUSY: resource busy or locked');
+  });
+
+  it('win32: falls through to the copy-back guard when the lock blocks that too', async () => {
+    // The usual case: whatever held the directory open against the delete holds
+    // it against the rewrite as well, so the warn arm self-limits.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockSourceRemovalFailure(linkPath, 'EBUSY: resource busy or locked');
+    mockCopyBackFailure('EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+    const out = errOutput(env);
+    expect(out).toContain('could not restore the local copy');
+    expect(out).toContain('nomad pull');
+    expect(logOutput(env)).not.toContain('adopted my-tools;');
+  });
+
+  it('posix: fails, because a real directory is where the symlink belongs', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockSourceRemovalFailure(linkPath, 'EACCES: permission denied');
+    stubPlatform('linux');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+    const out = errOutput(env);
+    expect(out).toContain(linkPath);
+    expect(out).toContain('EACCES: permission denied');
+    expect(out).toContain('nomad pull');
+    expect(out).toContain('and staged.');
+
+    // Staged, so one push still publishes the adopted content; and the source
+    // is still a real directory, never replaced by a half-made symlink.
+    expect(diffCached(env)).toContain('shared/my-tools');
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(logOutput(env)).not.toContain('adopted my-tools;');
+  });
+
+  it('posix: a staging failure is reported alongside the removal failure', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: (): never => {
+          throw new actual.NomadFatal('git add shared/my-tools failed');
+        },
+      };
+    });
+    mockSourceRemovalFailure(linkPath, 'EACCES: permission denied');
+    stubPlatform('linux');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    // Both facts survive: the original is still there AND it is not staged.
+    expect(out).toContain('could not remove the original');
+    expect(out).toContain('not staged');
   });
 });
