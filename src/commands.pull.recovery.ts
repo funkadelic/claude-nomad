@@ -167,7 +167,9 @@ export function recoverForceRemote(mode: NonNullable<WedgeMode>, repo: string): 
       "force-remote refused: the sync repo's synced config differs from origin/main.\n" +
         'Differing paths:\n' +
         synced.map((p) => `  ${p}`).join('\n') +
-        '\n\nManual recovery:\n' +
+        '\nThe comparison runs both ways, so a path can be listed because origin/main is ahead of\n' +
+        'you, with nothing of yours at risk on it.\n' +
+        '\nManual recovery:\n' +
         '  1. copy anything above you want to keep OUT of the repo (it may exist nowhere else)\n' +
         '  2. git reset --hard origin/main   (this is what clears the refusal)\n' +
         '  3. nomad pull\n\n' +

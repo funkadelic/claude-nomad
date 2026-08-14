@@ -160,10 +160,10 @@ other side:
   instead. The refusal clears only once the repo matches the shared repo again, so save a copy of
   anything in that list you still want, then follow the manual steps in the
   [FAQ](/claude-nomad/faq/#state-1-stuck-mid-rebase-or-mid-merge); moving or committing the files
-  does not clear it on its own. Two things are worth knowing before you retry: the stuck rebase has
-  already been unwound by the time it refuses, so running the same command again is now just an
-  ordinary pull, and the list can also name paths where the shared repo is simply ahead of yours,
-  which are nothing of yours at risk. The guard cannot help with an edit that exists only on this
+  does not clear it on its own. Two things are worth knowing before you retry: whichever operation
+  was stuck, the rebase or the merge, has already been unwound by the time it refuses, so running
+  the same command again is now just an ordinary pull, and the list can also name paths where the
+  shared repo is simply ahead of yours, which are nothing of yours at risk. The guard cannot help with an edit that exists only on this
   machine, which is what the warning above is for. A different stuck state, an unfinished index with nothing to abort, recovers by clearing
   the index without touching your working files, so on native Windows your shared config is left
   exactly as it was, and the usual pre-pull copy into the sync repo still runs, so an edit you have
