@@ -389,6 +389,44 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     expect(existsSync(join(sharedDir, 'commands'))).toBe(false);
   });
 
+  it('warns with read-only wording, not a write claim, when dryRun is true and a name cannot be stat-ed', async () => {
+    // The dry-run callers (nomad diff, pull --dry-run, the pre-pull reconcile
+    // planner, the wedge-recovery discard tally) never write to shared/ at
+    // all, so the wording must not claim a repo-side omission the way the wet
+    // caller's does.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unpublished local edit\n');
+    const blocked = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(p) === blocked) throw new Error('EPERM: operation not permitted');
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    expect(() => stageLocalSharedEdits({ projects: {} }, TS, { dryRun: true })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('CLAUDE.md could not be read');
+    expect(said[0]).toContain('EPERM');
+    expect(said[0]).toContain('left out of this preview');
+    expect(said[0]).toContain('nothing was written');
+    expect(said[0]).toContain('a real pull would skip it too');
+    expect(said[0]).toContain('another program has it open');
+    expect(said[0]).not.toContain('shared/ this run');
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
+  });
+
   it('omitting opts.linkNames derives allSharedLinks(map) internally, WARNing once for an invalid entry', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
