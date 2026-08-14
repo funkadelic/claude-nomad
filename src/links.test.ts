@@ -931,7 +931,59 @@ describe('applySharedLinks win32 copy branch', () => {
     expect(said[0]).toContain(blocked);
     expect(said[0]).toContain('could not be updated');
     expect(said[0]).toContain('EPERM');
+    expect(said[0]).toContain('it keeps the copy it had before this pull');
+    expect(said[0]).toContain('The rest of the pull continues');
+    expect(said[0]).toContain('another program has it open');
+    expect(said[0]).toContain("run 'nomad pull' again to update it");
+    // The WARN fires mid-loop, before the rest of the list has been touched,
+    // so a completed-tense claim about the other names would be false
+    // whenever the failing name sorts early; the reassurance must stay
+    // forward-looking instead.
+    expect(said[0]).not.toContain('were updated');
     expect(existsSync(blocked)).toBe(false);
+    expect(readFileSync(join(claudeDir, 'commands', 'foo.md'), 'utf8')).toBe('# shared command\n');
+  });
+
+  it('warns and keeps going when the copy step itself throws for a shared name', async () => {
+    // No pre-existing host copy of CLAUDE.md, so the outer lstatSync in
+    // applySharedLinksWin32 returns undefined and the fault is injected
+    // further down, inside copySharedLinkPull's own cpSync call. This proves
+    // the guard's try spans the whole write half of the loop, not just the
+    // leading stat: narrowing the try back to lstatSync alone must turn this
+    // test red.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+    const blockedDst = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        cpSync: (src: string | URL, dst: string | URL, opts?: fsModule.CopySyncOptions) => {
+          if (String(dst) === blockedDst) throw new Error('EBUSY: resource busy or locked');
+          return actual.cpSync(src, dst, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { applySharedLinks } = await import('./links.ts');
+    expect(() => applySharedLinks('20260813-000001', { projects: {} })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain(blockedDst);
+    expect(said[0]).toContain('could not be updated');
+    expect(said[0]).toContain('EBUSY');
+    expect(said[0]).toContain('it keeps the copy it had before this pull');
+    expect(said[0]).toContain('The rest of the pull continues');
+    expect(said[0]).toContain('another program has it open');
+    expect(said[0]).toContain("run 'nomad pull' again to update it");
+    expect(said[0]).not.toContain('were updated');
+    expect(existsSync(blockedDst)).toBe(false);
     expect(readFileSync(join(claudeDir, 'commands', 'foo.md'), 'utf8')).toBe('# shared command\n');
   });
 });
