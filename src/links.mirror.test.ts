@@ -419,9 +419,12 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('CLAUDE.md could not be read');
     expect(said[0]).toContain('EPERM');
-    expect(said[0]).toContain('left out of this preview');
-    expect(said[0]).toContain('nothing was written');
-    expect(said[0]).toContain('a real pull would skip it too');
+    expect(said[0]).toContain('nothing was captured for it and nothing was written');
+    expect(said[0]).toContain('A pull that captures shared edits would skip it too');
+    // `dryRun` means this call writes nothing, not that the user is looking at
+    // a preview: describeSkippedMirrorDiscard passes it from inside a real
+    // pull, so preview framing would be wrong there.
+    expect(said[0]).not.toContain('preview');
     expect(said[0]).toContain('another program has it open');
     expect(said[0]).not.toContain('shared/ this run');
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
