@@ -187,22 +187,33 @@ export function ensureSymlink(linkPath: string, target: string): void {
  * `force: false` so a same-`ts` collision drops the second copy rather than
  * overwriting an earlier snapshot. Shared core behind the three scoped
  * wrappers below, which differ only by their anchor and `destRoot`.
+ *
+ * @returns `true` when the copy ran, `false` when neither no-op guard let it
+ *   (the source is missing, or it resolves outside `anchor`). A caller that
+ *   tells the user where the previous content went needs the distinction: the
+ *   guards are checked here, so predicting them from outside is a guess that
+ *   goes stale the moment the entry changes between the two reads.
  */
-function backupUnder(absPath: string, anchor: string, destRoot: string): void {
-  if (!existsSync(absPath)) return;
+function backupUnder(absPath: string, anchor: string, destRoot: string): boolean {
+  if (!existsSync(absPath)) return false;
   const rel = relative(anchor, absPath);
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return;
+  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return false;
   const dst = join(destRoot, rel);
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+  return true;
 }
 
 /**
  * Snapshot `absPath` into `backupBase()/<ts>/<rel>` before destructive write.
  * No-op if source missing or outside claudeHome(). Recursive for directories.
+ *
+ * @returns `true` when the copy ran, `false` when it was a no-op (source
+ *   missing, or outside `claudeHome()`). The sibling wrappers below return
+ *   nothing: only this one has a caller that reports the snapshot to the user.
  */
-export function backupBeforeWrite(absPath: string, ts: string): void {
-  backupUnder(absPath, claudeHome(), join(backupBase(), ts));
+export function backupBeforeWrite(absPath: string, ts: string): boolean {
+  return backupUnder(absPath, claudeHome(), join(backupBase(), ts));
 }
 
 /**

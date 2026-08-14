@@ -170,8 +170,20 @@ function stillOccupied(abs: string): boolean {
 }
 
 /**
+ * What `snapshotBeforeWin32Copy` did, as opposed to what a caller could guess
+ * it would do. `snapshotted` means a copy of the previous content was written
+ * and can be pointed at; `nothing-to-snapshot` means the snapshot ran but had
+ * nothing to copy, which is what a dangling symlink or an entry that vanished
+ * between the caller's stat and the backup looks like; `failed` means the
+ * snapshot itself errored. Only `failed` stops the copy, and only
+ * `snapshotted` earns a mention of the backup dir in a later warning.
+ */
+type Win32SnapshotOutcome = 'snapshotted' | 'nothing-to-snapshot' | 'failed';
+
+/**
  * Snapshot the `~/.claude/<name>` entry a win32 copy is about to overwrite,
- * reporting whether the copy may proceed.
+ * reporting both whether the copy may proceed and whether a snapshot exists to
+ * name afterwards.
  *
  * The snapshot gets its OWN try/catch, ahead of the copy's, for two reasons.
  * Every way it can fail (no space in the cache directory, no permission on it,
@@ -185,19 +197,25 @@ function stillOccupied(abs: string): boolean {
  * without one would trade a reported, bounded staleness for silent loss of the
  * user's only copy.
  *
+ * A snapshot that copied nothing is not a failure and does not stop the copy:
+ * `backupBeforeWrite` no-ops when the entry is already gone (its own existence
+ * check runs after the caller's stat, so an entry can vanish in between) or
+ * when it resolves outside `~/.claude/`. There is simply no backup to point at
+ * afterwards, which is why that case is reported rather than folded into the
+ * proceed case.
+ *
  * @param linkPath - Host-side path about to be overwritten.
  * @param ts - Backup timestamp namespace for `backupBeforeWrite`.
- * @returns `true` when the copy may proceed, `false` when it must be skipped.
+ * @returns The outcome; see `Win32SnapshotOutcome`.
  */
-function snapshotBeforeWin32Copy(linkPath: string, ts: string): boolean {
+function snapshotBeforeWin32Copy(linkPath: string, ts: string): Win32SnapshotOutcome {
   try {
-    backupBeforeWrite(linkPath, ts);
-    return true;
+    return backupBeforeWrite(linkPath, ts) ? 'snapshotted' : 'nothing-to-snapshot';
   } catch (err) {
     warn(
       `could not snapshot ${linkPath} before updating it (${(err as Error).message}), so it was left as it is. The rest of the pull continues`,
     );
-    return false;
+    return 'failed';
   }
 }
 
@@ -212,13 +230,14 @@ function snapshotBeforeWin32Copy(linkPath: string, ts: string): boolean {
  * be exactly wrong in the cases that cost the user something, so only two
  * things are stated. Whether an entry is there now, which `stillOccupied`
  * answers (and answers PRESENT when it cannot tell). And whether a snapshot of
- * the previous content exists to recover from, which the caller knows because
- * it is the one that took it.
+ * the previous content exists to recover from, which the snapshot step reports
+ * for itself rather than the caller predicting it, so a snapshot that found
+ * nothing left to copy is never advertised as one.
  *
  * @param linkPath - Host-side path the copy was for.
  * @param ts - Backup timestamp, named so the user can find the snapshot.
  * @param err - The caught error; its message is quoted verbatim.
- * @param snapshotted - `true` when a copy of the previous content was taken.
+ * @param snapshotted - `true` when a copy of the previous content was written.
  */
 function warnWin32ApplyFailed(
   linkPath: string,
@@ -270,12 +289,9 @@ function applyOneSharedLinkWin32(target: string, linkPath: string, ts: string): 
   try {
     const stat = lstatSync(linkPath, { throwIfNoEntry: false });
     if (stat !== undefined) {
-      // Read before anything is written, and the same test `backupUnder`
-      // itself applies, so it answers whether there will be a copy to name
-      // afterwards: a symlink whose target is gone is present and uncopyable
-      // at once.
-      snapshotted = existsSync(linkPath);
-      if (!snapshotBeforeWin32Copy(linkPath, ts)) return;
+      const snapshot = snapshotBeforeWin32Copy(linkPath, ts);
+      if (snapshot === 'failed') return;
+      snapshotted = snapshot === 'snapshotted';
       if (stat.isSymbolicLink()) {
         rmSync(linkPath, { recursive: true, force: true });
       }

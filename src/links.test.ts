@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALWAYS_NEVER_SYNC, isDeniedName } from './config.ts';
 import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
+import type * as utilsFsModule from './utils.fs.ts';
 
 // Posix-only assertions (symlink creation) throughout this file assume the
 // process is genuinely running on a non-win32 host. On a real win32 runner,
@@ -736,6 +737,7 @@ describe('applySharedLinks win32 copy branch', () => {
     // restoreAllMocks does not clear a doMock registration, so without this
     // they would get the throwing lstatSync too.
     vi.doUnmock('node:fs');
+    vi.doUnmock('./utils.fs.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -1057,6 +1059,90 @@ describe('applySharedLinks win32 copy branch', () => {
       expect(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8')).toBe('# shared\n');
     },
   );
+
+  it.skipIf(isWin)(
+    'names no backup when the entry was gone by the time the snapshot ran',
+    async () => {
+      // A symlink whose target no longer exists: present to the stat that
+      // decides there is something to snapshot, absent to the snapshot itself,
+      // which therefore copies nothing. The copy then fails, and the WARN must
+      // not send the user to a backup dir that holds no copy of this name.
+      mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+      writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      const blockedDst = join(claudeDir, 'commands');
+      symlinkSync(join(testHome, 'target-that-was-deleted'), blockedDst);
+      vi.doMock('node:fs', async (importOriginal) => {
+        const actual = await importOriginal<typeof fsModule>();
+        return {
+          ...actual,
+          cpSync: (src: string | URL, dst: string | URL, opts?: fsModule.CopySyncOptions) => {
+            if (String(dst) === blockedDst) throw new Error('EBUSY: resource busy or locked');
+            return actual.cpSync(src, dst, opts);
+          },
+        };
+      });
+      stubPlatform('win32');
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        /* captured */
+      });
+
+      const { applySharedLinks } = await import('./links.ts');
+      expect(() => applySharedLinks('20260813-000005', { projects: {} })).not.toThrow();
+
+      const said = errSpy.mock.calls.map((c) => String(c[0]));
+      expect(said).toHaveLength(1);
+      expect(said[0]).toContain(blockedDst);
+      expect(said[0]).toContain('could not be updated');
+      expect(said[0]).toContain('nothing is at that path now');
+      // The claim has to follow what the snapshot actually did, not what the
+      // stat before it predicted: nothing was copied, so nothing is named.
+      expect(said[0]).not.toContain('backup/');
+      expect(
+        existsSync(join(testHome, '.cache', 'claude-nomad', 'backup', '20260813-000005')),
+      ).toBe(false);
+      // The other shared name still lands.
+      expect(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8')).toBe('# shared\n');
+    },
+  );
+
+  it('names no backup when the snapshot reports it copied nothing, however the path looks', async () => {
+    // The entry is really there when the loop stats it, and the snapshot still
+    // copies nothing, which is what the entry being removed between those two
+    // reads looks like from in here. Stubbing the snapshot is the only way to
+    // hold that interleaving still; the point is that the WARN follows what the
+    // snapshot reports, so a second look at the path cannot contradict it.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new shared content\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# prior real-copy content\n');
+    const blockedDst = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return { ...actual, backupBeforeWrite: () => false };
+    });
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        cpSync: (src: string | URL, dst: string | URL, opts?: fsModule.CopySyncOptions) => {
+          if (String(dst) === blockedDst) throw new Error('EBUSY: resource busy or locked');
+          return actual.cpSync(src, dst, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { applySharedLinks } = await import('./links.ts');
+    expect(() => applySharedLinks('20260813-000006', { projects: {} })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain(blockedDst);
+    expect(said[0]).toContain('could not be updated');
+    expect(said[0]).not.toContain('backup/');
+  });
 
   it('re-throws a type-collision fatal instead of downgrading it to a transient-lock WARN', async () => {
     // shared/CLAUDE.md is a FILE and the host entry is a DIRECTORY, which

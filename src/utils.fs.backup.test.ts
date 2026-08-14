@@ -34,23 +34,39 @@ describe('backupBeforeWrite', () => {
   it('copies an existing file under claudeHome() to the backup dir byte-equal', () => {
     const src = join(testHome, '.claude', 'settings.json');
     writeFileSync(src, '{"a":1}');
-    backupBeforeWrite(src, ts);
+    // Reports the copy it ran, so a caller can say a snapshot exists without
+    // re-deriving the guards this helper already checked.
+    expect(backupBeforeWrite(src, ts)).toBe(true);
     const dst = join(testHome, '.cache', 'claude-nomad', 'backup', ts, 'settings.json');
     expect(existsSync(dst)).toBe(true);
     expect(readFileSync(dst, 'utf8')).toBe('{"a":1}');
   });
 
-  it('is a no-op when the source path does not exist', () => {
+  it('is a no-op, and says so, when the source path does not exist', () => {
     const src = join(testHome, '.claude', 'settings.json');
-    backupBeforeWrite(src, ts);
+    expect(backupBeforeWrite(src, ts)).toBe(false);
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 
-  it('refuses paths outside claudeHome()', () => {
+  it('refuses paths outside claudeHome(), and says so', () => {
     mkdirSync(join(testHome, '.other'), { recursive: true });
     const src = join(testHome, '.other', 'data.json');
     writeFileSync(src, '{"a":1}');
-    backupBeforeWrite(src, ts);
+    expect(backupBeforeWrite(src, ts)).toBe(false);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
+  it('refuses claudeHome() itself, and says so', () => {
+    // The anchor relativizes to the empty string, which is neither inside the
+    // tree nor an escape, and copying the whole of ~/.claude into a dir under
+    // ~/.cache is not what any caller is asking for.
+    expect(backupBeforeWrite(join(testHome, '.claude'), ts)).toBe(false);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
+  it('refuses the parent of claudeHome(), and says so', () => {
+    // Relativizes to exactly "..", the escape case with no trailing separator.
+    expect(backupBeforeWrite(testHome, ts)).toBe(false);
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 
