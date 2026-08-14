@@ -151,12 +151,27 @@ other side:
   under `~/.claude/` to move or rename, with the two ways to finish. Nothing is lost either way:
   your file stays exactly as you left it and the update simply waits for the next pull. `nomad pull
   --force-remote` recovers a wedged sync repo. When the repo is stuck mid-rebase or mid-merge,
-  recovery resets it to match the shared repo, and on native Windows that reset also replaces your
-  shared config with the repo's copy; the pull warns naming how many shared names it restored from
-  the repo copy, with your previous copies snapshotted to the backup dir first. A different stuck
-  state, an unfinished index with nothing to abort, recovers by clearing the index without touching
-  your working files, so on native Windows your shared config is left exactly as it was. This is the
-  same behavior claude-nomad's `skills/` sync already has on every platform.
+  recovery parks any local commits on a branch of their own, resets the repo to match the shared
+  repo, and on native Windows that reset also replaces your shared config with the repo's copy; the
+  pull warns naming how many shared names it restored from the repo copy, with your previous copies
+  snapshotted to the backup dir first. One guard sits in front of that reset, and it covers the
+  sync repo rather than this machine: when the repo's own tracked copy of the shared config differs
+  from the shared repo, the pull refuses before it resets anything and lists those repo paths
+  instead. That refusal comes before the commit parking described above, so at that point nothing
+  has been saved for you: put your own commits on a branch, and copy any uncommitted work out,
+  before you follow the manual steps in the
+  [FAQ](/claude-nomad/faq/#state-1-stuck-mid-rebase-or-mid-merge), because those end in a hard reset.
+  The refusal clears only once the repo matches the shared repo again; moving or committing the
+  files does not clear it on its own. Two things are worth knowing before you retry: whichever operation
+  was stuck, the rebase or the merge, has already been unwound by the time it refuses, so running
+  the same command again is now just an ordinary pull, and the list can also name paths where the
+  shared repo is simply ahead of yours, which are nothing of yours at risk. The guard cannot help with an edit that exists only on this
+  machine, which is what the warning above is for. A different stuck state, an unfinished index with nothing to abort, recovers by clearing
+  the index without touching your working files, so on native Windows your shared config is left
+  exactly as it was, and the usual pre-pull copy into the sync repo still runs, so an edit you have
+  not pushed yet is still captured. If a file from that old conflict still carries conflict markers,
+  the pull stops there instead, so the markers never reach your live config. Copying instead of
+  symlinking is the same approach claude-nomad's `skills/` sync already uses on every platform.
 - **The copy-in never carries your Claude secrets or session history.** The same mirror that
   captures your Windows edits into the sync repo refuses to copy any path with a part on
   claude-nomad's never-sync list, whether that part is a directory along the way or the file name

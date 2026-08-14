@@ -164,10 +164,27 @@ export function recoverForceRemote(mode: NonNullable<WedgeMode>, repo: string): 
 
   if (synced.length > 0) {
     die(
-      'force-remote refused: stranded or dirty tracked changes touch synced config.\n' +
-        'At-risk paths:\n' +
-        synced.map((p) => `  ${p}`).join('\n') +
-        '\nCopy or cherry-pick those changes out before retrying.',
+      "force-remote refused: the sync repo's synced config differs from origin/main.\n" +
+        'Differing paths:\n' +
+        // Quoted for display only: `-z` hands back raw names, and a path
+        // carrying a newline or a terminal control sequence would otherwise
+        // split or rewrite the recovery steps printed below it. The
+        // classification above uses the raw value.
+        synced.map((p) => `  ${JSON.stringify(p)}`).join('\n') +
+        '\nThe comparison runs both ways, so a path can be listed because origin/main is ahead of\n' +
+        'you, with nothing of yours at risk on it.\n' +
+        '\nManual recovery. Step 1 is not optional: this refusal happens BEFORE recovery parks your\n' +
+        'local commits, so nothing has been saved for you yet and step 3 discards whatever is not\n' +
+        'on another ref.\n' +
+        '  1. git branch nomad-rescue HEAD   (keeps every local commit)\n' +
+        '  2. copy any uncommitted work above OUT of the repo (it exists nowhere else)\n' +
+        '  3. git reset --hard origin/main   (this is what clears the refusal)\n' +
+        '  4. nomad pull\n\n' +
+        'Copying or moving the files alone does not clear it: git still reports a moved file as a\n' +
+        'deletion, and a committed change is still ahead of origin/main. The in-progress rebase or\n' +
+        "merge has ALREADY been aborted, so re-running 'nomad pull --force-remote' now behaves as\n" +
+        'an ordinary pull.\n' +
+        '(see FAQ: "Every pull fails with unmerged files")',
     );
   }
 
