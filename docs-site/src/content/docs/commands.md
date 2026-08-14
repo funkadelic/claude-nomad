@@ -200,7 +200,10 @@ since adopting one would move a secret into the sync repo. On native Windows ado
 name as a real copy instead of a symlink (the win32 copy-sync modality). There a name whose
 `shared/<name>` counterpart already exists is reported as already adopted and skipped (with a
 `nomad pull` hint to refresh the local copy), where macOS, Linux, and WSL2 would refuse with a
-would-clobber error.
+would-clobber error. If that copy cannot be written, because another program has the path open or
+its permissions block it, adopt stops with an error naming the path and exits 1. Nothing is lost:
+the content is already in `shared/<name>` and staged, so `nomad push` still publishes it, and
+`nomad pull` recreates the local copy once the path is free.
 
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
