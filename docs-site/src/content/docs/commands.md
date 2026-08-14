@@ -202,9 +202,11 @@ name as a real copy instead of a symlink (the win32 copy-sync modality). There a
 `nomad pull` hint to refresh the local copy), where macOS, Linux, and WSL2 would refuse with a
 would-clobber error. If that copy cannot be written, because another program has the path open or
 its permissions block it, adopt stops with an error naming the path and exits 1. The content itself
-is not lost: it is already in `shared/<name>` and staged. Run `nomad pull` to recreate the local
-copy before your next `nomad push`, because a push copies the local name back over `shared/<name>`
-first, so publishing while the local copy is missing is what would undo the adopt.
+is not lost: it is already in `shared/<name>`, and staged unless the same error also reports that
+staging failed. Run `nomad pull` to recreate the local copy before your next `nomad push`, because
+a push copies the local name back over `shared/<name>` first, so publishing while the local copy is
+missing is what would undo the adopt. If the error says a partial copy is still at the path, that
+pull matters more, not less: it is what replaces the partial copy, once the path is free.
 
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
