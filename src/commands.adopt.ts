@@ -321,22 +321,31 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const linkPath = join(claude, name);
   const sharedTarget = join(repo, 'shared', name);
 
-  // Precondition checks -- in order: absent, already symlink, already
-  // adopted (win32 copy-sync), would clobber
+  // Precondition checks -- in order: already adopted (win32 copy-sync),
+  // absent, already symlink, would clobber.
+  //
+  // win32 has no unprivileged symlink support, so a real (non-symlink) copy at
+  // linkPath IS the healthy adopted state there once shared/<name> exists.
+  // Short-circuit before the clobber guard below so re-running adopt on an
+  // already-adopted win32 name is a safe no-op, not a refused "would clobber".
+  //
+  // It also runs BEFORE the absent check, which matters after a failed
+  // copy-back: that path removes the partial local copy, so linkPath is gone
+  // while shared/<name> is fully populated. Checking absence first would answer
+  // "nothing to adopt" and exit 0, hiding the `nomad pull` hint that is the
+  // actual next step. On win32 an absent linkPath with a populated
+  // shared/<name> is never "nothing to adopt": the content is in the repo and
+  // one pull materializes it.
+  if (process.platform === 'win32' && lexists(sharedTarget)) {
+    log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
+    return;
+  }
   if (!existsSync(linkPath)) {
     log(`${name}: nothing to adopt (not present in ~/.claude/)`);
     return;
   }
   if (lstatSync(linkPath).isSymbolicLink()) {
     log(`${name}: already adopted (already a symlink)`);
-    return;
-  }
-  // win32 has no unprivileged symlink support, so a real (non-symlink) copy at
-  // linkPath IS the healthy adopted state there once shared/<name> exists.
-  // Short-circuit before the clobber guard below so re-running adopt on an
-  // already-adopted win32 name is a safe no-op, not a refused "would clobber".
-  if (process.platform === 'win32' && lexists(sharedTarget)) {
-    log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
     return;
   }
   if (lexists(sharedTarget)) {

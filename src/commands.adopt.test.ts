@@ -954,6 +954,34 @@ describe('cmdAdopt win32 copy-back failure', () => {
     expect(out).toContain('nomad push');
   });
 
+  it('win32: re-running after the failure points at nomad pull, not "nothing to adopt"', async () => {
+    // The failure path clears the partial local copy, so linkPath is gone while
+    // shared/<name> is fully populated. Answering "nothing to adopt" there
+    // would be a dead end: the content is in the repo and one pull brings it
+    // back, which is what the already-adopted branch says.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('EBUSY: resource busy or locked', { partial: true });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+    expect(existsSync(linkPath)).toBe(false);
+
+    // Second run, same state the user is now in.
+    env.logSpy.mockClear();
+    process.exitCode = 0;
+    cmdAdopt('my-tools');
+
+    const out = logOutput(env);
+    expect(out).toContain('already adopted');
+    expect(out).toContain('nomad pull');
+    expect(out).not.toContain('nothing to adopt');
+    expect(process.exitCode).toBe(0);
+  });
+
   it('win32: re-throws a deliberate failure untouched rather than wrapping it', async () => {
     // A NomadFatal from the copy carries its own message and exit code, and
     // names the one command that clears it. Wrapping it would append a second,
