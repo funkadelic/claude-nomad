@@ -1,5 +1,5 @@
 import { cpSync, existsSync, lstatSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import {
   backupBase,
@@ -12,7 +12,7 @@ import {
 import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { EXIT } from './exit-codes.ts';
 import { copySharedLinkPull } from './links.ts';
-import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
+import { fail, gitOrFatal, log, warn, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { readPathMap } from './utils.json.ts';
 
@@ -82,6 +82,234 @@ function isValidAdoptName(name: string): boolean {
 }
 
 /**
+ * Whether `abs` is a direct child of `root`, both resolved first.
+ *
+ * The containment bound for a recursive force-remove. Exported only so it can
+ * be asserted directly: the guard it backs is unreachable through `cmdAdopt`
+ * (the name is rejected long before a path is built from it), so a test that
+ * went through the command could not tell a working bound from an inverted
+ * one. Direct-child rather than prefix containment because the only paths this
+ * ever sees are `join(CLAUDE_HOME, <single name>)`, and prefix containment
+ * would also accept a nested path several levels down.
+ *
+ * @param root Directory the path must sit directly inside.
+ * @param abs Path to test.
+ * @returns True when `abs` is exactly one level under `root`.
+ */
+export function isDirectChildOf(root: string, abs: string): boolean {
+  return dirname(resolve(abs)) === resolve(root);
+}
+
+/**
+ * Report the win32 already-adopted state, when that is what this is.
+ *
+ * win32 has no unprivileged symlink support, so a real (non-symlink) copy at
+ * `linkPath` IS the healthy adopted state there once `shared/<name>` exists,
+ * and so is no local entry at all: the content is in the repo and one
+ * `nomad pull` materializes it. Both are reported the same way, which is why
+ * this is a helper rather than a single branch: `cmdAdopt` asks it once for the
+ * absent case and once for the real-entry case, on either side of the
+ * symlink arm that has to stay ahead of both.
+ *
+ * @param name The name being adopted, for the message.
+ * @param sharedTarget Repo-side `shared/<name>` path to probe.
+ * @returns True when the message was printed and the caller should return.
+ */
+function reportWin32AlreadyAdopted(name: string, sharedTarget: string): boolean {
+  if (process.platform !== 'win32' || !lexists(sharedTarget)) return false;
+  log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
+  return true;
+}
+
+/**
+ * Run the precondition matrix, reporting whether adopt should stop here.
+ *
+ * Order is load-carrying and reads as most-specific-state-first: an absent
+ * local entry, then a symlink, then the win32 copy-sync state, then the
+ * would-clobber refusal.
+ *
+ * The win32 check appears twice by design, on either side of the symlink arm.
+ * An absent local entry whose `shared/<name>` exists is the state a failed
+ * copy-back leaves behind (that path clears the partial copy while the repo
+ * side stays populated), and answering "nothing to adopt" there would hide the
+ * `nomad pull` that brings the content back. But a real symlink at `linkPath`
+ * is the more specific state, and on a win32 host with Developer Mode (or an
+ * install predating the copy-sync model) both conditions hold at once, so the
+ * symlink arm has to win there or the message names the wrong mechanism.
+ *
+ * @param name The name being adopted.
+ * @param linkPath Absolute `CLAUDE_HOME/<name>`.
+ * @param sharedTarget Absolute `REPO_HOME/shared/<name>`.
+ * @returns True when a message was printed and adopt should return.
+ */
+function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): boolean {
+  if (!existsSync(linkPath)) {
+    if (reportWin32AlreadyAdopted(name, sharedTarget)) return true;
+    log(`${name}: nothing to adopt (not present in ~/.claude/)`);
+    return true;
+  }
+  if (lstatSync(linkPath).isSymbolicLink()) {
+    log(`${name}: already adopted (already a symlink)`);
+    return true;
+  }
+  if (reportWin32AlreadyAdopted(name, sharedTarget)) return true;
+  if (lexists(sharedTarget)) {
+    fail(`${name}: shared/${name} already exists; would clobber. Remove it first.`);
+    process.exit(1);
+  }
+  return false;
+}
+
+/**
+ * Clear the partial `~/.claude/<name>` a failed copy-back can leave behind.
+ *
+ * Not tidiness: the win32 push mirror (`syncSharedLinksPush` -> `copyExtrasFiltered`)
+ * WIPES `shared/<name>` and rebuilds it from whatever is at the host path, so a
+ * truncated remnant left here would replace the fully adopted content in the repo
+ * on the next push and propagate that loss to every other host. An absent host
+ * entry makes the mirror skip the name entirely, which is the safe state. The
+ * remnant is always a strict subset of `shared/<name>` (the copy into the repo
+ * completed before the source was removed), so nothing unique is discarded.
+ *
+ * Best-effort by necessity: whatever blocked the copy usually blocks this too.
+ * The caller reports the outcome rather than assuming it.
+ *
+ * A recursive force-remove earns a containment check at the point of use, not
+ * only at the entry point. `cmdAdopt` already rejects any name carrying a path
+ * separator or a `.`/`..` segment before it builds `linkPath`, so this cannot
+ * fire today; it is here so the removal stays bounded to one direct child of
+ * `~/.claude/` if a future caller reaches it by another route, and so the
+ * bound is checkable where the destructive call is rather than three guards
+ * away. Refusing reports as "not cleared", which is the safe direction: the
+ * caller then warns against pushing.
+ *
+ * The bound is re-read from `claudeHome()` rather than taken from the caller,
+ * so the check compares against the configured root instead of against the
+ * same value the path was built from, which would make it vacuous.
+ *
+ * The result is a re-probe, not the absence of a throw. On win32 a delete can
+ * be accepted and still leave the entry in place until the last handle closes,
+ * which is precisely the case this runs in (the copy just failed because
+ * something holds the path), and reporting a removal that did not happen is
+ * what would let the next push mirror publish the remnant. Same discipline as
+ * `removeUntrackedDenied` in `links.mirror.ts`, which re-probes the identical
+ * call for the identical reason.
+ *
+ * @param linkPath Host-side path to clear.
+ * @returns True when the path is gone afterwards.
+ */
+function clearPartialCopy(linkPath: string): boolean {
+  const resolved = resolve(linkPath);
+  /* c8 ignore next -- unreachable via cmdAdopt; the predicate is tested directly */
+  if (!isDirectChildOf(claudeHome(), resolved)) return false;
+  try {
+    rmSync(resolved, { recursive: true, force: true });
+  } catch {
+    return false;
+  }
+  // lstat-based, so a dangling symlink still counts as present: the question
+  // is whether an entry is there for the mirror to read, not whether it
+  // resolves.
+  return !lexists(resolved);
+}
+
+/**
+ * Stage `shared/<name>`, reporting a staging failure as a clause instead of
+ * letting it throw.
+ *
+ * `gitOrFatal` raises its own `NomadFatal`, which would propagate out of the
+ * copy-back catch and replace the whole report with a bare `git add ... failed`,
+ * so the user would never learn the local copy is missing. The failure still has
+ * to be told (an unstaged `shared/<name>` needs its own `git add` before a push
+ * publishes anything), just not at the cost of the message it interrupted.
+ *
+ * @param stage Stages `shared/<name>`.
+ * @returns An empty string on success, or a clause naming the staging failure.
+ */
+function stageOrReport(stage: () => void): string {
+  try {
+    stage();
+    return '';
+  } catch (err) {
+    return ` Staging it failed too (${(err as Error).message}), so it is in the repo but not staged.`;
+  }
+}
+
+/**
+ * Restore the host-side copy after a win32 move, failing loud rather than
+ * crashing when the destination cannot be written.
+ *
+ * By the time this runs the move itself has already succeeded: the content is
+ * in `shared/<name>` and the source is gone. So a failure here costs the local
+ * copy, never the content, and the honest report is a `NomadFatal` naming the
+ * path rather than either a crash report or a success message. `nomad adopt`
+ * takes exactly one name per invocation, so there is no rest-of-the-list to
+ * preserve by warning and continuing the way the pull's apply loop does
+ * (`applyOneSharedLinkWin32` in `links.ts`).
+ *
+ * The stage runs BEFORE the throw deliberately. Without it the caller's
+ * `git add` is skipped and the user is left with `shared/<name>` on disk but
+ * untracked, which no single command finishes.
+ *
+ * The recovery order is pull BEFORE push, and that order is load-bearing rather
+ * than stylistic: a push mirrors the host path back over `shared/<name>` first,
+ * so pushing while the local copy is missing or partial is what would undo the
+ * adopt. `clearPartialCopy` removes the remnant when it can, and the message
+ * says so when it cannot.
+ *
+ * The catch is deliberately broad, with no `err.code` dispatch: the copy
+ * bottoms out in several different syscalls, each of which can raise a
+ * different Windows errno for the same underlying lock, so narrowing would
+ * miss real cases rather than filter noise. Breadth stops at deliberate
+ * failures: a `NomadFatal` is staged and re-thrown untouched, keeping its own
+ * message and exit code, because the one this path raises (the repo-file
+ * against host-directory collision from `copyExtrasFilteredPreservingBy`) names
+ * the only command that clears it, and wrapping it would append a contradictory
+ * second instruction. Same discipline as `applyOneSharedLinkWin32`.
+ *
+ * @param name The name being adopted, for the message.
+ * @param linkPath Host-side path the copy could not be written to.
+ * @param sharedTarget Repo-side source of the copy.
+ * @param ts Backup timestamp, named only when a snapshot exists.
+ * @param snapshotted True when `backupBeforeWrite` actually wrote a snapshot.
+ * @param stage Stages `shared/<name>`; run before throwing, either way.
+ */
+function restoreWin32LocalCopy(
+  name: string,
+  linkPath: string,
+  sharedTarget: string,
+  ts: string,
+  snapshotted: boolean,
+  stage: () => void,
+): void {
+  try {
+    copySharedLinkPull(sharedTarget, linkPath);
+  } catch (err) {
+    if (err instanceof NomadFatal) {
+      // Re-thrown untouched, so a staging failure cannot ride along inside its
+      // message; it gets its own line rather than being dropped.
+      const fatalStageFailure = stageOrReport(stage);
+      if (fatalStageFailure !== '') warn(`${name}:${fatalStageFailure}`);
+      throw err;
+    }
+    const leftover = clearPartialCopy(linkPath)
+      ? ''
+      : ` A partial copy may still be at that path, so do NOT run \`nomad push\` or \`nomad sync\` yet: either one copies that path back over shared/${name}, and \`nomad sync\` pushes in the same run. Pull first, and check it does not warn about ${name} again, because a pull that cannot read the path warns and still exits 0.`;
+    const stageFailure = stageOrReport(stage);
+    const staged = stageFailure === '' ? ' and staged.' : `.${stageFailure}`;
+    const recover = snapshotted ? ` A copy of what it held before is under backup/${ts}/.` : '';
+    throw new NomadFatal(
+      `adopted ${name} into shared/${name}, but could not restore the local copy at ` +
+        `${linkPath} (${(err as Error).message}). The content is safe in the repo` +
+        `${staged}${recover} Check its permissions, or whether another program has it ` +
+        `open, then run \`nomad pull\` to recreate the local copy before your next ` +
+        `\`nomad push\`.${leftover}`,
+      { code: EXIT.GENERIC_FAILURE },
+    );
+  }
+}
+
+/**
  * Perform the actual backup -> copy -> remove -> relink -> stage sequence
  * once all preconditions have passed. Extracts the mutation block so the
  * top-level function stays under the cognitive-complexity threshold.
@@ -93,6 +321,11 @@ function isValidAdoptName(name: string): boolean {
  * support), `copySharedLinkPull` copies `sharedTarget` back into `linkPath`
  * as a real, deny-set-filtered copy so the host keeps a usable local
  * counterpart under the copy-sync model.
+ *
+ * The stage is a closure rather than a straight-line call because the win32
+ * arm has to run it on its own failure path (see `restoreWin32LocalCopy`).
+ * Handing it down means the success path still stages exactly once and the
+ * failure path never double-adds.
  *
  * @param name The validated, configured, real-directory name to adopt.
  * @param linkPath Absolute path of the source directory (`CLAUDE_HOME/<name>`).
@@ -107,25 +340,29 @@ function performAdoptMove(
 ): void {
   const ts = freshBackupTs(backup);
 
-  // Back up before any mutation
-  backupBeforeWrite(linkPath, ts);
+  // Back up before any mutation. The return value distinguishes a real
+  // snapshot from a no-op, so a later failure never advertises a backup dir
+  // that holds nothing.
+  const snapshotted = backupBeforeWrite(linkPath, ts);
 
   // Copy fully into shared/ BEFORE removing the source so a
   // mid-move crash cannot lose user content
   cpSync(linkPath, sharedTarget, { recursive: true, force: true, preserveTimestamps: true });
   rmSync(linkPath, { recursive: true, force: true });
 
+  // Targeted stage of shared/<name> only; never git add -A
+  const rel = join('shared', name);
+  const stage = (): void => gitOrFatal(['add', '--', rel], `git add shared/${name}`, repo);
+
   // Leave the host with a usable local counterpart: a real copy-back on
   // win32 (no unprivileged symlink support), a recreated symlink elsewhere.
   if (process.platform === 'win32') {
-    copySharedLinkPull(sharedTarget, linkPath);
+    restoreWin32LocalCopy(name, linkPath, sharedTarget, ts, snapshotted, stage);
   } else {
     ensureSymlink(linkPath, sharedTarget);
   }
 
-  // Targeted stage of shared/<name> only; never git add -A
-  const rel = join('shared', name);
-  gitOrFatal(['add', '--', rel], `git add shared/${name}`, repo);
+  stage();
 
   log(`adopted ${name}; ${ADOPT_PUSH_HINT}`);
 }
@@ -193,28 +430,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const linkPath = join(claude, name);
   const sharedTarget = join(repo, 'shared', name);
 
-  // Precondition checks -- in order: absent, already symlink, already
-  // adopted (win32 copy-sync), would clobber
-  if (!existsSync(linkPath)) {
-    log(`${name}: nothing to adopt (not present in ~/.claude/)`);
-    return;
-  }
-  if (lstatSync(linkPath).isSymbolicLink()) {
-    log(`${name}: already adopted (already a symlink)`);
-    return;
-  }
-  // win32 has no unprivileged symlink support, so a real (non-symlink) copy at
-  // linkPath IS the healthy adopted state there once shared/<name> exists.
-  // Short-circuit before the clobber guard below so re-running adopt on an
-  // already-adopted win32 name is a safe no-op, not a refused "would clobber".
-  if (process.platform === 'win32' && lexists(sharedTarget)) {
-    log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
-    return;
-  }
-  if (lexists(sharedTarget)) {
-    fail(`${name}: shared/${name} already exists; would clobber. Remove it first.`);
-    process.exit(1);
-  }
+  if (adoptStopsEarly(name, linkPath, sharedTarget)) return;
 
   // Dry-run preview -- branch before any mutation
   if (dryRun) {
@@ -230,7 +446,10 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     return;
   }
 
-  /* c8 ignore start -- catch is defensive: performAdoptMove only throws on a git/fs fault */
+  // A NomadFatal is this command's own reported failure (a git fault, or the
+  // win32 copy-back guard in performAdoptMove), so it renders as one message
+  // and its own exit code. Anything else is genuinely unexpected and belongs
+  // in the crash report the top-level handler writes.
   try {
     performAdoptMove(name, linkPath, sharedTarget, repo, backup);
   } catch (err) {
@@ -238,5 +457,4 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     fail(err.message);
     process.exitCode = err.code;
   }
-  /* c8 ignore stop */
 }

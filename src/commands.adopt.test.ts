@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import type * as fsModule from 'node:fs';
 import {
   existsSync,
   lstatSync,
@@ -15,7 +16,10 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { EXIT } from './exit-codes.ts';
+import type * as linksModule from './links.ts';
 import { stubPlatform } from './test-helpers.platform.ts';
+import type * as utilsModule from './utils.ts';
+import type * as utilsFsModule from './utils.fs.ts';
 
 // Posix-only assertions (symlink creation, clobber-refusal wording) below
 // assume the process is genuinely running on a non-win32 host. On a real
@@ -729,6 +733,29 @@ describe('cmdAdopt win32 copy-back branch', () => {
     expect(diffCached(env)).toContain('shared/my-tools');
   });
 
+  it('win32: a real symlink is reported as a symlink, not as the copy-sync state', async () => {
+    // Both conditions hold at once on a win32 host with Developer Mode, or one
+    // whose install predates the copy-sync model: linkPath is a symlink AND
+    // shared/<name> exists. The symlink is the more specific state, so the
+    // copy-sync message would name the wrong mechanism. Pinned with the
+    // platform stubbed because the real-win32 runner is the only other place
+    // this ordering shows up.
+    addSharedDir(env, 'my-dir');
+    const linkPath = join(env.claudeHome, 'my-dir');
+    const targetPath = join(env.repoHome, 'shared', 'my-dir');
+    mkdirSync(targetPath, { recursive: true });
+    symlinkSync(targetPath, linkPath);
+
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-dir')).not.toThrow();
+
+    const out = logOutput(env);
+    expect(out).toContain('already adopted (already a symlink)');
+    expect(out).not.toContain('win32 copy-sync');
+    expect(diffCached(env)).toBe('');
+  });
+
   it('non-win32 (posix): the already-symlink branch is unchanged, not the win32 short-circuit', async () => {
     // posix: an already-symlinked linkPath takes the existing posix
     // already-adopted branch, never the win32-only message.
@@ -764,4 +791,387 @@ describe('cmdAdopt win32 copy-back branch', () => {
       expect(out).not.toContain('would copy back');
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Containment bound behind the partial-copy cleanup
+// ---------------------------------------------------------------------------
+
+describe('isDirectChildOf', () => {
+  // Asserted directly because the guard it backs is unreachable through
+  // cmdAdopt: an invalid name is rejected before any path is built from it,
+  // so a test routed through the command could not tell a working bound from
+  // an inverted one.
+  it('accepts a direct child', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/commands')).toBe(true);
+  });
+
+  it('accepts a direct child when the root carries a trailing separator', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude/', '/home/u/.claude/commands')).toBe(true);
+  });
+
+  it('rejects the root itself', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude')).toBe(false);
+  });
+
+  it('rejects a nested grandchild, not just an escape', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/commands/nested')).toBe(false);
+  });
+
+  it('rejects a traversal that climbs out', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/../.ssh/id_rsa')).toBe(false);
+  });
+
+  it('rejects a sibling whose name merely starts with the root', async () => {
+    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude-evil/x')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// win32 copy-back failure (locked or permission-denied destination)
+// ---------------------------------------------------------------------------
+
+/**
+ * A genuine OS-level Windows lock cannot be provoked from vitest (Node opens
+ * with full sharing by default), so the failure is injected at the module
+ * boundary instead, matching how the pull-side guard is proven.
+ *
+ * @param message Error message the copy-back throws.
+ * @param opts.partial When true, write a truncated destination before throwing,
+ *   reproducing the mid-copy remnant the push mirror would otherwise publish.
+ * @param opts.fatal When true, throw a `NomadFatal` (a deliberate failure that
+ *   carries its own recovery instruction) instead of a raw `Error`.
+ */
+function mockCopyBackFailure(
+  message: string,
+  opts: { partial?: boolean; fatal?: boolean } = {},
+): void {
+  vi.doMock('./links.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof linksModule>();
+    const { NomadFatal } = await import('./utils.ts');
+    return {
+      ...actual,
+      copySharedLinkPull: (_src: string, dst: string): never => {
+        if (opts.partial === true) {
+          mkdirSync(dst, { recursive: true });
+          writeFileSync(join(dst, 'partial.txt'), 'half a file\n');
+        }
+        throw opts.fatal === true ? new NomadFatal(message) : new Error(message);
+      },
+    };
+  });
+}
+
+describe('cmdAdopt win32 copy-back failure', () => {
+  let env: Env;
+  const realPlatform = process.platform;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./utils.ts');
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('node:fs');
+    teardownAdoptEnv(env);
+  });
+
+  it('win32: reports one failure and exits 1 instead of reaching the crash report', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+
+    // No rethrow past cmdAdopt: a NomadFatal renders as one message, so the
+    // top-level handler never writes a crash report for this.
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+
+    const out = errOutput(env);
+    expect(out).toContain(linkPath);
+    expect(out).toContain('EBUSY: resource busy or locked');
+    expect(out).toContain('nomad pull');
+  });
+
+  it('win32: stages shared/<name> anyway so one push still publishes the adopted content', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('EPERM: operation not permitted');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    // The move itself succeeded: content is in shared/ and it is staged.
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(readFileSync(join(sharedTarget, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(diffCached(env)).toContain('shared/my-tools');
+
+    // And the success line never printed, so nothing claims the adopt finished.
+    expect(logOutput(env)).not.toContain('adopted my-tools;');
+  });
+
+  it('win32: names the backup dir when a snapshot was written', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(errOutput(env)).toContain('under backup/');
+  });
+
+  it('win32: does not name a backup dir when the snapshot no-opped', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    // backupBeforeWrite no-ops (and reports it) when there is nothing to
+    // snapshot; the message must not advertise a directory holding nothing.
+    vi.doMock('./utils.fs.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof utilsFsModule>()),
+      backupBeforeWrite: (): boolean => false,
+    }));
+    mockCopyBackFailure('EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    expect(out).toContain('could not restore the local copy');
+    expect(out).not.toContain('backup/');
+  });
+
+  it('win32: clears a partial copy so the next push cannot publish the remnant', async () => {
+    // The win32 push mirror wipes shared/<name> and rebuilds it from the host
+    // path, so a truncated remnant here would overwrite the fully adopted
+    // content in the repo and propagate that loss to every other host. An
+    // absent host entry is what makes the mirror skip the name.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(linkPath, 'other.sh'), '#!/bin/sh\necho there\n');
+
+    mockCopyBackFailure('EBUSY: resource busy or locked', { partial: true });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(existsSync(linkPath)).toBe(false);
+    // shared/<name> still holds everything the move copied in.
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(join(sharedTarget, 'tool.sh'))).toBe(true);
+    expect(existsSync(join(sharedTarget, 'other.sh'))).toBe(true);
+    // With the remnant gone, the message carries no do-not-push warning.
+    expect(errOutput(env)).not.toContain('do NOT run');
+  });
+
+  it('win32: warns against pushing when the partial copy cannot be cleared', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    // Whatever blocks the copy usually blocks the cleanup too. The first
+    // rmSync is the move's own source removal; the second is the cleanup.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      let calls = 0;
+      return {
+        ...actual,
+        rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
+          calls += 1;
+          if (calls > 1) throw new Error('EBUSY: resource busy or locked');
+          actual.rmSync(...args);
+        },
+      };
+    });
+    mockCopyBackFailure('EBUSY: resource busy or locked', { partial: true });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    expect(out).toContain('do NOT run');
+    expect(out).toContain('nomad push');
+  });
+
+  it('win32: re-running after the failure points at nomad pull, not "nothing to adopt"', async () => {
+    // The failure path clears the partial local copy, so linkPath is gone while
+    // shared/<name> is fully populated. Answering "nothing to adopt" there
+    // would be a dead end: the content is in the repo and one pull brings it
+    // back, which is what the already-adopted branch says.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('EBUSY: resource busy or locked', { partial: true });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+    expect(existsSync(linkPath)).toBe(false);
+
+    // Second run, same state the user is now in.
+    env.logSpy.mockClear();
+    process.exitCode = 0;
+    cmdAdopt('my-tools');
+
+    const out = logOutput(env);
+    expect(out).toContain('already adopted');
+    expect(out).toContain('nomad pull');
+    expect(out).not.toContain('nothing to adopt');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('win32: reports a removal only when the path is actually gone afterwards', async () => {
+    // A win32 delete can be accepted and still leave the entry until the last
+    // handle closes, which is exactly the state this runs in. Reporting a
+    // removal that did not happen is what would let the next push mirror
+    // publish the remnant, so the result is a re-probe, not the absence of a
+    // throw. rmSync is stubbed to no-op on the cleanup call only.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      let calls = 0;
+      return {
+        ...actual,
+        rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
+          calls += 1;
+          // First call is the move's own source removal; second is the
+          // cleanup, which "succeeds" while leaving the entry in place.
+          if (calls === 1) actual.rmSync(...args);
+        },
+      };
+    });
+    mockCopyBackFailure('EBUSY: resource busy or locked', { partial: true });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(existsSync(linkPath)).toBe(true);
+    expect(errOutput(env)).toContain('do NOT run');
+  });
+
+  it('win32: re-throws a deliberate failure untouched rather than wrapping it', async () => {
+    // A NomadFatal from the copy carries its own message and exit code, and
+    // names the one command that clears it. Wrapping it would append a second,
+    // contradictory instruction.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockCopyBackFailure('cannot overlay a file onto a directory; run `nomad pull --force-remote`', {
+      fatal: true,
+    });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    expect(out).toContain('nomad pull --force-remote');
+    expect(out).not.toContain('could not restore the local copy');
+    // Still staged, so the repo half of the move is not left half-done.
+    expect(diffCached(env)).toContain('shared/my-tools');
+  });
+
+  it('win32: a staging failure on the re-thrown arm is reported, not swallowed', async () => {
+    // The deliberate failure is re-thrown untouched, so a staging failure
+    // cannot ride along inside its message. It gets its own line instead of
+    // disappearing, which would leave the docs claiming it was staged.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: (): never => {
+          throw new actual.NomadFatal('git add shared/my-tools failed');
+        },
+      };
+    });
+    mockCopyBackFailure('cannot overlay a file onto a directory', { fatal: true });
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    expect(out).toContain('cannot overlay a file onto a directory');
+    expect(out).toContain('not staged');
+  });
+
+  it('win32: a staging failure is reported alongside the copy-back failure, not instead of it', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return {
+        ...actual,
+        gitOrFatal: (): never => {
+          throw new actual.NomadFatal('git add shared/my-tools failed');
+        },
+      };
+    });
+    mockCopyBackFailure('EBUSY: resource busy or locked');
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    // Both facts survive: the user learns the local copy is gone AND that the
+    // repo content is not staged.
+    expect(out).toContain('could not restore the local copy');
+    expect(out).toContain('not staged');
+  });
+
+  it.skipIf(isWin)('posix: an unexpected error still reaches the crash-report path', async () => {
+    // Not a NomadFatal, so cmdAdopt must rethrow rather than swallow it: the
+    // top-level handler is what turns an unexpected fault into a report.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof utilsFsModule>()),
+      ensureSymlink: (): never => {
+        throw new Error('ENOSPC: no space left on device');
+      },
+    }));
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+
+    expect(() => cmdAdopt('my-tools')).toThrow('ENOSPC: no space left on device');
+  });
 });
