@@ -126,34 +126,37 @@ other side:
   behaves like Linux. What this means for you: nothing extra. On native Windows both `nomad pull`
   and `nomad sync` mirror your local copies into the repo before they fetch, so an unpublished edit
   is captured rather than reverted, and a real `nomad pull` now prints a `Symlinks` line for each
-  name it captured, so the copy is visible instead of silent. If one of those names
-  cannot be read at all, because another program is holding it open or its permissions changed, the
-  mirror leaves it out and warns, naming the file and the reason, instead of a silent gap in what
-  was captured. The same warning appears on `nomad push` and in the `nomad diff` and `--dry-run`
-  previews, which report what they could not read rather than dropping it from the plan.
-  The warning covers the mirror step only: fix the permissions before re-running, because a later
-  step in the same pull reads that file too. A file you delete from a shared directory is handled
-  the same way: it is removed from the sync repo by the next pull, exactly as deleting inside a
-  symlinked directory already removes it on macOS or Linux, and that pull names the removal in the
-  same `Symlinks` section, on its own row right after any files it captured. The removal is left
+  name it captured, so the copy is visible instead of silent. If one of those names cannot be read
+  at all, because another program is holding it open or its permissions changed, the mirror leaves
+  it out and warns, naming the file and the reason, instead of a silent gap in what was captured.
+  `nomad push` prints the same warning. The `nomad diff` and `--dry-run` previews print a read-only
+  version of it, saying nothing was captured for the file and nothing was written, because they were
+  never going to write to the repo; either way they report what they could not read rather than
+  dropping it from the plan. A later step in the same pull reads that file too, and it no longer
+  stops there: it warns as well, naming the file, saying whether the file is gone or may be
+  part-updated, and pointing at the backup copy when it made one, then skips that one name and
+  finishes the rest of the pull. Close whatever is holding the file, or fix its permissions, and run
+  `nomad pull` again to pick it up. A file you delete from a shared directory is handled the same
+  way: it is removed from the sync repo by the next pull, exactly as deleting inside a symlinked
+  directory already removes it on macOS or Linux, and that pull names the removal in the same
+  `Symlinks` section, on its own row right after any files it captured. The removal is left
   uncommitted, so it publishes on your next push and passes the same secret scan as everything else,
   and the file is snapshotted to the backup dir first. The safety rule behind this: nomad only
   removes a file it has a record of having given this machine, so a repo file this machine has never
   synced is never touched. That record is also why the first pull after you upgrade to this version
   is an exception: there is nothing to compare against yet, so a deletion made before that pull
-  comes back once, and deleting it again sticks. If a file you created has
-  the same name as one another machine just created, the pull stops before it overlays your copy:
-  the only thing it removes is the temporary copy it had just made inside the sync repo, and it
-  tells you which file under `~/.claude/` to move or rename, with the two ways to finish.
-  Nothing is lost either way: your file stays exactly as you left it and the update simply waits for
-  the next pull. `nomad pull --force-remote` recovers a wedged sync repo. When the repo is stuck
-  mid-rebase or mid-merge, recovery resets it to match the shared repo, and on native Windows that
-  reset also replaces your shared config with the repo's copy; the pull warns naming how many shared
-  names it restored from the repo copy, with your previous copies snapshotted to the backup dir
-  first. A different stuck state, an unfinished index with nothing to abort, recovers by clearing
-  the index without touching your working files, so on native Windows your shared config is left
-  exactly as it was. This is the same behavior claude-nomad's `skills/` sync already has on every
-  platform.
+  comes back once, and deleting it again sticks. If a file you created has the same name as one
+  another machine just created, the pull stops before it overlays your copy: the only thing it
+  removes is the temporary copy it had just made inside the sync repo, and it tells you which file
+  under `~/.claude/` to move or rename, with the two ways to finish. Nothing is lost either way:
+  your file stays exactly as you left it and the update simply waits for the next pull. `nomad pull
+  --force-remote` recovers a wedged sync repo. When the repo is stuck mid-rebase or mid-merge,
+  recovery resets it to match the shared repo, and on native Windows that reset also replaces your
+  shared config with the repo's copy; the pull warns naming how many shared names it restored from
+  the repo copy, with your previous copies snapshotted to the backup dir first. A different stuck
+  state, an unfinished index with nothing to abort, recovers by clearing the index without touching
+  your working files, so on native Windows your shared config is left exactly as it was. This is the
+  same behavior claude-nomad's `skills/` sync already has on every platform.
 - **The copy-in never carries your Claude secrets or session history.** The same mirror that
   captures your Windows edits into the sync repo refuses to copy any path with a part on
   claude-nomad's never-sync list, whether that part is a directory along the way or the file name

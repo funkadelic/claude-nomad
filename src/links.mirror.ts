@@ -181,6 +181,23 @@ function notShared(policy: SharedMirrorPolicy, target: string): boolean {
  * as data loss on a directory that is deliberately host-private. The wording
  * claims nothing about the rest of the command, only about this mirror pass.
  *
+ * The warning has two arms, branched on `opts.dryRun`. Three of this
+ * function's four callers never write to the repo at all: `nomad diff` and
+ * `pull --dry-run` (via `preview.ts`'s call into this mirror), the pre-pull
+ * reconcile planner, and the wedge-recovery discard tally, all of which pass
+ * `dryRun: true`. Telling any of them that a name "was left out of shared/
+ * this run" claims an omitted write for work that was never scheduled, which
+ * is a false statement about what actually happened.
+ *
+ * The read-only arm's wording is scoped to that claim and nothing wider,
+ * because `dryRun` means "this call writes nothing", not "the user is looking
+ * at a preview". `describeSkippedMirrorDiscard` (`commands.pull.win32.ts`)
+ * passes `dryRun: true` from inside a REAL `nomad pull` on the force-remote
+ * recovery path, so an arm framed around previewing would tell a user
+ * mid-pull that they are previewing. The one wet caller,
+ * `reconcileSharedLinksBeforePull` (no `dryRun` key), keeps the original
+ * wording unchanged: its claim about a skipped write is accurate there.
+ *
  * @param name - Shared name from `allSharedLinks`.
  * @param claude - `claudeHome()`, resolved once by the caller.
  * @param repo - `repoHome()`, resolved once by the caller.
@@ -205,6 +222,12 @@ function mirrorOneSharedName(
     // would have skipped anyway, so an ACL change on ~/.claude/ reports the one
     // name it actually cost rather than one line per shared name.
     if (notShared(policy, target)) return;
+    if (opts.dryRun === true) {
+      warn(
+        `${name} could not be read (${(err as Error).message}), so nothing was captured for it and nothing was written. A pull that captures shared edits would skip it too. Check its permissions, or whether another program has it open`,
+      );
+      return;
+    }
     warn(
       `${name} could not be read (${(err as Error).message}), so it was left out of shared/ this run. Check its permissions, or whether another program has it open`,
     );
