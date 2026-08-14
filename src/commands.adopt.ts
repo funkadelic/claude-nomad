@@ -82,6 +82,54 @@ function isValidAdoptName(name: string): boolean {
 }
 
 /**
+ * Clear the partial `~/.claude/<name>` a failed copy-back can leave behind.
+ *
+ * Not tidiness: the win32 push mirror (`syncSharedLinksPush` -> `copyExtrasFiltered`)
+ * WIPES `shared/<name>` and rebuilds it from whatever is at the host path, so a
+ * truncated remnant left here would replace the fully adopted content in the repo
+ * on the next push and propagate that loss to every other host. An absent host
+ * entry makes the mirror skip the name entirely, which is the safe state. The
+ * remnant is always a strict subset of `shared/<name>` (the copy into the repo
+ * completed before the source was removed), so nothing unique is discarded.
+ *
+ * Best-effort by necessity: whatever blocked the copy usually blocks this too.
+ * The caller reports the outcome rather than assuming it.
+ *
+ * @param linkPath Host-side path to clear.
+ * @returns True when the path is gone afterwards.
+ */
+function clearPartialCopy(linkPath: string): boolean {
+  try {
+    rmSync(linkPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stage `shared/<name>`, reporting a staging failure as a clause instead of
+ * letting it throw.
+ *
+ * `gitOrFatal` raises its own `NomadFatal`, which would propagate out of the
+ * copy-back catch and replace the whole report with a bare `git add ... failed`,
+ * so the user would never learn the local copy is missing. The failure still has
+ * to be told (an unstaged `shared/<name>` needs its own `git add` before a push
+ * publishes anything), just not at the cost of the message it interrupted.
+ *
+ * @param stage Stages `shared/<name>`.
+ * @returns An empty string on success, or a clause naming the staging failure.
+ */
+function stageOrReport(stage: () => void): string {
+  try {
+    stage();
+    return '';
+  } catch (err) {
+    return ` Staging it failed too (${(err as Error).message}), so it is in the repo but not staged.`;
+  }
+}
+
+/**
  * Restore the host-side copy after a win32 move, failing loud rather than
  * crashing when the destination cannot be written.
  *
@@ -95,20 +143,30 @@ function isValidAdoptName(name: string): boolean {
  *
  * The stage runs BEFORE the throw deliberately. Without it the caller's
  * `git add` is skipped and the user is left with `shared/<name>` on disk but
- * untracked, which no single command finishes; staging first means one
- * `nomad push` still publishes what was adopted.
+ * untracked, which no single command finishes.
+ *
+ * The recovery order is pull BEFORE push, and that order is load-bearing rather
+ * than stylistic: a push mirrors the host path back over `shared/<name>` first,
+ * so pushing while the local copy is missing or partial is what would undo the
+ * adopt. `clearPartialCopy` removes the remnant when it can, and the message
+ * says so when it cannot.
  *
  * The catch is deliberately broad, with no `err.code` dispatch: the copy
  * bottoms out in several different syscalls, each of which can raise a
  * different Windows errno for the same underlying lock, so narrowing would
- * miss real cases rather than filter noise.
+ * miss real cases rather than filter noise. Breadth stops at deliberate
+ * failures: a `NomadFatal` is staged and re-thrown untouched, keeping its own
+ * message and exit code, because the one this path raises (the repo-file
+ * against host-directory collision from `copyExtrasFilteredPreservingBy`) names
+ * the only command that clears it, and wrapping it would append a contradictory
+ * second instruction. Same discipline as `applyOneSharedLinkWin32`.
  *
  * @param name The name being adopted, for the message.
  * @param linkPath Host-side path the copy could not be written to.
  * @param sharedTarget Repo-side source of the copy.
  * @param ts Backup timestamp, named only when a snapshot exists.
  * @param snapshotted True when `backupBeforeWrite` actually wrote a snapshot.
- * @param stage Stages `shared/<name>`; run before throwing.
+ * @param stage Stages `shared/<name>`; run before throwing, either way.
  */
 function restoreWin32LocalCopy(
   name: string,
@@ -121,13 +179,22 @@ function restoreWin32LocalCopy(
   try {
     copySharedLinkPull(sharedTarget, linkPath);
   } catch (err) {
-    stage();
+    if (err instanceof NomadFatal) {
+      stageOrReport(stage);
+      throw err;
+    }
+    const leftover = clearPartialCopy(linkPath)
+      ? ''
+      : ` A partial copy may still be at that path, so do NOT run \`nomad push\` before the pull succeeds: it would replace shared/${name} with the partial copy.`;
+    const stageFailure = stageOrReport(stage);
+    const staged = stageFailure === '' ? ' and staged.' : `.${stageFailure}`;
     const recover = snapshotted ? ` A copy of what it held before is under backup/${ts}/.` : '';
     throw new NomadFatal(
       `adopted ${name} into shared/${name}, but could not restore the local copy at ` +
-        `${linkPath} (${(err as Error).message}). The content is safe in the repo and ` +
-        `staged, so \`nomad push\` still publishes it.${recover} Check its permissions, or ` +
-        `whether another program has it open, then run \`nomad pull\` to recreate it`,
+        `${linkPath} (${(err as Error).message}). The content is safe in the repo` +
+        `${staged}${recover} Check its permissions, or whether another program has it ` +
+        `open, then run \`nomad pull\` to recreate the local copy before your next ` +
+        `\`nomad push\`.${leftover}`,
       { code: EXIT.GENERIC_FAILURE },
     );
   }
