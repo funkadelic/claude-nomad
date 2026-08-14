@@ -931,7 +931,14 @@ describe('applySharedLinks win32 copy branch', () => {
     expect(said[0]).toContain(blocked);
     expect(said[0]).toContain('could not be updated');
     expect(said[0]).toContain('EPERM');
-    expect(said[0]).toContain('it keeps the copy it had before this pull');
+    // The stat is the thing that failed, so nothing was written for this name
+    // and the path cannot be read to say more than that. The probe reports an
+    // unreadable path as still occupied on purpose: claiming it is gone is a
+    // claim nomad cannot support.
+    expect(said[0]).toContain('it may be unchanged, or partly updated');
+    // Nothing was snapshotted (the failure preceded the snapshot), so the WARN
+    // must not send the user to a backup dir that holds no copy.
+    expect(said[0]).not.toContain('backup/');
     expect(said[0]).toContain('The rest of the pull continues');
     expect(said[0]).toContain('another program has it open');
     expect(said[0]).toContain("run 'nomad pull' again to update it");
@@ -978,12 +985,146 @@ describe('applySharedLinks win32 copy branch', () => {
     expect(said[0]).toContain(blockedDst);
     expect(said[0]).toContain('could not be updated');
     expect(said[0]).toContain('EBUSY');
-    expect(said[0]).toContain('it keeps the copy it had before this pull');
+    // The host never had a copy of this name, so a "keeps the copy it had"
+    // reassurance would describe a copy that never existed. The WARN says what
+    // is true of the path instead, and names no backup, because none was taken.
+    expect(said[0]).toContain('nothing is at that path now');
+    expect(said[0]).not.toContain('keeps the copy it had');
+    expect(said[0]).not.toContain('backup/');
     expect(said[0]).toContain('The rest of the pull continues');
     expect(said[0]).toContain('another program has it open');
     expect(said[0]).toContain("run 'nomad pull' again to update it");
     expect(said[0]).not.toContain('were updated');
     expect(existsSync(blockedDst)).toBe(false);
+    expect(readFileSync(join(claudeDir, 'commands', 'foo.md'), 'utf8')).toBe('# shared command\n');
+  });
+
+  it.skipIf(isWin)(
+    'says the entry is gone, and names the snapshot, when the copy fails after the symlink was removed',
+    async () => {
+      // The one transition that actually costs the host its copy: a
+      // symlink-era leftover is removed first, then the copy throws, so
+      // ~/.claude/commands does not exist at all afterwards. A WARN claiming
+      // the previous copy was kept would be exactly inverted here, and the
+      // snapshot is the only way back.
+      mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+      writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+      writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+      const scratch = join(testHome, 'symlink-era-commands');
+      mkdirSync(scratch, { recursive: true });
+      writeFileSync(join(scratch, 'local.md'), '# unpushed local edit\n');
+      const blockedDst = join(claudeDir, 'commands');
+      symlinkSync(scratch, blockedDst);
+      vi.doMock('node:fs', async (importOriginal) => {
+        const actual = await importOriginal<typeof fsModule>();
+        return {
+          ...actual,
+          cpSync: (src: string | URL, dst: string | URL, opts?: fsModule.CopySyncOptions) => {
+            if (String(dst) === blockedDst) throw new Error('EBUSY: resource busy or locked');
+            return actual.cpSync(src, dst, opts);
+          },
+        };
+      });
+      stubPlatform('win32');
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        /* captured */
+      });
+
+      const { applySharedLinks } = await import('./links.ts');
+      expect(() => applySharedLinks('20260813-000002', { projects: {} })).not.toThrow();
+
+      // The symlink is gone and the copy never landed, so the host has
+      // nothing at that path.
+      expect(lstatSync(blockedDst, { throwIfNoEntry: false })).toBeUndefined();
+      const said = errSpy.mock.calls.map((c) => String(c[0]));
+      expect(said).toHaveLength(1);
+      expect(said[0]).toContain(blockedDst);
+      expect(said[0]).toContain('nothing is at that path now');
+      expect(said[0]).not.toContain('keeps the copy it had');
+      // The snapshot ran before the removal, so the WARN can name where the
+      // bytes went; that is the whole recovery path for this transition.
+      expect(said[0]).toContain('backup/20260813-000002/');
+      const snapshot = join(
+        testHome,
+        '.cache',
+        'claude-nomad',
+        'backup',
+        '20260813-000002',
+        'commands',
+      );
+      expect(readFileSync(join(snapshot, 'local.md'), 'utf8')).toBe('# unpushed local edit\n');
+      // The other shared name still lands: one lost entry does not abort the pull.
+      expect(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8')).toBe('# shared\n');
+    },
+  );
+
+  it('re-throws a type-collision fatal instead of downgrading it to a transient-lock WARN', async () => {
+    // shared/CLAUDE.md is a FILE and the host entry is a DIRECTORY, which
+    // copyExtrasFilteredPreservingBy raises as a NomadFatal naming
+    // `nomad pull --force-remote`. Swallowing it would repeat advice that
+    // cannot clear the condition on every pull, while the pull exits 0.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    mkdirSync(join(claudeDir, 'CLAUDE.md'), { recursive: true });
+    writeFileSync(join(claudeDir, 'CLAUDE.md', 'nested.md'), '# host side\n');
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { applySharedLinks } = await import('./links.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    let thrown: unknown;
+    try {
+      applySharedLinks('20260813-000003', { projects: {} });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(NomadFatal);
+    expect((thrown as Error).message).toContain('nomad pull --force-remote');
+    // The fatal reaches the top-level handler on its own terms: no WARN
+    // recasting it as a lock the user could wait out.
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('warns about the snapshot, and leaves the host copy alone, when the pre-write backup fails', async () => {
+    // The failure happens under ~/.cache/claude-nomad/backup/, not at the
+    // link path, so it must not be reported as a permissions problem with the
+    // link path. The copy is abandoned for that name on purpose: overwriting
+    // unbacked would lose the unpushed local edit outright.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new shared content\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unpushed local edit\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        cpSync: (src: string | URL, dst: string | URL, opts?: fsModule.CopySyncOptions) => {
+          if (String(dst).startsWith(backupRoot))
+            throw new Error('ENOSPC: no space left on device');
+          return actual.cpSync(src, dst, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { applySharedLinks } = await import('./links.ts');
+    expect(() => applySharedLinks('20260813-000004', { projects: {} })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('could not snapshot');
+    expect(said[0]).toContain(join(claudeDir, 'CLAUDE.md'));
+    expect(said[0]).toContain('ENOSPC');
+    expect(said[0]).toContain('so it was left as it is');
+    // Not the copy-failure wording: nothing was attempted at the link path.
+    expect(said[0]).not.toContain('could not be updated');
+    expect(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8')).toBe('# unpushed local edit\n');
     expect(readFileSync(join(claudeDir, 'commands', 'foo.md'), 'utf8')).toBe('# shared command\n');
   });
 });
