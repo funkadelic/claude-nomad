@@ -10,6 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -731,6 +732,10 @@ describe('applySharedLinks win32 copy branch', () => {
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
+    // Later cases in this describe re-import links.ts after resetModules, and
+    // restoreAllMocks does not clear a doMock registration, so without this
+    // they would get the throwing lstatSync too.
+    vi.doUnmock('node:fs');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -894,6 +899,40 @@ describe('applySharedLinks win32 copy branch', () => {
       .sort();
 
     expect(previewedNames).toEqual(wetCopiedNames);
+  });
+
+  it('warns and keeps going when a shared name cannot be stat-ed on the host', async () => {
+    // Two shared names so the run is not a no-op: CLAUDE.md is the one blocked
+    // at the stat site, commands/foo.md sorts after it and must still land.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'foo.md'), '# shared command\n');
+    const blocked = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(p) === blocked) throw new Error('EPERM: operation not permitted');
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { applySharedLinks } = await import('./links.ts');
+    expect(() => applySharedLinks('20260813-000000', { projects: {} })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain(blocked);
+    expect(said[0]).toContain('could not be updated');
+    expect(said[0]).toContain('EPERM');
+    expect(existsSync(blocked)).toBe(false);
+    expect(readFileSync(join(claudeDir, 'commands', 'foo.md'), 'utf8')).toBe('# shared command\n');
   });
 });
 

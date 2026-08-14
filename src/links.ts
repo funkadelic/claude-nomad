@@ -172,6 +172,29 @@ export function copySharedLinkPull(src: string, dst: string): void {
  * Kept as a separate function (rather than inlined into `applySharedLinks`)
  * so the win32 loop body stays flat under the cognitive-complexity gate.
  *
+ * The wet path guards `lstatSync` through `copySharedLinkPull` in one
+ * `try`/`catch` per name, so a locked or permission-denied destination cannot
+ * abort the rest of the pull. The catch is deliberately broad (no `err.code`
+ * dispatch): the three calls it spans bottom out in different syscalls
+ * (`lstatSync`, `cpSync`, `readdirSync`, `rmSync`), each of which can raise a
+ * different Windows errno for the same underlying lock, so narrowing would
+ * miss real cases rather than filter noise. It spans the whole write half of
+ * the loop body, not just the stat, because on win32 a lock on the
+ * destination being overwritten is likelier than one on the stat itself, and
+ * `backupBeforeWrite` and `copySharedLinkPull` raise the same errnos a lock
+ * on the stat would. On a throw, exactly one skipped name plus one WARN
+ * naming the path and the underlying message is the failure mode, not an
+ * aborted pull, matching what the host-to-repo mirror (`mirrorOneSharedName`
+ * in `links.mirror.ts`) already does for the identical error class.
+ *
+ * The posix symlink arm of `applySharedLinks`, below, is deliberately left
+ * unguarded. Its per-name failure runs through `ensureSymlink`, which calls
+ * `die`: a clean `NomadFatal` message plus `EXIT.GENERIC_FAILURE`, no crash
+ * report, rather than a raw throw. That failure's trigger is a genuine
+ * misconfiguration (a non-symlink squatting the link path), not a transient
+ * lock, so whether it should also skip-and-continue rather than stop is a
+ * separate design question this phase does not answer.
+ *
  * @param linkNames - Names to materialize (from `allSharedLinks(map)`).
  * @param claude - `claudeHome()` (host `~/.claude` dir).
  * @param repo - `repoHome()` (local sync repo checkout).
@@ -195,14 +218,21 @@ function applySharedLinksWin32(
       emitCopy(onPreview, linkPath, target);
       continue;
     }
-    const stat = lstatSync(linkPath, { throwIfNoEntry: false });
-    if (stat !== undefined) {
-      backupBeforeWrite(linkPath, ts);
-      if (stat.isSymbolicLink()) {
-        rmSync(linkPath, { recursive: true, force: true });
+    try {
+      const stat = lstatSync(linkPath, { throwIfNoEntry: false });
+      if (stat !== undefined) {
+        backupBeforeWrite(linkPath, ts);
+        if (stat.isSymbolicLink()) {
+          rmSync(linkPath, { recursive: true, force: true });
+        }
       }
+      copySharedLinkPull(target, linkPath);
+    } catch (err) {
+      warn(
+        `${linkPath} could not be updated (${(err as Error).message}), so it keeps the copy it had before this pull. The rest of the pull continues. Check its permissions, or whether another program has it open, then run 'nomad pull' again to update it`,
+      );
+      continue;
     }
-    copySharedLinkPull(target, linkPath);
   }
 }
 
