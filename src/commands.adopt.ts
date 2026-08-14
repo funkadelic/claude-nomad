@@ -1,5 +1,5 @@
 import { cpSync, existsSync, lstatSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import {
   backupBase,
@@ -82,6 +82,66 @@ function isValidAdoptName(name: string): boolean {
 }
 
 /**
+ * Report the win32 already-adopted state, when that is what this is.
+ *
+ * win32 has no unprivileged symlink support, so a real (non-symlink) copy at
+ * `linkPath` IS the healthy adopted state there once `shared/<name>` exists,
+ * and so is no local entry at all: the content is in the repo and one
+ * `nomad pull` materializes it. Both are reported the same way, which is why
+ * this is a helper rather than a single branch: `cmdAdopt` asks it once for the
+ * absent case and once for the real-entry case, on either side of the
+ * symlink arm that has to stay ahead of both.
+ *
+ * @param name The name being adopted, for the message.
+ * @param sharedTarget Repo-side `shared/<name>` path to probe.
+ * @returns True when the message was printed and the caller should return.
+ */
+function reportWin32AlreadyAdopted(name: string, sharedTarget: string): boolean {
+  if (process.platform !== 'win32' || !lexists(sharedTarget)) return false;
+  log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
+  return true;
+}
+
+/**
+ * Run the precondition matrix, reporting whether adopt should stop here.
+ *
+ * Order is load-carrying and reads as most-specific-state-first: an absent
+ * local entry, then a symlink, then the win32 copy-sync state, then the
+ * would-clobber refusal.
+ *
+ * The win32 check appears twice by design, on either side of the symlink arm.
+ * An absent local entry whose `shared/<name>` exists is the state a failed
+ * copy-back leaves behind (that path clears the partial copy while the repo
+ * side stays populated), and answering "nothing to adopt" there would hide the
+ * `nomad pull` that brings the content back. But a real symlink at `linkPath`
+ * is the more specific state, and on a win32 host with Developer Mode (or an
+ * install predating the copy-sync model) both conditions hold at once, so the
+ * symlink arm has to win there or the message names the wrong mechanism.
+ *
+ * @param name The name being adopted.
+ * @param linkPath Absolute `CLAUDE_HOME/<name>`.
+ * @param sharedTarget Absolute `REPO_HOME/shared/<name>`.
+ * @returns True when a message was printed and adopt should return.
+ */
+function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): boolean {
+  if (!existsSync(linkPath)) {
+    if (reportWin32AlreadyAdopted(name, sharedTarget)) return true;
+    log(`${name}: nothing to adopt (not present in ~/.claude/)`);
+    return true;
+  }
+  if (lstatSync(linkPath).isSymbolicLink()) {
+    log(`${name}: already adopted (already a symlink)`);
+    return true;
+  }
+  if (reportWin32AlreadyAdopted(name, sharedTarget)) return true;
+  if (lexists(sharedTarget)) {
+    fail(`${name}: shared/${name} already exists; would clobber. Remove it first.`);
+    process.exit(1);
+  }
+  return false;
+}
+
+/**
  * Clear the partial `~/.claude/<name>` a failed copy-back can leave behind.
  *
  * Not tidiness: the win32 push mirror (`syncSharedLinksPush` -> `copyExtrasFiltered`)
@@ -95,12 +155,28 @@ function isValidAdoptName(name: string): boolean {
  * Best-effort by necessity: whatever blocked the copy usually blocks this too.
  * The caller reports the outcome rather than assuming it.
  *
+ * A recursive force-remove earns a containment check at the point of use, not
+ * only at the entry point. `cmdAdopt` already rejects any name carrying a path
+ * separator or a `.`/`..` segment before it builds `linkPath`, so this cannot
+ * fire today; it is here so the removal stays bounded to one direct child of
+ * `~/.claude/` if a future caller reaches it by another route, and so the
+ * bound is checkable where the destructive call is rather than three guards
+ * away. Refusing reports as "not cleared", which is the safe direction: the
+ * caller then warns against pushing.
+ *
+ * The bound is re-read from `claudeHome()` rather than taken from the caller,
+ * so the check compares against the configured root instead of against the
+ * same value the path was built from, which would make it vacuous.
+ *
  * @param linkPath Host-side path to clear.
  * @returns True when the path is gone afterwards.
  */
 function clearPartialCopy(linkPath: string): boolean {
+  const resolved = resolve(linkPath);
+  /* c8 ignore next -- unreachable: cmdAdopt's name guards run first */
+  if (dirname(resolved) !== resolve(claudeHome())) return false;
   try {
-    rmSync(linkPath, { recursive: true, force: true });
+    rmSync(resolved, { recursive: true, force: true });
     return true;
   } catch {
     return false;
@@ -321,37 +397,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const linkPath = join(claude, name);
   const sharedTarget = join(repo, 'shared', name);
 
-  // Precondition checks -- in order: already adopted (win32 copy-sync),
-  // absent, already symlink, would clobber.
-  //
-  // win32 has no unprivileged symlink support, so a real (non-symlink) copy at
-  // linkPath IS the healthy adopted state there once shared/<name> exists.
-  // Short-circuit before the clobber guard below so re-running adopt on an
-  // already-adopted win32 name is a safe no-op, not a refused "would clobber".
-  //
-  // It also runs BEFORE the absent check, which matters after a failed
-  // copy-back: that path removes the partial local copy, so linkPath is gone
-  // while shared/<name> is fully populated. Checking absence first would answer
-  // "nothing to adopt" and exit 0, hiding the `nomad pull` hint that is the
-  // actual next step. On win32 an absent linkPath with a populated
-  // shared/<name> is never "nothing to adopt": the content is in the repo and
-  // one pull materializes it.
-  if (process.platform === 'win32' && lexists(sharedTarget)) {
-    log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
-    return;
-  }
-  if (!existsSync(linkPath)) {
-    log(`${name}: nothing to adopt (not present in ~/.claude/)`);
-    return;
-  }
-  if (lstatSync(linkPath).isSymbolicLink()) {
-    log(`${name}: already adopted (already a symlink)`);
-    return;
-  }
-  if (lexists(sharedTarget)) {
-    fail(`${name}: shared/${name} already exists; would clobber. Remove it first.`);
-    process.exit(1);
-  }
+  if (adoptStopsEarly(name, linkPath, sharedTarget)) return;
 
   // Dry-run preview -- branch before any mutation
   if (dryRun) {

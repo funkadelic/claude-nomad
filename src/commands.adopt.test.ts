@@ -733,6 +733,29 @@ describe('cmdAdopt win32 copy-back branch', () => {
     expect(diffCached(env)).toContain('shared/my-tools');
   });
 
+  it('win32: a real symlink is reported as a symlink, not as the copy-sync state', async () => {
+    // Both conditions hold at once on a win32 host with Developer Mode, or one
+    // whose install predates the copy-sync model: linkPath is a symlink AND
+    // shared/<name> exists. The symlink is the more specific state, so the
+    // copy-sync message would name the wrong mechanism. Pinned with the
+    // platform stubbed because the real-win32 runner is the only other place
+    // this ordering shows up.
+    addSharedDir(env, 'my-dir');
+    const linkPath = join(env.claudeHome, 'my-dir');
+    const targetPath = join(env.repoHome, 'shared', 'my-dir');
+    mkdirSync(targetPath, { recursive: true });
+    symlinkSync(targetPath, linkPath);
+
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-dir')).not.toThrow();
+
+    const out = logOutput(env);
+    expect(out).toContain('already adopted (already a symlink)');
+    expect(out).not.toContain('win32 copy-sync');
+    expect(diffCached(env)).toBe('');
+  });
+
   it('non-win32 (posix): the already-symlink branch is unchanged, not the win32 short-circuit', async () => {
     // posix: an already-symlinked linkPath takes the existing posix
     // already-adopted branch, never the win32-only message.
