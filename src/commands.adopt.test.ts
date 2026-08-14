@@ -803,32 +803,32 @@ describe('isDirectChildOf', () => {
   // so a test routed through the command could not tell a working bound from
   // an inverted one.
   it('accepts a direct child', async () => {
-    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    const { isDirectChildOf } = await import('./commands.adopt.recover.ts');
     expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/commands')).toBe(true);
   });
 
   it('accepts a direct child when the root carries a trailing separator', async () => {
-    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    const { isDirectChildOf } = await import('./commands.adopt.recover.ts');
     expect(isDirectChildOf('/home/u/.claude/', '/home/u/.claude/commands')).toBe(true);
   });
 
   it('rejects the root itself', async () => {
-    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    const { isDirectChildOf } = await import('./commands.adopt.recover.ts');
     expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude')).toBe(false);
   });
 
   it('rejects a nested grandchild, not just an escape', async () => {
-    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    const { isDirectChildOf } = await import('./commands.adopt.recover.ts');
     expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/commands/nested')).toBe(false);
   });
 
   it('rejects a traversal that climbs out', async () => {
-    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    const { isDirectChildOf } = await import('./commands.adopt.recover.ts');
     expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude/../.ssh/id_rsa')).toBe(false);
   });
 
   it('rejects a sibling whose name merely starts with the root', async () => {
-    const { isDirectChildOf } = await import('./commands.adopt.ts');
+    const { isDirectChildOf } = await import('./commands.adopt.recover.ts');
     expect(isDirectChildOf('/home/u/.claude', '/home/u/.claude-evil/x')).toBe(false);
   });
 });
