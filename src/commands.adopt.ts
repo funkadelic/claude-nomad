@@ -188,7 +188,10 @@ function performAdoptMove(
   // Only win32 reaches here with a failed removal, and the copy-back guard
   // has to know that so it never clears the intact original.
   if (process.platform === 'win32') {
-    restoreWin32LocalCopy(name, linkPath, sharedTarget, ts, snapshotted, stage, removal.ok);
+    restoreWin32LocalCopy(name, linkPath, sharedTarget, ts, stage, {
+      snapshotted,
+      sourceRemoved: removal.ok,
+    });
   } else {
     ensureSymlink(linkPath, sharedTarget);
   }

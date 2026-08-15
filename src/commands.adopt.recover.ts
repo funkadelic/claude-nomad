@@ -258,23 +258,29 @@ function describeLeftoverAt(name: string, linkPath: string, sourceRemoved: boole
  * the only command that clears it, and wrapping it would append a contradictory
  * second instruction. Same discipline as `applyOneSharedLinkWin32`.
  *
+ * The two flags travel in an options object rather than as positional
+ * booleans. They mean unrelated things, they sat on either side of `stage`,
+ * and the compiler cannot tell one `boolean` from another, so a swapped pair
+ * would typecheck and then quietly report the wrong recovery: a backup that
+ * was never written, and a clear of the intact original this phase exists to
+ * prevent.
+ *
  * @param name The name being adopted, for the message.
  * @param linkPath Host-side path the copy could not be written to.
  * @param sharedTarget Repo-side source of the copy.
  * @param ts Backup timestamp, named only when a snapshot exists.
- * @param snapshotted True when `backupBeforeWrite` actually wrote a snapshot.
  * @param stage Stages `shared/<name>`; run before throwing, either way.
- * @param sourceRemoved False when the move's own removal of `linkPath` failed,
- *   so whatever is there is the complete original rather than a remnant.
+ * @param opts.snapshotted True when `backupBeforeWrite` actually wrote a snapshot.
+ * @param opts.sourceRemoved False when the move's own removal of `linkPath`
+ *   failed, so whatever is there is the complete original rather than a remnant.
  */
 export function restoreWin32LocalCopy(
   name: string,
   linkPath: string,
   sharedTarget: string,
   ts: string,
-  snapshotted: boolean,
   stage: () => void,
-  sourceRemoved: boolean,
+  opts: { snapshotted: boolean; sourceRemoved: boolean },
 ): void {
   try {
     copySharedLinkPull(sharedTarget, linkPath);
@@ -286,10 +292,12 @@ export function restoreWin32LocalCopy(
       if (fatalStageFailure !== '') warn(`${name}:${fatalStageFailure}`);
       throw err;
     }
-    const leftover = describeLeftoverAt(name, linkPath, sourceRemoved);
+    const leftover = describeLeftoverAt(name, linkPath, opts.sourceRemoved);
     const stageFailure = stageOrReport(stage);
     const staged = stageFailure === '' ? ' and staged.' : `.${stageFailure}`;
-    const recover = snapshotted ? ` A copy of what it held before is under backup/${ts}/.` : '';
+    const recover = opts.snapshotted
+      ? ` A copy of what it held before is under backup/${ts}/.`
+      : '';
     throw new NomadFatal(
       `adopted ${name} into shared/${name}, but could not restore the local copy at ` +
         `${linkPath} (${(err as Error).message}). The content is safe in the repo` +
