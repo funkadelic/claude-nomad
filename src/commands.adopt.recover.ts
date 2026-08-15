@@ -392,10 +392,18 @@ function describePartialShared(name: string, linkPath: string): string {
  * reachable call: `adoptStopsEarly` already refused the run if
  * `shared/<name>` existed. That removal executes inside this same `try`, so a
  * failure there is reported by this guard rather than raw-thrown. Two
- * behavior deltas versus the old bare `cpSync` are deliberate: the loss of
- * `preserveTimestamps` (repo-side files get fresh mtimes, which nothing
- * reads) and the gain of `verbatimSymlinks: true` (a relative symlink target
- * stops being rewritten, matching what the repo-side mirror already does).
+ * behavior deltas versus the old bare `cpSync` are deliberate. The first is
+ * the loss of `preserveTimestamps`: repo-side files get fresh mtimes, which
+ * nothing reads. The second is `verbatimSymlinks: true`, which keeps a
+ * relative symlink target as the literal string it is instead of rewriting
+ * it to an absolute path anchored at the source, matching what the repo-side
+ * mirror already does to this same destination. That second one is accepted
+ * with its cost, not merely target-preserving: a link whose relative target
+ * climbs OUT of the adopted tree (`../skills/x`) is now relative to the repo
+ * rather than to `~/.claude/`, so it dangles where the old rewrite would have
+ * kept it resolving. Consistency with the mirror wins because the alternative
+ * is publishing an absolute host path into a repo every other host reads, and
+ * `commands.adopt.test.ts` pins both halves of the behavior.
  *
  * The catch is deliberately broad, with no `err.code` dispatch, for the reason
  * given on `restoreWin32LocalCopy`: the copy bottoms out in several syscalls

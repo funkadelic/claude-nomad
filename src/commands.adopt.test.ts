@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -494,6 +495,44 @@ describe('cmdAdopt (happy path and move sequence)', () => {
       expect(readFileSync(join(sharedTarget, 'root.txt'), 'utf8')).toBe('root\n');
     },
   );
+
+  // Symlink targets inside the adopted tree are copied verbatim, which is a
+  // deliberate behavior change and is user-visible for the escaping case.
+  it.skipIf(isWin)('copies relative symlink targets verbatim, escaping ones included', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const subDir = join(linkPath, 'sub');
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, 'real.txt'), 'real\n');
+    symlinkSync('sub/real.txt', join(linkPath, 'stays-inside'));
+
+    // A sibling of the adopted tree, so this link's target climbs out of it.
+    mkdirSync(join(env.claudeHome, 'neighbour'), { recursive: true });
+    writeFileSync(join(env.claudeHome, 'neighbour', 'outside.txt'), 'outside\n');
+    symlinkSync('../neighbour/outside.txt', join(linkPath, 'escapes'));
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    // The target string is preserved rather than rewritten to an absolute
+    // host path, which is what the repo-side mirror already does to the same
+    // destination. A link that stays inside the tree therefore keeps
+    // resolving, to the copy in the repo.
+    expect(readlinkSync(join(sharedTarget, 'stays-inside'))).toBe('sub/real.txt');
+    expect(readFileSync(join(sharedTarget, 'stays-inside'), 'utf8')).toBe('real\n');
+
+    // A link that climbs out of the tree is now relative to the repo instead
+    // of to ~/.claude/, so it dangles. Pinned rather than left incidental: it
+    // is the one user-visible cost of copying targets verbatim, and the copy
+    // says so in its own docstring.
+    expect(readlinkSync(join(sharedTarget, 'escapes'))).toBe('../neighbour/outside.txt');
+    expect(existsSync(join(sharedTarget, 'escapes'))).toBe(false);
+    // The host-side original is untouched by that, and still resolves.
+    expect(readFileSync(join(env.claudeHome, 'neighbour', 'outside.txt'), 'utf8')).toBe(
+      'outside\n',
+    );
+  });
 
   // Dry-run is a true no-op
   it('dry-run: zero fs writes, zero git mutations, prints would-do lines', async () => {
