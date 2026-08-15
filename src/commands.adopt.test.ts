@@ -617,14 +617,47 @@ describe('cmdAdopt (happy path and move sequence)', () => {
 // The preflight never-sync refusal: end-to-end, ahead of every mutation
 // ---------------------------------------------------------------------------
 
+/**
+ * Divert `readdirSync` so the never-sync scan sees a clean host root while
+ * the real tree on disk still carries `deniedBasename`, provoking the window
+ * between the preflight scan and the filtered copy that the real race cannot
+ * be provoked from vitest. Only the ONE `readdirSync(root, ...)` call the
+ * scan itself makes is diverted; every other call passes straight through,
+ * including whatever `cpSync` does internally to walk the tree it copies,
+ * which does not go through this module's exported `readdirSync`. So the
+ * copy still sees, and filters, the real entry independently of what the
+ * scan saw.
+ *
+ * @param root Absolute host root the scan reads (`CLAUDE_HOME/<name>`).
+ * @param deniedBasename The denied entry's basename to hide from the scan only.
+ */
+function mockScanBlindToEntry(root: string, deniedBasename: string): void {
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof fsModule>();
+    return {
+      ...actual,
+      readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
+        if (String(args[0]) !== root) {
+          return actual.readdirSync(...args);
+        }
+        const entries = actual.readdirSync(...args) as unknown as fsModule.Dirent[];
+        return entries.filter((entry) => entry.name !== deniedBasename);
+      },
+    };
+  });
+}
+
 describe('cmdAdopt never-sync refusal', () => {
   let env: Env;
+  const realPlatform = process.platform;
 
   beforeEach(() => {
     env = makeAdoptEnv();
   });
 
   afterEach(() => {
+    stubPlatform(realPlatform);
+    vi.doUnmock('node:fs');
     teardownAdoptEnv(env);
   });
 
@@ -659,6 +692,184 @@ describe('cmdAdopt never-sync refusal', () => {
     expect(readFileSync(join(sessionsDir, 'transcript.jsonl'), 'utf8')).toBe('{}\n');
     expect(diffCached(env)).toBe('');
     expect(existsSync(join(env.testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
+  it('refuses a denied file at the tree root, naming it and its matched segment', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(linkPath, 'settings.local.json'), '{}\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      cmdAdopt('my-tools');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
+    expect(fatal.message).toContain('settings.local.json');
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(sharedTarget)).toBe(false);
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(diffCached(env)).toBe('');
+    expect(existsSync(join(env.testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+
+  it('refuses a denied file nested one level down, naming its relative path', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const subDir = join(linkPath, 'sub');
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(subDir, 'history.jsonl'), '{}\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      cmdAdopt('my-tools');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
+    expect(fatal.message).toContain('sub/history.jsonl');
+    expect(fatal.message).toContain('history.jsonl');
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(sharedTarget)).toBe(false);
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('--dry-run refuses with the same message and code as the real run, and previews nothing', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const sessionsDir = join(linkPath, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(sessionsDir, 'transcript.jsonl'), '{}\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let wetCaught: unknown;
+    try {
+      cmdAdopt('my-tools');
+    } catch (err) {
+      wetCaught = err;
+    }
+    let dryCaught: unknown;
+    try {
+      cmdAdopt('my-tools', { dryRun: true });
+    } catch (err) {
+      dryCaught = err;
+    }
+
+    expect(wetCaught).toBeInstanceOf(NomadFatal);
+    expect(dryCaught).toBeInstanceOf(NomadFatal);
+    const wetFatal = wetCaught as InstanceType<typeof NomadFatal>;
+    const dryFatal = dryCaught as InstanceType<typeof NomadFatal>;
+    // String equality, not a substring check: this is what proves the
+    // refusal call sits ahead of the `if (dryRun)` branch rather than merely
+    // appearing to.
+    expect(dryFatal.message).toBe(wetFatal.message);
+    expect(dryFatal.code).toBe(wetFatal.code);
+
+    const out = logOutput(env);
+    expect(out).not.toContain('would backup');
+    expect(out).not.toContain('would move');
+    expect(out).not.toContain('would stage');
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(sharedTarget)).toBe(false);
+    expect(diffCached(env)).toBe('');
+  });
+
+  it.skipIf(isWin)(
+    'a clean host tree still adopts: symlink at source, populated shared/<name>',
+    async () => {
+      addSharedDir(env, 'my-tools');
+      const linkPath = join(env.claudeHome, 'my-tools');
+      const subDir = join(linkPath, 'sub');
+      mkdirSync(subDir, { recursive: true });
+      writeFileSync(join(linkPath, 'root.txt'), 'root\n');
+      writeFileSync(join(subDir, 'nested.txt'), 'nested\n');
+
+      const { cmdAdopt, ADOPT_PUSH_HINT } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+      const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+      expect(existsSync(join(sharedTarget, 'root.txt'))).toBe(true);
+      expect(existsSync(join(sharedTarget, 'sub', 'nested.txt'))).toBe(true);
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      expect(diffCached(env)).toContain('shared/my-tools');
+      expect(logOutput(env)).toContain(ADOPT_PUSH_HINT);
+    },
+  );
+
+  it('a clean host tree still adopts on win32: real copy at source, populated shared/<name>', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const subDir = join(linkPath, 'sub');
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(linkPath, 'root.txt'), 'root\n');
+    writeFileSync(join(subDir, 'nested.txt'), 'nested\n');
+
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(join(sharedTarget, 'root.txt'))).toBe(true);
+    expect(existsSync(join(sharedTarget, 'sub', 'nested.txt'))).toBe(true);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(diffCached(env)).toContain('shared/my-tools');
+  });
+
+  it('a name that only contains a denied word, rather than matching it exactly, is not caught', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const myTasksDir = join(linkPath, 'my-tasks');
+    mkdirSync(myTasksDir, { recursive: true });
+    writeFileSync(join(linkPath, 'tasks.md'), '# tasks\n');
+    writeFileSync(join(myTasksDir, 'note.txt'), 'note\n');
+    writeFileSync(join(linkPath, 'sessions.json'), '{}\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(join(sharedTarget, 'tasks.md'))).toBe(true);
+    expect(existsSync(join(sharedTarget, 'my-tasks'))).toBe(true);
+    expect(existsSync(join(sharedTarget, 'sessions.json'))).toBe(true);
+    expect(errOutput(env)).toBe('');
+  });
+
+  it('the copy filter strips an entry the scan never saw, proving the backstop is real', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(linkPath, 'settings.local.json'), '{}\n');
+
+    mockScanBlindToEntry(linkPath, 'settings.local.json');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+    expect(process.exitCode).not.toBe(EXIT.GENERIC_FAILURE);
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(join(sharedTarget, 'tool.sh'))).toBe(true);
+    expect(existsSync(join(sharedTarget, 'settings.local.json'))).toBe(false);
   });
 });
 
@@ -1299,7 +1510,11 @@ describe('cmdAdopt win32 copy-back failure', () => {
  * `sharedTarget` this mock sees; the SECOND is the cleanup removal inside
  * `clearPartialShared`. `opts.unclearable` targets the cleanup, so the first
  * removal always passes through to the real `rmSync` and only later ones
- * throw when set.
+ * throw when set. `opts.failLeadingRemoval` targets the opposite end: the
+ * FIRST removal itself throws, proving the arm the `copyExtrasFiltered` swap
+ * newly made reachable (a failure in the primitive's own leading destination
+ * removal, rather than in its `cpSync`) is still caught by the same guard.
+ * When set, `cpSync` is never reached, so `opts.partial` has no effect.
  *
  * @param sharedTarget Destination whose copy should throw.
  * @param message Error message the copy throws.
@@ -1307,11 +1522,14 @@ describe('cmdAdopt win32 copy-back failure', () => {
  *   reproducing the remnant that would otherwise block every retry.
  * @param opts.unclearable When true, also fail the cleanup removal of that
  *   destination, the state where the message has to name the path instead.
+ * @param opts.failLeadingRemoval When true, fail the FIRST removal of
+ *   `sharedTarget` (the copy primitive's own leading `rmSync`) instead of
+ *   letting it pass through to `cpSync`.
  */
 function mockCopyIntoSharedFailure(
   sharedTarget: string,
   message: string,
-  opts: { partial?: boolean; unclearable?: boolean } = {},
+  opts: { partial?: boolean; unclearable?: boolean; failLeadingRemoval?: boolean } = {},
 ): void {
   vi.doMock('node:fs', async (importOriginal) => {
     const actual = await importOriginal<typeof fsModule>();
@@ -1336,6 +1554,9 @@ function mockCopyIntoSharedFailure(
         }
         if (!clearedFirstRemoval) {
           clearedFirstRemoval = true;
+          if (opts.failLeadingRemoval === true) {
+            throw new Error(message);
+          }
           actual.rmSync(...args);
           return;
         }
@@ -1499,6 +1720,32 @@ describe('cmdAdopt copy-into-shared failure', () => {
     expect(out).toContain('already exists as adopted');
     expect(out).toContain(linkPath);
     expect(out).not.toContain('adopt refuses to run while it is there');
+  });
+
+  it("reports a failure in the copy primitive's own leading destination removal", async () => {
+    // copyExtrasFiltered's first statement is its own rmSync(dst); failing
+    // THAT call, rather than the cpSync inside it, proves the arm the
+    // copyExtrasFiltered swap newly made reachable is still caught by
+    // copyIntoSharedOrFatal's inherited guard rather than escaping raw.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+
+    mockCopyIntoSharedFailure(sharedTarget, 'EBUSY: resource busy or locked', {
+      failLeadingRemoval: true,
+    });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+
+    const out = errOutput(env);
+    expect(out).toContain('EBUSY: resource busy or locked');
+    expect(out).toContain('nomad adopt my-tools');
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(diffCached(env)).toBe('');
   });
 });
 
