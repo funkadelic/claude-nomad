@@ -711,6 +711,38 @@ function mockScanBlindToEntry(
   });
 }
 
+/**
+ * Let the preflight scan of `root` through, then make the NEXT listing of it
+ * throw, which is the post-copy re-scan.
+ *
+ * Nothing between the two reads `root` through the JS `readdirSync` binding
+ * (the backup and the copy both bottom out in native `cpSync`), so the second
+ * call is the re-scan and only the re-scan. That arm is otherwise unreachable
+ * from the command: it needs a tree that lists cleanly once and then fails,
+ * which is the transient the guard exists for (an entry removed between the
+ * listing and the type probe, a directory whose permissions changed mid-run).
+ *
+ * @param root Absolute path whose second listing should throw.
+ * @param message Text the thrown error carries, asserted in the report.
+ */
+function mockLateScanFailure(root: string, message: string): void {
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof fsModule>();
+    let sawPreflight = false;
+    return {
+      ...actual,
+      readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
+        if (String(args[0]) !== root) return actual.readdirSync(...args);
+        if (!sawPreflight) {
+          sawPreflight = true;
+          return actual.readdirSync(...args);
+        }
+        throw new Error(message);
+      },
+    };
+  });
+}
+
 describe('cmdAdopt never-sync refusal', () => {
   let env: Env;
   const realPlatform = process.platform;
@@ -987,6 +1019,36 @@ describe('cmdAdopt never-sync refusal', () => {
     expect(readFileSync(join(linkPath, 'settings.local.json'), 'utf8')).toBe('{"host":"local"}\n');
     // Refused cleanly: the leftover is a copy this run made, not something it
     // staged, so the index is where it started.
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('clears the completed shared copy when the post-copy re-scan cannot finish', async () => {
+    // The re-scan failing ends the run exactly as a hit does, with the same
+    // finished copy sitting in the repo. Leaving that one behind would hand
+    // the user a manual rm the sibling arm does for them, and on win32 a
+    // re-run would report the name as already adopted over it.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    mockLateScanFailure(linkPath, 'EACCES: permission denied');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+    const out = errOutput(env);
+    expect(out).toContain('could not scan');
+    expect(out).toContain('EACCES: permission denied');
+    expect(out).toContain('was cleared');
+    // The copy had already returned, so calling what it wrote partial would be
+    // a second false statement on top of the leftover.
+    expect(out).not.toContain('partial');
+
+    expect(existsSync(sharedTarget)).toBe(false);
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
     expect(diffCached(env)).toBe('');
   });
 

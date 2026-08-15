@@ -454,10 +454,19 @@ export function copyIntoSharedOrFatal(
  *
  * Refusing here is close to free, which is what makes it the right answer:
  * `linkPath` is still whole at this point, so the only thing to undo is the
- * partial `shared/<name>`, and the message can still promise that nothing was
- * taken off the host. `clearPartialShared` does that undo for the same reason
- * {@link copyIntoSharedOrFatal} clears it, and the message describes the
- * leftover on the rare run where the clear does not take.
+ * `shared/<name>` the copy just wrote, and the message can still promise that
+ * nothing was taken off the host. `clearPartialShared` does that undo for the
+ * same reason {@link copyIntoSharedOrFatal} clears it, and the message
+ * describes the leftover on the rare run where the clear does not take.
+ *
+ * Both of this gate's exits get that treatment, which is why the state is a
+ * thunk rather than a string handed to `scanOrFatal`. A re-scan that cannot
+ * FINISH ends the run just as surely as one that finds something, and it ends
+ * it with the same completed copy sitting in the repo, so leaving that one
+ * uncleared would hand the user a manual `rm` where the sibling arm one line
+ * below does it for them (and, on win32, a re-run that reports the name as
+ * already adopted over it). Built eagerly, it also had to describe the copy as
+ * partial, which it is not: this gate runs only after the copy returned.
  *
  * What it cannot promise is that nothing was WRITTEN. `backupBeforeWrite` has
  * already run by this point, and `backupUnder` snapshots the tree with a plain
@@ -488,20 +497,19 @@ export function refuseLateDeniedEntries(
   repo: string,
   opts: { snapshotted: boolean; ts: string },
 ): void {
-  const untouched = `Nothing was removed from ${linkPath}.`;
   const snapshot = opts.snapshotted
     ? ` A plain snapshot of ${linkPath} taken before the copy is under backup/${opts.ts}/; it is ` +
       `unfiltered, so any never-sync entry under that path is in it too.`
     : '';
-  const leftover = describePartialShared(name, linkPath);
-  const late = scanOrFatal(name, linkPath, `${untouched}${leftover}${snapshot}`);
+  const stateNow = (): string =>
+    clearPartialShared(sharedTarget, repo)
+      ? `shared/${name} was cleared, and nothing was removed from ${linkPath}.${snapshot}`
+      : `Nothing was removed from ${linkPath}.${describePartialShared(name, linkPath)}${snapshot}`;
+  const late = scanOrFatal(name, linkPath, stateNow);
   if (late.length === 0) return;
-  const state = clearPartialShared(sharedTarget, repo)
-    ? `shared/${name} was cleared, and nothing was removed from ${linkPath}.${snapshot}`
-    : `${untouched}${leftover}${snapshot}`;
   throw deniedEntriesRefusal(name, linkPath, late, {
     found: `never-sync content appeared under ${linkPath} after the preflight scan`,
-    state,
+    state: stateNow(),
   });
 }
 

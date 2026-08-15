@@ -117,15 +117,19 @@ export function scanDeniedEntries(root: string): DeniedEntry[] {
  *
  * @param name The name being adopted, for the message and the re-run hint.
  * @param root Absolute path to scan (`CLAUDE_HOME/<name>`).
- * @param state A finished sentence saying what is on disk right now. It is a
- *   parameter because it is the one thing that differs between the two gates:
- *   the preflight has changed nothing, while the re-scan that runs after the
- *   copy has `shared/<name>` written already.
+ * @param state Produces a finished sentence saying what is on disk right now.
+ *   It is a parameter because it is the one thing that differs between the two
+ *   gates: the preflight has changed nothing, while the re-scan that runs after
+ *   the copy has `shared/<name>` written already. It is a thunk rather than a
+ *   string because the gate that has something to undo has to DO the undo
+ *   before it can describe the result, and only on the arm that actually
+ *   reports. Built eagerly, the failure arm here could only ever describe a
+ *   state it had not reached, and would leave the caller's cleanup unrun.
  * @returns Every denied entry found, sorted by `path`, or `[]` when clean.
  * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when the scan could not finish,
  *   naming the path and quoting the caught text.
  */
-export function scanOrFatal(name: string, root: string, state: string): DeniedEntry[] {
+export function scanOrFatal(name: string, root: string, state: () => string): DeniedEntry[] {
   try {
     return scanDeniedEntries(root);
   } catch (err) {
@@ -143,7 +147,7 @@ export function scanOrFatal(name: string, root: string, state: string): DeniedEn
     // that fails the same way.
     throw new NomadFatal(
       `cannot adopt ${name}: could not scan ${root} for never-sync content (${text}). ` +
-        `${state} Check that it is readable and not being written to, then ` +
+        `${state()} Check that it is readable and not being written to, then ` +
         `run \`nomad adopt ${name}\` again.`,
       { code: EXIT.GENERIC_FAILURE },
     );
@@ -266,7 +270,7 @@ export function deniedEntriesRefusal(
  */
 export function refuseDeniedEntries(name: string, root: string): void {
   const nothingChanged = 'Nothing was changed.';
-  const hits = scanOrFatal(name, root, nothingChanged);
+  const hits = scanOrFatal(name, root, () => nothingChanged);
   if (hits.length === 0) return;
   throw deniedEntriesRefusal(name, root, hits, {
     found: `${root} contains never-sync content`,
