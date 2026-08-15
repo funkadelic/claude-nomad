@@ -226,21 +226,26 @@ normally. On macOS, Linux, and WSL2 the same leftover is a real directory where 
 belongs, so adopt stops with an error and exits 1, having staged `shared/<name>` anyway: run
 `nomad pull`, which backs that directory up and replaces it with the symlink.
 
-Before touching anything, adopt checks the whole `~/.claude/<name>` tree for names on the never-sync
-list (see `NEVER_SYNC` in `src/config.never-sync.ts` for the authoritative set). That list is wider
-than the credential entries: alongside `settings.local.json`, `.credentials.json`, `.env` and
-`id_rsa` it holds ordinary-sounding directory names such as `sessions`, `tasks`, `plans`, `todos`
-and `cache`, which are host-local runtime state under `~/.claude/` and never sync in either
-direction. The check matches the name and never looks at the content, so a directory of your own
-that happens to be spelled exactly like one of those is refused too, and the error names which one:
-that is a name collision, not a secret it found. Those names are exactly what the sync repo refuses
-to publish, so moving them into `shared/<name>` would only defer the failure to your next
-`nomad push`. If the check finds any, adopt stops before the backup and before anything is copied or
-moved, so nothing on your machine or in the repo has changed; the error lists every offending path
-relative to `~/.claude/<name>/` together with the name that matched, and exits 1. `--dry-run`
-answers exactly the same way, with the same exit code, rather than previewing a move it would
-refuse. To clear it, either move those paths out of `~/.claude/<name>/` or rename one that only
-collides by coincidence, then run `nomad adopt <name>` again.
+Before touching anything, adopt checks the whole `~/.claude/<name>` tree against two separate lists,
+both in `src/config.never-sync.ts`. The first is a list of exact names, `NEVER_SYNC`, and it is
+wider than the credential entries you would expect: alongside `settings.local.json` and
+`.credentials.json` it holds ordinary-sounding directory names such as `sessions`, `tasks`, `plans`,
+`todos` and `cache`, which are host-local runtime state under `~/.claude/` and never sync in either
+direction. The second is a list of credential filename shapes, `SECRET_FILE_PATTERNS`, which catches
+`.env` and `.env.local`, `id_rsa`, `credentials`, `.netrc`, `.npmrc`, and anything ending in
+`.pem`, `.key`, `.p12` or `.pfx`. Neither list looks inside a file, so a directory of your own that
+happens to be spelled exactly like a never-sync name is refused too: that is a name collision, not a
+secret it found. Both kinds are exactly what the sync repo refuses to publish, so moving them into
+`shared/<name>` would only defer the failure to your next `nomad push`.
+
+If the check finds anything, adopt stops before the backup and before anything is copied or moved,
+so nothing on your machine or in the repo has changed; the error lists every offending path relative
+to `~/.claude/<name>/`, says which of the two lists caught it, and exits 1. `--dry-run` answers
+exactly the same way, with the same exit code, rather than previewing a move it would refuse. To
+clear it, move those paths out of `~/.claude/<name>/` and run `nomad adopt <name>` again. Renaming
+works too for a name collision, since the spelling is the whole of the match and the error quotes
+the name to rename away from. It does not work for a credential filename shape, where the extension
+or the whole filename is what matched, so a new name in the same shape is refused identically.
 
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
