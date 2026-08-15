@@ -198,6 +198,12 @@ describe('refuseDeniedEntries', () => {
       expect(fatal.message).toContain(scanRoot);
       expect(fatal.message).toContain('EACCES: permission denied');
       expect(fatal.message).toContain('Nothing was changed.');
+      // The catch spans several unrelated causes (an unreadable directory, an
+      // entry removed mid-listing, a tree deep enough to exhaust the stack),
+      // so it quotes the one it caught instead of naming permissions as the
+      // reason and sending the user on a retry that fails the same way.
+      expect(fatal.message).toContain('readable and not being written to');
+      expect(fatal.message).not.toContain('Check its permissions');
     });
   });
 

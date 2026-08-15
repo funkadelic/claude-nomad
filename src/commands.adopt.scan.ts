@@ -116,9 +116,10 @@ export function scanDeniedEntries(root: string): DeniedEntry[] {
  *
  * @param name The name being adopted, for the message and the re-run hint.
  * @param root Absolute path to scan (`CLAUDE_HOME/<name>`).
- * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when `root` could not be read,
- *   naming the path and quoting the caught text, so an unreadable host tree
- *   is reported as this command's own failure rather than a crash report.
+ * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when `root` could not be
+ *   scanned, naming the path and quoting the caught text, so a tree the scan
+ *   cannot finish is reported as this command's own failure rather than a
+ *   crash report.
  * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when `root` carries one or more
  *   never-sync entries, naming every offending path and its matched segment.
  */
@@ -133,9 +134,16 @@ export function refuseDeniedEntries(name: string, root: string): void {
     // cross-module export for one consumer.
     const message = (err as Error | undefined)?.message;
     const text = typeof message === 'string' ? message : String(err);
+    // The cause is quoted rather than diagnosed. This catch is broad on
+    // purpose (an unreadable directory, an entry removed between the listing
+    // and the type probe a `Dirent` resolves with, a tree deep enough to
+    // exhaust the stack), and naming one of those as THE reason would send
+    // the user to check permissions that were never the problem, on a retry
+    // that fails the same way.
     throw new NomadFatal(
       `cannot adopt ${name}: could not scan ${root} for never-sync content (${text}). ` +
-        `Nothing was changed. Check its permissions, then run \`nomad adopt ${name}\` again.`,
+        `Nothing was changed. Check that it is readable and not being written to, then ` +
+        `run \`nomad adopt ${name}\` again.`,
       { code: EXIT.GENERIC_FAILURE },
     );
   }
