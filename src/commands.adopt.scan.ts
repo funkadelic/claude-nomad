@@ -42,7 +42,7 @@ export type DeniedEntry = { path: string; matched: string | null };
  * @returns `p` with every backslash rewritten to a forward slash.
  */
 function toForwardSlash(p: string): string {
-  return p.replace(/\\/g, '/');
+  return p.replaceAll('\\', '/');
 }
 
 /**
