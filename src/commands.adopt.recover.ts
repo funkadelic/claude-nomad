@@ -18,6 +18,30 @@ import { copySharedLinkPull } from './links.ts';
 import { warn, NomadFatal } from './utils.ts';
 
 /**
+ * The text to quote for a caught value, whatever was actually thrown.
+ *
+ * Every message this module builds ends with the cause in parentheses, and
+ * reading `.message` off an unknown directly renders the literal `undefined`
+ * for anything that is not an `Error`, which is the one place a failure report
+ * cannot afford to go vague. The calls these catches span (`cpSync`,
+ * `copySharedLinkPull`, `rmSync`, a staging closure) raise real `Error`s
+ * today, so this is about what a future caller or an injected fault produces,
+ * not a bug on any path in the current tree.
+ *
+ * Structural rather than `instanceof`, matching `isUserAbort` in
+ * `user-abort.ts`: an `Error` crossing a realm boundary fails the prototype
+ * check, and a thrown plain object carrying a `message` still says something
+ * more useful than `[object Object]`.
+ *
+ * @param err The caught value.
+ * @returns Its `message` when it has a string one, otherwise its `String` form.
+ */
+function errorText(err: unknown): string {
+  const message = (err as Error | undefined)?.message;
+  return typeof message === 'string' ? message : String(err);
+}
+
+/**
  * lstat-based existence check that, unlike `existsSync`, does NOT follow
  * symlinks: a dangling symlink at `p` returns true. Used for the clobber
  * guard so an existing (even broken) `shared/<name>` link is refused rather
@@ -174,7 +198,7 @@ function stageOrReport(stage: () => void): string {
     stage();
     return '';
   } catch (err) {
-    return ` Staging it failed too (${(err as Error).message}), so it is in the repo but not staged.`;
+    return ` Staging it failed too (${errorText(err)}), so it is in the repo but not staged.`;
   }
 }
 
@@ -300,7 +324,7 @@ export function restoreWin32LocalCopy(
       : '';
     throw new NomadFatal(
       `adopted ${name} into shared/${name}, but could not restore the local copy at ` +
-        `${linkPath} (${(err as Error).message}). The content is safe in the repo` +
+        `${linkPath} (${errorText(err)}). The content is safe in the repo` +
         `${staged}${recover} Check its permissions, or whether another program has it ` +
         `open, then run \`nomad pull\` to recreate the local copy before your next ` +
         `\`nomad push\`.${leftover}`,
@@ -376,7 +400,7 @@ export function copyIntoSharedOrFatal(
       ? ''
       : describePartialShared(name, linkPath);
     throw new NomadFatal(
-      `could not copy ${linkPath} into shared/${name} (${(err as Error).message}). ` +
+      `could not copy ${linkPath} into shared/${name} (${errorText(err)}). ` +
         `Nothing was removed from ${linkPath}. Check its permissions, or whether ` +
         `another program has it open, then run \`nomad adopt ${name}\` again.${leftover}`,
       { code: EXIT.GENERIC_FAILURE },
@@ -426,7 +450,7 @@ export function removeAdoptSource(linkPath: string): { ok: true } | { ok: false;
   try {
     rmSync(resolved, { recursive: true, force: true });
   } catch (err) {
-    return { ok: false, message: String((err as Error | undefined)?.message ?? err) };
+    return { ok: false, message: errorText(err) };
   }
   if (lexists(resolved)) {
     return { ok: false, message: 'the delete was accepted but the entry is still there' };
