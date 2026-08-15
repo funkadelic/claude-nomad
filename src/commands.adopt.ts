@@ -153,7 +153,9 @@ function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): 
  * same reason the order of those two is what it is: it is the last moment at
  * which the host tree is still whole, so a never-sync entry that arrived
  * after the preflight scan can be refused rather than silently filtered out
- * of the repo and then deleted off the host with everything else.
+ * of the repo and then deleted off the host with everything else. It is handed
+ * the backup outcome because the snapshot above it is unfiltered, so its
+ * refusal has to name the one copy of the denied entry the run did make.
  *
  * The stage is a closure rather than a straight-line call because two of those
  * failure paths have to run it themselves. Handing it down means the success
@@ -193,7 +195,7 @@ function performAdoptMove(
   // and says nothing about it; the removal below would then take that same
   // entry off the host. The source is still whole right here, so this is the
   // last point where refusing costs nothing.
-  refuseLateDeniedEntries(name, linkPath, sharedTarget, repo);
+  refuseLateDeniedEntries(name, linkPath, sharedTarget, repo, { snapshotted, ts });
 
   const removal = removeAdoptSource(linkPath);
   if (!removal.ok) reportSourceRemovalFailure(name, linkPath, removal.message, stage);

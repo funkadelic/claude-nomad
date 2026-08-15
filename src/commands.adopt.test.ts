@@ -722,6 +722,7 @@ describe('cmdAdopt never-sync refusal', () => {
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.doUnmock('node:fs');
+    vi.doUnmock('./utils.fs.ts');
     teardownAdoptEnv(env);
   });
 
@@ -940,6 +941,12 @@ describe('cmdAdopt never-sync refusal', () => {
     expect(out).toContain('settings.local.json');
     expect(out).toContain('was cleared');
     expect(out).toContain(`nothing was removed from ${linkPath}`);
+    // The backup ran before the copy and is not deny-set filtered, so the
+    // denied entry IS somewhere on disk this run put it. Claiming a clean undo
+    // without naming that snapshot would be a false promise.
+    expect(out).toContain('under backup/');
+    expect(out).toContain('it is unfiltered');
+    expect(existsSync(join(env.testHome, '.cache', 'claude-nomad', 'backup'))).toBe(true);
 
     // The host tree is untouched: the denied entry and its neighbour are both
     // still readable, and the path is still a real directory rather than the
@@ -975,8 +982,36 @@ describe('cmdAdopt never-sync refusal', () => {
     expect(out).not.toContain('was cleared');
     expect(out).toContain('A partial shared/my-tools may still be in the repo');
     expect(out).toContain(`Nothing was removed from ${linkPath}`);
+    expect(out).toContain('under backup/');
     expect(existsSync(sharedTarget)).toBe(true);
     expect(readFileSync(join(linkPath, 'settings.local.json'), 'utf8')).toBe('{"host":"local"}\n');
+    // Refused cleanly: the leftover is a copy this run made, not something it
+    // staged, so the index is where it started.
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('does not name a backup dir when the snapshot no-opped', async () => {
+    // backupBeforeWrite reports a no-op when there was nothing to snapshot.
+    // Naming a directory that holds nothing is the mirror-image false promise
+    // of staying silent about one that holds the denied entry.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(linkPath, 'settings.local.json'), '{"host":"local"}\n');
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof utilsFsModule>()),
+      backupBeforeWrite: (): boolean => false,
+    }));
+    mockScanBlindToEntry(linkPath, 'settings.local.json');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+    const out = errOutput(env);
+    expect(out).toContain('settings.local.json');
+    expect(out).not.toContain('backup/');
   });
 });
 

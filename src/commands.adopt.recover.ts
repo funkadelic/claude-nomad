@@ -459,10 +459,25 @@ export function copyIntoSharedOrFatal(
  * {@link copyIntoSharedOrFatal} clears it, and the message describes the
  * leftover on the rare run where the clear does not take.
  *
+ * What it cannot promise is that nothing was WRITTEN. `backupBeforeWrite` has
+ * already run by this point, and `backupUnder` snapshots the tree with a plain
+ * recursive copy: no filter, no deny set. So the entry that triggered this
+ * refusal has just been copied verbatim into `backupBase()/<ts>/<name>/`,
+ * where a fresh `<ts>` per attempt means repeated tries pile up further
+ * copies. That cache is host-local and never syncs, so it is not a boundary
+ * leak, but it is exactly the kind of unannounced side effect on denied
+ * content this gate exists to stop, and saying "nothing was removed" without
+ * saying it would read as an undo that did not happen. `restoreWin32LocalCopy`
+ * sets the precedent for naming the snapshot; this gate has to, because the
+ * preflight's own refusal takes no snapshot at all and the two messages would
+ * otherwise be indistinguishable.
+ *
  * @param name The name being adopted, for the message and the re-run hint.
  * @param linkPath Host-side source of the copy, re-scanned here.
  * @param sharedTarget Repo-side destination to clear before refusing.
  * @param repo Absolute path to the nomad repo root.
+ * @param opts.snapshotted True when `backupBeforeWrite` actually wrote a snapshot.
+ * @param opts.ts Backup timestamp, named only when a snapshot exists.
  * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when the re-scan finds a denied
  *   entry, or cannot finish.
  */
@@ -471,13 +486,19 @@ export function refuseLateDeniedEntries(
   linkPath: string,
   sharedTarget: string,
   repo: string,
+  opts: { snapshotted: boolean; ts: string },
 ): void {
   const untouched = `Nothing was removed from ${linkPath}.`;
-  const late = scanOrFatal(name, linkPath, `${untouched}${describePartialShared(name, linkPath)}`);
+  const snapshot = opts.snapshotted
+    ? ` A plain snapshot of ${linkPath} taken before the copy is under backup/${opts.ts}/; it is ` +
+      `unfiltered, so any never-sync entry under that path is in it too.`
+    : '';
+  const leftover = describePartialShared(name, linkPath);
+  const late = scanOrFatal(name, linkPath, `${untouched}${leftover}${snapshot}`);
   if (late.length === 0) return;
   const state = clearPartialShared(sharedTarget, repo)
-    ? `shared/${name} was cleared, and nothing was removed from ${linkPath}.`
-    : `${untouched}${describePartialShared(name, linkPath)}`;
+    ? `shared/${name} was cleared, and nothing was removed from ${linkPath}.${snapshot}`
+    : `${untouched}${leftover}${snapshot}`;
   throw deniedEntriesRefusal(name, linkPath, late, {
     found: `never-sync content appeared under ${linkPath} after the preflight scan`,
     state,
