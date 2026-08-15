@@ -210,6 +210,22 @@ off on `nomad sync` too, since it pushes in the same run: pull on its own first,
 not warn about that name again, because a pull that still cannot read the path warns and carries on
 rather than stopping.
 
+Two earlier steps can fail the same way. If the copy INTO `shared/<name>` fails, nothing has been
+removed from `~/.claude/`: adopt clears whatever partial copy reached the repo and asks you to run
+the command again once the path is readable. Should it report a partial `shared/<name>` it could
+not clear, remove that one yourself before re-running. On macOS, Linux, and WSL2 adopt would
+otherwise turn the re-run away with the would-clobber error. On native Windows removing it matters
+more, because there a name whose `shared/<name>` exists is reported as already adopted, so the
+re-run would claim success over a half-copied fragment, and the `nomad pull` that reply suggests
+would copy that fragment over the local directory this failure left whole.
+
+If the copy succeeds but the original cannot be removed, the answer depends on the platform. On
+native Windows a real local copy sitting beside a populated `shared/<name>` is exactly what an
+adopted name looks like, so adopt warns, refreshes the local copy from the repo, and finishes
+normally. On macOS, Linux, and WSL2 the same leftover is a real directory where the symlink
+belongs, so adopt stops with an error and exits 1, having staged `shared/<name>` anyway: run
+`nomad pull`, which backs that directory up and replaces it with the symlink.
+
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
 | `--dry-run` | Preview the planned backup, move, and `git add` without touching the filesystem or the git index. |
