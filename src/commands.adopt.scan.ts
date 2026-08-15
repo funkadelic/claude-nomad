@@ -79,9 +79,11 @@ function walk(root: string, dir: string, out: DeniedEntry[]): void {
  *
  * The returned list is sorted by `path` before it is returned, so the
  * refusal message built from it reads the same regardless of filesystem
- * listing order, which `readdirSync` does not guarantee. Entries are unique
- * by construction (one push per matched basename), so the comparator never
- * needs an equality arm.
+ * listing order, which `readdirSync` does not guarantee. Sorted with
+ * `localeCompare` rather than a hand-written comparator: entries are unique
+ * by construction (one push per matched basename), so the zero case never
+ * arises in practice, and this way there is no branch to force in either
+ * direction for full coverage.
  *
  * May throw when a directory under `root` cannot be read; converting that
  * into a reported failure is {@link refuseDeniedEntries}'s job, not this
@@ -95,7 +97,7 @@ export function scanDeniedEntries(root: string): DeniedEntry[] {
   if (!stat?.isDirectory()) return [];
   const out: DeniedEntry[] = [];
   walk(root, root, out);
-  out.sort((a, b) => (a.path < b.path ? -1 : 1));
+  out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
 }
 
