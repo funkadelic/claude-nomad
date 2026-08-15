@@ -158,6 +158,10 @@ describe('refuseDeniedEntries', () => {
     expect(fatal.message).toContain(root);
     expect(fatal.message).toContain('Nothing was changed.');
     expect(fatal.message).toContain('nomad adopt my-tools');
+    // Both remedies, because a denied name is matched by spelling alone and
+    // moving an ordinary directory out is the destructive one of the two.
+    expect(fatal.message).toContain('or rename those paths');
+    expect(fatal.message).toContain('matched by exact name, never by content');
   });
 
   describe('unreadable directory', () => {

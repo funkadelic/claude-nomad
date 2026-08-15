@@ -153,9 +153,16 @@ export function refuseDeniedEntries(name: string, root: string): void {
     .map((hit) => `  ${hit.path} (matches never-sync name "${hit.segment}")`)
     .join('\n');
   const subject = hits.length === 1 ? 'that path' : 'those paths';
+  // Two remedies, not one. The deny set holds ordinary directory names
+  // (`tasks`, `plans`, `cache`) alongside the credential entries, and it
+  // matches on the name alone, so a directory of the user's own can be
+  // refused purely for how it is spelled. Naming only the move would ask
+  // them to break their own layout to get past a spelling collision.
   throw new NomadFatal(
     `cannot adopt ${name}: ${root} contains never-sync content:\n${lines}\n` +
-      `Nothing was changed. Move ${subject} out of ${root} and run \`nomad adopt ${name}\` again.`,
+      `Nothing was changed. Move ${subject} out of ${root} and run \`nomad adopt ${name}\` ` +
+      `again, or rename ${subject} if the name only collides by coincidence: these are ` +
+      `matched by exact name, never by content.`,
     { code: EXIT.GENERIC_FAILURE },
   );
 }
