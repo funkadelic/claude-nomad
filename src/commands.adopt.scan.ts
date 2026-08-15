@@ -102,31 +102,22 @@ export function scanDeniedEntries(root: string): DeniedEntry[] {
 }
 
 /**
- * Refuse `nomad adopt <name>` outright when `root` carries a never-sync
- * entry, otherwise return silently.
- *
- * This is a refusal rather than a skip because the source directory is
- * removed by the move either way: `removeAdoptSource` (in
- * `commands.adopt.recover.ts`) takes the whole tree off the host, and on
- * posix the path then becomes a symlink into `shared/`. A skipped entry
- * would therefore not merely be left out of the repo, it would be taken off
- * the host and survive only in a backup snapshot the user was never told
- * about. Refusing before anything moves keeps the claim "nothing was
- * changed" literally true.
+ * Scan `root`, reporting a scan that could not finish as this command's own
+ * refusal instead of letting the raw throw reach the crash reporter.
  *
  * @param name The name being adopted, for the message and the re-run hint.
  * @param root Absolute path to scan (`CLAUDE_HOME/<name>`).
- * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when `root` could not be
- *   scanned, naming the path and quoting the caught text, so a tree the scan
- *   cannot finish is reported as this command's own failure rather than a
- *   crash report.
- * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when `root` carries one or more
- *   never-sync entries, naming every offending path and its matched segment.
+ * @param state A finished sentence saying what is on disk right now. It is a
+ *   parameter because it is the one thing that differs between the two gates:
+ *   the preflight has changed nothing, while the re-scan that runs after the
+ *   copy has `shared/<name>` written already.
+ * @returns Every denied entry found, sorted by `path`, or `[]` when clean.
+ * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when the scan could not finish,
+ *   naming the path and quoting the caught text.
  */
-export function refuseDeniedEntries(name: string, root: string): void {
-  let hits: DeniedEntry[];
+export function scanOrFatal(name: string, root: string, state: string): DeniedEntry[] {
   try {
-    hits = scanDeniedEntries(root);
+    return scanDeniedEntries(root);
   } catch (err) {
     // Restated rather than imported: `errorText` in `commands.adopt.recover.ts`
     // is not exported, and this is the only other caller that needs its
@@ -142,27 +133,84 @@ export function refuseDeniedEntries(name: string, root: string): void {
     // that fails the same way.
     throw new NomadFatal(
       `cannot adopt ${name}: could not scan ${root} for never-sync content (${text}). ` +
-        `Nothing was changed. Check that it is readable and not being written to, then ` +
+        `${state} Check that it is readable and not being written to, then ` +
         `run \`nomad adopt ${name}\` again.`,
       { code: EXIT.GENERIC_FAILURE },
     );
   }
-  if (hits.length === 0) return;
+}
 
+/**
+ * Compose the refusal a never-sync gate raises, so the two gates cannot drift
+ * apart on what they list or on what they tell the user to do about it.
+ *
+ * Only the two clauses that genuinely differ are handed in. Everything else
+ * (the listing, the singular or plural subject, both remedies, the exit code)
+ * is shared, which is the whole point of building the message here rather
+ * than at either call site.
+ *
+ * The remedy names the rename as well as the move because the deny set holds
+ * ordinary directory names (`tasks`, `plans`, `cache`) alongside the
+ * credential entries and matches on the basename alone, so a directory of the
+ * user's own can be refused purely for how it is spelled. Naming only the
+ * move would ask them to break their own layout over a spelling collision.
+ *
+ * @param name The name being adopted, for the message and the re-run hint.
+ * @param root Absolute path the listed hits are relative to.
+ * @param hits Every denied entry to name, already sorted.
+ * @param clauses.found Says what was found, with no trailing punctuation.
+ * @param clauses.state A finished sentence saying what is on disk right now.
+ * @returns The refusal, for the caller to throw.
+ */
+export function deniedEntriesRefusal(
+  name: string,
+  root: string,
+  hits: DeniedEntry[],
+  clauses: { found: string; state: string },
+): NomadFatal {
   const lines = hits
     .map((hit) => `  ${hit.path} (matches never-sync name "${hit.segment}")`)
     .join('\n');
   const subject = hits.length === 1 ? 'that path' : 'those paths';
-  // Two remedies, not one. The deny set holds ordinary directory names
-  // (`tasks`, `plans`, `cache`) alongside the credential entries, and it
-  // matches on the name alone, so a directory of the user's own can be
-  // refused purely for how it is spelled. Naming only the move would ask
-  // them to break their own layout to get past a spelling collision.
-  throw new NomadFatal(
-    `cannot adopt ${name}: ${root} contains never-sync content:\n${lines}\n` +
-      `Nothing was changed. Move ${subject} out of ${root} and run \`nomad adopt ${name}\` ` +
+  return new NomadFatal(
+    `cannot adopt ${name}: ${clauses.found}:\n${lines}\n` +
+      `${clauses.state} Move ${subject} out of ${root} and run \`nomad adopt ${name}\` ` +
       `again, or rename ${subject} if the name only collides by coincidence: these are ` +
       `matched by exact name, never by content.`,
     { code: EXIT.GENERIC_FAILURE },
   );
+}
+
+/**
+ * Refuse `nomad adopt <name>` outright when `root` carries a never-sync
+ * entry, otherwise return silently.
+ *
+ * This is a refusal rather than a skip because the source directory is
+ * removed by the move either way: `removeAdoptSource` (in
+ * `commands.adopt.recover.ts`) takes the whole tree off the host, and on
+ * posix the path then becomes a symlink into `shared/`. A skipped entry
+ * would therefore not merely be left out of the repo, it would be taken off
+ * the host and survive only in a backup snapshot the user was never told
+ * about. Refusing before anything moves keeps the claim "nothing was
+ * changed" literally true.
+ *
+ * The same reasoning is why the copy-side filter is not the whole answer:
+ * `refuseLateDeniedEntries` (in `commands.adopt.recover.ts`) runs this same
+ * scan again after the copy, because an entry that arrived in between is
+ * filtered out of the repo and would otherwise still be deleted off the host.
+ *
+ * @param name The name being adopted, for the message and the re-run hint.
+ * @param root Absolute path to scan (`CLAUDE_HOME/<name>`).
+ * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when the scan could not finish,
+ *   or when `root` carries one or more never-sync entries, naming every
+ *   offending path and its matched segment.
+ */
+export function refuseDeniedEntries(name: string, root: string): void {
+  const nothingChanged = 'Nothing was changed.';
+  const hits = scanOrFatal(name, root, nothingChanged);
+  if (hits.length === 0) return;
+  throw deniedEntriesRefusal(name, root, hits, {
+    found: `${root} contains never-sync content`,
+    state: nothingChanged,
+  });
 }

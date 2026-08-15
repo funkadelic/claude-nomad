@@ -618,30 +618,55 @@ describe('cmdAdopt (happy path and move sequence)', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Divert `readdirSync` so the never-sync scan sees a clean host root while
- * the real tree on disk still carries `deniedBasename`, provoking the window
- * between the preflight scan and the filtered copy that the real race cannot
- * be provoked from vitest. Only the ONE `readdirSync(root, ...)` call the
- * scan itself makes is diverted; every other call passes straight through,
- * including whatever `cpSync` does internally to walk the tree it copies,
- * which does not go through this module's exported `readdirSync`. So the
- * copy still sees, and filters, the real entry independently of what the
- * scan saw.
+ * Divert `readdirSync` so the PREFLIGHT never-sync scan sees a clean host
+ * root while the real tree on disk still carries `deniedBasename`, provoking
+ * the window between that scan and the filtered copy which the real race
+ * cannot be provoked from vitest.
+ *
+ * Only the FIRST `readdirSync(root, ...)` is diverted, which is the preflight
+ * scan's own listing. Every later one passes straight through, so the copy
+ * filters the real entry and the re-scan that runs after the copy sees it,
+ * which is the sequence the whole window is about. `cpSync` walks the tree it
+ * copies without going through this module's exported `readdirSync`, so it is
+ * unaffected either way.
  *
  * @param root Absolute host root the scan reads (`CLAUDE_HOME/<name>`).
- * @param deniedBasename The denied entry's basename to hide from the scan only.
+ * @param deniedBasename The denied entry's basename to hide from the preflight.
+ * @param opts.unclearableShared Repo-side path whose CLEANUP removal should
+ *   fail (the copy primitive's own leading removal of it still passes
+ *   through), the state where the refusal has to name the leftover rather
+ *   than claim it cleared it.
  */
-function mockScanBlindToEntry(root: string, deniedBasename: string): void {
+function mockScanBlindToEntry(
+  root: string,
+  deniedBasename: string,
+  opts: { unclearableShared?: string } = {},
+): void {
   vi.doMock('node:fs', async (importOriginal) => {
     const actual = await importOriginal<typeof fsModule>();
+    let hidPreflight = false;
+    let sawLeadingRemoval = false;
     return {
       ...actual,
       readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
-        if (String(args[0]) !== root) {
+        if (hidPreflight || String(args[0]) !== root) {
           return actual.readdirSync(...args);
         }
+        hidPreflight = true;
         const entries = actual.readdirSync(...args) as unknown as fsModule.Dirent[];
         return entries.filter((entry) => entry.name !== deniedBasename);
+      },
+      rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
+        if (opts.unclearableShared === undefined || String(args[0]) !== opts.unclearableShared) {
+          actual.rmSync(...args);
+          return;
+        }
+        if (!sawLeadingRemoval) {
+          sawLeadingRemoval = true;
+          actual.rmSync(...args);
+          return;
+        }
+        throw new Error('EACCES: permission denied');
       },
     };
   });
@@ -855,21 +880,64 @@ describe('cmdAdopt never-sync refusal', () => {
     expect(errOutput(env)).toBe('');
   });
 
-  it('the copy filter strips an entry the scan never saw, proving the backstop is real', async () => {
+  it('refuses an entry the preflight never saw, leaving the host tree whole', async () => {
+    // The copy filter strips such an entry from the repo silently, and the
+    // removal that follows would take it off the host as well: gone from
+    // ~/.claude/, absent from the repo, alive only in a backup snapshot
+    // nothing mentioned. The source is still whole between those two steps,
+    // which is why the re-scan refuses there instead of warning afterwards.
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
-    writeFileSync(join(linkPath, 'settings.local.json'), '{}\n');
+    writeFileSync(join(linkPath, 'settings.local.json'), '{"host":"local"}\n');
 
     mockScanBlindToEntry(linkPath, 'settings.local.json');
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('my-tools')).not.toThrow();
-    expect(process.exitCode).not.toBe(EXIT.GENERIC_FAILURE);
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
 
+    const out = errOutput(env);
+    expect(out).toContain('settings.local.json');
+    expect(out).toContain('was cleared');
+    expect(out).toContain(`nothing was removed from ${linkPath}`);
+
+    // The host tree is untouched: the denied entry and its neighbour are both
+    // still readable, and the path is still a real directory rather than the
+    // symlink a finished move would leave, so the removal never ran.
+    expect(readFileSync(join(linkPath, 'settings.local.json'), 'utf8')).toBe('{"host":"local"}\n');
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(lstatSync(linkPath).isDirectory()).toBe(true);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+
+    // And the repo side is back to where it started, so the re-run the
+    // message asks for is not turned away by the would-clobber refusal.
+    expect(existsSync(join(env.repoHome, 'shared', 'my-tools'))).toBe(false);
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('names the partial shared copy when it cannot clear it before refusing', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
     const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
-    expect(existsSync(join(sharedTarget, 'tool.sh'))).toBe(true);
-    expect(existsSync(join(sharedTarget, 'settings.local.json'))).toBe(false);
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(linkPath, 'settings.local.json'), '{"host":"local"}\n');
+
+    mockScanBlindToEntry(linkPath, 'settings.local.json', { unclearableShared: sharedTarget });
+    stubPlatform('linux');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+    const out = errOutput(env);
+    // No false claim that the repo side was cleared, and the leftover is
+    // named, because a re-run meets the would-clobber refusal until it goes.
+    expect(out).not.toContain('was cleared');
+    expect(out).toContain('A partial shared/my-tools may still be in the repo');
+    expect(out).toContain(`Nothing was removed from ${linkPath}`);
+    expect(existsSync(sharedTarget)).toBe(true);
+    expect(readFileSync(join(linkPath, 'settings.local.json'), 'utf8')).toBe('{"host":"local"}\n');
   });
 });
 

@@ -12,6 +12,7 @@
 import { lstatSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+import { deniedEntriesRefusal, scanOrFatal } from './commands.adopt.scan.ts';
 import { claudeHome, NEVER_SYNC } from './config.ts';
 import { EXIT } from './exit-codes.ts';
 import { copyExtrasFiltered } from './extras-sync.core.ts';
@@ -384,7 +385,10 @@ function describePartialShared(name: string, linkPath: string): string {
  * (`mirrorOneSharedName` in `links.mirror.ts`) already applies to this exact
  * destination, so a denied basename is never written here even if one
  * appears on the host after `refuseDeniedEntries`'s preflight scan has
- * already run. The primitive's leading `rmSync(dst)` is a no-op on every
+ * already run. That filter is silent by construction, which is why
+ * {@link refuseLateDeniedEntries} re-scans the source straight afterwards
+ * rather than letting the removal take such an entry off the host unannounced.
+ * The primitive's leading `rmSync(dst)` is a no-op on every
  * reachable call: `adoptStopsEarly` already refused the run if
  * `shared/<name>` existed. That removal executes inside this same `try`, so a
  * failure there is reported by this guard rather than raw-thrown. Two
@@ -421,6 +425,55 @@ export function copyIntoSharedOrFatal(
       { code: EXIT.GENERIC_FAILURE },
     );
   }
+}
+
+/**
+ * Refuse the move when a never-sync entry turns up under `linkPath` after the
+ * preflight scan has already passed it, before the source is removed.
+ *
+ * The copy's filter is a backstop, not a report: it drops such an entry from
+ * `shared/<name>` silently, and the very next step
+ * (`removeAdoptSource`) then deletes the whole host tree, that entry
+ * included. So the one window the filter exists to cover is also the one
+ * window where a denied entry becomes a silent skip WITH the source removed,
+ * which is precisely the outcome `refuseDeniedEntries` refuses in order to
+ * prevent: taken off the host, absent from the repo, surviving only in a
+ * backup snapshot nothing told the user about.
+ *
+ * The window is not microscopic either. It spans the backup snapshot of the
+ * whole tree and the copy of the whole tree into the repo, so seconds on a
+ * large one.
+ *
+ * Refusing here is close to free, which is what makes it the right answer:
+ * `linkPath` is still whole at this point, so the only thing to undo is the
+ * partial `shared/<name>`, and the message can still promise that nothing was
+ * taken off the host. `clearPartialShared` does that undo for the same reason
+ * {@link copyIntoSharedOrFatal} clears it, and the message describes the
+ * leftover on the rare run where the clear does not take.
+ *
+ * @param name The name being adopted, for the message and the re-run hint.
+ * @param linkPath Host-side source of the copy, re-scanned here.
+ * @param sharedTarget Repo-side destination to clear before refusing.
+ * @param repo Absolute path to the nomad repo root.
+ * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when the re-scan finds a denied
+ *   entry, or cannot finish.
+ */
+export function refuseLateDeniedEntries(
+  name: string,
+  linkPath: string,
+  sharedTarget: string,
+  repo: string,
+): void {
+  const untouched = `Nothing was removed from ${linkPath}.`;
+  const late = scanOrFatal(name, linkPath, `${untouched}${describePartialShared(name, linkPath)}`);
+  if (late.length === 0) return;
+  const state = clearPartialShared(sharedTarget, repo)
+    ? `shared/${name} was cleared, and nothing was removed from ${linkPath}.`
+    : `${untouched}${describePartialShared(name, linkPath)}`;
+  throw deniedEntriesRefusal(name, linkPath, late, {
+    found: `never-sync content appeared under ${linkPath} after the preflight scan`,
+    state,
+  });
 }
 
 /**
