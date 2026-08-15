@@ -328,6 +328,7 @@ export {
   ALWAYS_NEVER_SYNC,
   isSecretFileName,
   isDeniedName,
+  matchDeniedName,
   isClaudeExtraName,
   stripTrailingDotsAndWhitespace,
   deniedSegmentFor,

@@ -758,7 +758,7 @@ describe('cmdAdopt never-sync refusal', () => {
     expect(existsSync(join(env.testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 
-  it('refuses a denied file at the tree root, naming it and its matched segment', async () => {
+  it('refuses a denied file at the tree root, naming it and the entry it matched', async () => {
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
     mkdirSync(linkPath, { recursive: true });

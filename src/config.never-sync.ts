@@ -149,34 +149,68 @@ export function isSecretFileName(name: string): boolean {
 }
 
 /**
- * Denylist membership for the sync boundary, hardened on three axes over a raw
- * `blockSet.has(name)`:
+ * Which axis of the deny boundary a basename matched, and, on the exact-name
+ * axis, the denylist entry it collided with.
+ *
+ * The two are not interchangeable to anyone reporting a refusal. An exact-name
+ * hit is a spelling collision with a fixed list, so renaming the path clears
+ * it and the entry names what to rename away from. A shape hit is a credential
+ * filename pattern, where an extension (`*.pem`, `*.key`) or the whole
+ * filename (`id_rsa`, `.npmrc`) is what matched, so there is no list entry to
+ * quote and a rename that keeps the shape changes nothing. Telling a user to
+ * rename a `server.pem` would send them straight back into the same refusal.
+ */
+export type DeniedNameMatch = { axis: 'name'; entry: string } | { axis: 'shape' };
+
+/**
+ * Classify `name` against the deny boundary, naming the axis that matched.
+ *
+ * The single implementation of the three hardenings this boundary applies over
+ * a raw `blockSet.has(name)`:
  *   1. Case-insensitive: the exact-name sets are all lowercase, so a host on a
  *      case-insensitive filesystem (macOS default) could otherwise slip a
  *      `Settings.local.json` past `Set.has` yet land it on the same inode as the
  *      denied `settings.local.json`. Lowercasing the probe closes that.
- *   2. Secret-file patterns: ORs in `isSecretFileName` so credential filetypes
- *      the exact sets do not enumerate are still blocked.
- *   3. Trailing dots and whitespace: the exact-name probe also tests
+ *   2. Trailing dots and whitespace: the exact-name probe also tests
  *      `stripTrailingDotsAndWhitespace(name)` and its lowercase form, so
- *      `settings.local.json.` bypasses this axis by the same trivially-cheap
- *      evasion `isSecretFileName` closes on the pattern axis, in the same
- *      function. See {@link stripTrailingDotsAndWhitespace} for the
- *      monotonicity argument.
+ *      `settings.local.json.` cannot bypass this axis by the same
+ *      trivially-cheap evasion `isSecretFileName` closes on the pattern axis.
+ *      See {@link stripTrailingDotsAndWhitespace} for the monotonicity
+ *      argument.
+ *   3. Secret-file patterns: `isSecretFileName` catches credential filetypes
+ *      the exact sets do not enumerate. Probed last, so a name that is on the
+ *      list is reported as a list collision rather than as a shape.
+ *
+ * The candidate that matched is returned rather than the caller's own
+ * spelling: quoting the user's `Settings.local.json` back at them says nothing
+ * about which entry it collided with, which is the one thing they need in
+ * order to act.
+ *
+ * @param blockSet The exact-name denylist for the context (e.g. the result of
+ *   `extrasDenySet`, or `ALWAYS_NEVER_SYNC`).
+ * @param name A single path segment (basename) to test.
+ * @returns The matching axis, or `null` when `name` is clean.
+ */
+export function matchDeniedName(blockSet: Set<string>, name: string): DeniedNameMatch | null {
+  const stripped = stripTrailingDotsAndWhitespace(name);
+  for (const candidate of [name, name.toLowerCase(), stripped, stripped.toLowerCase()]) {
+    if (blockSet.has(candidate)) return { axis: 'name', entry: candidate };
+  }
+  return isSecretFileName(name) ? { axis: 'shape' } : null;
+}
+
+/**
+ * Denylist membership for the sync boundary. The boolean view of
+ * {@link matchDeniedName}, which owns the three hardenings both share, so a
+ * caller that only needs a yes or no cannot drift apart from one that needs to
+ * report which axis answered.
  *
  * @param blockSet The exact-name denylist for the context (e.g. the result of
  *   `extrasDenySet`, or `ALWAYS_NEVER_SYNC`).
  * @param name A single path segment (basename) to test.
  */
 export function isDeniedName(blockSet: Set<string>, name: string): boolean {
-  const stripped = stripTrailingDotsAndWhitespace(name);
-  return (
-    blockSet.has(name) ||
-    blockSet.has(name.toLowerCase()) ||
-    blockSet.has(stripped) ||
-    blockSet.has(stripped.toLowerCase()) ||
-    isSecretFileName(name)
-  );
+  return matchDeniedName(blockSet, name) !== null;
 }
 
 /**

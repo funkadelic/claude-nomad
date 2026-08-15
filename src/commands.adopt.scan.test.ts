@@ -59,24 +59,26 @@ describe('scanDeniedEntries', () => {
 
     const hits = scanDeniedEntries(root);
     expect(hits).toHaveLength(1);
-    expect(hits[0]).toEqual({ path: 'sessions', segment: 'sessions' });
+    expect(hits[0]).toEqual({ path: 'sessions', matched: 'sessions' });
     expect(hits.some((hit) => hit.path.startsWith('sessions/'))).toBe(false);
   });
 
-  it('reports a denied file matched by exact name', () => {
+  it('reports a denied file matched by exact name, carrying the entry it matched', () => {
     root = makeRoot();
     writeFileSync(join(root, 'settings.local.json'), '{}\n');
     const hits = scanDeniedEntries(root);
     expect(hits).toHaveLength(1);
-    expect(hits[0].segment).toBe('settings.local.json');
+    expect(hits[0]).toEqual({ path: 'settings.local.json', matched: 'settings.local.json' });
   });
 
-  it('reports a denied file matched by credential shape rather than exact name', () => {
+  it('reports a denied file matched by credential shape with a null matched entry', () => {
+    // The null is what tells the refusal to withhold the rename remedy: the
+    // extension is what matched, so a rename would land in the same refusal.
     root = makeRoot();
     writeFileSync(join(root, '.env'), 'SECRET=1\n');
     const hits = scanDeniedEntries(root);
     expect(hits).toHaveLength(1);
-    expect(hits[0].segment).toBe('.env');
+    expect(hits[0]).toEqual({ path: '.env', matched: null });
   });
 
   it('reports a nested hit with a forward-slashed path relative to the root', () => {
@@ -85,7 +87,7 @@ describe('scanDeniedEntries', () => {
     writeFileSync(join(root, 'a', 'b', 'history.jsonl'), '{}\n');
     const hits = scanDeniedEntries(root);
     expect(hits).toHaveLength(1);
-    expect(hits[0]).toEqual({ path: 'a/b/history.jsonl', segment: 'history.jsonl' });
+    expect(hits[0]).toEqual({ path: 'a/b/history.jsonl', matched: 'history.jsonl' });
   });
 
   it('returns entries sorted by path regardless of filesystem listing order', () => {
@@ -136,7 +138,7 @@ describe('refuseDeniedEntries', () => {
     expect((caught as InstanceType<typeof NomadFatal>).message).toContain('Move that path out of');
   });
 
-  it('throws a NomadFatal listing every hit and its segment on a dirty root', async () => {
+  it('throws a NomadFatal listing every hit and what it matched on a dirty root', async () => {
     root = makeRoot();
     mkdirSync(join(root, 'debug'));
     mkdirSync(join(root, 'a', 'b'), { recursive: true });
@@ -158,10 +160,75 @@ describe('refuseDeniedEntries', () => {
     expect(fatal.message).toContain(root);
     expect(fatal.message).toContain('Nothing was changed.');
     expect(fatal.message).toContain('nomad adopt my-tools');
-    // Both remedies, because a denied name is matched by spelling alone and
-    // moving an ordinary directory out is the destructive one of the two.
-    expect(fatal.message).toContain('or rename those paths');
-    expect(fatal.message).toContain('matched by exact name, never by content');
+    // Both hits are list collisions, so the rename remedy applies to both and
+    // the credential-shape sentence has nothing to describe.
+    expect(fatal.message).toContain('matches the never-sync name "debug"');
+    expect(fatal.message).toContain('renaming a path listed above as a never-sync name');
+    expect(fatal.message).not.toContain('credential filename shape');
+  });
+
+  it('withholds the rename remedy when every hit matched a credential shape', async () => {
+    // Renaming a `deploy.key` lands in an identical refusal, because the
+    // extension is what matched. Offering it would be the misdirection the
+    // list-collision wording exists to avoid.
+    root = makeRoot();
+    writeFileSync(join(root, 'deploy.key'), 'PRIVATE\n');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      refuseDeniedEntries('my-tools', root);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.message).toContain('deploy.key (matches a credential filename shape)');
+    expect(fatal.message).toContain('Move that path out of');
+    expect(fatal.message).toContain('renaming a path listed above as a credential filename shape');
+    expect(fatal.message).not.toContain('never-sync name');
+    // And nothing quotes the file's own basename back as the entry it matched,
+    // which would be a sentence that says nothing.
+    expect(fatal.message).not.toContain('never-sync name "deploy.key"');
+  });
+
+  it('prints both remedies, each scoped to its own axis, on a mixed set of hits', async () => {
+    root = makeRoot();
+    mkdirSync(join(root, 'plans'));
+    writeFileSync(join(root, 'server.pem'), 'CERT\n');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      refuseDeniedEntries('my-tools', root);
+    } catch (err) {
+      caught = err;
+    }
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal).toBeInstanceOf(NomadFatal);
+    expect(fatal.message).toContain('plans (matches the never-sync name "plans")');
+    expect(fatal.message).toContain('server.pem (matches a credential filename shape)');
+    expect(fatal.message).toContain('renaming a path listed above as a never-sync name');
+    expect(fatal.message).toContain('renaming a path listed above as a credential filename shape');
+  });
+
+  it('quotes the denylist entry rather than the case-folded spelling on disk', async () => {
+    // Repeating the user's own spelling back at them ("Settings.local.json
+    // matches Settings.local.json") names no entry to rename away from.
+    root = makeRoot();
+    writeFileSync(join(root, 'Settings.local.json'), '{}\n');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      refuseDeniedEntries('my-tools', root);
+    } catch (err) {
+      caught = err;
+    }
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal).toBeInstanceOf(NomadFatal);
+    expect(fatal.message).toContain('Settings.local.json (matches the never-sync name');
+    expect(fatal.message).toContain('"settings.local.json")');
   });
 
   describe('unreadable directory', () => {

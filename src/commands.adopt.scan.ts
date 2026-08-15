@@ -10,7 +10,7 @@
 import { lstatSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { isDeniedName, NEVER_SYNC } from './config.ts';
+import { matchDeniedName, NEVER_SYNC } from './config.ts';
 import { EXIT } from './exit-codes.ts';
 import { NomadFatal } from './utils.ts';
 
@@ -18,11 +18,20 @@ import { NomadFatal } from './utils.ts';
  * One host-side entry the scan found that must never cross into `shared/`.
  *
  * `path` is relative to the scanned root and always forward-slashed, even on
- * a platform whose native separator is a backslash. `segment` is the
- * basename that matched the deny set, named separately so a refusal can say
- * WHICH name did it rather than only where it is.
+ * a platform whose native separator is a backslash.
+ *
+ * `matched` carries the axis, and it is the field the remedy hangs off. It
+ * holds the never-sync list entry the basename collided with, or `null` when
+ * the basename matched a credential filename shape instead (`*.pem`,
+ * `.env.local`, `id_rsa`). Only the first kind is cleared by renaming the
+ * path, so a refusal that treated both alike would send a user with a
+ * `server.pem` off to rename it and straight back into the same refusal. It is
+ * also what makes the listing honest: on the shape axis there is no list entry
+ * to quote, and quoting the basename back instead says nothing at all, while
+ * on the name axis the entry and the basename differ whenever the match came
+ * through the case-fold or trailing-character normalization.
  */
-export type DeniedEntry = { path: string; segment: string };
+export type DeniedEntry = { path: string; matched: string | null };
 
 /**
  * Replace every backslash in `p` with a forward slash, so a relative path
@@ -52,10 +61,11 @@ function toForwardSlash(p: string): string {
  */
 function walk(root: string, dir: string, out: DeniedEntry[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (isDeniedName(NEVER_SYNC, entry.name)) {
+    const match = matchDeniedName(NEVER_SYNC, entry.name);
+    if (match !== null) {
       out.push({
         path: toForwardSlash(relative(root, join(dir, entry.name))),
-        segment: entry.name,
+        matched: match.axis === 'name' ? match.entry : null,
       });
       continue;
     }
@@ -141,19 +151,73 @@ export function scanOrFatal(name: string, root: string, state: string): DeniedEn
 }
 
 /**
+ * Say why one hit was refused, in the terms that decide what to do about it.
+ *
+ * A list collision quotes the entry that matched rather than the basename the
+ * user wrote: the two differ whenever the match came through the case-fold or
+ * trailing-character normalization, and repeating their own spelling back at
+ * them ("`Settings.local.json` matches `Settings.local.json`") carries no
+ * information. A shape hit quotes nothing, because there is no list entry
+ * behind it, only a filename pattern.
+ *
+ * @param hit One denied entry.
+ * @returns The parenthetical to print after that hit's path.
+ */
+function describeMatch(hit: DeniedEntry): string {
+  return hit.matched === null
+    ? 'matches a credential filename shape'
+    : `matches the never-sync name "${hit.matched}"`;
+}
+
+/**
+ * The remedy sentences that apply to this particular set of hits.
+ *
+ * The move is unconditional and comes first: it clears every hit on either
+ * axis. What follows is scoped, because the two axes do not answer to the same
+ * fix and a blanket "or rename it" is wrong on one of them. A never-sync name
+ * is a spelling collision with a fixed list, so a rename ends it, and saying
+ * so matters because the list holds ordinary directory names (`tasks`,
+ * `plans`, `cache`) that a user may legitimately own and would otherwise be
+ * told to break their layout over. A credential filename shape is matched by
+ * an extension or by the whole filename, so renaming a `deploy.key` to
+ * `release.key` lands in an identical refusal.
+ *
+ * Each clause is emitted only when at least one hit is on its axis, and both
+ * appear on a mixed set, so every sentence printed is true of something in the
+ * listing above it. Each names its axis in the words {@link describeMatch}
+ * prints on the line itself, rather than saying "it" or "those paths", so a
+ * mixed listing still maps each remedy onto the exact lines it applies to.
+ *
+ * @param hits Every denied entry being reported.
+ * @param root Absolute path the hits are relative to.
+ * @param name The name being adopted, for the re-run hint.
+ * @returns The remedy sentences, leading with a space.
+ */
+function remedies(hits: DeniedEntry[], root: string, name: string): string {
+  const subject = hits.length === 1 ? 'that path' : 'those paths';
+  let out = ` Move ${subject} out of ${root} and run \`nomad adopt ${name}\` again.`;
+  if (hits.some((hit) => hit.matched !== null)) {
+    out +=
+      ' A never-sync name is matched by spelling alone and never by content, so renaming a path' +
+      ' listed above as a never-sync name clears the refusal just as well.';
+  }
+  if (hits.some((hit) => hit.matched === null)) {
+    out +=
+      ' A credential filename shape is matched by the extension or by the whole filename, so' +
+      ' renaming a path listed above as a credential filename shape clears the refusal only if' +
+      ' the new name falls outside that shape too.';
+  }
+  return out;
+}
+
+/**
  * Compose the refusal a never-sync gate raises, so the two gates cannot drift
  * apart on what they list or on what they tell the user to do about it.
  *
  * Only the two clauses that genuinely differ are handed in. Everything else
- * (the listing, the singular or plural subject, both remedies, the exit code)
+ * (the listing, the singular or plural subject, the remedies, the exit code)
  * is shared, which is the whole point of building the message here rather
  * than at either call site.
- *
- * The remedy names the rename as well as the move because the deny set holds
- * ordinary directory names (`tasks`, `plans`, `cache`) alongside the
- * credential entries and matches on the basename alone, so a directory of the
- * user's own can be refused purely for how it is spelled. Naming only the
- * move would ask them to break their own layout over a spelling collision.
  *
  * @param name The name being adopted, for the message and the re-run hint.
  * @param root Absolute path the listed hits are relative to.
@@ -168,15 +232,10 @@ export function deniedEntriesRefusal(
   hits: DeniedEntry[],
   clauses: { found: string; state: string },
 ): NomadFatal {
-  const lines = hits
-    .map((hit) => `  ${hit.path} (matches never-sync name "${hit.segment}")`)
-    .join('\n');
-  const subject = hits.length === 1 ? 'that path' : 'those paths';
+  const lines = hits.map((hit) => `  ${hit.path} (${describeMatch(hit)})`).join('\n');
   return new NomadFatal(
     `cannot adopt ${name}: ${clauses.found}:\n${lines}\n` +
-      `${clauses.state} Move ${subject} out of ${root} and run \`nomad adopt ${name}\` ` +
-      `again, or rename ${subject} if the name only collides by coincidence: these are ` +
-      `matched by exact name, never by content.`,
+      `${clauses.state}${remedies(hits, root, name)}`,
     { code: EXIT.GENERIC_FAILURE },
   );
 }
@@ -203,7 +262,7 @@ export function deniedEntriesRefusal(
  * @param root Absolute path to scan (`CLAUDE_HOME/<name>`).
  * @throws {NomadFatal} `EXIT.GENERIC_FAILURE` when the scan could not finish,
  *   or when `root` carries one or more never-sync entries, naming every
- *   offending path and its matched segment.
+ *   offending path and the axis it matched on.
  */
 export function refuseDeniedEntries(name: string, root: string): void {
   const nothingChanged = 'Nothing was changed.';
