@@ -226,6 +226,17 @@ normally. On macOS, Linux, and WSL2 the same leftover is a real directory where 
 belongs, so adopt stops with an error and exits 1, having staged `shared/<name>` anyway: run
 `nomad pull`, which backs that directory up and replaces it with the symlink.
 
+Before touching anything, adopt checks the whole `~/.claude/<name>` tree for names that must never
+leave your machine: `settings.local.json`, a `sessions` directory, `.credentials.json`, and the
+credential-shaped family above (`.env`, `id_rsa`, `*.pem`) are the same never-sync boundary
+described throughout this reference, not a longer list. Those are exactly what the sync repo
+refuses to publish, so moving them into `shared/<name>` would only defer the failure to your next
+`nomad push`. If the check finds any, adopt stops before the backup and before anything is copied
+or moved, so nothing on your machine or in the repo has changed; the error lists every offending
+path relative to `~/.claude/<name>/` together with the name that matched, and exits 1. `--dry-run`
+answers exactly the same way, with the same exit code, rather than previewing a move it would
+refuse. Move those paths out of `~/.claude/<name>/` and run `nomad adopt <name>` again to clear it.
+
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
 | `--dry-run` | Preview the planned backup, move, and `git add` without touching the filesystem or the git index. |
