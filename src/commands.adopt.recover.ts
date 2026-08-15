@@ -9,11 +9,12 @@
  * `commands.push.recovery*.ts` already sets.
  */
 
-import { cpSync, lstatSync, rmSync } from 'node:fs';
+import { lstatSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-import { claudeHome } from './config.ts';
+import { claudeHome, NEVER_SYNC } from './config.ts';
 import { EXIT } from './exit-codes.ts';
+import { copyExtrasFiltered } from './extras-sync.core.ts';
 import { copySharedLinkPull } from './links.ts';
 import { warn, NomadFatal } from './utils.ts';
 
@@ -23,7 +24,7 @@ import { warn, NomadFatal } from './utils.ts';
  * Every message this module builds ends with the cause in parentheses, and
  * reading `.message` off an unknown directly renders the literal `undefined`
  * for anything that is not an `Error`, which is the one place a failure report
- * cannot afford to go vague. The calls these catches span (`cpSync`,
+ * cannot afford to go vague. The calls these catches span (`copyExtrasFiltered`,
  * `copySharedLinkPull`, `rmSync`, a staging closure) raise real `Error`s
  * today, so this is about what a future caller or an injected fault produces,
  * not a bug on any path in the current tree.
@@ -378,6 +379,20 @@ function describePartialShared(name: string, linkPath: string): string {
  * {@link describePartialShared}), so the clear runs first and the message only
  * describes the leftover when the clear did not take.
  *
+ * The copy runs through `copyExtrasFiltered(..., NEVER_SYNC)`,
+ * the same primitive and the same deny set the repo-side mirror
+ * (`mirrorOneSharedName` in `links.mirror.ts`) already applies to this exact
+ * destination, so a denied basename is never written here even if one
+ * appears on the host after `refuseDeniedEntries`'s preflight scan has
+ * already run. The primitive's leading `rmSync(dst)` is a no-op on every
+ * reachable call: `adoptStopsEarly` already refused the run if
+ * `shared/<name>` existed. That removal executes inside this same `try`, so a
+ * failure there is reported by this guard rather than raw-thrown. Two
+ * behavior deltas versus the old bare `cpSync` are deliberate: the loss of
+ * `preserveTimestamps` (repo-side files get fresh mtimes, which nothing
+ * reads) and the gain of `verbatimSymlinks: true` (a relative symlink target
+ * stops being rewritten, matching what the repo-side mirror already does).
+ *
  * The catch is deliberately broad, with no `err.code` dispatch, for the reason
  * given on `restoreWin32LocalCopy`: the copy bottoms out in several syscalls
  * that raise different errnos for the same underlying cause.
@@ -394,7 +409,7 @@ export function copyIntoSharedOrFatal(
   repo: string,
 ): void {
   try {
-    cpSync(linkPath, sharedTarget, { recursive: true, force: true, preserveTimestamps: true });
+    copyExtrasFiltered(linkPath, sharedTarget, NEVER_SYNC);
   } catch (err) {
     const leftover = clearPartialShared(sharedTarget, repo)
       ? ''

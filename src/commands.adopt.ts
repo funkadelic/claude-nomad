@@ -8,6 +8,7 @@ import {
   reportSourceRemovalFailure,
   restoreWin32LocalCopy,
 } from './commands.adopt.recover.ts';
+import { refuseDeniedEntries } from './commands.adopt.scan.ts';
 import {
   backupBase,
   claudeHome,
@@ -265,6 +266,11 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const sharedTarget = join(repo, 'shared', name);
 
   if (adoptStopsEarly(name, linkPath, sharedTarget)) return;
+
+  // Ahead of both the backup and the dry-run branch, so a refusal raised
+  // here means literally nothing has changed yet; a name whose host tree is
+  // clean falls straight through.
+  refuseDeniedEntries(name, linkPath);
 
   // Dry-run preview -- branch before any mutation
   if (dryRun) {

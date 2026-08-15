@@ -614,6 +614,55 @@ describe('cmdAdopt (happy path and move sequence)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The preflight never-sync refusal: end-to-end, ahead of every mutation
+// ---------------------------------------------------------------------------
+
+describe('cmdAdopt never-sync refusal', () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    teardownAdoptEnv(env);
+  });
+
+  it('refuses a host tree carrying a denied directory, with nothing changed', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const sessionsDir = join(linkPath, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(sessionsDir, 'transcript.jsonl'), '{}\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      cmdAdopt('my-tools');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
+    expect(fatal.message).toContain('sessions');
+    expect(fatal.message).toContain(linkPath);
+    expect(fatal.message).toContain('Nothing was changed.');
+
+    // Zero mutation: nothing on disk moved, nothing staged, no backup taken.
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(sharedTarget)).toBe(false);
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(readFileSync(join(sessionsDir, 'transcript.jsonl'), 'utf8')).toBe('{}\n');
+    expect(diffCached(env)).toBe('');
+    expect(existsSync(join(env.testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // win32 copy-back branch (no unprivileged symlink support)
 // ---------------------------------------------------------------------------
 
@@ -1244,6 +1293,14 @@ describe('cmdAdopt win32 copy-back failure', () => {
  * Keyed on the destination rather than on a call count, because
  * `backupBeforeWrite` copies first and would otherwise absorb the failure.
  *
+ * `copyIntoSharedOrFatal` now runs through `copyExtrasFiltered`, whose first
+ * statement is its own `rmSync(dst)` (a no-op here, since `shared/<name>`
+ * never exists on a run that reaches the copy). That is the FIRST removal of
+ * `sharedTarget` this mock sees; the SECOND is the cleanup removal inside
+ * `clearPartialShared`. `opts.unclearable` targets the cleanup, so the first
+ * removal always passes through to the real `rmSync` and only later ones
+ * throw when set.
+ *
  * @param sharedTarget Destination whose copy should throw.
  * @param message Error message the copy throws.
  * @param opts.partial When true, write a truncated destination before throwing,
@@ -1258,6 +1315,7 @@ function mockCopyIntoSharedFailure(
 ): void {
   vi.doMock('node:fs', async (importOriginal) => {
     const actual = await importOriginal<typeof fsModule>();
+    let clearedFirstRemoval = false;
     return {
       ...actual,
       cpSync: (...args: Parameters<typeof actual.cpSync>): void => {
@@ -1272,7 +1330,16 @@ function mockCopyIntoSharedFailure(
         throw new Error(message);
       },
       rmSync: (...args: Parameters<typeof actual.rmSync>): void => {
-        if (opts.unclearable === true && String(args[0]) === sharedTarget) {
+        if (String(args[0]) !== sharedTarget) {
+          actual.rmSync(...args);
+          return;
+        }
+        if (!clearedFirstRemoval) {
+          clearedFirstRemoval = true;
+          actual.rmSync(...args);
+          return;
+        }
+        if (opts.unclearable === true) {
           throw new Error(message);
         }
         actual.rmSync(...args);
