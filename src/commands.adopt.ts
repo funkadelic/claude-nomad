@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import {
   copyIntoSharedOrFatal,
   lexists,
+  refuseLateDeniedEntries,
   removeAdoptSource,
   reportSourceRemovalFailure,
   restoreWin32LocalCopy,
 } from './commands.adopt.recover.ts';
+import { refuseDeniedEntries } from './commands.adopt.scan.ts';
 import {
   backupBase,
   claudeHome,
@@ -147,6 +149,14 @@ function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): 
  * (nothing destroyed yet), `reportSourceRemovalFailure` (the platform split),
  * and `restoreWin32LocalCopy` (the content is already safe in the repo).
  *
+ * `refuseLateDeniedEntries` sits between the copy and the removal for the
+ * same reason the order of those two is what it is: it is the last moment at
+ * which the host tree is still whole, so a never-sync entry that arrived
+ * after the preflight scan can be refused rather than silently filtered out
+ * of the repo and then deleted off the host with everything else. It is handed
+ * the backup outcome because the snapshot above it is unfiltered, so its
+ * refusal has to name the one copy of the denied entry the run did make.
+ *
  * The stage is a closure rather than a straight-line call because two of those
  * failure paths have to run it themselves. Handing it down means the success
  * path still stages exactly once and no failure path double-adds.
@@ -180,6 +190,13 @@ function performAdoptMove(
   // Copy fully into shared/ BEFORE removing the source so a
   // mid-move crash cannot lose user content
   copyIntoSharedOrFatal(name, linkPath, sharedTarget, repo);
+
+  // The copy filters out a denied entry that arrived since the preflight scan,
+  // and says nothing about it; the removal below would then take that same
+  // entry off the host. The source is still whole right here, so this is the
+  // last point where refusing costs nothing.
+  refuseLateDeniedEntries(name, linkPath, sharedTarget, repo, { snapshotted, ts });
+
   const removal = removeAdoptSource(linkPath);
   if (!removal.ok) reportSourceRemovalFailure(name, linkPath, removal.message, stage);
 
@@ -265,6 +282,11 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const sharedTarget = join(repo, 'shared', name);
 
   if (adoptStopsEarly(name, linkPath, sharedTarget)) return;
+
+  // Ahead of both the backup and the dry-run branch, so a refusal raised
+  // here means literally nothing has changed yet; a name whose host tree is
+  // clean falls straight through.
+  refuseDeniedEntries(name, linkPath);
 
   // Dry-run preview -- branch before any mutation
   if (dryRun) {

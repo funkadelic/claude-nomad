@@ -6,6 +6,7 @@ import {
   CLAUDE_EXTRA_NEVER_SYNC,
   deniedSegmentFor,
   isNeverSync,
+  matchDeniedName,
   NEVER_SYNC,
 } from './config.never-sync.ts';
 
@@ -70,6 +71,49 @@ describe('isNeverSync', () => {
 
   it('blocks a credential-shaped filename the exact sets do not enumerate', () => {
     expect(isNeverSync('shared/commands/.env')).toBe(true);
+  });
+});
+
+describe('matchDeniedName', () => {
+  // The axis this returns decides what a refusal tells the user to do, so
+  // each of the four exact-name spellings and the shape fallback is pinned
+  // separately: they are what tells a rename-clears-it collision apart from a
+  // credential shape a rename cannot touch.
+  it('reports a plain exact-name hit, quoting the entry that matched', () => {
+    expect(matchDeniedName(NEVER_SYNC, 'settings.local.json')).toEqual({
+      axis: 'name',
+      entry: 'settings.local.json',
+    });
+  });
+
+  it('reports a case-folded hit as the lowercase entry, not the caller spelling', () => {
+    expect(matchDeniedName(NEVER_SYNC, 'Settings.local.json')).toEqual({
+      axis: 'name',
+      entry: 'settings.local.json',
+    });
+  });
+
+  it('reports a trailing-dot hit as the entry underneath the dots', () => {
+    expect(matchDeniedName(NEVER_SYNC, 'settings.local.json.')).toEqual({
+      axis: 'name',
+      entry: 'settings.local.json',
+    });
+  });
+
+  it('reports a hit that needs both normalizations at once', () => {
+    expect(matchDeniedName(NEVER_SYNC, 'Settings.local.json. ')).toEqual({
+      axis: 'name',
+      entry: 'settings.local.json',
+    });
+  });
+
+  it('reports a credential filename shape as the shape axis, with no entry to quote', () => {
+    expect(matchDeniedName(NEVER_SYNC, 'server.pem')).toEqual({ axis: 'shape' });
+    expect(matchDeniedName(NEVER_SYNC, '.env.local')).toEqual({ axis: 'shape' });
+  });
+
+  it('returns null for a clean basename', () => {
+    expect(matchDeniedName(NEVER_SYNC, 'deploy.md')).toBeNull();
   });
 });
 
