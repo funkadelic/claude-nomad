@@ -36,7 +36,7 @@ import { recoverForceRemote } from './commands.pull.recovery.ts';
 import { recoverUnmergedIndex } from './commands.pull.recovery.unmerged.ts';
 import { EXIT } from './exit-codes.ts';
 import { die, fail, gitCaptureRaw, log, NomadFatal } from './utils.ts';
-import { freshBackupTs } from './utils.fs.ts';
+import { discardEmptyBackupDir, freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
 
@@ -526,6 +526,11 @@ export function runPullCore(
   // not mean anything actually changed upstream).
   const incomingChanges =
     prePostHeads === undefined ? true : prePostHeads.pre !== prePostHeads.post;
+  // Every step that can snapshot has run by now, so an empty backup dir means
+  // this pull overwrote nothing and the dir is the eager fail-fast probe above
+  // and nothing else. Left behind, it accumulates one per pull until doctor's
+  // housekeeping row reports a cache that holds no bytes at all.
+  discardEmptyBackupDir(join(backup, ts));
   // Spliced at the head so the wet tree reads in the order the pull executes
   // and matches the preview tree, which already puts Symlinks first. Empty on
   // darwin, linux, and whenever nothing was mirrored (and nothing was
