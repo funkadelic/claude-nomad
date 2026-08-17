@@ -43,9 +43,10 @@ On native Windows, where shared config is a real copy rather than a symlink, pul
 those copies into the repo, before the rebase, and reports what it took in a leading `Symlinks`
 section (one `captured  <local> -> <repo>` row per name), so the copy is visible rather than
 silent. Without that step the rebase-then-overlay sequence would overwrite an edit you had not
-published yet. That mirror skips any path carrying a never-sync segment (see `NEVER_SYNC` in
-`src/config.never-sync.ts`, which holds ordinary names such as `sessions`, `tasks`, `plans`, and
-`cache` alongside the obvious credential entries); if such a path is already sitting in the sync
+published yet. That mirror skips your Claude login and credential files, your per-host settings,
+your local history and stats cache, and any file that looks like a credential by name (a `.env`, a
+private key, a `.netrc`); see `src/config.never-sync.ts` for the exact lists. An ordinary directory
+of your own inside a shared name is carried, not skipped. If a skipped path is already sitting in the sync
 repo working tree, pull removes it when git does not track it (snapshotting it to the backup dir
 first, unless it is a symlink whose target is already gone and there is no content to save) and
 otherwise leaves it exactly as it found it, warning with the file name and the git command that
@@ -108,6 +109,13 @@ Export local sessions and opted-in per-project extras to logical names, commit
 transcripts that changed since the last successful push (incremental); a cold
 start, a gitleaks version change, a gitleaks config change, or `--full-scan`
 forces a full rescan of all transcripts.
+
+On native Windows, before any of that, push also carries your local edits back into the sync repo
+for names the repo already shares, the same as `nomad pull` does before it fetches. A directory the
+repo does not carry yet stays on this machine until you run `nomad adopt <name>`, the same as on
+macOS, Linux, and WSL2: publishing a directory to every other host is something you ask for, not a
+side effect of the next push. A name you have already shared is unaffected and keeps publishing your
+edits on every push.
 
 | Flag               | Description                                                                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -227,25 +235,34 @@ belongs, so adopt stops with an error and exits 1, having staged `shared/<name>`
 `nomad pull`, which backs that directory up and replaces it with the symlink.
 
 Before touching anything, adopt checks the whole `~/.claude/<name>` tree against two separate lists,
-both in `src/config.never-sync.ts`. The first is a list of exact names, `NEVER_SYNC`, and it is
-wider than the credential entries you would expect: alongside `settings.local.json` and
-`.credentials.json` it holds ordinary-sounding directory names such as `sessions`, `tasks`, `plans`,
-`todos` and `cache`, which are host-local runtime state under `~/.claude/` and never sync in either
-direction. The second is a list of credential filename shapes, `SECRET_FILE_PATTERNS`, which catches
+both in `src/config.never-sync.ts`. The first is a list of exact names, `ALWAYS_NEVER_SYNC`, and it
+is narrower than you might expect: it holds only the credential and per-host settings files
+(`.claude.json`, `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`).
+Your own folders named `plans`, `tasks`, `cache`, `sessions` or `todos` inside the directory you are
+adopting are carried into the sync repo like anything else, because you asked for that directory to
+be shared. The second is a list of credential filename shapes, `SECRET_FILE_PATTERNS`, which catches
 `.env` and `.env.local`, `id_rsa`, `credentials`, `.netrc`, `.npmrc`, and anything ending in
 `.pem`, `.key`, `.p12` or `.pfx`. Neither list looks inside a file, so a directory of your own that
-happens to be spelled exactly like a never-sync name is refused too: that is a name collision, not a
+happens to be spelled exactly like a credential name is refused too: that is a name collision, not a
 secret it found. Both kinds are exactly what the sync repo refuses to publish, so moving them into
 `shared/<name>` would only defer the failure to your next `nomad push`.
 
-If the check finds anything, adopt stops before the backup and before anything is copied or moved,
-so nothing on your machine or in the repo has changed; the error lists every offending path relative
-to `~/.claude/<name>/`, says which of the two lists caught it, and exits 1. `--dry-run` answers
-exactly the same way, with the same exit code, rather than previewing a move it would refuse. To
-clear it, move those paths out of `~/.claude/<name>/` and run `nomad adopt <name>` again. Renaming
-works too for a name collision, since the spelling is the whole of the match and the error quotes
-the name to rename away from. It does not work for a credential filename shape, where the extension
-or the whole filename is what matched, so a new name in the same shape is refused identically.
+The two lists answer two different questions, and adopt uses both. Is `<name>` itself, the directory
+you are pointing adopt at, safe to share at all? That is checked against the full set in
+`src/config.never-sync.ts`, so `nomad adopt sessions` or `nomad adopt cache` is still refused as a
+NAME, unchanged by any of this. Is the CONTENT inside a directory you have already chosen to share
+safe to carry? That is the narrower check above, and it is what changed: a `sessions/` or `plans/`
+folder inside your own `my-tools/` now adopts along with everything else.
+
+If the content check finds anything, adopt stops before the backup and before anything is copied or
+moved, so nothing on your machine or in the repo has changed; the error lists every offending path
+relative to `~/.claude/<name>/`, says which of the two lists caught it, and exits 1. `--dry-run`
+answers exactly the same way, with the same exit code, rather than previewing a move it would
+refuse. To clear it, move those paths out of `~/.claude/<name>/` and run `nomad adopt <name>` again.
+Renaming works too for a name collision, since the spelling is the whole of the match and the error
+quotes the name to rename away from. It does not work for a credential filename shape, where the
+extension or the whole filename is what matched, so a new name in the same shape is refused
+identically.
 
 | Flag        | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
@@ -395,9 +412,13 @@ verbose-only. On native Windows, the per-name shared-link row (the same one cove
 `commands/`, `rules/`, and any `sharedDirs` entries) also byte-compares the real copy against its
 `shared/` counterpart and warns (`⚠︎`, exit code untouched) with the diverging files listed when it
 has drifted, instead of reporting it healthy on presence alone; a matching copy still reads `✓`.
-Paths the mirror will never sync are thrown out of that comparison rather than reported as drift,
-since no command could reconcile them; when any were excluded, the passing row carries a dim
-`(N never-synced path(s) not compared)` note under `--verbose`.
+Paths the mirror will never sync (now the narrower credential and per-host-settings floor) are
+thrown out of that comparison rather than reported as drift, since no command could reconcile them;
+when any were excluded, the passing row carries a dim `(N never-synced path(s) not compared)` note
+under `--verbose`. On native Windows, a real local copy the sync repo does not carry (never
+published, since `nomad push` no longer creates a repo counterpart on its own) gets its own info
+row naming `nomad adopt <name>`; it never fails the check and, like every other informational Links
+row, it is stripped from the default compact view and shown under `--verbose`.
 A CRLF-guard
 check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
 wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or

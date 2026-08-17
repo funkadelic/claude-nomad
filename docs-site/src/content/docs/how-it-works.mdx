@@ -104,17 +104,21 @@ Pointers and specifics:
   `session-env/`, `statsig/`, `telemetry/`, `ide/`, plus host-local caches and runtime state
   (`cache/`, `backups/`, `paste-cache/`, `daemon/`, `jobs/`, `tasks/`, `security/`,
   `sessions/`). This set is also the deny-list the `sharedDirs` opt-in is checked against, so
-  one of these names cannot be symlinked into the shared repo by mistake.
-- **The win32 mirror is filtered against this same never-synced set.** Copying your local edits
-  into `shared/` (the previous bullet) never writes a path carrying one of these names as a
-  segment, and if one reaches the sync repo working tree anyway, such as a file edited directly in
-  the repo rather than through `~/.claude/`, the next `nomad pull` removes it if git is not already
-  tracking it (snapshotting it to the backup dir first), and otherwise warns once, naming the file
-  and the exact git command to run, changing nothing itself. Because the set is not only secrets, an
-  ordinary directory inside one of your shared names can collide with it (a `sessions` or `tasks`
-  subfolder, for example) and silently stop mirroring; the match is on a whole path segment,
-  directory or file name alike, so a file named `tasks.md` is unaffected. Nothing in this gate can
-  fail a pull outright: a hit is a warning, never an error.
+  one of these names cannot be symlinked into the shared repo by mistake. That is the full list for
+  one question only: is this NAME safe to share at all? A different, narrower question applies to
+  the CONTENT already inside a directory you have chosen to share, covered next.
+- **The win32 mirror is filtered against a narrower set once you are inside a name you already
+  share.** Copying your local edits into `shared/` (the previous bullet) never writes a path
+  carrying your Claude login or credential files, your per-host settings, or your local history and
+  stats cache as a segment, and if one reaches the sync repo working tree anyway, such as a file
+  edited directly in the repo rather than through `~/.claude/`, the next `nomad pull` removes it if
+  git is not already tracking it (snapshotting it to the backup dir first), and otherwise warns
+  once, naming the file and the exact git command to run, changing nothing itself. An ordinary
+  directory of your own inside one of your shared names (a `sessions` or `tasks` subfolder, for
+  example) is mirrored, not stopped; only that narrower credential and host-config floor is still
+  refused, matched on a whole path segment, directory or file name alike, so a file named
+  `tasks.md` is unaffected either way. Nothing in this gate can fail a pull outright: a hit is a
+  warning, never an error.
 - **Per-project extras** run a pre-pull divergence WARN that flags local edits before they get
   overwritten.
 - **Synced skills** get the same divergence WARN as extras: if a file under `~/.claude/skills/`
@@ -282,14 +286,18 @@ What this means for you: each listed name is symlinked from `shared/<name>` into
 `~/.claude/<name>` (the same model as the built-in synced links, not a copy), so editing it on
 any host updates the one shared copy. On native Windows these names are real copies, like every
 synced link there, so both `nomad pull` (which mirrors before it fetches, naming each capture in
-its `Symlinks` section) and `nomad push` carry a local edit into the repo. One caveat specific to
-that modality: a path inside the directory whose segments include a never-synced name (`cache`,
-`sessions`, `tasks`, `plans`, and the rest) is not mirrored, per the never-synced bullet above.
+its `Symlinks` section) and `nomad push` carry a local edit into the repo. Your own folders inside
+that directory, even ones spelled like `cache`, `sessions`, `tasks`, or `plans`, are carried along;
+only the credential and per-host-settings floor from the never-synced bullet above is still
+refused. On native Windows, as everywhere else, a directory the sync repo does not carry yet is
+published by an explicit `nomad adopt <name>`, and after that every push carries its edits.
 The field is additive and back-compatible: a `path-map.json`
 without it behaves exactly as before.
 
-Entries are validated before anything is linked. A name is accepted only if it is a single path
-segment (no `/`, no `..`), is not one of the never-synced names, and does not collide with a
+Entries are validated before anything is linked. This checks the entry's own NAME, the question the
+full never-synced list above answers, not the content that ends up inside it once it is shared: a
+name is accepted only if it is a single path segment (no `/`, no `..`), is not one of the
+never-synced names, and does not collide with a
 reserved `shared/` name (`settings.base.json`, the built-in synced links, `hooks`, `agents`,
 `skills`, `hosts`, `path-map.json`). Note that `hooks`, `agents`, and `skills` are reserved and
 cannot be re-added through `sharedDirs`: `hooks` and `agents` are gsd-owned per-host, and
