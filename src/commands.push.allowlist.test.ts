@@ -260,16 +260,39 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     },
   );
 
-  it('does NOT add an allow entry for a NEVER_SYNC sharedDir, and the hard-block still fires', async () => {
-    // 'todos' is in NEVER_SYNC; it must not widen the allow-list AND the
-    // NEVER_SYNC hard-block must still reject a path containing it.
+  it('does NOT add an allow entry for a NEVER_SYNC sharedDir; rejected by the allow-list, not never-sync', async () => {
+    // The name guard (classifyDeniedName, backing isValidSharedDir) answers
+    // whether a directory NAME is safe to share and stays on the full
+    // NEVER_SYNC set, so 'todos' is still refused as a sharedDirs entry and
+    // never widens the allow-list. The content gate (isNeverSync,
+    // blockSetFor) answers whether nested CONTENT under an already-shared
+    // name is safe to carry, and it now follows the writers: 'todos' is not
+    // in ALWAYS_NEVER_SYNC, so 'shared/todos/a.md' no longer hard-blocks at
+    // that layer either. The path is still refused overall, but by the
+    // allow-list violation (no 'shared/todos/' entry exists to admit it)
+    // rather than by the never-sync hard block. The rejection did not go
+    // away; only the layer that produces it did.
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['todos'] };
     expect(() => enforceAllowList('M  shared/todos/a.md\0', map)).toThrow(NomadFatal);
-    // Verify it was the NEVER_SYNC message (not the allow-list message)
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('is in NEVER_SYNC and must never be pushed'),
+      expect.stringContaining('to sync shared/todos/a.md, add to PUSH_ALLOWED in src/config.ts'),
+    );
+    expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('still hard-blocks a floor name nested under a NEVER_SYNC sharedDir', async () => {
+    // The floor holds on this path too: even though 'todos' content is no
+    // longer never-sync-blocked, the five ALWAYS_NEVER_SYNC names still are.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['todos'] };
+    expect(() => enforceAllowList('M  shared/todos/settings.local.json\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('shared/todos/settings.local.json is in NEVER_SYNC'),
     );
   });
 });

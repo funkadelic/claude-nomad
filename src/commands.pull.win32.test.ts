@@ -969,7 +969,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
   const TS = '20260810-020000';
 
   /** The denylisted repo-relative path every fixture below targets. */
-  const DENIED = 'shared/commands/sessions/notes.md';
+  const DENIED = 'shared/commands/credentials/notes.md';
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -1011,7 +1011,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
   }
 
   it('removes an untracked denylisted path and names both the path and the segment', async () => {
-    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(repo, DENIED), 'token=abc\n');
 
     stubPlatform('win32');
@@ -1020,7 +1020,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
 
     expect(existsSync(join(repo, DENIED))).toBe(false);
     expect(warnings()).toContain(DENIED);
-    expect(warnings()).toContain('sessions');
+    expect(warnings()).toContain('credentials');
   });
 
   it('reports a TRACKED denylisted path and changes neither the file nor the index', async () => {
@@ -1029,7 +1029,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     // either snapshot of the before/after diff. It is also the case where
     // acting means reconstructing an index state from a status prefix, so the
     // gate reports it and names the command instead.
-    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(repo, DENIED), '# committed notes\n');
     g(['add', '-A'], repo);
     g(['commit', '-qm', 'add notes'], repo);
@@ -1044,7 +1044,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     expect(readFileSync(join(repo, DENIED), 'utf8')).toBe('# committed notes\ntoken=abc\n');
     expect(gitOut(['diff', '--cached', '--name-status'], repo)).toBe(stagedBefore);
     expect(warnings()).toContain(DENIED);
-    expect(warnings()).toContain('sessions');
+    expect(warnings()).toContain('credentials');
     expect(warnings()).toContain(`git checkout HEAD -- ${DENIED}`);
     expect(warnings()).toContain('Nothing was changed');
   });
@@ -1066,7 +1066,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     // Acting on an unanswerable snapshot is how a gate deletes the wrong path,
     // so an unavailable probe degrades to a silent skip, not to a revert.
     const plain = join(testHome, 'plain');
-    mkdirSync(join(plain, 'shared', 'commands', 'sessions'), { recursive: true });
+    mkdirSync(join(plain, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(plain, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     writeFileSync(join(plain, DENIED), 'token=abc\n');
 
@@ -1075,6 +1075,23 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     expect(() => reconcileSharedLinksBeforePull(plain, TS)).not.toThrow();
 
     expect(existsSync(join(plain, DENIED))).toBe(true);
+    expect(warnings()).toBe('');
+  });
+
+  it('leaves a widened NEVER_SYNC-only name under a shared name alone, end to end', async () => {
+    // Same contract as revertDeniedMirrorPaths's own unit case, proven through
+    // the real caller on a real git fixture: the backstop no longer strips
+    // content the narrowed writers legitimately write.
+    const rel = 'shared/my-tools/sessions/notes.md';
+    mkdirSync(join(repo, 'shared', 'my-tools', 'sessions'), { recursive: true });
+    writeFileSync(join(repo, rel), 'token=abc\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(existsSync(join(repo, rel))).toBe(true);
+    expect(readFileSync(join(repo, rel), 'utf8')).toBe('token=abc\n');
     expect(warnings()).toBe('');
   });
 });
