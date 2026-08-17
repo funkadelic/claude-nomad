@@ -41,6 +41,13 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Pinned to main rather than left to default, because a dispatch run
+          # takes the ref picked under "Use workflow from". Off main, the branch
+          # the PR step creates below would be based on that ref, so the drift
+          # PR would carry its unrelated commits while claiming to be a schema
+          # sync. The daily run is already on main; this makes the dispatch
+          # behave the same.
+          ref: main
           # Persist the App token so the branch push is authored by the App and
           # its synchronize events also trigger CI.
           token: ${{ steps.app-token.outputs.token }}
