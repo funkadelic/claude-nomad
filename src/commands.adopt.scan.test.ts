@@ -52,15 +52,22 @@ describe('scanDeniedEntries', () => {
   });
 
   it('reports a denied directory once and prunes everything beneath it', () => {
+    // The pruning fixture has to be a directory, and the narrow exact-name
+    // set (ALWAYS_NEVER_SYNC) holds only file names, so the credential-shape
+    // axis is the only source of a denied directory fixture, which is why
+    // this asserts a null matched entry rather than a list entry. The nested
+    // `todos/` proves the prune stops before an ORDINARY name, and the
+    // nested `history.jsonl` (a real name-axis hit) proves it stops before a
+    // REAL one too, not merely before nothing.
     root = makeRoot();
-    const sessionsDir = join(root, 'sessions');
-    mkdirSync(join(sessionsDir, 'todos'), { recursive: true });
-    writeFileSync(join(sessionsDir, 'inner.txt'), 'inner\n');
+    const credentialsDir = join(root, 'credentials');
+    mkdirSync(join(credentialsDir, 'todos'), { recursive: true });
+    writeFileSync(join(credentialsDir, 'history.jsonl'), 'inner\n');
 
     const hits = scanDeniedEntries(root);
     expect(hits).toHaveLength(1);
-    expect(hits[0]).toEqual({ path: 'sessions', matched: 'sessions' });
-    expect(hits.some((hit) => hit.path.startsWith('sessions/'))).toBe(false);
+    expect(hits[0]).toEqual({ path: 'credentials', matched: null });
+    expect(hits.some((hit) => hit.path.startsWith('credentials/'))).toBe(false);
   });
 
   it('reports a denied file matched by exact name, carrying the entry it matched', () => {
@@ -94,12 +101,17 @@ describe('scanDeniedEntries', () => {
     root = makeRoot();
     // Created in fully reverse alphabetical order, so a two-way comparator
     // walking these three pairs is exercised in both directions regardless
-    // of which order readdirSync happens to list them in.
-    mkdirSync(join(root, 'tasks'));
-    mkdirSync(join(root, 'jobs'));
-    mkdirSync(join(root, 'cache'));
+    // of which order readdirSync happens to list them in. All three are
+    // exact-name-axis survivors under ALWAYS_NEVER_SYNC.
+    writeFileSync(join(root, 'stats-cache.json'), '{}\n');
+    writeFileSync(join(root, 'settings.local.json'), '{}\n');
+    writeFileSync(join(root, 'history.jsonl'), '{}\n');
     const hits = scanDeniedEntries(root);
-    expect(hits.map((hit) => hit.path)).toEqual(['cache', 'jobs', 'tasks']);
+    expect(hits.map((hit) => hit.path)).toEqual([
+      'history.jsonl',
+      'settings.local.json',
+      'stats-cache.json',
+    ]);
   });
 
   it.skipIf(isWin)('does not descend through a symlink to a directory', () => {
@@ -113,6 +125,25 @@ describe('scanDeniedEntries', () => {
     const hits = scanDeniedEntries(root);
     expect(hits.some((hit) => hit.path.startsWith('linked/'))).toBe(false);
   });
+
+  it('returns [] for a tree whose only denied-looking names are ordinary runtime-state directories', () => {
+    // An ordinary directory name Claude Code happens to use for its own
+    // runtime state under ~/.claude/ is nested user content here, under a
+    // name the user has already asked to share, and is carried rather than
+    // refused.
+    root = makeRoot();
+    mkdirSync(join(root, 'sessions'), { recursive: true });
+    mkdirSync(join(root, 'plans'), { recursive: true });
+    mkdirSync(join(root, 'tasks'), { recursive: true });
+    mkdirSync(join(root, 'cache'), { recursive: true });
+    mkdirSync(join(root, 'todos'), { recursive: true });
+    writeFileSync(join(root, 'sessions', 'notes.md'), 'a\n');
+    writeFileSync(join(root, 'plans', 'a.md'), 'b\n');
+    writeFileSync(join(root, 'tasks', 'x.md'), 'c\n');
+    writeFileSync(join(root, 'cache', 'y.bin'), 'd\n');
+    writeFileSync(join(root, 'todos', 'z.md'), 'e\n');
+    expect(scanDeniedEntries(root)).toEqual([]);
+  });
 });
 
 describe('refuseDeniedEntries', () => {
@@ -125,7 +156,7 @@ describe('refuseDeniedEntries', () => {
 
   it('uses singular wording ("that path") when exactly one entry is denied', async () => {
     root = makeRoot();
-    mkdirSync(join(root, 'debug'));
+    mkdirSync(join(root, 'credentials'));
     const { NomadFatal } = await import('./utils.ts');
 
     let caught: unknown;
@@ -140,7 +171,7 @@ describe('refuseDeniedEntries', () => {
 
   it('throws a NomadFatal listing every hit and what it matched on a dirty root', async () => {
     root = makeRoot();
-    mkdirSync(join(root, 'debug'));
+    writeFileSync(join(root, 'stats-cache.json'), '{}\n');
     mkdirSync(join(root, 'a', 'b'), { recursive: true });
     writeFileSync(join(root, 'a', 'b', 'history.jsonl'), '{}\n');
     const { NomadFatal } = await import('./utils.ts');
@@ -154,7 +185,7 @@ describe('refuseDeniedEntries', () => {
     expect(caught).toBeInstanceOf(NomadFatal);
     const fatal = caught as InstanceType<typeof NomadFatal>;
     expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
-    expect(fatal.message).toContain('debug');
+    expect(fatal.message).toContain('stats-cache.json');
     expect(fatal.message).toContain('a/b/history.jsonl');
     expect(fatal.message).toContain('history.jsonl');
     expect(fatal.message).toContain(root);
@@ -162,7 +193,7 @@ describe('refuseDeniedEntries', () => {
     expect(fatal.message).toContain('nomad adopt my-tools');
     // Both hits are list collisions, so the rename remedy applies to both and
     // the credential-shape sentence has nothing to describe.
-    expect(fatal.message).toContain('matches the never-sync name "debug"');
+    expect(fatal.message).toContain('matches the never-sync name "stats-cache.json"');
     expect(fatal.message).toContain('renaming a path listed above as a never-sync name');
     expect(fatal.message).not.toContain('credential filename shape');
   });
@@ -194,7 +225,7 @@ describe('refuseDeniedEntries', () => {
 
   it('prints both remedies, each scoped to its own axis, on a mixed set of hits', async () => {
     root = makeRoot();
-    mkdirSync(join(root, 'plans'));
+    writeFileSync(join(root, 'settings.local.json'), '{}\n');
     writeFileSync(join(root, 'server.pem'), 'CERT\n');
     const { NomadFatal } = await import('./utils.ts');
 
@@ -206,7 +237,9 @@ describe('refuseDeniedEntries', () => {
     }
     const fatal = caught as InstanceType<typeof NomadFatal>;
     expect(fatal).toBeInstanceOf(NomadFatal);
-    expect(fatal.message).toContain('plans (matches the never-sync name "plans")');
+    expect(fatal.message).toContain(
+      'settings.local.json (matches the never-sync name "settings.local.json")',
+    );
     expect(fatal.message).toContain('server.pem (matches a credential filename shape)');
     expect(fatal.message).toContain('renaming a path listed above as a never-sync name');
     expect(fatal.message).toContain('renaming a path listed above as a credential filename shape');
@@ -229,6 +262,47 @@ describe('refuseDeniedEntries', () => {
     expect(fatal).toBeInstanceOf(NomadFatal);
     expect(fatal.message).toContain('Settings.local.json (matches the never-sync name');
     expect(fatal.message).toContain('"settings.local.json")');
+  });
+
+  it('returns without throwing on a tree holding only ordinary runtime-state directory names', () => {
+    root = makeRoot();
+    const cleanRoot = root;
+    mkdirSync(join(cleanRoot, 'sessions'), { recursive: true });
+    mkdirSync(join(cleanRoot, 'plans'), { recursive: true });
+    mkdirSync(join(cleanRoot, 'tasks'), { recursive: true });
+    mkdirSync(join(cleanRoot, 'cache'), { recursive: true });
+    mkdirSync(join(cleanRoot, 'todos'), { recursive: true });
+    writeFileSync(join(cleanRoot, 'sessions', 'notes.md'), 'a\n');
+    expect(() => refuseDeniedEntries('my-tools', cleanRoot)).not.toThrow();
+  });
+
+  it('refuses on the same tree plus a real hit, naming only the real hit', async () => {
+    // Asserting the message does NOT name the five ordinary directories is
+    // the half that would catch a partial swap where the scan narrowed but a
+    // message composer still enumerated the wide set.
+    root = makeRoot();
+    mkdirSync(join(root, 'sessions'), { recursive: true });
+    mkdirSync(join(root, 'plans'), { recursive: true });
+    mkdirSync(join(root, 'tasks'), { recursive: true });
+    mkdirSync(join(root, 'cache'), { recursive: true });
+    mkdirSync(join(root, 'todos'), { recursive: true });
+    writeFileSync(join(root, 'settings.local.json'), '{}\n');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      refuseDeniedEntries('my-tools', root);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.message).toContain('settings.local.json');
+    expect(fatal.message).not.toContain('sessions');
+    expect(fatal.message).not.toContain('plans');
+    expect(fatal.message).not.toContain('tasks');
+    expect(fatal.message).not.toContain('cache');
+    expect(fatal.message).not.toContain('todos');
   });
 
   describe('unreadable directory', () => {
