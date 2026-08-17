@@ -359,8 +359,10 @@ re-scan in a single step.
 `nomad clean --backups [--older-than <dur>] [--keep <N>] [--dry-run]`
 
 Delete old backup snapshots under `~/.cache/claude-nomad/backup/`. The `--backups` flag is required.
-By default (no retention flag) removes snapshots older than 14 days. Always preview with `--dry-run`
-first. See [Recovery flows](/claude-nomad/recovery/).
+By default (no retention flag) removes snapshots older than 14 days. A snapshot that holds nothing
+is removed in every mode, whatever its age and whatever `--keep` says, since there is no content in
+it to protect. Always preview with `--dry-run` first. See
+[Recovery flows](/claude-nomad/recovery/).
 
 | Flag                | Description                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------- |

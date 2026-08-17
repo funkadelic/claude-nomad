@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, rmSync, statSync, type Dirent } from 'node:fs';
 import { join } from 'node:path';
 
 import { backupBase as getBackupBase } from './config.ts';
@@ -24,6 +24,17 @@ const CLEAN_DEFAULT_OLDER_THAN_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** A `<ts>` backup directory tagged with its modification time. */
 type BackupDir = { name: string; mtimeMs: number };
+
+/**
+ * Projection helper: a backup dir's own name, for mapping descriptor lists
+ * down to the name lists every prune path speaks in.
+ *
+ * @param d - A backup dir descriptor.
+ * @returns Its `<ts>` entry name.
+ */
+function nameOf(d: BackupDir): string {
+  return d.name;
+}
 
 /**
  * Whether a directory entry name matches the `<ts>` backup shape.
@@ -63,6 +74,42 @@ export function listBackupDirs(backupBase: string): BackupDir[] {
     .filter(isTsDir)
     .map((name) => ({ name, mtimeMs: statSync(join(backupBase, name)).mtimeMs }))
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/**
+ * Whether a `<ts>` backup dir holds nothing recoverable: no file, no symlink,
+ * nothing at all beneath it except more empty directories.
+ *
+ * A pull creates its backup dir before its first destructive step, so a run
+ * that overwrites nothing leaves the dir behind holding zero bytes. Those are
+ * pruned whatever their age, since retention exists to protect content and
+ * there is none here to protect.
+ *
+ * Only a directory counts as "not content". Every other entry type does,
+ * symlinks included: `readdirSync` with `withFileTypes` classifies from the
+ * entry itself rather than its target, so a link is reported as a link and
+ * this stops rather than following it out of the cache.
+ *
+ * An unreadable directory answers `false`. The question is whether the dir is
+ * known to be empty, and a failed read answers nothing about its contents, so
+ * treating it as empty would make an unreadable snapshot a prune target on the
+ * strength of the error alone.
+ *
+ * @param dir - Absolute path to a `<ts>` dir (or a nested subdir).
+ * @returns `true` only when nothing but empty directories lies beneath `dir`.
+ */
+function holdsNoContent(dir: string): boolean {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) return false;
+    if (!holdsNoContent(join(dir, entry.name))) return false;
+  }
+  return true;
 }
 
 /**
@@ -139,6 +186,10 @@ function resolveTargets(
  * a live run each target passes through the `safeDelete` safety guard and a
  * `removed N backup(s)` summary is logged.
  *
+ * A `<ts>` dir holding no content is pruned in every mode, whatever its age
+ * and whatever `keep` says, and takes no slot in the retention count; see
+ * {@link holdsNoContent}.
+ *
  * @param opts - Parsed CLI options.
  * @param opts.dryRun - List targets without deleting when `true`.
  * @param opts.olderThan - Age duration string (`14d`, `24h`, `30m`).
@@ -165,7 +216,20 @@ export function cmdClean(
   }
 
   const dirs = listBackupDirs(backupBase);
-  const targets = resolveTargets(dirs, olderThanMs, keep);
+  // Empty dirs are pruned in every mode, and are held out of the retention
+  // computation rather than merely added to its result: `--keep 5` is a request
+  // for the five newest recoverable snapshots, and counting empty ones toward
+  // that would retain five directories holding nothing while deleting the
+  // content the flag was meant to keep.
+  const empty = new Set(dirs.filter((d) => holdsNoContent(join(backupBase, d.name))).map(nameOf));
+  const aged = new Set(
+    resolveTargets(
+      dirs.filter((d) => !empty.has(d.name)),
+      olderThanMs,
+      keep,
+    ),
+  );
+  const targets = dirs.filter((d) => empty.has(d.name) || aged.has(d.name)).map(nameOf);
 
   if (dryRun) {
     for (const name of targets) item(name);

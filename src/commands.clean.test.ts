@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -29,13 +37,32 @@ let failSpy: MockInstance<(...args: unknown[]) => void>;
 let savedExitCode: typeof process.exitCode;
 
 /**
- * Create a `<ts>`-named backup directory under `testRoot` and stamp its mtime.
+ * Create a `<ts>`-named backup directory under `testRoot`, put one snapshotted
+ * file in it, and stamp its mtime. The file matters: a `<ts>` dir holding
+ * nothing is pruned in every mode, so an empty fixture would make every
+ * retention assertion below pass for the wrong reason.
  *
  * @param name - The `<ts>` directory name to create.
  * @param ageDays - How many days in the past to set the mtime (default 0).
  * @returns Absolute path to the created directory.
  */
 function makeBackup(name: string, ageDays = 0): string {
+  const full = makeEmptyBackup(name, ageDays);
+  writeFileSync(join(full, 'settings.json'), '{}');
+  const when = new Date(Date.now() - ageDays * DAY_MS);
+  utimesSync(full, when, when);
+  return full;
+}
+
+/**
+ * Create a `<ts>`-named backup directory holding nothing, as a run that
+ * overwrote no file leaves behind.
+ *
+ * @param name - The `<ts>` directory name to create.
+ * @param ageDays - How many days in the past to set the mtime (default 0).
+ * @returns Absolute path to the created directory.
+ */
+function makeEmptyBackup(name: string, ageDays = 0): string {
   const full = join(testRoot, name);
   mkdirSync(full, { recursive: true });
   const when = new Date(Date.now() - ageDays * DAY_MS);
@@ -170,6 +197,65 @@ describe('cmdClean default', () => {
     cmdClean({}, testRoot);
     const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(out).toContain('removed 0 backup(s)');
+  });
+});
+
+describe('cmdClean empty dirs', () => {
+  it('removes a fresh empty dir the age cutoff would have kept', () => {
+    makeEmptyBackup('20260530-000000', 1);
+    makeBackup('20260530-000001', 1);
+    cmdClean({}, testRoot);
+    expect(existsSync(join(testRoot, '20260530-000000'))).toBe(false);
+    expect(existsSync(join(testRoot, '20260530-000001'))).toBe(true);
+  });
+
+  it('removes an empty dir without spending one of the --keep slots', () => {
+    makeEmptyBackup('20260301-000000', 1);
+    makeBackup('20260201-000000', 2);
+    makeBackup('20260101-000000', 3);
+    cmdClean({ keep: 2 }, testRoot);
+    expect(existsSync(join(testRoot, '20260301-000000'))).toBe(false);
+    expect(existsSync(join(testRoot, '20260201-000000'))).toBe(true);
+    expect(existsSync(join(testRoot, '20260101-000000'))).toBe(true);
+  });
+
+  it('treats a dir holding only empty subdirs as empty, and one holding a nested file as not', () => {
+    mkdirSync(join(makeEmptyBackup('20260401-000000', 1), 'repo', 'shared'), { recursive: true });
+    const nested = makeEmptyBackup('20260401-000001', 1);
+    mkdirSync(join(nested, 'repo'), { recursive: true });
+    writeFileSync(join(nested, 'repo', 'settings.json'), '{}');
+    cmdClean({}, testRoot);
+    expect(existsSync(join(testRoot, '20260401-000000'))).toBe(false);
+    expect(existsSync(join(testRoot, '20260401-000001'))).toBe(true);
+  });
+
+  it('lists an empty dir as a dry-run target without deleting it', () => {
+    makeEmptyBackup('20260501-000000', 1);
+    cmdClean({ dryRun: true }, testRoot);
+    expect(existsSync(join(testRoot, '20260501-000000'))).toBe(true);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('20260501-000000');
+    expect(out).toContain('dry-run: 1 backup(s) would be removed');
+  });
+
+  it('never reads a <ts>-shaped regular file as an empty dir', () => {
+    // Listing it fails (ENOTDIR), which says nothing about emptiness, so it is
+    // not a prune target on that ground and safeDelete refuses it besides.
+    writeFileSync(join(testRoot, '20260701-000000'), 'not a dir');
+    cmdClean({}, testRoot);
+    expect(existsSync(join(testRoot, '20260701-000000'))).toBe(true);
+  });
+
+  it('keeps a dir holding only a symlink, which is content this cannot follow', () => {
+    const target = mkdtempSync(join(tmpdir(), 'nomad-clean-linked-'));
+    const dir = makeEmptyBackup('20260601-000000', 1);
+    symlinkSync(target, join(dir, 'skills'));
+    try {
+      cmdClean({}, testRoot);
+      expect(existsSync(join(testRoot, '20260601-000000'))).toBe(true);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
   });
 });
 
