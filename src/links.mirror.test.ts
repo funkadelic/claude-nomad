@@ -89,7 +89,12 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('mirrors a local file edit and a local directory edit into shared/ on win32', async () => {
+  it('mirrors a local file edit and a local directory edit into an already-shared shared/ on win32', async () => {
+    // Both repo counterparts pre-exist: this case proves an EDIT reaches the
+    // repo, not that a new name is created (adoptNew: false means it never
+    // creates one).
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
@@ -100,6 +105,42 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
 
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# local edit\n');
     expect(readFileSync(join(sharedDir, 'commands', 'foo.md'), 'utf8')).toBe('# local command\n');
+  });
+
+  it('does not publish a name the repo does not already share: publishing is a deliberate act, performed by nomad adopt', async () => {
+    mkdirSync(join(claudeDir, 'rules'), { recursive: true });
+    writeFileSync(join(claudeDir, 'rules', 'private.md'), '# host-only\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    expect(existsSync(join(sharedDir, 'rules'))).toBe(false);
+    expect(readFileSync(join(claudeDir, 'rules', 'private.md'), 'utf8')).toBe('# host-only\n');
+  });
+
+  it('does not publish a local-only file name the repo does not already share (the file-type half of the same contract)', async () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local only\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    expect(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8')).toBe('# local only\n');
+  });
+
+  it('keeps publishing an already-shared name on every push (the half this policy did NOT change)', async () => {
+    mkdirSync(join(sharedDir, 'rules'), { recursive: true });
+    writeFileSync(join(sharedDir, 'rules', 'existing.md'), '# already published\n');
+    mkdirSync(join(claudeDir, 'rules'), { recursive: true });
+    writeFileSync(join(claudeDir, 'rules', 'existing.md'), '# host edit\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    expect(readFileSync(join(sharedDir, 'rules', 'existing.md'), 'utf8')).toBe('# host edit\n');
   });
 
   it('skips a name whose local entry is still a live symlink (symlink-era guard)', async () => {
@@ -119,6 +160,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
   });
 
   it('excludes a nested ALWAYS_NEVER_SYNC entry from the mirrored directory', async () => {
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
     writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{"secret":true}');
@@ -159,6 +201,12 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     // reaches the catch: a permissions failure, a file another process holds
     // open on Windows, a broken mount. The name is skipped either way, but
     // skipping it silently would lose a local edit with no output at all.
+    // Both repo counterparts must pre-exist: without shared/CLAUDE.md, the
+    // notShared early return fires before the mocked lstatSync is ever
+    // reached, the WARN never happens, and this case fails for a reason
+    // that has nothing to do with the mock.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unreadable local edit\n');
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
@@ -192,9 +240,11 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     // it: a truncation back to the bare first clause must fail here.
     expect(said[0]).toContain('left out of shared/ this run');
     expect(said[0]).toContain('another program has it open');
-    // Nothing was written for the unreadable name, and the pass carried on to
-    // the rest of the list rather than aborting at the first bad entry.
-    expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    // Nothing was written for the unreadable name (the repo-side copy is
+    // still its original content, untouched by the failed stat), and the
+    // pass carried on to the rest of the list rather than aborting at the
+    // first bad entry.
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
     expect(existsSync(join(sharedDir, 'commands', 'foo.md'))).toBe(true);
   });
 
@@ -630,19 +680,6 @@ describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
   });
 });
 
-/**
- * The mirror's copy-time filter runs against the full `NEVER_SYNC` set, not the
- * five-name `ALWAYS_NEVER_SYNC` subset. Every path this mirror writes lives
- * under `shared/<name>` and never under `shared/extras/`, so that set is
- * exactly what the repo-working-tree gate resolves for the same path; running
- * it here means the path is simply never written.
- *
- * `NEVER_SYNC` carries ordinary-sounding directory names authored against
- * `~/.claude/` semantics, so this is a user-facing behavior change and gets a
- * test that names the generic entry it uses rather than reaching for an
- * obviously-secret one. Pinned in both directions: a name that is now refused,
- * and a name that still passes.
- */
 /**
  * The copy-time denylist under a shared name, now the credential and
  * host-config floor (`ALWAYS_NEVER_SYNC`) rather than the full `NEVER_SYNC`

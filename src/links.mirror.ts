@@ -177,8 +177,9 @@ function notShared(policy: SharedMirrorPolicy, target: string): boolean {
  * to remove. Only a real error reaches the warning, since `throwIfNoEntry`
  * already absorbs the ordinary absent-path case, and only a name this pass
  * would actually have captured: an unreadable name the repo does not share was
- * never going to be copied under `adoptNew: false`, so reporting it would read
- * as data loss on a directory that is deliberately host-private. The wording
+ * never going to be copied, since both wrappers now run under `adoptNew:
+ * false`, so reporting it would read as data loss on a directory that is
+ * deliberately host-private. The wording
  * claims nothing about the rest of the command, only about this mirror pass.
  *
  * The warning has two arms, branched on `opts.dryRun`. Three of this
@@ -282,12 +283,26 @@ function mirrorSharedNames(
 
 /**
  * Win32 push-mirror for `allSharedLinks(map)` names: copies each real local
- * copy at `~/.claude/<name>` back into `shared/<name>` (repo side), so an
- * edit made through the win32 copy model (`applySharedLinksWin32` in
- * `links.ts`) reaches the repo at the next push. This is the write half of
- * the copy-sync model; `copySharedLinkPull` in `links.ts` is the read half.
+ * copy at `~/.claude/<name>` back into an EXISTING `shared/<name>` (repo
+ * side), so an edit made through the win32 copy model
+ * (`applySharedLinksWin32` in `links.ts`) reaches the repo at the next push.
+ * This is the write half of the copy-sync model; `copySharedLinkPull` in
+ * `links.ts` is the read half.
  *
- * Mirrors `syncSkillsPush`'s pattern exactly: skip a name absent from
+ * Runs under `adoptNew: false`: it declines to create `shared/<name>` for a
+ * name the repo does not already carry. Publishing a directory to every
+ * other host is a deliberate act, and the command that performs it is
+ * `nomad adopt <name>`, not an implicit side effect of the next push. This
+ * matches the behavior macOS, Linux and WSL2 have always had, where a name
+ * with no repo counterpart simply stays a private local directory; matching
+ * it on native Windows removes a platform-specific way to publish something
+ * without asking.
+ *
+ * A name whose `shared/<name>` already exists is unaffected by that policy
+ * and is re-mirrored on every push exactly as before, so nothing already
+ * published stops publishing and no host needs a migration step.
+ *
+ * Mirrors `syncSkillsPush`'s pattern otherwise: skip a name absent from
  * `~/.claude/` (nothing to mirror), skip a name that is still a live symlink
  * (a symlink-era leftover, or a host sharing `~/.claude` with a
  * symlink-capable OS; mirroring through it would rm the copy target from
@@ -297,7 +312,10 @@ function mirrorSharedNames(
  * write half and `copySharedLinkPull`'s repo-to-host read half now apply the
  * identical set, so what a push carries into the repo is exactly what a pull
  * carries back onto a host, with nothing stripped in one direction that
- * survived in the other.
+ * survived in the other. Both wrappers now decline to adopt a new name, so
+ * the only remaining difference between this push policy and
+ * `stageLocalSharedEdits`'s pre-pull policy is `overlay` and the backup
+ * snapshot.
  *
  * On darwin/linux this is a no-op: the symlink means an edit at
  * `~/.claude/<name>` already lands in `shared/<name>` directly, so push has
@@ -321,7 +339,7 @@ function mirrorSharedNames(
  *   exercised by the real-push-only call site today.
  */
 export function syncSharedLinksPush(map: PathMap | null, opts: MirrorOpts = {}): void {
-  mirrorSharedNames(map, { adoptNew: true, overlay: false }, opts);
+  mirrorSharedNames(map, { adoptNew: false, overlay: false }, opts);
 }
 
 /**
