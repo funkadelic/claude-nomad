@@ -121,8 +121,9 @@ describe('blockSetFor: the shared-name branch', () => {
   // region test extended it to the mis-cased one, so it is pinned here as the
   // real behavior rather than left to be rediscovered. It is not a hole in the
   // boundary: the allow-list admits nothing at that depth, and the extras copy
-  // filter applies the same floor at every level (see backlog 999.91 for the
-  // scan-range question itself).
+  // filter applies the same floor at every level. Whether the slice should
+  // start at the logical name instead of at segment 4 is a separate question
+  // and is tracked outside the source.
   it.each(['extras', 'Extras'])(
     'does not catch a floor name parked above the extras scan range (%s spelling)',
     (region) => {
