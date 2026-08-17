@@ -61,8 +61,8 @@ describe('blockSetFor', () => {
 
 /**
  * The shared-name branch settled by this phase: `blockSetFor` narrows to
- * `ALWAYS_NEVER_SYNC` for an ordinary `shared/<name>/` path, matching the set
- * the host-to-repo writers to that destination already apply. A change to
+ * `ALWAYS_NEVER_SYNC` for an ordinary `shared/<name>/` path, because the
+ * content sits under a name the user asked to share. A change to
  * `UNFILTERED_SHARED_REGIONS` must fail one of these cases.
  */
 describe('blockSetFor: the shared-name branch', () => {
@@ -90,6 +90,27 @@ describe('blockSetFor: the shared-name branch', () => {
     expect(blockSetFor('hosts/dell.json'.split('/'))).toBe(NEVER_SYNC);
     expect(blockSetFor(['CLAUDE.md'])).toBe(NEVER_SYNC);
   });
+
+  // A case-insensitive filesystem (macOS APFS, NTFS) resolves every spelling
+  // below to the SAME directory as its lowercase twin, so a raw Set.has on the
+  // region segment would let the spelling alone pick the narrower denylist.
+  it.each(['Projects', 'PROJECTS', 'projects.', 'projects '])(
+    'keeps the wide set for the %s spelling of the projects region',
+    (region) => {
+      expect(blockSetFor(`shared/${region}/foo/x.jsonl`.split('/'))).toBe(NEVER_SYNC);
+    },
+  );
+
+  it.each(['Extras', 'EXTRAS', 'extras.'])(
+    'routes the %s spelling of the extras region through the extras arm, not the shared-name arm',
+    (region) => {
+      // Same set either way, so the observable difference is the `.claude`
+      // sub-arm: only the extras arm can widen back to CLAUDE_EXTRA_NEVER_SYNC.
+      expect(blockSetFor(`shared/${region}/myproj/.claude/projects/x.jsonl`.split('/'))).toBe(
+        CLAUDE_EXTRA_NEVER_SYNC,
+      );
+    },
+  );
 });
 
 describe('isNeverSync', () => {

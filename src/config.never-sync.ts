@@ -55,7 +55,15 @@ export const CLAUDE_EXTRA_NEVER_SYNC = new Set([...NEVER_SYNC, 'projects']);
  * where the broader `NEVER_SYNC` segment scan is narrowed to avoid
  * false-blocking ephemeral dir names (`todos`, `plans`, etc.) inside synced
  * `.planning/` trees. Strict subset of `NEVER_SYNC`; doctor display and the
- * sharedDirs guard use the full set.
+ * sharedDirs guard use the full set, since those gate a NAME the user is
+ * choosing rather than content nested under one already chosen.
+ *
+ * This set is now the floor at four places, not one: the `shared/extras/`
+ * arm of `blockSetFor`, its ordinary-shared-name arm, `mirrorOneSharedName`'s
+ * host-to-repo copy filter, and `cmdAdopt`'s refusal scan. Everywhere the
+ * denylist narrows, it narrows to exactly this set, so these five names plus
+ * the {@link SECRET_FILE_PATTERNS} shapes are what survives every narrowing.
+ * Removing a name from here removes it from all four at once.
  *
  * Lives beside its two siblings in this dependency-free leaf rather than in
  * `config.ts`, so `blockSetFor` below can choose between all three without the
@@ -232,6 +240,25 @@ export function isClaudeExtraName(name: string): boolean {
 }
 
 /**
+ * Normalized comparison key for the region segment directly under `shared/`,
+ * case-folded and stripped of trailing dots and whitespace, matching the
+ * hardening {@link isClaudeExtraName} applies to the sibling selection
+ * comparison.
+ *
+ * Both region tests below run through this rather than comparing the raw
+ * segment. `shared/Projects/` and `shared/projects/` are the SAME directory on
+ * a case-insensitive filesystem (macOS APFS, NTFS), so a raw comparison lets a
+ * spelling difference alone decide which denylist that tree crosses, which is
+ * the narrowing this module exists to make deliberate.
+ *
+ * @param segment A single path segment, normally `segments[1]`.
+ * @returns The segment's normalized region key.
+ */
+function regionKey(segment: string): string {
+  return stripTrailingDotsAndWhitespace(segment).toLowerCase();
+}
+
+/**
  * True when a repo-relative path's segments land inside the extras tree, which
  * is the one region where the denylist narrows and the scan skips a prefix.
  * Both decisions read this predicate rather than restating the test, since a
@@ -242,7 +269,7 @@ export function isClaudeExtraName(name: string): boolean {
  * @returns Whether the path sits under `shared/extras/`.
  */
 function isExtrasScoped(segments: string[]): boolean {
-  return segments[0] === 'shared' && segments[1] === 'extras';
+  return segments[0] === 'shared' && regionKey(segments[1] ?? '') === 'extras';
 }
 
 /**
@@ -263,16 +290,20 @@ function isExtrasScoped(segments: string[]): boolean {
  * says so), so this push gate is the ONLY deny-set boundary a
  * `shared/projects/<logical>/` tree ever crosses. Narrowing it here would
  * weaken that boundary with nothing behind it to catch what slips through.
+ * Its content is also not a name the user asked to share: the remap mechanism
+ * puts it there, which is the distinction the ordinary-name arm rests on.
+ *
+ * Membership is tested through {@link regionKey}, never a raw `Set.has`, so
+ * `shared/Projects/` cannot take the narrow arm on a case-insensitive
+ * filesystem where it names this very directory.
  */
 const UNFILTERED_SHARED_REGIONS = new Set(['extras', 'projects']);
 
 /**
  * True when a repo-relative path's segments sit under an ordinary shared NAME
- * (`shared/<name>/...`) whose content a host-to-repo writer fills using the
- * narrow `ALWAYS_NEVER_SYNC` set, so this gate, which runs behind those
- * writers, applies the same set they already applied. The complement of
- * `isExtrasScoped`: that predicate scopes to the extras TREE, this one scopes
- * to an ordinary shared NAME.
+ * (`shared/<name>/...`), the region where the denylist narrows because the
+ * user named the directory. The complement of `isExtrasScoped`: that predicate
+ * scopes to the extras TREE, this one scopes to an ordinary shared NAME.
  *
  * A bare `['shared']` path (no name segment at all) is not scoped by this
  * predicate: there is nothing below a name for it to be scoped to, so it
@@ -286,7 +317,9 @@ function isSharedNameScoped(segments: string[]): boolean {
   // proves it is defined for any real path.split('/') result, so a fallback
   // here would be an untestable branch rather than a real defense.
   return (
-    segments[0] === 'shared' && segments.length > 1 && !UNFILTERED_SHARED_REGIONS.has(segments[1])
+    segments[0] === 'shared' &&
+    segments.length > 1 &&
+    !UNFILTERED_SHARED_REGIONS.has(regionKey(segments[1]))
   );
 }
 
@@ -306,12 +339,21 @@ function isSharedNameScoped(segments: string[]): boolean {
  *
  * Under an ordinary shared name (`shared/<name>/...`, `<name>` not in
  * `UNFILTERED_SHARED_REGIONS`) the same narrow `ALWAYS_NEVER_SYNC` set
- * applies, because that is the set the host-to-repo writers to that
- * destination already apply: this gate computes the same answer the copy
- * filter computed, rather than fighting it. `shared/projects/` is excluded
- * from this branch, because its writer filters nothing below its top level,
- * so this gate is its only boundary and narrowing it would leave that tree
- * with no deny-set protection at all.
+ * applies, because the content sits under a name the user explicitly asked to
+ * share. What holds the line there is this set plus the credential-shape
+ * patterns, not a filter upstream: on win32 `mirrorOneSharedName` happens to
+ * have applied the same set at copy time, but on posix and WSL2 there is NO
+ * host-to-repo writer at all, since `shared/<name>` is the target of the
+ * `~/.claude/<name>` symlink and edits land in the repo directly. This gate is
+ * the only deny-set boundary such a path crosses, and it is narrowed there
+ * deliberately: the wide set does not filter on this path, it hard-fails the
+ * push, which would refuse ordinary names like `plans/` or `tasks/` nested
+ * inside a directory the user opted in.
+ *
+ * `shared/projects/` is excluded from this branch on the other half of that
+ * same test: nobody asked to share it (the remap mechanism writes it), and its
+ * writer filters nothing below the top level, so narrowing here would leave
+ * that tree with no deny-set protection at all.
  *
  * Every other path, including a bare `shared` path with no name segment,
  * falls through to the full `NEVER_SYNC` set. The five credential and

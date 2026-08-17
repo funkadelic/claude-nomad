@@ -406,9 +406,8 @@ describe('enforceAllowList gsd-dropped path handling (issue #294)', () => {
 
 // The gate's new answer under the shared-name branch settled by this phase:
 // a widened NEVER_SYNC-only name nested under a valid sharedDirs entry is now
-// admitted at the push gate, matching what the host-to-repo writers to that
-// destination already write. The floor (the five ALWAYS_NEVER_SYNC names)
-// still hard-blocks on the same entry.
+// admitted at the push gate, because the user asked to share that name. The
+// floor (the five ALWAYS_NEVER_SYNC names) still hard-blocks on the same entry.
 describe('enforceAllowList: shared-name branch admits a widened NEVER_SYNC-only segment', () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -440,6 +439,28 @@ describe('enforceAllowList: shared-name branch admits a widened NEVER_SYNC-only 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('shared/my-tools/settings.local.json is in NEVER_SYNC'),
     );
+  });
+
+  // Every other test for this branch stubs win32, where the mirror's copy
+  // filter runs ahead of the gate and applies the same set. On posix and WSL2
+  // no host-to-repo writer runs at all: `shared/<name>` is the target of the
+  // `~/.claude/<name>` symlink, so edits reach the repo directly and this gate
+  // is the only deny-set boundary the path crosses. Pinning what survives the
+  // narrowing there, on both axes, nested rather than at the tree root.
+  it('keeps the credential floor and the shape axis under a shared name on a posix host', async () => {
+    const realPlatform = process.platform;
+    stubPlatform('linux');
+    try {
+      const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+      const { NomadFatal } = await import('./utils.ts');
+      const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
+      expect(() => enforceAllowList('A  shared/my-tools/deep/.credentials.json\0', map)).toThrow(
+        NomadFatal,
+      );
+      expect(() => enforceAllowList('A  shared/my-tools/deep/id_rsa\0', map)).toThrow(NomadFatal);
+    } finally {
+      stubPlatform(realPlatform);
+    }
   });
 });
 
