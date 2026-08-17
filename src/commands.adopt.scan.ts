@@ -10,7 +10,7 @@
 import { lstatSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { matchDeniedName, NEVER_SYNC } from './config.ts';
+import { ALWAYS_NEVER_SYNC, matchDeniedName } from './config.ts';
 import { EXIT } from './exit-codes.ts';
 import { NomadFatal } from './utils.ts';
 
@@ -61,7 +61,7 @@ function toForwardSlash(p: string): string {
  */
 function walk(root: string, dir: string, out: DeniedEntry[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const match = matchDeniedName(NEVER_SYNC, entry.name);
+    const match = matchDeniedName(ALWAYS_NEVER_SYNC, entry.name);
     if (match !== null) {
       out.push({
         path: toForwardSlash(relative(root, join(dir, entry.name))),
@@ -94,6 +94,19 @@ function walk(root: string, dir: string, out: DeniedEntry[]): void {
  * by construction (one push per matched basename), so the zero case never
  * arises in practice, and this way there is no branch to force in either
  * direction for full coverage.
+ *
+ * Tests every basename against `ALWAYS_NEVER_SYNC`, the credential and
+ * host-config floor, rather than the full `NEVER_SYNC` set: `root` is nested
+ * content under a name the user has already explicitly asked to share, the
+ * same boundary `shared/extras/<logical>/` already applies to its own
+ * content and for the identical reason, so an ordinary directory name
+ * (`sessions`, `plans`, `tasks`, and the rest of `NEVER_SYNC`'s
+ * runtime-state entries) found underneath it is not a collision. The NAME
+ * being adopted is still checked against the full `NEVER_SYNC` set
+ * elsewhere (`classifyDeniedName` in `config.sharedDirs.guard.ts`, backing
+ * `nomad adopt`'s own name validation), so `nomad adopt sessions` is refused
+ * as a name long before this scan ever runs; only nested content stopped
+ * being refused.
  *
  * May throw when a directory under `root` cannot be read; converting that
  * into a reported failure is {@link refuseDeniedEntries}'s job, not this
