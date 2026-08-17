@@ -71,7 +71,23 @@ jobs:
           git switch -C "$BRANCH"
           git add src/settings-keys.ts
           git commit -m "chore(doctor): sync settings schema keys"
-          git push --force-with-lease origin "$BRANCH"
+          # The checkout is single-branch, so nothing here has a remote-tracking
+          # ref for this branch, and a bare --force-with-lease refuses with
+          # "stale info" whenever the branch already exists upstream. That is the
+          # update path: every drift PR so far was merged and its branch deleted
+          # before the next run, so the push always created the branch and the
+          # lease had nothing to check. A PR left open overnight would have
+          # failed this step instead of updating.
+          #
+          # Fetching the branch is necessary but not sufficient: the bare form
+          # still refuses, because it wants a value it observed rather than one
+          # it just created. Stating the expected value explicitly is the
+          # documented, non-experimental form of the lease, and it still refuses
+          # if anyone else moved the branch. An absent branch leaves the
+          # expectation empty, which git reads as "must not exist yet".
+          git fetch --no-tags origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" 2>/dev/null || true
+          expected="$(git rev-parse --verify --quiet "refs/remotes/origin/${BRANCH}" || true)"
+          git push --force-with-lease="refs/heads/${BRANCH}:${expected}" origin "$BRANCH"
           if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
             gh pr create --base main --head "$BRANCH" \
               --title "chore(doctor): sync settings schema keys" \
