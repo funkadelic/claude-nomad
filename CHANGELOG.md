@@ -2,6 +2,58 @@
 
 ## [0.66.0](https://github.com/funkadelic/claude-nomad/compare/v0.65.0...v0.66.0) (2026-08-17)
 
+### What's new
+
+**On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
+
+- **A folder you share now carries everything inside it.** If you share a folder through
+  `sharedDirs`, its subfolders travel with it, including ones with everyday names like `sessions`,
+  `plans`, `tasks`, and `cache`. Those names used to be refused wherever they appeared, so a push
+  could fail, or `nomad adopt` could turn you away, over a folder holding nothing sensitive. Your
+  Claude login, your credential files, your per-host settings, and your local history still never
+  leave the machine, in either direction.
+- **`nomad adopt` checks the whole folder before it moves anything.** It used to copy everything,
+  so a file that never syncs between machines could land in your repo and fail your next push, on
+  content you never chose to add. Adopt now stops before touching anything and names every path it
+  objected to and why: a name that collides with the never-sync list, which renaming clears, or a
+  name that looks like a credential file, where renaming only helps if the new name looks different
+  too. `--dry-run` gives exactly the same answer as the real run, so you can check a folder before
+  committing to it.
+- **An interrupted `nomad adopt` now explains itself instead of writing a crash report.** If
+  another program has the directory open, or its permissions block the move partway through, the
+  command says what happened, where your content ended up, and what to run next. Your content is
+  safe in every one of these cases: either it was never touched on this machine, or it is already
+  in the repo.
+
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to
+it.
+
+- **A push no longer publishes a folder you never asked to share.** Windows keeps your shared
+  config as real file copies rather than symlinks, and a push used to pick up any folder sitting in
+  your Claude directory and publish it to your other machines. Sharing is now the same deliberate
+  step it has always been on macOS and Linux: run `nomad adopt <name>` once, then push. Your
+  existing shared folders keep syncing exactly as before.
+- **`nomad doctor --verbose` names a folder your repo does not carry yet.** It lists the local
+  copies that are still private to this machine, and the command that shares one.
+- **One unreadable file no longer ends your pull.** A single config file that another program has
+  open, or that your account cannot read, used to stop the whole pull with a crash report. Nomad
+  now names the file and the reason, then carries on: your settings, your skills, and your session
+  history all still sync, and the command finishes normally. The warning also says whether the file
+  is still there or has been removed, and points at the backup copy when there is one.
+- **`nomad adopt` recovers cleanly when it cannot restore your local copy.** Adopt finishes by
+  copying the folder back out of the sync repo so this machine keeps a usable copy. If that copy
+  was blocked, the command used to end in a crash report, with the folder gone from your Claude
+  directory and nothing staged for publishing. It now stops with a plain message naming the folder
+  and the reason, stages the adopted content either way, and tells you to run `nomad pull` before
+  your next push and why that order matters. A half written folder left behind by the interrupted
+  copy is removed, so a later push cannot replace your adopted folder with the partial one.
+- **A refused `nomad pull --force-remote` now tells you what actually clears it.** The old advice
+  did not work, and would land you back on the same refusal. The message now gives the steps that
+  finish the job and names the one that clears the check, and it says that the stuck rebase has
+  already been undone by that point, so retrying is now just an ordinary pull. It no longer calls
+  every listed file at risk, since the list can include files where the shared repo is simply ahead
+  of yours. The quickstart says the same thing and links to the matching recovery steps in the FAQ.
+
 
 ### Added
 
