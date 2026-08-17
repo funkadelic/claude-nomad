@@ -1,3 +1,18 @@
+/**
+ * The win32 copy-sync classification cluster for `nomad doctor`'s Links
+ * section: the healthy, unpublished and diverged rows for a name materialized
+ * as a real copy rather than a symlink, plus the two path helpers that place a
+ * `git diff --no-index` record back onto its repo-relative path so the
+ * denylist can classify it.
+ *
+ * Split out of `commands.doctor.checks.repo.ts` so that reporter is not
+ * carrying a platform-specific content compare it reaches through a single
+ * call. Nothing here is exported except that call and the row shape: the three
+ * row builders and both path helpers are reachable only through
+ * `classifyWin32Copy`, which is what keeps this a leaf rather than a second
+ * doctor surface.
+ */
+
 import { existsSync } from 'node:fs';
 import { join, win32 as win32Path } from 'node:path';
 

@@ -255,6 +255,18 @@ export function isClaudeExtraName(name: string): boolean {
  * spelling difference alone decide which denylist that tree crosses, which is
  * the narrowing this module exists to make deliberate.
  *
+ * `segments[0]` is deliberately NOT normalized, in either predicate. The
+ * asymmetry is safe in the direction it fails: a mis-cased `Shared/` misses
+ * both predicates, lands on the default arm, and gets the full set with a
+ * full-path scan, which is strictly more restrictive than either narrow arm.
+ * Normalizing it would be a widening, so it stays exact-case on purpose.
+ *
+ * Both callers guard the segment's existence with `segments.length > 1` rather
+ * than passing a `?? ''` fallback. The guard is reachable (a bare `['shared']`
+ * path) and therefore testable; a fallback would be a branch no test could
+ * reach, which the repo's coverage gate treats as a defect rather than a
+ * defense.
+ *
  * @param segment A single path segment, normally `segments[1]`.
  * @returns The segment's normalized region key.
  */
@@ -273,7 +285,7 @@ function regionKey(segment: string): string {
  * @returns Whether the path sits under `shared/extras/`.
  */
 function isExtrasScoped(segments: string[]): boolean {
-  return segments[0] === 'shared' && regionKey(segments[1] ?? '') === 'extras';
+  return segments[0] === 'shared' && segments.length > 1 && regionKey(segments[1]) === 'extras';
 }
 
 /**
@@ -322,9 +334,8 @@ const UNFILTERED_SHARED_REGIONS = new Set(['extras', 'projects']);
  * @returns Whether the path sits under an ordinary `shared/<name>/`.
  */
 function isSharedNameScoped(segments: string[]): boolean {
-  // No `?? ''` fallback on segments[1]: the segments.length > 1 guard already
-  // proves it is defined for any real path.split('/') result, so a fallback
-  // here would be an untestable branch rather than a real defense.
+  // Same guard shape as `isExtrasScoped`; see {@link regionKey} for why both
+  // read `segments.length > 1` instead of a `?? ''` fallback.
   return (
     segments[0] === 'shared' &&
     segments.length > 1 &&
