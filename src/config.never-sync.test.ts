@@ -112,6 +112,30 @@ describe('blockSetFor: the shared-name branch', () => {
       );
     },
   );
+
+  // The extras arm carries a SCAN RANGE as well as a set: `deniedSegmentFor`
+  // starts at segment 4, so the `<logical>` name cannot hard-block its own
+  // files. A floor name parked directly at `shared/extras/<logical>/<file>`
+  // therefore sits above the scan and this gate does not catch it, in either
+  // spelling. That is pre-existing for the lowercase one and normalizing the
+  // region test extended it to the mis-cased one, so it is pinned here as the
+  // real behavior rather than left to be rediscovered. It is not a hole in the
+  // boundary: the allow-list admits nothing at that depth, and the extras copy
+  // filter applies the same floor at every level (see backlog 999.91 for the
+  // scan-range question itself).
+  it.each(['extras', 'Extras'])(
+    'does not catch a floor name parked above the extras scan range (%s spelling)',
+    (region) => {
+      expect(isNeverSync(`shared/${region}/myproj/settings.local.json`)).toBe(false);
+    },
+  );
+
+  it.each(['extras', 'Extras'])(
+    'still catches the same floor name once it is inside the extras scan range (%s spelling)',
+    (region) => {
+      expect(isNeverSync(`shared/${region}/myproj/.planning/settings.local.json`)).toBe(true);
+    },
+  );
 });
 
 describe('isNeverSync', () => {

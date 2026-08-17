@@ -58,12 +58,16 @@ export const CLAUDE_EXTRA_NEVER_SYNC = new Set([...NEVER_SYNC, 'projects']);
  * sharedDirs guard use the full set, since those gate a NAME the user is
  * choosing rather than content nested under one already chosen.
  *
- * This set is now the floor at four places, not one: the `shared/extras/`
- * arm of `blockSetFor`, its ordinary-shared-name arm, `mirrorOneSharedName`'s
- * host-to-repo copy filter, and `cmdAdopt`'s refusal scan. Everywhere the
- * denylist narrows, it narrows to exactly this set, so these five names plus
+ * The invariant is worth more than an enumeration: wherever a denylist in this
+ * codebase narrows, it narrows to exactly this set, so these five names plus
  * the {@link SECRET_FILE_PATTERNS} shapes are what survives every narrowing.
- * Removing a name from here removes it from all four at once.
+ * Removing a name from here removes it from every one of those places at once,
+ * and they run in BOTH directions. The outbound ones are the more obvious
+ * (`blockSetFor`'s two narrow arms, `mirrorOneSharedName`'s copy filter,
+ * `cmdAdopt`'s refusal scan, the skills sync); the inbound one is
+ * `copySharedLinkPull` in `links.ts`, which is what stops a poisoned repo from
+ * restoring a credential or a per-host settings file onto a machine. Grep the
+ * symbol for the live list rather than trusting a count written here.
  *
  * Lives beside its two siblings in this dependency-free leaf rather than in
  * `config.ts`, so `blockSetFor` below can choose between all three without the
@@ -273,12 +277,17 @@ function isExtrasScoped(segments: string[]): boolean {
 }
 
 /**
- * Top-level names under `shared/` whose destination is written by a nomad
- * writer that applies no narrow deny-set filter of its own, so the boundary
- * function stays on the full `NEVER_SYNC` set for content nested under them.
- * A name belongs here only when leaving it off would make this gate narrower
- * than the writer that fills that destination, not because of anything about
- * the path's shape.
+ * Top-level names under `shared/` holding content the user did NOT ask to
+ * share by name, so the boundary function stays on the full `NEVER_SYNC` set
+ * for anything nested under them.
+ *
+ * That is the membership rule, and it is about provenance rather than about
+ * the path's shape: the narrow arm exists because a user named the directory,
+ * so a region nomad populates on the user's behalf does not qualify no matter
+ * what its content looks like. Do not restate the rule in terms of what some
+ * writer already filtered. On posix and WSL2 no writer runs ahead of this gate
+ * at all (see `blockSetFor`), so that phrasing would argue every shared name
+ * belongs in this set, which is the reverse of what it is for.
  *
  * `extras` is handled by its own branch above (`isExtrasScoped`) and is
  * listed here anyway, so this predicate reads correctly on its own rather

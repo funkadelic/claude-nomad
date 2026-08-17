@@ -24,7 +24,6 @@ import {
 import { addChildItem, addItem, type DoctorSection } from './commands.doctor.format.ts';
 import {
   classifyWin32Copy,
-  repoHasSharedSource,
   type SharedLinkClassification,
 } from './commands.doctor.checks.repo.win32.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
@@ -180,6 +179,19 @@ export function reportRepoState(section: DoctorSection): void {
     );
     process.exitCode = 1;
   }
+}
+
+/**
+ * True when the repo has a `shared/<name>` source for this link. `applySharedLinks`
+ * only creates a symlink when this source exists, so when it does NOT, an absent
+ * or dangling link in `~/.claude/` is expected (nothing to sync), not a problem to
+ * fix. Doctor uses this to downgrade those rows from a warn to an info note.
+ *
+ * @param name - A shared name (`commands`, `rules`, ...).
+ * @returns Whether `shared/<name>` exists in the repo.
+ */
+function repoHasSharedSource(name: string): boolean {
+  return existsSync(join(repoHome(), 'shared', name));
 }
 
 /**

@@ -5,24 +5,6 @@ import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { deniedSegmentFor, repoHome } from './config.ts';
 import { listDivergingFiles } from './extras-sync.diff.ts';
 
-/**
- * True when the repo has a `shared/<name>` source for this link. `applySharedLinks`
- * only creates a symlink when this source exists, so when it does NOT, an absent
- * or dangling link in `~/.claude/` is expected (nothing to sync), not a problem to
- * fix. Doctor uses this to downgrade those rows from a warn to an info note.
- *
- * Lives in this leaf rather than beside its four callers in
- * `commands.doctor.checks.repo.ts` because `divergingRepoPath` below needs the
- * same probe, and importing it back from the parent would make the pair
- * circular.
- *
- * @param name - A shared name (`commands`, `rules`, ...).
- * @returns Whether `shared/<name>` exists in the repo.
- */
-export function repoHasSharedSource(name: string): boolean {
-  return existsSync(join(repoHome(), 'shared', name));
-}
-
 /** Return shape shared by every `classifySharedLink` branch. */
 export type SharedLinkClassification = { line: string; fail: boolean; children?: string[] };
 

@@ -441,26 +441,25 @@ describe('enforceAllowList: shared-name branch admits a widened NEVER_SYNC-only 
     );
   });
 
-  // Every other test for this branch stubs win32, where the mirror's copy
-  // filter runs ahead of the gate and applies the same set. On posix and WSL2
-  // no host-to-repo writer runs at all: `shared/<name>` is the target of the
-  // `~/.claude/<name>` symlink, so edits reach the repo directly and this gate
-  // is the only deny-set boundary the path crosses. Pinning what survives the
-  // narrowing there, on both axes, nested rather than at the tree root.
-  it('keeps the credential floor and the shape axis under a shared name on a posix host', async () => {
-    const realPlatform = process.platform;
-    stubPlatform('linux');
-    try {
-      const { enforceAllowList } = await import('./commands.push.allowlist.ts');
-      const { NomadFatal } = await import('./utils.ts');
-      const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
-      expect(() => enforceAllowList('A  shared/my-tools/deep/.credentials.json\0', map)).toThrow(
-        NomadFatal,
-      );
-      expect(() => enforceAllowList('A  shared/my-tools/deep/id_rsa\0', map)).toThrow(NomadFatal);
-    } finally {
-      stubPlatform(realPlatform);
-    }
+  // Deliberately NOT platform-stubbed: nothing from `enforceAllowList` down
+  // through `isNeverSync` to `blockSetFor` branches on the platform, so a stub
+  // here would assert nothing and would imply a branch that does not exist.
+  //
+  // The case matters because of what runs AHEAD of the gate, which does differ.
+  // On win32 the mirror's copy filter has already applied this same set. On
+  // posix and WSL2 no host-to-repo writer runs at all: `shared/<name>` is the
+  // target of the `~/.claude/<name>` symlink, so edits reach the repo directly
+  // and this gate is the only deny-set boundary the path crosses. These two
+  // assertions are what has to survive the narrowing in that arrangement, on
+  // both match axes, nested rather than at the tree root.
+  it('keeps the credential floor and the shape axis nested under a shared name', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
+    expect(() => enforceAllowList('A  shared/my-tools/deep/.credentials.json\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(() => enforceAllowList('A  shared/my-tools/deep/id_rsa\0', map)).toThrow(NomadFatal);
   });
 });
 
