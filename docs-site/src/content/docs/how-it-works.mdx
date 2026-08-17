@@ -307,17 +307,26 @@ push, so do not point `sharedDirs` at a directory that holds credentials.
 
 First-time setup on an already-configured repo: a symlink can only form once the directory exists
 under `shared/`. On a fresh repo `nomad init --snapshot` handles this for you. To add a new
-`sharedDirs` entry to a repo that is already set up, move it into `shared/` once on the host that
-has it, then let the normal flow take over:
+`sharedDirs` entry to a repo that is already set up, add the name to `path-map.json` first, then run
+`nomad adopt` on the host that has the directory:
 
 ```bash
-$ mv ~/.claude/my-tool ~/claude-nomad/shared/my-tool   # one-time, on the source host
-$ nomad pull                                            # re-creates ~/.claude/my-tool as a symlink
-$ nomad push                                            # shares it with your other hosts
+$ nomad adopt my-tool   # on the source host, after adding "my-tool" to sharedDirs
+$ nomad push            # shares it with your other hosts
 ```
 
-`nomad pull` never writes back to the remote, so it will not seed `shared/` for you; the
-one-time move is deliberate.
+`nomad adopt` only accepts a name you have already declared, so the `path-map.json` edit comes
+first: it is a mover, not a config editor, and it never writes `path-map.json` for you. It then
+backs your directory up, copies it into `shared/my-tool`, replaces `~/.claude/my-tool` with a
+symlink pointing there (a real copy on native Windows), and stages the result. It stops at that
+point, printing the `nomad push` reminder rather than committing or pushing anything itself. Use
+`nomad adopt my-tool --dry-run` first to see the backup, move, and staging it would perform without
+touching anything.
+
+Let `nomad adopt` do the move rather than moving the directory into `shared/` by hand. Only the
+command applies the name validation, the credential and never-synced refusal, and the backup, and
+only it recreates the local symlink; a manual `mv` skips all of that and leaves the local name
+missing until the next pull.
 
 ## Per-host overrides
 
