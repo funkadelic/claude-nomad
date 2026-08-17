@@ -198,11 +198,13 @@ type SharedLinkClassification = { line: string; fail: boolean; children?: string
  * `exempt` counts diverging paths the compare threw out as never-synced, and is
  * named in a dim trailing note when non-zero. Which paths is deliberately left
  * unsaid (they are never-synced by definition, so naming them is not
- * actionable), but a bare OK row with a standing one-way divergence behind it
- * reads as "nothing to see" when the truth is "nothing this tool will ever
- * reconcile". Never a WARN, because no command could clear it; compact mode
- * strips passing rows either way, so this surfaces under `--verbose`, where a
- * reader is asking for detail.
+ * actionable, and the set that boundary applies here is the credential and
+ * host-config floor plus the credential-shape patterns, not ordinary
+ * runtime-state directory names), but a bare OK row with a standing one-way
+ * divergence behind it reads as "nothing to see" when the truth is "nothing
+ * this tool will ever reconcile". Never a WARN, because no command could clear
+ * it; compact mode strips passing rows either way, so this surfaces under
+ * `--verbose`, where a reader is asking for detail.
  */
 function win32CopyOkRow(name: string, exempt = 0): SharedLinkClassification {
   const note = exempt > 0 ? dim(` (${exempt} never-synced path(s) not compared)`) : '';
@@ -241,8 +243,10 @@ function relativeUnder(root: string, path: string): string | null {
 /**
  * One `listDivergingFiles` line rewritten as the repo-relative, forward-slashed
  * path `shared/<name>/<rest>`, which is the shape `deniedSegmentFor` expects:
- * it picks its denylist from the first two segments, so a bare relative path
- * would be classified as if it sat somewhere else in the tree.
+ * it picks its denylist from the first two segments (see `blockSetFor`), and a
+ * bare relative path with no `shared/<name>/` prefix would be classified as if
+ * it sat in a different region with a different set, which is exactly the
+ * failure this function exists to prevent.
  *
  * The `(local only)` / `(repo only)` side indicator is stripped first, matching
  * the exact suffixes `labelEntry` produces in `extras-sync.diff.ts`. git
@@ -286,14 +290,20 @@ function divergingRepoPath(line: string, name: string, local: string, shared: st
  * like `reportSkillsDivergence`, per the doctor reporter contract.
  *
  * The compare's result is filtered through `deniedSegmentFor`, the same
- * predicate the host-to-repo mirror applies at copy time (`mirrorOneSharedName`
- * in `links.mirror.ts`). A path under a shared name that the predicate rejects
- * exists locally by design and is deliberately never copied into the repo, so
- * counting it as drift would produce a WARN on every run that no command could
- * clear, which is worse than no WARN at all. The test has to run over every
- * segment rather than the basename, because that denylist holds ordinary
- * DIRECTORY names (`sessions`, `tasks`, `plans`, ...) as well as filenames, and
- * a denied directory segment is structurally invisible to a basename test.
+ * boundary the host-to-repo mirror applies to this destination
+ * (`mirrorOneSharedName` in `links.mirror.ts`, via `blockSetFor`): a path the
+ * mirror will never copy is not reported as drift no command could clear.
+ * Under a shared name that boundary is now the credential and host-config
+ * floor (`ALWAYS_NEVER_SYNC`) plus the credential-shape patterns, not the
+ * wider set of ordinary runtime-state directory names (`sessions`, `tasks`,
+ * `plans`, ...) it used to be; those are counted as ordinary drift again,
+ * because the mirror now writes them and a divergence there is one the next
+ * push actually resolves. What remains exempt is content that genuinely
+ * cannot cross in either direction: a credential-shaped name, or a name on
+ * the five-entry floor. The test has to run over every segment rather than
+ * the basename, because the floor holds directory names as well as
+ * filenames, and a denied directory segment is structurally invisible to a
+ * basename test.
  *
  * What the exemption costs is a signal, and the count is given back rather than
  * swallowed. Such a path is a genuine, permanent one-way divergence: the mirror

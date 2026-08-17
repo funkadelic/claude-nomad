@@ -764,16 +764,17 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
   it('does not count a local-only directory segment on the never-sync list as drift', async () => {
     stubPlatform('win32');
     vi.resetModules();
-    // The never-sync list holds ordinary-sounding DIRECTORY names, and the
-    // mirror refuses to copy such a segment into the repo, so it can only ever
-    // exist on the local side. A basename test cannot see it (the file itself
-    // is an unremarkable notes.md), which would leave the host with a WARN on
-    // every run that no command could clear.
+    // `credentials` matches the credential-shape axis, which the boundary
+    // under a shared name still refuses in both directions, so the mirror
+    // never copies it into the repo and it can only ever exist on the local
+    // side. A basename test cannot see it (the file itself is an unremarkable
+    // notes.md), which would leave the host with a WARN on every run that no
+    // command could clear.
     mkdirSync(join(sharedDir, 'commands'), { recursive: true });
-    mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
     writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
-    writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# notes\n');
+    writeFileSync(join(claudeDir, 'commands', 'credentials', 'notes.md'), '# notes\n');
 
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
     const { section } = await import('./commands.doctor.format.ts');
@@ -796,12 +797,14 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     vi.resetModules();
     // The repo-only side of the same exemption: git reports this path under
     // the REPO root, so relativizing it against the local root would escape
-    // the tree and the segment scan would miss the denied name.
-    mkdirSync(join(sharedDir, 'commands', 'tasks'), { recursive: true });
+    // the tree and the segment scan would miss the denied name. `credentials`
+    // is still refused on the credential-shape axis regardless of which set
+    // applies under a shared name.
+    mkdirSync(join(sharedDir, 'commands', 'credentials'), { recursive: true });
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
     writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
-    writeFileSync(join(sharedDir, 'commands', 'tasks', 'plan.md'), '# plan\n');
+    writeFileSync(join(sharedDir, 'commands', 'credentials', 'plan.md'), '# plan\n');
 
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
     const { section } = await import('./commands.doctor.format.ts');
@@ -812,6 +815,33 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     expect(row).toBeDefined();
     expect(row).toContain(okGlyph);
     expect(row).not.toContain('diverge from shared/');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('counts a local-only sessions directory under a shared name as drift, now that the mirror admits it', async () => {
+    stubPlatform('win32');
+    vi.resetModules();
+    // The exemption is scoped to content the mirror genuinely will not carry.
+    // `sessions` is an ordinary runtime-state directory name, no longer a
+    // member of the boundary this compare applies under a shared name, so it
+    // is actionable drift again: the next push mirror copies the directory
+    // and the divergence resolves.
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(sharedDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'a.md'), '# same\n');
+    writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# notes\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes('commands') && !item.startsWith('\t'));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('diverge from shared/');
+    expect(row).not.toContain('not compared');
     expect(process.exitCode).toBe(0);
   });
 
