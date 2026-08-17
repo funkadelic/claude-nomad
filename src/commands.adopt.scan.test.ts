@@ -297,12 +297,22 @@ describe('refuseDeniedEntries', () => {
     }
     expect(caught).toBeInstanceOf(NomadFatal);
     const fatal = caught as InstanceType<typeof NomadFatal>;
-    expect(fatal.message).toContain('settings.local.json');
-    expect(fatal.message).not.toContain('sessions');
-    expect(fatal.message).not.toContain('plans');
-    expect(fatal.message).not.toContain('tasks');
-    expect(fatal.message).not.toContain('cache');
-    expect(fatal.message).not.toContain('todos');
+
+    // Scoped to the hit list rather than the whole message. The message also
+    // embeds the scanned root twice (the header clause and the remedy
+    // sentence), and that root comes from `os.tmpdir()`, which honors TMPDIR:
+    // a developer whose temp dir lives under something like `~/.cache/tmp`
+    // would fail the `cache` assertion below on a message that is entirely
+    // correct. Only the hit lines are indented, so this is the listing itself.
+    const hitList = fatal.message
+      .split('\n')
+      .filter((line) => line.startsWith('  '))
+      .join('\n');
+
+    expect(hitList).toContain('settings.local.json');
+    for (const ordinary of ['sessions', 'plans', 'tasks', 'cache', 'todos']) {
+      expect(hitList).not.toContain(ordinary);
+    }
   });
 
   describe('unreadable directory', () => {
