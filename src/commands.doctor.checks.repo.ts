@@ -163,7 +163,7 @@ export function reportRepoState(section: DoctorSection): void {
   // Computed once so populated/partial/empty branches share the same
   // annotation. Leading space before `(` keeps the line readable on every
   // branch; empty string produces zero visual change when the override is
-  // not in play, matching SPEC §5 (acceptance: unset env -> no annotation).
+  // not in play, so an unset env var annotates nothing at all.
   const overrideLabel = isOverrideActive() ? ' (NOMAD_REPO)' : '';
   if (state === 'populated') {
     addItem(section, `${green(okGlyph)} repo state: populated${overrideLabel}`);

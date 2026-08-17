@@ -16,7 +16,7 @@ import {
 import { stubPlatform } from './test-helpers.platform.ts';
 
 describe('cmdDoctor NOMAD_REPO annotation', () => {
-  // The annotation lives in reportRepoState (per SPEC §5). It must appear on
+  // The annotation lives in reportRepoState. It must appear on
   // all three branches (populated/partial/empty) when NOMAD_REPO is set, and
   // be absent when the env is unset. NO_COLOR=1 is critical: ANSI escapes
   // would split the literal `(NOMAD_REPO)` substring from surrounding text.
