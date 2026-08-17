@@ -18,8 +18,10 @@ import {
  * fatal-throw behavior. These test the predicate itself.
  */
 describe('blockSetFor', () => {
-  it('returns the full NEVER_SYNC set for a path outside the extras tree', () => {
-    expect(blockSetFor('shared/commands/deploy.md'.split('/'))).toBe(NEVER_SYNC);
+  it('returns ALWAYS_NEVER_SYNC for an ordinary shared name (shared/<name>/...)', () => {
+    // The gate agrees with the host-to-repo writers to this destination,
+    // which already apply the narrow set.
+    expect(blockSetFor('shared/commands/deploy.md'.split('/'))).toBe(ALWAYS_NEVER_SYNC);
   });
 
   it('returns the narrow ALWAYS_NEVER_SYNC subset inside shared/extras/', () => {
@@ -41,11 +43,60 @@ describe('blockSetFor', () => {
       CLAUDE_EXTRA_NEVER_SYNC,
     );
   });
+
+  it('returns ALWAYS_NEVER_SYNC for a short extras path with no dirname segment', () => {
+    // segments[3] is undefined here (only shared/extras/<logical>), so
+    // isClaudeExtraName('') must be false rather than throwing.
+    expect(blockSetFor('shared/extras/myproj'.split('/'))).toBe(ALWAYS_NEVER_SYNC);
+  });
+
+  it('still resolves the .claude extra to CLAUDE_EXTRA_NEVER_SYNC regardless of arm ordering', () => {
+    // A later reordering of blockSetFor's arms must not silently downgrade
+    // the .claude extra to a set that lacks `projects`.
+    expect(blockSetFor('shared/extras/myproj/.claude/settings.json'.split('/'))).toBe(
+      CLAUDE_EXTRA_NEVER_SYNC,
+    );
+  });
+});
+
+/**
+ * The shared-name branch settled by this phase: `blockSetFor` narrows to
+ * `ALWAYS_NEVER_SYNC` for an ordinary `shared/<name>/` path, matching the set
+ * the host-to-repo writers to that destination already apply. A change to
+ * `UNFILTERED_SHARED_REGIONS` must fail one of these cases.
+ */
+describe('blockSetFor: the shared-name branch', () => {
+  it('narrows for an adopted or statically-shared name', () => {
+    expect(blockSetFor('shared/my-tools/notes.md'.split('/'))).toBe(ALWAYS_NEVER_SYNC);
+  });
+
+  it('narrows for shared/skills/, closing a pre-existing disagreement deliberately', () => {
+    // The skills writer has applied the narrow set on both directions since
+    // it was written; the gate behind it was wide until this phase. This
+    // case settles that disagreement on purpose rather than as a side effect.
+    expect(blockSetFor('shared/skills/mine/SKILL.md'.split('/'))).toBe(ALWAYS_NEVER_SYNC);
+  });
+
+  it('stays on NEVER_SYNC for shared/projects/, whose writer filters nothing below its top level', () => {
+    expect(blockSetFor('shared/projects/foo/x.jsonl'.split('/'))).toBe(NEVER_SYNC);
+  });
+
+  it('stays on NEVER_SYNC for a bare ["shared"] path with no name segment to be scoped to', () => {
+    // Required for patch coverage on the segments.length > 1 guard.
+    expect(blockSetFor(['shared'])).toBe(NEVER_SYNC);
+  });
+
+  it('does not leak the narrow set outside shared/', () => {
+    expect(blockSetFor('hosts/dell.json'.split('/'))).toBe(NEVER_SYNC);
+    expect(blockSetFor(['CLAUDE.md'])).toBe(NEVER_SYNC);
+  });
 });
 
 describe('isNeverSync', () => {
-  it('blocks a generic NEVER_SYNC directory segment outside the extras tree', () => {
-    expect(isNeverSync('shared/commands/sessions/notes.md')).toBe(true);
+  it('no longer blocks a generic NEVER_SYNC-only directory segment under an ordinary shared name', () => {
+    // shared/commands/ is an ordinary shared name, so the mirror already
+    // writes `sessions/` there unfiltered; the gate now agrees.
+    expect(isNeverSync('shared/commands/sessions/notes.md')).toBe(false);
   });
 
   it('passes an ordinary shared path', () => {
@@ -72,6 +123,36 @@ describe('isNeverSync', () => {
   it('blocks a credential-shaped filename the exact sets do not enumerate', () => {
     expect(isNeverSync('shared/commands/.env')).toBe(true);
   });
+
+  it('admits the widened NEVER_SYNC-only names under an ordinary shared name', () => {
+    // Stated positively: the widening itself, not just the negation above.
+    expect(isNeverSync('shared/my-tools/sessions/notes.md')).toBe(false);
+    expect(isNeverSync('shared/my-tools/plans/a.md')).toBe(false);
+    expect(isNeverSync('shared/my-tools/tasks/x.md')).toBe(false);
+  });
+
+  it('the shape axis stays live under the new shared-name branch', () => {
+    // Independent of which set is chosen: a credential-shaped directory or
+    // filename is still denied.
+    expect(isNeverSync('shared/my-tools/credentials/token')).toBe(true);
+    expect(isNeverSync('shared/my-tools/.env')).toBe(true);
+  });
+
+  it.each([...ALWAYS_NEVER_SYNC])(
+    'still blocks the credential/host-config floor name %s under every region this phase touches',
+    (name) => {
+      for (const prefix of [
+        'shared/my-tools/',
+        'shared/commands/',
+        'shared/skills/mine/',
+        'shared/projects/foo/',
+      ]) {
+        const path = `${prefix}${name}`;
+        expect(isNeverSync(path)).toBe(true);
+        expect(deniedSegmentFor(path)).toBe(name);
+      }
+    },
+  );
 });
 
 describe('matchDeniedName', () => {
@@ -118,18 +199,25 @@ describe('matchDeniedName', () => {
 });
 
 describe('deniedSegmentFor', () => {
-  it('returns the exact segment that caused the block', () => {
-    expect(deniedSegmentFor('shared/commands/sessions/notes.md')).toBe('sessions');
+  it('no longer flags a single widened segment under an ordinary shared name', () => {
+    expect(deniedSegmentFor('shared/commands/sessions/notes.md')).toBeNull();
   });
 
-  it('returns the FIRST matching segment when a path carries more than one', () => {
-    expect(deniedSegmentFor('shared/commands/plans/todos/a.md')).toBe('plans');
+  it('no longer flags two widened segments under an ordinary shared name', () => {
+    expect(deniedSegmentFor('shared/commands/plans/todos/a.md')).toBeNull();
   });
 
-  it('returns the segment as spelled on disk, not the denylist entry it matched', () => {
+  it('no longer flags a case-folded widened segment under an ordinary shared name', () => {
+    expect(deniedSegmentFor('shared/commands/Sessions/notes.md')).toBeNull();
+  });
+
+  it('returns the segment as spelled on disk, case-folded match, for a name still on the floor', () => {
     // The WARN this feeds names the user's own spelling back to them, so a
-    // case-folded match must not be normalized on the way out.
-    expect(deniedSegmentFor('shared/commands/Sessions/notes.md')).toBe('Sessions');
+    // case-folded match must not be normalized on the way out. Moved off the
+    // widened `sessions` fixture onto a floor name that survives under the
+    // new shared-name branch, so this hardening stays pinned rather than
+    // silently dropping with the fixture.
+    expect(deniedSegmentFor('shared/commands/Settings.local.json')).toBe('Settings.local.json');
   });
 
   it('returns null for a clean path', () => {

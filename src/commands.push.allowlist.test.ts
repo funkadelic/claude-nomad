@@ -381,6 +381,45 @@ describe('enforceAllowList gsd-dropped path handling (issue #294)', () => {
   });
 });
 
+// The gate's new answer under the shared-name branch settled by this phase:
+// a widened NEVER_SYNC-only name nested under a valid sharedDirs entry is now
+// admitted at the push gate, matching what the host-to-repo writers to that
+// destination already write. The floor (the five ALWAYS_NEVER_SYNC names)
+// still hard-blocks on the same entry.
+describe('enforceAllowList: shared-name branch admits a widened NEVER_SYNC-only segment', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('does not throw and prints nothing for a widened name under a valid sharedDirs entry', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
+    expect(() => enforceAllowList('A  shared/my-tools/sessions/notes.md\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('still throws the never-sync message for a floor name under the same entry', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
+    expect(() => enforceAllowList('A  shared/my-tools/settings.local.json\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('shared/my-tools/settings.local.json is in NEVER_SYNC'),
+    );
+  });
+});
+
 // End-to-end regression for issue #294 (commit-suppression gap): after git add -A
 // stages the gsd payload, the unstage step in commitAndPush must remove gsd-owned
 // paths from the index before commit. This test uses a real git repo to exercise

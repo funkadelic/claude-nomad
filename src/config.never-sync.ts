@@ -246,25 +246,87 @@ function isExtrasScoped(segments: string[]): boolean {
 }
 
 /**
- * Choose the hard-block denylist for a repo-relative path's segments. Outside
- * the extras tree the full `NEVER_SYNC` set applies. Inside `shared/extras/`
- * the narrow `ALWAYS_NEVER_SYNC` subset applies, so legitimate GSD content such
- * as `.planning/todos/` passes, EXCEPT for the `.claude` extra:
- * its subtree mirrors `~/.claude/` semantics, so its ephemeral segment names
- * (`projects`, `shell-snapshots`, `sessions`, `todos`, ...) get the full
- * `NEVER_SYNC` boundary. Mirrors `extrasDenySet` in `extras-sync.core.ts` so
- * the push gate and the copy filter agree on the boundary. The `.claude`
- * comparison runs through `isClaudeExtraName` (case-insensitive, trailing
- * dot/whitespace normalized) rather than a raw `===`, so a spelling like
- * `.Claude` or `.claude.` cannot silently downgrade to the narrower
- * `ALWAYS_NEVER_SYNC` set.
+ * Top-level names under `shared/` whose destination is written by a nomad
+ * writer that applies no narrow deny-set filter of its own, so the boundary
+ * function stays on the full `NEVER_SYNC` set for content nested under them.
+ * A name belongs here only when leaving it off would make this gate narrower
+ * than the writer that fills that destination, not because of anything about
+ * the path's shape.
+ *
+ * `extras` is handled by its own branch above (`isExtrasScoped`) and is
+ * listed here anyway, so this predicate reads correctly on its own rather
+ * than only because that branch happens to run first.
+ *
+ * `projects` holds session transcripts. `copyDirJsonlOnly` (`src/remap.ts`)
+ * restricts to `*.jsonl` at depth zero only, then copies every subdirectory
+ * underneath that recursively with no further filtering (its own docstring
+ * says so), so this push gate is the ONLY deny-set boundary a
+ * `shared/projects/<logical>/` tree ever crosses. Narrowing it here would
+ * weaken that boundary with nothing behind it to catch what slips through.
+ */
+const UNFILTERED_SHARED_REGIONS = new Set(['extras', 'projects']);
+
+/**
+ * True when a repo-relative path's segments sit under an ordinary shared NAME
+ * (`shared/<name>/...`) whose content a host-to-repo writer fills using the
+ * narrow `ALWAYS_NEVER_SYNC` set, so this gate, which runs behind those
+ * writers, applies the same set they already applied. The complement of
+ * `isExtrasScoped`: that predicate scopes to the extras TREE, this one scopes
+ * to an ordinary shared NAME.
+ *
+ * A bare `['shared']` path (no name segment at all) is not scoped by this
+ * predicate: there is nothing below a name for it to be scoped to, so it
+ * falls through to the full set in `blockSetFor`.
+ *
+ * @param segments A repo-relative path already split on `/`.
+ * @returns Whether the path sits under an ordinary `shared/<name>/`.
+ */
+function isSharedNameScoped(segments: string[]): boolean {
+  // No `?? ''` fallback on segments[1]: the segments.length > 1 guard already
+  // proves it is defined for any real path.split('/') result, so a fallback
+  // here would be an untestable branch rather than a real defense.
+  return (
+    segments[0] === 'shared' && segments.length > 1 && !UNFILTERED_SHARED_REGIONS.has(segments[1])
+  );
+}
+
+/**
+ * Choose the hard-block denylist for a repo-relative path's segments.
+ *
+ * Inside `shared/extras/` the narrow `ALWAYS_NEVER_SYNC` subset applies, so
+ * legitimate GSD content such as `.planning/todos/` passes, EXCEPT for the
+ * `.claude` extra: its subtree mirrors `~/.claude/` semantics, so its
+ * ephemeral segment names (`projects`, `shell-snapshots`, `sessions`,
+ * `todos`, ...) get the full `NEVER_SYNC` boundary. Mirrors `extrasDenySet`
+ * in `extras-sync.core.ts` so the push gate and the copy filter agree on the
+ * boundary. The `.claude` comparison runs through `isClaudeExtraName`
+ * (case-insensitive, trailing dot/whitespace normalized) rather than a raw
+ * `===`, so a spelling like `.Claude` or `.claude.` cannot silently downgrade
+ * to the narrower `ALWAYS_NEVER_SYNC` set.
+ *
+ * Under an ordinary shared name (`shared/<name>/...`, `<name>` not in
+ * `UNFILTERED_SHARED_REGIONS`) the same narrow `ALWAYS_NEVER_SYNC` set
+ * applies, because that is the set the host-to-repo writers to that
+ * destination already apply: this gate computes the same answer the copy
+ * filter computed, rather than fighting it. `shared/projects/` is excluded
+ * from this branch, because its writer filters nothing below its top level,
+ * so this gate is its only boundary and narrowing it would leave that tree
+ * with no deny-set protection at all.
+ *
+ * Every other path, including a bare `shared` path with no name segment,
+ * falls through to the full `NEVER_SYNC` set. The five credential and
+ * host-config names in `ALWAYS_NEVER_SYNC` stay blocked in every arm, since
+ * every other set is either exactly `ALWAYS_NEVER_SYNC` or a superset of it.
  *
  * @param segments A repo-relative path already split on `/`.
  * @returns The exact-name denylist that applies to that path.
  */
 export function blockSetFor(segments: string[]): Set<string> {
-  if (!isExtrasScoped(segments)) return NEVER_SYNC;
-  return isClaudeExtraName(segments[3] ?? '') ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+  if (isExtrasScoped(segments)) {
+    return isClaudeExtraName(segments[3] ?? '') ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+  }
+  if (isSharedNameScoped(segments)) return ALWAYS_NEVER_SYNC;
+  return NEVER_SYNC;
 }
 
 /**
@@ -278,6 +340,13 @@ export function blockSetFor(segments: string[]): Set<string> {
  * scanned: the `<logical>` and `<dirname>` names are not denylist tokens, and a
  * logical that happens to equal a `NEVER_SYNC` token (e.g. a project named
  * `sessions`) must not hard-block its own legitimate files.
+ *
+ * This slice is deliberately extras-only: under an ordinary shared name,
+ * segment 0 is the literal `shared` and segment 1 is a shared name already
+ * validated against the full `NEVER_SYNC` set (by `classifyDeniedName`)
+ * before it can be shared at all, so scanning both segments changes nothing
+ * reachable and keeps a file hand-created at the top of the shared tree
+ * (`shared/settings.local.json`) hard-blocked.
  *
  * Returns the segment rather than a bare boolean because the denylists hold
  * ordinary-looking directory names (`tasks`, `plans`, `sessions`, ...), so a
