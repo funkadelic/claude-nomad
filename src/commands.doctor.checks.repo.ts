@@ -212,6 +212,30 @@ function win32CopyOkRow(name: string, exempt = 0): SharedLinkClassification {
 }
 
 /**
+ * The win32 copy-sync unpublished-name row: a real local copy at
+ * `~/.claude/<name>` with no `shared/<name>` counterpart in the repo.
+ *
+ * An info row rather than a WARN, because a deliberately host-private
+ * directory is a legitimate state on every platform: `syncSharedLinksPush`
+ * (`links.mirror.ts`) runs under `adoptNew: false`, so it never creates a
+ * repo counterpart for a name the repo does not already carry, and a yellow
+ * row here would train users to ignore a state that is often exactly what
+ * they intended. It exists at all because that same policy change means a
+ * push no longer creates a repo counterpart on its own: without this row,
+ * the only symptom of an unpublished name is its absence on another machine,
+ * with nothing on this one pointing at the cause or the fix.
+ *
+ * Never sets `process.exitCode`, matching every other informational Links
+ * row (`not synced (nothing in shared/)`, a stale symlink, ...).
+ */
+function win32CopyUnpublishedRow(name: string): SharedLinkClassification {
+  return {
+    line: `${dim(infoGlyph)} ${name}: real local copy, not published (run \`nomad adopt ${name}\` to share it)`,
+    fail: false,
+  };
+}
+
+/**
  * The path from `root` down to `path`, forward-slashed, or `null` when `path`
  * is not strictly under `root`.
  *
@@ -317,7 +341,7 @@ function divergingRepoPath(line: string, name: string, local: string, shared: st
  */
 function classifyWin32Copy(name: string, p: string): SharedLinkClassification {
   const sharedPath = join(repoHome(), 'shared', name);
-  if (!existsSync(sharedPath)) return win32CopyOkRow(name);
+  if (!existsSync(sharedPath)) return win32CopyUnpublishedRow(name);
   const compared = listDivergingFiles(p, sharedPath);
   const diverging = compared.filter(
     (line) => deniedSegmentFor(divergingRepoPath(line, name, p, sharedPath)) === null,

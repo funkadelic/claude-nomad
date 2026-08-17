@@ -6,7 +6,7 @@ import type * as diffModule from './extras-sync.diff.ts';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, okGlyph, warnGlyph } from './color.ts';
+import { failGlyph, infoGlyph, okGlyph, warnGlyph } from './color.ts';
 import {
   type Env,
   joinedLog,
@@ -692,12 +692,13 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     expect(cleanRow).toContain(okGlyph);
   });
 
-  it('skips the compare (stays the plain OK row) when the repo has no shared/<name> source', async () => {
+  it('names a real local copy the repo does not carry as unpublished, with the command that publishes it', async () => {
     stubPlatform('win32');
     vi.resetModules();
     const { SHARED_LINKS } = await import('./config.ts');
     const name = SHARED_LINKS[0];
-    // No shared/<name> written at all: nothing to compare against.
+    // No shared/<name> written at all: this name was never published, since
+    // syncSharedLinksPush no longer creates a repo counterpart on its own.
     writeFileSync(join(claudeDir, name), '# local only\n');
 
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
@@ -707,8 +708,35 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
 
     const row = sec.items.find((item) => item.includes(name));
     expect(row).toBeDefined();
-    expect(row).toContain(okGlyph);
-    expect(row).toContain('win32 copy-sync');
+    expect(row).toContain(infoGlyph);
+    expect(row).toContain('not published');
+    expect(row).toContain(`nomad adopt ${name}`);
+    expect(row).not.toContain('win32 copy-sync');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('does not confuse an absent local name with an unpublished one: with nothing at ~/.claude/<name> and nothing in shared/, the row is still "not synced"', async () => {
+    // The two rows are one lstat apart: this one fires when the local stat
+    // fails (ENOENT), the unpublished row above fires when the local stat
+    // succeeds. Confusing them would tell a user to adopt a directory that
+    // does not exist.
+    stubPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    // Nothing written under claudeDir or sharedDir for this name at all.
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(infoGlyph);
+    expect(row).toContain('not synced (nothing in shared/)');
+    expect(row).not.toContain('not published');
+    expect(process.exitCode).toBe(0);
   });
 
   it('never throws when the compare cannot run (git absent from PATH)', async () => {

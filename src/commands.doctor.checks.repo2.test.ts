@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, infoGlyph, okGlyph, warnGlyph } from './color.ts';
+import { failGlyph, infoGlyph, warnGlyph } from './color.ts';
 import { section } from './commands.doctor.format.ts';
 import {
   type Env,
@@ -314,13 +314,15 @@ describe('classifySharedLink win32 real-copy branch', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('reports a real non-symlink target as OK (fail:false) on win32', async () => {
+  it('names a real local directory the repo does not carry as unpublished, with the command that publishes it (fail:false) on win32', async () => {
     stubPlatform('win32');
     vi.resetModules();
     const { SHARED_LINKS } = await import('./config.ts');
     const claudeHomeDir = join(testHome, '.claude');
     mkdirSync(claudeHomeDir, { recursive: true });
     const name = SHARED_LINKS[0];
+    // No shared/<name> in the repo: this directory was never published, since
+    // syncSharedLinksPush no longer creates a repo counterpart on its own.
     mkdirSync(join(claudeHomeDir, name), { recursive: true });
 
     const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
@@ -329,8 +331,10 @@ describe('classifySharedLink win32 real-copy branch', () => {
 
     const row = sec.items.find((item) => item.includes(name));
     expect(row).toBeDefined();
-    expect(row).toContain(okGlyph);
-    expect(row).toContain('win32 copy-sync');
+    expect(row).toContain(infoGlyph);
+    expect(row).toContain('not published');
+    expect(row).toContain(`nomad adopt ${name}`);
+    expect(row).not.toContain('win32 copy-sync');
     expect(process.exitCode).toBe(0);
   });
 
