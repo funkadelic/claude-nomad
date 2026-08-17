@@ -643,7 +643,19 @@ describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
  * obviously-secret one. Pinned in both directions: a name that is now refused,
  * and a name that still passes.
  */
-describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)', () => {
+/**
+ * The copy-time denylist under a shared name, now the credential and
+ * host-config floor (`ALWAYS_NEVER_SYNC`) rather than the full `NEVER_SYNC`
+ * set. `NEVER_SYNC` was authored against `~/.claude/`'s own directory
+ * semantics and carries several ordinary-sounding runtime-state names, so a
+ * user's `sharedDirs` content legitimately containing a directory spelled
+ * exactly like one of those used to stop being mirrored: a user-facing
+ * behavior change pinned in both directions below. It is pinned again here,
+ * inverted: an ordinary directory name is now carried rather than silently
+ * dropped, also a user-facing behavior change, and also pinned in both
+ * directions.
+ */
+describe('copy-time denylist (ALWAYS_NEVER_SYNC, the credential and host-config floor)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNomadRepo: string | undefined;
@@ -680,7 +692,7 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('refuses a directory segment spelled exactly like the generic NEVER_SYNC entry "sessions"', async () => {
+  it('carries a directory segment spelled exactly like the generic NEVER_SYNC entry "sessions"', async () => {
     mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# token: abc\n');
 
@@ -688,7 +700,9 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     const { stageLocalSharedEdits } = await import('./links.mirror.ts');
     stageLocalSharedEdits({ projects: {} }, TS);
 
-    expect(existsSync(join(sharedDir, 'commands', 'sessions'))).toBe(false);
+    expect(readFileSync(join(sharedDir, 'commands', 'sessions', 'notes.md'), 'utf8')).toBe(
+      '# token: abc\n',
+    );
   });
 
   it('still mirrors an ordinary shared file, so the widening did not blanket-refuse', async () => {
@@ -725,9 +739,9 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     expect(existsSync(join(sharedDir, 'commands', '.env'))).toBe(false);
   });
 
-  it('applies the same refusal on the push mirror, which routes through copyExtrasFiltered', async () => {
+  it('applies the same carry on the push mirror, which routes through copyExtrasFiltered', async () => {
     // The pull mirror overlays (copyExtrasOverlayFiltered); the push mirror
-    // replaces (copyExtrasFiltered). Both call sites take the widened set.
+    // replaces (copyExtrasFiltered). Both call sites take the narrow set.
     mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# token: abc\n');
     writeFileSync(join(claudeDir, 'commands', 'deploy.md'), '# deploy\n');
@@ -736,8 +750,43 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     const { syncSharedLinksPush } = await import('./links.mirror.ts');
     syncSharedLinksPush({ projects: {} });
 
-    expect(existsSync(join(sharedDir, 'commands', 'sessions'))).toBe(false);
+    expect(readFileSync(join(sharedDir, 'commands', 'sessions', 'notes.md'), 'utf8')).toBe(
+      '# token: abc\n',
+    );
     expect(readFileSync(join(sharedDir, 'commands', 'deploy.md'), 'utf8')).toBe('# deploy\n');
+  });
+
+  it('still refuses a nested exact-name hit: settings.local.json never lands in shared/', async () => {
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{"host":"local"}\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(existsSync(join(sharedDir, 'commands', 'settings.local.json'))).toBe(false);
+  });
+
+  it('round-trips through copySharedLinkPull: what the write half carries in is what the read half carries back out', async () => {
+    // The write half and the read half now apply the identical set for the
+    // first time, so what a push mirrors into shared/ is exactly what a pull
+    // mirrors back onto a host, with nothing stripped in one direction that
+    // survived in the other.
+    mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# token: abc\n');
+    writeFileSync(join(claudeDir, 'commands', 'deploy.md'), '# deploy\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    const { copySharedLinkPull } = await import('./links.ts');
+    const pulledDest = join(testHome, 'pulled-commands');
+    mkdirSync(pulledDest, { recursive: true });
+    copySharedLinkPull(join(sharedDir, 'commands'), pulledDest);
+
+    expect(readFileSync(join(pulledDest, 'sessions', 'notes.md'), 'utf8')).toBe('# token: abc\n');
+    expect(readFileSync(join(pulledDest, 'deploy.md'), 'utf8')).toBe('# deploy\n');
   });
 });
 
