@@ -19,8 +19,9 @@ import {
  */
 describe('blockSetFor', () => {
   it('returns ALWAYS_NEVER_SYNC for an ordinary shared name (shared/<name>/...)', () => {
-    // The gate agrees with the host-to-repo writers to this destination,
-    // which already apply the narrow set.
+    // The content sits under a name the user asked to share. On win32 the
+    // mirror happens to have applied the same set at copy time; on posix no
+    // writer runs ahead of the gate at all, and it is narrowed there anyway.
     expect(blockSetFor('shared/commands/deploy.md'.split('/'))).toBe(ALWAYS_NEVER_SYNC);
   });
 
