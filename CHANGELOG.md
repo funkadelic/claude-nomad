@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.66.0](https://github.com/funkadelic/claude-nomad/compare/v0.65.0...v0.66.0) (2026-08-17)
+
+
+### Added
+
+* carry your own subfolders inside a shared directory ([#522](https://github.com/funkadelic/claude-nomad/issues/522)) ([791eef9](https://github.com/funkadelic/claude-nomad/commit/791eef9685672eb16113f79b7160c3988fae8ebc))
+
+
+### Fixed
+
+* **adopt:** say what happened when a move cannot finish ([#516](https://github.com/funkadelic/claude-nomad/issues/516)) ([d5e8add](https://github.com/funkadelic/claude-nomad/commit/d5e8addac0ba769f340b776ffeb5e96a95877eea))
+* **adopt:** stop a native Windows adopt from ending in a crash report ([#514](https://github.com/funkadelic/claude-nomad/issues/514)) ([0e9bee9](https://github.com/funkadelic/claude-nomad/commit/0e9bee9cc6d32ce71db2f290897de9a256b3a10c))
+* **adopt:** stop adopt from copying host-only files into your synced config ([#517](https://github.com/funkadelic/claude-nomad/issues/517)) ([9f92706](https://github.com/funkadelic/claude-nomad/commit/9f92706fa6ce06635b8c3fef0e76d34484a40696))
+* **ci:** keep the drift PR updatable on a second push ([#523](https://github.com/funkadelic/claude-nomad/issues/523)) ([ff6cdc6](https://github.com/funkadelic/claude-nomad/commit/ff6cdc631002bdbabb5948b7d5c41634adc5a771))
+* **pull:** keep a native Windows pull going when one shared file cannot be read ([#512](https://github.com/funkadelic/claude-nomad/issues/512)) ([32ea631](https://github.com/funkadelic/claude-nomad/commit/32ea63195f260556ebd246ca03d63f7ee1758753))
+* **pull:** say what actually clears a refused recovery ([#515](https://github.com/funkadelic/claude-nomad/issues/515)) ([a97fed2](https://github.com/funkadelic/claude-nomad/commit/a97fed27a0c0439631594fe6c7213e6e6df45062))
+
+
+### Dependencies
+
+* bump astro from 7.2.0 to 7.2.2 in /docs-site in the prod-dependencies group across 1 directory ([#521](https://github.com/funkadelic/claude-nomad/issues/521)) ([4e5e4ca](https://github.com/funkadelic/claude-nomad/commit/4e5e4ca0d0a8d551f3fa743818bb3a196325254d))
+* bump starlight-links-validator from 0.25.2 to 0.25.3 in /docs-site in the dev-dependencies group across 1 directory ([#520](https://github.com/funkadelic/claude-nomad/issues/520)) ([77d1a24](https://github.com/funkadelic/claude-nomad/commit/77d1a24303a14c8d8556d9d69ece4990572797f4))
+* bump the codeql-action group with 2 updates ([#519](https://github.com/funkadelic/claude-nomad/issues/519)) ([9e45462](https://github.com/funkadelic/claude-nomad/commit/9e45462797059f52efbfbaec8d2a65d52455b3a9))
+* bump the dev-dependencies group across 1 directory with 5 updates ([#518](https://github.com/funkadelic/claude-nomad/issues/518)) ([2feb689](https://github.com/funkadelic/claude-nomad/commit/2feb6893c61e815940fd182995b01c3be93be728))
+
 ## [0.65.0](https://github.com/funkadelic/claude-nomad/compare/v0.64.1...v0.65.0) (2026-08-13)
 
 ### What's new
