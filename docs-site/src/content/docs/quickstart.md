@@ -173,21 +173,22 @@ other side:
   the pull stops there instead, so the markers never reach your live config. Copying instead of
   symlinking is the same approach claude-nomad's `skills/` sync already uses on every platform.
 - **The copy-in never carries your Claude secrets or session history.** The same mirror that
-  captures your Windows edits into the sync repo refuses to copy any path with a part on
-  claude-nomad's never-sync list, whether that part is a directory along the way or the file name
-  itself (session transcripts, credentials, caches, and other ephemeral `~/.claude/` state; see
-  `NEVER_SYNC` in `src/config.never-sync.ts` for the exact set). If something on that list somehow
-  lands in the sync repo working tree anyway, such as a file edited directly in the repo rather
-  than through `~/.claude/`, what happens next depends on whether Git already tracks it. If it does
-  not, the next `nomad pull` deletes it, snapshotting it to the backup dir first, and prints a
-  warning naming the file. The warning names the backup location only when there was something to
-  copy: a symlink whose target is already gone is deleted without one, because there is no content
-  to save. If it does, pull leaves the file untouched and prints a warning naming
-  the file and the exact command to run to finish clearing it yourself. One thing worth knowing:
-  that list is not only secrets, it also uses a few ordinary-sounding names (`sessions`, `tasks`,
-  `plans`, `cache`, and others) that Claude Code itself uses under `~/.claude/`. A path inside one
-  of your shared names stops mirroring as soon as any part of it is spelled exactly like one of
-  those; the spelling has to match in full, so a file named `tasks.md` is unaffected.
+  captures your Windows edits into the sync repo refuses to copy your Claude login and credential
+  files, your per-host settings, or your local history and stats cache, by name and by filename
+  shape (a `.env`, a private key, a `.netrc`), whether that part is a directory along the way or
+  the file name itself; see `src/config.never-sync.ts` for the exact set. Session transcripts under
+  `~/.claude/projects/` are a separate mechanism entirely (path-remapped, not mirrored by this
+  gate) and are never carried by it either way. If something on the credential list somehow lands
+  in the sync repo working tree anyway, such as a file edited directly in the repo rather than
+  through `~/.claude/`, what happens next depends on whether Git already tracks it. If it does not,
+  the next `nomad pull` deletes it, snapshotting it to the backup dir first, and prints a warning
+  naming the file. The warning names the backup location only when there was something to copy: a
+  symlink whose target is already gone is deleted without one, because there is no content to save.
+  If it does, pull leaves the file untouched and prints a warning naming the file and the exact
+  command to run to finish clearing it yourself. One thing worth knowing: an ordinary folder of
+  your own inside one of your shared names (`sessions`, `tasks`, `plans`, `cache`, and the like)
+  mirrors along with everything else; it is not on this list, even though Claude Code itself uses
+  those same names under `~/.claude/` for its own runtime state.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
   on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native

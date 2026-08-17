@@ -260,16 +260,39 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     },
   );
 
-  it('does NOT add an allow entry for a NEVER_SYNC sharedDir, and the hard-block still fires', async () => {
-    // 'todos' is in NEVER_SYNC; it must not widen the allow-list AND the
-    // NEVER_SYNC hard-block must still reject a path containing it.
+  it('does NOT add an allow entry for a NEVER_SYNC sharedDir; rejected by the allow-list, not never-sync', async () => {
+    // The name guard (classifyDeniedName, backing isValidSharedDir) answers
+    // whether a directory NAME is safe to share and stays on the full
+    // NEVER_SYNC set, so 'todos' is still refused as a sharedDirs entry and
+    // never widens the allow-list. The content gate (isNeverSync,
+    // blockSetFor) answers whether nested CONTENT under an already-shared
+    // name is safe to carry, and it now follows the writers: 'todos' is not
+    // in ALWAYS_NEVER_SYNC, so 'shared/todos/a.md' no longer hard-blocks at
+    // that layer either. The path is still refused overall, but by the
+    // allow-list violation (no 'shared/todos/' entry exists to admit it)
+    // rather than by the never-sync hard block. The rejection did not go
+    // away; only the layer that produces it did.
     const { enforceAllowList } = await import('./commands.push.allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['todos'] };
     expect(() => enforceAllowList('M  shared/todos/a.md\0', map)).toThrow(NomadFatal);
-    // Verify it was the NEVER_SYNC message (not the allow-list message)
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('is in NEVER_SYNC and must never be pushed'),
+      expect.stringContaining('to sync shared/todos/a.md, add to PUSH_ALLOWED in src/config.ts'),
+    );
+    expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
+  it('still hard-blocks a floor name nested under a NEVER_SYNC sharedDir', async () => {
+    // The floor holds on this path too: even though 'todos' content is no
+    // longer never-sync-blocked, the five ALWAYS_NEVER_SYNC names still are.
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['todos'] };
+    expect(() => enforceAllowList('M  shared/todos/settings.local.json\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('shared/todos/settings.local.json is in NEVER_SYNC'),
     );
   });
 });
@@ -378,6 +401,65 @@ describe('enforceAllowList gsd-dropped path handling (issue #294)', () => {
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(hooks + support + agents, map)).not.toThrow();
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+// The gate's new answer under the shared-name branch settled by this phase:
+// a widened NEVER_SYNC-only name nested under a valid sharedDirs entry is now
+// admitted at the push gate, because the user asked to share that name. The
+// floor (the five ALWAYS_NEVER_SYNC names) still hard-blocks on the same entry.
+describe('enforceAllowList: shared-name branch admits a widened NEVER_SYNC-only segment', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
+      /* captured */
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('does not throw and prints nothing for a widened name under a valid sharedDirs entry', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
+    expect(() => enforceAllowList('A  shared/my-tools/sessions/notes.md\0', map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('still throws the never-sync message for a floor name under the same entry', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
+    expect(() => enforceAllowList('A  shared/my-tools/settings.local.json\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('shared/my-tools/settings.local.json is in NEVER_SYNC'),
+    );
+  });
+
+  // Deliberately NOT platform-stubbed: nothing from `enforceAllowList` down
+  // through `isNeverSync` to `blockSetFor` branches on the platform, so a stub
+  // here would assert nothing and would imply a branch that does not exist.
+  //
+  // The case matters because of what runs AHEAD of the gate, which does differ.
+  // On win32 the mirror's copy filter has already applied this same set. On
+  // posix and WSL2 no host-to-repo writer runs at all: `shared/<name>` is the
+  // target of the `~/.claude/<name>` symlink, so edits reach the repo directly
+  // and this gate is the only deny-set boundary the path crosses. These two
+  // assertions are what has to survive the narrowing in that arrangement, on
+  // both match axes, nested rather than at the tree root.
+  it('keeps the credential floor and the shape axis nested under a shared name', async () => {
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { NomadFatal } = await import('./utils.ts');
+    const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
+    expect(() => enforceAllowList('A  shared/my-tools/deep/.credentials.json\0', map)).toThrow(
+      NomadFatal,
+    );
+    expect(() => enforceAllowList('A  shared/my-tools/deep/id_rsa\0', map)).toThrow(NomadFatal);
   });
 });
 

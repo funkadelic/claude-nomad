@@ -89,7 +89,12 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('mirrors a local file edit and a local directory edit into shared/ on win32', async () => {
+  it('mirrors a local file edit and a local directory edit into an already-shared shared/ on win32', async () => {
+    // Both repo counterparts pre-exist: this case proves an EDIT reaches the
+    // repo, not that a new name is created (adoptNew: false means it never
+    // creates one).
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
@@ -100,6 +105,42 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
 
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# local edit\n');
     expect(readFileSync(join(sharedDir, 'commands', 'foo.md'), 'utf8')).toBe('# local command\n');
+  });
+
+  it('does not publish a name the repo does not already share: publishing is a deliberate act, performed by nomad adopt', async () => {
+    mkdirSync(join(claudeDir, 'rules'), { recursive: true });
+    writeFileSync(join(claudeDir, 'rules', 'private.md'), '# host-only\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    expect(existsSync(join(sharedDir, 'rules'))).toBe(false);
+    expect(readFileSync(join(claudeDir, 'rules', 'private.md'), 'utf8')).toBe('# host-only\n');
+  });
+
+  it('does not publish a local-only file name the repo does not already share (the file-type half of the same contract)', async () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local only\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    expect(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8')).toBe('# local only\n');
+  });
+
+  it('keeps publishing an already-shared name on every push (the half this policy did NOT change)', async () => {
+    mkdirSync(join(sharedDir, 'rules'), { recursive: true });
+    writeFileSync(join(sharedDir, 'rules', 'existing.md'), '# already published\n');
+    mkdirSync(join(claudeDir, 'rules'), { recursive: true });
+    writeFileSync(join(claudeDir, 'rules', 'existing.md'), '# host edit\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    expect(readFileSync(join(sharedDir, 'rules', 'existing.md'), 'utf8')).toBe('# host edit\n');
   });
 
   it('skips a name whose local entry is still a live symlink (symlink-era guard)', async () => {
@@ -119,6 +160,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
   });
 
   it('excludes a nested ALWAYS_NEVER_SYNC entry from the mirrored directory', async () => {
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
     writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{"secret":true}');
@@ -159,6 +201,12 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     // reaches the catch: a permissions failure, a file another process holds
     // open on Windows, a broken mount. The name is skipped either way, but
     // skipping it silently would lose a local edit with no output at all.
+    // Both repo counterparts must pre-exist: without shared/CLAUDE.md, the
+    // notShared early return fires before the mocked lstatSync is ever
+    // reached, the WARN never happens, and this case fails for a reason
+    // that has nothing to do with the mock.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unreadable local edit\n');
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
@@ -192,9 +240,11 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     // it: a truncation back to the bare first clause must fail here.
     expect(said[0]).toContain('left out of shared/ this run');
     expect(said[0]).toContain('another program has it open');
-    // Nothing was written for the unreadable name, and the pass carried on to
-    // the rest of the list rather than aborting at the first bad entry.
-    expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    // Nothing was written for the unreadable name (the repo-side copy is
+    // still its original content, untouched by the failed stat), and the
+    // pass carried on to the rest of the list rather than aborting at the
+    // first bad entry.
+    expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
     expect(existsSync(join(sharedDir, 'commands', 'foo.md'))).toBe(true);
   });
 
@@ -631,19 +681,18 @@ describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
 });
 
 /**
- * The mirror's copy-time filter runs against the full `NEVER_SYNC` set, not the
- * five-name `ALWAYS_NEVER_SYNC` subset. Every path this mirror writes lives
- * under `shared/<name>` and never under `shared/extras/`, so that set is
- * exactly what the repo-working-tree gate resolves for the same path; running
- * it here means the path is simply never written.
- *
- * `NEVER_SYNC` carries ordinary-sounding directory names authored against
- * `~/.claude/` semantics, so this is a user-facing behavior change and gets a
- * test that names the generic entry it uses rather than reaching for an
- * obviously-secret one. Pinned in both directions: a name that is now refused,
- * and a name that still passes.
+ * The copy-time denylist under a shared name, now the credential and
+ * host-config floor (`ALWAYS_NEVER_SYNC`) rather than the full `NEVER_SYNC`
+ * set. `NEVER_SYNC` was authored against `~/.claude/`'s own directory
+ * semantics and carries several ordinary-sounding runtime-state names, so a
+ * user's `sharedDirs` content legitimately containing a directory spelled
+ * exactly like one of those used to stop being mirrored: a user-facing
+ * behavior change pinned in both directions below. It is pinned again here,
+ * inverted: an ordinary directory name is now carried rather than silently
+ * dropped, also a user-facing behavior change, and also pinned in both
+ * directions.
  */
-describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)', () => {
+describe('copy-time denylist (ALWAYS_NEVER_SYNC, the credential and host-config floor)', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNomadRepo: string | undefined;
@@ -680,7 +729,7 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('refuses a directory segment spelled exactly like the generic NEVER_SYNC entry "sessions"', async () => {
+  it('carries a directory segment spelled exactly like the generic NEVER_SYNC entry "sessions"', async () => {
     mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# token: abc\n');
 
@@ -688,7 +737,9 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     const { stageLocalSharedEdits } = await import('./links.mirror.ts');
     stageLocalSharedEdits({ projects: {} }, TS);
 
-    expect(existsSync(join(sharedDir, 'commands', 'sessions'))).toBe(false);
+    expect(readFileSync(join(sharedDir, 'commands', 'sessions', 'notes.md'), 'utf8')).toBe(
+      '# token: abc\n',
+    );
   });
 
   it('still mirrors an ordinary shared file, so the widening did not blanket-refuse', async () => {
@@ -725,9 +776,9 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     expect(existsSync(join(sharedDir, 'commands', '.env'))).toBe(false);
   });
 
-  it('applies the same refusal on the push mirror, which routes through copyExtrasFiltered', async () => {
+  it('applies the same carry on the push mirror, which routes through copyExtrasFiltered', async () => {
     // The pull mirror overlays (copyExtrasOverlayFiltered); the push mirror
-    // replaces (copyExtrasFiltered). Both call sites take the widened set.
+    // replaces (copyExtrasFiltered). Both call sites take the narrow set.
     mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# token: abc\n');
     writeFileSync(join(claudeDir, 'commands', 'deploy.md'), '# deploy\n');
@@ -736,8 +787,43 @@ describe('copy-time denylist (NEVER_SYNC, not just the ALWAYS_NEVER_SYNC subset)
     const { syncSharedLinksPush } = await import('./links.mirror.ts');
     syncSharedLinksPush({ projects: {} });
 
-    expect(existsSync(join(sharedDir, 'commands', 'sessions'))).toBe(false);
+    expect(readFileSync(join(sharedDir, 'commands', 'sessions', 'notes.md'), 'utf8')).toBe(
+      '# token: abc\n',
+    );
     expect(readFileSync(join(sharedDir, 'commands', 'deploy.md'), 'utf8')).toBe('# deploy\n');
+  });
+
+  it('still refuses a nested exact-name hit: settings.local.json never lands in shared/', async () => {
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'settings.local.json'), '{"host":"local"}\n');
+
+    stubPlatform('win32');
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS);
+
+    expect(existsSync(join(sharedDir, 'commands', 'settings.local.json'))).toBe(false);
+  });
+
+  it('round-trips through copySharedLinkPull: what the write half carries in is what the read half carries back out', async () => {
+    // The write half and the read half now apply the identical set for the
+    // first time, so what a push mirrors into shared/ is exactly what a pull
+    // mirrors back onto a host, with nothing stripped in one direction that
+    // survived in the other.
+    mkdirSync(join(claudeDir, 'commands', 'sessions'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'sessions', 'notes.md'), '# token: abc\n');
+    writeFileSync(join(claudeDir, 'commands', 'deploy.md'), '# deploy\n');
+
+    stubPlatform('win32');
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    const { copySharedLinkPull } = await import('./links.ts');
+    const pulledDest = join(testHome, 'pulled-commands');
+    mkdirSync(pulledDest, { recursive: true });
+    copySharedLinkPull(join(sharedDir, 'commands'), pulledDest);
+
+    expect(readFileSync(join(pulledDest, 'sessions', 'notes.md'), 'utf8')).toBe('# token: abc\n');
+    expect(readFileSync(join(pulledDest, 'deploy.md'), 'utf8')).toBe('# deploy\n');
   });
 });
 
@@ -825,8 +911,8 @@ describe('revertDeniedMirrorPaths', () => {
   it('warns and moves on when an untracked hit cannot be removed', async () => {
     // Stands in for the real throwing cases: an antivirus lock, a read-only
     // file, a path over the Windows limit.
-    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-    writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'notes.md'), 'token=abc\n');
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
@@ -839,12 +925,16 @@ describe('revertDeniedMirrorPaths', () => {
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     expect(() =>
-      revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS),
+      revertDeniedMirrorPaths(
+        repo,
+        { tracked: [], untracked: ['shared/commands/credentials'] },
+        TS,
+      ),
     ).not.toThrow();
 
     expect(warnings()).toContain('could not remove');
     expect(warnings()).toContain('EPERM');
-    expect(existsSync(join(repo, 'shared', 'commands', 'sessions'))).toBe(true);
+    expect(existsSync(join(repo, 'shared', 'commands', 'credentials'))).toBe(true);
   });
 
   it('says the path survived rather than claiming a removal that did not happen', async () => {
@@ -854,6 +944,11 @@ describe('revertDeniedMirrorPaths', () => {
     // path that moved between the snapshot and here) must not be reported as
     // removed: the user would believe a denylisted file left the working tree
     // while it is still one `git add` from the remote.
+    //
+    // This block deliberately keeps fixtures on both match axes: most cases use
+    // `credentials` (the shape axis, denied under either set), and this one uses
+    // `settings.local.json` (the exact-name axis, one of the five floor names).
+    // The two arms of the predicate can regress independently.
     const abs = join(repo, 'shared', 'commands', 'settings.local.json');
     writeFileSync(abs, '{"apiKey":"x"}\n');
     vi.doMock('node:fs', async (importOriginal) => {
@@ -878,15 +973,15 @@ describe('revertDeniedMirrorPaths', () => {
     // `--untracked-files=all` does not descend into a nested git repository, so
     // an untracked directory can arrive as a single record and the removal has
     // to be recursive to act on it at all.
-    const dir = join(repo, 'shared', 'commands', 'sessions');
+    const dir = join(repo, 'shared', 'commands', 'credentials');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(existsSync(dir)).toBe(false);
-    expect(warnings()).toContain('removed shared/commands/sessions');
+    expect(warnings()).toContain('removed shared/commands/credentials');
   });
 
   it('snapshots an untracked hit into the pull backup before removing it', async () => {
@@ -894,15 +989,15 @@ describe('revertDeniedMirrorPaths', () => {
     // snapshot behind it. Git never had the path, so without one the removal is
     // unrecoverable, which is a strictly worse failure than the leak the gate
     // prevents when it fires on a false positive.
-    const dir = join(repo, 'shared', 'commands', 'sessions');
+    const dir = join(repo, 'shared', 'commands', 'credentials');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(existsSync(dir)).toBe(false);
-    const snapshot = backupOf(join('shared', 'commands', 'sessions', 'notes.md'));
+    const snapshot = backupOf(join('shared', 'commands', 'credentials', 'notes.md'));
     expect(readFileSync(snapshot, 'utf8')).toBe('token=abc\n');
     // The WARN is the gate's only user-facing record, so it has to name where
     // the copy went or the snapshot may as well not exist.
@@ -917,7 +1012,7 @@ describe('revertDeniedMirrorPaths', () => {
     // rather than performed unbacked, and the WARN names the cache failure
     // instead of blaming the file, which would send the user to check the wrong
     // thing entirely.
-    const dir = join(repo, 'shared', 'commands', 'sessions');
+    const dir = join(repo, 'shared', 'commands', 'credentials');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
     vi.doMock('./utils.fs.ts', async (importOriginal) => {
@@ -931,7 +1026,7 @@ describe('revertDeniedMirrorPaths', () => {
     });
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(readFileSync(join(dir, 'notes.md'), 'utf8')).toBe('token=abc\n');
     expect(warnings()).toContain('could not snapshot');
@@ -949,12 +1044,12 @@ describe('revertDeniedMirrorPaths', () => {
     // fact still wherever it was: worse than the silence the gate exists to
     // remove.
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
-    expect(warnings()).toContain('nothing was removed for shared/commands/sessions');
-    expect(warnings()).not.toContain('removed shared/commands/sessions');
+    expect(warnings()).toContain('nothing was removed for shared/commands/credentials');
+    expect(warnings()).not.toContain('removed shared/commands/credentials');
     expect(warnings()).not.toContain('snapshotted');
-    expect(existsSync(backupOf(join('shared', 'commands', 'sessions')))).toBe(false);
+    expect(existsSync(backupOf(join('shared', 'commands', 'credentials')))).toBe(false);
   });
 
   it.skipIf(isWin)('claims the removal of a dangling symlink it really did remove', async () => {
@@ -963,15 +1058,15 @@ describe('revertDeniedMirrorPaths', () => {
     // the backup (correctly, there are no bytes to copy) and then reports that
     // nothing was removed, while rmSync has already unlinked the link. Only
     // the removal claim is true here, and only the snapshot clause is not.
-    const link = join(repo, 'shared', 'commands', 'sessions');
+    const link = join(repo, 'shared', 'commands', 'credentials');
     mkdirSync(dirname(link), { recursive: true });
     symlinkSync(join(repo, 'shared', 'commands', 'gone-target'), link);
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(lstatSync(link, { throwIfNoEntry: false })).toBeUndefined();
-    expect(warnings()).toContain('removed shared/commands/sessions');
+    expect(warnings()).toContain('removed shared/commands/credentials');
     expect(warnings()).not.toContain('nothing was removed');
     expect(warnings()).not.toContain('snapshotted');
   });
@@ -987,16 +1082,20 @@ describe('revertDeniedMirrorPaths', () => {
       // degradation is to attempt the removal and let it say what happened.
       const parent = join(repo, 'shared', 'commands');
       mkdirSync(parent, { recursive: true });
-      writeFileSync(join(parent, 'sessions'), 'token=abc\n');
+      writeFileSync(join(parent, 'credentials'), 'token=abc\n');
       chmodSync(parent, 0o000);
 
       try {
         const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-        revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/sessions'] }, TS);
+        revertDeniedMirrorPaths(
+          repo,
+          { tracked: [], untracked: ['shared/commands/credentials'] },
+          TS,
+        );
 
         expect(warnings()).toContain('could not remove');
         expect(warnings()).not.toContain('nothing was removed');
-        expect(warnings()).not.toContain('removed shared/commands/sessions');
+        expect(warnings()).not.toContain('removed shared/commands/credentials');
       } finally {
         chmodSync(parent, 0o700);
       }
@@ -1052,17 +1151,17 @@ describe('revertDeniedMirrorPaths', () => {
       // deletion of a file the user hand-placed.
       writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# deploy\n');
       commitBase();
-      mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-      const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+      mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+      const abs = join(repo, 'shared', 'commands', 'credentials', 'notes.md');
       writeFileSync(abs, 'token=abc\n');
-      g(['add', 'shared/commands/sessions/notes.md'], repo);
+      g(['add', 'shared/commands/credentials/notes.md'], repo);
       const before = stagedIndex();
 
       const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
       expect(() =>
         revertDeniedMirrorPaths(
           repo,
-          { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+          { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
           TS,
         ),
       ).not.toThrow();
@@ -1070,10 +1169,10 @@ describe('revertDeniedMirrorPaths', () => {
       expect(stagedIndex()).toBe(before);
       expect(readFileSync(abs, 'utf8')).toBe('token=abc\n');
       expect(warnings()).toContain(
-        'shared/commands/sessions/notes.md is staged and has no committed version',
+        'shared/commands/credentials/notes.md is staged and has no committed version',
       );
-      expect(warnings()).toContain('"sessions"');
-      expect(warnings()).toContain('git rm --cached -- shared/commands/sessions/notes.md');
+      expect(warnings()).toContain('"credentials"');
+      expect(warnings()).toContain('git rm --cached -- shared/commands/credentials/notes.md');
       expect(warnings()).toContain('Nothing was changed');
       // ...and it has to say what running that command leads to. Unstaging is
       // exactly what turns the path into an untracked record, which is the shape
@@ -1129,8 +1228,8 @@ describe('revertDeniedMirrorPaths', () => {
       writeFileSync(join(repo, 'hosts', 'outside.md'), '# committed\n');
       writeFileSync(join(repo, 'shared', 'commands', 'keep.md'), '# keep\n');
       commitBase();
-      mkdirSync(join(repo, 'shared', 'commands', 'tasks'), { recursive: true });
-      g(['mv', 'hosts/outside.md', 'shared/commands/tasks/outside.md'], repo);
+      mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+      g(['mv', 'hosts/outside.md', 'shared/commands/credentials/outside.md'], repo);
       const before = stagedIndex();
 
       // Parsed from the real snapshot the backstop is fed, so the pathspec's
@@ -1145,9 +1244,9 @@ describe('revertDeniedMirrorPaths', () => {
       revertDeniedMirrorPaths(repo, status, TS);
 
       expect(stagedIndex()).toBe(before);
-      expect(existsSync(join(repo, 'shared', 'commands', 'tasks', 'outside.md'))).toBe(true);
+      expect(existsSync(join(repo, 'shared', 'commands', 'credentials', 'outside.md'))).toBe(true);
       expect(warnings()).toContain(
-        'shared/commands/tasks/outside.md is staged and has no committed version',
+        'shared/commands/credentials/outside.md is staged and has no committed version',
       );
       expect(warnings()).toContain('git diff --cached --name-status');
     },
@@ -1161,8 +1260,8 @@ describe('revertDeniedMirrorPaths', () => {
       // discarded the user's edit to a file nothing had removed.
       writeFileSync(join(repo, 'shared', 'commands', 'foo.md'), 'body\n');
       commitBase();
-      mkdirSync(join(repo, 'shared', 'commands', 'tasks'), { recursive: true });
-      writeFileSync(join(repo, 'shared', 'commands', 'tasks', 'copy.md'), 'body\n');
+      mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+      writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'copy.md'), 'body\n');
       // Copy detection only pairs against a source the same change touched.
       writeFileSync(join(repo, 'shared', 'commands', 'foo.md'), 'body\nedited\n');
       g(['add', '-A'], repo);
@@ -1172,7 +1271,7 @@ describe('revertDeniedMirrorPaths', () => {
         { cwd: repo },
       ).toString();
       // Guard the fixture: without a real C record this case proves nothing.
-      expect(raw).toContain('C  shared/commands/tasks/copy.md');
+      expect(raw).toContain('C  shared/commands/credentials/copy.md');
       const before = stagedIndex();
 
       const { parsePorcelainZ } = await import('./commands.pull.recovery.git.ts');
@@ -1184,7 +1283,7 @@ describe('revertDeniedMirrorPaths', () => {
         'body\nedited\n',
       );
       expect(warnings()).toContain(
-        'shared/commands/tasks/copy.md is staged and has no committed version',
+        'shared/commands/credentials/copy.md is staged and has no committed version',
       );
     },
   );
@@ -1196,11 +1295,11 @@ describe('revertDeniedMirrorPaths', () => {
     // this, which is why it took a copy to surface: nothing is mutated and the
     // assertion is true in this shape, so the whole defect is one user-facing
     // line printed twice, which reads as two separate hits.
-    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-    const src = join(repo, 'shared', 'commands', 'sessions', 'src.md');
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    const src = join(repo, 'shared', 'commands', 'credentials', 'src.md');
     writeFileSync(src, 'body\n');
     commitBase();
-    writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'copy.md'), 'body\n');
+    writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'copy.md'), 'body\n');
     // Copy detection only pairs against a source the same change touched.
     writeFileSync(src, 'body\nedited\n');
     g(['add', '-A'], repo);
@@ -1210,24 +1309,26 @@ describe('revertDeniedMirrorPaths', () => {
       { cwd: repo },
     ).toString();
     // Guard the fixture: without a real C record this case proves nothing.
-    expect(raw).toContain('C  shared/commands/sessions/copy.md');
+    expect(raw).toContain('C  shared/commands/credentials/copy.md');
     const before = stagedIndex();
 
     const { parsePorcelainZ } = await import('./commands.pull.recovery.git.ts');
     const status = parsePorcelainZ(raw);
     // The duplicate is in the parse, which three other consumers depend on, so
     // it is the dispatch that has to absorb it.
-    expect(status.tracked.filter((p) => p === 'shared/commands/sessions/src.md')).toHaveLength(2);
+    expect(status.tracked.filter((p) => p === 'shared/commands/credentials/src.md')).toHaveLength(
+      2,
+    );
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(repo, status, TS);
 
     expect(stagedIndex()).toBe(before);
     const lines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
     expect(
-      lines.filter((l) => l.includes('shared/commands/sessions/src.md is tracked')),
+      lines.filter((l) => l.includes('shared/commands/credentials/src.md is tracked')),
     ).toHaveLength(1);
     expect(
-      lines.filter((l) => l.includes('shared/commands/sessions/copy.md is staged')),
+      lines.filter((l) => l.includes('shared/commands/credentials/copy.md is staged')),
     ).toHaveLength(1);
   });
 
@@ -1237,33 +1338,35 @@ describe('revertDeniedMirrorPaths', () => {
     // into a single visit would silently drop whichever half lost. git does not
     // emit that pairing today, which is exactly why the boundary has to be
     // pinned rather than assumed.
-    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-    const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    const abs = join(repo, 'shared', 'commands', 'credentials', 'notes.md');
     writeFileSync(abs, 'token=abc\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(
       repo,
       {
-        tracked: ['shared/commands/sessions/notes.md'],
-        untracked: ['shared/commands/sessions/notes.md'],
+        tracked: ['shared/commands/credentials/notes.md'],
+        untracked: ['shared/commands/credentials/notes.md'],
       },
       TS,
     );
 
     // Untracked half ran (the file is gone, snapshotted first)...
     expect(existsSync(abs)).toBe(false);
-    expect(warnings()).toContain('removed shared/commands/sessions/notes.md');
+    expect(warnings()).toContain('removed shared/commands/credentials/notes.md');
     // ...and so did the tracked half, which cannot answer outside a checkout.
-    expect(warnings()).toContain('could not check shared/commands/sessions/notes.md against HEAD');
+    expect(warnings()).toContain(
+      'could not check shared/commands/credentials/notes.md against HEAD',
+    );
   });
 
   it.skipIf(!hasGit)('reports a plain tracked modification without restoring it', async () => {
     // The committed case: the content IS in HEAD, so `git checkout HEAD --` is
     // the right command and the WARN names it. Running it here would discard a
     // working-tree edit the gate has no snapshot of.
-    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-    const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    const abs = join(repo, 'shared', 'commands', 'credentials', 'notes.md');
     writeFileSync(abs, '# committed\n');
     commitBase();
     writeFileSync(abs, 'token=abc\n');
@@ -1272,21 +1375,21 @@ describe('revertDeniedMirrorPaths', () => {
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(
       repo,
-      { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+      { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
       TS,
     );
 
     expect(stagedIndex()).toBe(before);
     expect(readFileSync(abs, 'utf8')).toBe('token=abc\n');
     expect(warnings()).toContain(
-      'shared/commands/sessions/notes.md is tracked and has changes against HEAD',
+      'shared/commands/credentials/notes.md is tracked and has changes against HEAD',
     );
-    expect(warnings()).toContain('git checkout HEAD -- shared/commands/sessions/notes.md');
+    expect(warnings()).toContain('git checkout HEAD -- shared/commands/credentials/notes.md');
     expect(warnings()).not.toContain('restored');
     // Both options the WARN opened with leave the denylisted content committed,
     // so the third one has to say how it comes out and be honest that nothing
     // local reaches a copy a previous push already published.
-    expect(warnings()).toContain('git rm -- shared/commands/sessions/notes.md');
+    expect(warnings()).toContain('git rm -- shared/commands/credentials/notes.md');
     expect(warnings()).toContain('rotate');
     expect(warnings()).toContain('cannot scrub what a previous push already sent to the remote');
   });
@@ -1305,23 +1408,27 @@ describe('revertDeniedMirrorPaths', () => {
           'update-index',
           '--add',
           '--cacheinfo',
-          `160000,${'1'.repeat(40)},shared/commands/sessions`,
+          `160000,${'1'.repeat(40)},shared/commands/credentials`,
         ],
         repo,
       );
       g(['commit', '-qm', 'gitlink'], repo);
-      mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-      writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+      mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+      writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'notes.md'), 'token=abc\n');
       const before = stagedIndex();
 
       const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-      revertDeniedMirrorPaths(repo, { tracked: ['shared/commands/sessions'], untracked: [] }, TS);
+      revertDeniedMirrorPaths(
+        repo,
+        { tracked: ['shared/commands/credentials'], untracked: [] },
+        TS,
+      );
 
       expect(stagedIndex()).toBe(before);
       expect(warnings()).toContain(
-        'shared/commands/sessions is tracked and has changes against HEAD',
+        'shared/commands/credentials is tracked and has changes against HEAD',
       );
-      expect(warnings()).toContain('git checkout HEAD -- shared/commands/sessions');
+      expect(warnings()).toContain('git checkout HEAD -- shared/commands/credentials');
     },
   );
 
@@ -1331,8 +1438,8 @@ describe('revertDeniedMirrorPaths', () => {
       // Already deleted (the deletion pass removed it, or the user did). There is
       // nothing left to act on, and naming `git checkout HEAD --` here would be
       // the one piece of advice that puts the denylisted content back.
-      mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-      const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+      mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+      const abs = join(repo, 'shared', 'commands', 'credentials', 'notes.md');
       writeFileSync(abs, 'token=abc\n');
       commitBase();
       rmSync(abs);
@@ -1341,7 +1448,7 @@ describe('revertDeniedMirrorPaths', () => {
       const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
       revertDeniedMirrorPaths(
         repo,
-        { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+        { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
         TS,
       );
 
@@ -1356,8 +1463,8 @@ describe('revertDeniedMirrorPaths', () => {
     // timeout, an unborn or corrupt HEAD, a promisor clone that cannot
     // materialize the object. Only one of those means "not committed", so a
     // null must not pick a command on a guess.
-    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-    const abs = join(repo, 'shared', 'commands', 'sessions', 'notes.md');
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    const abs = join(repo, 'shared', 'commands', 'credentials', 'notes.md');
     writeFileSync(abs, '# committed\n');
     commitBase();
     writeFileSync(abs, 'token=abc\n');
@@ -1370,14 +1477,16 @@ describe('revertDeniedMirrorPaths', () => {
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(
       repo,
-      { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+      { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
       TS,
     );
 
     expect(stagedIndex()).toBe(before);
     expect(readFileSync(abs, 'utf8')).toBe('token=abc\n');
-    expect(warnings()).toContain('could not check shared/commands/sessions/notes.md against HEAD');
-    expect(warnings()).toContain('git status -- shared/commands/sessions/notes.md');
+    expect(warnings()).toContain(
+      'could not check shared/commands/credentials/notes.md against HEAD',
+    );
+    expect(warnings()).toContain('git status -- shared/commands/credentials/notes.md');
     expect(warnings()).not.toContain('git rm --cached');
     expect(warnings()).not.toContain('git checkout HEAD');
   });
@@ -1385,19 +1494,45 @@ describe('revertDeniedMirrorPaths', () => {
   it('says it could not check HEAD when the path is not in a git checkout at all', async () => {
     // No git repo here, so the HEAD lookup fails. Naming a command on that
     // guess is the fail-open the null branch exists to close.
-    mkdirSync(join(repo, 'shared', 'commands', 'sessions'), { recursive: true });
-    writeFileSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'), 'token=abc\n');
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'notes.md'), 'token=abc\n');
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(
       repo,
-      { tracked: ['shared/commands/sessions/notes.md'], untracked: [] },
+      { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
       TS,
     );
 
-    expect(warnings()).toContain('could not check shared/commands/sessions/notes.md against HEAD');
+    expect(warnings()).toContain(
+      'could not check shared/commands/credentials/notes.md against HEAD',
+    );
     expect(warnings()).toContain('before committing');
-    expect(existsSync(join(repo, 'shared', 'commands', 'sessions', 'notes.md'))).toBe(true);
+    expect(existsSync(join(repo, 'shared', 'commands', 'credentials', 'notes.md'))).toBe(true);
+  });
+
+  it('leaves a widened name under a shared name completely alone', async () => {
+    // The contract this phase settles: the backstop no longer deletes content
+    // the host-to-repo writers legitimately produce under an adopted or
+    // statically-shared name. `sessions` is a NEVER_SYNC-only name, so this is
+    // the positive proof that the widening reaches this gate too.
+    const dir = join(repo, 'shared', 'my-tools', 'sessions');
+    mkdirSync(dir, { recursive: true });
+    const abs = join(dir, 'notes.md');
+    writeFileSync(abs, 'token=abc\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    expect(() =>
+      revertDeniedMirrorPaths(
+        repo,
+        { tracked: [], untracked: ['shared/my-tools/sessions/notes.md'] },
+        TS,
+      ),
+    ).not.toThrow();
+
+    expect(readFileSync(abs, 'utf8')).toBe('token=abc\n');
+    expect(warnings()).toBe('');
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup', TS))).toBe(false);
   });
 });
 

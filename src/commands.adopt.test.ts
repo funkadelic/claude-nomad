@@ -759,12 +759,16 @@ describe('cmdAdopt never-sync refusal', () => {
   });
 
   it('refuses a host tree carrying a denied directory, with nothing changed', async () => {
+    // The fixture is `credentials/`, not one of the widened runtime-state
+    // names: those now adopt (see the "widened boundary" describe below), and
+    // this case exists to keep pinning a denied DIRECTORY on the
+    // credential-shape axis, which is still refused under `ALWAYS_NEVER_SYNC`.
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
-    const sessionsDir = join(linkPath, 'sessions');
-    mkdirSync(sessionsDir, { recursive: true });
+    const credentialsDir = join(linkPath, 'credentials');
+    mkdirSync(credentialsDir, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
-    writeFileSync(join(sessionsDir, 'transcript.jsonl'), '{}\n');
+    writeFileSync(join(credentialsDir, 'transcript.jsonl'), '{}\n');
 
     const { cmdAdopt } = await import('./commands.adopt.ts');
     const { NomadFatal } = await import('./utils.ts');
@@ -778,7 +782,7 @@ describe('cmdAdopt never-sync refusal', () => {
     expect(caught).toBeInstanceOf(NomadFatal);
     const fatal = caught as InstanceType<typeof NomadFatal>;
     expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
-    expect(fatal.message).toContain('sessions');
+    expect(fatal.message).toContain('credentials');
     expect(fatal.message).toContain(linkPath);
     expect(fatal.message).toContain('Nothing was changed.');
 
@@ -786,7 +790,7 @@ describe('cmdAdopt never-sync refusal', () => {
     const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
     expect(existsSync(sharedTarget)).toBe(false);
     expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
-    expect(readFileSync(join(sessionsDir, 'transcript.jsonl'), 'utf8')).toBe('{}\n');
+    expect(readFileSync(join(credentialsDir, 'transcript.jsonl'), 'utf8')).toBe('{}\n');
     expect(diffCached(env)).toBe('');
     expect(existsSync(join(env.testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
@@ -849,12 +853,15 @@ describe('cmdAdopt never-sync refusal', () => {
   });
 
   it('--dry-run refuses with the same message and code as the real run, and previews nothing', async () => {
+    // Same fixture-choice reasoning as the case above: `credentials/` is a
+    // denied DIRECTORY on the credential-shape axis, still refused under
+    // `ALWAYS_NEVER_SYNC`.
     addSharedDir(env, 'my-tools');
     const linkPath = join(env.claudeHome, 'my-tools');
-    const sessionsDir = join(linkPath, 'sessions');
-    mkdirSync(sessionsDir, { recursive: true });
+    const credentialsDir = join(linkPath, 'credentials');
+    mkdirSync(credentialsDir, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
-    writeFileSync(join(sessionsDir, 'transcript.jsonl'), '{}\n');
+    writeFileSync(join(credentialsDir, 'transcript.jsonl'), '{}\n');
 
     const { cmdAdopt } = await import('./commands.adopt.ts');
     const { NomadFatal } = await import('./utils.ts');
@@ -1074,6 +1081,99 @@ describe('cmdAdopt never-sync refusal', () => {
     const out = errOutput(env);
     expect(out).toContain('settings.local.json');
     expect(out).not.toContain('backup/');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The widened boundary: an ordinary runtime-state directory name adopts
+// whole, the credential and host-config floor still refuses, and the
+// staged result survives the push gate on the same concrete path.
+// ---------------------------------------------------------------------------
+
+describe('cmdAdopt widened never-sync boundary', () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    teardownAdoptEnv(env);
+  });
+
+  it('adopts a host tree carrying ordinary runtime-state directory names whole', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const sessionsDir = join(linkPath, 'sessions');
+    const plansDir = join(linkPath, 'plans');
+    mkdirSync(sessionsDir, { recursive: true });
+    mkdirSync(plansDir, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(sessionsDir, 'notes.md'), 'session notes\n');
+    writeFileSync(join(plansDir, 'a.md'), 'plan a\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(readFileSync(join(sharedTarget, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(readFileSync(join(sharedTarget, 'sessions', 'notes.md'), 'utf8')).toBe(
+      'session notes\n',
+    );
+    expect(readFileSync(join(sharedTarget, 'plans', 'a.md'), 'utf8')).toBe('plan a\n');
+    if (!isWin) {
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    }
+    const staged = diffCached(env);
+    expect(staged).toContain('shared/my-tools/sessions/notes.md');
+    expect(staged).toContain('shared/my-tools/plans/a.md');
+  });
+
+  it('the staged sessions path from that adopt survives the push allow-list gate', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const sessionsDir = join(linkPath, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(sessionsDir, 'notes.md'), 'session notes\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+
+    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const map = { projects: {}, sharedDirs: ['my-tools'] };
+    expect(() => enforceAllowList('A  shared/my-tools/sessions/notes.md\0', map)).not.toThrow();
+  });
+
+  it('still refuses the credential and host-config floor under the same adopted name', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    const sessionsDir = join(linkPath, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    writeFileSync(join(sessionsDir, 'notes.md'), 'session notes\n');
+    writeFileSync(join(linkPath, 'settings.local.json'), '{"host":"local"}\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { NomadFatal } = await import('./utils.ts');
+
+    let caught: unknown;
+    try {
+      cmdAdopt('my-tools');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NomadFatal);
+    const fatal = caught as InstanceType<typeof NomadFatal>;
+    expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
+    expect(fatal.message).toContain('settings.local.json');
+
+    const sharedTarget = join(env.repoHome, 'shared', 'my-tools');
+    expect(existsSync(sharedTarget)).toBe(false);
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(readFileSync(join(sessionsDir, 'notes.md'), 'utf8')).toBe('session notes\n');
+    expect(readFileSync(join(linkPath, 'settings.local.json'), 'utf8')).toBe('{"host":"local"}\n');
+    expect(diffCached(env)).toBe('');
+    expect(existsSync(join(env.testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
   });
 });
 

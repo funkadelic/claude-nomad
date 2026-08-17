@@ -788,7 +788,10 @@ describe('cmdPush: shared-links push mirror integration', () => {
     // End-to-end with the real (unmocked) syncSharedLinksPush: a win32 local
     // edit at ~/.claude/CLAUDE.md is mirrored into shared/CLAUDE.md by the
     // time cmdPush reaches its status snapshot, mirroring the existing "real
-    // syncSkillsPush" integration test's shape.
+    // syncSkillsPush" integration test's shape. shared/CLAUDE.md must
+    // pre-exist: syncSharedLinksPush runs under adoptNew: false, so it mirrors
+    // an edit into an EXISTING repo counterpart but never creates a new one.
+    writeFileSync(join(env.repoUnderHome, 'shared', 'CLAUDE.md'), '# original shared\n');
     writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# win32 local edit\n');
     stubPlatform('win32');
 

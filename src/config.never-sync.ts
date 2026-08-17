@@ -55,7 +55,19 @@ export const CLAUDE_EXTRA_NEVER_SYNC = new Set([...NEVER_SYNC, 'projects']);
  * where the broader `NEVER_SYNC` segment scan is narrowed to avoid
  * false-blocking ephemeral dir names (`todos`, `plans`, etc.) inside synced
  * `.planning/` trees. Strict subset of `NEVER_SYNC`; doctor display and the
- * sharedDirs guard use the full set.
+ * sharedDirs guard use the full set, since those gate a NAME the user is
+ * choosing rather than content nested under one already chosen.
+ *
+ * The invariant is worth more than an enumeration: wherever a denylist in this
+ * codebase narrows, it narrows to exactly this set, so these five names plus
+ * the {@link SECRET_FILE_PATTERNS} shapes are what survives every narrowing.
+ * Removing a name from here removes it from every one of those places at once,
+ * and they run in BOTH directions. The outbound ones are the more obvious
+ * (`blockSetFor`'s two narrow arms, `mirrorOneSharedName`'s copy filter,
+ * `cmdAdopt`'s refusal scan, the skills sync); the inbound one is
+ * `copySharedLinkPull` in `links.ts`, which is what stops a poisoned repo from
+ * restoring a credential or a per-host settings file onto a machine. Grep the
+ * symbol for the live list rather than trusting a count written here.
  *
  * Lives beside its two siblings in this dependency-free leaf rather than in
  * `config.ts`, so `blockSetFor` below can choose between all three without the
@@ -232,6 +244,37 @@ export function isClaudeExtraName(name: string): boolean {
 }
 
 /**
+ * Normalized comparison key for the region segment directly under `shared/`,
+ * case-folded and stripped of trailing dots and whitespace, matching the
+ * hardening {@link isClaudeExtraName} applies to the sibling selection
+ * comparison.
+ *
+ * Both region tests below run through this rather than comparing the raw
+ * segment. `shared/Projects/` and `shared/projects/` are the SAME directory on
+ * a case-insensitive filesystem (macOS APFS, NTFS), so a raw comparison lets a
+ * spelling difference alone decide which denylist that tree crosses, which is
+ * the narrowing this module exists to make deliberate.
+ *
+ * `segments[0]` is deliberately NOT normalized, in either predicate. The
+ * asymmetry is safe in the direction it fails: a mis-cased `Shared/` misses
+ * both predicates, lands on the default arm, and gets the full set with a
+ * full-path scan, which is strictly more restrictive than either narrow arm.
+ * Normalizing it would be a widening, so it stays exact-case on purpose.
+ *
+ * Both callers guard the segment's existence with `segments.length > 1` rather
+ * than passing a `?? ''` fallback. The guard is reachable (a bare `['shared']`
+ * path) and therefore testable; a fallback would be a branch no test could
+ * reach, which the repo's coverage gate treats as a defect rather than a
+ * defense.
+ *
+ * @param segment A single path segment, normally `segments[1]`.
+ * @returns The segment's normalized region key.
+ */
+function regionKey(segment: string): string {
+  return stripTrailingDotsAndWhitespace(segment).toLowerCase();
+}
+
+/**
  * True when a repo-relative path's segments land inside the extras tree, which
  * is the one region where the denylist narrows and the scan skips a prefix.
  * Both decisions read this predicate rather than restating the test, since a
@@ -242,29 +285,110 @@ export function isClaudeExtraName(name: string): boolean {
  * @returns Whether the path sits under `shared/extras/`.
  */
 function isExtrasScoped(segments: string[]): boolean {
-  return segments[0] === 'shared' && segments[1] === 'extras';
+  return segments[0] === 'shared' && segments.length > 1 && regionKey(segments[1]) === 'extras';
 }
 
 /**
- * Choose the hard-block denylist for a repo-relative path's segments. Outside
- * the extras tree the full `NEVER_SYNC` set applies. Inside `shared/extras/`
- * the narrow `ALWAYS_NEVER_SYNC` subset applies, so legitimate GSD content such
- * as `.planning/todos/` passes, EXCEPT for the `.claude` extra:
- * its subtree mirrors `~/.claude/` semantics, so its ephemeral segment names
- * (`projects`, `shell-snapshots`, `sessions`, `todos`, ...) get the full
- * `NEVER_SYNC` boundary. Mirrors `extrasDenySet` in `extras-sync.core.ts` so
- * the push gate and the copy filter agree on the boundary. The `.claude`
- * comparison runs through `isClaudeExtraName` (case-insensitive, trailing
- * dot/whitespace normalized) rather than a raw `===`, so a spelling like
- * `.Claude` or `.claude.` cannot silently downgrade to the narrower
- * `ALWAYS_NEVER_SYNC` set.
+ * Top-level names under `shared/` holding content the user did NOT ask to
+ * share by name, so the boundary function stays on the full `NEVER_SYNC` set
+ * for anything nested under them.
+ *
+ * That is the membership rule, and it is about provenance rather than about
+ * the path's shape: the narrow arm exists because a user named the directory,
+ * so a region nomad populates on the user's behalf does not qualify no matter
+ * what its content looks like. Do not restate the rule in terms of what some
+ * writer already filtered. On posix and WSL2 no writer runs ahead of this gate
+ * at all (see `blockSetFor`), so that phrasing would argue every shared name
+ * belongs in this set, which is the reverse of what it is for.
+ *
+ * `extras` is handled by its own branch above (`isExtrasScoped`) and is
+ * listed here anyway, so this predicate reads correctly on its own rather
+ * than only because that branch happens to run first.
+ *
+ * `projects` holds session transcripts. `copyDirJsonlOnly` (`src/remap.ts`)
+ * restricts to `*.jsonl` at depth zero only, then copies every subdirectory
+ * underneath that recursively with no further filtering (its own docstring
+ * says so), so this push gate is the ONLY deny-set boundary a
+ * `shared/projects/<logical>/` tree ever crosses. Narrowing it here would
+ * weaken that boundary with nothing behind it to catch what slips through.
+ * Its content is also not a name the user asked to share: the remap mechanism
+ * puts it there, which is the distinction the ordinary-name arm rests on.
+ *
+ * Membership is tested through {@link regionKey}, never a raw `Set.has`, so
+ * `shared/Projects/` cannot take the narrow arm on a case-insensitive
+ * filesystem where it names this very directory.
+ */
+const UNFILTERED_SHARED_REGIONS = new Set(['extras', 'projects']);
+
+/**
+ * True when a repo-relative path's segments sit under an ordinary shared NAME
+ * (`shared/<name>/...`), the region where the denylist narrows because the
+ * user named the directory. The complement of `isExtrasScoped`: that predicate
+ * scopes to the extras TREE, this one scopes to an ordinary shared NAME.
+ *
+ * A bare `['shared']` path (no name segment at all) is not scoped by this
+ * predicate: there is nothing below a name for it to be scoped to, so it
+ * falls through to the full set in `blockSetFor`.
+ *
+ * @param segments A repo-relative path already split on `/`.
+ * @returns Whether the path sits under an ordinary `shared/<name>/`.
+ */
+function isSharedNameScoped(segments: string[]): boolean {
+  // Same guard shape as `isExtrasScoped`; see {@link regionKey} for why both
+  // read `segments.length > 1` instead of a `?? ''` fallback.
+  return (
+    segments[0] === 'shared' &&
+    segments.length > 1 &&
+    !UNFILTERED_SHARED_REGIONS.has(regionKey(segments[1]))
+  );
+}
+
+/**
+ * Choose the hard-block denylist for a repo-relative path's segments.
+ *
+ * Inside `shared/extras/` the narrow `ALWAYS_NEVER_SYNC` subset applies, so
+ * legitimate GSD content such as `.planning/todos/` passes, EXCEPT for the
+ * `.claude` extra: its subtree mirrors `~/.claude/` semantics, so its
+ * ephemeral segment names (`projects`, `shell-snapshots`, `sessions`,
+ * `todos`, ...) get the full `NEVER_SYNC` boundary. Mirrors `extrasDenySet`
+ * in `extras-sync.core.ts` so the push gate and the copy filter agree on the
+ * boundary. The `.claude` comparison runs through `isClaudeExtraName`
+ * (case-insensitive, trailing dot/whitespace normalized) rather than a raw
+ * `===`, so a spelling like `.Claude` or `.claude.` cannot silently downgrade
+ * to the narrower `ALWAYS_NEVER_SYNC` set.
+ *
+ * Under an ordinary shared name (`shared/<name>/...`, `<name>` not in
+ * `UNFILTERED_SHARED_REGIONS`) the same narrow `ALWAYS_NEVER_SYNC` set
+ * applies, because the content sits under a name the user explicitly asked to
+ * share. What holds the line there is this set plus the credential-shape
+ * patterns, not a filter upstream: on win32 `mirrorOneSharedName` happens to
+ * have applied the same set at copy time, but on posix and WSL2 there is NO
+ * host-to-repo writer at all, since `shared/<name>` is the target of the
+ * `~/.claude/<name>` symlink and edits land in the repo directly. This gate is
+ * the only deny-set boundary such a path crosses, and it is narrowed there
+ * deliberately: the wide set does not filter on this path, it hard-fails the
+ * push, which would refuse ordinary names like `plans/` or `tasks/` nested
+ * inside a directory the user opted in.
+ *
+ * `shared/projects/` is excluded from this branch on the other half of that
+ * same test: nobody asked to share it (the remap mechanism writes it), and its
+ * writer filters nothing below the top level, so narrowing here would leave
+ * that tree with no deny-set protection at all.
+ *
+ * Every other path, including a bare `shared` path with no name segment,
+ * falls through to the full `NEVER_SYNC` set. The five credential and
+ * host-config names in `ALWAYS_NEVER_SYNC` stay blocked in every arm, since
+ * every other set is either exactly `ALWAYS_NEVER_SYNC` or a superset of it.
  *
  * @param segments A repo-relative path already split on `/`.
  * @returns The exact-name denylist that applies to that path.
  */
 export function blockSetFor(segments: string[]): Set<string> {
-  if (!isExtrasScoped(segments)) return NEVER_SYNC;
-  return isClaudeExtraName(segments[3] ?? '') ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+  if (isExtrasScoped(segments)) {
+    return isClaudeExtraName(segments[3] ?? '') ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+  }
+  if (isSharedNameScoped(segments)) return ALWAYS_NEVER_SYNC;
+  return NEVER_SYNC;
 }
 
 /**
@@ -278,6 +402,13 @@ export function blockSetFor(segments: string[]): Set<string> {
  * scanned: the `<logical>` and `<dirname>` names are not denylist tokens, and a
  * logical that happens to equal a `NEVER_SYNC` token (e.g. a project named
  * `sessions`) must not hard-block its own legitimate files.
+ *
+ * This slice is deliberately extras-only: under an ordinary shared name,
+ * segment 0 is the literal `shared` and segment 1 is a shared name already
+ * validated against the full `NEVER_SYNC` set (by `classifyDeniedName`)
+ * before it can be shared at all, so scanning both segments changes nothing
+ * reachable and keeps a file hand-created at the top of the shared tree
+ * (`shared/settings.local.json`) hard-blocked.
  *
  * Returns the segment rather than a bare boolean because the denylists hold
  * ordinary-looking directory names (`tasks`, `plans`, `sessions`, ...), so a

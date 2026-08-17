@@ -13,7 +13,7 @@ import { lstatSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { deniedEntriesRefusal, scanOrFatal } from './commands.adopt.scan.ts';
-import { claudeHome, NEVER_SYNC } from './config.ts';
+import { ALWAYS_NEVER_SYNC, claudeHome } from './config.ts';
 import { EXIT } from './exit-codes.ts';
 import { copyExtrasFiltered } from './extras-sync.core.ts';
 import { copySharedLinkPull } from './links.ts';
@@ -380,7 +380,7 @@ function describePartialShared(name: string, linkPath: string): string {
  * {@link describePartialShared}), so the clear runs first and the message only
  * describes the leftover when the clear did not take.
  *
- * The copy runs through `copyExtrasFiltered(..., NEVER_SYNC)`,
+ * The copy runs through `copyExtrasFiltered(..., ALWAYS_NEVER_SYNC)`,
  * the same primitive and the same deny set the repo-side mirror
  * (`mirrorOneSharedName` in `links.mirror.ts`) already applies to this exact
  * destination, so a denied basename is never written here even if one
@@ -421,7 +421,7 @@ export function copyIntoSharedOrFatal(
   repo: string,
 ): void {
   try {
-    copyExtrasFiltered(linkPath, sharedTarget, NEVER_SYNC);
+    copyExtrasFiltered(linkPath, sharedTarget, ALWAYS_NEVER_SYNC);
   } catch (err) {
     const leftover = clearPartialShared(sharedTarget, repo)
       ? ''
