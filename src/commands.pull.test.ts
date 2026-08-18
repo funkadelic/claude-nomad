@@ -550,6 +550,28 @@ describe('cmdPull: extras integration', () => {
     expect(existsSync(cache) ? readdirSync(cache) : []).toEqual([]);
   });
 
+  it('leaves no backup dir behind when the pull throws before snapshotting', async () => {
+    // The failing pull is the case that actually strands a dir in production:
+    // it is created before the first destructive step, so a throw between the
+    // two leaves it behind holding nothing.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
+    );
+    mockCleanPullPipeline();
+    vi.doMock('./remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => {
+        throw new Error('rebase left the index unmerged');
+      }),
+      remapPush: vi.fn(),
+    }));
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).toThrow('rebase left the index unmerged');
+    const cache = join(testHome, '.cache', 'claude-nomad', 'backup');
+    expect(existsSync(cache) ? readdirSync(cache) : []).toEqual([]);
+  });
+
   it('keeps the backup dir when a step snapshotted into it', async () => {
     writeFileSync(
       join(repoUnderHome, 'path-map.json'),
@@ -926,6 +948,10 @@ describe('cmdPull forceRemote routing', () => {
     originalNomadHost = process.env.NOMAD_HOST;
     process.exitCode = 0;
     tmp = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-force-'));
+    // Two of these cases drive a real wet pull, which resolves its backup
+    // cache under HOME. Without this the pull writes into whatever HOME the
+    // runner has, which on a developer machine is the real one.
+    process.env.HOME = tmp;
     process.env.NOMAD_HOST = 'test-host';
     vi.resetModules();
     vi.spyOn(console, 'error').mockImplementation(() => {

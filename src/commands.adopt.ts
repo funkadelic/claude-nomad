@@ -22,6 +22,7 @@ import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.gu
 import { EXIT } from './exit-codes.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
+import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
 
 /**
@@ -302,6 +303,14 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     return;
   }
 
+  // Under the same lock as pull, push and sync, taken here rather than at the
+  // top of the command so the dry-run preview above stays lock-free. The move
+  // snapshots into `backup/<ts>/` and writes both `~/.claude/` and the repo,
+  // which is exactly the state those commands mutate, and `nomad clean`
+  // removes a `<ts>` dir holding nothing whatever its age, so an unlocked
+  // adopt could have its snapshot dir taken between the mkdir and the copy.
+  const handle = acquireLock('adopt');
+  if (handle === null) process.exit(EXIT.SUCCESS);
   // A NomadFatal is this command's own reported failure (a git fault, or any
   // of performAdoptMove's three filesystem guards), so it renders as one
   // message and its own exit code. Anything else is genuinely unexpected and
@@ -312,5 +321,7 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
     if (!(err instanceof NomadFatal)) throw err;
     fail(err.message);
     process.exitCode = err.code;
+  } finally {
+    releaseLock(handle);
   }
 }

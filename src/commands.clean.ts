@@ -225,8 +225,16 @@ export function cmdClean(
     olderThanMs = parsed;
   }
 
+  // A dry run reads and prints, so it takes no lock: skipping it on contention
+  // would print nothing at all, and a caller reading the
+  // `dry-run: N backup(s) would be removed` line has no way to tell that
+  // silence from a genuine zero.
+  if (dryRun) {
+    pruneBackups({ dryRun, olderThanMs, keep }, backupBase);
+    return;
+  }
   const handle = acquireLock('clean');
-  if (handle === null) process.exit(0);
+  if (handle === null) process.exit(EXIT.SUCCESS);
   try {
     pruneBackups({ dryRun, olderThanMs, keep }, backupBase);
   } finally {

@@ -315,6 +315,16 @@ describe('cmdClean lock', () => {
     expect(existsSync(join(testRoot, '20260101-000000'))).toBe(true);
   });
 
+  it('still previews under contention, since a dry run mutates nothing', () => {
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(join(testHome, '.cache', 'claude-nomad', 'nomad.lock'), String(process.pid));
+    makeEmptyBackup('20260101-000000', 30);
+    cmdClean({ dryRun: true }, testRoot);
+    expect(existsSync(join(testRoot, '20260101-000000'))).toBe(true);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('dry-run: 1 backup(s) would be removed');
+  });
+
   it('releases the lock when the prune finishes', () => {
     cmdClean({}, testRoot);
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'nomad.lock'))).toBe(false);

@@ -1,3 +1,9 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll } from 'vitest';
+
 // Ensure picocolors initializes with color disabled so doctor-output
 // substring assertions (`${glyph} <text>`) are not split by ANSI escape
 // sequences in CI (where `CI=true` makes picocolors enable color by
@@ -18,3 +24,18 @@ process.env.NO_COLOR ??= '1';
 if (process.platform === 'win32') {
   delete process.env.USERPROFILE;
 }
+
+// Every command in this codebase resolves its host-local state under HOME
+// (`~/.claude/`, `~/.cache/claude-nomad/`), and a test that drives one without
+// stamping its own sandbox writes into the developer's real home instead. That
+// is silent: the run passes, and the damage shows up later as backup dirs,
+// baseline caches and lockfiles nobody created by hand. Pointing HOME at a
+// per-file temp dir here, before any test module loads, makes the omission
+// harmless rather than invisible. A test that wants its own sandbox still sets
+// HOME itself and restores this value afterwards.
+const SUITE_HOME = mkdtempSync(join(tmpdir(), 'nomad-suite-home-'));
+process.env.HOME = SUITE_HOME;
+
+afterAll(() => {
+  rmSync(SUITE_HOME, { recursive: true, force: true });
+});

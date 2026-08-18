@@ -168,21 +168,23 @@ export function freshBackupTs(backupRoot: string): string {
  *
  * The backup dir is created eagerly, before the first destructive step, so a
  * full disk or a permission problem fails the run before it has mutated
- * anything rather than halfway through. Most runs then have nothing to
- * snapshot, so without this the cache gains one empty dir per run, and doctor's
- * housekeeping row eventually reports a cache holding zero bytes as something
- * to clean.
+ * anything rather than halfway through. Two runs then leave it holding
+ * nothing: a first pull on a host with no `~/.claude/settings.json` or
+ * `skills/` to snapshot yet, and any run that fails between the mkdir and its
+ * first snapshot. On an established host a wet pull always snapshots
+ * `settings.json` (`regenerateSettings`) and `skills/` (`syncSkillsPull`), so
+ * this is a no-op there.
  *
  * `rmdirSync` rather than a recursive remove, and that is the whole safety
  * argument: it refuses a directory with anything in it, so the decision of
  * whether this run's snapshot is worth keeping is made by the filesystem
  * against the real directory rather than by a predicate that could be wrong.
- * Every failure is swallowed for the same reason the row it silences is only a
- * nudge: ENOTEMPTY means a real snapshot landed and must stay, ENOENT means it
- * is already gone, and anything else (a read-only cache, an antivirus lock)
- * leaves one stale empty dir behind, which is not worth failing a completed
- * run over. `nomad clean --backups` prunes empty dirs whatever their age, so
- * an entry that survives here is still recoverable ground.
+ * Every failure is swallowed: ENOTEMPTY means a real snapshot landed and must
+ * stay, ENOENT means the run never got as far as creating it, and anything
+ * else (a read-only cache, an antivirus lock) leaves one stale empty dir
+ * behind, which is not worth failing a completed run over. `nomad clean
+ * --backups` prunes empty dirs whatever their age, so an entry that survives
+ * here is still recoverable ground.
  *
  * @param backupRoot - Absolute path to this run's `backupBase()/<ts>` dir.
  */

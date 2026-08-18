@@ -356,6 +356,34 @@ export type PullCoreResult =
 export function runPullCore(
   opts: { dryRun?: boolean; forceRemote?: boolean; compose?: boolean } = {},
 ): PullCoreResult {
+  const backup = backupBase();
+  // Collision-resistant ts: nowTimestamp() is second-resolution, so two
+  // pulls in the same wall-clock second would share `ts` and the second's
+  // backupBeforeWrite calls (cpSync force:false) would silently no-op.
+  const ts = freshBackupTs(backup);
+  try {
+    return runPullWithBackupTs(ts, opts);
+  } finally {
+    // In a `finally` because the throwing pull is the case that actually
+    // strands one: the dir is created before the first destructive step, so a
+    // failure between there and the first snapshot leaves it behind empty.
+    discardEmptyBackupDir(join(backup, ts));
+  }
+}
+
+/**
+ * The pull itself, with this run's backup timestamp already resolved by
+ * {@link runPullCore}. Split out so the empty-backup-dir cleanup can sit in a
+ * `finally` around the whole body without indenting it.
+ *
+ * @param ts - This run's backup timestamp namespace.
+ * @param opts - See {@link runPullCore}.
+ * @returns A `PullCoreResult` tagged `dry` or `wet`.
+ */
+function runPullWithBackupTs(
+  ts: string,
+  opts: { dryRun?: boolean; forceRemote?: boolean; compose?: boolean },
+): PullCoreResult {
   const dryRun = opts.dryRun === true;
   const forceRemote = opts.forceRemote === true;
   const compose = opts.compose === true;
@@ -363,10 +391,6 @@ export function runPullCore(
   // every other command/extras/remap module in this codebase).
   const repo = repoHome();
   const backup = backupBase();
-  // Collision-resistant ts: nowTimestamp() is second-resolution, so two
-  // pulls in the same wall-clock second would share `ts` and the second's
-  // backupBeforeWrite calls (cpSync force:false) would silently no-op.
-  const ts = freshBackupTs(backup);
   // Preflight: handle repo stuck mid-rebase or mid-merge. With
   // --force-remote, handleWedge delegates to recoverForceRemote (aborts,
   // safety-diffs, parks stranded commits, resets to origin/main). Without
@@ -526,11 +550,6 @@ export function runPullCore(
   // not mean anything actually changed upstream).
   const incomingChanges =
     prePostHeads === undefined ? true : prePostHeads.pre !== prePostHeads.post;
-  // Every step that can snapshot has run by now, so an empty backup dir means
-  // this pull overwrote nothing and the dir is the eager fail-fast probe above
-  // and nothing else. Left behind, it accumulates one per pull until doctor's
-  // housekeeping row reports a cache that holds no bytes at all.
-  discardEmptyBackupDir(join(backup, ts));
   // Spliced at the head so the wet tree reads in the order the pull executes
   // and matches the preview tree, which already puts Symlinks first. Empty on
   // darwin, linux, and whenever nothing was mirrored (and nothing was
