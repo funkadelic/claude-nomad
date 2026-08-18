@@ -553,19 +553,15 @@ describe('cmdPull: extras integration', () => {
   it('leaves no backup dir behind when the pull throws before snapshotting', async () => {
     // The failing pull is the case that actually strands a dir in production:
     // it is created before the first destructive step, so a throw between the
-    // two leaves it behind holding nothing.
+    // two leaves it behind holding nothing. applySharedLinks stands in for
+    // that step, since it is the first thing the wet path calls.
     writeFileSync(
       join(repoUnderHome, 'path-map.json'),
       JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
     );
-    mockCleanPullPipeline();
-    vi.doMock('./remap.ts', () => ({
-      scanLocalOnly: vi.fn(() => 0),
-      remapPull: vi.fn(() => {
-        throw new Error('rebase left the index unmerged');
-      }),
-      remapPush: vi.fn(),
-    }));
+    mockCleanPullPipeline(() => {
+      throw new Error('rebase left the index unmerged');
+    });
     const { cmdPull } = await import('./commands.pull.ts');
     expect(() => cmdPull()).toThrow('rebase left the index unmerged');
     const cache = join(testHome, '.cache', 'claude-nomad', 'backup');

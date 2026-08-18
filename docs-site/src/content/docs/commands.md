@@ -368,7 +368,7 @@ it to protect. Always preview with `--dry-run` first. See
 | ------------------- | ------------------------------------------------------------------------------------- |
 | `--backups`         | Required: confirm backup pruning is the intended target.                              |
 | `--older-than <dur>`| Delete snapshots older than this age (e.g. `7d`, `24h`). Default when omitted: 14 days. |
-| `--keep <N>`        | Keep the N newest snapshots and delete the rest. Cannot be combined with `--older-than`. |
+| `--keep <N>`        | Keep the N newest snapshots that hold something and delete the rest. Cannot be combined with `--older-than`. |
 | `--dry-run`         | List the snapshots that would be removed without deleting.                             |
 
 ## `update`
