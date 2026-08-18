@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { backupBase as getBackupBase } from './config.ts';
 import { EXIT } from './exit-codes.ts';
 import { fail, item, log } from './utils.ts';
+import { acquireLock, releaseLock } from './utils.lockfile.ts';
 
 /**
  * Shape of a `<ts>` backup directory name as produced by `freshBackupTs`:
@@ -190,6 +191,15 @@ function resolveTargets(
  * and whatever `keep` says, and takes no slot in the retention count; see
  * {@link holdsNoContent}.
  *
+ * Runs under the same lock as `pull`/`push`/`sync`, taken after the usage
+ * checks so a bad flag still exits 2 without touching it. A pull creates its
+ * `<ts>` dir before its first destructive step and only then copies into it,
+ * so an unlocked prune could read that dir as empty and remove it in the
+ * window before the copy lands, destroying the one snapshot of a file the
+ * pull is about to overwrite. Contention exits 0 without pruning, the same
+ * skip every other locked command takes, since a delayed cleanup costs
+ * nothing.
+ *
  * @param opts - Parsed CLI options.
  * @param opts.dryRun - List targets without deleting when `true`.
  * @param opts.olderThan - Age duration string (`14d`, `24h`, `30m`).
@@ -215,6 +225,29 @@ export function cmdClean(
     olderThanMs = parsed;
   }
 
+  const handle = acquireLock('clean');
+  if (handle === null) process.exit(0);
+  try {
+    pruneBackups({ dryRun, olderThanMs, keep }, backupBase);
+  } finally {
+    releaseLock(handle);
+  }
+}
+
+/**
+ * The prune itself, split out so `cmdClean` stays a thin validate-lock-release
+ * wrapper and this body keeps one level of nesting rather than sitting inside
+ * the `try`.
+ *
+ * @param opts - Validated options: `dryRun`, the resolved `olderThanMs`
+ *   cutoff, and `keep`.
+ * @param backupBase - Backup root to operate on.
+ */
+function pruneBackups(
+  opts: { dryRun?: boolean; olderThanMs: number; keep?: number },
+  backupBase: string,
+): void {
+  const { dryRun, olderThanMs, keep } = opts;
   const dirs = listBackupDirs(backupBase);
   // Empty dirs are pruned in every mode, and are held out of the retention
   // computation rather than merely added to its result: `--keep 5` is a request

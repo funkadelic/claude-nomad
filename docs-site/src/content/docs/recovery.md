@@ -38,9 +38,9 @@ You choose what counts as "old" in one of two ways (you cannot use both at once)
 - `--keep <N>` keeps the `N` most recent snapshots and deletes the rest, regardless of age.
 
 A snapshot that holds nothing at all is removed in either mode, whatever its age, and it does not
-use up one of the `--keep` slots. A sync that overwrites none of your files creates its snapshot
-folder and then has nothing to put in it, so these are ordinary leftovers rather than a sign
-something went wrong, and there is nothing in one to recover.
+use up one of the `--keep` slots. A sync now clears its own snapshot folder when it turns out to
+have nothing to put in it, so the empty ones you still have are leftovers from earlier versions:
+ordinary housekeeping rather than a sign something went wrong, with nothing in one to recover.
 
 `nomad clean` only ever touches the timestamped snapshot directories directly inside the backup
 folder; it never follows symlinks out of it and never removes the backup folder itself. As a

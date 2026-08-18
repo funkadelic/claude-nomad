@@ -32,6 +32,8 @@ import {
 const DAY_MS = 86_400_000;
 
 let testRoot: string;
+let testHome: string;
+let originalHome: string | undefined;
 let logSpy: MockInstance<(msg: string) => void>;
 let failSpy: MockInstance<(...args: unknown[]) => void>;
 let savedExitCode: typeof process.exitCode;
@@ -72,6 +74,12 @@ function makeEmptyBackup(name: string, ageDays = 0): string {
 
 beforeEach(() => {
   testRoot = mkdtempSync(join(tmpdir(), 'nomad-clean-'));
+  // The prune runs under the shared nomad lock, which resolves under HOME.
+  // Point HOME at a temp dir so no test touches the real lockfile (or blocks
+  // on a genuine pull holding it).
+  originalHome = process.env.HOME;
+  testHome = mkdtempSync(join(tmpdir(), 'nomad-clean-home-'));
+  process.env.HOME = testHome;
   savedExitCode = process.exitCode;
   process.exitCode = undefined;
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
@@ -84,6 +92,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  if (originalHome !== undefined) process.env.HOME = originalHome;
+  else delete process.env.HOME;
+  rmSync(testHome, { recursive: true, force: true });
   process.exitCode = savedExitCode;
   rmSync(testRoot, { recursive: true, force: true });
 });
@@ -287,6 +298,26 @@ describe('cmdClean safety', () => {
     safeDelete(testRoot, 'not-ts');
     safeDelete(testRoot, '20200101-000000');
     expect(existsSync(join(testRoot, 'not-ts'))).toBe(true);
+  });
+});
+
+describe('cmdClean lock', () => {
+  it('skips the prune and exits 0 when another nomad command holds the lock', () => {
+    // A live pid in the lockfile is real contention, not a stale lock: the
+    // prune must not run while a pull may be writing into a fresh <ts> dir.
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(join(testHome, '.cache', 'claude-nomad', 'nomad.lock'), String(process.pid));
+    makeEmptyBackup('20260101-000000', 30);
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${String(code)}`);
+    }) as never);
+    expect(() => cmdClean({}, testRoot)).toThrow('exit:0');
+    expect(existsSync(join(testRoot, '20260101-000000'))).toBe(true);
+  });
+
+  it('releases the lock when the prune finishes', () => {
+    cmdClean({}, testRoot);
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'nomad.lock'))).toBe(false);
   });
 });
 
