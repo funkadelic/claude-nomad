@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.67.0](https://github.com/funkadelic/claude-nomad/compare/v0.66.0...v0.67.0) (2026-08-18)
+
+
+### Added
+
+* clean up the empty folders in your backup cache ([#525](https://github.com/funkadelic/claude-nomad/issues/525)) ([3f5ae92](https://github.com/funkadelic/claude-nomad/commit/3f5ae92e46173364f5e9c66e4963bcc716c813e6))
+
+
+### Fixed
+
+* **ci:** base the drift branch on main on a dispatch run ([#524](https://github.com/funkadelic/claude-nomad/issues/524)) ([3e94c1e](https://github.com/funkadelic/claude-nomad/commit/3e94c1e2df9296a539c71eac873058cb69225d78))
+
 ## [0.66.0](https://github.com/funkadelic/claude-nomad/compare/v0.65.0...v0.66.0) (2026-08-17)
 
 ### What's new
