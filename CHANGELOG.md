@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.67.0](https://github.com/funkadelic/claude-nomad/compare/v0.66.0...v0.67.0) (2026-08-18)
+
+### What's new
+
+**On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
+
+- **Your backup cache no longer collects empty folders.** Every sync saves a copy of anything it is
+  about to overwrite into a dated folder under `~/.cache/claude-nomad/backup/`, and it creates that
+  folder before it touches your files so a full disk or a permissions problem stops the sync before
+  it has changed anything. A sync that turns out to have nothing to save now clears its own folder
+  instead of leaving an empty one behind, and so does one that stops early.
+- **`nomad clean --backups` removes empty backup folders whatever their age.** They hold nothing to
+  recover, so neither the 14-day default nor `--keep <N>` keeps one alive, and they no longer use up
+  the slots `--keep <N>` reserves: ask for the five newest and you get the five newest that actually
+  hold something. Backups holding anything at all, a file or even a link, are left exactly as
+  before. `nomad clean --backups --dry-run` always prints its preview, since it changes nothing and
+  never waits on another command.
+- **`nomad adopt` no longer runs at the same time as a pull, push, or sync.** It waits its turn the
+  way those commands already wait for each other, so a cleanup or a sync running in another terminal
+  cannot remove or overwrite a backup that adopt is still writing. If another one is already
+  running, adopt says so and does nothing rather than starting a move it cannot finish safely.
+  Previewing with `nomad adopt <name> --dry-run` never waits, since it only reads and prints.
+
+
+### Added
+
+* clean up the empty folders in your backup cache ([#525](https://github.com/funkadelic/claude-nomad/issues/525)) ([3f5ae92](https://github.com/funkadelic/claude-nomad/commit/3f5ae92e46173364f5e9c66e4963bcc716c813e6))
+
+
+### Fixed
+
+* **ci:** base the drift branch on main on a dispatch run ([#524](https://github.com/funkadelic/claude-nomad/issues/524)) ([3e94c1e](https://github.com/funkadelic/claude-nomad/commit/3e94c1e2df9296a539c71eac873058cb69225d78))
+
 ## [0.66.0](https://github.com/funkadelic/claude-nomad/compare/v0.65.0...v0.66.0) (2026-08-17)
 
 ### What's new
