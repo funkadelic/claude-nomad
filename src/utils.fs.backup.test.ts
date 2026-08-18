@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { backupBeforeWrite, backupRepoWrite } from './utils.fs.ts';
+import { backupBeforeWrite, backupRepoWrite, discardEmptyBackupDir } from './utils.fs.ts';
 
 /**
  * claudeHome() / backupBase() backup-helper coverage, split off from
@@ -146,5 +146,43 @@ describe('backupRepoWrite', () => {
     writeFileSync(outsidePath, '{"a":1}');
     backupRepoWrite(outsidePath, ts, repoHome);
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup'))).toBe(false);
+  });
+});
+
+describe('discardEmptyBackupDir', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'nomad-discard-'));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('removes the dir when the run snapshotted nothing into it', () => {
+    const dir = join(root, '20260516-000000');
+    mkdirSync(dir, { recursive: true });
+    discardEmptyBackupDir(dir);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('leaves a dir holding a snapshot alone', () => {
+    const dir = join(root, '20260516-000001');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'settings.json'), '{"a":1}');
+    discardEmptyBackupDir(dir);
+    expect(existsSync(join(dir, 'settings.json'))).toBe(true);
+  });
+
+  it('leaves a dir holding an empty subdir alone, since rmdir alone decides', () => {
+    const dir = join(root, '20260516-000002');
+    mkdirSync(join(dir, 'repo'), { recursive: true });
+    discardEmptyBackupDir(dir);
+    expect(existsSync(dir)).toBe(true);
+  });
+
+  it('is silent on a path that is already gone', () => {
+    expect(() => discardEmptyBackupDir(join(root, '20260516-000003'))).not.toThrow();
   });
 });

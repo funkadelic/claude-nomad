@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -38,6 +46,36 @@ function mockMirrorModule(impl: ReturnType<typeof vi.fn> = vi.fn()): ReturnType<
     return { ...actual, stageLocalSharedEdits: impl };
   });
   return impl;
+}
+
+/**
+ * Mock every module a wet pull would otherwise drive against real git and a
+ * real `~/.claude/`, leaving the run itself intact. Used by the backup-dir
+ * cases, which care only about what the run leaves in the backup cache.
+ *
+ * @param onApplySharedLinks - Optional body for the `applySharedLinks` stand-in,
+ *   letting a test simulate a step that snapshots a file before overwriting it.
+ */
+function mockCleanPullPipeline(onApplySharedLinks: () => void = () => undefined): void {
+  vi.doMock('./links.ts', () => ({
+    applySharedLinks: vi.fn(onApplySharedLinks),
+    regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+  }));
+  mockMirrorModule();
+  vi.doMock('./remap.ts', () => ({
+    scanLocalOnly: vi.fn(() => 0),
+    remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+    remapPush: vi.fn(),
+  }));
+  vi.doMock('./extras-sync.ts', () => ({
+    remapExtrasPush: vi.fn(),
+    remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
+    divergenceCheckExtras: vi.fn(),
+  }));
+  vi.doMock('./utils.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof utilsModule>();
+    return { ...actual, gitOrFatal: vi.fn() };
+  });
 }
 
 /**
@@ -497,6 +535,58 @@ describe('cmdPull: extras integration', () => {
     expect(out).not.toContain('pull complete');
   });
 
+  it('leaves no backup dir behind when the pull snapshotted nothing', async () => {
+    // The dir is created eagerly, before the first destructive step, so a pull
+    // that overwrites nothing would otherwise leave one empty dir per run and
+    // grow the cache doctor reports on.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
+    );
+    mockCleanPullPipeline();
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    const cache = join(testHome, '.cache', 'claude-nomad', 'backup');
+    expect(existsSync(cache) ? readdirSync(cache) : []).toEqual([]);
+  });
+
+  it('leaves no backup dir behind when the pull throws before snapshotting', async () => {
+    // The failing pull is the case that actually strands a dir in production:
+    // it is created before the first destructive step, so a throw between the
+    // two leaves it behind holding nothing. applySharedLinks stands in for
+    // that step, since it is the first thing the wet path calls.
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
+    );
+    mockCleanPullPipeline(() => {
+      throw new Error('rebase left the index unmerged');
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).toThrow('rebase left the index unmerged');
+    const cache = join(testHome, '.cache', 'claude-nomad', 'backup');
+    expect(existsSync(cache) ? readdirSync(cache) : []).toEqual([]);
+  });
+
+  it('keeps the backup dir when a step snapshotted into it', async () => {
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
+    );
+    // Stand in for any step that backs a file up: applySharedLinks is the one
+    // that snapshots a shared name before overwriting it.
+    mockCleanPullPipeline(() => {
+      const cache = join(testHome, '.cache', 'claude-nomad', 'backup');
+      const [ts] = readdirSync(cache);
+      writeFileSync(join(cache, ts, 'CLAUDE.md'), '# snapshotted\n');
+    });
+    const { cmdPull } = await import('./commands.pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    const cache = join(testHome, '.cache', 'claude-nomad', 'backup');
+    const [ts] = readdirSync(cache);
+    expect(readdirSync(join(cache, ts))).toEqual(['CLAUDE.md']);
+  });
+
   it('summaryRow receives the SUM of remapResult.unmapped + extrasResult.unmapped (L49 ArithmeticOperator)', async () => {
     // Both remap and extras report unmapped > 0. The collapsed summary count
     // must equal 2+3=5, not 2-3=-1 (the ArithmeticOperator + -> - mutation).
@@ -854,6 +944,10 @@ describe('cmdPull forceRemote routing', () => {
     originalNomadHost = process.env.NOMAD_HOST;
     process.exitCode = 0;
     tmp = mkdtempSync(join(tmpdir(), 'nomad-cmdpull-force-'));
+    // Two of these cases drive a real wet pull, which resolves its backup
+    // cache under HOME. Without this the pull writes into whatever HOME the
+    // runner has, which on a developer machine is the real one.
+    process.env.HOME = tmp;
     process.env.NOMAD_HOST = 'test-host';
     vi.resetModules();
     vi.spyOn(console, 'error').mockImplementation(() => {

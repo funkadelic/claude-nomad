@@ -22,6 +22,7 @@ import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.gu
 import { EXIT } from './exit-codes.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
+import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
 
 /**
@@ -281,6 +282,45 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   const linkPath = join(claude, name);
   const sharedTarget = join(repo, 'shared', name);
 
+  // A dry run reads and prints, so it stays lock-free. A real one takes the
+  // same lock as pull, push and sync BEFORE its preflight, not just around the
+  // move: `adoptStopsEarly` and `refuseDeniedEntries` read the host tree and
+  // the repo, `performAdoptMove` does not re-check what they concluded, and a
+  // concurrent pull rewrites exactly those two paths. Locking only the move
+  // would let it act on a preflight answer that stopped being true.
+  if (dryRun) {
+    adoptPreflightAndMove(name, linkPath, sharedTarget, repo, backup, true);
+    return;
+  }
+  const handle = acquireLock('adopt');
+  if (handle === null) process.exit(EXIT.SUCCESS);
+  try {
+    adoptPreflightAndMove(name, linkPath, sharedTarget, repo, backup, false);
+  } finally {
+    releaseLock(handle);
+  }
+}
+
+/**
+ * The preflight checks and, on a real run, the move itself. Split out of
+ * {@link cmdAdopt} so a wet run can hold the lock across both without the
+ * dry-run preview taking one.
+ *
+ * @param name - The validated, configured directory name to adopt.
+ * @param linkPath - Absolute path of the source directory (`CLAUDE_HOME/<name>`).
+ * @param sharedTarget - Absolute path of the destination (`REPO_HOME/shared/<name>`).
+ * @param repo - Absolute path to the nomad repo root.
+ * @param backup - Absolute path to the backup root.
+ * @param dryRun - Preview only; print what a real run would do and change nothing.
+ */
+function adoptPreflightAndMove(
+  name: string,
+  linkPath: string,
+  sharedTarget: string,
+  repo: string,
+  backup: string,
+  dryRun: boolean,
+): void {
   if (adoptStopsEarly(name, linkPath, sharedTarget)) return;
 
   // Ahead of both the backup and the dry-run branch, so a refusal raised

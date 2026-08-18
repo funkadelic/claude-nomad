@@ -743,6 +743,60 @@ function mockLateScanFailure(root: string, message: string): void {
   });
 }
 
+describe('cmdAdopt lock', () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    teardownAdoptEnv(env);
+  });
+
+  it('skips the move and exits 0 when another nomad command holds the lock', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    mkdirSync(join(env.testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(join(env.testHome, '.cache', 'claude-nomad', 'nomad.lock'), String(process.pid));
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${String(code)}`);
+    }) as never);
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools')).toThrow('exit:0');
+    // Nothing moved: the source is still a real directory on the host.
+    expect(existsSync(join(linkPath, 'tool.sh'))).toBe(true);
+    expect(existsSync(join(env.repoHome, 'shared', 'my-tools'))).toBe(false);
+  });
+
+  it('releases the lock once the move finishes', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+    expect(existsSync(join(env.testHome, '.cache', 'claude-nomad', 'nomad.lock'))).toBe(false);
+  });
+
+  it('takes no lock on a dry run', async () => {
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+    mkdirSync(join(env.testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(join(env.testHome, '.cache', 'claude-nomad', 'nomad.lock'), String(process.pid));
+
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-tools', { dryRun: true })).not.toThrow();
+    expect(existsSync(join(linkPath, 'tool.sh'))).toBe(true);
+  });
+});
+
 describe('cmdAdopt never-sync refusal', () => {
   let env: Env;
   const realPlatform = process.platform;

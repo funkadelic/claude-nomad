@@ -37,6 +37,12 @@ You choose what counts as "old" in one of two ways (you cannot use both at once)
   With no retention flag at all, the default is `--older-than 14d`.
 - `--keep <N>` keeps the `N` most recent snapshots and deletes the rest, regardless of age.
 
+A snapshot that holds nothing at all is removed in either mode, whatever its age, and it does not
+use up one of the `--keep` slots. Most syncs do save something, so an empty one is unusual: it
+means either the sync stopped before it had anything to save, or it was your first sync on this
+machine. A sync now clears its own folder in those cases, so any empty ones you still have are
+leftovers from earlier versions. There is nothing in one to recover either way.
+
 `nomad clean` only ever touches the timestamped snapshot directories directly inside the backup
 folder; it never follows symlinks out of it and never removes the backup folder itself. As a
 gentle reminder, `nomad doctor` shows a warning when the backup folder grows past roughly 20
