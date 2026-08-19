@@ -28,4 +28,29 @@ describe('errorText', () => {
     expect(crossRealm).not.toBeInstanceOf(Error);
     expect(errorText(crossRealm)).toBe('cross-realm failure');
   });
+
+  // Every caller runs inside a catch whose contract is to report and carry on,
+  // so the composer itself must never throw. Conversion is the step that can:
+  // a property read cannot fail, but `String` can, for these three shapes.
+  it('stands in for a null-prototype object rather than throwing on conversion', () => {
+    expect(errorText(Object.create(null))).toBe('unprintable error value');
+  });
+
+  it('stands in for a value whose toString throws', () => {
+    const hostile = {
+      toString() {
+        throw new Error('conversion refused');
+      },
+    };
+    expect(errorText(hostile)).toBe('unprintable error value');
+  });
+
+  it('stands in for a value whose message getter throws', () => {
+    const hostile = {
+      get message(): string {
+        throw new Error('read refused');
+      },
+    };
+    expect(errorText(hostile)).toBe('unprintable error value');
+  });
 });

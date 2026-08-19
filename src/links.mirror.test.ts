@@ -1687,12 +1687,11 @@ describe('revertDeniedMirrorPaths', () => {
     expect(warnings()).toContain('left in place');
   });
 
-  it('quotes real text at the removal-failure WARN for a cross-realm Error, not the placeholder undefined', async () => {
-    // Same shape as the EPERM Error case above, but the fault is a
-    // cross-realm-shaped plain object: no Error prototype and no message
-    // property, the shape a value crossing a realm boundary can arrive in.
-    // `(err as Error).message` read undefined off it, so the WARN used to
-    // render the literal word "undefined" here.
+  it('quotes real text at the removal-failure WARN for a message-less thrown object, not the placeholder undefined', async () => {
+    // Same shape as the EPERM Error case above, but the fault is a plain
+    // object with neither an Error prototype nor a message property, which is
+    // what makes it reproduce: `(err as Error).message` read undefined off it,
+    // so the WARN used to render the literal word "undefined" here.
     mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'notes.md'), 'token=abc\n');
     vi.doMock('node:fs', async (importOriginal) => {

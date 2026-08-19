@@ -20,10 +20,21 @@
 /**
  * The text to quote for `err`, whatever was actually thrown.
  *
+ * Total on every input, which the callers depend on: each one runs inside a
+ * catch whose contract is to report the failure and carry on, so a composer
+ * that throws would abandon the rest of the sweep it is reporting on. Reading
+ * a property cannot throw, but converting can, for a null-prototype object or
+ * one whose `toString` throws, so both steps sit under the guard.
+ *
  * @param err - The caught value.
- * @returns Its `message` when it has a string one, otherwise its `String` form.
+ * @returns Its `message` when it has a string one, otherwise its `String`
+ *   form, or a fixed stand-in when the value cannot be converted at all.
  */
 export function errorText(err: unknown): string {
-  const message = (err as Error | undefined)?.message;
-  return typeof message === 'string' ? message : String(err);
+  try {
+    const message = (err as Error | undefined)?.message;
+    return typeof message === 'string' ? message : String(err);
+  } catch {
+    return 'unprintable error value';
+  }
 }
