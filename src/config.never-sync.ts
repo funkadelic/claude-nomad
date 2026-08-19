@@ -358,8 +358,10 @@ function isLogicalNameScoped(segments: string[]): boolean {
 /**
  * True when a repo-relative path's segments sit under an ordinary shared NAME
  * (`shared/<name>/...`), the region where the denylist narrows because the
- * user named the directory. The complement of `isExtrasScoped`: that predicate
- * scopes to the extras TREE, this one scopes to an ordinary shared NAME.
+ * user named the directory. The exact complement of `isLogicalNameScoped`
+ * over paths that reach the `shared/` prefix at all: that predicate scopes to
+ * a region whose segment 2 is a derived logical, this one to an ordinary
+ * shared NAME.
  *
  * A bare `['shared']` path (no name segment at all) is not scoped by this
  * predicate: there is nothing below a name for it to be scoped to, so it
@@ -369,8 +371,9 @@ function isLogicalNameScoped(segments: string[]): boolean {
  * @returns Whether the path sits under an ordinary `shared/<name>/`.
  */
 function isSharedNameScoped(segments: string[]): boolean {
-  // Same guard shape as `isExtrasScoped`; see {@link regionKey} for why both
-  // read `segments.length > 1` instead of a `?? ''` fallback.
+  // Same guard shape as `isExtrasScoped` and `isLogicalNameScoped`; see
+  // {@link regionKey} for why all three read `segments.length > 1` instead of
+  // a `?? ''` fallback.
   return (
     segments[0] === 'shared' &&
     segments.length > 1 &&
@@ -460,8 +463,11 @@ export function deniedSegmentFor(path: string): string | null {
   const blockSet = blockSetFor(segments);
   // shared/<region>/<logical> is exactly three segments; skip that prefix in
   // every region where the logical is a name nomad derived rather than a
-  // denylist token, and scan everything below it in full.
-  const scan = isLogicalNameScoped(segments) ? segments.slice(3) : segments;
+  // denylist token, and scan everything below it in full. The length guard
+  // keeps the skip from consuming the whole path: at three segments there is
+  // no logical yet, so the last segment is a file sitting at the region root
+  // and it stays in range rather than passing unscanned.
+  const scan = isLogicalNameScoped(segments) && segments.length > 3 ? segments.slice(3) : segments;
   for (const segment of scan) {
     if (isDeniedName(blockSet, segment)) return segment;
   }

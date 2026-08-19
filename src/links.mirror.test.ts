@@ -1582,7 +1582,9 @@ describe('revertDeniedMirrorPaths', () => {
     expect(existsSync(abs)).toBe(false);
     const snapshot = backupOf(join('shared', 'extras', 'myproj', 'settings.local.json'));
     expect(readFileSync(snapshot, 'utf8')).toBe('{"apiKey":"x"}\n');
-    expect(warnings()).toContain('settings.local.json');
+    // Only the success-path line proves the removal happened. The bare
+    // filename also appears in two of this function's failure warnings, so
+    // asserting it alone would pass on a removal that failed.
     expect(warnings()).toContain('removed shared/extras/myproj/settings.local.json');
   });
 });

@@ -147,9 +147,9 @@ describe('isNeverSync', () => {
   });
 
   it('passes .planning content inside the extras tree, where the narrow subset applies', () => {
-    // The logical and dirname segments are not scanned at all, and `todos` is
-    // absent from ALWAYS_NEVER_SYNC, so legitimate planning content rides
-    // through the extras gate.
+    // The logical segment is skipped and the dirname is scanned, but
+    // `.planning` is clean and `todos` is absent from ALWAYS_NEVER_SYNC, so
+    // legitimate planning content rides through the extras gate.
     expect(isNeverSync('shared/extras/myproj/.planning/todos/a.md')).toBe(false);
   });
 
@@ -189,6 +189,8 @@ describe('isNeverSync', () => {
         'shared/commands/',
         'shared/skills/mine/',
         'shared/projects/foo/',
+        'shared/projects/',
+        'shared/extras/',
       ]) {
         const path = `${prefix}${name}`;
         expect(isNeverSync(path)).toBe(true);
@@ -322,5 +324,39 @@ describe('deniedSegmentFor', () => {
 
   it('keeps a file hand-created at the top of the shared tree hard-blocked', () => {
     expect(deniedSegmentFor('shared/settings.local.json')).toBe('settings.local.json');
+  });
+
+  // The prefix skip must not consume the whole path. At three segments there is
+  // no logical yet, so the last segment is a file sitting directly at the region
+  // root, and skipping it would let a credential ride through the one gate a
+  // `shared/projects/` tree ever crosses. Both regions are covered because both
+  // take the skip, and every spelling is covered because `regionKey` normalizes
+  // the region before either arm is chosen.
+  it.each([
+    'settings.local.json',
+    '.credentials.json',
+    '.claude.json',
+    'history.jsonl',
+    'stats-cache.json',
+  ])('keeps %s hard-blocked at the projects region root', (name) => {
+    expect(deniedSegmentFor(`shared/projects/${name}`)).toBe(name);
+  });
+
+  it.each(['projects', 'Projects', 'extras', 'Extras'])(
+    'keeps a credential shape hard-blocked at the %s region root',
+    (region) => {
+      expect(deniedSegmentFor(`shared/${region}/id_rsa`)).toBe('id_rsa');
+    },
+  );
+
+  it('keeps a floor name hard-blocked at the extras region root, where the logical belongs', () => {
+    expect(deniedSegmentFor('shared/extras/settings.local.json')).toBe('settings.local.json');
+  });
+
+  it('still takes the skip once a logical is actually present', () => {
+    expect(deniedSegmentFor('shared/projects/sessions/settings.local.json')).toBe(
+      'settings.local.json',
+    );
+    expect(deniedSegmentFor('shared/projects/sessions/x.jsonl')).toBeNull();
   });
 });
