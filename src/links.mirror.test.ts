@@ -1534,6 +1534,57 @@ describe('revertDeniedMirrorPaths', () => {
     expect(warnings()).toBe('');
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup', TS))).toBe(false);
   });
+
+  // These two are win32-only in production (`revertDeniedUnderShared`, the
+  // only caller, is reached from `src/commands.pull.win32.ts`), but
+  // `revertDeniedMirrorPaths` itself is platform-independent, so neither test
+  // needs a platform stub.
+
+  it('leaves a projects logical named after a denylist token completely alone', async () => {
+    // The destructive twin of the widening pinned in config.never-sync.test.ts:
+    // before the scan-range fix this path was snapshotted and then recursively
+    // removed, which is a legitimately-named project losing its transcripts to
+    // the sync tool.
+    const dir = join(repo, 'shared', 'projects', 'sessions');
+    mkdirSync(dir, { recursive: true });
+    const abs = join(dir, 'x.jsonl');
+    writeFileSync(abs, '{"type":"summary"}\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: [], untracked: ['shared/projects/sessions/x.jsonl'] },
+      TS,
+    );
+
+    expect(existsSync(abs)).toBe(true);
+    expect(readFileSync(abs, 'utf8')).toBe('{"type":"summary"}\n');
+    expect(existsSync(backupOf(join('shared', 'projects', 'sessions', 'x.jsonl')))).toBe(false);
+    expect(warnings()).toBe('');
+  });
+
+  it("removes a floor name parked at an extras logical's own depth", async () => {
+    // The destructive twin of the narrowing pinned in config.never-sync.test.ts:
+    // before the scan-range fix this path survived, sitting above the old
+    // segment-4 scan.
+    const dir = join(repo, 'shared', 'extras', 'myproj');
+    mkdirSync(dir, { recursive: true });
+    const abs = join(dir, 'settings.local.json');
+    writeFileSync(abs, '{"apiKey":"x"}\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(
+      repo,
+      { tracked: [], untracked: ['shared/extras/myproj/settings.local.json'] },
+      TS,
+    );
+
+    expect(existsSync(abs)).toBe(false);
+    const snapshot = backupOf(join('shared', 'extras', 'myproj', 'settings.local.json'));
+    expect(readFileSync(snapshot, 'utf8')).toBe('{"apiKey":"x"}\n');
+    expect(warnings()).toContain('settings.local.json');
+    expect(warnings()).toContain('removed shared/extras/myproj/settings.local.json');
+  });
 });
 
 /**
