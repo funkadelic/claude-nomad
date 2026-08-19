@@ -91,8 +91,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
 
   it('mirrors a local file edit and a local directory edit into an already-shared shared/ on win32', async () => {
     // Both repo counterparts pre-exist: this case proves an EDIT reaches the
-    // repo, not that a new name is created (adoptNew: false means it never
-    // creates one).
+    // repo, not that a new name is created (the mirror never creates one).
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
     mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
@@ -437,8 +436,9 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
       expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
       // The unreadable parent takes down the stat for every shared name, but
       // only CLAUDE.md has a shared/ counterpart this pull would have
-      // captured. The other three are host-private under `adoptNew: false`, so
-      // warning about them would report a loss that was never going to happen.
+      // captured. The other three are host-private since the mirror never
+      // adopts a new name, so warning about them would report a loss that
+      // was never going to happen.
       const said = errSpy.mock.calls.map((c) => String(c[0]));
       expect(said).toHaveLength(1);
       expect(said[0]).toContain('CLAUDE.md could not be read');
@@ -447,9 +447,9 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
   );
 
   it('stays silent for an unreadable name the repo does not share', async () => {
-    // `adoptNew: false` means a host-private name is never published by a
-    // pull, readable or not, so an unreadable one costs nothing and must not
-    // be reported as a lost capture.
+    // The mirror never publishes a host-private name on a pull, readable or
+    // not, so an unreadable one costs nothing and must not be reported as a
+    // lost capture.
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
     const blocked = join(claudeDir, 'commands');

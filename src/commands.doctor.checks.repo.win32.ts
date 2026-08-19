@@ -48,8 +48,8 @@ function win32CopyOkRow(name: string, exempt = 0): SharedLinkClassification {
  *
  * An info row rather than a WARN, because a deliberately host-private
  * directory is a legitimate state on every platform: `syncSharedLinksPush`
- * (`links.mirror.ts`) runs under `adoptNew: false`, so it never creates a
- * repo counterpart for a name the repo does not already carry, and a yellow
+ * (`links.mirror.ts`) never creates a repo counterpart for a name the repo
+ * does not already carry, and a yellow
  * row here would train users to ignore a state that is often exactly what
  * they intended. It exists at all because that same policy change means a
  * push no longer creates a repo counterpart on its own: without this row,
