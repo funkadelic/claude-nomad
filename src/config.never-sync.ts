@@ -249,23 +249,23 @@ export function isClaudeExtraName(name: string): boolean {
  * hardening {@link isClaudeExtraName} applies to the sibling selection
  * comparison.
  *
- * Both region tests below run through this rather than comparing the raw
+ * All three region tests below run through this rather than comparing the raw
  * segment. `shared/Projects/` and `shared/projects/` are the SAME directory on
  * a case-insensitive filesystem (macOS APFS, NTFS), so a raw comparison lets a
  * spelling difference alone decide which denylist that tree crosses, which is
  * the narrowing this module exists to make deliberate.
  *
- * `segments[0]` is deliberately NOT normalized, in either predicate. The
- * asymmetry is safe in the direction it fails: a mis-cased `Shared/` misses
- * both predicates, lands on the default arm, and gets the full set with a
- * full-path scan, which is strictly more restrictive than either narrow arm.
- * Normalizing it would be a widening, so it stays exact-case on purpose.
+ * `segments[0]` is deliberately NOT normalized, in any of the three
+ * predicates. The asymmetry is safe in the direction it fails: a mis-cased
+ * `Shared/` misses all three, lands on the default arm, and gets the full set
+ * with a full-path scan, which is strictly more restrictive than any narrow
+ * arm. Normalizing it would be a widening, so it stays exact-case on purpose.
  *
- * Both callers guard the segment's existence with `segments.length > 1` rather
- * than passing a `?? ''` fallback. The guard is reachable (a bare `['shared']`
- * path) and therefore testable; a fallback would be a branch no test could
- * reach, which the repo's coverage gate treats as a defect rather than a
- * defense.
+ * All three callers guard the segment's existence with `segments.length > 1`
+ * rather than passing a `?? ''` fallback. The guard is reachable (a bare
+ * `['shared']` path) and therefore testable; a fallback would be a branch no
+ * test could reach, which the repo's coverage gate treats as a defect rather
+ * than a defense.
  *
  * @param segment A single path segment, normally `segments[1]`.
  * @returns The segment's normalized region key.
@@ -275,11 +275,12 @@ function regionKey(segment: string): string {
 }
 
 /**
- * True when a repo-relative path's segments land inside the extras tree, which
- * is the one region where the denylist narrows and the scan skips a prefix.
- * Both decisions read this predicate rather than restating the test, since a
- * narrow set paired with a full-path scan (or the reverse) silently changes
- * what the gate blocks.
+ * True when a repo-relative path's segments land inside the extras tree,
+ * which is the one region where the denylist SET narrows (`blockSetFor`
+ * below). The SCAN half of the boundary is a separate decision, shared with
+ * `projects`: see {@link isLogicalNameScoped}. The two predicates read
+ * different things and are not interchangeable, even though both currently
+ * resolve `true` for the same `shared/extras/` paths.
  *
  * @param segments A repo-relative path already split on `/`.
  * @returns Whether the path sits under `shared/extras/`.
@@ -314,6 +315,13 @@ function isExtrasScoped(segments: string[]): boolean {
  * Its content is also not a name the user asked to share: the remap mechanism
  * puts it there, which is the distinction the ordinary-name arm rests on.
  *
+ * The SCAN nonetheless skips the logical NAME itself (`isLogicalNameScoped`),
+ * so a project legally named `sessions` or `tasks` does not hard-block its
+ * own transcripts on that name alone. That is not a weakening of the same
+ * boundary: the skipped segment is a directory NAME nomad derived from
+ * `path-map.json`, not content, and every segment below it is still scanned
+ * with this full `NEVER_SYNC` set.
+ *
  * Membership is tested through {@link regionKey}, never a raw `Set.has`, so
  * `shared/Projects/` cannot take the narrow arm on a case-insensitive
  * filesystem where it names this very directory.
@@ -321,10 +329,39 @@ function isExtrasScoped(segments: string[]): boolean {
 const UNFILTERED_SHARED_REGIONS = new Set(['extras', 'projects']);
 
 /**
+ * True when a repo-relative path's segments land under a region whose logical
+ * name (segment 2, `shared/<region>/<logical>/...`) `deniedSegmentFor` must
+ * skip over: `extras` and `projects`, the two members of
+ * `UNFILTERED_SHARED_REGIONS`. The logical is a name nomad derived on the
+ * user's behalf (a `path-map.json` key), not a denylist token, so a project or
+ * extra named `sessions`, `tasks`, `plans`, or `cache` must not hard-block its
+ * own files on that name alone.
+ *
+ * This predicate changes no block SET: `shared/projects/` keeps the full
+ * `NEVER_SYNC` set and `shared/extras/` keeps its narrow arm exactly as
+ * `blockSetFor` selects them today. It only widens the SCAN, and only by the
+ * three-segment `shared/<region>/<logical>` prefix; every segment below that
+ * prefix is still scanned in full with whichever set `blockSetFor` chose.
+ *
+ * @param segments A repo-relative path already split on `/`.
+ * @returns Whether the path sits under `shared/<region>/<logical>/` for a
+ *   region in `UNFILTERED_SHARED_REGIONS`.
+ */
+function isLogicalNameScoped(segments: string[]): boolean {
+  return (
+    segments[0] === 'shared' &&
+    segments.length > 1 &&
+    UNFILTERED_SHARED_REGIONS.has(regionKey(segments[1]))
+  );
+}
+
+/**
  * True when a repo-relative path's segments sit under an ordinary shared NAME
  * (`shared/<name>/...`), the region where the denylist narrows because the
- * user named the directory. The complement of `isExtrasScoped`: that predicate
- * scopes to the extras TREE, this one scopes to an ordinary shared NAME.
+ * user named the directory. The exact complement of `isLogicalNameScoped`
+ * over paths that reach the `shared/` prefix at all: that predicate scopes to
+ * a region whose segment 2 is a derived logical, this one to an ordinary
+ * shared NAME.
  *
  * A bare `['shared']` path (no name segment at all) is not scoped by this
  * predicate: there is nothing below a name for it to be scoped to, so it
@@ -334,8 +371,9 @@ const UNFILTERED_SHARED_REGIONS = new Set(['extras', 'projects']);
  * @returns Whether the path sits under an ordinary `shared/<name>/`.
  */
 function isSharedNameScoped(segments: string[]): boolean {
-  // Same guard shape as `isExtrasScoped`; see {@link regionKey} for why both
-  // read `segments.length > 1` instead of a `?? ''` fallback.
+  // Same guard shape as `isExtrasScoped` and `isLogicalNameScoped`; see
+  // {@link regionKey} for why all three read `segments.length > 1` instead of
+  // a `?? ''` fallback.
   return (
     segments[0] === 'shared' &&
     segments.length > 1 &&
@@ -397,18 +435,19 @@ export function blockSetFor(segments: string[]): Set<string> {
  * `isDeniedName` so the match is case-insensitive (macOS case-fold) and also
  * covers credential-file patterns (dotenv, private keys, npm/netrc auth) the
  * exact sets do not enumerate. Genuinely-sensitive host-local files stay
- * blocked even when nested inside a synced extras dir. Inside
- * `shared/extras/<logical>/<dirname>/` only the content segments (index 4+) are
- * scanned: the `<logical>` and `<dirname>` names are not denylist tokens, and a
- * logical that happens to equal a `NEVER_SYNC` token (e.g. a project named
- * `sessions`) must not hard-block its own legitimate files.
+ * blocked even when nested inside a synced extras dir. The scan skips the
+ * `shared/<region>/<logical>` prefix for every region in
+ * `UNFILTERED_SHARED_REGIONS` (see {@link isLogicalNameScoped}), because in
+ * those regions segment 2 is a name nomad derived on the user's behalf (a
+ * `path-map.json` logical) rather than a denylist token, and a project or
+ * extra named after one (e.g. `sessions`) must not hard-block its own
+ * legitimate files.
  *
- * This slice is deliberately extras-only: under an ordinary shared name,
- * segment 0 is the literal `shared` and segment 1 is a shared name already
- * validated against the full `NEVER_SYNC` set (by `classifyDeniedName`)
- * before it can be shared at all, so scanning both segments changes nothing
- * reachable and keeps a file hand-created at the top of the shared tree
- * (`shared/settings.local.json`) hard-blocked.
+ * Under an ordinary shared name the full path is still scanned: segment 1 is
+ * a shared name already validated against the full `NEVER_SYNC` set (by
+ * `classifyDeniedName`) before it can be shared at all, so scanning it again
+ * changes nothing reachable, and a file hand-created at the top of the shared
+ * tree (`shared/settings.local.json`) stays hard-blocked.
  *
  * Returns the segment rather than a bare boolean because the denylists hold
  * ordinary-looking directory names (`tasks`, `plans`, `sessions`, ...), so a
@@ -422,7 +461,13 @@ export function blockSetFor(segments: string[]): Set<string> {
 export function deniedSegmentFor(path: string): string | null {
   const segments = path.split('/');
   const blockSet = blockSetFor(segments);
-  const scan = isExtrasScoped(segments) ? segments.slice(4) : segments;
+  // shared/<region>/<logical> is exactly three segments; skip that prefix in
+  // every region where the logical is a name nomad derived rather than a
+  // denylist token, and scan everything below it in full. The length guard
+  // keeps the skip from consuming the whole path: at three segments there is
+  // no logical yet, so the last segment is a file sitting at the region root
+  // and it stays in range rather than passing unscanned.
+  const scan = isLogicalNameScoped(segments) && segments.length > 3 ? segments.slice(3) : segments;
   for (const segment of scan) {
     if (isDeniedName(blockSet, segment)) return segment;
   }
