@@ -84,9 +84,21 @@ jobs:
           # Keep the scanner out of the docs site, matching the docs-site
           # exclusions in sonar-project.properties, eslint.config.js, and
           # codecov.yml.
+          #
+          # Test files and test-helper infra are excluded too. They are never
+          # published (`files` ships only dist/), so they are not attack
+          # surface, and every js/file-system-race hit they produced was a
+          # false positive: an assertion pair reading back a file inside a
+          # per-test mkdtempSync sandbox that no other process can reach.
+          # Triaging one alert per such assertion was recurring toil with no
+          # signal. Shipped source keeps the rule, so the redact and recovery
+          # paths are still scanned. Patterns mirror sonar.test.inclusions in
+          # sonar-project.properties.
           config: |
             paths-ignore:
               - docs-site
+              - src/**/*.test.ts
+              - src/**/*.test-helpers*.ts
 
       - name: Perform CodeQL analysis
         if: steps.gate.outputs.skip != 'true'
