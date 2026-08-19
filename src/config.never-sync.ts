@@ -321,6 +321,33 @@ function isExtrasScoped(segments: string[]): boolean {
 const UNFILTERED_SHARED_REGIONS = new Set(['extras', 'projects']);
 
 /**
+ * True when a repo-relative path's segments land under a region whose logical
+ * name (segment 2, `shared/<region>/<logical>/...`) `deniedSegmentFor` must
+ * skip over: `extras` and `projects`, the two members of
+ * `UNFILTERED_SHARED_REGIONS`. The logical is a name nomad derived on the
+ * user's behalf (a `path-map.json` key), not a denylist token, so a project or
+ * extra named `sessions`, `tasks`, `plans`, or `cache` must not hard-block its
+ * own files on that name alone.
+ *
+ * This predicate changes no block SET: `shared/projects/` keeps the full
+ * `NEVER_SYNC` set and `shared/extras/` keeps its narrow arm exactly as
+ * `blockSetFor` selects them today. It only widens the SCAN, and only by the
+ * three-segment `shared/<region>/<logical>` prefix; every segment below that
+ * prefix is still scanned in full with whichever set `blockSetFor` chose.
+ *
+ * @param segments A repo-relative path already split on `/`.
+ * @returns Whether the path sits under `shared/<region>/<logical>/` for a
+ *   region in `UNFILTERED_SHARED_REGIONS`.
+ */
+function isLogicalNameScoped(segments: string[]): boolean {
+  return (
+    segments[0] === 'shared' &&
+    segments.length > 1 &&
+    UNFILTERED_SHARED_REGIONS.has(regionKey(segments[1]))
+  );
+}
+
+/**
  * True when a repo-relative path's segments sit under an ordinary shared NAME
  * (`shared/<name>/...`), the region where the denylist narrows because the
  * user named the directory. The complement of `isExtrasScoped`: that predicate
@@ -422,7 +449,10 @@ export function blockSetFor(segments: string[]): Set<string> {
 export function deniedSegmentFor(path: string): string | null {
   const segments = path.split('/');
   const blockSet = blockSetFor(segments);
-  const scan = isExtrasScoped(segments) ? segments.slice(4) : segments;
+  // shared/<region>/<logical> is exactly three segments; skip that prefix in
+  // every region where the logical is a name nomad derived rather than a
+  // denylist token, and scan everything below it in full.
+  const scan = isLogicalNameScoped(segments) ? segments.slice(3) : segments;
   for (const segment of scan) {
     if (isDeniedName(blockSet, segment)) return segment;
   }

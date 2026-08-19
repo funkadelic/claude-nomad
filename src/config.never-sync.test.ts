@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { SUPPORTED_EXTRAS } from './config.ts';
 import {
   ALWAYS_NEVER_SYNC,
   blockSetFor,
@@ -114,25 +115,20 @@ describe('blockSetFor: the shared-name branch', () => {
   );
 
   // The extras arm carries a SCAN RANGE as well as a set: `deniedSegmentFor`
-  // starts at segment 4, so the `<logical>` name cannot hard-block its own
-  // files. A floor name parked directly at `shared/extras/<logical>/<file>`
-  // therefore sits above the scan and this gate does not catch it, in either
-  // spelling. That is pre-existing for the lowercase one and normalizing the
-  // region test extended it to the mis-cased one, so it is pinned here as the
-  // real behavior rather than left to be rediscovered. It is not a hole in the
-  // boundary: the allow-list admits nothing at that depth, and the extras copy
-  // filter applies the same floor at every level. Whether the slice should
-  // start at the logical name instead of at segment 4 is a separate question
-  // and is tracked outside the source.
+  // skips exactly the `shared/<region>/<logical>` prefix, in both regions that
+  // have one, and everything below that prefix is scanned. A floor name parked
+  // directly at `shared/extras/<logical>/<file>` therefore sits at the
+  // logical's own depth and this gate catches it, in either spelling of the
+  // region.
   it.each(['extras', 'Extras'])(
-    'does not catch a floor name parked above the extras scan range (%s spelling)',
+    "catches a floor name parked at the logical's own depth (%s spelling)",
     (region) => {
-      expect(isNeverSync(`shared/${region}/myproj/settings.local.json`)).toBe(false);
+      expect(isNeverSync(`shared/${region}/myproj/settings.local.json`)).toBe(true);
     },
   );
 
   it.each(['extras', 'Extras'])(
-    'still catches the same floor name once it is inside the extras scan range (%s spelling)',
+    'still catches the same floor name one level deeper too (%s spelling)',
     (region) => {
       expect(isNeverSync(`shared/${region}/myproj/.planning/settings.local.json`)).toBe(true);
     },
@@ -273,5 +269,58 @@ describe('deniedSegmentFor', () => {
 
   it('returns null for extras content the narrow subset allows', () => {
     expect(deniedSegmentFor('shared/extras/myproj/.planning/todos/a.md')).toBeNull();
+  });
+
+  // The projects region gets the same logical-name skip as extras: a project
+  // named after a denylist token must not be refused on its own name.
+  it.each(['sessions', 'tasks', 'plans', 'cache'])(
+    'no longer flags a projects logical named after a denylist token (%s)',
+    (logical) => {
+      expect(deniedSegmentFor(`shared/projects/${logical}/x.jsonl`)).toBeNull();
+    },
+  );
+
+  it('no longer flags a projects logical on the shape axis either', () => {
+    // SAFE_LOGICAL admits `.env` as a path-map.json projects key, so the same
+    // skip must cover the shape axis, not just the exact-name axis.
+    expect(deniedSegmentFor('shared/projects/.env/x.jsonl')).toBeNull();
+  });
+
+  // Everything below the projects logical stays fully scanned with the wide
+  // NEVER_SYNC set: the skip is the logical segment only, never its content.
+  it('still flags a NEVER_SYNC-only name nested under a projects logical', () => {
+    expect(deniedSegmentFor('shared/projects/foo/todos/file.md')).toBe('todos');
+  });
+
+  it('still flags the same name nested deeper under a projects logical', () => {
+    expect(deniedSegmentFor('shared/projects/foo/sub/todos/a.md')).toBe('todos');
+  });
+
+  it('still flags a floor name nested under a projects logical', () => {
+    expect(deniedSegmentFor('shared/projects/foo/settings.local.json')).toBe('settings.local.json');
+  });
+
+  it('passes an ordinary transcript under a projects logical', () => {
+    expect(deniedSegmentFor('shared/projects/foo/x.jsonl')).toBeNull();
+  });
+
+  // Drive this from SUPPORTED_EXTRAS itself, so a future fourth entry that
+  // collides with a denylist name fails here instead of in the field.
+  it.each(SUPPORTED_EXTRAS)('does not refuse the supported extra %s at its own depth', (name) => {
+    expect(deniedSegmentFor(`shared/extras/myproj/${name}`)).toBeNull();
+  });
+
+  // Branch coverage for isLogicalNameScoped, reached through the public
+  // deniedSegmentFor surface rather than through the module-private predicate.
+  it('returns null when the top segment is not shared at all (first condition false)', () => {
+    expect(deniedSegmentFor('hosts/dell.json')).toBeNull();
+  });
+
+  it('returns null for a bare shared path with no region segment (length guard false)', () => {
+    expect(deniedSegmentFor('shared')).toBeNull();
+  });
+
+  it('keeps a file hand-created at the top of the shared tree hard-blocked', () => {
+    expect(deniedSegmentFor('shared/settings.local.json')).toBe('settings.local.json');
   });
 });
