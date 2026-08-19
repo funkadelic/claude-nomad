@@ -30,8 +30,9 @@ describe('errorText', () => {
   });
 
   // Every caller runs inside a catch whose contract is to report and carry on,
-  // so the composer itself must never throw. Conversion is the step that can:
-  // a property read cannot fail, but `String` can, for these three shapes.
+  // so the composer itself must never throw. Both of its steps can: the read
+  // through a getter or a Proxy trap, and the conversion for the other two
+  // shapes below.
   it('stands in for a null-prototype object rather than throwing on conversion', () => {
     expect(errorText(Object.create(null))).toBe('unprintable error value');
   });
