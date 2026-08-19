@@ -92,13 +92,17 @@ jobs:
           # per-test mkdtempSync sandbox that no other process can reach.
           # Triaging one alert per such assertion was recurring toil with no
           # signal. Shipped source keeps the rule, so the redact and recovery
-          # paths are still scanned. Patterns mirror sonar.test.inclusions in
-          # sonar-project.properties.
+          # paths are still scanned. Tests live under both src/ and scripts/,
+          # so both roots are listed; vitest.config.ts is the authority on
+          # where they are, and sonar-project.properties excludes the same
+          # shapes from duplication detection.
           config: |
             paths-ignore:
               - docs-site
               - src/**/*.test.ts
               - src/**/*.test-helpers*.ts
+              - scripts/**/*.test.ts
+              - scripts/**/*.test-helpers*.ts
 
       - name: Perform CodeQL analysis
         if: steps.gate.outputs.skip != 'true'
