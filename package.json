@@ -67,7 +67,8 @@
   "overrides": {
     "@conventional-changelog/git-client": {
       "conventional-commits-parser": "^7.0.0"
-    }
+    },
+    "qs": "^6.15.2"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
