@@ -14,34 +14,11 @@ import { dirname, join, resolve } from 'node:path';
 
 import { deniedEntriesRefusal, scanOrFatal } from './commands.adopt.scan.ts';
 import { ALWAYS_NEVER_SYNC, claudeHome } from './config.ts';
+import { errorText } from './error-text.ts';
 import { EXIT } from './exit-codes.ts';
 import { copyExtrasFiltered } from './extras-sync.core.ts';
 import { copySharedLinkPull } from './links.ts';
 import { warn, NomadFatal } from './utils.ts';
-
-/**
- * The text to quote for a caught value, whatever was actually thrown.
- *
- * Every message this module builds ends with the cause in parentheses, and
- * reading `.message` off an unknown directly renders the literal `undefined`
- * for anything that is not an `Error`, which is the one place a failure report
- * cannot afford to go vague. The calls these catches span (`copyExtrasFiltered`,
- * `copySharedLinkPull`, `rmSync`, a staging closure) raise real `Error`s
- * today, so this is about what a future caller or an injected fault produces,
- * not a bug on any path in the current tree.
- *
- * Structural rather than `instanceof`, matching `isUserAbort` in
- * `user-abort.ts`: an `Error` crossing a realm boundary fails the prototype
- * check, and a thrown plain object carrying a `message` still says something
- * more useful than `[object Object]`.
- *
- * @param err The caught value.
- * @returns Its `message` when it has a string one, otherwise its `String` form.
- */
-function errorText(err: unknown): string {
-  const message = (err as Error | undefined)?.message;
-  return typeof message === 'string' ? message : String(err);
-}
 
 /**
  * lstat-based existence check that, unlike `existsSync`, does NOT follow

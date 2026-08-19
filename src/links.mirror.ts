@@ -15,6 +15,7 @@ import {
   ALWAYS_NEVER_SYNC,
   type PathMap,
 } from './config.ts';
+import { errorText } from './error-text.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras-sync.core.ts';
 import { gitProbe } from './git-probe.ts';
 import { log, warn } from './utils.ts';
@@ -225,12 +226,12 @@ function mirrorOneSharedName(
     if (notShared(policy, target)) return;
     if (opts.dryRun === true) {
       warn(
-        `${name} could not be read (${(err as Error).message}), so nothing was captured for it and nothing was written. A pull that captures shared edits would skip it too. Check its permissions, or whether another program has it open`,
+        `${name} could not be read (${errorText(err)}), so nothing was captured for it and nothing was written. A pull that captures shared edits would skip it too. Check its permissions, or whether another program has it open`,
       );
       return;
     }
     warn(
-      `${name} could not be read (${(err as Error).message}), so it was left out of shared/ this run. Check its permissions, or whether another program has it open`,
+      `${name} could not be read (${errorText(err)}), so it was left out of shared/ this run. Check its permissions, or whether another program has it open`,
     );
     return;
   }
@@ -522,7 +523,7 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
     backupRepoWrite(abs, ts, repo);
   } catch (err) {
     warn(
-      `could not snapshot ${abs} before removing it (${(err as Error).message}), so it was left in place: ${denied}, so remove it by hand`,
+      `could not snapshot ${abs} before removing it (${errorText(err)}), so it was left in place: ${denied}, so remove it by hand`,
     );
     return;
   }
@@ -535,7 +536,7 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
     const where = snapshotted ? `. A copy was snapshotted under backup/${ts}/repo/ first` : '';
     warn(`removed ${path} from the sync repo working tree: ${denied}${where}`);
   } catch (err) {
-    warn(`could not remove ${abs}: ${(err as Error).message}`);
+    warn(`could not remove ${abs}: ${errorText(err)}`);
   }
 }
 
