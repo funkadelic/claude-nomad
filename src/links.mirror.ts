@@ -15,6 +15,7 @@ import {
   ALWAYS_NEVER_SYNC,
   type PathMap,
 } from './config.ts';
+import { errorText } from './error-text.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras-sync.core.ts';
 import { gitProbe } from './git-probe.ts';
 import { log, warn } from './utils.ts';
@@ -112,8 +113,6 @@ type DeniedRevertStatus = {
 
 /** How one mirror pass treats the repo side. See the two exported wrappers. */
 type SharedMirrorPolicy = {
-  /** Create `shared/<name>` when the repo has no counterpart yet. */
-  adoptNew: boolean;
   /** Overlay onto the repo copy instead of replacing it wholesale. */
   overlay: boolean;
   /** When set, snapshot the repo copy under `backup/<ts>/repo/` before writing. */
@@ -121,17 +120,18 @@ type SharedMirrorPolicy = {
 };
 
 /**
- * True when `policy` would leave this name alone because the repo does not
- * already carry a `shared/<name>` counterpart. The pull policy runs with
- * `adoptNew: false` so a host-private name is never published by a pull; the
- * push policy adopts, so nothing is unshared from its point of view.
+ * True when `target` (`shared/<name>`) does not yet exist, so this mirror
+ * pass should leave the name alone rather than create it.
  *
- * @param policy - Repo-side treatment; see {@link SharedMirrorPolicy}.
+ * Both the push and the pull mirror run under this same policy: publishing a
+ * directory to every other host is a deliberate act, performed by
+ * `nomad adopt <name>`, never an implicit side effect of a pull or a push.
+ *
  * @param target - Absolute `shared/<name>` path for the name under test.
  * @returns `true` when the name should be skipped as not shared.
  */
-function notShared(policy: SharedMirrorPolicy, target: string): boolean {
-  return !policy.adoptNew && !existsSync(target);
+function notShared(target: string): boolean {
+  return !existsSync(target);
 }
 
 /**
@@ -177,8 +177,8 @@ function notShared(policy: SharedMirrorPolicy, target: string): boolean {
  * to remove. Only a real error reaches the warning, since `throwIfNoEntry`
  * already absorbs the ordinary absent-path case, and only a name this pass
  * would actually have captured: an unreadable name the repo does not share was
- * never going to be copied, since both wrappers now run under `adoptNew:
- * false`, so reporting it would read as data loss on a directory that is
+ * never going to be copied, since both wrappers now decline to adopt a new
+ * name, so reporting it would read as data loss on a directory that is
  * deliberately host-private. The wording
  * claims nothing about the rest of the command, only about this mirror pass.
  *
@@ -222,21 +222,21 @@ function mirrorOneSharedName(
     // instead of dropping the name without a word. Silent for a name this pass
     // would have skipped anyway, so an ACL change on ~/.claude/ reports the one
     // name it actually cost rather than one line per shared name.
-    if (notShared(policy, target)) return;
+    if (notShared(target)) return;
     if (opts.dryRun === true) {
       warn(
-        `${name} could not be read (${(err as Error).message}), so nothing was captured for it and nothing was written. A pull that captures shared edits would skip it too. Check its permissions, or whether another program has it open`,
+        `${name} could not be read (${errorText(err)}), so nothing was captured for it and nothing was written. A pull that captures shared edits would skip it too. Check its permissions, or whether another program has it open`,
       );
       return;
     }
     warn(
-      `${name} could not be read (${(err as Error).message}), so it was left out of shared/ this run. Check its permissions, or whether another program has it open`,
+      `${name} could not be read (${errorText(err)}), so it was left out of shared/ this run. Check its permissions, or whether another program has it open`,
     );
     return;
   }
   if (stat === undefined) return; // absent: nothing to mirror
   if (stat.isSymbolicLink()) return; // symlink-era live link; defer to next pull
-  if (notShared(policy, target)) return; // repo does not share this name
+  if (notShared(target)) return; // repo does not share this name
 
   if (opts.dryRun === true) {
     emitMirror(opts.onPreview, name, localPath, target);
@@ -289,8 +289,8 @@ function mirrorSharedNames(
  * This is the write half of the copy-sync model; `copySharedLinkPull` in
  * `links.ts` is the read half.
  *
- * Runs under `adoptNew: false`: it declines to create `shared/<name>` for a
- * name the repo does not already carry. Publishing a directory to every
+ * Declines to create `shared/<name>` for a name the repo does not already
+ * carry. Publishing a directory to every
  * other host is a deliberate act, and the command that performs it is
  * `nomad adopt <name>`, not an implicit side effect of the next push. This
  * matches the behavior macOS, Linux and WSL2 have always had, where a name
@@ -339,7 +339,7 @@ function mirrorSharedNames(
  *   exercised by the real-push-only call site today.
  */
 export function syncSharedLinksPush(map: PathMap | null, opts: MirrorOpts = {}): void {
-  mirrorSharedNames(map, { adoptNew: false, overlay: false }, opts);
+  mirrorSharedNames(map, { overlay: false }, opts);
 }
 
 /**
@@ -355,10 +355,10 @@ export function syncSharedLinksPush(map: PathMap | null, opts: MirrorOpts = {}):
  * gitleaks scan; a pull is neither, so it runs under the two conservative
  * settings instead:
  *
- * - `adoptNew: false`, so a name the repo does not already share is left alone.
- *   Creating `shared/<name>` from a purely host-local dir would turn a pull
- *   into a publish trigger (under `nomad sync` the push half would ship it to
- *   every other host), and it would invert the guarantee `applySharedLinks`
+ * - Leaves a name the repo does not already share alone. Creating
+ *   `shared/<name>` from a purely host-local dir would turn a pull into a
+ *   publish trigger (under `nomad sync` the push half would ship it to every
+ *   other host), and it would invert the guarantee `applySharedLinks`
  *   enforces: a host with no `shared/<name>` counterpart keeps its private
  *   local copy.
  * - `overlay: true`, so a repo-side file the host copy happens to lack is not
@@ -392,7 +392,7 @@ export function stageLocalSharedEdits(
   ts: string,
   opts: MirrorOpts = {},
 ): void {
-  mirrorSharedNames(map, { adoptNew: false, overlay: true, backupTs: ts }, opts);
+  mirrorSharedNames(map, { overlay: true, backupTs: ts }, opts);
 }
 
 /**
@@ -522,7 +522,7 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
     backupRepoWrite(abs, ts, repo);
   } catch (err) {
     warn(
-      `could not snapshot ${abs} before removing it (${(err as Error).message}), so it was left in place: ${denied}, so remove it by hand`,
+      `could not snapshot ${abs} before removing it (${errorText(err)}), so it was left in place: ${denied}, so remove it by hand`,
     );
     return;
   }
@@ -535,7 +535,7 @@ function removeUntrackedDenied(repo: string, path: string, segment: string, ts: 
     const where = snapshotted ? `. A copy was snapshotted under backup/${ts}/repo/ first` : '';
     warn(`removed ${path} from the sync repo working tree: ${denied}${where}`);
   } catch (err) {
-    warn(`could not remove ${abs}: ${(err as Error).message}`);
+    warn(`could not remove ${abs}: ${errorText(err)}`);
   }
 }
 

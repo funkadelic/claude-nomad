@@ -91,8 +91,7 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
 
   it('mirrors a local file edit and a local directory edit into an already-shared shared/ on win32', async () => {
     // Both repo counterparts pre-exist: this case proves an EDIT reaches the
-    // repo, not that a new name is created (adoptNew: false means it never
-    // creates one).
+    // repo, not that a new name is created (the mirror never creates one).
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
     mkdirSync(join(sharedDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
@@ -254,6 +253,42 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     syncSharedLinksPush({ projects: {} });
     expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
   });
+
+  it('quotes real text at the unreadable-name WARN for a thrown non-Error, not the placeholder undefined', async () => {
+    // Same shape as the EPERM Error case above, but the fault is a bare
+    // thrown string. `(err as Error).message` reads undefined off a string,
+    // so the WARN used to render the literal word "undefined" here.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    mkdirSync(join(sharedDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unreadable local edit\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
+    const blocked = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          if (String(p) === blocked) throw 'disk read failed';
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    expect(() => syncSharedLinksPush({ projects: {} })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('CLAUDE.md could not be read');
+    expect(said[0]).toContain('disk read failed');
+    expect(said[0]).not.toContain('(undefined)');
+  });
 });
 
 // The pull-side mirror runs the same loop under a deliberately narrower policy
@@ -401,8 +436,9 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
       expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
       // The unreadable parent takes down the stat for every shared name, but
       // only CLAUDE.md has a shared/ counterpart this pull would have
-      // captured. The other three are host-private under `adoptNew: false`, so
-      // warning about them would report a loss that was never going to happen.
+      // captured. The other three are host-private since the mirror never
+      // adopts a new name, so warning about them would report a loss that
+      // was never going to happen.
       const said = errSpy.mock.calls.map((c) => String(c[0]));
       expect(said).toHaveLength(1);
       expect(said[0]).toContain('CLAUDE.md could not be read');
@@ -411,9 +447,9 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
   );
 
   it('stays silent for an unreadable name the repo does not share', async () => {
-    // `adoptNew: false` means a host-private name is never published by a
-    // pull, readable or not, so an unreadable one costs nothing and must not
-    // be reported as a lost capture.
+    // The mirror never publishes a host-private name on a pull, readable or
+    // not, so an unreadable one costs nothing and must not be reported as a
+    // lost capture.
     mkdirSync(join(claudeDir, 'commands'), { recursive: true });
     writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
     const blocked = join(claudeDir, 'commands');
@@ -517,6 +553,40 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
     // gsd IS in the supplied list, so its host edit is mirrored in.
     expect(readFileSync(join(sharedDir, 'gsd', 'local.md'), 'utf8')).toBe('# local gsd\n');
+  });
+
+  it('quotes real text at the dry-run unreadable-name WARN for a thrown non-Error, not the placeholder undefined', async () => {
+    // Same shape as the dryRun EPERM Error case above, but the fault is a
+    // bare thrown number, which (like a bare string) has no message
+    // property. `(err as Error).message` read undefined off it, so the WARN
+    // used to render the literal word "undefined" here.
+    writeFileSync(join(sharedDir, 'CLAUDE.md'), '# original shared\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unpublished local edit\n');
+    const blocked = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          if (String(p) === blocked) throw 13;
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    expect(() => stageLocalSharedEdits({ projects: {} }, TS, { dryRun: true })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('CLAUDE.md could not be read');
+    expect(said[0]).toContain('could not be read (13)');
+    expect(said[0]).not.toContain('(undefined)');
   });
 });
 
@@ -1586,6 +1656,68 @@ describe('revertDeniedMirrorPaths', () => {
     // filename also appears in two of this function's failure warnings, so
     // asserting it alone would pass on a removal that failed.
     expect(warnings()).toContain('removed shared/extras/myproj/settings.local.json');
+  });
+
+  it('quotes real text at the snapshot-failure WARN for a thrown non-Error, not the placeholder undefined', async () => {
+    // Same shape as the ENOSPC Error case above, but the fault is a plain
+    // object with no message property at all: the other arm of the optional
+    // chain. `(err as Error).message` read undefined off it, and the WARN
+    // rendered the literal word "undefined" where the cause belongs.
+    const dir = join(repo, 'shared', 'commands', 'credentials');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
+    vi.doMock('./utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return {
+        ...actual,
+        backupRepoWrite: () => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          throw { code: 'EACCES' };
+        },
+      };
+    });
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
+
+    expect(readFileSync(join(dir, 'notes.md'), 'utf8')).toBe('token=abc\n');
+    expect(warnings()).toContain('could not snapshot');
+    expect(warnings()).toContain('[object Object]');
+    expect(warnings()).not.toContain('(undefined)');
+    expect(warnings()).toContain('left in place');
+  });
+
+  it('quotes real text at the removal-failure WARN for a message-less thrown object, not the placeholder undefined', async () => {
+    // Same shape as the EPERM Error case above, but the fault is a plain
+    // object with neither an Error prototype nor a message property, which is
+    // what makes it reproduce: `(err as Error).message` read undefined off it,
+    // so the WARN used to render the literal word "undefined" here.
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'notes.md'), 'token=abc\n');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        rmSync: () => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          throw { name: 'Error' };
+        },
+      };
+    });
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    expect(() =>
+      revertDeniedMirrorPaths(
+        repo,
+        { tracked: [], untracked: ['shared/commands/credentials'] },
+        TS,
+      ),
+    ).not.toThrow();
+
+    expect(warnings()).toContain('could not remove');
+    expect(warnings()).toContain('[object Object]');
+    expect(warnings()).not.toContain('(undefined)');
+    expect(existsSync(join(repo, 'shared', 'commands', 'credentials'))).toBe(true);
   });
 });
 
