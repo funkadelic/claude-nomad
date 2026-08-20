@@ -1,27 +1,48 @@
 # Changelog
 
+## [0.67.1](https://github.com/funkadelic/claude-nomad/compare/v0.67.0...v0.67.1) (2026-08-20)
+
+### What's new
+
+**On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
+
+- **A project in a folder named `sessions`, `tasks`, `plans`, or `cache` now syncs its own history.** Those are names nomad uses for its own working folders, and a project of yours that happened to share one was refused, as though the folder held something private. Nothing in it was: the refusal was on the folder's name alone, never on anything inside it. Your own projects with those names now sync like any other, and what is actually inside a folder is still checked exactly as before.
+
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to it.
+
+- **A pull no longer removes that project's transcripts from your sync repo.** The same name check ran during a pull, where instead of refusing it deleted, so a project named after one of those folders quietly lost its saved history from the sync repo on every pull. It kept a backup copy each time, under `~/.cache/claude-nomad/backup/`, but nothing was ever put back. Pulls now leave those projects alone.
+- **When a sync cannot remove or back up a file, it now tells you why.** These messages sometimes printed the word `undefined` where the reason belongs, which left you with a file named and no idea what had gone wrong with it. They now carry the real reason. The same messages could also stop the cleanup partway through, so files after the first problem went unhandled and unmentioned; the pass now runs to the end and reports everything it did.
+
+
+### Fixed
+
+* **config:** stop a project's own folder name from blocking its history ([#536](https://github.com/funkadelic/claude-nomad/issues/536)) ([1994c55](https://github.com/funkadelic/claude-nomad/commit/1994c55a32c62220e8d7291554f95099b2c12eba))
+* **mirror:** name the reason in sync warnings instead of undefined ([#537](https://github.com/funkadelic/claude-nomad/issues/537)) ([e973ff3](https://github.com/funkadelic/claude-nomad/commit/e973ff392e369694e517c5aabfb26c996836378f))
+
+
+### Changed
+
+* **codeql:** exclude test files from security scanning ([#534](https://github.com/funkadelic/claude-nomad/issues/534)) ([c86a6d3](https://github.com/funkadelic/claude-nomad/commit/c86a6d3c80a640e0a251181c8c0461edef2375da))
+
+
+### Dependencies
+
+* bump fast-uri from 3.1.4 to 3.1.5 ([#527](https://github.com/funkadelic/claude-nomad/issues/527)) ([6a8f6ba](https://github.com/funkadelic/claude-nomad/commit/6a8f6baa534dae9d9e6786acf96627c85bb8d400))
+* bump js-yaml from 4.3.0 to 4.3.1 in /docs-site ([#529](https://github.com/funkadelic/claude-nomad/issues/529)) ([a4e541f](https://github.com/funkadelic/claude-nomad/commit/a4e541fd74100527306ebaa713a2a730ffe98af7))
+* bump nanoid from 3.3.15 to 3.3.18 in /docs-site ([#531](https://github.com/funkadelic/claude-nomad/issues/531)) ([0a0f53e](https://github.com/funkadelic/claude-nomad/commit/0a0f53ee46e3b69babd82b84e39c6982791f8896))
+* bump postcss from 8.5.15 to 8.5.26 in /docs-site ([#530](https://github.com/funkadelic/claude-nomad/issues/530)) ([413f75d](https://github.com/funkadelic/claude-nomad/commit/413f75db6c292785f6b7d67fbd629680d5b39e04))
+* bump postcss from 8.5.16 to 8.5.26 ([#532](https://github.com/funkadelic/claude-nomad/issues/532)) ([b03bd62](https://github.com/funkadelic/claude-nomad/commit/b03bd62ab77249bdcc31c78ac2440da434b2de39))
+* bump svgo from 4.0.1 to 4.0.2 in /docs-site ([#528](https://github.com/funkadelic/claude-nomad/issues/528)) ([a424693](https://github.com/funkadelic/claude-nomad/commit/a4246932d01a79082383d6a09e08e7542eb7a873))
+
 ## [0.67.0](https://github.com/funkadelic/claude-nomad/compare/v0.66.0...v0.67.0) (2026-08-18)
 
 ### What's new
 
 **On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
 
-- **Your backup cache no longer collects empty folders.** Every sync saves a copy of anything it is
-  about to overwrite into a dated folder under `~/.cache/claude-nomad/backup/`, and it creates that
-  folder before it touches your files so a full disk or a permissions problem stops the sync before
-  it has changed anything. A sync that turns out to have nothing to save now clears its own folder
-  instead of leaving an empty one behind, and so does one that stops early.
-- **`nomad clean --backups` removes empty backup folders whatever their age.** They hold nothing to
-  recover, so neither the 14-day default nor `--keep <N>` keeps one alive, and they no longer use up
-  the slots `--keep <N>` reserves: ask for the five newest and you get the five newest that actually
-  hold something. Backups holding anything at all, a file or even a link, are left exactly as
-  before. `nomad clean --backups --dry-run` always prints its preview, since it changes nothing and
-  never waits on another command.
-- **`nomad adopt` no longer runs at the same time as a pull, push, or sync.** It waits its turn the
-  way those commands already wait for each other, so a cleanup or a sync running in another terminal
-  cannot remove or overwrite a backup that adopt is still writing. If another one is already
-  running, adopt says so and does nothing rather than starting a move it cannot finish safely.
-  Previewing with `nomad adopt <name> --dry-run` never waits, since it only reads and prints.
+- **Your backup cache no longer collects empty folders.** Every sync saves a copy of anything it is about to overwrite into a dated folder under `~/.cache/claude-nomad/backup/`, and it creates that folder before it touches your files so a full disk or a permissions problem stops the sync before it has changed anything. A sync that turns out to have nothing to save now clears its own folder instead of leaving an empty one behind, and so does one that stops early.
+- **`nomad clean --backups` removes empty backup folders whatever their age.** They hold nothing to recover, so neither the 14-day default nor `--keep <N>` keeps one alive, and they no longer use up the slots `--keep <N>` reserves: ask for the five newest and you get the five newest that actually hold something. Backups holding anything at all, a file or even a link, are left exactly as before. `nomad clean --backups --dry-run` always prints its preview, since it changes nothing and never waits on another command.
+- **`nomad adopt` no longer runs at the same time as a pull, push, or sync.** It waits its turn the way those commands already wait for each other, so a cleanup or a sync running in another terminal cannot remove or overwrite a backup that adopt is still writing. If another one is already running, adopt says so and does nothing rather than starting a move it cannot finish safely. Previewing with `nomad adopt <name> --dry-run` never waits, since it only reads and prints.
 
 
 ### Added
@@ -39,53 +60,17 @@
 
 **On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
 
-- **A folder you share now carries everything inside it.** If you share a folder through
-  `sharedDirs`, its subfolders travel with it, including ones with everyday names like `sessions`,
-  `plans`, `tasks`, and `cache`. Those names used to be refused wherever they appeared, so a push
-  could fail, or `nomad adopt` could turn you away, over a folder holding nothing sensitive. Your
-  Claude login, your credential files, your per-host settings, and your local history still never
-  leave the machine, in either direction.
-- **`nomad adopt` checks the whole folder before it moves anything.** It used to copy everything,
-  so a file that never syncs between machines could land in your repo and fail your next push, on
-  content you never chose to add. Adopt now stops before touching anything and names every path it
-  objected to and why: a name that collides with the never-sync list, which renaming clears, or a
-  name that looks like a credential file, where renaming only helps if the new name looks different
-  too. `--dry-run` gives exactly the same answer as the real run, so you can check a folder before
-  committing to it.
-- **An interrupted `nomad adopt` now explains itself instead of writing a crash report.** If
-  another program has the directory open, or its permissions block the move partway through, the
-  command says what happened, where your content ended up, and what to run next. Your content is
-  safe in every one of these cases: either it was never touched on this machine, or it is already
-  in the repo.
+- **A folder you share now carries everything inside it.** If you share a folder through `sharedDirs`, its subfolders travel with it, including ones with everyday names like `sessions`, `plans`, `tasks`, and `cache`. Those names used to be refused wherever they appeared, so a push could fail, or `nomad adopt` could turn you away, over a folder holding nothing sensitive. Your Claude login, your credential files, your per-host settings, and your local history still never leave the machine, in either direction.
+- **`nomad adopt` checks the whole folder before it moves anything.** It used to copy everything, so a file that never syncs between machines could land in your repo and fail your next push, on content you never chose to add. Adopt now stops before touching anything and names every path it objected to and why: a name that collides with the never-sync list, which renaming clears, or a name that looks like a credential file, where renaming only helps if the new name looks different too. `--dry-run` gives exactly the same answer as the real run, so you can check a folder before committing to it.
+- **An interrupted `nomad adopt` now explains itself instead of writing a crash report.** If another program has the directory open, or its permissions block the move partway through, the command says what happened, where your content ended up, and what to run next. Your content is safe in every one of these cases: either it was never touched on this machine, or it is already in the repo.
 
-**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to
-it.
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to it.
 
-- **A push no longer publishes a folder you never asked to share.** Windows keeps your shared
-  config as real file copies rather than symlinks, and a push used to pick up any folder sitting in
-  your Claude directory and publish it to your other machines. Sharing is now the same deliberate
-  step it has always been on macOS and Linux: run `nomad adopt <name>` once, then push. Your
-  existing shared folders keep syncing exactly as before.
-- **`nomad doctor --verbose` names a folder your repo does not carry yet.** It lists the local
-  copies that are still private to this machine, and the command that shares one.
-- **One unreadable file no longer ends your pull.** A single config file that another program has
-  open, or that your account cannot read, used to stop the whole pull with a crash report. Nomad
-  now names the file and the reason, then carries on: your settings, your skills, and your session
-  history all still sync, and the command finishes normally. The warning also says whether the file
-  is still there or has been removed, and points at the backup copy when there is one.
-- **`nomad adopt` recovers cleanly when it cannot restore your local copy.** Adopt finishes by
-  copying the folder back out of the sync repo so this machine keeps a usable copy. If that copy
-  was blocked, the command used to end in a crash report, with the folder gone from your Claude
-  directory and nothing staged for publishing. It now stops with a plain message naming the folder
-  and the reason, stages the adopted content either way, and tells you to run `nomad pull` before
-  your next push and why that order matters. A half written folder left behind by the interrupted
-  copy is removed, so a later push cannot replace your adopted folder with the partial one.
-- **A refused `nomad pull --force-remote` now tells you what actually clears it.** The old advice
-  did not work, and would land you back on the same refusal. The message now gives the steps that
-  finish the job and names the one that clears the check, and it says that the stuck rebase has
-  already been undone by that point, so retrying is now just an ordinary pull. It no longer calls
-  every listed file at risk, since the list can include files where the shared repo is simply ahead
-  of yours. The quickstart says the same thing and links to the matching recovery steps in the FAQ.
+- **A push no longer publishes a folder you never asked to share.** Windows keeps your shared config as real file copies rather than symlinks, and a push used to pick up any folder sitting in your Claude directory and publish it to your other machines. Sharing is now the same deliberate step it has always been on macOS and Linux: run `nomad adopt <name>` once, then push. Your existing shared folders keep syncing exactly as before.
+- **`nomad doctor --verbose` names a folder your repo does not carry yet.** It lists the local copies that are still private to this machine, and the command that shares one.
+- **One unreadable file no longer ends your pull.** A single config file that another program has open, or that your account cannot read, used to stop the whole pull with a crash report. Nomad now names the file and the reason, then carries on: your settings, your skills, and your session history all still sync, and the command finishes normally. The warning also says whether the file is still there or has been removed, and points at the backup copy when there is one.
+- **`nomad adopt` recovers cleanly when it cannot restore your local copy.** Adopt finishes by copying the folder back out of the sync repo so this machine keeps a usable copy. If that copy was blocked, the command used to end in a crash report, with the folder gone from your Claude directory and nothing staged for publishing. It now stops with a plain message naming the folder and the reason, stages the adopted content either way, and tells you to run `nomad pull` before your next push and why that order matters. A half written folder left behind by the interrupted copy is removed, so a later push cannot replace your adopted folder with the partial one.
+- **A refused `nomad pull --force-remote` now tells you what actually clears it.** The old advice did not work, and would land you back on the same refusal. The message now gives the steps that finish the job and names the one that clears the check, and it says that the stuck rebase has already been undone by that point, so retrying is now just an ordinary pull. It no longer calls every listed file at risk, since the list can include files where the shared repo is simply ahead of yours. The quickstart says the same thing and links to the matching recovery steps in the FAQ.
 
 
 ### Added
@@ -114,39 +99,16 @@ it.
 
 ### What's new
 
-**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to
-it.
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to it.
 
-- **`nomad pull --force-remote` no longer discards edits you have not published.** The flag exists
-  to rescue a sync repo that got stuck part-way through an update. On native Windows it also skipped
-  the step that saves your local shared-config edits into the repo, every time it ran, even on a
-  healthy machine with nothing to rescue. That was the flag's only visible effect on a healthy repo,
-  and nothing told you it had happened. It now rescues a stuck repo and nothing else, and when a
-  rescue genuinely does replace your copies, the pull says how many and where your previous ones
-  were saved.
-- **A pull now says what it did to your shared config.** On Windows your shared config is kept as
-  real file copies rather than symlinks, so every pull starts by copying your local edits into the
-  sync repo. That step used to be silent. It now prints a `Symlinks` section naming each file it
-  picked up, and each file it removed from the repo because you deleted it here. If a file cannot be
-  read at all, because another program is holding it open or its permissions changed, the pull names
-  it and says why rather than leaving a silent gap. `nomad diff` and `nomad pull --dry-run` read
-  from the same place, so a preview now matches what a real pull does.
-- **Windows keeps the same things out of your sync repo that your other machines do.** The Windows
-  copy step used to hold back only files whose names looked like passwords or keys. It now skips
-  everything on the never-sync list, so the folders Claude Code uses for its own state, named things
-  like `sessions`, `tasks`, `plans`, and `cache`, stay on the machine even when they sit inside a
-  folder you share. If one of them is already sitting in your sync repo, the pull tells you, and
-  takes a backup copy before removing it.
+- **`nomad pull --force-remote` no longer discards edits you have not published.** The flag exists to rescue a sync repo that got stuck part-way through an update. On native Windows it also skipped the step that saves your local shared-config edits into the repo, every time it ran, even on a healthy machine with nothing to rescue. That was the flag's only visible effect on a healthy repo, and nothing told you it had happened. It now rescues a stuck repo and nothing else, and when a rescue genuinely does replace your copies, the pull says how many and where your previous ones were saved.
+- **A pull now says what it did to your shared config.** On Windows your shared config is kept as real file copies rather than symlinks, so every pull starts by copying your local edits into the sync repo. That step used to be silent. It now prints a `Symlinks` section naming each file it picked up, and each file it removed from the repo because you deleted it here. If a file cannot be read at all, because another program is holding it open or its permissions changed, the pull names it and says why rather than leaving a silent gap. `nomad diff` and `nomad pull --dry-run` read from the same place, so a preview now matches what a real pull does.
+- **Windows keeps the same things out of your sync repo that your other machines do.** The Windows copy step used to hold back only files whose names looked like passwords or keys. It now skips everything on the never-sync list, so the folders Claude Code uses for its own state, named things like `sessions`, `tasks`, `plans`, and `cache`, stay on the machine even when they sit inside a folder you share. If one of them is already sitting in your sync repo, the pull tells you, and takes a backup copy before removing it.
 
 **On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
 
-- **`nomad doctor` names the files that have drifted.** When it reports that your skills or your
-  shared config no longer match the repo, it lists them. Before, you got a count and had to run it
-  again with `--verbose` to find out which files it meant.
-- **`nomad pull --force-remote` tells you when there was nothing to rescue.** On a repo that is not
-  stuck it now says so and pulls normally, instead of appearing to do nothing. If it cannot tell
-  whether the repo is stuck, it says that too rather than reporting a clean repo. The help text,
-  README, and docs site now agree on what the flag does.
+- **`nomad doctor` names the files that have drifted.** When it reports that your skills or your shared config no longer match the repo, it lists them. Before, you got a count and had to run it again with `--verbose` to find out which files it meant.
+- **`nomad pull --force-remote` tells you when there was nothing to rescue.** On a repo that is not stuck it now says so and pulls normally, instead of appearing to do nothing. If it cannot tell whether the repo is stuck, it says that too rather than reporting a clean repo. The help text, README, and docs site now agree on what the flag does.
 
 
 ### Added
@@ -185,21 +147,9 @@ it.
 
 ### What's new
 
-- **A stray dot or space at the end of a file name no longer hides a secret.** nomad never copies
-  password and key files (things like `.env`, `id_rsa`, or `server.pem`) out of the project folders
-  you sync. It spots them by name, and a name with an extra dot or space on the end, such as
-  `.env.`, did not match, so a file like that could end up in your sync repo. It matches now, and so
-  do the other files nomad always keeps out, such as `settings.local.json`. Nothing changes in how
-  you use nomad. It simply catches more ways of writing the same names it already blocked.
-- **A `.claude` folder is recognized however it is capitalized.** If a project had a folder named
-  `.Claude` instead of `.claude`, nomad checked what was inside it less carefully than it should
-  have. Both are treated the same now.
-- **A folder name nomad will never sync is turned down as soon as you add it.** You can ask nomad to
-  sync extra folders by listing their names in `path-map.json`. If a name you list is one nomad
-  refuses to sync, because it looks like a password file, or because it is a name that causes
-  trouble on one of the machines you sync to, you are told straight away and told why. Before,
-  nothing was said until a later `nomad push` stopped without explaining itself. `nomad doctor` also
-  lists any names in this situation and what to do about them.
+- **A stray dot or space at the end of a file name no longer hides a secret.** nomad never copies password and key files (things like `.env`, `id_rsa`, or `server.pem`) out of the project folders you sync. It spots them by name, and a name with an extra dot or space on the end, such as `.env.`, did not match, so a file like that could end up in your sync repo. It matches now, and so do the other files nomad always keeps out, such as `settings.local.json`. Nothing changes in how you use nomad. It simply catches more ways of writing the same names it already blocked.
+- **A `.claude` folder is recognized however it is capitalized.** If a project had a folder named `.Claude` instead of `.claude`, nomad checked what was inside it less carefully than it should have. Both are treated the same now.
+- **A folder name nomad will never sync is turned down as soon as you add it.** You can ask nomad to sync extra folders by listing their names in `path-map.json`. If a name you list is one nomad refuses to sync, because it looks like a password file, or because it is a name that causes trouble on one of the machines you sync to, you are told straight away and told why. Before, nothing was said until a later `nomad push` stopped without explaining itself. `nomad doctor` also lists any names in this situation and what to do about them.
 
 All of this applies on macOS, Linux, WSL2, and native Windows.
 
@@ -218,31 +168,11 @@ All of this applies on macOS, Linux, WSL2, and native Windows.
 
 ### What's new
 
-- **Native Windows: deleting a shared config file now sticks.** On native Windows (PowerShell or
-  cmd), deleting a file inside a synced folder, say `~/.claude/commands/old.md`, used to leave it
-  sitting in the sync repo, and the next `nomad pull` put it straight back. The deletion is now
-  carried into the sync repo instead, so it survives the pull and reaches your other machines.
-  Nothing is removed unless this machine's own record shows it had the file, and every removed file
-  is copied to the backup directory first. The first pull after upgrading has no record yet, so
-  deletions start propagating from the pull after that. macOS, Linux, and WSL2 were never affected:
-  they symlink shared config, so deleting the file was always a deletion in the repo.
-- **Native Windows: a name clash during a pull now explains itself.** If a file you created inside a
-  synced folder has the same name as one an incoming update adds, the pull stops before changing
-  anything. You used to be left with git's own error, which pointed at a copy inside the sync repo
-  and told you to move it, and following that advice looped, because the next pull copied your file
-  back over it. You now get the file under `~/.claude/` to act on and the two ways to finish, keep
-  the incoming version or keep both and merge them, and nomad clears its own copy out of the way for
-  you. Your file is untouched either way.
-- **Native Windows shared-config changes show up in a preview first.** `nomad pull --dry-run` and
-  `nomad diff` now list both the edits being carried into the repo and the files being removed from
-  it, worked out before the pull so the preview and the real run agree.
-- **`nomad doctor` notices a native Windows shared file that has drifted.** When a synced copy under
-  `~/.claude/` no longer matches the one in the repo, doctor warns about it instead of reporting the
-  machine as healthy. On the symlink platforms there is only ever one file, so there is nothing to
-  drift.
-- **`nomad doctor` no longer recognizes `leftArrowOpensAgents`.** Claude Code dropped it from its
-  settings schema, so doctor will flag it as an unknown key if you still have it set. This one
-  applies everywhere, not just on Windows.
+- **Native Windows: deleting a shared config file now sticks.** On native Windows (PowerShell or cmd), deleting a file inside a synced folder, say `~/.claude/commands/old.md`, used to leave it sitting in the sync repo, and the next `nomad pull` put it straight back. The deletion is now carried into the sync repo instead, so it survives the pull and reaches your other machines. Nothing is removed unless this machine's own record shows it had the file, and every removed file is copied to the backup directory first. The first pull after upgrading has no record yet, so deletions start propagating from the pull after that. macOS, Linux, and WSL2 were never affected: they symlink shared config, so deleting the file was always a deletion in the repo.
+- **Native Windows: a name clash during a pull now explains itself.** If a file you created inside a synced folder has the same name as one an incoming update adds, the pull stops before changing anything. You used to be left with git's own error, which pointed at a copy inside the sync repo and told you to move it, and following that advice looped, because the next pull copied your file back over it. You now get the file under `~/.claude/` to act on and the two ways to finish, keep the incoming version or keep both and merge them, and nomad clears its own copy out of the way for you. Your file is untouched either way.
+- **Native Windows shared-config changes show up in a preview first.** `nomad pull --dry-run` and `nomad diff` now list both the edits being carried into the repo and the files being removed from it, worked out before the pull so the preview and the real run agree.
+- **`nomad doctor` notices a native Windows shared file that has drifted.** When a synced copy under `~/.claude/` no longer matches the one in the repo, doctor warns about it instead of reporting the machine as healthy. On the symlink platforms there is only ever one file, so there is nothing to drift.
+- **`nomad doctor` no longer recognizes `leftArrowOpensAgents`.** Claude Code dropped it from its settings schema, so doctor will flag it as an unknown key if you still have it set. This one applies everywhere, not just on Windows.
 
 
 ### Added
@@ -268,17 +198,9 @@ All of this applies on macOS, Linux, WSL2, and native Windows.
 
 ### What's new
 
-- **`nomad doctor` stops warning about settings you legitimately set.** The list of settings it
-  recognizes has been updated and synced with the current Claude Code settings schema, so settings
-  the app actually writes (quiet hours, the break reminder, the token-usage reminder, and others)
-  are no longer reported as unknown keys on an otherwise healthy machine. Entries that were never
-  settings at all have been dropped at the same time.
-- **A new Claude Code setting is recognized within a day.** The job that tracks the official
-  settings list ran once a week, so a setting added on a Tuesday could be reported as unknown until
-  the following Monday. It now runs daily.
-- **The list keeps its own bookkeeping straight from here.** When a setting Claude Code writes
-  ahead of its published documentation is later documented, it now moves across on its own instead
-  of being recorded in two places at once.
+- **`nomad doctor` stops warning about settings you legitimately set.** The list of settings it recognizes has been updated and synced with the current Claude Code settings schema, so settings the app actually writes (quiet hours, the break reminder, the token-usage reminder, and others) are no longer reported as unknown keys on an otherwise healthy machine. Entries that were never settings at all have been dropped at the same time.
+- **A new Claude Code setting is recognized within a day.** The job that tracks the official settings list ran once a week, so a setting added on a Tuesday could be reported as unknown until the following Monday. It now runs daily.
+- **The list keeps its own bookkeeping straight from here.** When a setting Claude Code writes ahead of its published documentation is later documented, it now moves across on its own instead of being recorded in two places at once.
 
 
 ### Fixed
@@ -309,18 +231,9 @@ All of this applies on macOS, Linux, WSL2, and native Windows.
 
 ### What's new
 
-- **Windows: your own edits to shared config are no longer reverted.** On Windows, editing a synced
-  file like `~/.claude/CLAUDE.md` and then running `nomad pull` overwrote it from the repo, and
-  `nomad sync` went on to publish the reverted version, silently undoing the change you ran sync to
-  publish. Your edit is now carried into the sync repo first, so it survives the pull and gets
-  published instead.
-- **The secret prompt on push is readable and asks once per secret.** When a push finds a possible
-  secret it used to ask the same question several times over for one secret, and the snippet it
-  showed was mostly noise. It now asks once per secret and describes what was actually found, so you
-  can tell a real credential from a false positive at a glance.
-- **Three ways that prompt could show you a secret it meant to hide are closed**, along with a case
-  where allowing one false positive could quietly let a real secret through beside it on the same
-  line.
+- **Windows: your own edits to shared config are no longer reverted.** On Windows, editing a synced file like `~/.claude/CLAUDE.md` and then running `nomad pull` overwrote it from the repo, and `nomad sync` went on to publish the reverted version, silently undoing the change you ran sync to publish. Your edit is now carried into the sync repo first, so it survives the pull and gets published instead.
+- **The secret prompt on push is readable and asks once per secret.** When a push finds a possible secret it used to ask the same question several times over for one secret, and the snippet it showed was mostly noise. It now asks once per secret and describes what was actually found, so you can tell a real credential from a false positive at a glance.
+- **Three ways that prompt could show you a secret it meant to hide are closed**, along with a case where allowing one false positive could quietly let a real secret through beside it on the same line.
 
 
 ### Added
