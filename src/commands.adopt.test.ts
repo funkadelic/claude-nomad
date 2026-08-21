@@ -421,10 +421,10 @@ describe('cmdAdopt (precondition matrix)', () => {
 
   // The dangling case: the local symlink resolves to something real
   // elsewhere (so it still reaches the already-a-symlink branch), while
-  // shared/<name> itself is a separate dangling symlink. Per D-05 this names
-  // the broken target but does NOT inherit the win32 refusal's exit 1: a
-  // write through a genuinely broken posix symlink fails loudly at the OS
-  // level, so there is no silent data loss to prevent.
+  // shared/<name> itself is a separate dangling symlink. This names the
+  // broken target but does NOT inherit the win32 refusal's exit 1: a write
+  // through a genuinely broken posix symlink fails loudly at the OS level,
+  // so there is no silent data loss to prevent.
   it.skipIf(isWin)(
     'already-a-symlink branch: dangling shared/<name> names it broken and stays at exit 0',
     async () => {
