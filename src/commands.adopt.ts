@@ -134,6 +134,38 @@ function reportWin32AlreadyAdopted(name: string, sharedTarget: string): boolean 
 }
 
 /**
+ * Describe the already-a-symlink state at `linkPath`, naming a broken
+ * `shared/<name>` when that is what is there.
+ *
+ * `adoptStopsEarly`'s already-a-symlink branch checks only
+ * `lstatSync(linkPath).isSymbolicLink()` and never probed `sharedTarget`, so
+ * it reported "already adopted" even once the target had gone dangling. This
+ * folds in the same classification the win32 refusal uses, but does NOT
+ * inherit its exit-1 treatment: a write through a genuinely broken posix
+ * symlink fails loudly at the OS level, so there is no silent data loss to
+ * prevent here and no scripted-caller ambiguity to resolve. The two refusal
+ * semantics stay deliberately distinct, and this branch is reached on EVERY
+ * platform, unlike the win32-gated refusal above.
+ *
+ * `dangling` specifically, rather than {@link isUnusableTarget}: the second
+ * wording asserts that the link is broken, which an unreadable-but-present
+ * `shared/<name>` (the `unknown` state) has not been shown to be.
+ *
+ * @param name The name being adopted, for the message.
+ * @param sharedTarget Repo-side `shared/<name>` path to probe.
+ * @returns The message to log; unchanged wording when the target resolves.
+ */
+function alreadySymlinkMessage(name: string, sharedTarget: string): string {
+  if (classifyPresence(sharedTarget) !== 'dangling') {
+    return `${name}: already adopted (already a symlink)`;
+  }
+  return (
+    `${name}: already a symlink, but shared/${name} does not resolve, so the link is broken. ` +
+    `Restore shared/${name} in the repo, or remove ~/.claude/${name} and re-run adopt`
+  );
+}
+
+/**
  * Run the precondition matrix, reporting whether adopt should stop here.
  *
  * Order is load-carrying and reads as most-specific-state-first: an absent
@@ -166,7 +198,7 @@ function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): 
     return true;
   }
   if (lstatSync(linkPath).isSymbolicLink()) {
-    log(`${name}: already adopted (already a symlink)`);
+    log(alreadySymlinkMessage(name, sharedTarget));
     return true;
   }
   if (reportWin32AlreadyAdopted(name, sharedTarget)) return true;
