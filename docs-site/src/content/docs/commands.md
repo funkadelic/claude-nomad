@@ -214,12 +214,14 @@ since adopting one would move a secret into the sync repo. On native Windows ado
 name as a real copy instead of a symlink (the win32 copy-sync modality). There, a name whose
 `shared/<name>` counterpart already exists and resolves to something real is reported as already
 adopted and skipped (with a `nomad pull` hint to refresh the local copy), where macOS, Linux, and
-WSL2 would refuse with a would-clobber error. If that counterpart exists but leads nowhere instead,
-for example because it points at content another host shared that never reached this one, adopt now
-stops with an error naming the entry and exits 1, rather than the older behavior of reporting it
-already adopted and pointing you at a `nomad pull` that could not have fixed that state either.
-Remove the broken entry from the sync repo, or restore what it points at, then run
-`nomad adopt <name>` again. The same broken-pointer state is also called out, on every platform,
+WSL2 would refuse with a would-clobber error. If that counterpart is there but does not lead to
+anything usable, either because it points at content another host shared that never reached this
+one, or because it could not be read at all, adopt now stops with an error naming the entry and
+exits 1, rather than the older behavior of reporting it already adopted and pointing you at a
+`nomad pull` that could not have fixed that state either. Remove the entry from the sync repo, or
+restore what it points at, then run `nomad adopt <name>` again. On macOS, Linux, and WSL2, the
+would-clobber refusal now says which of those three it found, so it never claims there is content
+in the way when all it saw was a pointer leading nowhere, or a path it could not read. The same broken-pointer state is also called out, on every platform,
 when your local `~/.claude/<name>` is already a symlink into the sync repo: adopt used to report a
 plain already-adopted success there too, and now says the link is broken instead, though it still
 exits 0 in that case, since a write through a broken local symlink already fails on its own and

@@ -19,7 +19,7 @@ import {
 } from './config.ts';
 import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { EXIT } from './exit-codes.ts';
-import { classifyPresence, isUnusableTarget, lexists } from './fs-presence.ts';
+import { classifyPresence, isUnusableTarget, type PresenceState } from './fs-presence.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -72,7 +72,7 @@ function isValidAdoptName(name: string): boolean {
 }
 
 /**
- * Refuse a name whose `shared/<name>` cannot be used, and end the process.
+ * Refuse a name whose `shared/<name>` cannot be used.
  *
  * Called only from {@link reportWin32AlreadyAdopted} once the repo-side
  * target has classified as `dangling` or `unknown`
@@ -86,15 +86,79 @@ function isValidAdoptName(name: string): boolean {
  * real success, and the entry adopt would have to delete to auto-repair is
  * committed repo state on a name adopt did not just move.
  *
+ * Throws rather than calling `process.exit`, which this command cannot do
+ * from here: `cmdAdopt` holds the nomad lockfile across this call inside a
+ * `try`/`finally`, and `process.exit` terminates synchronously without
+ * running `finally`, so the lock would be left on disk holding a dead pid.
+ * `cmdPull` documents the same hazard in its own words, and
+ * `commands.drop-session.unstage.test.ts` pins the lockfile-must-be-gone
+ * assertion that distinguishes the two. `nomad.ts`'s top-level handler
+ * prints a `NomadFatal`'s message and adopts its code with no crash report,
+ * so this must not also call `fail` or the message prints twice.
+ *
+ * The wording says "does not resolve to anything usable" rather than naming
+ * a broken symlink, matching `warnUnusableSharedTarget` in `links.mirror.ts`:
+ * the guard covers both an unresolving pointer and an entry that could not be
+ * read at all, and the latter may be no pointer at all.
+ *
  * @param name The name being adopted, for the message.
- * @returns Never returns; ends the process at `EXIT.GENERIC_FAILURE`.
+ * @returns Never returns; throws at `EXIT.GENERIC_FAILURE`.
  */
-function refuseDanglingSharedTarget(name: string): never {
-  fail(
-    `${name}: shared/${name} does not resolve, so adopting would publish nothing. ` +
-      `Remove shared/${name} from the repo, or restore what it points at, then re-run adopt.`,
+function refuseUnusableSharedTarget(name: string): never {
+  throw new NomadFatal(
+    `${name}: shared/${name} does not resolve to anything usable, so adopting would publish ` +
+      `nothing. Remove shared/${name} from the repo, or restore what it points at, then re-run adopt.`,
+    { code: EXIT.GENERIC_FAILURE },
   );
-  process.exit(EXIT.GENERIC_FAILURE);
+}
+
+/**
+ * The would-clobber refusal wording for a `shared/<name>` that is not absent,
+ * worded per state so it never asserts more than the probe observed.
+ *
+ * "already exists" is only true of a resolving entry. A dangling pointer does
+ * occupy the path, but reads to a user as "there is content there" when there
+ * is none, and a path that could not be stat-ed was never shown to hold
+ * anything at all, so telling that user to "remove it first" names an action
+ * that usually fails for the same reason the probe did.
+ *
+ * @param name The name being adopted, for the message.
+ * @param state The classified state of `shared/<name>`; never `absent`.
+ * @returns The refusal message for that state.
+ */
+function clobberMessage(name: string, state: PresenceState): string {
+  if (state === 'dangling') {
+    return (
+      `${name}: shared/${name} is a pointer that does not resolve; would clobber. ` +
+      `Remove it, or restore what it points at, first.`
+    );
+  }
+  if (state === 'unknown') {
+    return (
+      `${name}: shared/${name} could not be read, so adopt cannot tell whether it would clobber ` +
+      `existing content. Check its permissions in the sync repo.`
+    );
+  }
+  return `${name}: shared/${name} already exists; would clobber. Remove it first.`;
+}
+
+/**
+ * Refuse the move when anything at all occupies `shared/<name>`, and return
+ * quietly when nothing does.
+ *
+ * Throws `NomadFatal` rather than calling `process.exit`, for the reason given
+ * on {@link refuseUnusableSharedTarget}: this runs under the lock `cmdAdopt`
+ * releases in a `finally`. It also replaces a bare integer exit, which the
+ * repo's process-exit contract forbids; every failure path picks an `EXIT.*`
+ * member.
+ *
+ * @param name The name being adopted, for the message.
+ * @param sharedTarget Repo-side `shared/<name>` path to probe.
+ */
+function refuseClobber(name: string, sharedTarget: string): void {
+  const state = classifyPresence(sharedTarget);
+  if (state === 'absent') return;
+  throw new NomadFatal(clobberMessage(name, state), { code: EXIT.GENERIC_FAILURE });
 }
 
 /**
@@ -113,21 +177,21 @@ function refuseDanglingSharedTarget(name: string): never {
  * return so every non-win32 caller keeps the same shape as before. Once past
  * it, `sharedTarget` is classified once: `absent` falls through to `false`
  * exactly as before (this is the not-yet-adopted case, still the caller's to
- * report), an unusable state (`dangling` or `unknown`) ends the process via
- * {@link refuseDanglingSharedTarget}, and anything else (a live, resolving
+ * report), an unusable state (`dangling` or `unknown`) refuses via
+ * {@link refuseUnusableSharedTarget}, and anything else (a live, resolving
  * entry) is the genuine already-adopted state and keeps the original message.
  *
  * @param name The name being adopted, for the message.
  * @param sharedTarget Repo-side `shared/<name>` path to probe.
  * @returns True when the message was printed and the caller should return.
- *   Never returns `false` after printing a refusal: {@link refuseDanglingSharedTarget}
- *   ends the process instead.
+ *   Never returns `false` after a refusal: {@link refuseUnusableSharedTarget}
+ *   throws instead.
  */
 function reportWin32AlreadyAdopted(name: string, sharedTarget: string): boolean {
   if (process.platform !== 'win32') return false;
   const state = classifyPresence(sharedTarget);
   if (state === 'absent') return false;
-  if (isUnusableTarget(state)) refuseDanglingSharedTarget(name);
+  if (isUnusableTarget(state)) refuseUnusableSharedTarget(name);
   log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
   return true;
 }
@@ -180,16 +244,17 @@ function alreadySymlinkMessage(name: string, sharedTarget: string): string {
  * install predating the copy-sync model) both conditions hold at once, so the
  * symlink arm has to win there or the message names the wrong mechanism.
  *
- * `reportWin32AlreadyAdopted` now has a third outcome that ends the process
- * (an unusable `shared/<name>` is refused rather than reported adopted), so
- * both of its call sites below carry that refusal too, without either one
- * changing shape.
+ * `reportWin32AlreadyAdopted` now has a third outcome that refuses the whole
+ * command (an unusable `shared/<name>` is refused rather than reported
+ * adopted), so both of its call sites below carry that refusal too, without
+ * either one changing shape.
  *
- * The clobber guard's `lexists` now comes from the shared presence leaf,
- * whose fallback on a genuine stat error is present rather than absent. So an
- * unreadable `shared/<name>` now refuses here instead of falling through into
+ * The clobber guard reads the same shared presence leaf, whose fallback on a
+ * genuine stat error is present rather than absent. So an unreadable
+ * `shared/<name>` now refuses here instead of falling through into
  * `performAdoptMove`, which previously raw-threw out of `cpSync` into a crash
- * report.
+ * report. See {@link clobberMessage} for why each non-absent state gets its
+ * own wording rather than one "already exists" claim for all three.
  *
  * @param name The name being adopted.
  * @param linkPath Absolute `CLAUDE_HOME/<name>`.
@@ -207,10 +272,7 @@ function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): 
     return true;
   }
   if (reportWin32AlreadyAdopted(name, sharedTarget)) return true;
-  if (lexists(sharedTarget)) {
-    fail(`${name}: shared/${name} already exists; would clobber. Remove it first.`);
-    process.exit(1);
-  }
+  refuseClobber(name, sharedTarget);
   return false;
 }
 

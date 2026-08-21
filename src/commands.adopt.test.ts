@@ -46,6 +46,7 @@ type Env = {
   testHome: string;
   repoHome: string;
   claudeHome: string;
+  lockPath: string;
   exitSpy: ExitSpy;
   errorSpy: LogSpy;
   logSpy: LogSpy;
@@ -109,6 +110,10 @@ function makeAdoptEnv(): Env {
     testHome,
     repoHome,
     claudeHome,
+    // Mirrors `nomadLockPath` in utils.lockfile.ts. Every refusal raised under
+    // the lock must leave this path gone; a `process.exit` on such a path
+    // would skip `cmdAdopt`'s `finally` and strand the lockfile.
+    lockPath: join(testHome, '.cache', 'claude-nomad', 'nomad.lock'),
     exitSpy,
     errorSpy,
     logSpy,
@@ -122,6 +127,10 @@ function makeAdoptEnv(): Env {
 function teardownAdoptEnv(env: Env): void {
   vi.restoreAllMocks();
   vi.doUnmock('./commands.adopt.ts');
+  // Pair every doMock with a doUnmock here rather than inline: restoreAllMocks
+  // does NOT clear a doMock registration, so an assertion that throws first
+  // would leak the fs mock into later test files.
+  vi.doUnmock('node:fs');
   process.exitCode = 0;
   if (env.originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = env.originalHome;
@@ -148,6 +157,54 @@ function diffCached(env: Env): string {
   })
     .toString()
     .trim();
+}
+
+/**
+ * Register a `node:fs` mock whose `lstatSync` throws `EACCES` for `blocked`
+ * and delegates to the real implementation everywhere else, so a shared name
+ * classifies as present-but-unreadable rather than as any observable state.
+ *
+ * A real `EACCES` is not portably reproducible in CI, so this mirrors the
+ * `node:fs` mock the doctor and presence suites already use. The matching
+ * `doUnmock` lives in `teardownAdoptEnv`, not inline.
+ *
+ * @param blocked - The one absolute path whose `lstatSync` throws.
+ */
+function mockUnreadable(blocked: string): void {
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof fsModule>();
+    return {
+      ...actual,
+      lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+        if (String(p) === blocked) {
+          const err = new Error('permission denied') as NodeJS.ErrnoException;
+          err.code = 'EACCES';
+          throw err;
+        }
+        return actual.lstatSync(p, opts);
+      },
+    };
+  });
+  vi.resetModules();
+}
+
+/**
+ * Run `fn`, expecting it to refuse, and return the refusal's message and exit
+ * code. Adopt's refusals throw rather than calling `process.exit`, because
+ * `cmdAdopt` releases the nomad lockfile in a `finally` that a synchronous
+ * exit would skip, so the assertion shape is the thrown value rather than the
+ * `process.exit` spy.
+ *
+ * @param fn - The call under test.
+ * @returns The thrown error's message and its carried exit code.
+ */
+function catchRefusal(fn: () => void): { message: string; code: unknown } {
+  try {
+    fn();
+  } catch (err) {
+    return { message: (err as Error).message, code: (err as { code?: unknown }).code };
+  }
+  throw new Error('expected a refusal, but the call returned normally');
 }
 
 /** Add a `sharedDirs` entry to the test path-map.json. */
@@ -357,16 +414,18 @@ describe('cmdAdopt (precondition matrix)', () => {
     mkdirSync(join(env.repoHome, 'shared', 'my-dir'), { recursive: true });
 
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('my-dir')).toThrow('exit:1');
-    const out = errOutput(env);
-    expect(out).toContain('would clobber');
+    expect(() => cmdAdopt('my-dir')).toThrow(/already exists; would clobber/);
     expect(diffCached(env)).toBe('');
+    // Raised under the lock, so the unwind has to have released it.
+    expect(existsSync(env.lockPath)).toBe(false);
   });
 
   // Dangling target: a broken symlink at shared/<name> must still be
   // refused. existsSync follows links and reports false for a dangling link,
   // so the clobber guard uses an lstat-based check; otherwise cpSync would
-  // throw an opaque non-NomadFatal error on the dangling destination.
+  // throw an opaque non-NomadFatal error on the dangling destination. The
+  // wording has to stop short of "already exists", which reads as "there is
+  // content there" for a pointer that leads nowhere.
   it.skipIf(isWin)('refuses when shared/<name> is a dangling symlink (would clobber)', async () => {
     addSharedDir(env, 'my-dir');
     mkdirSync(join(env.claudeHome, 'my-dir'), { recursive: true });
@@ -377,11 +436,31 @@ describe('cmdAdopt (precondition matrix)', () => {
     );
 
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('my-dir')).toThrow('exit:1');
-    const out = errOutput(env);
-    expect(out).toContain('would clobber');
+    expect(() => cmdAdopt('my-dir')).toThrow(/is a pointer that does not resolve; would clobber/);
     expect(diffCached(env)).toBe('');
+    expect(existsSync(env.lockPath)).toBe(false);
   });
+
+  // The third clobber state: shared/<name> could not be stat-ed at all, so
+  // neither "already exists" nor "does not resolve" was observed. The refusal
+  // has to say only what the probe supports, and point at the permissions
+  // rather than at a removal that would fail for the same reason.
+  it.skipIf(isWin)(
+    'refuses without claiming content when shared/<name> is unreadable',
+    async () => {
+      addSharedDir(env, 'my-dir');
+      mkdirSync(join(env.claudeHome, 'my-dir'), { recursive: true });
+      mockUnreadable(join(env.repoHome, 'shared', 'my-dir'));
+
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      const refusal = catchRefusal(() => cmdAdopt('my-dir'));
+      expect(refusal.message).toContain('could not be read, so adopt cannot tell');
+      expect(refusal.message).not.toContain('already exists');
+      expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
+      expect(diffCached(env)).toBe('');
+      expect(existsSync(env.lockPath)).toBe(false);
+    },
+  );
 
   // Verify lstatSync is used: a real dir should NOT take the already-adopted branch
   it.skipIf(isWin)('does not take the already-adopted branch for a real directory', async () => {
@@ -1480,10 +1559,9 @@ describe('cmdAdopt win32 copy-back branch', () => {
 
     stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('my-dir')).toThrow(`exit:${EXIT.GENERIC_FAILURE}`);
-
-    const out = errOutput(env);
-    expect(out).toContain('does not resolve, so adopting would publish nothing');
+    const refusal = catchRefusal(() => cmdAdopt('my-dir'));
+    expect(refusal.message).toContain('does not resolve to anything usable');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
 
     // Zero mutation: shared/<name> is still the same dangling symlink, and
     // nothing was staged.
@@ -1491,6 +1569,10 @@ describe('cmdAdopt win32 copy-back branch', () => {
     expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
     expect(existsSync(join(env.claudeHome, 'my-dir'))).toBe(false);
     expect(diffCached(env)).toBe('');
+    // The load-bearing assertion: the refusal is raised while the nomad lock
+    // is held, so it has to unwind through `finally { releaseLock }` rather
+    // than terminate the process, where that block never runs.
+    expect(existsSync(env.lockPath)).toBe(false);
   });
 
   it('win32: refuses a dangling shared/<name> at exit 1 when a real local copy is present', async () => {
@@ -1505,10 +1587,9 @@ describe('cmdAdopt win32 copy-back branch', () => {
 
     stubPlatform('win32');
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('my-dir')).toThrow(`exit:${EXIT.GENERIC_FAILURE}`);
-
-    const out = errOutput(env);
-    expect(out).toContain('does not resolve, so adopting would publish nothing');
+    const refusal = catchRefusal(() => cmdAdopt('my-dir'));
+    expect(refusal.message).toContain('does not resolve to anything usable');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
 
     // Zero mutation: shared/<name> is still dangling, the host entry is
     // untouched, and nothing was staged.
@@ -1517,6 +1598,23 @@ describe('cmdAdopt win32 copy-back branch', () => {
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
     expect(readFileSync(join(linkPath, 'file.txt'), 'utf8')).toBe('content\n');
     expect(diffCached(env)).toBe('');
+    expect(existsSync(env.lockPath)).toBe(false);
+  });
+
+  it('win32: refuses an unreadable shared/<name>, not only an unresolving one', async () => {
+    // The refusal guard covers both states the classifier calls unusable.
+    // Only the unresolving one is reachable with a real filesystem, so this
+    // drives the other operand of the same disjunction through the command.
+    addSharedDir(env, 'my-dir');
+    mockUnreadable(join(env.repoHome, 'shared', 'my-dir'));
+
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const refusal = catchRefusal(() => cmdAdopt('my-dir'));
+    expect(refusal.message).toContain('does not resolve to anything usable');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
+    expect(diffCached(env)).toBe('');
+    expect(existsSync(env.lockPath)).toBe(false);
   });
 });
 
