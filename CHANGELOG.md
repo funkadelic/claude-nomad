@@ -6,12 +6,13 @@
 
 **On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
 
-- **A project in a folder named `sessions`, `tasks`, `plans`, or `cache` now syncs its own history.** Those are names nomad uses for its own working folders, and a project of yours that happened to share one was refused, as though the folder held something private. Nothing in it was: the refusal was on the folder's name alone, never on anything inside it. Your own projects with those names now sync like any other, and what is actually inside a folder is still checked exactly as before.
+- **A project in a folder named `sessions`, `tasks`, `plans`, or `cache` now syncs its own history.** Those names, along with `debug`, `jobs`, `security`, and a few more, belong to nomad's own working folders, so a project of yours that happened to share one was refused as though it held something private. Nothing in it was, and the name alone decided it. Those projects now sync like any other, and nomad still checks what is actually inside a folder exactly as before.
+- **A per-host settings file sitting at the very top of a folder you share now stays out of your sync repo.** Inside a folder you opted into sharing, nomad already blocked `settings.local.json` and anything else shaped like a credential file at every level except the very top, where one could slip past and reach your other machines. The top level is now covered too.
 
 **On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to it.
 
-- **A pull no longer removes that project's transcripts from your sync repo.** The same name check ran during a pull, where instead of refusing it deleted, so a project named after one of those folders quietly lost its saved history from the sync repo on every pull. It kept a backup copy each time, under `~/.cache/claude-nomad/backup/`, but nothing was ever put back. Pulls now leave those projects alone.
-- **When a sync cannot remove or back up a file, it now tells you why.** These messages sometimes printed the word `undefined` where the reason belongs, which left you with a file named and no idea what had gone wrong with it. They now carry the real reason. The same messages could also stop the cleanup partway through, so files after the first problem went unhandled and unmentioned; the pass now runs to the end and reports everything it did.
+- **A pull no longer removes that project's transcripts from your sync repo.** The same name check ran during a pull, where it deleted rather than refused, so every pull stripped that project's saved history out of the sync repo. Each one left a backup under `~/.cache/claude-nomad/backup/`, but never put anything back. Pulls now leave those projects alone.
+- **When a sync cannot remove or back up a file, it now tells you why.** These warnings sometimes printed the word `undefined` where the reason belongs, so you got a filename and nothing else. They now carry the real reason. A failure arriving in an unexpected form could also stop the cleanup partway through, leaving the files after the first problem unhandled and unmentioned. The pass now runs to the end and reports everything it did.
 
 
 ### Fixed
