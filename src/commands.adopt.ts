@@ -20,6 +20,7 @@ import {
 } from './config.ts';
 import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { EXIT } from './exit-codes.ts';
+import { classifyPresence, isUnusableTarget } from './fs-presence.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -72,7 +73,34 @@ function isValidAdoptName(name: string): boolean {
 }
 
 /**
- * Report the win32 already-adopted state, when that is what this is.
+ * Refuse a name whose `shared/<name>` cannot be used, and end the process.
+ *
+ * Called only from {@link reportWin32AlreadyAdopted} once the repo-side
+ * target has classified as `dangling` or `unknown`
+ * ({@link isUnusableTarget}): a broken repo pointer, or one that could not be
+ * stat-ed at all. Reporting this as "already adopted" (the old behavior)
+ * was wrong twice over: nothing was actually adopted, and `nomad pull`
+ * cannot repair it either, because `copySharedLinkPull` copies FROM
+ * `shared/<name>`, so a pull against an unresolvable one has nothing to
+ * copy. A WARN at exit 0 was rejected for the same reason auto-repair was:
+ * it would leave a scripted caller unable to tell this no-op apart from a
+ * real success, and the entry adopt would have to delete to auto-repair is
+ * committed repo state on a name adopt did not just move.
+ *
+ * @param name The name being adopted, for the message.
+ * @returns Never returns; ends the process at `EXIT.GENERIC_FAILURE`.
+ */
+function refuseDanglingSharedTarget(name: string): never {
+  fail(
+    `${name}: shared/${name} does not resolve, so adopting would publish nothing. ` +
+      `Remove shared/${name} from the repo, or restore what it points at, then re-run adopt.`,
+  );
+  process.exit(EXIT.GENERIC_FAILURE);
+}
+
+/**
+ * Report the win32 already-adopted state, when that is what this is, or
+ * refuse a `shared/<name>` that cannot be used.
  *
  * win32 has no unprivileged symlink support, so a real (non-symlink) copy at
  * `linkPath` IS the healthy adopted state there once `shared/<name>` exists,
@@ -82,12 +110,25 @@ function isValidAdoptName(name: string): boolean {
  * absent case and once for the real-entry case, on either side of the
  * symlink arm that has to stay ahead of both.
  *
+ * Three outcomes rather than two. The platform gate stays a first-line early
+ * return so every non-win32 caller keeps the same shape as before. Once past
+ * it, `sharedTarget` is classified once: `absent` falls through to `false`
+ * exactly as before (this is the not-yet-adopted case, still the caller's to
+ * report), an unusable state (`dangling` or `unknown`) ends the process via
+ * {@link refuseDanglingSharedTarget}, and anything else (a live, resolving
+ * entry) is the genuine already-adopted state and keeps the original message.
+ *
  * @param name The name being adopted, for the message.
  * @param sharedTarget Repo-side `shared/<name>` path to probe.
  * @returns True when the message was printed and the caller should return.
+ *   Never returns `false` after printing a refusal: {@link refuseDanglingSharedTarget}
+ *   ends the process instead.
  */
 function reportWin32AlreadyAdopted(name: string, sharedTarget: string): boolean {
-  if (process.platform !== 'win32' || !lexists(sharedTarget)) return false;
+  if (process.platform !== 'win32') return false;
+  const state = classifyPresence(sharedTarget);
+  if (state === 'absent') return false;
+  if (isUnusableTarget(state)) refuseDanglingSharedTarget(name);
   log(`${name}: already adopted (win32 copy-sync); run \`nomad pull\` to refresh the local copy`);
   return true;
 }
@@ -107,6 +148,11 @@ function reportWin32AlreadyAdopted(name: string, sharedTarget: string): boolean 
  * is the more specific state, and on a win32 host with Developer Mode (or an
  * install predating the copy-sync model) both conditions hold at once, so the
  * symlink arm has to win there or the message names the wrong mechanism.
+ *
+ * `reportWin32AlreadyAdopted` now has a third outcome that ends the process
+ * (an unusable `shared/<name>` is refused rather than reported adopted), so
+ * both of its call sites below carry that refusal too, without either one
+ * changing shape.
  *
  * @param name The name being adopted.
  * @param linkPath Absolute `CLAUDE_HOME/<name>`.
