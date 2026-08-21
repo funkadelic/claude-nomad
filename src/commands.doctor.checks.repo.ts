@@ -26,7 +26,7 @@ import {
   classifyWin32Copy,
   type SharedLinkClassification,
 } from './commands.doctor.checks.repo.win32.ts';
-import { classifyPresence } from './fs-presence.ts';
+import { classifyPresence, isUnusableTarget, type PresenceState } from './fs-presence.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 import { readJson, validatePathMapShape } from './utils.json.ts';
 
@@ -196,6 +196,53 @@ function repoHasSharedSource(name: string): boolean {
 }
 
 /**
+ * The classified state of the repo's own `shared/<name>`, resolved through the
+ * shared presence leaf rather than through `existsSync`.
+ *
+ * Every row in this file that says anything about the repo side is entitled to
+ * exactly what this returns and no more: `existsSync` follows a symlink, so it
+ * reads a broken pointer and an unreadable path alike as "nothing there", which
+ * is what let two rows here make claims the probe never supported.
+ *
+ * @param name - A shared name (`commands`, `rules`, ...).
+ * @returns The state of `shared/<name>`; see `classifyPresence`.
+ */
+function repoSourceState(name: string): PresenceState {
+  return classifyPresence(join(repoHome(), 'shared', name));
+}
+
+/**
+ * The posix non-symlink row: a real file or directory sits where a symlink
+ * into the sync repo belongs, which blocks sync on that platform.
+ *
+ * Two wordings, because the remedy is not the same in both. `nomad adopt` is
+ * the fix only when the repo side has room for the name; when `shared/<name>`
+ * is there but does not resolve, adopt refuses outright, so naming it as the
+ * fix sends the user at a command that cannot run. The severity does not move
+ * with the wording: a real entry where a symlink belongs blocks sync on posix
+ * either way, so both arms keep `fail: true`.
+ *
+ * The win32 sibling of this state is `classifyWin32Copy`, which reaches the
+ * same conclusion through its own rows; this exists so the two platforms stop
+ * describing one on-disk state with two different remedies.
+ *
+ * @param name - A shared name (`commands`, `rules`, ...).
+ * @returns The FAIL row, worded for whether adopt could actually help.
+ */
+function posixNonSymlinkRow(name: string): SharedLinkClassification {
+  if (isUnusableTarget(repoSourceState(name))) {
+    return {
+      line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync), and shared/${name} does not resolve, so \`nomad adopt ${name}\` would refuse (remove shared/${name}, or restore what it points at, first)`,
+      fail: true,
+    };
+  }
+  return {
+    line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync); run \`nomad adopt ${name}\` to fix`,
+    fail: true,
+  };
+}
+
+/**
  * True only when `shared/<name>` is a symlink whose target does not resolve,
  * the `dangling` state from {@link classifyPresence}. Deliberately narrower
  * than `isUnusableTarget`: this gates a row that asserts the repo's own
@@ -212,7 +259,7 @@ function repoHasSharedSource(name: string): boolean {
  * @returns Whether `shared/<name>` is present but does not resolve.
  */
 function sharedSourceDangling(name: string): boolean {
-  return classifyPresence(join(repoHome(), 'shared', name)) === 'dangling';
+  return repoSourceState(name) === 'dangling';
 }
 
 /**
@@ -287,10 +334,7 @@ function classifySharedLink(name: string, p: string): SharedLinkClassification {
     if (process.platform === 'win32') {
       return classifyWin32Copy(name, p);
     }
-    return {
-      line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync); run \`nomad adopt ${name}\` to fix`,
-      fail: true,
-    };
+    return posixNonSymlinkRow(name);
   }
   return classifySymlinkTarget(name, p);
 }

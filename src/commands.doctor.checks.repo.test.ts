@@ -958,6 +958,36 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     expect(row).toBeDefined();
     expect(row).toContain(failGlyph);
     expect(row).toContain('NOT a symlink');
+    expect(row).toContain('run `nomad adopt');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('does not name adopt on posix when shared/<name> does not resolve', async () => {
+    // The one posix row that names `nomad adopt` as the remedy. When the repo
+    // side does not resolve, that command refuses, so the row has to say so
+    // rather than send the user at it. The win32 sibling already reports this
+    // on-disk state as a repo-pointer problem; this is what makes the two
+    // platforms agree.
+    stubPlatform('linux');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    symlinkSync(join(sharedDir, 'no-such-target'), join(sharedDir, name));
+    writeFileSync(join(claudeDir, name), '# local, but not a symlink\n');
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    // Still a FAIL: a real entry where a symlink belongs blocks sync on posix
+    // whatever the repo side looks like. Only the remedy changes.
+    expect(row).toContain(failGlyph);
+    expect(row).toContain('NOT a symlink');
+    expect(row).toContain(`does not resolve, so \`nomad adopt ${name}\` would refuse`);
+    expect(row).not.toContain('to fix');
     expect(process.exitCode).toBe(1);
   });
 });
