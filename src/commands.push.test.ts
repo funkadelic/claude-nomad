@@ -889,8 +889,9 @@ describe('cmdPush: shared-links push mirror integration', () => {
     const sharedClaudeMd = join(env.repoUnderHome, 'shared', 'CLAUDE.md');
     expect(lstatSync(sharedClaudeMd).isSymbolicLink()).toBe(true);
     expect(existsSync(sharedClaudeMd)).toBe(false);
-    // The WARN did not fail the push.
-    expect(process.exitCode).not.toBe(1);
+    // The WARN did not fail the push: exit 0, not merely "not 1", which would
+    // also pass for the leak code or a usage error.
+    expect(process.exitCode ?? 0).toBe(0);
   });
 
   it('WET push: one invalid sharedDirs entry WARNs exactly once (linkNames derived once)', async () => {

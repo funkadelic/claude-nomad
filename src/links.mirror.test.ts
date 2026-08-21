@@ -290,6 +290,49 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('warns and writes nothing when shared/<name> cannot be read at all', async () => {
+    // The other state the mirror treats as unusable. A dangling pointer is
+    // reachable with a real filesystem; an unreadable one is not portably
+    // reproducible in CI, so only the mock drives this operand of the same
+    // disjunction through the real pass.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+    const blocked = join(sharedDir, 'CLAUDE.md');
+    writeFileSync(blocked, '# original shared\n');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(p) === blocked) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+
+    stubPlatform('win32');
+    process.exitCode = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('CLAUDE.md');
+    expect(said[0]).toContain('does not resolve to anything usable');
+    // The wording never says "symlink", which would misdescribe this state.
+    expect(said[0]).not.toContain('symlink');
+    // The repo copy is untouched: the pass skipped the name rather than
+    // writing through a path it could not classify.
+    expect(readFileSync(blocked, 'utf8')).toBe('# original shared\n');
+    expect(process.exitCode).toBe(0);
+  });
+
   it.skipIf(isWin)('is a no-op on a non-win32 stub', async () => {
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
     const { syncSharedLinksPush } = await import('./links.mirror.ts');

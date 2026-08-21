@@ -306,6 +306,9 @@ describe('classifySharedLink win32 real-copy branch', () => {
     stubPlatform(realPlatform);
     process.exitCode = 0;
     vi.restoreAllMocks();
+    // Pair every doMock with a doUnmock; restoreAllMocks does NOT clear a
+    // doMock registration, so it would otherwise leak into later files.
+    vi.doUnmock('node:fs');
     vi.resetModules();
     restoreEnv('HOME', originalHome);
     restoreEnv('USERPROFILE', originalUserProfile);
@@ -362,6 +365,49 @@ describe('classifySharedLink win32 real-copy branch', () => {
     expect(row).toBeDefined();
     expect(row).toContain(warnGlyph);
     expect(row).toContain('does not resolve in the repo');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('warns the same when shared/<name> could not be read at all, on win32', async () => {
+    // The other half of the same disjunction. The dangling case above is
+    // reachable with a real filesystem; an unreadable one is not portably
+    // reproducible in CI, so the mock is what drives this operand through the
+    // real reporter rather than leaving it satisfied by line coverage alone.
+    stubPlatform('win32');
+    const claudeHomeDir = join(testHome, '.claude');
+    mkdirSync(claudeHomeDir, { recursive: true });
+    const sharedParent = join(testHome, 'claude-nomad', 'shared');
+    mkdirSync(sharedParent, { recursive: true });
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: vi.fn((p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (typeof p === 'string' && p.startsWith(sharedParent)) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.lstatSync(p, opts);
+        }),
+      };
+    });
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    mkdirSync(join(claudeHomeDir, name), { recursive: true });
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('does not resolve in the repo');
+    // Never the unpublished row: the repo does carry the name, this host just
+    // could not read it, and that row names adopt, which would refuse.
+    expect(row).not.toContain('not published');
     expect(process.exitCode).toBe(0);
   });
 
