@@ -13,12 +13,12 @@
  * doctor surface.
  */
 
-import { existsSync } from 'node:fs';
 import { join, win32 as win32Path } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { deniedSegmentFor, repoHome } from './config.ts';
 import { listDivergingFiles } from './extras-sync.diff.ts';
+import { classifyPresence, isUnusableTarget } from './fs-presence.ts';
 
 /** Return shape shared by every `classifySharedLink` branch. */
 export type SharedLinkClassification = { line: string; fail: boolean; children?: string[] };
@@ -61,6 +61,32 @@ function win32CopyOkRow(name: string, exempt = 0): SharedLinkClassification {
 function win32CopyUnpublishedRow(name: string): SharedLinkClassification {
   return {
     line: `${dim(infoGlyph)} ${name}: real local copy, not published (run \`nomad adopt ${name}\` to share it)`,
+    fail: false,
+  };
+}
+
+/**
+ * The win32 copy-sync dangling-repo-pointer row: a real local copy at
+ * `~/.claude/<name>` sits beside a `shared/<name>` that does not resolve, a
+ * different fact from `win32CopyUnpublishedRow`'s "never published" (the
+ * repo does carry an entry here, it is just broken) and from
+ * `classifySymlinkTarget`'s host-side "broken symlink" / "stale symlink"
+ * rows in `commands.doctor.checks.repo.ts` (those describe the local link's
+ * TARGET going missing; this describes the REPO's own pointer being unusable,
+ * which on win32 is never followed through a symlink at all).
+ *
+ * A WARN, never a FAIL: this file's own documented rule is that divergence is
+ * always a WARN, matching every other row here that means "run a follow-up
+ * command" (`win32CopyOkRow`'s exempt note aside, which needs no command at
+ * all). `fail: false` leaves `process.exitCode` untouched, so a scripted
+ * `nomad doctor && deploy` does not block on this state by itself; automation
+ * that wants to catch it has to parse WARN lines rather than rely only on the
+ * exit code, an accepted tradeoff recorded here so it is not rediscovered
+ * later as a surprise.
+ */
+function win32CopyDanglingRow(name: string): SharedLinkClassification {
+  return {
+    line: `${yellow(warnGlyph)} ${name}: real local copy, but shared/${name} does not resolve in the repo (remove shared/${name}, or restore what it points at)`,
     fail: false,
   };
 }
@@ -131,11 +157,16 @@ function divergingRepoPath(line: string, name: string, local: string, shared: st
  * divergence from `shared/<name>` means something did not reconcile, which is
  * worth a nudge before the next mutating command runs.
  *
- * Skips the compare entirely when the repo has no `shared/<name>` source:
- * there is nothing to compare against, and the row names the name as
- * unpublished. The presence probe is inlined rather than delegated to
- * `repoHasSharedSource` so the repo path it builds is computed once and reused
- * as the compare's right-hand side. The compare itself routes through
+ * Skips the compare entirely when `shared/<name>` is absent (the row names
+ * the name as unpublished) or does not resolve (the row names the repo's own
+ * pointer as broken): there is nothing to compare against either way. The
+ * presence probe is `classifyPresence` rather than `existsSync`, and rather
+ * than being delegated to `repoHasSharedSource`, so the repo path it builds is
+ * computed once, classified once, and reused as the compare's right-hand
+ * side. `existsSync` alone would follow a dangling `shared/<name>` and read it
+ * as absent, which is exactly the false negative this row exists to close:
+ * the name would report as never published, naming `nomad adopt <name>` as
+ * the fix for a state that command now refuses. The compare itself routes through
  * `listDivergingFiles`, the same byte-level `git diff --no-index` helper
  * `reportSkillsDivergence` already uses (never mtime-based, so a checkout
  * mtime rewrite cannot manufacture a false WARN), which never throws and
@@ -175,7 +206,9 @@ function divergingRepoPath(line: string, name: string, local: string, shared: st
  */
 export function classifyWin32Copy(name: string, p: string): SharedLinkClassification {
   const sharedPath = join(repoHome(), 'shared', name);
-  if (!existsSync(sharedPath)) return win32CopyUnpublishedRow(name);
+  const sharedState = classifyPresence(sharedPath);
+  if (sharedState === 'absent') return win32CopyUnpublishedRow(name);
+  if (isUnusableTarget(sharedState)) return win32CopyDanglingRow(name);
   const compared = listDivergingFiles(p, sharedPath);
   const diverging = compared.filter(
     (line) => deniedSegmentFor(divergingRepoPath(line, name, p, sharedPath)) === null,

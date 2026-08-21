@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -335,6 +335,33 @@ describe('classifySharedLink win32 real-copy branch', () => {
     expect(row).toContain('not published');
     expect(row).toContain(`nomad adopt ${name}`);
     expect(row).not.toContain('win32 copy-sync');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('warns that the repo pointer does not resolve when shared/<name> is a dangling symlink, on win32', async () => {
+    // The false negative this task closes: existsSync(sharedPath) follows the
+    // link and reads a dangling shared/<name> as absent, so the row used to
+    // claim the name was never published, naming `nomad adopt <name>` as the
+    // fix for a state that command now refuses at exit 1.
+    stubPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const claudeHomeDir = join(testHome, '.claude');
+    mkdirSync(claudeHomeDir, { recursive: true });
+    const name = SHARED_LINKS[0];
+    mkdirSync(join(claudeHomeDir, name), { recursive: true });
+    const sharedParent = join(testHome, 'claude-nomad', 'shared');
+    mkdirSync(sharedParent, { recursive: true });
+    symlinkSync(join(sharedParent, 'no-such-target'), join(sharedParent, name));
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('does not resolve in the repo');
     expect(process.exitCode).toBe(0);
   });
 
