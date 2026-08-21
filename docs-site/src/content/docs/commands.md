@@ -117,6 +117,12 @@ macOS, Linux, and WSL2: publishing a directory to every other host is something 
 side effect of the next push. A name you have already shared is unaffected and keeps publishing your
 edits on every push.
 
+If a name you have already shared ends up with a broken pointer in the sync repo instead, for
+example because a machine that shared it no longer has the original, push skips writing through it
+exactly as it did before, but now also prints a warning naming the entry so your local edit does not
+silently stop reaching the repo. Push does not repair the broken pointer for you: remove it from the
+sync repo, or restore what it pointed at, by hand. The warning does not fail the push.
+
 | Flag               | Description                                                                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--dry-run`        | Run pre-push safety checks (gitleaks probe, rebase, remap preview, gitlink scan, allow-list) and a read-only gitleaks leak preview over a throwaway temp copy of the sessions, extras, and non-gsd user skills this host would stage. Exits with code 5 if a leak is found, or if the staged tree cannot be scanned cleanly (the scan ran but produced no parseable report); both fail closed with the same leak-blocked code a real push uses, so a scripted `$? == 5` pre-flight buckets them the same way. Only a scan that could not run at all (gitleaks or git missing) exits 1. Writes nothing to `~/.claude/` and commits/pushes nothing, but the rebase above updates the sync repo (`~/claude-nomad/`) first.    |
@@ -205,10 +211,19 @@ editor, so it never writes `path-map.json` itself. A credential-shaped `<name>` 
 outright, before the membership check and before `--dry-run` takes effect: `.env`, `id_rsa`,
 `credentials`, `*.pem`, `*.key` and similar shapes stop the command with an error and exit code 1,
 since adopting one would move a secret into the sync repo. On native Windows adopt recreates the
-name as a real copy instead of a symlink (the win32 copy-sync modality). There a name whose
-`shared/<name>` counterpart already exists is reported as already adopted and skipped (with a
-`nomad pull` hint to refresh the local copy), where macOS, Linux, and WSL2 would refuse with a
-would-clobber error. If that copy cannot be written, because another program has the path open or
+name as a real copy instead of a symlink (the win32 copy-sync modality). There, a name whose
+`shared/<name>` counterpart already exists and resolves to something real is reported as already
+adopted and skipped (with a `nomad pull` hint to refresh the local copy), where macOS, Linux, and
+WSL2 would refuse with a would-clobber error. If that counterpart exists but leads nowhere instead,
+for example because it points at content another host shared that never reached this one, adopt now
+stops with an error naming the entry and exits 1, rather than the older behavior of reporting it
+already adopted and pointing you at a `nomad pull` that could not have fixed that state either.
+Remove the broken entry from the sync repo, or restore what it points at, then run
+`nomad adopt <name>` again. The same broken-pointer state is also called out, on every platform,
+when your local `~/.claude/<name>` is already a symlink into the sync repo: adopt used to report a
+plain already-adopted success there too, and now says the link is broken instead, though it still
+exits 0 in that case, since a write through a broken local symlink already fails on its own and
+nothing is silently lost. If that copy cannot be written, because another program has the path open or
 its permissions block it, adopt stops with an error naming the path and exits 1. The content itself
 is not lost: it is already in `shared/<name>`, and staged unless the same error also reports that
 staging failed. Run `nomad pull` to recreate the local copy before your next `nomad push`, because
@@ -420,7 +435,18 @@ when any were excluded, the passing row carries a dim `(N never-synced path(s) n
 under `--verbose`. On native Windows, a real local copy the sync repo does not carry (never
 published, since `nomad push` no longer creates a repo counterpart on its own) gets its own info
 row naming `nomad adopt <name>`; it never fails the check and, like every other informational Links
-row, it is stripped from the default compact view and shown under `--verbose`.
+row, it is stripped from the default compact view and shown under `--verbose`. On native Windows,
+when a real local copy sits beside a `shared/<name>` counterpart that leads nowhere, doctor now
+warns and names the broken repo pointer, instead of the older behavior of reporting the name as
+never published and pointing you at `nomad adopt <name>`, a command that now refuses that exact
+state. On every platform, when your local entry is missing entirely, or your local symlink into the
+sync repo is itself broken, and the repo's own `shared/<name>` pointer also leads nowhere, doctor
+now warns that `shared/<name>` does not resolve and that there is nothing to restore from either
+side. This replaces two older lines that no longer fit that state: one saying the name was simply
+never shared, and one saying the dangling local symlink was stale and safe to remove, neither of
+which named the real problem, that the repo's own copy is unusable too. As with every other warning
+in this section, the exit code is untouched, so a script that only checks the exit code should still
+read the warning lines.
 A CRLF-guard
 check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
 wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or
