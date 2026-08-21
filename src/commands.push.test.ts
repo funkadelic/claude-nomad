@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -828,6 +836,61 @@ describe('cmdPush: shared-links push mirror integration', () => {
     expect(readFileSync(join(env.repoUnderHome, 'shared', 'CLAUDE.md'), 'utf8')).toBe(
       '# win32 local edit\n',
     );
+  });
+
+  it('WET push on win32: real syncSharedLinksPush WARNs and writes nothing when shared/CLAUDE.md is present but does not resolve', async () => {
+    // Same fixture shape as the case above, but the repo counterpart is a
+    // dangling symlink instead of a real file: present per lexists, but
+    // unusable per classifyPresence. Unlike that case, this one does NOT
+    // mock syncSharedLinksPush, so the assertion below only holds if the
+    // real mirror reaches its new dangling-target guard end to end.
+    symlinkSync(
+      join(env.repoUnderHome, 'shared', 'no-such-target'),
+      join(env.repoUnderHome, 'shared', 'CLAUDE.md'),
+    );
+    writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# win32 local edit\n');
+    stubPlatform('win32');
+
+    vi.doMock('./push-checks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof pushChecksModule>();
+      return {
+        ...actual,
+        probeGitleaks: vi.fn(() => 'v8.18.2'),
+        rebaseBeforePush: vi.fn(),
+        findGitlinks: vi.fn(() => []),
+      };
+    });
+    vi.doMock('./remap.ts', () => ({
+      remapPull: vi.fn(),
+      remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
+    }));
+    vi.doMock('./extras-sync.ts', () => ({
+      remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
+      remapExtrasPull: vi.fn(),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('./skills-sync.ts', () => ({
+      syncSkillsPull: vi.fn(),
+      syncSkillsPush: vi.fn(),
+    }));
+    vi.doMock('./utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
+    });
+
+    const { cmdPush } = await import('./commands.push.ts');
+    await expect(cmdPush()).resolves.toBeUndefined();
+
+    // The WARN fired through the real, unmocked mirror.
+    expect(errOutput(env)).toContain('does not resolve to anything usable');
+    // Nothing was written through the dangling entry: it is still a symlink
+    // whose target does not exist. lstat, not existsSync, so the check does
+    // not itself follow the link a real write would have replaced.
+    const sharedClaudeMd = join(env.repoUnderHome, 'shared', 'CLAUDE.md');
+    expect(lstatSync(sharedClaudeMd).isSymbolicLink()).toBe(true);
+    expect(existsSync(sharedClaudeMd)).toBe(false);
+    // The WARN did not fail the push.
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('WET push: one invalid sharedDirs entry WARNs exactly once (linkNames derived once)', async () => {
