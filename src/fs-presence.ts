@@ -25,6 +25,23 @@ import { existsSync, lstatSync } from 'node:fs';
 export type PresenceState = 'absent' | 'resolves' | 'dangling' | 'unknown';
 
 /**
+ * The errnos that mean nothing can be at the path, so `absent` is the honest
+ * answer rather than the present-but-unknown fallback.
+ *
+ * `throwIfNoEntry: false` already suppresses the plain missing-entry case, so
+ * `ENOENT` is here only for a caller that reaches this set some other way.
+ * `ENOTDIR` (a component of the path is a regular file, so `shared/` is not a
+ * directory at all) and `ENAMETOOLONG` (a configured shared name over the
+ * platform limit) both throw, and both mean the entry cannot exist. Folding
+ * them into `unknown` would tell a user to remove or restore something that
+ * is not there, which is an instruction they cannot follow.
+ *
+ * `ELOOP` is deliberately absent: a symlink loop means an entry IS there, it
+ * just cannot be followed, which is exactly the state `unknown` describes.
+ */
+const ABSENT_CODES = new Set(['ENOENT', 'ENOTDIR', 'ENAMETOOLONG']);
+
+/**
  * Classify what is at `p`, without following a symlink further than needed
  * to tell the four states apart.
  *
@@ -42,6 +59,11 @@ export type PresenceState = 'absent' | 'resolves' | 'dangling' | 'unknown';
  * boundary specifically, guessing absent is exactly what lets an unreadable
  * entry vanish from a mirror pass without a word.
  *
+ * The thrown error is dispatched on its errno rather than folded wholesale,
+ * matching what the doctor reporters already do with their own stat errors:
+ * see {@link ABSENT_CODES} for the codes that mean nothing can be there and
+ * therefore report `absent` instead.
+ *
  * @param p - Absolute path to probe.
  * @returns The classified state; see {@link PresenceState}.
  */
@@ -49,8 +71,8 @@ export function classifyPresence(p: string): PresenceState {
   let stat;
   try {
     stat = lstatSync(p, { throwIfNoEntry: false });
-  } catch {
-    return 'unknown';
+  } catch (err) {
+    return ABSENT_CODES.has(String((err as NodeJS.ErrnoException).code)) ? 'absent' : 'unknown';
   }
   if (stat === undefined) return 'absent';
   return existsSync(p) ? 'resolves' : 'dangling';

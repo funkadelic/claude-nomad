@@ -5,7 +5,46 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as fsPresenceModule from './fs-presence.ts';
 import { classifyPresence, isUnusableTarget, lexists, type PresenceState } from './fs-presence.ts';
+
+/**
+ * Register a `node:fs` mock whose `lstatSync` throws `code` for `blocked` and
+ * delegates to the real implementation for every other path, then load a fresh
+ * copy of the module under test against it.
+ *
+ * A real `EACCES` is not portably reproducible in CI, the same reasoning
+ * `commands.doctor.checks.repo3.test.ts`'s own unreadable-target case
+ * documents for its `statSync` mock. Only `lstatSync` is mocked, since
+ * `classifyPresence`'s own throw path is `lstatSync`'s, not `statSync`'s.
+ *
+ * The caller is responsible for nothing: the `doUnmock` is in `afterEach`,
+ * because `vi.restoreAllMocks` does not clear a `doMock` registration and an
+ * assertion that throws before an inline `doUnmock` would leak the mock into
+ * every later test file.
+ *
+ * @param blocked - The one absolute path whose `lstatSync` throws.
+ * @param code - The errno to throw for it.
+ * @returns The freshly imported module under test.
+ */
+async function withThrowingLstat(blocked: string, code: string): Promise<typeof fsPresenceModule> {
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof fsModule>();
+    return {
+      ...actual,
+      lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+        if (String(p) === blocked) {
+          const err = new Error(`stat failed: ${code}`) as NodeJS.ErrnoException;
+          err.code = code;
+          throw err;
+        }
+        return actual.lstatSync(p, opts);
+      },
+    };
+  });
+  vi.resetModules();
+  return import('./fs-presence.ts');
+}
 
 describe('classifyPresence', () => {
   let tempRoot: string;
@@ -15,6 +54,11 @@ describe('classifyPresence', () => {
   });
 
   afterEach(() => {
+    // Pair every doMock with a doUnmock here rather than inline after the
+    // assertions: restoreAllMocks does NOT clear a doMock registration, so a
+    // failing assertion would otherwise leak the fs mock into later files.
+    vi.doUnmock('node:fs');
+    vi.resetModules();
     rmSync(tempRoot, { recursive: true, force: true });
   });
 
@@ -40,37 +84,28 @@ describe('classifyPresence', () => {
     expect(classifyPresence(link)).toBe('dangling');
   });
 
-  // A real EACCES is not portably reproducible in CI, the same reasoning
-  // commands.doctor.checks.repo3.test.ts's own unreadable-target case
-  // documents for its statSync mock. Only lstatSync is mocked here, since
-  // classifyPresence's own throw path is lstatSync's, not statSync's.
   it('returns unknown, not absent, when lstatSync throws a genuine error', async () => {
     const blocked = join(tempRoot, 'unreadable-parent-entry');
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      return {
-        ...actual,
-        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
-          if (String(p) === blocked) {
-            const err = new Error('permission denied') as NodeJS.ErrnoException;
-            err.code = 'EACCES';
-            throw err;
-          }
-          return actual.lstatSync(p, opts);
-        },
-      };
-    });
-    vi.resetModules();
     const { classifyPresence: mockedClassifyPresence, lexists: mockedLexists } =
-      await import('./fs-presence.ts');
+      await withThrowingLstat(blocked, 'EACCES');
 
     expect(mockedClassifyPresence(blocked)).toBe('unknown');
     // The fail-safe direction: an unreadable entry reports present, the
     // opposite of the `lexists` copies that fold every thrown error to false.
     expect(mockedLexists(blocked)).toBe(true);
+  });
 
-    vi.doUnmock('node:fs');
-    vi.resetModules();
+  it('returns absent when the throw means nothing can be at the path', async () => {
+    // ENOTDIR: a component of the path is a regular file, so `shared/` is not
+    // a directory. Reporting present-but-unknown here would send the user
+    // after an entry that does not exist, and would refuse adopt with an
+    // instruction they cannot follow.
+    const blocked = join(tempRoot, 'a-file-that-is-not-a-dir', 'child');
+    const { classifyPresence: mockedClassifyPresence, lexists: mockedLexists } =
+      await withThrowingLstat(blocked, 'ENOTDIR');
+
+    expect(mockedClassifyPresence(blocked)).toBe('absent');
+    expect(mockedLexists(blocked)).toBe(false);
   });
 });
 
