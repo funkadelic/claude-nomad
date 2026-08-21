@@ -396,6 +396,62 @@ describe('cmdAdopt (precondition matrix)', () => {
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
     expect(logOutput(env)).not.toContain('already adopted');
   });
+
+  // The already-a-symlink branch only probes lstatSync(linkPath).isSymbolicLink(),
+  // never sharedTarget, so it reported "already adopted" unconditionally even
+  // once shared/<name> had gone dangling. This is the resolving-target
+  // regression: the local link points at a real, resolving shared/<name>, so
+  // the message and exit code stay exactly as they were.
+  it.skipIf(isWin)(
+    'already-a-symlink branch: resolving shared/<name> keeps the unchanged message',
+    async () => {
+      addSharedDir(env, 'my-dir');
+      const linkPath = join(env.claudeHome, 'my-dir');
+      const targetPath = join(env.repoHome, 'shared', 'my-dir');
+      mkdirSync(targetPath, { recursive: true });
+      symlinkSync(targetPath, linkPath);
+
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('my-dir')).not.toThrow();
+      expect(logOutput(env)).toContain('already adopted (already a symlink)');
+      expect(process.exitCode ?? 0).toBe(0);
+      expect(diffCached(env)).toBe('');
+    },
+  );
+
+  // The dangling case: the local symlink resolves to something real
+  // elsewhere (so it still reaches the already-a-symlink branch), while
+  // shared/<name> itself is a separate dangling symlink. Per D-05 this names
+  // the broken target but does NOT inherit the win32 refusal's exit 1: a
+  // write through a genuinely broken posix symlink fails loudly at the OS
+  // level, so there is no silent data loss to prevent.
+  it.skipIf(isWin)(
+    'already-a-symlink branch: dangling shared/<name> names it broken and stays at exit 0',
+    async () => {
+      addSharedDir(env, 'my-dir');
+      const linkPath = join(env.claudeHome, 'my-dir');
+      const realElsewhere = join(env.testHome, 'elsewhere');
+      mkdirSync(realElsewhere, { recursive: true });
+      symlinkSync(realElsewhere, linkPath);
+      symlinkSync(
+        join(env.repoHome, 'shared', 'no-such-target'),
+        join(env.repoHome, 'shared', 'my-dir'),
+      );
+
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('my-dir')).not.toThrow();
+      const out = logOutput(env);
+      expect(out).toContain('does not resolve, so the link is broken');
+      expect(process.exitCode ?? 0).toBe(0);
+
+      // No mutation: the local symlink is untouched, shared/<name> is still
+      // the same dangling symlink, and nothing was staged.
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      expect(lstatSync(join(env.repoHome, 'shared', 'my-dir')).isSymbolicLink()).toBe(true);
+      expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
+      expect(diffCached(env)).toBe('');
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -1409,6 +1465,59 @@ describe('cmdAdopt win32 copy-back branch', () => {
       expect(out).not.toContain('would copy back');
     },
   );
+
+  // The two cases below differ ONLY in whether ~/.claude/<name> exists, which
+  // is what proves both of adoptStopsEarly's call sites of
+  // reportWin32AlreadyAdopted reach the same refusal: the host-absent branch
+  // at the top of the function, and the real-copy-present branch below the
+  // symlink arm.
+  it('win32: refuses a dangling shared/<name> at exit 1 when the host entry is absent', async () => {
+    addSharedDir(env, 'my-dir');
+    symlinkSync(
+      join(env.repoHome, 'shared', 'no-such-target'),
+      join(env.repoHome, 'shared', 'my-dir'),
+    );
+
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-dir')).toThrow(`exit:${EXIT.GENERIC_FAILURE}`);
+
+    const out = errOutput(env);
+    expect(out).toContain('does not resolve, so adopting would publish nothing');
+
+    // Zero mutation: shared/<name> is still the same dangling symlink, and
+    // nothing was staged.
+    expect(lstatSync(join(env.repoHome, 'shared', 'my-dir')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
+    expect(existsSync(join(env.claudeHome, 'my-dir'))).toBe(false);
+    expect(diffCached(env)).toBe('');
+  });
+
+  it('win32: refuses a dangling shared/<name> at exit 1 when a real local copy is present', async () => {
+    addSharedDir(env, 'my-dir');
+    const linkPath = join(env.claudeHome, 'my-dir');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+    symlinkSync(
+      join(env.repoHome, 'shared', 'no-such-target'),
+      join(env.repoHome, 'shared', 'my-dir'),
+    );
+
+    stubPlatform('win32');
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    expect(() => cmdAdopt('my-dir')).toThrow(`exit:${EXIT.GENERIC_FAILURE}`);
+
+    const out = errOutput(env);
+    expect(out).toContain('does not resolve, so adopting would publish nothing');
+
+    // Zero mutation: shared/<name> is still dangling, the host entry is
+    // untouched, and nothing was staged.
+    expect(lstatSync(join(env.repoHome, 'shared', 'my-dir')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(linkPath, 'file.txt'), 'utf8')).toBe('content\n');
+    expect(diffCached(env)).toBe('');
+  });
 });
 
 // ---------------------------------------------------------------------------

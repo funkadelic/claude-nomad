@@ -3,7 +3,6 @@ import { join } from 'node:path';
 
 import {
   copyIntoSharedOrFatal,
-  lexists,
   refuseLateDeniedEntries,
   removeAdoptSource,
   reportSourceRemovalFailure,
@@ -20,7 +19,7 @@ import {
 } from './config.ts';
 import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { EXIT } from './exit-codes.ts';
-import { classifyPresence, isUnusableTarget } from './fs-presence.ts';
+import { classifyPresence, isUnusableTarget, lexists } from './fs-presence.ts';
 import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
@@ -185,6 +184,12 @@ function alreadySymlinkMessage(name: string, sharedTarget: string): string {
  * (an unusable `shared/<name>` is refused rather than reported adopted), so
  * both of its call sites below carry that refusal too, without either one
  * changing shape.
+ *
+ * The clobber guard's `lexists` now comes from the shared presence leaf,
+ * whose fallback on a genuine stat error is present rather than absent. So an
+ * unreadable `shared/<name>` now refuses here instead of falling through into
+ * `performAdoptMove`, which previously raw-threw out of `cpSync` into a crash
+ * report.
  *
  * @param name The name being adopted.
  * @param linkPath Absolute `CLAUDE_HOME/<name>`.

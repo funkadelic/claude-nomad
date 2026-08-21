@@ -9,7 +9,7 @@
  * `commands.push.recovery*.ts` already sets.
  */
 
-import { lstatSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { deniedEntriesRefusal, scanOrFatal } from './commands.adopt.scan.ts';
@@ -17,27 +17,9 @@ import { ALWAYS_NEVER_SYNC, claudeHome } from './config.ts';
 import { errorText } from './error-text.ts';
 import { EXIT } from './exit-codes.ts';
 import { copyExtrasFiltered } from './extras-sync.core.ts';
+import { lexists } from './fs-presence.ts';
 import { copySharedLinkPull } from './links.ts';
 import { warn, NomadFatal } from './utils.ts';
-
-/**
- * lstat-based existence check that, unlike `existsSync`, does NOT follow
- * symlinks: a dangling symlink at `p` returns true. Used for the clobber
- * guard so an existing (even broken) `shared/<name>` link is refused rather
- * than fed to `cpSync`, which would otherwise throw an opaque non-NomadFatal
- * error on a dangling-symlink destination.
- *
- * @param p Absolute path to probe.
- * @returns True when any entry (file, dir, or symlink) exists at `p`.
- */
-export function lexists(p: string): boolean {
-  try {
-    lstatSync(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Whether `abs` is a direct child of `root`, both resolved first.
@@ -139,6 +121,12 @@ function clearPartialShared(sharedTarget: string, repo: string): boolean {
  * a path that is still there. Same discipline as `removeUntrackedDenied` in
  * `links.mirror.ts`, which re-probes the identical call for the identical
  * reason.
+ *
+ * `lexists` now comes from the shared presence leaf, whose fallback on a
+ * genuine stat error is present rather than absent (the same direction
+ * `presentAt` already takes in `links.mirror.ts`). That changes this
+ * function in the safe direction: a re-probe that cannot be completed now
+ * reports the removal as NOT confirmed, instead of assuming success.
  *
  * @param root Directory `target` must sit directly inside.
  * @param target Path to remove.
@@ -520,6 +508,12 @@ export function refuseLateDeniedEntries(
  * which is the safe direction: the caller then either stops (posix) or leaves
  * the path in place and says so (win32), rather than deleting something outside
  * the bound.
+ *
+ * `lexists` now comes from the shared presence leaf, whose fallback on a
+ * genuine stat error is present rather than absent (the same direction
+ * `presentAt` already takes in `links.mirror.ts`). That changes the
+ * post-removal re-probe below in the safe direction: an unreadable path
+ * reports the removal as NOT confirmed rather than as a success.
  *
  * @param linkPath Host-side source directory to remove.
  * @returns `{ ok: true }` once the path is confirmed gone, otherwise the reason.
