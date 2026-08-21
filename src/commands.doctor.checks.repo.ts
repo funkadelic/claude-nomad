@@ -26,6 +26,7 @@ import {
   classifyWin32Copy,
   type SharedLinkClassification,
 } from './commands.doctor.checks.repo.win32.ts';
+import { classifyPresence } from './fs-presence.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 import { readJson, validatePathMapShape } from './utils.json.ts';
 
@@ -195,6 +196,60 @@ function repoHasSharedSource(name: string): boolean {
 }
 
 /**
+ * True only when `shared/<name>` is a symlink whose target does not resolve,
+ * the `dangling` state from {@link classifyPresence}. Deliberately narrower
+ * than `isUnusableTarget`: this gates a row that asserts the repo's own
+ * pointer is BROKEN, and a `shared/<name>` that merely could not be stat-ed
+ * (the `unknown` state) has not been shown to be broken, so that case keeps
+ * falling through to the existing rows below instead of claiming a fact this
+ * function cannot support. `classifyWin32Copy` makes the opposite call for
+ * its own row (it uses `isUnusableTarget`, covering `dangling` and
+ * `unknown`), because that row's wording is scoped to "does not resolve"
+ * rather than to "is broken", a claim an unreadable-but-present entry also
+ * supports.
+ *
+ * @param name - A shared name (`commands`, `rules`, ...).
+ * @returns Whether `shared/<name>` is present but does not resolve.
+ */
+function sharedSourceDangling(name: string): boolean {
+  return classifyPresence(join(repoHome(), 'shared', name)) === 'dangling';
+}
+
+/**
+ * The cross-platform dangling-repo-source row, shared by both
+ * `classifySharedLink`'s and `classifySymlinkTarget`'s ENOENT branches: the
+ * host has nothing at `~/.claude/<name>` (or a symlink that no longer
+ * resolves), and the repo's own `shared/<name>` is ALSO a dangling symlink,
+ * so there is nothing usable to restore from either direction.
+ *
+ * One builder serves both consumers because the actionable fact is
+ * identical regardless of which branch reached it: the repo's own source is
+ * unusable. Duplicating the string per consumer would give two wordings to
+ * keep in step for no gain.
+ *
+ * Replaces two rows that were each wrong for this state, not merely terse:
+ * `not synced (nothing in shared/)` is false, because the repo does carry an
+ * entry (it is just broken), and `missing (run \`nomad pull\` to restore)`
+ * names a command that cannot help, because `copySharedLinkPull` copies FROM
+ * `shared/<name>`, and there is nothing there to copy. A WARN, never a FAIL:
+ * `fail: false` leaves `process.exitCode` untouched, matching every other row
+ * in this file that means "run a follow-up command".
+ *
+ * Reached from every platform, unlike the win32-only dangling row in
+ * `commands.doctor.checks.repo.win32.ts`: both `classifySharedLink` and
+ * `classifySymlinkTarget` run their ENOENT branch on posix and win32 alike.
+ *
+ * @param name - A shared name (`commands`, `rules`, ...).
+ * @returns The WARN row naming the unusable repo source.
+ */
+function repoSourceDanglingRow(name: string): SharedLinkClassification {
+  return {
+    line: `${yellow(warnGlyph)} ${name}: shared/${name} in the repo does not resolve, so there is nothing to restore from (remove shared/${name}, or restore what it points at)`,
+    fail: false,
+  };
+}
+
+/**
  * Resolve the display item and optional exit-code side-effect for a single
  * shared-link path. Returns `{ line, fail, children }` where `fail` true
  * means the caller should set `process.exitCode = 1`, and `children` (when
@@ -218,6 +273,7 @@ function classifySharedLink(name: string, p: string): SharedLinkClassification {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
+      if (sharedSourceDangling(name)) return repoSourceDanglingRow(name);
       return repoHasSharedSource(name)
         ? {
             line: `${yellow(warnGlyph)} ${name}: missing (run \`nomad pull\` to restore)`,
@@ -254,6 +310,7 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
+      if (sharedSourceDangling(name)) return repoSourceDanglingRow(name);
       return repoHasSharedSource(name)
         ? {
             line: `${yellow(warnGlyph)} ${name}: broken symlink (target missing, run \`nomad pull\`)`,
