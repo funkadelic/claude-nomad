@@ -56,7 +56,6 @@ describe('classifyPresence', () => {
             err.code = 'EACCES';
             throw err;
           }
-          // @ts-expect-error -- pass-through with optional opts param
           return actual.lstatSync(p, opts);
         },
       };
