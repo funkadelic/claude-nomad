@@ -20,7 +20,7 @@ import {
 import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.guard.ts';
 import { EXIT } from './exit-codes.ts';
 import { classifyPresence, isUnusableTarget, type PresenceState } from './fs-presence.ts';
-import { fail, gitOrFatal, log, NomadFatal } from './utils.ts';
+import { fail, gitOrFatal, log, NomadFatal, warn } from './utils.ts';
 import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
@@ -197,35 +197,53 @@ function reportWin32AlreadyAdopted(name: string, sharedTarget: string): boolean 
 }
 
 /**
- * Describe the already-a-symlink state at `linkPath`, naming a broken
- * `shared/<name>` when that is what is there.
+ * Describe the already-a-symlink state at `linkPath`, naming a broken or
+ * unreadable `shared/${name}` when that is what is there.
  *
  * `adoptStopsEarly`'s already-a-symlink branch checks only
  * `lstatSync(linkPath).isSymbolicLink()` and never probed `sharedTarget`, so
  * it reported "already adopted" even once the target had gone dangling. This
  * folds in the same classification the win32 refusal uses, but does NOT
- * inherit its exit-1 treatment: a write through a genuinely broken posix
- * symlink fails loudly at the OS level, so there is no silent data loss to
- * prevent here and no scripted-caller ambiguity to resolve. The two refusal
- * semantics stay deliberately distinct, and this branch is reached on EVERY
- * platform, unlike the win32-gated refusal above.
+ * inherit its exit-1 treatment: the exit-0 outcome is deliberate, since the
+ * command is reporting rather than writing and the local link keeps whatever
+ * standing it had. The two refusal semantics stay deliberately distinct, and
+ * this branch is reached on EVERY platform, unlike the win32-gated refusal
+ * above.
  *
- * `dangling` specifically, rather than {@link isUnusableTarget}: the second
- * wording asserts that the link is broken, which an unreadable-but-present
- * `shared/<name>` (the `unknown` state) has not been shown to be.
+ * Three outcomes rather than two, because only one of the three is a success
+ * claim. A `dangling` target supports the stronger "the link is broken"
+ * wording; an `unknown` one does not, so it gets its own message naming what
+ * could not be determined instead of falling through to the success message
+ * about a repo entry this process could not read. `healthy` is returned
+ * beside the text so the caller can pick its stream and glyph without
+ * matching a substring of a message this function owns.
  *
  * @param name The name being adopted, for the message.
  * @param sharedTarget Repo-side `shared/<name>` path to probe.
- * @returns The message to log; unchanged wording when the target resolves.
+ * @returns The message, and whether it reports a healthy already-adopted state.
  */
-function alreadySymlinkMessage(name: string, sharedTarget: string): string {
-  if (classifyPresence(sharedTarget) !== 'dangling') {
-    return `${name}: already adopted (already a symlink)`;
+function alreadySymlinkMessage(
+  name: string,
+  sharedTarget: string,
+): { text: string; healthy: boolean } {
+  const state = classifyPresence(sharedTarget);
+  if (state === 'dangling') {
+    return {
+      text:
+        `${name}: already a symlink, but shared/${name} does not resolve, so the link is broken. ` +
+        `Restore shared/${name} in the repo, or remove ~/.claude/${name} and re-run adopt`,
+      healthy: false,
+    };
   }
-  return (
-    `${name}: already a symlink, but shared/${name} does not resolve, so the link is broken. ` +
-    `Restore shared/${name} in the repo, or remove ~/.claude/${name} and re-run adopt`
-  );
+  if (state === 'unknown') {
+    return {
+      text:
+        `${name}: already a symlink, but shared/${name} could not be read, so whether the link ` +
+        `works could not be determined. Check its permissions in the sync repo`,
+      healthy: false,
+    };
+  }
+  return { text: `${name}: already adopted (already a symlink)`, healthy: true };
 }
 
 /**
@@ -268,7 +286,14 @@ function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): 
     return true;
   }
   if (lstatSync(linkPath).isSymbolicLink()) {
-    log(alreadySymlinkMessage(name, sharedTarget));
+    // Stream and glyph follow the severity, not the branch: doctor renders
+    // this same on-disk state with the WARN glyph and `nomad push` warns for
+    // it on stderr, so reporting it on stdout under the dim info glyph would
+    // make adopt the one surface of the three a glyph-grepping caller cannot
+    // see it on.
+    const { text, healthy } = alreadySymlinkMessage(name, sharedTarget);
+    if (healthy) log(text);
+    else warn(text);
     return true;
   }
   if (reportWin32AlreadyAdopted(name, sharedTarget)) return true;

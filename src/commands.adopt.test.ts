@@ -501,11 +501,11 @@ describe('cmdAdopt (precondition matrix)', () => {
   // The dangling case: the local symlink resolves to something real
   // elsewhere (so it still reaches the already-a-symlink branch), while
   // shared/<name> itself is a separate dangling symlink. This names the
-  // broken target but does NOT inherit the win32 refusal's exit 1: a write
-  // through a genuinely broken posix symlink fails loudly at the OS level,
-  // so there is no silent data loss to prevent.
+  // broken target but does NOT inherit the win32 refusal's exit 1: the
+  // command reports rather than writes here, and the local link keeps
+  // whatever standing it had.
   it.skipIf(isWin)(
-    'already-a-symlink branch: dangling shared/<name> names it broken and stays at exit 0',
+    'already-a-symlink branch: dangling shared/<name> warns it is broken and stays at exit 0',
     async () => {
       addSharedDir(env, 'my-dir');
       const linkPath = join(env.claudeHome, 'my-dir');
@@ -519,8 +519,10 @@ describe('cmdAdopt (precondition matrix)', () => {
 
       const { cmdAdopt } = await import('./commands.adopt.ts');
       expect(() => cmdAdopt('my-dir')).not.toThrow();
-      const out = logOutput(env);
-      expect(out).toContain('does not resolve, so the link is broken');
+      // Stream and severity match doctor and push for the same bytes on disk:
+      // a WARN on stderr, not an info line on stdout.
+      expect(errOutput(env)).toContain('does not resolve, so the link is broken');
+      expect(logOutput(env)).not.toContain('does not resolve, so the link is broken');
       expect(process.exitCode ?? 0).toBe(0);
 
       // No mutation: the local symlink is untouched, shared/<name> is still
@@ -528,6 +530,29 @@ describe('cmdAdopt (precondition matrix)', () => {
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
       expect(lstatSync(join(env.repoHome, 'shared', 'my-dir')).isSymbolicLink()).toBe(true);
       expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
+      expect(diffCached(env)).toBe('');
+    },
+  );
+
+  // The third state on the same branch: shared/<name> could not be stat-ed,
+  // so the link was never shown to be broken and was never shown to work
+  // either. Reporting the unchanged already-adopted success there is a
+  // positive claim about a repo entry the process could not read.
+  it.skipIf(isWin)(
+    'already-a-symlink branch: unreadable shared/<name> is not reported as adopted',
+    async () => {
+      addSharedDir(env, 'my-dir');
+      const linkPath = join(env.claudeHome, 'my-dir');
+      const realElsewhere = join(env.testHome, 'elsewhere');
+      mkdirSync(realElsewhere, { recursive: true });
+      symlinkSync(realElsewhere, linkPath);
+      mockUnreadable(join(env.repoHome, 'shared', 'my-dir'));
+
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('my-dir')).not.toThrow();
+      expect(errOutput(env)).toContain('could not be read, so whether the link works');
+      expect(logOutput(env)).not.toContain('already adopted');
+      expect(process.exitCode ?? 0).toBe(0);
       expect(diffCached(env)).toBe('');
     },
   );
