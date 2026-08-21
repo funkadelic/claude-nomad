@@ -17,6 +17,7 @@ import {
 } from './config.ts';
 import { errorText } from './error-text.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras-sync.core.ts';
+import { classifyPresence, isUnusableTarget } from './fs-presence.ts';
 import { gitProbe } from './git-probe.ts';
 import { log, warn } from './utils.ts';
 import { backupRepoWrite } from './utils.fs.ts';
@@ -199,12 +200,61 @@ function notShared(target: string): boolean {
  * `reconcileSharedLinksBeforePull` (no `dryRun` key), keeps the original
  * wording unchanged: its claim about a skipped write is accurate there.
  *
+ * A third outcome sits above the `notShared` check: `shared/<name>` can also
+ * be a symlink that does not resolve, distinct from both "not shared" (never
+ * published, silent, unchanged) and "shared" (mirrors normally, unchanged).
+ * The mirror still writes nothing for that case, `copyExtrasFiltered`'s
+ * behavior against a dangling destination is unproven, and probing the
+ * target and then writing through it anyway would open a TOCTOU window this
+ * phase deliberately does not open, but it always WARNs first, via
+ * {@link warnUnusableSharedTarget}, naming the name and the broken repo
+ * pointer. The existing WARN-on-unreadable-local-name arm just above this
+ * one is the direct precedent for both the wording shape and the "this WARN
+ * always fires, sink or no sink" rule.
+ *
+ * One compound state is deliberately left alone: a name whose LOCAL path is
+ * unreadable AND whose `shared/<name>` is ALSO dangling still returns
+ * silently, because the `if (notShared(target)) return;` guard inside the
+ * unreadable-local-path catch block above runs first and never reaches the
+ * new dangling check. No surface reports that compound state today, and
+ * adding a branch for it here would push this function's branch count
+ * further toward the cognitive-complexity gate for a case nothing currently
+ * needs.
+ *
  * @param name - Shared name from `allSharedLinks`.
  * @param claude - `claudeHome()`, resolved once by the caller.
  * @param repo - `repoHome()`, resolved once by the caller.
  * @param policy - Repo-side treatment; see {@link SharedMirrorPolicy}.
  * @param opts - `dryRun`/`onPreview`; see {@link MirrorOpts}.
  */
+/**
+ * WARN that `shared/<name>` does not resolve to anything usable, so this
+ * mirror pass left it alone. Extracted out of {@link mirrorOneSharedName} so
+ * the message composition does not add to that function's own branch count
+ * against the cognitive-complexity gate, matching the extraction rationale
+ * already documented on that function.
+ *
+ * Both arms cover the `dangling` and `unknown` states honestly without ever
+ * saying "symlink": a genuine stat error is not a symlink at all, and naming
+ * one specifically would misdescribe the other case.
+ *
+ * @param name - Shared name from `allSharedLinks`.
+ * @param dryRun - `true` when the calling pass writes nothing regardless, so
+ *   the wording claims no write was skipped rather than one that already
+ *   would not have happened.
+ */
+function warnUnusableSharedTarget(name: string, dryRun: boolean): void {
+  if (dryRun) {
+    warn(
+      `${name} would not be captured into shared/: shared/${name} does not resolve to anything usable in the sync repo. Remove it, or restore what it points at`,
+    );
+    return;
+  }
+  warn(
+    `${name} was not captured into shared/ this run: shared/${name} does not resolve to anything usable in the sync repo. Remove it, or restore what it points at, then run \`nomad push\` again`,
+  );
+}
+
 function mirrorOneSharedName(
   name: string,
   claude: string,
@@ -236,6 +286,10 @@ function mirrorOneSharedName(
   }
   if (stat === undefined) return; // absent: nothing to mirror
   if (stat.isSymbolicLink()) return; // symlink-era live link; defer to next pull
+  if (isUnusableTarget(classifyPresence(target))) {
+    warnUnusableSharedTarget(name, opts.dryRun === true);
+    return;
+  }
   if (notShared(target)) return; // repo does not share this name
 
   if (opts.dryRun === true) {

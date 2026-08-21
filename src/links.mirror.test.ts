@@ -247,6 +247,32 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     expect(existsSync(join(sharedDir, 'commands', 'foo.md'))).toBe(true);
   });
 
+  it('warns and writes nothing when shared/<name> is a dangling symlink', async () => {
+    // A real local copy exists (the win32 copy-sync model's normal healthy
+    // state), but the repo side is a symlink whose target was never created:
+    // this is the "already shared, pointer broken" state, distinct from both
+    // "not shared" (silent skip) and "shared" (silent mirror).
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+    symlinkSync(join(sharedDir, 'no-such-target'), join(sharedDir, 'CLAUDE.md'));
+
+    stubPlatform('win32');
+    process.exitCode = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('CLAUDE.md');
+    expect(said[0]).toContain('does not resolve to anything usable');
+    const linkStat = lstatSync(join(sharedDir, 'CLAUDE.md'));
+    expect(linkStat.isSymbolicLink()).toBe(true);
+    expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    expect(process.exitCode).toBe(0);
+  });
+
   it.skipIf(isWin)('is a no-op on a non-win32 stub', async () => {
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
     const { syncSharedLinksPush } = await import('./links.mirror.ts');
