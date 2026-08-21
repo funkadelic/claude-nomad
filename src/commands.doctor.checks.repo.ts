@@ -26,7 +26,7 @@ import {
   classifyWin32Copy,
   type SharedLinkClassification,
 } from './commands.doctor.checks.repo.win32.ts';
-import { classifyPresence, isUnusableTarget, type PresenceState } from './fs-presence.ts';
+import { posixNonSymlinkRow, repoSourceRow } from './commands.doctor.checks.repo.source.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 import { readJson, validatePathMapShape } from './utils.json.ts';
 
@@ -183,120 +183,6 @@ export function reportRepoState(section: DoctorSection): void {
 }
 
 /**
- * True when the repo has a `shared/<name>` source for this link. `applySharedLinks`
- * only creates a symlink when this source exists, so when it does NOT, an absent
- * or dangling link in `~/.claude/` is expected (nothing to sync), not a problem to
- * fix. Doctor uses this to downgrade those rows from a warn to an info note.
- *
- * @param name - A shared name (`commands`, `rules`, ...).
- * @returns Whether `shared/<name>` exists in the repo.
- */
-function repoHasSharedSource(name: string): boolean {
-  return existsSync(join(repoHome(), 'shared', name));
-}
-
-/**
- * The classified state of the repo's own `shared/<name>`, resolved through the
- * shared presence leaf rather than through `existsSync`.
- *
- * Every row in this file that says anything about the repo side is entitled to
- * exactly what this returns and no more: `existsSync` follows a symlink, so it
- * reads a broken pointer and an unreadable path alike as "nothing there", which
- * is what let two rows here make claims the probe never supported.
- *
- * @param name - A shared name (`commands`, `rules`, ...).
- * @returns The state of `shared/<name>`; see `classifyPresence`.
- */
-function repoSourceState(name: string): PresenceState {
-  return classifyPresence(join(repoHome(), 'shared', name));
-}
-
-/**
- * The posix non-symlink row: a real file or directory sits where a symlink
- * into the sync repo belongs, which blocks sync on that platform.
- *
- * Two wordings, because the remedy is not the same in both. `nomad adopt` is
- * the fix only when the repo side has room for the name; when `shared/<name>`
- * is there but does not resolve, adopt refuses outright, so naming it as the
- * fix sends the user at a command that cannot run. The severity does not move
- * with the wording: a real entry where a symlink belongs blocks sync on posix
- * either way, so both arms keep `fail: true`.
- *
- * The win32 sibling of this state is `classifyWin32Copy`, which reaches the
- * same conclusion through its own rows; this exists so the two platforms stop
- * describing one on-disk state with two different remedies.
- *
- * @param name - A shared name (`commands`, `rules`, ...).
- * @returns The FAIL row, worded for whether adopt could actually help.
- */
-function posixNonSymlinkRow(name: string): SharedLinkClassification {
-  if (isUnusableTarget(repoSourceState(name))) {
-    return {
-      line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync), and shared/${name} does not resolve, so \`nomad adopt ${name}\` would refuse (remove shared/${name}, or restore what it points at, first)`,
-      fail: true,
-    };
-  }
-  return {
-    line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync); run \`nomad adopt ${name}\` to fix`,
-    fail: true,
-  };
-}
-
-/**
- * True only when `shared/<name>` is a symlink whose target does not resolve,
- * the `dangling` state from {@link classifyPresence}. Deliberately narrower
- * than `isUnusableTarget`: this gates a row that asserts the repo's own
- * pointer is BROKEN, and a `shared/<name>` that merely could not be stat-ed
- * (the `unknown` state) has not been shown to be broken, so that case keeps
- * falling through to the existing rows below instead of claiming a fact this
- * function cannot support. `classifyWin32Copy` makes the opposite call for
- * its own row (it uses `isUnusableTarget`, covering `dangling` and
- * `unknown`), because that row's wording is scoped to "does not resolve"
- * rather than to "is broken", a claim an unreadable-but-present entry also
- * supports.
- *
- * @param name - A shared name (`commands`, `rules`, ...).
- * @returns Whether `shared/<name>` is present but does not resolve.
- */
-function sharedSourceDangling(name: string): boolean {
-  return repoSourceState(name) === 'dangling';
-}
-
-/**
- * The cross-platform dangling-repo-source row, shared by both
- * `classifySharedLink`'s and `classifySymlinkTarget`'s ENOENT branches: the
- * host has nothing at `~/.claude/<name>` (or a symlink that no longer
- * resolves), and the repo's own `shared/<name>` is ALSO a dangling symlink,
- * so there is nothing usable to restore from either direction.
- *
- * One builder serves both consumers because the actionable fact is
- * identical regardless of which branch reached it: the repo's own source is
- * unusable. Duplicating the string per consumer would give two wordings to
- * keep in step for no gain.
- *
- * Replaces two rows that were each wrong for this state, not merely terse:
- * `not synced (nothing in shared/)` is false, because the repo does carry an
- * entry (it is just broken), and `missing (run \`nomad pull\` to restore)`
- * names a command that cannot help, because `copySharedLinkPull` copies FROM
- * `shared/<name>`, and there is nothing there to copy. A WARN, never a FAIL:
- * `fail: false` leaves `process.exitCode` untouched, matching every other row
- * in this file that means "run a follow-up command".
- *
- * Reached from every platform, unlike the win32-only dangling row in
- * `commands.doctor.checks.repo.win32.ts`: both `classifySharedLink` and
- * `classifySymlinkTarget` run their ENOENT branch on posix and win32 alike.
- *
- * @param name - A shared name (`commands`, `rules`, ...).
- * @returns The WARN row naming the unusable repo source.
- */
-function repoSourceDanglingRow(name: string): SharedLinkClassification {
-  return {
-    line: `${yellow(warnGlyph)} ${name}: shared/${name} in the repo does not resolve, so there is nothing to restore from (remove shared/${name}, or restore what it points at)`,
-    fail: false,
-  };
-}
-
-/**
  * Resolve the display item and optional exit-code side-effect for a single
  * shared-link path. Returns `{ line, fail, children }` where `fail` true
  * means the caller should set `process.exitCode = 1`, and `children` (when
@@ -320,13 +206,14 @@ function classifySharedLink(name: string, p: string): SharedLinkClassification {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      if (sharedSourceDangling(name)) return repoSourceDanglingRow(name);
-      return repoHasSharedSource(name)
-        ? {
-            line: `${yellow(warnGlyph)} ${name}: missing (run \`nomad pull\` to restore)`,
-            fail: false,
-          }
-        : { line: `${dim(infoGlyph)} ${name}: not synced (nothing in shared/)`, fail: false };
+      return repoSourceRow(
+        name,
+        {
+          line: `${yellow(warnGlyph)} ${name}: missing (run \`nomad pull\` to restore)`,
+          fail: false,
+        },
+        { line: `${dim(infoGlyph)} ${name}: not synced (nothing in shared/)`, fail: false },
+      );
     }
     return { line: `${red(failGlyph)} ${name}: could not stat (${String(code)})`, fail: true };
   }
@@ -354,16 +241,17 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      if (sharedSourceDangling(name)) return repoSourceDanglingRow(name);
-      return repoHasSharedSource(name)
-        ? {
-            line: `${yellow(warnGlyph)} ${name}: broken symlink (target missing, run \`nomad pull\`)`,
-            fail: false,
-          }
-        : {
-            line: `${dim(infoGlyph)} ${name}: stale symlink (no longer in shared/, safe to remove)`,
-            fail: false,
-          };
+      return repoSourceRow(
+        name,
+        {
+          line: `${yellow(warnGlyph)} ${name}: broken symlink (target missing, run \`nomad pull\`)`,
+          fail: false,
+        },
+        {
+          line: `${dim(infoGlyph)} ${name}: stale symlink (no longer in shared/, safe to remove)`,
+          fail: false,
+        },
+      );
     }
     return {
       line: `${yellow(warnGlyph)} ${name}: symlink target unreadable (${String(code)})`,

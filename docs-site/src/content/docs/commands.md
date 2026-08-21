@@ -449,9 +449,15 @@ sync repo is itself broken, and the repo's own `shared/<name>` pointer also lead
 now warns that `shared/<name>` does not resolve and that there is nothing to restore from either
 side. This replaces two older lines that no longer fit that state: one saying the name was simply
 never shared, and one saying the dangling local symlink was stale and safe to remove, neither of
-which named the real problem, that the repo's own copy is unusable too. As with every other warning
-in this section, the exit code is untouched, so a script that only checks the exit code should still
-read the warning lines.
+which named the real problem, that the repo's own copy is unusable too. When the repo's entry
+cannot be read at all, rather than pointing nowhere, doctor now says exactly that and points you at
+its permissions, where it used to report the name as never shared, on a quiet informational line the
+default view hides. Also on every platform, when a real file or directory sits at
+`~/.claude/<name>` where a link into the sync repo belongs, the failing row only tells you to run
+`nomad adopt <name>` when that command could actually help; when the sync repo entry is unusable it
+names the entry to clear up first, since adopt would refuse. As with every other warning in this
+section, the exit code is untouched, so a script that only checks the exit code should still read
+the warning lines.
 A CRLF-guard
 check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
 wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or

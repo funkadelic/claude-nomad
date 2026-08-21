@@ -206,6 +206,44 @@ describe('reportSharedLinks dangling symlink detection', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('warns that shared/<name> could not be read, instead of claiming nothing is in shared/', async () => {
+    // The third repo-side state: shared/<name> is there, but the probe could
+    // not stat it. Reporting "not synced (nothing in shared/)" is a positive
+    // claim about a path nothing read, and it is an info row, so the default
+    // compact rendering strips it and the state becomes invisible. A warning
+    // survives that filter and says only what was observed.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: vi.fn((p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (typeof p === 'string' && p.includes(join('claude-nomad', 'shared'))) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.lstatSync(p, opts);
+        }),
+      };
+    });
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const name = SHARED_LINKS[0];
+    if (!name) throw new Error('SHARED_LINKS is empty');
+
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(`${name}:`));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('could not be read');
+    expect(row).not.toContain('nothing in shared/');
+    expect(row).not.toContain(infoGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
   it('warns the same when the host path is a dangling symlink through a dangling shared/<name> (classifySymlinkTarget ENOENT branch)', async () => {
     // The host symlink resolves one hop to shared/<name>, which is itself a
     // dangling symlink, so following it all the way still lands on nothing.
