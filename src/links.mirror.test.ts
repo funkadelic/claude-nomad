@@ -111,11 +111,20 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     writeFileSync(join(claudeDir, 'rules', 'private.md'), '# host-only\n');
 
     stubPlatform('win32');
+    // Regression pin: a genuinely-absent shared/<name> must stay
+    // silent, not just unwritten. The new dangling-target WARN is a THIRD
+    // outcome, and it must never fire for this, the original "not shared"
+    // outcome.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
     const { syncSharedLinksPush } = await import('./links.mirror.ts');
     syncSharedLinksPush({ projects: {} });
 
     expect(existsSync(join(sharedDir, 'rules'))).toBe(false);
     expect(readFileSync(join(claudeDir, 'rules', 'private.md'), 'utf8')).toBe('# host-only\n');
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said.some((line) => line.includes('rules'))).toBe(false);
   });
 
   it('does not publish a local-only file name the repo does not already share (the file-type half of the same contract)', async () => {
@@ -136,10 +145,18 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     writeFileSync(join(claudeDir, 'rules', 'existing.md'), '# host edit\n');
 
     stubPlatform('win32');
+    // Regression pin: a resolving shared/<name> keeps mirroring
+    // silently, exactly as before; the new dangling-target WARN must never
+    // fire for a name whose repo pointer actually resolves.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
     const { syncSharedLinksPush } = await import('./links.mirror.ts');
     syncSharedLinksPush({ projects: {} });
 
     expect(readFileSync(join(sharedDir, 'rules', 'existing.md'), 'utf8')).toBe('# host edit\n');
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said.some((line) => line.includes('rules'))).toBe(false);
   });
 
   it('skips a name whose local entry is still a live symlink (symlink-era guard)', async () => {
@@ -685,6 +702,31 @@ describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# repo copy\n');
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', TS);
     expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('dryRun true against a dangling shared/<name>: warns "would not be captured", no preview event, nothing written', async () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
+    symlinkSync(join(sharedDir, 'no-such-target'), join(sharedDir, 'CLAUDE.md'));
+    stubPlatform('win32');
+    const events: unknown[] = [];
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    stageLocalSharedEdits({ projects: {} }, TS, {
+      dryRun: true,
+      onPreview: (e) => events.push(e),
+    });
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('would not be captured');
+    // The name was never going to be mirrored this pass, so no preview event
+    // is emitted for it: the WARN and the event are mutually exclusive here.
+    expect(events).toEqual([]);
+    const linkStat = lstatSync(join(sharedDir, 'CLAUDE.md'));
+    expect(linkStat.isSymbolicLink()).toBe(true);
   });
 
   it('dryRun true with no sink: the log fallback line fires and still nothing is written', async () => {
