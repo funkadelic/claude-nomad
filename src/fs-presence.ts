@@ -10,7 +10,7 @@
  * `exit-codes.ts` and `user-abort.ts`: zero imports, safe for any other
  * module to import without creating a cycle.
  */
-import { existsSync, lstatSync } from 'node:fs';
+import { lstatSync, statSync } from 'node:fs';
 
 /**
  * The four states a path can be in, distinguishing "nothing here" from
@@ -38,6 +38,12 @@ export type PresenceState = 'absent' | 'resolves' | 'dangling' | 'unknown';
  *
  * `ELOOP` is deliberately absent: a symlink loop means an entry IS there, it
  * just cannot be followed, which is exactly the state `unknown` describes.
+ *
+ * The same three codes carry the same meaning for the follow probe in
+ * {@link classifyPresence}, one level further out: there the entry itself is
+ * known to exist, so "nothing can be at the target" means `dangling` rather
+ * than `absent`. One set, because the question ("could anything be there at
+ * all?") is the same one in both places.
  */
 const ABSENT_CODES = new Set(['ENOENT', 'ENOTDIR', 'ENAMETOOLONG']);
 
@@ -46,8 +52,18 @@ const ABSENT_CODES = new Set(['ENOENT', 'ENOTDIR', 'ENAMETOOLONG']);
  * to tell the four states apart.
  *
  * Follows `classifyName`'s idiom in `commands.eject.ts`: `lstatSync` first
- * (so a symlink is detected as an entry even when its target is gone), then
- * `existsSync` (which follows the link) decides whether that entry resolves.
+ * (so a symlink is detected as an entry even when its target is gone), then a
+ * following `statSync` decides whether that entry resolves.
+ *
+ * The follow probe is `statSync` rather than `existsSync` for the same reason
+ * the first probe dispatches on errno: `existsSync` answers `false` for EVERY
+ * failure, so a target that exists but cannot be reached (`EACCES` on a
+ * directory along its path, `ELOOP` on a symlink cycle) read as a broken
+ * pointer, and the three surfaces then told the user to remove the entry or
+ * restore what it points at, neither of which is the problem. Only the codes
+ * that mean nothing can be at the target report `dangling`; every other
+ * failure is `unknown`, which is the state whose wording claims nothing about
+ * where the pointer leads.
  *
  * The `unknown` fallback is deliberate and is the opposite direction from the
  * `lexists` copies already in this codebase (`commands.adopt.recover.ts`,
@@ -75,7 +91,12 @@ export function classifyPresence(p: string): PresenceState {
     return ABSENT_CODES.has(String((err as NodeJS.ErrnoException).code)) ? 'absent' : 'unknown';
   }
   if (stat === undefined) return 'absent';
-  return existsSync(p) ? 'resolves' : 'dangling';
+  try {
+    statSync(p);
+  } catch (err) {
+    return ABSENT_CODES.has(String((err as NodeJS.ErrnoException).code)) ? 'dangling' : 'unknown';
+  }
+  return 'resolves';
 }
 
 /**
