@@ -46,10 +46,16 @@ silent. Without that step the rebase-then-overlay sequence would overwrite an ed
 published yet. That mirror skips your Claude login and credential files, your per-host settings,
 your local history and stats cache, and any file that looks like a credential by name (a `.env`, a
 private key, a `.netrc`); see `src/config.never-sync.ts` for the exact lists. An ordinary directory
-of your own inside a shared name is carried, not skipped. If a skipped path is already sitting in the sync
-repo working tree, pull removes it when git does not track it (snapshotting it to the backup dir
-first, unless it is a symlink whose target is already gone and there is no content to save) and
-otherwise leaves it exactly as it found it, warning with the file name and the git command that
+of your own inside a shared name is carried, not skipped. A name whose `shared/<name>` counterpart
+is in the repo but leads nowhere, or cannot be read at all, is left alone too, and the pull warns
+naming it, so a local edit does not quietly stop being captured; the `nomad diff` and `--dry-run`
+previews say the same in read-only wording. A counterpart that leads nowhere asks you to remove the
+entry from the sync repo or restore what it points at, by hand; one that could not be read asks you
+to check its permissions there instead, because nothing established where it leads. If a
+skipped path is already sitting in the sync repo working tree, pull removes it when git does not
+track it (snapshotting it to the backup dir first, unless it is a symlink whose target is already
+gone and there is no content to save) and otherwise leaves it exactly as it found it, warning with
+the file name and the git command that
 clears it. Neither case fails the pull. The same pre-rebase step also removes a file
 you deleted from a shared directory from the repo, the same as deleting inside a symlinked directory
 already removes it on macOS or Linux, and the pull names that removal too, as a
@@ -116,6 +122,14 @@ repo does not carry yet stays on this machine until you run `nomad adopt <name>`
 macOS, Linux, and WSL2: publishing a directory to every other host is something you ask for, not a
 side effect of the next push. A name you have already shared is unaffected and keeps publishing your
 edits on every push.
+
+If a name you have already shared ends up with a broken pointer in the sync repo instead, for
+example because a machine that shared it no longer has the original, push skips writing through it
+exactly as it did before, but now also prints a warning naming the entry so your local edit does not
+silently stop reaching the repo. Push does not repair the broken pointer for you: remove it from the
+sync repo, or restore what it pointed at, by hand. An entry push could not read at all is skipped
+and named the same way, but the warning points at its permissions in the sync repo rather than at a
+broken pointer, because nothing checked where that entry leads. Neither warning fails the push.
 
 | Flag               | Description                                                                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -205,14 +219,32 @@ editor, so it never writes `path-map.json` itself. A credential-shaped `<name>` 
 outright, before the membership check and before `--dry-run` takes effect: `.env`, `id_rsa`,
 `credentials`, `*.pem`, `*.key` and similar shapes stop the command with an error and exit code 1,
 since adopting one would move a secret into the sync repo. On native Windows adopt recreates the
-name as a real copy instead of a symlink (the win32 copy-sync modality). There a name whose
-`shared/<name>` counterpart already exists is reported as already adopted and skipped (with a
-`nomad pull` hint to refresh the local copy), where macOS, Linux, and WSL2 would refuse with a
-would-clobber error. If that copy cannot be written, because another program has the path open or
-its permissions block it, adopt stops with an error naming the path and exits 1. The content itself
-is not lost: it is already in `shared/<name>`, and staged unless the same error also reports that
-staging failed. Run `nomad pull` to recreate the local copy before your next `nomad push`, because
-a push copies the local name back over `shared/<name>` first, so publishing while the local copy is
+name as a real copy instead of a symlink (the win32 copy-sync modality). There, a name whose
+`shared/<name>` counterpart already exists and resolves to something real is reported as already
+adopted and skipped (with a `nomad pull` hint to refresh the local copy), where macOS, Linux, and
+WSL2 would refuse with a would-clobber error. If that counterpart is there but does not lead to
+anything usable, either because it points at content another host shared that never reached this
+one, or because it could not be read at all, adopt now stops with an error naming the entry and
+exits 1, rather than the older behavior of reporting it already adopted and pointing you at a
+`nomad pull` that could not have fixed that state either. If the entry does not resolve, remove it
+from the sync repo or restore what it points at, then run `nomad adopt <name>` again. If it could
+not be read, check its permissions in the sync repo before you rerun the command. On macOS, Linux,
+and WSL2, the would-clobber refusal now says which of those three it found, so it never claims
+there is content in the way when all it saw was a pointer leading nowhere, or a path it could not
+read. The same state is also called out, on every platform, when your local `~/.claude/<name>` is
+already a symlink into the sync repo: adopt used to report a plain already-adopted success there
+too, and now prints a warning saying the link is broken, or, when the sync repo entry could not be
+read at all, that it could not tell whether the link works. A symlink with no `shared/<name>` in the
+repo behind it at all is called out the same way, since a link the sync repo has no counterpart for
+is not adopted either: remove `~/.claude/<name>` and run adopt again, or run `nomad pull` if another
+machine already shares the name. It still exits 0 in all three cases, since it is reporting rather
+than writing and nothing is silently lost. The warning goes to standard error with the same warning
+marker `nomad push` and `nomad doctor` use for that state, so all three surfaces are greppable the
+same way. If that copy cannot be written, because another program has the path open or its
+permissions block it, adopt stops with an error naming the path and exits 1. The content itself is
+not lost: it is already in `shared/<name>`, and staged unless the same error also reports that
+staging failed. Run `nomad pull` to recreate the local copy before your next `nomad push`, because a
+push copies the local name back over `shared/<name>` first, so publishing while the local copy is
 missing is what would undo the adopt. If the error says a partial copy is still at the path, hold
 off on `nomad sync` too, since it pushes in the same run: pull on its own first, and check it does
 not warn about that name again, because a pull that still cannot read the path warns and carries on
@@ -420,7 +452,24 @@ when any were excluded, the passing row carries a dim `(N never-synced path(s) n
 under `--verbose`. On native Windows, a real local copy the sync repo does not carry (never
 published, since `nomad push` no longer creates a repo counterpart on its own) gets its own info
 row naming `nomad adopt <name>`; it never fails the check and, like every other informational Links
-row, it is stripped from the default compact view and shown under `--verbose`.
+row, it is stripped from the default compact view and shown under `--verbose`. On native Windows,
+when a real local copy sits beside a `shared/<name>` counterpart that leads nowhere, doctor now
+warns and names the broken repo pointer, instead of the older behavior of reporting the name as
+never published and pointing you at `nomad adopt <name>`, a command that now refuses that exact
+state. On every platform, when your local entry is missing entirely, or your local symlink into the
+sync repo is itself broken, and the repo's own `shared/<name>` pointer also leads nowhere, doctor
+now warns that `shared/<name>` does not resolve and that there is nothing to restore from either
+side. This replaces two older lines that no longer fit that state: one saying the name was simply
+never shared, and one saying the dangling local symlink was stale and safe to remove, neither of
+which named the real problem, that the repo's own copy is unusable too. When the repo's entry
+cannot be read at all, rather than pointing nowhere, doctor now says exactly that and points you at
+its permissions, where it used to report the name as never shared, on a quiet informational line the
+default view hides. Also on every platform, when a real file or directory sits at
+`~/.claude/<name>` where a link into the sync repo belongs, the failing row only tells you to run
+`nomad adopt <name>` when that command could actually help; when the sync repo entry is unusable it
+names the entry to clear up first, since adopt would refuse. As with every other warning in this
+section, the exit code is untouched, so a script that only checks the exit code should still read
+the warning lines.
 A CRLF-guard
 check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
 wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or

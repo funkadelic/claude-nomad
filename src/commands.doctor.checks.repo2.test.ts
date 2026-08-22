@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -306,6 +306,9 @@ describe('classifySharedLink win32 real-copy branch', () => {
     stubPlatform(realPlatform);
     process.exitCode = 0;
     vi.restoreAllMocks();
+    // Pair every doMock with a doUnmock; restoreAllMocks does NOT clear a
+    // doMock registration, so it would otherwise leak into later files.
+    vi.doUnmock('node:fs');
     vi.resetModules();
     restoreEnv('HOME', originalHome);
     restoreEnv('USERPROFILE', originalUserProfile);
@@ -335,6 +338,83 @@ describe('classifySharedLink win32 real-copy branch', () => {
     expect(row).toContain('not published');
     expect(row).toContain(`nomad adopt ${name}`);
     expect(row).not.toContain('win32 copy-sync');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('warns that the repo pointer does not resolve when shared/<name> is a dangling symlink, on win32', async () => {
+    // The false negative this task closes: existsSync(sharedPath) follows the
+    // link and reads a dangling shared/<name> as absent, so the row used to
+    // claim the name was never published, naming `nomad adopt <name>` as the
+    // fix for a state that command now refuses at exit 1.
+    stubPlatform('win32');
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const claudeHomeDir = join(testHome, '.claude');
+    mkdirSync(claudeHomeDir, { recursive: true });
+    const name = SHARED_LINKS[0];
+    mkdirSync(join(claudeHomeDir, name), { recursive: true });
+    const sharedParent = join(testHome, 'claude-nomad', 'shared');
+    mkdirSync(sharedParent, { recursive: true });
+    symlinkSync(join(sharedParent, 'no-such-target'), join(sharedParent, name));
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('does not resolve in the repo');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('warns that shared/<name> could not be READ, not that it does not resolve, on win32', async () => {
+    // The other half of the same disjunction, and it must not borrow the
+    // dangling arm's words: nothing here read where the entry points, so
+    // "does not resolve" claims a read that never happened and the repair it
+    // prescribes may not be the problem. The dangling case above is reachable
+    // with a real filesystem; an unreadable one is not portably reproducible
+    // in CI, so the mock is what drives this operand through the real reporter
+    // rather than leaving it satisfied by line coverage alone.
+    stubPlatform('win32');
+    const claudeHomeDir = join(testHome, '.claude');
+    mkdirSync(claudeHomeDir, { recursive: true });
+    const sharedParent = join(testHome, 'claude-nomad', 'shared');
+    mkdirSync(sharedParent, { recursive: true });
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: vi.fn((p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (typeof p === 'string' && p.startsWith(sharedParent)) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.lstatSync(p, opts);
+        }),
+      };
+    });
+    vi.resetModules();
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    mkdirSync(join(claudeHomeDir, name), { recursive: true });
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    expect(row).toContain(warnGlyph);
+    expect(row).toContain('could not be read in the repo');
+    expect(row).toContain('check its permissions');
+    // Never the dangling arm's wording or its repair advice, and never the
+    // unpublished row either: the repo does carry the name, this host just
+    // could not read it, and that row names adopt, which would refuse.
+    expect(row).not.toContain('does not resolve');
+    expect(row).not.toContain('restore what it points at');
+    expect(row).not.toContain('not published');
     expect(process.exitCode).toBe(0);
   });
 

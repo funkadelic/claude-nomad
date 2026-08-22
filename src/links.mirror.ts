@@ -17,6 +17,7 @@ import {
 } from './config.ts';
 import { errorText } from './error-text.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras-sync.core.ts';
+import { classifyPresence, isUnusableTarget, type PresenceState } from './fs-presence.ts';
 import { gitProbe } from './git-probe.ts';
 import { log, warn } from './utils.ts';
 import { backupRepoWrite } from './utils.fs.ts';
@@ -199,12 +200,118 @@ function notShared(target: string): boolean {
  * `reconcileSharedLinksBeforePull` (no `dryRun` key), keeps the original
  * wording unchanged: its claim about a skipped write is accurate there.
  *
+ * A third outcome sits above the `notShared` check: `shared/<name>` can also
+ * be a symlink that does not resolve, distinct from both "not shared" (never
+ * published, silent, unchanged) and "shared" (mirrors normally, unchanged).
+ * The mirror still writes nothing for that case, `copyExtrasFiltered`'s
+ * behavior against a dangling destination is unproven, and probing the
+ * target and then writing through it anyway would open a TOCTOU window this
+ * phase deliberately does not open, but it always WARNs first, via
+ * {@link warnUnusableSharedTarget}, naming the name and the broken repo
+ * pointer. The existing WARN-on-unreadable-local-name arm just above this
+ * one is the direct precedent for both the wording shape and the "this WARN
+ * always fires, sink or no sink" rule.
+ *
+ * The compound state, a name whose LOCAL path is unreadable AND whose
+ * `shared/<name>` is ALSO unusable, reports the repo side. Both facts are
+ * true, but only one of them tells the user something they can act on from
+ * this host: the local path may become readable again on its own (a program
+ * closes the file), while an unusable repo entry stays unusable until someone
+ * fixes it in the sync repo, and it is the half that keeps this name from
+ * syncing even after the local side clears.
+ *
  * @param name - Shared name from `allSharedLinks`.
  * @param claude - `claudeHome()`, resolved once by the caller.
  * @param repo - `repoHome()`, resolved once by the caller.
  * @param policy - Repo-side treatment; see {@link SharedMirrorPolicy}.
  * @param opts - `dryRun`/`onPreview`; see {@link MirrorOpts}.
  */
+/**
+ * WARN that `shared/<name>` does not resolve to anything usable, so this
+ * mirror pass left it alone. Extracted out of {@link mirrorOneSharedName} so
+ * the message composition does not add to that function's own branch count
+ * against the cognitive-complexity gate, matching the extraction rationale
+ * already documented on that function.
+ *
+ * Neither arm ever says "symlink": a genuine stat error is not a symlink at
+ * all, and naming one specifically would misdescribe that case.
+ *
+ * The reason and remedy vary with `state` rather than being fixed text,
+ * because `isUnusableTarget` groups `dangling` and `unknown` for control flow
+ * only. Telling a user whose `shared/<name>` merely could not
+ * be read that it "does not resolve", and to restore what it points at, states
+ * a read that never happened and prescribes a repair for a break that may not
+ * exist. Doctor's `repoSourceUnusableRow` and adopt's `alreadySymlinkMessage`
+ * split the same way, which is what keeps the three surfaces telling one story
+ * about one on-disk state.
+ *
+ * @param name - Shared name from `allSharedLinks`.
+ * @param dryRun - `true` when the calling pass writes nothing regardless, so
+ *   the wording claims no write was skipped rather than one that already
+ *   would not have happened.
+ * @param state - The unusable state observed at `shared/<name>`.
+ */
+function warnUnusableSharedTarget(name: string, dryRun: boolean, state: PresenceState): void {
+  // Neither arm ends in terminal punctuation, so the wet path below can append
+  // its own trailing clause to either one.
+  const reason =
+    state === 'dangling'
+      ? `shared/${name} does not resolve to anything usable in the sync repo. Remove it, or restore what it points at`
+      : `shared/${name} could not be read in the sync repo, so whether it is usable could not be determined. Check its permissions there`;
+  if (dryRun) {
+    warn(`${name} would not be captured into shared/: ${reason}`);
+    return;
+  }
+  warn(`${name} was not captured into shared/ this run: ${reason}, then run \`nomad push\` again`);
+}
+
+/**
+ * WARN that `~/.claude/<name>` could not be read, so this mirror pass could
+ * promise nothing about it, instead of dropping the name without a word.
+ * Extracted out of {@link mirrorOneSharedName} for the same reason
+ * {@link warnUnusableSharedTarget} was: the branch set here would otherwise
+ * push that function past the cognitive-complexity gate.
+ *
+ * Silent for a name this pass would have skipped anyway, so an ACL change on
+ * `~/.claude/` reports the one name it actually cost rather than one line per
+ * shared name.
+ *
+ * The repo side is classified BEFORE that not-shared guard, because
+ * `notShared` is an `existsSync` probe that follows the link, so it reads an
+ * unusable `shared/<name>` as "never published" and returns silently. The
+ * compound state (local unreadable AND repo entry unusable) is the one where
+ * both halves are broken, which makes it the last one that should be quiet,
+ * and the repo half is what keeps the name from syncing even after the local
+ * side clears.
+ *
+ * @param name - Shared name from `allSharedLinks`.
+ * @param target - Absolute `shared/<name>` path in the repo.
+ * @param err - The error `lstatSync` threw for the local path.
+ * @param dryRun - `true` when the calling pass writes nothing regardless.
+ */
+function warnUnreadableLocalName(
+  name: string,
+  target: string,
+  err: unknown,
+  dryRun: boolean,
+): void {
+  const compoundState = classifyPresence(target);
+  if (isUnusableTarget(compoundState)) {
+    warnUnusableSharedTarget(name, dryRun, compoundState);
+    return;
+  }
+  if (notShared(target)) return;
+  if (dryRun) {
+    warn(
+      `${name} could not be read (${errorText(err)}), so nothing was captured for it and nothing was written. A pull that captures shared edits would skip it too. Check its permissions, or whether another program has it open`,
+    );
+    return;
+  }
+  warn(
+    `${name} could not be read (${errorText(err)}), so it was left out of shared/ this run. Check its permissions, or whether another program has it open`,
+  );
+}
+
 function mirrorOneSharedName(
   name: string,
   claude: string,
@@ -218,24 +325,16 @@ function mirrorOneSharedName(
   try {
     stat = lstatSync(localPath, { throwIfNoEntry: false });
   } catch (err) {
-    // Unreadable: the mirror cannot promise anything about it, so say so
-    // instead of dropping the name without a word. Silent for a name this pass
-    // would have skipped anyway, so an ACL change on ~/.claude/ reports the one
-    // name it actually cost rather than one line per shared name.
-    if (notShared(target)) return;
-    if (opts.dryRun === true) {
-      warn(
-        `${name} could not be read (${errorText(err)}), so nothing was captured for it and nothing was written. A pull that captures shared edits would skip it too. Check its permissions, or whether another program has it open`,
-      );
-      return;
-    }
-    warn(
-      `${name} could not be read (${errorText(err)}), so it was left out of shared/ this run. Check its permissions, or whether another program has it open`,
-    );
+    warnUnreadableLocalName(name, target, err, opts.dryRun === true);
     return;
   }
   if (stat === undefined) return; // absent: nothing to mirror
   if (stat.isSymbolicLink()) return; // symlink-era live link; defer to next pull
+  const targetState = classifyPresence(target);
+  if (isUnusableTarget(targetState)) {
+    warnUnusableSharedTarget(name, opts.dryRun === true, targetState);
+    return;
+  }
   if (notShared(target)) return; // repo does not share this name
 
   if (opts.dryRun === true) {

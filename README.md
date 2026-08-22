@@ -148,7 +148,13 @@ Native Windows cannot use symlinks, so claude-nomad keeps a real copy of your sh
 the repo before they fetch, so an edit you have not published yet is captured rather than
 overwritten. If a file cannot be read, because another program is holding it open or its permissions
 changed, the pull warns naming the file and the reason, skips that one file, and finishes everything
-else normally. Close whatever is holding it, or fix its permissions, and run again to pick it up.
+else normally. Close whatever is holding it, or fix its permissions, and run again to pick it up. A
+shared name whose copy in the sync repo is there but points at content that is not, usually because
+the machine that shared it no longer has the original, is skipped the same way, with a warning
+naming it. Remove it from the sync repo, or restore what it points at, by hand. A copy in the sync
+repo that cannot be read at all is skipped and named too, with its own wording: nothing checked
+where it leads, so the warning asks you to look at its permissions in the sync repo rather than to
+restore anything.
 
 ```powershell
 # 1. Install prerequisites and the CLI. (Using Scoop instead? scoop install gh gitleaks.)

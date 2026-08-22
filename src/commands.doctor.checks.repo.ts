@@ -26,6 +26,7 @@ import {
   classifyWin32Copy,
   type SharedLinkClassification,
 } from './commands.doctor.checks.repo.win32.ts';
+import { posixNonSymlinkRow, repoSourceRow } from './commands.doctor.checks.repo.source.ts';
 import { classifyRepoState, reasonForPartial } from './init.classify.ts';
 import { readJson, validatePathMapShape } from './utils.json.ts';
 
@@ -182,19 +183,6 @@ export function reportRepoState(section: DoctorSection): void {
 }
 
 /**
- * True when the repo has a `shared/<name>` source for this link. `applySharedLinks`
- * only creates a symlink when this source exists, so when it does NOT, an absent
- * or dangling link in `~/.claude/` is expected (nothing to sync), not a problem to
- * fix. Doctor uses this to downgrade those rows from a warn to an info note.
- *
- * @param name - A shared name (`commands`, `rules`, ...).
- * @returns Whether `shared/<name>` exists in the repo.
- */
-function repoHasSharedSource(name: string): boolean {
-  return existsSync(join(repoHome(), 'shared', name));
-}
-
-/**
  * Resolve the display item and optional exit-code side-effect for a single
  * shared-link path. Returns `{ line, fail, children }` where `fail` true
  * means the caller should set `process.exitCode = 1`, and `children` (when
@@ -218,12 +206,14 @@ function classifySharedLink(name: string, p: string): SharedLinkClassification {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      return repoHasSharedSource(name)
-        ? {
-            line: `${yellow(warnGlyph)} ${name}: missing (run \`nomad pull\` to restore)`,
-            fail: false,
-          }
-        : { line: `${dim(infoGlyph)} ${name}: not synced (nothing in shared/)`, fail: false };
+      return repoSourceRow(
+        name,
+        {
+          line: `${yellow(warnGlyph)} ${name}: missing (run \`nomad pull\` to restore)`,
+          fail: false,
+        },
+        { line: `${dim(infoGlyph)} ${name}: not synced (nothing in shared/)`, fail: false },
+      );
     }
     return { line: `${red(failGlyph)} ${name}: could not stat (${String(code)})`, fail: true };
   }
@@ -231,10 +221,7 @@ function classifySharedLink(name: string, p: string): SharedLinkClassification {
     if (process.platform === 'win32') {
       return classifyWin32Copy(name, p);
     }
-    return {
-      line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync); run \`nomad adopt ${name}\` to fix`,
-      fail: true,
-    };
+    return posixNonSymlinkRow(name);
   }
   return classifySymlinkTarget(name, p);
 }
@@ -254,15 +241,17 @@ function classifySymlinkTarget(name: string, p: string): { line: string; fail: b
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      return repoHasSharedSource(name)
-        ? {
-            line: `${yellow(warnGlyph)} ${name}: broken symlink (target missing, run \`nomad pull\`)`,
-            fail: false,
-          }
-        : {
-            line: `${dim(infoGlyph)} ${name}: stale symlink (no longer in shared/, safe to remove)`,
-            fail: false,
-          };
+      return repoSourceRow(
+        name,
+        {
+          line: `${yellow(warnGlyph)} ${name}: broken symlink (target missing, run \`nomad pull\`)`,
+          fail: false,
+        },
+        {
+          line: `${dim(infoGlyph)} ${name}: stale symlink (no longer in shared/, safe to remove)`,
+          fail: false,
+        },
+      );
     }
     return {
       line: `${yellow(warnGlyph)} ${name}: symlink target unreadable (${String(code)})`,
