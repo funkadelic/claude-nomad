@@ -110,9 +110,10 @@ function makeAdoptEnv(): Env {
     testHome,
     repoHome,
     claudeHome,
-    // Mirrors `nomadLockPath` in utils.lockfile.ts. Every refusal raised under
-    // the lock must leave this path gone; a `process.exit` on such a path
-    // would skip `cmdAdopt`'s `finally` and strand the lockfile.
+    // Mirrors `lockFilePath` in utils.lockfile.ts, which is private to that
+    // module. Every refusal raised under the lock must leave this path gone; a
+    // `process.exit` on such a path would skip `cmdAdopt`'s `finally` and
+    // strand the lockfile.
     lockPath: join(testHome, '.cache', 'claude-nomad', 'nomad.lock'),
     exitSpy,
     errorSpy,
@@ -487,6 +488,33 @@ describe('cmdAdopt (precondition matrix)', () => {
   // once shared/<name> had gone dangling. This is the resolving-target
   // regression: the local link points at a real, resolving shared/<name>, so
   // the message and exit code stay exactly as they were.
+  it.skipIf(isWin)(
+    'already-a-symlink branch: no shared/<name> at all is not adopted either',
+    async () => {
+      // The fourth state of the same branch. The local link resolves (to
+      // somewhere outside the repo), so it reaches the already-a-symlink arm,
+      // but the repo carries no counterpart, so the link cannot be pointing
+      // into the sync repo and "already adopted" would be the same false
+      // success the dangling and unreadable arms already removed.
+      addSharedDir(env, 'my-dir');
+      const elsewhere = join(env.testHome, 'somewhere-else');
+      mkdirSync(elsewhere, { recursive: true });
+      symlinkSync(elsewhere, join(env.claudeHome, 'my-dir'));
+      expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
+
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      expect(() => cmdAdopt('my-dir')).not.toThrow();
+
+      const out = errOutput(env);
+      expect(out).toContain('there is no shared/my-dir in the repo, so it is not adopted');
+      expect(out).not.toContain('already adopted');
+      // Reporting, not writing: the exit code and the index stay untouched,
+      // matching the other two unhealthy arms of this same branch.
+      expect(process.exitCode ?? 0).toBe(0);
+      expect(diffCached(env)).toBe('');
+    },
+  );
+
   it.skipIf(isWin)(
     'already-a-symlink branch: resolving shared/<name> keeps the unchanged message',
     async () => {
@@ -1582,56 +1610,62 @@ describe('cmdAdopt win32 copy-back branch', () => {
   // reportWin32AlreadyAdopted reach the same refusal: the host-absent branch
   // at the top of the function, and the real-copy-present branch below the
   // symlink arm.
-  it('win32: refuses a dangling shared/<name> at exit 1 when the host entry is absent', async () => {
-    addSharedDir(env, 'my-dir');
-    symlinkSync(
-      join(env.repoHome, 'shared', 'no-such-target'),
-      join(env.repoHome, 'shared', 'my-dir'),
-    );
+  it.skipIf(isWin)(
+    'win32: refuses a dangling shared/<name> at exit 1 when the host entry is absent',
+    async () => {
+      addSharedDir(env, 'my-dir');
+      symlinkSync(
+        join(env.repoHome, 'shared', 'no-such-target'),
+        join(env.repoHome, 'shared', 'my-dir'),
+      );
 
-    stubPlatform('win32');
-    const { cmdAdopt } = await import('./commands.adopt.ts');
-    const refusal = catchRefusal(() => cmdAdopt('my-dir'));
-    expect(refusal.message).toContain('does not resolve to anything usable');
-    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
+      stubPlatform('win32');
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      const refusal = catchRefusal(() => cmdAdopt('my-dir'));
+      expect(refusal.message).toContain('does not resolve to anything usable');
+      expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
 
-    // Zero mutation: shared/<name> is still the same dangling symlink, and
-    // nothing was staged.
-    expect(lstatSync(join(env.repoHome, 'shared', 'my-dir')).isSymbolicLink()).toBe(true);
-    expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
-    expect(existsSync(join(env.claudeHome, 'my-dir'))).toBe(false);
-    expect(diffCached(env)).toBe('');
-    // The load-bearing assertion: the refusal is raised while the nomad lock
-    // is held, so it has to unwind through `finally { releaseLock }` rather
-    // than terminate the process, where that block never runs.
-    expect(existsSync(env.lockPath)).toBe(false);
-  });
+      // Zero mutation: shared/<name> is still the same dangling symlink, and
+      // nothing was staged.
+      expect(lstatSync(join(env.repoHome, 'shared', 'my-dir')).isSymbolicLink()).toBe(true);
+      expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
+      expect(existsSync(join(env.claudeHome, 'my-dir'))).toBe(false);
+      expect(diffCached(env)).toBe('');
+      // The load-bearing assertion: the refusal is raised while the nomad lock
+      // is held, so it has to unwind through `finally { releaseLock }` rather
+      // than terminate the process, where that block never runs.
+      expect(existsSync(env.lockPath)).toBe(false);
+    },
+  );
 
-  it('win32: refuses a dangling shared/<name> at exit 1 when a real local copy is present', async () => {
-    addSharedDir(env, 'my-dir');
-    const linkPath = join(env.claudeHome, 'my-dir');
-    mkdirSync(linkPath, { recursive: true });
-    writeFileSync(join(linkPath, 'file.txt'), 'content\n');
-    symlinkSync(
-      join(env.repoHome, 'shared', 'no-such-target'),
-      join(env.repoHome, 'shared', 'my-dir'),
-    );
+  it.skipIf(isWin)(
+    'win32: refuses a dangling shared/<name> at exit 1 when a real local copy is present',
+    async () => {
+      addSharedDir(env, 'my-dir');
+      const linkPath = join(env.claudeHome, 'my-dir');
+      mkdirSync(linkPath, { recursive: true });
+      writeFileSync(join(linkPath, 'file.txt'), 'content\n');
+      symlinkSync(
+        join(env.repoHome, 'shared', 'no-such-target'),
+        join(env.repoHome, 'shared', 'my-dir'),
+      );
 
-    stubPlatform('win32');
-    const { cmdAdopt } = await import('./commands.adopt.ts');
-    const refusal = catchRefusal(() => cmdAdopt('my-dir'));
-    expect(refusal.message).toContain('does not resolve to anything usable');
-    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
+      stubPlatform('win32');
+      const { cmdAdopt } = await import('./commands.adopt.ts');
+      const refusal = catchRefusal(() => cmdAdopt('my-dir'));
+      expect(refusal.message).toContain('does not resolve to anything usable');
+      expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
 
-    // Zero mutation: shared/<name> is still dangling, the host entry is
-    // untouched, and nothing was staged.
-    expect(lstatSync(join(env.repoHome, 'shared', 'my-dir')).isSymbolicLink()).toBe(true);
-    expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
-    expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
-    expect(readFileSync(join(linkPath, 'file.txt'), 'utf8')).toBe('content\n');
-    expect(diffCached(env)).toBe('');
-    expect(existsSync(env.lockPath)).toBe(false);
-  });
+      // Zero mutation: shared/<name> is still dangling, the host entry is
+      // untouched, and nothing was staged.
+      expect(lstatSync(join(env.repoHome, 'shared', 'my-dir')).isSymbolicLink()).toBe(true);
+      expect(existsSync(join(env.repoHome, 'shared', 'my-dir'))).toBe(false);
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(linkPath, 'file.txt'), 'utf8')).toBe('content\n');
+      expect(diffCached(env)).toBe('');
+      expect(existsSync(env.lockPath)).toBe(false);
+    },
+  );
 
   it('win32: refuses an unreadable shared/<name>, not only an unresolving one', async () => {
     // The refusal guard covers both states the classifier calls unusable.

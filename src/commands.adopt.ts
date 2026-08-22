@@ -210,13 +210,15 @@ function reportWin32AlreadyAdopted(name: string, sharedTarget: string): boolean 
  * this branch is reached on EVERY platform, unlike the win32-gated refusal
  * above.
  *
- * Three outcomes rather than two, because only one of the three is a success
- * claim. A `dangling` target supports the stronger "the link is broken"
- * wording; an `unknown` one does not, so it gets its own message naming what
- * could not be determined instead of falling through to the success message
- * about a repo entry this process could not read. `healthy` is returned
- * beside the text so the caller can pick its stream and glyph without
- * matching a substring of a message this function owns.
+ * One outcome per state, because only `resolves` is a success claim. A
+ * `dangling` target supports the stronger "the link is broken" wording; an
+ * `unknown` one does not, so it gets its own message naming what could not be
+ * determined rather than a claim about a repo entry this process could not
+ * read; and `absent` means the repo carries no counterpart at all, so this
+ * symlink cannot be pointing into the sync repo and calling it adopted would
+ * be the same false success in a fourth state. `healthy` is returned beside
+ * the text so the caller can pick its stream and glyph without matching a
+ * substring of a message this function owns.
  *
  * @param name The name being adopted, for the message.
  * @param sharedTarget Repo-side `shared/<name>` path to probe.
@@ -240,6 +242,15 @@ function alreadySymlinkMessage(
       text:
         `${name}: already a symlink, but shared/${name} could not be read, so whether the link ` +
         `works could not be determined. Check its permissions in the sync repo`,
+      healthy: false,
+    };
+  }
+  if (state === 'absent') {
+    return {
+      text:
+        `${name}: already a symlink, but there is no shared/${name} in the repo, so it is not ` +
+        `adopted. Remove ~/.claude/${name} and re-run adopt, or run \`nomad pull\` if another ` +
+        `host shares it`,
       healthy: false,
     };
   }
