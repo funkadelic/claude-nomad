@@ -46,10 +46,14 @@ silent. Without that step the rebase-then-overlay sequence would overwrite an ed
 published yet. That mirror skips your Claude login and credential files, your per-host settings,
 your local history and stats cache, and any file that looks like a credential by name (a `.env`, a
 private key, a `.netrc`); see `src/config.never-sync.ts` for the exact lists. An ordinary directory
-of your own inside a shared name is carried, not skipped. If a skipped path is already sitting in the sync
-repo working tree, pull removes it when git does not track it (snapshotting it to the backup dir
-first, unless it is a symlink whose target is already gone and there is no content to save) and
-otherwise leaves it exactly as it found it, warning with the file name and the git command that
+of your own inside a shared name is carried, not skipped. A name whose `shared/<name>` counterpart
+is in the repo but leads nowhere is left alone too, and the pull warns naming it, so a local edit
+does not quietly stop being captured; the `nomad diff` and `--dry-run` previews say the same in
+read-only wording. Remove the entry from the sync repo, or restore what it points at, by hand. If a
+skipped path is already sitting in the sync repo working tree, pull removes it when git does not
+track it (snapshotting it to the backup dir first, unless it is a symlink whose target is already
+gone and there is no content to save) and otherwise leaves it exactly as it found it, warning with
+the file name and the git command that
 clears it. Neither case fails the pull. The same pre-rebase step also removes a file
 you deleted from a shared directory from the repo, the same as deleting inside a symlinked directory
 already removes it on macOS or Linux, and the pull names that removal too, as a
