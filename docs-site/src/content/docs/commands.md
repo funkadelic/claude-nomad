@@ -420,66 +420,68 @@ every warning and failure and closes with a one-line verdict (`✓ healthy`, or 
 counts), so the last line always answers "am I healthy?". By default the report is compact: only the
 version line, the Environment repo-state line, any section carrying a warning or failure (passing
 rows removed), and the Summary are shown. Add `--verbose` (alias `--all`, `-v`) to print the full
-per-check tree, including everything that passed. The exit code is identical in both modes. Includes a release-version staleness
-check (an info line says when the latest version could not be determined, so a skipped check is
-not mistaken for "current"), a Hook targets check that fails (`✗`, exit 1) when `settings.json`
-references a hook command whose script under `~/.claude/` is missing on this host, a wedged-repo
-check that fails (`✗`, exit 1) in two cases: the sync repo is stuck mid-rebase or mid-merge from
-a previous failed pull, OR the git index has unmerged entries with no active rebase or merge (the
-sibling state where the operation was torn down but the index was left stuck); both FAIL lines
-carry a `nomad pull --force-remote` recovery hint. A separate `⚠︎` warn fires when an orphaned
-autostash entry is found in `git stash list` (a stash entry left by a `--autostash` rebase that
-was interrupted before completion); the warn is non-blocking and points at the `git stash pop`
-or `git stash drop` runbook. Other `⚠︎`-only checks: gitleaks version drift; on a private GitHub
-repo, re-enabled Actions; optional-dependency presence (`gh` and the curl-or-wget HTTP fetcher);
-a backups-cache size/count nudge toward `nomad clean --backups`; an ESM/CommonJS hook-scope
-mismatch; a Node-engine floor check; a hook command that runs a Node script under a synced
-(symlinked) directory without `--preserve-symlinks-main`; and, when `NOMAD_HOST` is unset on a repo
-that already configures other hosts, a hostname-derived host key that matches neither a
+per-check tree, including everything that passed. The exit code is identical in both modes. Includes
+a release-version staleness check (an info line says when the latest version could not be
+determined, so a skipped check is not mistaken for "current"), a Hook targets check that fails (`✗`,
+exit 1) when `settings.json` references a hook command whose script under `~/.claude/` is missing on
+this host, a wedged-repo check that fails (`✗`, exit 1) in two cases: the sync repo is stuck
+mid-rebase or mid-merge from a previous failed pull, OR the git index has unmerged entries with no
+active rebase or merge (the sibling state where the operation was torn down but the index was left
+stuck); both FAIL lines carry a `nomad pull --force-remote` recovery hint. A separate `⚠︎` warn
+fires when an orphaned autostash entry is found in `git stash list` (a stash entry left by a
+`--autostash` rebase that was interrupted before completion); the warn is non-blocking and points at
+the `git stash pop` or `git stash drop` runbook. Other `⚠︎`-only checks: gitleaks version drift; on
+a private GitHub repo, re-enabled Actions; optional-dependency presence (`gh` and the curl-or-wget
+HTTP fetcher); a backups-cache size/count nudge toward `nomad clean --backups`; an ESM/CommonJS
+hook-scope mismatch; a Node-engine floor check; a hook command that runs a Node script under a
+synced (symlinked) directory without `--preserve-symlinks-main`; and, when `NOMAD_HOST` is unset on
+a repo that already configures other hosts, a hostname-derived host key that matches neither a
 `hosts/<NOMAD_HOST>.json` override nor a path-map entry (the silent-misalignment nudge: per-host
 settings and session sync key off this label, so set `NOMAD_HOST` to the label this host should use
-when the warning fires; a single-host or fresh repo stays silent). The Environment section prints
-an informational sync-modality row (`symlink (posix)` or `copy-sync`). On native Windows that row
-also names when a local edit reaches the repo (the next pull or push, since the host-side and
-repo-side files are distinct there) and is kept in the default compact view; the posix row stays
-verbose-only. On native Windows, the per-name shared-link row (the same one covering `CLAUDE.md`,
-`commands/`, `rules/`, and any `sharedDirs` entries) also byte-compares the real copy against its
-`shared/` counterpart and warns (`⚠︎`, exit code untouched) with the diverging files listed when it
-has drifted, instead of reporting it healthy on presence alone; a matching copy still reads `✓`.
-Paths the mirror will never sync (now the narrower credential and per-host-settings floor) are
-thrown out of that comparison rather than reported as drift, since no command could reconcile them;
-when any were excluded, the passing row carries a dim `(N never-synced path(s) not compared)` note
-under `--verbose`. On native Windows, a real local copy the sync repo does not carry (never
-published, since `nomad push` no longer creates a repo counterpart on its own) gets its own info
-row naming `nomad adopt <name>`; it never fails the check and, like every other informational Links
-row, it is stripped from the default compact view and shown under `--verbose`. On native Windows,
-when a real local copy sits beside a `shared/<name>` counterpart that leads nowhere, doctor now
-warns and names the broken repo pointer, instead of the older behavior of reporting the name as
-never published and pointing you at `nomad adopt <name>`, a command that now refuses that exact
-state. On every platform, when your local entry is missing entirely, or your local symlink into the
-sync repo is itself broken, and the repo's own `shared/<name>` pointer also leads nowhere, doctor
-now warns that `shared/<name>` does not resolve and that there is nothing to restore from either
-side. This replaces two older lines that no longer fit that state: one saying the name was simply
-never shared, and one saying the dangling local symlink was stale and safe to remove, neither of
-which named the real problem, that the repo's own copy is unusable too. When the repo's entry
-cannot be read at all, rather than pointing nowhere, doctor now says exactly that and points you at
-its permissions, where it used to report the name as never shared, on a quiet informational line the
-default view hides. Also on every platform, when a real file or directory sits at
-`~/.claude/<name>` where a link into the sync repo belongs, the failing row only tells you to run
-`nomad adopt <name>` when that command could actually help; when the sync repo entry is unusable it
-names the entry to clear up first, since adopt would refuse. As with every other warning in this
-section, the exit code is untouched, so a script that only checks the exit code should still read
-the warning lines.
-A CRLF-guard
-check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the
-wording names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or
-unset). On native Windows two further warn-only rows check long-path support (`git config
-core.longpaths` and the OS `LongPathsEnabled` registry value), since deep encoded session paths
-under `~/.claude/projects/` can exceed the legacy 260-character `MAX_PATH`; the
-gitleaks-missing install hint also switches to `winget`/`scoop` there. The Path map section lists both
-the
-projects mapped for this host and any local project directories with no path-map entry (what
-`nomad push` counts as "unmapped"; they are left alone in both directions).
+when the warning fires; a single-host or fresh repo stays silent). The Environment section prints an
+informational sync-modality row (`symlink (posix)` or `copy-sync`). On native Windows that row also
+names when a local edit reaches the repo (the next pull or push, since the host-side and repo-side
+files are distinct there) and is kept in the default compact view; the posix row stays verbose-only.
+On native Windows, the per-name shared-link row (the same one covering `CLAUDE.md`, `commands/`,
+`rules/`, and any `sharedDirs` entries) also byte-compares the real copy against its `shared/`
+counterpart and warns (`⚠︎`, exit code untouched) with the diverging files listed when it has
+drifted, instead of reporting it healthy on presence alone; a matching copy still reads `✓`. Paths
+the mirror will never sync (now the narrower credential and per-host-settings floor) are thrown out
+of that comparison rather than reported as drift, since no command could reconcile them; when any
+were excluded, the passing row carries a dim `(N never-synced path(s) not compared)` note under
+`--verbose`. On native Windows, a real local copy the sync repo does not carry (never published,
+since `nomad push` no longer creates a repo counterpart on its own) gets its own info row naming
+`nomad adopt <name>`; it never fails the check and, like every other informational Links row, it is
+stripped from the default compact view and shown under `--verbose`. On native Windows, when a real
+local copy sits beside a `shared/<name>` counterpart that leads nowhere, doctor now warns and names
+the broken repo pointer, instead of the older behavior of reporting the name as never published and
+pointing you at `nomad adopt <name>`, a command that now refuses that exact state. On every
+platform, when your local entry is missing entirely, or your local symlink into the sync repo is
+itself broken, and the repo's own `shared/<name>` pointer also leads nowhere, doctor now warns that
+`shared/<name>` does not resolve and that there is nothing to restore from either side. This
+replaces two older lines that no longer fit that state: one saying the name was simply never shared,
+and one saying the dangling local symlink was stale and safe to remove, neither of which named the
+real problem, that the repo's own copy is unusable too. When the repo's entry cannot be read at all,
+rather than pointing nowhere, doctor now says exactly that and points you at its permissions, where
+it used to report the name as never shared, on a quiet informational line the default view hides.
+Also on every platform, when a real file or directory sits at `~/.claude/<name>` where a link into
+the sync repo belongs, the failing row only tells you to run `nomad adopt <name>` when that command
+could actually help. When the sync repo entry is unusable it names the entry to clear up first,
+since adopt would refuse. When the sync repo entry already holds content, adopt refuses for a
+different and deliberate reason, that it will not choose between two copies of the name that have
+drifted apart on different machines, so the row says so and names both ways out: compare the two,
+then either remove the local copy and run `nomad pull`, or remove the repo entry and run `nomad
+adopt <name>`. Either direction discards one copy, which is why nothing does it for you. As with
+every other warning in this section, the exit code is untouched, so a script that only checks the
+exit code should still read the warning lines. A CRLF-guard check on every platform warns when the
+sync repo has no `.gitattributes` `* -text` line (the wording names whether `core.autocrlf` is
+actively converting, explicitly `false` on this host, or unset). On native Windows two further
+warn-only rows check long-path support (`git config core.longpaths` and the OS `LongPathsEnabled`
+registry value), since deep encoded session paths under `~/.claude/projects/` can exceed the legacy
+260-character `MAX_PATH`; the gitleaks-missing install hint also switches to `winget`/`scoop` there.
+The Path map section lists both the projects mapped for this host and any local project directories
+with no path-map entry (what `nomad push` counts as "unmapped"; they are left alone in both
+directions).
 
 | Flag                | Description                                                                                                                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
