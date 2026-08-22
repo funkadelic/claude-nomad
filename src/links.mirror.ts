@@ -356,6 +356,43 @@ function mirrorOneSharedName(
 }
 
 /**
+ * WARN once that the `shared/` directory itself is unusable, so this mirror
+ * pass left EVERY configured name alone.
+ *
+ * Separate wording from {@link warnUnusableSharedTarget} on purpose. That one
+ * names a single shared name, and when the parent is what broke it fired once
+ * per configured name, so a reader saw a column of individually-accurate lines
+ * and still could not tell one broken name from a broken directory. This arm
+ * names `shared/` itself and says the whole pass was skipped, which is the
+ * fact the per-name wording could not express.
+ *
+ * Splits `dangling` from `unknown` for the same reason the per-name warning
+ * does: a directory that merely could not be READ has not been shown to be
+ * broken, so prescribing "restore what it points at" would name a repair for a
+ * break that may not exist.
+ *
+ * @param dryRun - `true` when the calling pass writes nothing regardless, so
+ *   the wording claims no write was skipped rather than one that already would
+ *   not have happened.
+ * @param state - The unusable state observed at `shared/`.
+ */
+function warnUnusableSharedDir(dryRun: boolean, state: PresenceState): void {
+  // Neither arm ends in terminal punctuation, so the wet path below can append
+  // its own trailing clause to either one.
+  const reason =
+    state === 'dangling'
+      ? 'shared/ does not resolve to anything usable in the sync repo. Remove it, or restore what it points at'
+      : 'shared/ could not be read in the sync repo, so whether it is usable could not be determined. Check its permissions there';
+  if (dryRun) {
+    warn(`no shared name would be captured into shared/: ${reason}`);
+    return;
+  }
+  warn(
+    `no shared name was captured into shared/ this run: ${reason}, then run \`nomad push\` again`,
+  );
+}
+
+/**
  * Shared win32 host-to-repo mirror driving both `syncSharedLinksPush` and
  * `stageLocalSharedEdits`. The platform and null-map gates live here so both
  * callers can invoke their wrapper unconditionally with no branch of their own,
@@ -374,6 +411,17 @@ function mirrorSharedNames(
   if (map === null) return;
   const claude = claudeHome();
   const repo = repoHome();
+  // Probe the shared/ PARENT once before the loop. When it is unusable every
+  // per-name probe below fails closed to `unknown`, so without this the pass
+  // emitted one warning per configured name for a single broken directory.
+  // Only `dangling`/`unknown` short-circuit: `absent` is NOT unusable, and a
+  // repo with no shared/ directory must keep falling through to the per-name
+  // `notShared` skip, which is deliberately silent.
+  const sharedState = classifyPresence(join(repo, 'shared'));
+  if (isUnusableTarget(sharedState)) {
+    warnUnusableSharedDir(opts.dryRun === true, sharedState);
+    return;
+  }
   const linkNames = opts.linkNames ?? allSharedLinks(map);
   for (const name of linkNames) {
     mirrorOneSharedName(name, claude, repo, policy, opts);
