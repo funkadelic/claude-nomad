@@ -463,25 +463,26 @@ replaces two older lines that no longer fit that state: one saying the name was 
 and one saying the dangling local symlink was stale and safe to remove, neither of which named the
 real problem, that the repo's own copy is unusable too. When the repo's entry cannot be read at all,
 rather than pointing nowhere, doctor now says exactly that and points you at its permissions, where
-it used to report the name as never shared, on a quiet informational line the default view hides.
-Also on every platform, when a real file or directory sits at `~/.claude/<name>` where a link into
+it used to report the name as never shared, on a quiet informational line the default view hides. On
+macOS, Linux, and WSL2, when a real file or directory sits at `~/.claude/<name>` where a link into
 the sync repo belongs, the failing row only tells you to run `nomad adopt <name>` when that command
 could actually help. When the sync repo entry is unusable it names the entry to clear up first,
 since adopt would refuse. When the sync repo entry already holds content, adopt refuses for a
 different and deliberate reason, that it will not choose between two copies of the name that have
 drifted apart on different machines, so the row says so and names both ways out: compare the two,
 then either remove the local copy and run `nomad pull`, or remove the repo entry and run `nomad
-adopt <name>`. Either direction discards one copy, which is why nothing does it for you. As with
-every other warning in this section, the exit code is untouched, so a script that only checks the
-exit code should still read the warning lines. A CRLF-guard check on every platform warns when the
-sync repo has no `.gitattributes` `* -text` line (the wording names whether `core.autocrlf` is
-actively converting, explicitly `false` on this host, or unset). On native Windows two further
-warn-only rows check long-path support (`git config core.longpaths` and the OS `LongPathsEnabled`
-registry value), since deep encoded session paths under `~/.claude/projects/` can exceed the legacy
-260-character `MAX_PATH`; the gitleaks-missing install hint also switches to `winget`/`scoop` there.
-The Path map section lists both the projects mapped for this host and any local project directories
-with no path-map entry (what `nomad push` counts as "unmapped"; they are left alone in both
-directions).
+adopt <name>`. Either direction discards one copy, which is why nothing does it for you. Native
+Windows reports the same situation through its own copy-model rows, which list the files that
+differ. All of these are failing rows, so they do set the exit code; the warning rows above leave it
+untouched, so a script that only checks the exit code should still read those lines. A CRLF-guard
+check on every platform warns when the sync repo has no `.gitattributes` `* -text` line (the wording
+names whether `core.autocrlf` is actively converting, explicitly `false` on this host, or unset). On
+native Windows two further warn-only rows check long-path support (`git config core.longpaths` and
+the OS `LongPathsEnabled` registry value), since deep encoded session paths under
+`~/.claude/projects/` can exceed the legacy 260-character `MAX_PATH`; the gitleaks-missing install
+hint also switches to `winget`/`scoop` there. The Path map section lists both the projects mapped
+for this host and any local project directories with no path-map entry (what `nomad push` counts as
+"unmapped"; they are left alone in both directions).
 
 | Flag                | Description                                                                                                                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

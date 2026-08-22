@@ -4,7 +4,7 @@
  * the whole thing.
  */
 
-import { existsSync, lstatSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -393,6 +393,57 @@ function warnUnusableSharedDir(dryRun: boolean, state: PresenceState): void {
 }
 
 /**
+ * Whether `p` resolves to a directory, answered without throwing.
+ *
+ * Only ever called for a path {@link classifyPresence} already reported as
+ * `resolves`, so the `statSync` is expected to succeed; the guard is for the
+ * window between the two probes, and treats a path it can no longer read as
+ * "not a directory" so the caller reports rather than proceeding into a loop
+ * that cannot work.
+ *
+ * @param p - Absolute path, already known to resolve.
+ * @returns `true` only when `p` is a directory.
+ */
+function resolvesToDirectory(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * WARN once that `shared/` is not a directory at all, so this mirror pass had
+ * nowhere to write and left every configured name alone.
+ *
+ * Distinct from {@link warnUnusableSharedDir}: that one answers a pointer that
+ * is broken or unreadable, while this answers a `shared/` that resolves
+ * perfectly well and is simply the wrong KIND of thing, usually a regular file
+ * or a symlink to one. The remedy differs too, so the wording does.
+ *
+ * This state was previously silent in both directions, and worse than the
+ * repeated warning that motivated the parent probe: every per-name probe under
+ * a non-directory parent raises `ENOTDIR`, which the presence leaf reports as
+ * `absent`, so `notShared` skipped each name without a word and a whole push
+ * mirrored nothing while saying nothing.
+ *
+ * @param dryRun - `true` when the calling pass writes nothing regardless.
+ */
+function warnSharedNotADirectory(dryRun: boolean): void {
+  // Neither arm ends in terminal punctuation, so the wet path below can append
+  // its own trailing clause to either one.
+  const reason =
+    'shared/ in the sync repo is not a directory, so there is nowhere to capture names into. Replace it with the shared/ directory the repo expects';
+  if (dryRun) {
+    warn(`no shared name would be captured into shared/: ${reason}`);
+    return;
+  }
+  warn(
+    `no shared name was captured into shared/ this run: ${reason}, then run \`nomad push\` again`,
+  );
+}
+
+/**
  * Shared win32 host-to-repo mirror driving both `syncSharedLinksPush` and
  * `stageLocalSharedEdits`. The platform and null-map gates live here so both
  * callers can invoke their wrapper unconditionally with no branch of their own,
@@ -417,9 +468,19 @@ function mirrorSharedNames(
   // Only `dangling`/`unknown` short-circuit: `absent` is NOT unusable, and a
   // repo with no shared/ directory must keep falling through to the per-name
   // `notShared` skip, which is deliberately silent.
-  const sharedState = classifyPresence(join(repo, 'shared'));
+  const sharedPath = join(repo, 'shared');
+  const sharedState = classifyPresence(sharedPath);
   if (isUnusableTarget(sharedState)) {
     warnUnusableSharedDir(opts.dryRun === true, sharedState);
+    return;
+  }
+  // A `shared/` that resolves can still be the wrong KIND of entry. A regular
+  // file there raises ENOTDIR on every per-name probe, which the presence leaf
+  // reports as `absent`, so each name used to be skipped in total silence.
+  // `absent` itself is left alone: a repo with no shared/ yet simply shares
+  // nothing, which is not a fault to report.
+  if (sharedState === 'resolves' && !resolvesToDirectory(sharedPath)) {
+    warnSharedNotADirectory(opts.dryRun === true);
     return;
   }
   const linkNames = opts.linkNames ?? allSharedLinks(map);
