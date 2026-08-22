@@ -226,24 +226,25 @@ WSL2 would refuse with a would-clobber error. If that counterpart is there but d
 anything usable, either because it points at content another host shared that never reached this
 one, or because it could not be read at all, adopt now stops with an error naming the entry and
 exits 1, rather than the older behavior of reporting it already adopted and pointing you at a
-`nomad pull` that could not have fixed that state either. Remove the entry from the sync repo, or
-restore what it points at, then run `nomad adopt <name>` again. On macOS, Linux, and WSL2, the
-would-clobber refusal now says which of those three it found, so it never claims there is content
-in the way when all it saw was a pointer leading nowhere, or a path it could not read. The same
-state is also called out, on every platform, when your local `~/.claude/<name>` is already a symlink
-into the sync repo: adopt used to report a plain already-adopted success there too, and now prints a
-warning saying the link is broken, or, when the sync repo entry could not be read at all, that it
-could not tell whether the link works. A symlink with no `shared/<name>` in the repo behind it at
-all is called out the same way, since a link the sync repo has no counterpart for is not adopted
-either: remove `~/.claude/<name>` and run adopt again, or run `nomad pull` if another machine
-already shares the name. It still exits 0 in all three cases, since it is reporting rather
+`nomad pull` that could not have fixed that state either. If the entry does not resolve, remove it
+from the sync repo or restore what it points at, then run `nomad adopt <name>` again. If it could
+not be read, check its permissions in the sync repo before you rerun the command. On macOS, Linux,
+and WSL2, the would-clobber refusal now says which of those three it found, so it never claims
+there is content in the way when all it saw was a pointer leading nowhere, or a path it could not
+read. The same state is also called out, on every platform, when your local `~/.claude/<name>` is
+already a symlink into the sync repo: adopt used to report a plain already-adopted success there
+too, and now prints a warning saying the link is broken, or, when the sync repo entry could not be
+read at all, that it could not tell whether the link works. A symlink with no `shared/<name>` in the
+repo behind it at all is called out the same way, since a link the sync repo has no counterpart for
+is not adopted either: remove `~/.claude/<name>` and run adopt again, or run `nomad pull` if another
+machine already shares the name. It still exits 0 in all three cases, since it is reporting rather
 than writing and nothing is silently lost. The warning goes to standard error with the same warning
 marker `nomad push` and `nomad doctor` use for that state, so all three surfaces are greppable the
-same way. If that copy cannot be written, because another program has the path open or
-its permissions block it, adopt stops with an error naming the path and exits 1. The content itself
-is not lost: it is already in `shared/<name>`, and staged unless the same error also reports that
-staging failed. Run `nomad pull` to recreate the local copy before your next `nomad push`, because
-a push copies the local name back over `shared/<name>` first, so publishing while the local copy is
+same way. If that copy cannot be written, because another program has the path open or its
+permissions block it, adopt stops with an error naming the path and exits 1. The content itself is
+not lost: it is already in `shared/<name>`, and staged unless the same error also reports that
+staging failed. Run `nomad pull` to recreate the local copy before your next `nomad push`, because a
+push copies the local name back over `shared/<name>` first, so publishing while the local copy is
 missing is what would undo the adopt. If the error says a partial copy is still at the path, hold
 off on `nomad sync` too, since it pushes in the same run: pull on its own first, and check it does
 not warn about that name again, because a pull that still cannot read the path warns and carries on
