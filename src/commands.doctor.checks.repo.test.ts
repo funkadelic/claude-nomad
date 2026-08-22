@@ -180,6 +180,45 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
       expect(process.exitCode).toBe(1);
     },
   );
+
+  it.skipIf(isWin)(
+    'does not recommend adopt when shared/<name> already holds content, because adopt refuses that state',
+    async () => {
+      // The collision, and the one repo-side state where adopt's refusal is
+      // not a defect. A real never-symlinked local entry sits beside a live
+      // shared/<name> carrying content adopted from another host. Doctor used
+      // to answer this with the same plain `run `nomad adopt <name>` to fix`
+      // row the case above gets, while assertNoClobber refuses it with
+      // `already exists; would clobber`, so the command doctor named could not
+      // run. Refusing is the SAFE answer here (the copies diverged
+      // independently, so moving either over the other destroys one), which is
+      // why this row hands the choice back rather than naming a command.
+      //
+      // The case above is the companion pin: with NO repo-side entry, adopt
+      // has room for the name and the plain recommendation stays correct.
+      writeFileSync(join(env.testHome, '.claude', 'CLAUDE.md'), '# local copy\n');
+      writeFileSync(
+        join(env.testHome, 'claude-nomad', 'shared', 'CLAUDE.md'),
+        '# content from another host\n',
+      );
+      const { cmdDoctor } = await import('./commands.doctor.ts');
+      cmdDoctor({ verbose: true });
+      const out = joinedLog(env.logSpy);
+
+      expect(out).toContain(
+        'CLAUDE.md: NOT a symlink (blocks sync), and shared/CLAUDE.md already holds content',
+      );
+      expect(out).toContain('would refuse rather than choose between them');
+      // Both manual remedies are named, since either direction loses a copy.
+      expect(out).toContain('remove ~/.claude/CLAUDE.md and run `nomad pull`');
+      expect(out).toContain('remove shared/CLAUDE.md and run `nomad adopt CLAUDE.md`');
+      // The dead-end recommendation is gone for THIS state.
+      expect(out).not.toContain('NOT a symlink (blocks sync); run `nomad adopt CLAUDE.md` to fix');
+      // Severity unchanged: a real entry where a symlink belongs still blocks
+      // sync on posix.
+      expect(process.exitCode).toBe(1);
+    },
+  );
 });
 
 describe('cmdDoctor sharedDirs symlink row', () => {

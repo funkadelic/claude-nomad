@@ -56,20 +56,57 @@ function adoptRefusalClause(name: string, state: PresenceState): string {
 }
 
 /**
+ * The collision row: a real host entry AND a live `shared/<name>` both hold
+ * content for the same name, so there are two copies and adopt will not pick
+ * one.
+ *
+ * Split from the plain adopt recommendation because `resolves` is the one
+ * repo-side state where adopt refuses for a reason that is not a defect.
+ * `assertNoClobber` answers this state with `already exists; would clobber.
+ * Remove it first.`, which is the SAFE answer: the host copy and the adopted
+ * content have diverged independently, and moving either one over the other
+ * silently destroys a copy nothing else holds. So the row names the collision
+ * and hands the choice back, rather than naming a command that would refuse.
+ *
+ * Both remedies are destructive in one direction, which is exactly why neither
+ * is performed automatically, and why the row tells the reader to compare
+ * before choosing.
+ *
+ * @param name - A shared name (`commands`, `rules`, ...).
+ * @returns The FAIL row naming the collision and both manual remedies.
+ */
+function adoptWouldClobberRow(name: string): SharedLinkClassification {
+  return {
+    line:
+      `${red(failGlyph)} ${name}: NOT a symlink (blocks sync), and shared/${name} already holds ` +
+      `content, so \`nomad adopt ${name}\` would refuse rather than choose between them ` +
+      `(compare the two, then either remove ~/.claude/${name} and run \`nomad pull\`, or remove ` +
+      `shared/${name} and run \`nomad adopt ${name}\`)`,
+    fail: true,
+  };
+}
+
+/**
  * The posix non-symlink row: a real file or directory sits where a symlink
  * into the sync repo belongs, which blocks sync on that platform.
  *
- * Two remedies, because `nomad adopt` is the fix only when the repo side has
- * room for the name; when `shared/<name>` is there but unusable, adopt refuses
+ * Three remedies, because `nomad adopt` is the fix only when the repo side has
+ * ROOM for the name. When `shared/<name>` is there but unusable, adopt refuses
  * outright, so naming it as the fix sends the user at a command that cannot
- * run. That refusal arm splits again per state, via
- * {@link adoptRefusalClause}. The severity does not move with the wording: a
- * real entry where a symlink belongs blocks sync on posix either way, so every
- * arm keeps `fail: true`.
+ * run; that refusal arm splits again per state, via {@link adoptRefusalClause}.
+ * When `shared/<name>` resolves, adopt refuses for a different and legitimate
+ * reason, handled by {@link adoptWouldClobberRow}. Only an ABSENT repo side
+ * leaves adopt able to do what this row asks of it.
+ *
+ * The severity does not move with the wording: a real entry where a symlink
+ * belongs blocks sync on posix in every arm, so every arm keeps `fail: true`.
  *
  * The win32 sibling of this state is `classifyWin32Copy`, which reaches the
  * same conclusion through its own rows; this exists so the two platforms stop
- * describing one on-disk state with two different remedies.
+ * describing one on-disk state with two different remedies. Note win32 needs no
+ * collision arm of its own: under the copy modality a real local copy beside a
+ * resolving `shared/<name>` is the HEALTHY state, and that classifier compares
+ * the two and reports divergence instead of recommending anything.
  *
  * @param name - A shared name (`commands`, `rules`, ...).
  * @returns The FAIL row, worded for whether adopt could actually help.
@@ -82,6 +119,7 @@ export function posixNonSymlinkRow(name: string): SharedLinkClassification {
       fail: true,
     };
   }
+  if (state === 'resolves') return adoptWouldClobberRow(name);
   return {
     line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync); run \`nomad adopt ${name}\` to fix`,
     fail: true,
