@@ -134,8 +134,10 @@ other side:
   never going to write to the repo; either way they report what they could not read rather than
   dropping it from the plan. A shared name is also skipped when its copy in the sync repo is there
   but points at content that is not, usually because the machine that shared it no longer has the
-  original. Pull, push, and the previews all warn and name the entry, and none of them repairs it
-  for you: remove it from the sync repo, or restore what it points at, by hand. A later step in the
+  original, and when that copy cannot be read at all. Pull, push, and the previews all warn and name
+  the entry, and none of them repairs it for you: remove a copy that points nowhere from the sync
+  repo, or restore what it points at, by hand; for one that could not be read, check its permissions
+  in the sync repo instead. A later step in the
   same pull reads that file too, and it no longer stops there: it warns as well, naming the file,
   saying whether the file is gone or may be part-updated, and pointing at the backup copy when it
   made one, then skips that one name and finishes the rest of the pull. Close whatever is holding

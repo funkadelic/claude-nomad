@@ -47,9 +47,11 @@ published yet. That mirror skips your Claude login and credential files, your pe
 your local history and stats cache, and any file that looks like a credential by name (a `.env`, a
 private key, a `.netrc`); see `src/config.never-sync.ts` for the exact lists. An ordinary directory
 of your own inside a shared name is carried, not skipped. A name whose `shared/<name>` counterpart
-is in the repo but leads nowhere is left alone too, and the pull warns naming it, so a local edit
-does not quietly stop being captured; the `nomad diff` and `--dry-run` previews say the same in
-read-only wording. Remove the entry from the sync repo, or restore what it points at, by hand. If a
+is in the repo but leads nowhere, or cannot be read at all, is left alone too, and the pull warns
+naming it, so a local edit does not quietly stop being captured; the `nomad diff` and `--dry-run`
+previews say the same in read-only wording. A counterpart that leads nowhere asks you to remove the
+entry from the sync repo or restore what it points at, by hand; one that could not be read asks you
+to check its permissions there instead, because nothing established where it leads. If a
 skipped path is already sitting in the sync repo working tree, pull removes it when git does not
 track it (snapshotting it to the backup dir first, unless it is a symlink whose target is already
 gone and there is no content to save) and otherwise leaves it exactly as it found it, warning with
@@ -125,7 +127,9 @@ If a name you have already shared ends up with a broken pointer in the sync repo
 example because a machine that shared it no longer has the original, push skips writing through it
 exactly as it did before, but now also prints a warning naming the entry so your local edit does not
 silently stop reaching the repo. Push does not repair the broken pointer for you: remove it from the
-sync repo, or restore what it pointed at, by hand. The warning does not fail the push.
+sync repo, or restore what it pointed at, by hand. An entry push could not read at all is skipped
+and named the same way, but the warning points at its permissions in the sync repo rather than at a
+broken pointer, because nothing checked where that entry leads. Neither warning fails the push.
 
 | Flag               | Description                                                                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -229,7 +233,10 @@ in the way when all it saw was a pointer leading nowhere, or a path it could not
 state is also called out, on every platform, when your local `~/.claude/<name>` is already a symlink
 into the sync repo: adopt used to report a plain already-adopted success there too, and now prints a
 warning saying the link is broken, or, when the sync repo entry could not be read at all, that it
-could not tell whether the link works. It still exits 0 in both cases, since it is reporting rather
+could not tell whether the link works. A symlink with no `shared/<name>` in the repo behind it at
+all is called out the same way, since a link the sync repo has no counterpart for is not adopted
+either: remove `~/.claude/<name>` and run adopt again, or run `nomad pull` if another machine
+already shares the name. It still exits 0 in all three cases, since it is reporting rather
 than writing and nothing is silently lost. The warning goes to standard error with the same warning
 marker `nomad push` and `nomad doctor` use for that state, so all three surfaces are greppable the
 same way. If that copy cannot be written, because another program has the path open or

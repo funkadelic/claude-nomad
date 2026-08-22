@@ -74,9 +74,11 @@ warning naming the file and the reason, instead of vanishing from the capture li
 version of it, saying nothing was captured for the file and nothing was written, because they were
 never going to write to the repo. A shared name is skipped for a second reason too: when its
 `shared/<name>` counterpart is in the repo but leads nowhere, usually because the machine that
-shared it no longer has the original. That one is left alone as well, with a warning naming the
-entry, on `nomad push` and on the pull-side mirror alike. Nomad does not repair it for you: remove
-it from the sync repo, or restore what it points at, by hand. A later step in the same pull reads
+shared it no longer has the original, or when that counterpart cannot be read at all. Those are left
+alone as well, with a warning naming the entry, on `nomad push` and on the pull-side mirror alike.
+Nomad does not repair either for you: remove a counterpart that leads nowhere from the sync repo, or
+restore what it points at, by hand; for one that could not be read, check its permissions in the
+sync repo instead, since nothing established where it leads. A later step in the same pull reads
 that file too, and it no longer stops there: it warns as well, naming the file, saying whether the
 file is gone or may be part-updated, and pointing at the backup copy when it made one, then skips
 that one name and finishes the rest of the pull. A file you delete from inside one of these

@@ -151,7 +151,10 @@ changed, the pull warns naming the file and the reason, skips that one file, and
 else normally. Close whatever is holding it, or fix its permissions, and run again to pick it up. A
 shared name whose copy in the sync repo is there but points at content that is not, usually because
 the machine that shared it no longer has the original, is skipped the same way, with a warning
-naming it. Remove it from the sync repo, or restore what it points at, by hand.
+naming it. Remove it from the sync repo, or restore what it points at, by hand. A copy in the sync
+repo that cannot be read at all is skipped and named too, with its own wording: nothing checked
+where it leads, so the warning asks you to look at its permissions in the sync repo rather than to
+restore anything.
 
 ```powershell
 # 1. Install prerequisites and the CLI. (Using Scoop instead? scoop install gh gitleaks.)
