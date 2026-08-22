@@ -413,9 +413,10 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   // adopt is the one entry point where the user explicitly named this
   // directory, so a quiet skip here is the confusing outcome: hard-fail
   // instead of falling through to the generic invalid-name path below.
-  // EXIT.GENERIC_FAILURE preserves the exit code the adjacent invalid-name
-  // path already returns; EXIT.USAGE is reserved for bad argv shapes, not a
-  // rejected positional value.
+  // EXIT.GENERIC_FAILURE matches the two refusals below; EXIT.USAGE is
+  // reserved for bad argv shapes, not a rejected positional value. All three
+  // throw rather than calling process.exit, so a caller that wraps cmdAdopt
+  // sees the refusal and the top-level handler owns the exit.
   const rejection = validateSharedDirEntry(name);
   if (rejection !== null && rejection.reason === 'secret-shaped') {
     throw new NomadFatal(
@@ -428,8 +429,9 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   // names that are not in SHARED_LINKS; SHARED_LINKS statics bypass isValidSharedDir
   // because RESERVED_SHARED overlaps with SHARED_LINKS by design)
   if (!isValidAdoptName(name)) {
-    fail(`invalid name: ${JSON.stringify(name)}`);
-    process.exit(1);
+    throw new NomadFatal(`invalid name: ${JSON.stringify(name)}`, {
+      code: EXIT.GENERIC_FAILURE,
+    });
   }
 
   // Resolve roots once per command invocation to avoid a time-of-check/time-of-use
@@ -442,11 +444,11 @@ export function cmdAdopt(name: string, opts: { dryRun?: boolean } = {}): void {
   // Confirm name is an already-configured shared target
   const map = readMapIfPresent(repo);
   if (!isConfiguredTarget(name, map)) {
-    fail(
+    throw new NomadFatal(
       `${name}: not a configured shared target. ` +
         `Add it to sharedDirs in path-map.json first, then re-run adopt.`,
+      { code: EXIT.GENERIC_FAILURE },
     );
-    process.exit(1);
   }
 
   const linkPath = join(claude, name);

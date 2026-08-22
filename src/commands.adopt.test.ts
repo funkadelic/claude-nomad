@@ -237,8 +237,9 @@ describe('cmdAdopt (precondition matrix)', () => {
   it('rejects an invalid name (path separator) before any mutation', async () => {
     const { cmdAdopt } = await import('./commands.adopt.ts');
     const namePath = join(env.claudeHome, '../evil');
-    expect(() => cmdAdopt('../evil')).toThrow('exit:1');
-    expect(errOutput(env)).toContain('../evil');
+    const refusal = catchRefusal(() => cmdAdopt('../evil'));
+    expect(refusal.message).toContain('../evil');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
     // No git mutation
     expect(diffCached(env)).toBe('');
     // No filesystem change at claude home level
@@ -250,10 +251,10 @@ describe('cmdAdopt (precondition matrix)', () => {
     // "get-shit-done" passes isValidSharedDir but is not in SHARED_LINKS or sharedDirs
     const { cmdAdopt } = await import('./commands.adopt.ts');
     mkdirSync(join(env.claudeHome, 'get-shit-done'), { recursive: true });
-    expect(() => cmdAdopt('get-shit-done')).toThrow('exit:1');
-    const out = errOutput(env);
-    expect(out).toContain('sharedDirs');
-    expect(out).toContain('path-map.json');
+    const refusal = catchRefusal(() => cmdAdopt('get-shit-done'));
+    expect(refusal.message).toContain('sharedDirs');
+    expect(refusal.message).toContain('path-map.json');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
     // Zero mutation
     expect(diffCached(env)).toBe('');
     expect(existsSync(join(env.repoHome, 'shared', 'get-shit-done'))).toBe(false);
@@ -289,11 +290,13 @@ describe('cmdAdopt (precondition matrix)', () => {
       const mapPath = join(env.repoHome, 'path-map.json');
       writeFileSync(mapPath, JSON.stringify({ projects: {}, sharedDirs: bad }) + '\n');
       const { cmdAdopt } = await import('./commands.adopt.ts');
-      expect(() => cmdAdopt('custom')).toThrow();
+      const refusal = catchRefusal(() => cmdAdopt('custom'));
       // The friendly refusal, which only the guarded path can produce. A bare
       // toThrow() would also pass against the old code, where a non-array threw
-      // a raw TypeError before reaching any message at all.
-      expect(errOutput(env)).toContain('sharedDirs');
+      // a raw TypeError before reaching any message at all. The carried exit
+      // code pins that it is a NomadFatal: a raw TypeError has none.
+      expect(refusal.message).toContain('sharedDirs');
+      expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
       expect(diffCached(env)).not.toContain('custom');
     },
   );
@@ -313,24 +316,27 @@ describe('cmdAdopt (precondition matrix)', () => {
   it('rejects "hooks" as an invalid adopt name (B7: blocked by RESERVED_SHARED)', async () => {
     mkdirSync(join(env.claudeHome, 'hooks'), { recursive: true });
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('hooks')).toThrow('exit:1');
-    expect(errOutput(env)).toContain('invalid name');
+    const refusal = catchRefusal(() => cmdAdopt('hooks'));
+    expect(refusal.message).toContain('invalid name');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
     expect(diffCached(env)).toBe('');
   });
 
   it('rejects "agents" as an invalid adopt name (B7: blocked by RESERVED_SHARED)', async () => {
     mkdirSync(join(env.claudeHome, 'agents'), { recursive: true });
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('agents')).toThrow('exit:1');
-    expect(errOutput(env)).toContain('invalid name');
+    const refusal = catchRefusal(() => cmdAdopt('agents'));
+    expect(refusal.message).toContain('invalid name');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
     expect(diffCached(env)).toBe('');
   });
 
   it('rejects "skills" as an invalid adopt name (copy-synced, blocked by RESERVED_SHARED)', async () => {
     mkdirSync(join(env.claudeHome, 'skills'), { recursive: true });
     const { cmdAdopt } = await import('./commands.adopt.ts');
-    expect(() => cmdAdopt('skills')).toThrow('exit:1');
-    expect(errOutput(env)).toContain('invalid name');
+    const refusal = catchRefusal(() => cmdAdopt('skills'));
+    expect(refusal.message).toContain('invalid name');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
     expect(diffCached(env)).toBe('');
   });
 
@@ -791,8 +797,9 @@ describe('cmdAdopt (happy path and move sequence)', () => {
 
     const { cmdAdopt } = await import('./commands.adopt.ts');
     // Invalid name must be rejected before membership is checked
-    expect(() => cmdAdopt('../evil')).toThrow('exit:1');
-    expect(errOutput(env)).toContain('../evil');
+    const refusal = catchRefusal(() => cmdAdopt('../evil'));
+    expect(refusal.message).toContain('../evil');
+    expect(refusal.code).toBe(EXIT.GENERIC_FAILURE);
     // No filesystem mutation
     expect(diffCached(env)).toBe('');
   });
