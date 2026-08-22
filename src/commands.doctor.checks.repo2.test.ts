@@ -368,11 +368,14 @@ describe('classifySharedLink win32 real-copy branch', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('warns the same when shared/<name> could not be read at all, on win32', async () => {
-    // The other half of the same disjunction. The dangling case above is
-    // reachable with a real filesystem; an unreadable one is not portably
-    // reproducible in CI, so the mock is what drives this operand through the
-    // real reporter rather than leaving it satisfied by line coverage alone.
+  it('warns that shared/<name> could not be READ, not that it does not resolve, on win32', async () => {
+    // The other half of the same disjunction, and it must not borrow the
+    // dangling arm's words: nothing here read where the entry points, so
+    // "does not resolve" claims a read that never happened and the repair it
+    // prescribes may not be the problem. The dangling case above is reachable
+    // with a real filesystem; an unreadable one is not portably reproducible
+    // in CI, so the mock is what drives this operand through the real reporter
+    // rather than leaving it satisfied by line coverage alone.
     stubPlatform('win32');
     const claudeHomeDir = join(testHome, '.claude');
     mkdirSync(claudeHomeDir, { recursive: true });
@@ -404,9 +407,13 @@ describe('classifySharedLink win32 real-copy branch', () => {
     const row = sec.items.find((item) => item.includes(name));
     expect(row).toBeDefined();
     expect(row).toContain(warnGlyph);
-    expect(row).toContain('does not resolve in the repo');
-    // Never the unpublished row: the repo does carry the name, this host just
+    expect(row).toContain('could not be read in the repo');
+    expect(row).toContain('check its permissions');
+    // Never the dangling arm's wording or its repair advice, and never the
+    // unpublished row either: the repo does carry the name, this host just
     // could not read it, and that row names adopt, which would refuse.
+    expect(row).not.toContain('does not resolve');
+    expect(row).not.toContain('restore what it points at');
     expect(row).not.toContain('not published');
     expect(process.exitCode).toBe(0);
   });

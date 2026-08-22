@@ -18,7 +18,7 @@ import { join, win32 as win32Path } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from './color.ts';
 import { deniedSegmentFor, repoHome } from './config.ts';
 import { listDivergingFiles } from './extras-sync.diff.ts';
-import { classifyPresence, isUnusableTarget } from './fs-presence.ts';
+import { classifyPresence, isUnusableTarget, type PresenceState } from './fs-presence.ts';
 
 /** Return shape shared by every `classifySharedLink` branch. */
 export type SharedLinkClassification = { line: string; fail: boolean; children?: string[] };
@@ -66,14 +66,22 @@ function win32CopyUnpublishedRow(name: string): SharedLinkClassification {
 }
 
 /**
- * The win32 copy-sync dangling-repo-pointer row: a real local copy at
- * `~/.claude/<name>` sits beside a `shared/<name>` that does not resolve, a
+ * The win32 copy-sync unusable-repo-source row: a real local copy at
+ * `~/.claude/<name>` sits beside a `shared/<name>` that cannot be used, a
  * different fact from `win32CopyUnpublishedRow`'s "never published" (the
- * repo does carry an entry here, it is just broken) and from
+ * repo does carry an entry here, it is just no use) and from
  * `classifySymlinkTarget`'s host-side "broken symlink" / "stale symlink"
  * rows in `commands.doctor.checks.repo.ts` (those describe the local link's
- * TARGET going missing; this describes the REPO's own pointer being unusable,
+ * TARGET going missing; this describes the REPO's own entry being unusable,
  * which on win32 is never followed through a symlink at all).
+ *
+ * Two wordings, matching `repoSourceUnusableRow` in
+ * `commands.doctor.checks.repo.source.ts` state for state: a pointer that does
+ * not resolve was read and can be removed or repaired, while a path that could
+ * not be stat-ed was never shown to point anywhere, so the removal advice does
+ * not apply and whatever blocked the probe usually blocks the removal too.
+ * `isUnusableTarget` groups the two states for control flow; it must not group
+ * them for what the user is told.
  *
  * A WARN, never a FAIL: this file's own documented rule is that divergence is
  * always a WARN, matching every other row here that means "run a follow-up
@@ -83,10 +91,20 @@ function win32CopyUnpublishedRow(name: string): SharedLinkClassification {
  * that wants to catch it has to parse WARN lines rather than rely only on the
  * exit code, an accepted tradeoff recorded here so it is not rediscovered
  * later as a surprise.
+ *
+ * @param name - The shared name being classified.
+ * @param state - The unusable state observed at `shared/<name>`.
+ * @returns The WARN row, worded for the state actually observed.
  */
-function win32CopyDanglingRow(name: string): SharedLinkClassification {
+function win32CopyUnusableRow(name: string, state: PresenceState): SharedLinkClassification {
+  if (state === 'dangling') {
+    return {
+      line: `${yellow(warnGlyph)} ${name}: real local copy, but shared/${name} does not resolve in the repo (remove shared/${name}, or restore what it points at)`,
+      fail: false,
+    };
+  }
   return {
-    line: `${yellow(warnGlyph)} ${name}: real local copy, but shared/${name} does not resolve in the repo (remove shared/${name}, or restore what it points at)`,
+    line: `${yellow(warnGlyph)} ${name}: real local copy, but shared/${name} could not be read in the repo, so whether it is usable could not be determined (check its permissions in the sync repo)`,
     fail: false,
   };
 }
@@ -208,7 +226,7 @@ export function classifyWin32Copy(name: string, p: string): SharedLinkClassifica
   const sharedPath = join(repoHome(), 'shared', name);
   const sharedState = classifyPresence(sharedPath);
   if (sharedState === 'absent') return win32CopyUnpublishedRow(name);
-  if (isUnusableTarget(sharedState)) return win32CopyDanglingRow(name);
+  if (isUnusableTarget(sharedState)) return win32CopyUnusableRow(name, sharedState);
   const compared = listDivergingFiles(p, sharedPath);
   const diverging = compared.filter(
     (line) => deniedSegmentFor(divergingRepoPath(line, name, p, sharedPath)) === null,

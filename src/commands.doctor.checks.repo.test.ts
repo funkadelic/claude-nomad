@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -614,6 +615,9 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
     vi.doUnmock('./extras-sync.diff.ts');
+    // Paired here rather than inline: restoreAllMocks does NOT clear a doMock
+    // registration, so a failing assertion would leak the fs mock onward.
+    vi.doUnmock('node:fs');
     restoreEnv('HOME', originalHome);
     restoreEnv('USERPROFILE', originalUserProfile);
     restoreEnv('NOMAD_REPO', originalNomadRepo);
@@ -988,6 +992,53 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     expect(row).toContain('NOT a symlink');
     expect(row).toContain(`does not resolve, so \`nomad adopt ${name}\` would refuse`);
     expect(row).not.toContain('to fix');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('does not claim shared/<name> fails to resolve on posix when it could not be read', async () => {
+    // The other unusable state reaching the same row. It must not borrow the
+    // dangling arm's sentence: nothing here read where the entry points, so
+    // "does not resolve" asserts a read that did not happen, and whatever
+    // blocked the probe usually blocks the removal it prescribes too. An
+    // unreadable path is not portably reproducible in CI, so the mock is what
+    // drives this operand through the real reporter.
+    stubPlatform('linux');
+    const { SHARED_LINKS } = await import('./config.ts');
+    const name = SHARED_LINKS[0];
+    const blocked = join(sharedDir, name);
+    writeFileSync(blocked, '# shared\n');
+    writeFileSync(join(claudeDir, name), '# local, but not a symlink\n');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(p) === blocked) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    vi.resetModules();
+
+    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { section } = await import('./commands.doctor.format.ts');
+    const sec = section('Links');
+    reportSharedLinks(sec, { projects: {} });
+
+    const row = sec.items.find((item) => item.includes(name));
+    expect(row).toBeDefined();
+    // Still a FAIL, and still not the adopt-as-remedy row: only the reason
+    // and the follow-up move change with the state.
+    expect(row).toContain(failGlyph);
+    expect(row).toContain('NOT a symlink');
+    expect(row).toContain(`could not be read, so \`nomad adopt ${name}\` would refuse`);
+    expect(row).toContain('check its permissions in the sync repo');
+    expect(row).not.toContain('does not resolve');
+    expect(row).not.toContain('restore what it points at');
     expect(process.exitCode).toBe(1);
   });
 });

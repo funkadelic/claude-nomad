@@ -33,15 +33,39 @@ function repoSourceState(name: string): PresenceState {
 }
 
 /**
+ * Why `nomad adopt` would refuse this name, phrased for the state actually
+ * observed at `shared/<name>` and naming the remedy that state supports.
+ *
+ * Split per state rather than sharing one unusable-entry clause because the
+ * two do not support the same sentence. A pointer that does not resolve was
+ * read, and can be removed or repaired; a path that could not be stat-ed was
+ * never shown to point anywhere, so saying it "does not resolve" claims a
+ * read that did not happen, and whatever blocked the probe usually blocks the
+ * suggested removal too. `repoSourceUnusableRow` below splits the same way for
+ * the same reason.
+ *
+ * @param name - A shared name (`commands`, `rules`, ...).
+ * @param state - The unusable state observed at `shared/<name>`.
+ * @returns The trailing clause, without the leading glyph or name.
+ */
+function adoptRefusalClause(name: string, state: PresenceState): string {
+  if (state === 'dangling') {
+    return `shared/${name} does not resolve, so \`nomad adopt ${name}\` would refuse (remove shared/${name}, or restore what it points at, first)`;
+  }
+  return `shared/${name} could not be read, so \`nomad adopt ${name}\` would refuse (check its permissions in the sync repo first)`;
+}
+
+/**
  * The posix non-symlink row: a real file or directory sits where a symlink
  * into the sync repo belongs, which blocks sync on that platform.
  *
- * Two wordings, because the remedy is not the same in both. `nomad adopt` is
- * the fix only when the repo side has room for the name; when `shared/<name>`
- * is there but does not resolve, adopt refuses outright, so naming it as the
- * fix sends the user at a command that cannot run. The severity does not move
- * with the wording: a real entry where a symlink belongs blocks sync on posix
- * either way, so both arms keep `fail: true`.
+ * Two remedies, because `nomad adopt` is the fix only when the repo side has
+ * room for the name; when `shared/<name>` is there but unusable, adopt refuses
+ * outright, so naming it as the fix sends the user at a command that cannot
+ * run. That refusal arm splits again per state, via
+ * {@link adoptRefusalClause}. The severity does not move with the wording: a
+ * real entry where a symlink belongs blocks sync on posix either way, so every
+ * arm keeps `fail: true`.
  *
  * The win32 sibling of this state is `classifyWin32Copy`, which reaches the
  * same conclusion through its own rows; this exists so the two platforms stop
@@ -51,9 +75,10 @@ function repoSourceState(name: string): PresenceState {
  * @returns The FAIL row, worded for whether adopt could actually help.
  */
 export function posixNonSymlinkRow(name: string): SharedLinkClassification {
-  if (isUnusableTarget(repoSourceState(name))) {
+  const state = repoSourceState(name);
+  if (isUnusableTarget(state)) {
     return {
-      line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync), and shared/${name} does not resolve, so \`nomad adopt ${name}\` would refuse (remove shared/${name}, or restore what it points at, first)`,
+      line: `${red(failGlyph)} ${name}: NOT a symlink (blocks sync), and ${adoptRefusalClause(name, state)}`,
       fail: true,
     };
   }
