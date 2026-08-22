@@ -290,8 +290,9 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('warns and writes nothing when shared/<name> cannot be read at all', async () => {
-    // The other state the mirror treats as unusable. A dangling pointer is
+  it('warns that shared/<name> could not be READ, not that it does not resolve', async () => {
+    // The other state the mirror treats as unusable, and it gets its own
+    // wording rather than borrowing the dangling arm's. A dangling pointer is
     // reachable with a real filesystem; an unreadable one is not portably
     // reproducible in CI, so only the mock drives this operand of the same
     // disjunction through the real pass.
@@ -324,8 +325,14 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     const said = errSpy.mock.calls.map((c) => String(c[0]));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('CLAUDE.md');
-    expect(said[0]).toContain('does not resolve to anything usable');
-    // The wording never says "symlink", which would misdescribe this state.
+    expect(said[0]).toContain('could not be read in the sync repo');
+    expect(said[0]).toContain('Check its permissions there');
+    // Never the dangling arm's words: nothing here read where the entry
+    // points, so claiming it does not resolve, and telling the user to restore
+    // what it points at, describes a break that may not exist. The wording
+    // never says "symlink" either, which would misdescribe this state.
+    expect(said[0]).not.toContain('does not resolve');
+    expect(said[0]).not.toContain('restore what it points at');
     expect(said[0]).not.toContain('symlink');
     // The repo copy is untouched: the pass skipped the name rather than
     // writing through a path it could not classify.
@@ -673,6 +680,50 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     expect(said[0]).toContain('CLAUDE.md could not be read');
     expect(said[0]).toContain('could not be read (13)');
     expect(said[0]).not.toContain('(undefined)');
+  });
+
+  it('warns about the repo side when the local path is unreadable AND shared/<name> is dangling', async () => {
+    // The compound state: both halves are broken at once. It used to be the
+    // quiet one, because the not-shared guard in the unreadable-local path is
+    // an existsSync probe that follows the link, so it read a dangling
+    // shared/<name> as "never published" and returned without a word. The repo
+    // half is the one reported, because it is what keeps this name from
+    // syncing even once the local side becomes readable again.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unpublished local edit\n');
+    symlinkSync(join(sharedDir, 'no-such-target'), join(sharedDir, 'CLAUDE.md'));
+    const blocked = join(claudeDir, 'CLAUDE.md');
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (p: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(p) === blocked) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.lstatSync(p, opts);
+        },
+      };
+    });
+    stubPlatform('win32');
+    process.exitCode = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('CLAUDE.md');
+    expect(said[0]).toContain('does not resolve to anything usable');
+    // Nothing was written through the broken pointer, and the WARN alone does
+    // not fail the push.
+    expect(lstatSync(join(sharedDir, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(sharedDir, 'CLAUDE.md'))).toBe(false);
+    expect(process.exitCode).toBe(0);
   });
 });
 
