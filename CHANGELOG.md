@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.67.2](https://github.com/funkadelic/claude-nomad/compare/v0.67.1...v0.67.2) (2026-08-22)
+
+
+### Fixed
+
+* stop reporting success when a shared item is broken in the sync repo ([#538](https://github.com/funkadelic/claude-nomad/issues/538)) ([10961b9](https://github.com/funkadelic/claude-nomad/commit/10961b910ff49b4b146436aee860ae2b7b321fb6))
+
 ## [0.67.1](https://github.com/funkadelic/claude-nomad/compare/v0.67.0...v0.67.1) (2026-08-20)
 
 ### What's new
