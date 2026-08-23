@@ -264,6 +264,187 @@ describe('syncSharedLinksPush (win32 push mirror)', () => {
     expect(existsSync(join(sharedDir, 'commands', 'foo.md'))).toBe(true);
   });
 
+  it('warns ONCE naming shared/ itself when the shared/ parent is a dangling symlink', async () => {
+    // The parent is what broke, not any one name. Every per-name probe below
+    // fails closed to `unknown`, so before the pre-loop short-circuit this
+    // emitted one individually-accurate line per configured shared name and
+    // the reader could not tell a broken directory from a broken name.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
+    rmSync(sharedDir, { recursive: true, force: true });
+    symlinkSync(join(repoUnderHome, 'no-such-shared'), sharedDir);
+
+    stubPlatform('win32');
+    process.exitCode = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    // ONE line for one broken directory, whatever the shared list contains.
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('no shared name was captured into shared/');
+    expect(said[0]).toContain('does not resolve to anything usable');
+    // It names the directory, not any single configured name.
+    expect(said[0]).not.toContain('CLAUDE.md');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('warns ONCE that the shared/ parent could not be READ, not that it does not resolve', async () => {
+    // The other unusable state of the same parent, split for the same reason
+    // the per-name warning splits: an unreadable directory has not been shown
+    // to be broken, so it must not be told to restore what it points at.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        lstatSync: (pth: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(pth) === sharedDir) {
+            const err = new Error('permission denied') as NodeJS.ErrnoException;
+            err.code = 'EACCES';
+            throw err;
+          }
+          return actual.lstatSync(pth, opts);
+        },
+      };
+    });
+
+    stubPlatform('win32');
+    process.exitCode = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('could not be read in the sync repo');
+    expect(said[0]).toContain('Check its permissions there');
+    expect(said[0]).not.toContain('does not resolve');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('stays silent when the shared/ parent is merely ABSENT, which is not an unusable state', async () => {
+    // Regression pin on the one state the short-circuit must NOT claim. A repo
+    // with no shared/ directory falls through to the per-name `notShared`
+    // skip, which is deliberately silent; short-circuiting on `absent` would
+    // turn every such repo into a warning it never used to emit.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+    rmSync(sharedDir, { recursive: true, force: true });
+
+    stubPlatform('win32');
+    process.exitCode = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    expect(errSpy.mock.calls).toHaveLength(0);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('warns ONCE when shared/ resolves but is a regular file, which used to be silent in both directions', async () => {
+    // A shared/ that resolves can still be the wrong KIND of entry. Every
+    // per-name probe under a non-directory parent raises ENOTDIR, which the
+    // presence leaf reports as `absent`, so notShared skipped each name
+    // without a word: the whole pass mirrored nothing and said nothing. That
+    // silence is worse than the repeated warning the parent probe was added
+    // for, and it predates the probe.
+    rmSync(sharedDir, { recursive: true, force: true });
+    writeFileSync(sharedDir, 'not a directory\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+    mkdirSync(join(claudeDir, 'commands'), { recursive: true });
+    writeFileSync(join(claudeDir, 'commands', 'foo.md'), '# local command\n');
+
+    stubPlatform('win32');
+    process.exitCode = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    syncSharedLinksPush({ projects: {} });
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('shared/ in the sync repo is not a directory');
+    expect(said[0]).toContain('nowhere to capture names into');
+    // It must not borrow the broken-pointer wording: this entry resolves.
+    expect(said[0]).not.toContain('does not resolve');
+    expect(said[0]).not.toContain('could not be read');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('uses read-only wording for a non-directory shared/ when dryRun is true', async () => {
+    rmSync(sharedDir, { recursive: true, force: true });
+    writeFileSync(sharedDir, 'not a directory\n');
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    expect(() =>
+      stageLocalSharedEdits({ projects: {} }, '20260822-000000', { dryRun: true }),
+    ).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('no shared name would be captured into shared/');
+    expect(said[0]).not.toContain('this run');
+  });
+
+  it('reports rather than throwing when shared/ stops being readable between the two probes', async () => {
+    // The TOCTOU window: classifyPresence says the parent resolves, and the
+    // directory check that follows then fails. Treating that as "not a
+    // directory" reports once and stops, which is the safe direction: letting
+    // the error escape would abort the push from inside the mirror.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# local edit\n');
+    // The first statSync of shared/ is classifyPresence's own follow probe and
+    // must SUCCEED, so the parent classifies as `resolves`; only the directory
+    // check that follows fails. Failing both would classify the parent as
+    // `unknown` and short-circuit one branch earlier, never reaching the guard
+    // under test.
+    let sharedStats = 0;
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        statSync: (pth: fsModule.PathLike, opts?: fsModule.StatSyncOptions) => {
+          if (String(pth) === sharedDir) {
+            sharedStats += 1;
+            if (sharedStats > 1) {
+              const err = new Error('permission denied') as NodeJS.ErrnoException;
+              err.code = 'EACCES';
+              throw err;
+            }
+          }
+          return actual.statSync(pth, opts);
+        },
+      };
+    });
+
+    stubPlatform('win32');
+    process.exitCode = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+    const { syncSharedLinksPush } = await import('./links.mirror.ts');
+    expect(() => syncSharedLinksPush({ projects: {} })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('shared/ in the sync repo is not a directory');
+    expect(process.exitCode).toBe(0);
+  });
+
   it('warns and writes nothing when shared/<name> is a dangling symlink', async () => {
     // A real local copy exists (the win32 copy-sync model's normal healthy
     // state), but the repo side is a symlink whose target was never created:
@@ -607,6 +788,33 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     expect(said[0]).toContain('another program has it open');
     expect(said[0]).not.toContain('shared/ this run');
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# original shared\n');
+  });
+
+  it('warns ONCE with read-only wording when dryRun is true and the shared/ parent is unusable', async () => {
+    // The dry-run half of the parent short-circuit. Same reason the per-name
+    // warning splits dry from wet: nomad diff and pull --dry-run write nothing
+    // regardless, so claiming a repo-side omission would describe a write that
+    // was never going to happen.
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unpublished local edit\n');
+    rmSync(sharedDir, { recursive: true, force: true });
+    symlinkSync(join(repoUnderHome, 'no-such-shared'), sharedDir);
+
+    stubPlatform('win32');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* captured */
+    });
+
+    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    expect(() => stageLocalSharedEdits({ projects: {} }, TS, { dryRun: true })).not.toThrow();
+
+    const said = errSpy.mock.calls.map((c) => String(c[0]));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('no shared name would be captured into shared/');
+    expect(said[0]).toContain('does not resolve to anything usable');
+    // The wet arm's trailing clause must not appear on a call that writes
+    // nothing regardless.
+    expect(said[0]).not.toContain('this run');
+    expect(said[0]).not.toContain('nomad push` again');
   });
 
   it('omitting opts.linkNames derives allSharedLinks(map) internally, WARNing once for an invalid entry', async () => {
