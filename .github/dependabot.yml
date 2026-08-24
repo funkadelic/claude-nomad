@@ -13,6 +13,15 @@ updates:
       timezone: Etc/UTC
     open-pull-requests-limit: 5
     groups:
+      # core and vitest-runner pin each other with an exact peer dep
+      # (`peer @stryker-mutator/core@"<version>"`), so a major split across two
+      # PRs leaves BOTH unable to `npm ci` and neither can ever go green. Same
+      # reason as the codeql-action group below. Listed first because the first
+      # matching group wins, and carries no update-types filter so majors group
+      # too, unlike dev-dependencies.
+      stryker:
+        patterns:
+          - '@stryker-mutator/*'
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
