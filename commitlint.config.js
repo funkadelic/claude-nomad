@@ -1,5 +1,20 @@
 export default {
   extends: ['@commitlint/config-conventional'],
+  // conventional-changelog-conventionalcommits types the type as `\w*`, which
+  // cannot match the hyphen in `deps-dev`. Without this, `type-enum` below
+  // lists `deps-dev` but the parser never produces it, so a `deps-dev:`
+  // commit fails with a misleading "type may not be empty". This is the
+  // preset's own pattern with that one class widened to `[\w-]*`; the rest,
+  // including the `!?` breaking-change marker, is copied verbatim, since
+  // replacing parserOpts wholesale would otherwise drop `feat!:` support.
+  // .github/workflows/pr-title.yml widens the same class for the same reason
+  // on the squash subject, and is the server-side half of this gate.
+  parserPreset: {
+    parserOpts: {
+      headerPattern: /^([\w-]*)(?:\((.*)\))?!?: (.*)$/,
+      headerCorrespondence: ['type', 'scope', 'subject'],
+    },
+  },
   rules: {
     // Conventional Commits keeps header tight, but bodies and footers are
     // prose. The default 100-char per-line cap encouraged ragged hard-wraps
