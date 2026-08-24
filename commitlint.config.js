@@ -1,18 +1,26 @@
+import conventionalPreset from 'conventional-changelog-conventionalcommits';
+
+// conventional-changelog-conventionalcommits types the commit type as `\w*` in
+// both of its header patterns, which cannot match the hyphen in `deps-dev`.
+// Without widening, `type-enum` below lists `deps-dev` but the parser never
+// produces it, so a `deps-dev:` commit fails the commit-msg hook with a
+// misleading "type may not be empty". The same class is widened in
+// .github/workflows/pr-title.yml, which gates the squash subject server-side.
+//
+// The preset's own options are spread in rather than retyped, because
+// commitlint REPLACES parserOpts instead of merging it: listing only the
+// patterns silently drops noteKeywords, revertPattern, revertCorrespondence
+// and issuePrefixes, and a dropped breakingHeaderPattern costs every type its
+// BREAKING CHANGE note without failing anything.
+const { parser } = await conventionalPreset();
+
 export default {
   extends: ['@commitlint/config-conventional'],
-  // conventional-changelog-conventionalcommits types the type as `\w*`, which
-  // cannot match the hyphen in `deps-dev`. Without this, `type-enum` below
-  // lists `deps-dev` but the parser never produces it, so a `deps-dev:`
-  // commit fails with a misleading "type may not be empty". This is the
-  // preset's own pattern with that one class widened to `[\w-]*`; the rest,
-  // including the `!?` breaking-change marker, is copied verbatim, since
-  // replacing parserOpts wholesale would otherwise drop `feat!:` support.
-  // .github/workflows/pr-title.yml widens the same class for the same reason
-  // on the squash subject, and is the server-side half of this gate.
   parserPreset: {
     parserOpts: {
+      ...parser,
       headerPattern: /^([\w-]*)(?:\((.*)\))?!?: (.*)$/,
-      headerCorrespondence: ['type', 'scope', 'subject'],
+      breakingHeaderPattern: /^([\w-]*)(?:\((.*)\))?!: (.*)$/,
     },
   },
   rules: {
