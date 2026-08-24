@@ -2,6 +2,20 @@
 
 ## [0.67.2](https://github.com/funkadelic/claude-nomad/compare/v0.67.1...v0.67.2) (2026-08-24)
 
+### What's new
+
+**On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
+
+- **`nomad adopt` no longer calls a broken shortcut adopted.** If a name in `~/.claude/` already points into your sync repo but the repo side is missing, broken, or unreadable, adopt used to report it as already adopted and leave it there. It now says which of those three it found, so you can tell a healthy setup from one that quietly stopped working. It still finishes cleanly, since it only looks and reports.
+
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to it.
+
+- **A push no longer reports success after skipping a broken shared item.** When an item in your sync repo pointed at something that was no longer there, the push dropped it without a word, so the edits you made on that machine never reached the repo and the push still said it worked. It now warns and names the item. Two more cases used to skip every shared item in silence and now report once: a `shared/` folder that cannot be read at all, and a file sitting where that folder should be.
+- **`nomad adopt` refuses a broken shared item instead of claiming it worked.** `nomad pull` cannot repair a broken pointer, since it copies from it, so adopt now stops and says so rather than sending you to a command that cannot help.
+
+**On \*nix, Mac, and WSL2.** Note: native Windows keeps a real copy of each shared item, so this state is normal there and never reported.
+
+- **`nomad doctor` stops sending you to a command that would refuse.** When a folder of your own sits where a shared item belongs and your sync repo already holds content under that name, doctor used to tell you to run `nomad adopt <name>`, which turns that exact case away. Doctor now describes the collision and gives you both ways out, and warns that either one throws away a copy.
 
 ### Fixed
 
