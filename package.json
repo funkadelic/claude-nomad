@@ -74,7 +74,7 @@
     "@commitlint/config-conventional": "^21.0.1",
     "@eslint/js": "^10.0.1",
     "@stryker-mutator/core": "9.6.1",
-    "@stryker-mutator/vitest-runner": "9.6.1",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.6",
     "diff": "^9.0.0",
