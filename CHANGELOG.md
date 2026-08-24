@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.67.2](https://github.com/funkadelic/claude-nomad/compare/v0.67.1...v0.67.2) (2026-08-24)
+
+### What's new
+
+**On all supported platforms, i.e. \*nix, Mac, WSL2, and native Windows.**
+
+- **`nomad adopt` no longer calls a broken shortcut adopted.** If a name in `~/.claude/` already points into your sync repo but the repo side is missing, broken, or unreadable, adopt used to report it as already adopted and leave it there. It now says which of those three it found, so you can tell a healthy setup from one that quietly stopped working. It still finishes cleanly, since it only looks and reports.
+
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and none of these apply to it.
+
+- **A push no longer reports success after skipping a broken shared item.** When an item in your sync repo pointed at something that was no longer there, the push dropped it without a word, so the edits you made on that machine never reached the repo and the push still said it worked. It now warns and names the item. Two more cases used to skip every shared item in silence and now report once: a `shared/` folder that cannot be read at all, and a file sitting where that folder should be.
+- **`nomad adopt` refuses a broken shared item instead of claiming it worked.** `nomad pull` cannot repair a broken pointer, since it copies from it, so adopt now stops and says so rather than sending you to a command that cannot help.
+
+**On \*nix, Mac, and WSL2.** Note: native Windows keeps a real copy of each shared item, so this state is normal there and never reported.
+
+- **`nomad doctor` stops sending you to a command that would refuse.** When a folder of your own sits where a shared item belongs and your sync repo already holds content under that name, doctor used to tell you to run `nomad adopt <name>`, which turns that exact case away. Doctor now describes the collision and gives you both ways out, and warns that either one throws away a copy.
+
+### Fixed
+
+* stop reporting success when a shared item is broken in the sync repo ([#538](https://github.com/funkadelic/claude-nomad/issues/538)) ([10961b9](https://github.com/funkadelic/claude-nomad/commit/10961b910ff49b4b146436aee860ae2b7b321fb6))
+* warn once about a broken shared folder and only suggest adopt when it can help ([#540](https://github.com/funkadelic/claude-nomad/issues/540)) ([8d3033d](https://github.com/funkadelic/claude-nomad/commit/8d3033d6f72ae45b4329fbc6a0e8d66367a63db7))
+
+
+### Changed
+
+* **tests:** skip the suite for docs-site-only changes ([#548](https://github.com/funkadelic/claude-nomad/issues/548)) ([52cbe18](https://github.com/funkadelic/claude-nomad/commit/52cbe18b9cd67e338f3a269d8ec42610312a4150))
+
+
+### Dependencies
+
+* bump astro from 7.2.2 to 7.2.4 in /docs-site in the prod-dependencies group across 1 directory ([#545](https://github.com/funkadelic/claude-nomad/issues/545)) ([f888dbd](https://github.com/funkadelic/claude-nomad/commit/f888dbdb2e6caa2e8c6fdc8cf49113c990eea54a))
+* bump the codeql-action group across 1 directory with 2 updates ([#544](https://github.com/funkadelic/claude-nomad/issues/544)) ([0754b7b](https://github.com/funkadelic/claude-nomad/commit/0754b7b0d38f6390ef319661219ed17cabfeb6ca))
+* bump the dev-dependencies group across 1 directory with 2 updates ([#547](https://github.com/funkadelic/claude-nomad/issues/547)) ([1b0f539](https://github.com/funkadelic/claude-nomad/commit/1b0f5394e929e948082881486358f04347433330))
+* bump the dev-dependencies group with 2 updates ([#541](https://github.com/funkadelic/claude-nomad/issues/541)) ([a1fef0c](https://github.com/funkadelic/claude-nomad/commit/a1fef0c37c7bcddf7571e5a40c8c78d620d8cd33))
+* bump the stryker group from 9.6.1 to 10.0.0 ([#546](https://github.com/funkadelic/claude-nomad/issues/546)) ([e9980e8](https://github.com/funkadelic/claude-nomad/commit/e9980e8ec7c27307496946e2f45298d9c247e720))
+
 ## [0.67.1](https://github.com/funkadelic/claude-nomad/compare/v0.67.0...v0.67.1) (2026-08-20)
 
 ### What's new
