@@ -271,7 +271,9 @@ jobs:
         run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=${{ env.JUNIT_REPORT }}
 
       # Codecov Test Analytics: failure rates, flake detection and per-test
-      # timing over the JUnit XML the steps above write.
+      # timing over the JUnit XML the steps above write. Same action and pin as
+      # the coverage upload below, switched to test results by `report_type`;
+      # the standalone codecov/test-results-action is archived.
       #
       # A step defaults to running only on success, so `!cancelled()` is what
       # makes this one run after a failing suite, the run the data is most
@@ -283,8 +285,9 @@ jobs:
         if: >-
           ${{ !cancelled() && steps.gate.outputs.skip != 'true'
           && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
-        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
         with:
+          report_type: test_results
           files: ${{ env.JUNIT_REPORT }}
           disable_search: true
           handle_no_reports_found: true
