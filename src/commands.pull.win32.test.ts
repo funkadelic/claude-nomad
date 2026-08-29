@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import type * as gitProbeModule from './git-probe.ts';
 import type * as linksDeletionsModule from './links.deletions.ts';
 import type * as linksMirrorModule from './links.mirror.ts';
 
@@ -996,6 +997,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
+    vi.doUnmock('./git-probe.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -1021,6 +1023,92 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     expect(existsSync(join(repo, DENIED))).toBe(false);
     expect(warnings()).toContain(DENIED);
     expect(warnings()).toContain('credentials');
+  });
+
+  it('REPORTS a gitignored denylisted path and leaves the file where it is', async () => {
+    // A plain status probe emits no record at all for an ignored path, so this
+    // was invisible. It is reported rather than removed because it cannot leak:
+    // every staging call in the codebase is a bare `git add`, which skips an
+    // ignored path, so it reaches neither the index nor the remote. The ignore
+    // rule is also frequently the user's GLOBAL one, which they never wrote
+    // with this repo in mind.
+    writeFileSync(join(repo, '.gitignore'), 'shared/commands/credentials/\n');
+    g(['add', '-A'], repo);
+    g(['commit', '-qm', 'ignore credentials'], repo);
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    writeFileSync(join(repo, DENIED), 'token=abc\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(existsSync(join(repo, DENIED))).toBe(true);
+    expect(readFileSync(join(repo, DENIED), 'utf8')).toBe('token=abc\n');
+    expect(warnings()).toContain(DENIED);
+    expect(warnings()).toContain('credentials');
+    expect(warnings()).toContain('git ignores it');
+    expect(warnings()).toContain('check-ignore');
+  });
+
+  it('names the individual files inside an ignored DIRECTORY, not the directory', async () => {
+    // `--untracked-files=all` is what makes git descend into an ignored tree
+    // rather than collapsing it to one directory record, which is the
+    // difference between a WARN the user can act on and one that sends them
+    // searching.
+    writeFileSync(join(repo, '.gitignore'), 'shared/commands/credentials/\n');
+    g(['add', '-A'], repo);
+    g(['commit', '-qm', 'ignore credentials'], repo);
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials', 'nested'), { recursive: true });
+    writeFileSync(join(repo, DENIED), 'token=abc\n');
+    writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'nested', 'more.md'), 'x\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(warnings()).toContain(DENIED);
+    expect(warnings()).toContain('shared/commands/credentials/nested/more.md');
+  });
+
+  it('still sweeps untracked paths when the ignored probe cannot answer', async () => {
+    // The two probes are separate so the expensive one cannot take the cheap
+    // one down. `--ignored` makes git recurse into every ignored subtree, and
+    // gitProbe collapses a timeout to null; sharing one probe would mean a slow
+    // walk silently disabling the removing half as well.
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    writeFileSync(join(repo, DENIED), 'token=abc\n');
+    vi.doMock('./git-probe.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof gitProbeModule>();
+      return {
+        ...actual,
+        gitProbe: (args: readonly string[], cwd: string) =>
+          args.includes('--ignored') ? null : actual.gitProbe(args, cwd),
+      };
+    });
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(existsSync(join(repo, DENIED))).toBe(false);
+    expect(warnings()).toContain(DENIED);
+  });
+
+  it('leaves an ordinary gitignored path under shared/ alone', async () => {
+    // The ignored pass sees every ignored path under shared/, so the segment
+    // filter is the only thing keeping the WARN off content a user
+    // deliberately keeps out of git.
+    writeFileSync(join(repo, '.gitignore'), 'shared/commands/scratch.md\n');
+    g(['add', '-A'], repo);
+    g(['commit', '-qm', 'ignore scratch'], repo);
+    writeFileSync(join(repo, 'shared', 'commands', 'scratch.md'), '# local notes\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(existsSync(join(repo, 'shared', 'commands', 'scratch.md'))).toBe(true);
+    expect(warnings()).toBe('');
   });
 
   it('reports a TRACKED denylisted path and changes neither the file nor the index', async () => {

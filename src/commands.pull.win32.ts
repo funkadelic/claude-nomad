@@ -9,7 +9,7 @@ import { join } from 'node:path';
 
 import { yellow, warnGlyph } from './color.ts';
 import { parsePorcelainZ } from './commands.pull.recovery.git.ts';
-import { allSharedLinks, backupBase, type PathMap } from './config.ts';
+import { allSharedLinks, backupBase, deniedSegmentFor, type PathMap } from './config.ts';
 import { gitProbe } from './git-probe.ts';
 import {
   applySharedLinkDeletions,
@@ -179,13 +179,73 @@ function newlyUntracked(before: Set<string> | null, after: Set<string> | null): 
 }
 
 /**
+ * Repo-relative paths git reports as IGNORED under `shared/`, or an empty list
+ * when the probe could not answer.
+ *
+ * A deliberately separate probe from the one {@link revertDeniedUnderShared}
+ * acts on, and the separation is the point. `--ignored` makes git recurse into
+ * every ignored subtree under `shared/` and emit a record per file, where
+ * without it git prunes at the directory and never descends, so this is the
+ * expensive half. Folding the flag into the single probe would put the whole
+ * gate behind that walk: `gitProbe` collapses a timeout to `null`, the caller
+ * returns, and a plainly untracked credential file the gate used to catch would
+ * pass unreported and unmentioned. Run separately, a walk that times out costs
+ * only the ignored half.
+ *
+ * `--untracked-files=all` travels with the flag so an ignored DIRECTORY expands
+ * into its individual files, which is what makes the WARN name something the
+ * user can act on rather than a directory to go searching through.
+ *
+ * @param repo - Absolute path to the sync repo.
+ * @returns The ignored paths, or `[]` when git could not answer.
+ */
+function ignoredPathsUnderShared(repo: string): string[] {
+  const out = gitProbe(
+    ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored', '--', 'shared/'],
+    repo,
+  );
+  if (out === null) return [];
+  return out
+    .split('\0')
+    .filter((record) => record.startsWith('!! '))
+    .map((record) => record.slice(3));
+}
+
+/**
+ * Report every IGNORED denylisted path under `shared/`, changing nothing.
+ *
+ * Report-only, and unlike the tracked half that is not about git being hard to
+ * patch safely. An ignored path cannot leak. Every staging call in this
+ * codebase is a plain `git add -A` or `git add -- <path>`, never `git add -f`,
+ * and git will not stage an ignored path without it, so such a file cannot
+ * reach the index, the gitleaks scan, a commit, or the remote by any route
+ * nomad drives. Removing it would destroy user data to close nothing: the
+ * pattern that hides it is one the user wrote, or worse one their GLOBAL
+ * `core.excludesFile` supplies, and `.env`, `.npmrc`, `.netrc` and `credentials`
+ * are all both on the never-sync list and near-universal in a developer's
+ * global ignore file. So the WARN says where it is and leaves it there.
+ *
+ * @param repo - Absolute path to the sync repo.
+ */
+function reportIgnoredDenied(repo: string): void {
+  for (const path of new Set(ignoredPathsUnderShared(repo))) {
+    const segment = deniedSegmentFor(path);
+    if (segment === null) continue;
+    warn(
+      `${path} is inside shared/ but git ignores it: the path segment "${segment}" is on the never-sync list. Nothing was changed, and nothing published it: nomad only ever stages with "git add -A", which skips an ignored path, so it has not reached the index or the remote. It stays invisible to the rest of this gate for the same reason, so move it outside shared/ if you want it kept, or delete it. Note the ignore rule may come from your global core.excludesFile rather than from this repo; "git check-ignore -v -- ${path}" names the file and line it came from`,
+    );
+  }
+}
+
+/**
  * Run the denylist backstop over the repo working tree's `shared/` subtree.
  *
- * The sweep treats its two halves differently, and
- * {@link revertDeniedMirrorPaths} owns the reasoning: an untracked hit is
- * snapshotted and then removed, while a tracked hit is reported and left
- * exactly as it was found. So a hit here is always a WARN, and only sometimes
- * a write.
+ * The sweep treats its halves differently, and
+ * {@link revertDeniedMirrorPaths} owns the reasoning for the first two: an
+ * untracked hit is snapshotted and then removed, while a tracked hit is
+ * reported and left exactly as it was found. So a hit is always a WARN, and
+ * only sometimes a write. {@link reportIgnoredDenied} adds a third, also
+ * report-only, over the paths git ignores.
  *
  * Fed by a `git status` snapshot rather than the untracked-file diff the
  * reconcile already computes, because `git ls-files --others` only ever lists
@@ -201,7 +261,8 @@ function newlyUntracked(before: Set<string> | null, after: Set<string> | null): 
  * in this file has the same fail-open contract, and the removing half is why it
  * has to be this one: acting on an unanswerable snapshot is how a gate deletes
  * the wrong path, and a report built from the same snapshot would send the user
- * after the wrong one.
+ * after the wrong one. The ignored pass runs either way, since it has its own
+ * probe and never writes.
  *
  * @param repo - Absolute path to the sync repo.
  * @param ts - Backup timestamp, resolved once by `runPullCore`. Reaches only
@@ -212,8 +273,8 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
     ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', 'shared/'],
     repo,
   );
-  if (out === null) return;
-  revertDeniedMirrorPaths(repo, parsePorcelainZ(out), ts);
+  if (out !== null) revertDeniedMirrorPaths(repo, parsePorcelainZ(out), ts);
+  reportIgnoredDenied(repo);
 }
 
 /**
