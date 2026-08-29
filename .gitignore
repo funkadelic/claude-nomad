@@ -21,6 +21,8 @@ docs-site/.astro/
 .stryker-tmp/
 reports/
 .test-bundle/
+# JUnit XML for Codecov Test Analytics; written by the CI test steps only.
+/test-report.junit.xml
 
 # Local dev-loop caches (speed only; never restored in CI, so CI always runs
 # cold/full). tsc --incremental buildinfo and ESLint's --cache file. Prettier's

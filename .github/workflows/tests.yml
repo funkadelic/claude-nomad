@@ -48,6 +48,9 @@ jobs:
       # Surfaced at job level so the SonarCloud step's `if:` can detect
       # an unset secret (e.g. on fork PRs) and skip cleanly.
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # Named once so the step that writes the report and the step that uploads
+      # it cannot drift apart. Gitignored, so it never lands in a commit.
+      JUNIT_REPORT: ./test-report.junit.xml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -249,19 +252,48 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $destDir
           & "$destDir\gitleaks.exe" version
 
+      # The junit reporter runs beside the default one, so console output is
+      # unchanged. One file covers both vitest projects and scripts/, keyed by
+      # test file path, which is how Codecov identifies a test across runs.
       - name: Run tests with coverage
         if: steps.gate.outputs.skip != 'true' && matrix.os == 'ubuntu-latest'
-        run: npm run coverage
+        run: npm run coverage -- --reporter=default --reporter=junit --outputFile.junit=${{ env.JUNIT_REPORT }}
 
       # Windows leg runs the plain suite (no coverage upload) to avoid a
       # second, redundant Sonar/Codecov submission from a second OS; picocolors
       # forces color on for win32 regardless of TTY, so NO_COLOR=1 keeps
-      # doctor-glyph string assertions stable here.
+      # doctor-glyph string assertions stable here. Test results still upload
+      # from this leg, which is the one that flakes.
       - name: Run tests (Windows)
         if: steps.gate.outputs.skip != 'true' && matrix.os == 'windows-latest'
         env:
           NO_COLOR: '1'
-        run: npx vitest run
+        run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=${{ env.JUNIT_REPORT }}
+
+      # Codecov Test Analytics: failure rates, flake detection and per-test
+      # timing over the JUnit XML the steps above write. Same action and pin as
+      # the coverage upload below, switched to test results by `report_type`;
+      # the standalone codecov/test-results-action is archived.
+      #
+      # A step defaults to running only on success, so `!cancelled()` is what
+      # makes this one run after a failing suite, the run the data is most
+      # wanted for. `handle_no_reports_found` covers the other side of that:
+      # an earlier failure can mean no suite ever wrote a report. Every leg
+      # uploads, unlike coverage, because a flake belongs to the OS and node
+      # version that produced it.
+      - name: Upload test results to Codecov
+        if: >-
+          ${{ !cancelled() && steps.gate.outputs.skip != 'true'
+          && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
+        with:
+          report_type: test_results
+          files: ${{ env.JUNIT_REPORT }}
+          disable_search: true
+          handle_no_reports_found: true
+          flags: ${{ matrix.os }}-node${{ matrix.node-version }}
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       # Source sonar.projectVersion from package.json (bumped by release-please)
       # so the Sonar analysis version stays current without a hardcoded value.
