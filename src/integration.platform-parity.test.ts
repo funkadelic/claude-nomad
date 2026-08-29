@@ -51,6 +51,22 @@ const hasGit = ((): boolean => {
   }
 })();
 
+/**
+ * Returns `true` when the `gitleaks` binary is present on PATH. Gates the sync
+ * journey below, whose push half hard-requires gitleaks. CI installs it; the
+ * npm-publish prepublishOnly hook runs the suite without it, so the journey
+ * skips cleanly there rather than failing the release. The pull journey above
+ * drives no push and carries no such gate.
+ */
+const hasGitleaks = ((): boolean => {
+  try {
+    execFileSync('gitleaks', ['version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
 /** Shared-config content seeded into the repo before the host materializes it. */
 const ORIGINAL_MD = '# shared claude md (from the repo)\n';
 /** The unpublished host-side edit whose survival across a pull is the invariant. */
@@ -65,6 +81,11 @@ const EDITED_MD = '# shared claude md (edited locally, not yet pushed)\n';
  * changed to notice."
  */
 const FORCED_MD = '# shared claude md (edited again, clean repo, force-remote)\n';
+/**
+ * The edit host B publishes with `nomad sync`, and the exact bytes host A must
+ * read back afterwards.
+ */
+const SYNCED_MD = '# shared claude md (edited on host B, published by nomad sync)\n';
 
 describe.skipIf(!hasGit)('parity: pull preserves an unpublished shared-config edit', () => {
   let tmp: string;
@@ -142,6 +163,74 @@ describe.skipIf(!hasGit)('parity: pull preserves an unpublished shared-config ed
     ).toBe(FORCED_MD);
   });
 });
+
+describe.skipIf(!hasGit || !hasGitleaks)(
+  'parity: sync publishes an unpublished shared-config edit',
+  () => {
+    let tmp: string;
+
+    beforeEach(() => {
+      tmp = mkdtempSync(join(tmpdir(), 'nomad-parity-sync-'));
+    });
+
+    afterEach(() => {
+      rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it("lands host B's edit on host A on both modalities", () => {
+      // Sync runs the pull and the push under one held lock. Before the fix the
+      // win32 pull half reverted the edit and the push half published the
+      // revert, so the run made to publish the edit is what erased it.
+      const { makeHost } = makeWorld(tmp);
+
+      const a = makeHost('host-a');
+      mkdirSync(a.claudeHome, { recursive: true });
+      writeFileSync(join(a.claudeHome, 'CLAUDE.md'), ORIGINAL_MD);
+      const initResult = runNomad(a, ['init', '--snapshot', '--keep-actions']);
+      expect(initResult.status, `init failed:\n${initResult.stderr}`).toBe(0);
+      g(['add', '-A'], a.repo);
+      g(['commit', '-q', '-m', 'nomad init scaffold'], a.repo);
+      g(['push', '-q', 'origin', 'main'], a.repo);
+
+      const b = makeHost('host-b');
+      const firstPull = runNomad(b, ['pull']);
+      expect(firstPull.status, `host B first pull failed:\n${firstPull.stderr}`).toBe(0);
+      const bClaudeMd = join(b.claudeHome, 'CLAUDE.md');
+      expect(readFileSync(bClaudeMd, 'utf8'), 'shared config did not materialize on B').toBe(
+        ORIGINAL_MD,
+      );
+
+      // The user edits their config and publishes it in one step.
+      writeFileSync(bClaudeMd, SYNCED_MD);
+      const sync = runNomad(b, ['sync']);
+      expect(sync.status, `sync failed:\n${sync.stdout}\n${sync.stderr}`).toBe(0);
+
+      // Invariant 1: sync's own pull half did not revert the edit under B.
+      expect(readFileSync(bClaudeMd, 'utf8'), 'the sync pull half reverted the local edit').toBe(
+        SYNCED_MD,
+      );
+
+      // Invariant 2: the push half published the EDIT, not the pre-edit content
+      // the pull half would have restored. Asserted on B's repo first so a red
+      // run separates a publish failure here from a receive failure on A, which
+      // a single end-to-end assertion cannot tell apart.
+      expect(
+        readFileSync(join(b.repo, 'shared', 'CLAUDE.md'), 'utf8'),
+        'the sync push half published what its own pull half restored, not the edit',
+      ).toBe(SYNCED_MD);
+
+      // Invariant 3: and the other host actually receives it. The second pull
+      // is what buys receive-side coverage on win32, where the shared name is a
+      // real copy rather than a symlink.
+      const aPull = runNomad(a, ['pull']);
+      expect(aPull.status, `host A pull failed:\n${aPull.stderr}`).toBe(0);
+      expect(
+        readFileSync(join(a.claudeHome, 'CLAUDE.md'), 'utf8'),
+        "host A did not receive host B's published edit",
+      ).toBe(SYNCED_MD);
+    });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // In-process sandbox
