@@ -449,6 +449,7 @@ describe('cmdRedact', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
+    vi.doUnmock('./utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;

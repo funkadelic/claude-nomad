@@ -717,6 +717,10 @@ describe('cmdPull wedge preflight', () => {
     vi.doUnmock('./commands.pull.recovery.ts');
     vi.doUnmock('./commands.pull.recovery.unmerged.ts');
     vi.doUnmock('./utils.ts');
+    vi.doUnmock('./links.ts');
+    vi.doUnmock('./links.mirror.ts');
+    vi.doUnmock('./remap.ts');
+    vi.doUnmock('./extras-sync.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -2601,6 +2605,7 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
     vi.doUnmock('./commands.pull.wedge.ts');
+    vi.doUnmock('./commands.pull.recovery.ts');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./remap.ts');
