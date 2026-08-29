@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -199,31 +199,44 @@ function countMockCalls(source: string): { all: number; literal: number } {
 }
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
-const THIS_FILE = basename(fileURLToPath(import.meta.url));
+const THIS_FILE = fileURLToPath(import.meta.url);
 
 /**
- * Every `*.test.ts` in this directory, excluding this guard itself so its own
- * textual references to the API cannot make it scan its own source.
+ * Every `*.test.ts` vitest runs, excluding this guard itself so its own textual
+ * references to the API cannot make it scan its own source.
+ *
+ * Walked recursively over the same two roots `vitest.config.ts` includes
+ * (`src/` and `scripts/`), because a flat `readdirSync` misses a nested test
+ * file: it would run in the suite while never entering this scan.
  *
  * Deliberately NOT pre-filtered on the file containing `vi.doMock(`. Several
- * files here install their mocks entirely through an imported helper and carry
- * no literal call of their own, and a text filter drops exactly those: the
- * scan goes green while a real leak sits in a file it never opened.
+ * files install their mocks entirely through an imported helper and carry no
+ * literal call of their own, and a text filter drops exactly those: the scan
+ * goes green while a real leak sits in a file it never opened.
  * `findViolations` returns nothing for a file with no mocks, so the filter
  * bought nothing anyway.
  *
- * @returns The matching basenames, in `readdirSync` order.
+ * @returns Absolute paths to every test file to scan.
  */
 function listTestFiles(): string[] {
-  return readdirSync(TEST_DIR).filter((name) => name !== THIS_FILE && name.endsWith('.test.ts'));
+  const roots = [TEST_DIR, join(TEST_DIR, '..', 'scripts')];
+  const found: string[] = [];
+  for (const root of roots) {
+    for (const entry of readdirSync(root, { withFileTypes: true, recursive: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.test.ts')) continue;
+      const abs = join(entry.parentPath, entry.name);
+      if (abs !== THIS_FILE) found.push(abs);
+    }
+  }
+  return found;
 }
 
 /**
  * Paths of the test-helper modules `source` imports, whether they sit beside
- * the test file or under `test-support/`.
+ * the importing file or under `test-support/`.
  *
  * @param source - The importing test file's contents.
- * @returns Repo-relative specifiers, as written in the import.
+ * @returns The specifiers as written in the import.
  */
 function helperImports(source: string): string[] {
   return [...source.matchAll(/from '(\.[^']+)'/g)]
@@ -232,33 +245,56 @@ function helperImports(source: string): string[] {
 }
 
 /**
- * The named top-level helper regions of the test-helper modules `source`
- * imports, so a mock or an unmock performed inside one is attributed to the
- * `describe` that calls it.
+ * Every helper module path reachable from the corpus, resolved against the
+ * directory of the file that imports it rather than against one fixed root, so
+ * a nested test file's relative specifier still lands on the right file.
+ *
+ * @param corpus - Absolute path and contents of each scanned test file.
+ * @returns Absolute helper paths, deduplicated.
+ */
+function resolveHelperPaths(corpus: readonly (readonly [string, string])[]): string[] {
+  const paths = new Set<string>();
+  for (const [file, source] of corpus) {
+    for (const target of helperImports(source)) paths.add(join(dirname(file), target));
+  }
+  return [...paths];
+}
+
+/**
+ * Read every helper module once, keeping its named top-level regions.
  *
  * Harvesting the whole region, rather than just its unmocks, is what keeps the
  * two halves symmetric across the module boundary. Pulling in only unmocks
  * would hand every describe a free pass for a helper's teardown while never
  * charging it for the setup that installed the mock.
  *
- * An unreadable or renamed helper contributes nothing rather than throwing, so
- * a broken import surfaces as a symmetry failure instead of a crash inside the
- * guard.
+ * A helper that cannot be read is RECORDED rather than skipped quietly. Losing
+ * one drops its `vi.doMock` text as well as its `vi.doUnmock` text, so a file
+ * that installs every mock through it would then have nothing to report and the
+ * guard would pass on exactly the case it exists to cover. The repository-wide
+ * check asserts this list is empty.
  *
- * @param source - The importing test file's contents.
- * @returns The helper modules' named top-level regions.
+ * @param paths - Absolute helper module paths.
+ * @returns The parsed regions per helper, and the paths that could not be read.
  */
-function importedHelperRegions(source: string): Region[] {
-  const regions: Region[] = [];
-  for (const target of helperImports(source)) {
+function readHelpers(paths: readonly string[]): {
+  regionsByPath: Map<string, Region[]>;
+  unreadable: string[];
+} {
+  const regionsByPath = new Map<string, Region[]>();
+  const unreadable: string[] = [];
+  for (const path of paths) {
     try {
-      const helperSource = readFileSync(join(TEST_DIR, target), 'utf8');
-      regions.push(...topLevelRegions(helperSource).filter((r) => r.name !== null));
+      const source = readFileSync(path, 'utf8');
+      regionsByPath.set(
+        path,
+        topLevelRegions(source).filter((r) => r.name !== null),
+      );
     } catch {
-      /* a helper this guard cannot read contributes no regions */
+      unreadable.push(path);
     }
   }
-  return regions;
+  return { regionsByPath, unreadable };
 }
 
 describe('findViolations', () => {
@@ -450,25 +486,49 @@ describe('findViolations', () => {
   });
 });
 
-/** Every scanned test file's basename paired with its contents, read once. */
-const CORPUS: readonly (readonly [string, string])[] = listTestFiles().map((name) => [
-  name,
-  readFileSync(join(TEST_DIR, name), 'utf8'),
+/** Absolute path and contents of every scanned test file, read once. */
+const CORPUS: readonly (readonly [string, string])[] = listTestFiles().map((file) => [
+  file,
+  readFileSync(file, 'utf8'),
 ]);
+
+/** Named top-level regions of every helper module the corpus imports, read once. */
+const HELPERS = readHelpers(resolveHelperPaths(CORPUS));
+
+/** Path shown in a failure message: relative to `src/`, so it stays readable. */
+function label(file: string): string {
+  return relative(TEST_DIR, file);
+}
+
+/** The helper regions reachable from one test file. */
+function helpersFor(source: string, file: string): Region[] {
+  return helperImports(source).flatMap(
+    (target) => HELPERS.regionsByPath.get(join(dirname(file), target)) ?? [],
+  );
+}
 
 describe('doMock/doUnmock symmetry across every test file', () => {
   it('every describe can reach a vi.doUnmock for what it vi.doMocks', () => {
     // A discovery failure (an empty scan) must not read as a pass.
     expect(CORPUS.length).toBeGreaterThan(0);
+    // Nor may a helper this guard cannot read. Dropping one takes its doMock
+    // text with its doUnmock text, so a file that installs every mock through
+    // that helper would report nothing and the scan would go green.
+    expect(HELPERS.unreadable.map(label)).toEqual([]);
     const violations: Violation[] = [];
     let attributed = 0;
     for (const [file, source] of CORPUS) {
-      violations.push(...findViolations(file, source, importedHelperRegions(source)));
-      attributed += countMockCalls(source).all;
+      violations.push(...findViolations(label(file), source, helpersFor(source, file)));
+      attributed += extract(MOCK_PATTERN, source).length;
+    }
+    for (const regions of HELPERS.regionsByPath.values()) {
+      for (const region of regions) attributed += extract(MOCK_PATTERN, region.text).length;
     }
     // Discovery is not the only way this check can fail open: if MOCK_PATTERN
     // ever stops matching, every file is visited, nothing is attributed, and
-    // the scan reports green. The real tree carries hundreds.
+    // the scan reports green. Counted through the same pattern the check uses,
+    // over helper modules as well, so moving mocks into a helper does not drift
+    // the number toward the floor. The real tree carries hundreds.
     expect(attributed).toBeGreaterThan(100);
     if (violations.length > 0) {
       const detail = violations
@@ -488,25 +548,17 @@ describe('doMock/doUnmock symmetry across every test file', () => {
   it('every vi.doMock call site uses a plain single-quoted specifier', () => {
     // Helper modules are checked too: they are where a mock most easily hides
     // from the scan above, since the file that calls one carries no doMock text.
-    const seen = new Set<string>();
-    const sources: (readonly [string, string])[] = [];
-    for (const [file, source] of CORPUS) {
-      sources.push([file, source]);
-      for (const target of helperImports(source)) {
-        if (seen.has(target)) continue;
-        seen.add(target);
-        try {
-          sources.push([target, readFileSync(join(TEST_DIR, target), 'utf8')]);
-        } catch {
-          /* an unreadable helper is reported by the symmetry check instead */
-        }
-      }
-    }
+    const sources: (readonly [string, string])[] = [
+      ...CORPUS,
+      ...[...HELPERS.regionsByPath].map(
+        ([path, regions]) => [path, regions.map((r) => r.text).join('\n')] as const,
+      ),
+    ];
     for (const [file, source] of sources) {
       const { all, literal } = countMockCalls(source);
       expect(
         all,
-        `${file} has ${all} vi.doMock( call site(s) but only ${literal} use a plain ` +
+        `${label(file)} has ${all} vi.doMock( call site(s) but only ${literal} use a plain ` +
           'single-quoted specifier; a computed or non-literal specifier is invisible to the ' +
           'symmetry guard above',
       ).toBe(literal);
