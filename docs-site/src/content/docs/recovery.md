@@ -16,9 +16,9 @@ description: Pruning backups, dropping sessions, redacting secrets, and managing
 
 ## Pruning old backups
 
-Every `nomad pull` and `nomad push` keeps you safe by copying any file it is about to overwrite
-into a timestamped snapshot under `~/.cache/claude-nomad/backup/<ts>/`. That is what makes an
-unexpected overwrite recoverable, but the snapshots are never deleted automatically, so over many
+Every `nomad pull` and `nomad push` copies any file it is about to overwrite into a timestamped
+snapshot under `~/.cache/claude-nomad/backup/<ts>/`. That is what makes an unexpected overwrite
+recoverable, but the snapshots are never deleted automatically, so over many
 syncs the folder slowly grows. It lives in your local cache and is never synced to the shared
 repo, so cleaning it up is purely local disk housekeeping.
 
@@ -44,10 +44,10 @@ machine. A sync now clears its own folder in those cases, so any empty ones you 
 leftovers from earlier versions. There is nothing in one to recover either way.
 
 `nomad clean` only ever touches the timestamped snapshot directories directly inside the backup
-folder; it never follows symlinks out of it and never removes the backup folder itself. As a
-gentle reminder, `nomad doctor` shows a warning when the backup folder grows past roughly 20
-snapshots or 200 MB, nudging you to run `nomad clean --backups`. That warning is informational
-only and never changes the doctor exit code.
+folder; it never follows symlinks out of it and never removes the backup folder itself. `nomad
+doctor` shows a warning when the backup folder grows past roughly 20 snapshots or 200 MB, nudging
+you to run `nomad clean --backups`. That warning is informational only and never changes the doctor
+exit code.
 
 ## nomad drop-session
 
@@ -180,7 +180,7 @@ Two branches from here:
    `src/remap.ts`) does a full rm-and-copy mirror of your LOCAL transcripts into
    `shared/projects/` on every push, so the next `nomad push` re-copies the un-scrubbed local
    file forward and re-stages the same secret. The durable fix is to rotate AND scrub the local
-   transcript. The easiest way: `nomad redact <sid-aaaa>` (see above), which rewrites the secret
+   transcript. The easiest way is `nomad redact <sid-aaaa>` (see above), which rewrites the secret
    span in place with a backup. Alternatively, remove the local transcript at
    `~/.claude/projects/<encoded>/<sid-aaaa>.jsonl` (plus the sibling `<sid-aaaa>/` subagent
    directory, if present). Do not leave the local file un-scrubbed and expect the staged-tree drop

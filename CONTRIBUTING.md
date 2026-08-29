@@ -82,10 +82,10 @@ not have to be reverse-engineered from them.
   own tree and adds upgrade-PR churn that the committed lockfile already makes unnecessary. Pin in
   the lockfile (automatic), not in the manifest ranges.
 
-One grouping choice is deliberate and worth stating: Dependabot groups dev-dependency `minor` and
-`patch` updates and production `patch` updates into single PRs, but a production `minor` update
-arrives as its own PR. Production minors are the likeliest to carry behavior change, so they get
-individual review while the lower-risk batches stay consolidated.
+One grouping choice is deliberate: Dependabot groups dev-dependency `minor` and `patch` updates and
+production `patch` updates into single PRs, but a production `minor` update arrives as its own PR.
+Production minors are the likeliest to carry behavior change, so they get individual review while
+the lower-risk batches stay consolidated.
 
 ## Mutation testing
 
@@ -206,11 +206,13 @@ itself be a valid Conventional Commit subject (a CI check enforces this).
 Releases are automated by release-please, which reads Conventional Commit types to decide both the
 version bump and the changelog grouping:
 
-- `feat` triggers a minor bump; `fix` and `perf` trigger a patch bump; a `!` suffix or a
-  `BREAKING CHANGE:` footer triggers a major bump.
-- Other types (`docs`, `refactor`, `test`, `build`, `ci`, `chore`, `style`, `deps`, `deps-dev`) are
-  grouped into the changelog but do not by themselves bump the version. The full type-to-section
-  mapping lives in [`release-please-config.json`](release-please-config.json).
+- `feat` triggers a minor bump; a `!` suffix or a `BREAKING CHANGE:` footer triggers a major bump;
+  every other Conventional Commit type in the config (`fix`, `perf`, `docs`, `refactor`, `test`,
+  `build`, `ci`, `chore`, `style`, `deps`, `deps-dev`) triggers a patch bump.
+- The type only decides which changelog section the entry lands in, not whether a release happens.
+  None of these types is marked `hidden` in
+  [`release-please-config.json`](release-please-config.json), so any one of them landing on `main`
+  is enough to cut a release. The full type-to-section mapping lives there.
 
 Two per-PR escape hatches override the computed version when you need them: add a
 `Release-As: <version>` footer to force a specific version, or wrap a replacement message in a

@@ -34,5 +34,5 @@ so you never have to remember which one to run first.
   place and follow you everywhere. Per-machine tweaks like model choice, MCP URLs, and env vars
   merge on top instead of clobbering your shared defaults.
 
-Not dotfiles, not rsync. **claude-nomad** understands Claude Code's state, so your session history
-survives different file paths and your secrets never ride along.
+Dotfiles managers and rsync copy files. **claude-nomad** understands Claude Code's state, so your
+session history survives different file paths and your secrets never ride along.

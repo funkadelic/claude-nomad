@@ -73,7 +73,7 @@ remain available as the lower-level halves).
 
 ## Cross-OS project remapping
 
-This is the feature most config-sync tools lack. The same project lives at a different absolute path
+The same project lives at a different absolute path
 on each machine (`/Users/you/app` on a Mac, `/home/you/app` on Linux), so Claude Code stores its
 session transcripts under a different directory key on each host. Mapping one logical name to both
 paths lets your session history follow you.

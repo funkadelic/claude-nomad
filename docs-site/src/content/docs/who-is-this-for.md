@@ -56,4 +56,4 @@ go up is secret-scanned before it leaves. See [Security](/claude-nomad/security/
 
 If you only ever use Claude Code on a single machine and never plan to move, you do not need this.
 
-Ready to set up? Head to the [Quickstart](/claude-nomad/quickstart/).
+To set up, head to the [Quickstart](/claude-nomad/quickstart/).

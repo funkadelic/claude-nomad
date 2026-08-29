@@ -76,7 +76,7 @@ not have to be reverse-engineered from them.
   their own tree and adds upgrade-PR churn that the committed lockfile already makes unnecessary.
   Pin in the lockfile (automatic), not in the manifest ranges.
 
-One grouping choice is deliberate and worth stating: Dependabot groups dev-dependency `minor` and
+One grouping choice is deliberate: Dependabot groups dev-dependency `minor` and
 `patch` updates and production `patch` updates into single PRs, but a production `minor` update
 arrives as its own PR. Production minors are the likeliest to carry behavior change, so they get
 individual review while the lower-risk batches stay consolidated.

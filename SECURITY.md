@@ -42,7 +42,7 @@ as accepted trade-offs rather than defended in code.
 - **The sync repo is a trust boundary for pulling hosts.** Content pulled from the repo (session
   transcripts, settings overrides, symlinked shared directories) is applied to `~/.claude/` on every
   host. Path-map keys and host paths are validated against traversal before any filesystem write,
-  but the broader principle holds: a host trusts whatever the repo contains.
+  but a host still trusts whatever the repo contains.
 
 Under the intended single-user model none of these is exploitable by a remote party; they matter
 only for multi-user repos or a repo compromise, which are out of scope for the default deployment.
