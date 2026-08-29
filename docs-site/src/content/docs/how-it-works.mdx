@@ -7,7 +7,7 @@ import { FileTree } from '@astrojs/starlight/components';
 
 ## Overview
 
-**claude-nomad** is a **tool**, not a config store. You install the CLI globally
+**claude-nomad** is a tool, not a config store. You install the CLI globally
 (`npm i -g claude-nomad`) and keep a separate **private** Git repo that holds only your config:
 `CLAUDE.md`, skills, settings, session transcripts. No tool source code lives in that repo.
 
@@ -199,7 +199,7 @@ so they need no manual install.
 
 ## Path remapping
 
-The hard problem: Claude Code stores sessions in `~/.claude/projects/<encoded-path>/`, where the
+Claude Code stores sessions in `~/.claude/projects/<encoded-path>/`, where the
 encoded path is the absolute project path with every character that isn't an ASCII letter or digit
 (`A-Z`, `a-z`, `0-9`) replaced by `-`, and any result longer than 200 characters shortened with a
 short hash on the end. So the same logical project ends up in different directories on each host.
@@ -413,7 +413,7 @@ Read these before adopting so you opt in with eyes open.
 
 - **Last-write-wins on conflicts.** Git surfaces them on merge; no field-level JSON merging.
 - **Manual push/pull.** No file watcher. Shell hooks recommended.
-- **OAuth doesn't sync.** You'll log in once per host. Intentional.
+- **OAuth doesn't sync.** You'll log in once per host, by design.
 - **Only sessions in `path-map.json` are remapped.** Drive-by sessions on un-mapped paths are
   left alone.
 - **Extras are opt-in and whitelisted.** Projects without an `extras` entry in `path-map.json`

@@ -75,4 +75,4 @@ cannot provide. `nomad sync` runs that same push pipeline as its second half. So
 When a Claude Code session starts (including `--resume`, `/clear`, and after a compaction), the
 plugin quietly runs `nomad doctor` and surfaces any warnings or failures into the session. If
 everything is healthy, it says nothing. The check is read-only, never writes to `~/.claude/`, and
-always lets the session start even if doctor reports a problem, so it can never get in your way.
+always lets the session start even if doctor reports a problem.

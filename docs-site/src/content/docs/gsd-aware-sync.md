@@ -147,7 +147,7 @@ gsd's own install:
 npm i -g @opengsd/gsd-core
 ```
 
-That single install step is what gives the new host its gsd hooks and agents. A `nomad pull` will
+That install gives the new host its gsd hooks and agents. A `nomad pull` will
 not do it for you.
 
 Everything else (your skills, settings, session transcripts, project extras) arrives via the normal

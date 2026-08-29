@@ -6,7 +6,7 @@ description: Install and configure claude-nomad in four steps.
 ## Requirements
 
 - Node.js 22.22.1 or newer (24 LTS recommended; the npm `engines` field declares the 22.22.1 floor
-  and surfaces a warning on older runtimes -- npm only blocks the install when `engine-strict=true`
+  and surfaces a warning on older runtimes; npm only blocks the install when `engine-strict=true`
   is configured)
 - Git
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) (required for `nomad push`, which exits with
@@ -147,19 +147,19 @@ other side:
   directory already removes it on macOS or Linux, and that pull names the removal in the same
   `Symlinks` section, on its own row right after any files it captured. The removal is left
   uncommitted, so it publishes on your next push and passes the same secret scan as everything else,
-  and the file is snapshotted to the backup dir first. The safety rule behind this: nomad only
-  removes a file it has a record of having given this machine, so a repo file this machine has never
-  synced is never touched. That record is also why the first pull after you upgrade to this version
-  is an exception: there is nothing to compare against yet, so a deletion made before that pull
-  comes back once, and deleting it again sticks. If a file you created has the same name as one
-  another machine just created, the pull stops before it overlays your copy: the only thing it
+  and the file is snapshotted to the backup dir first. Nomad only removes a file it has a record of
+  having given this machine, so a repo file this machine has never synced is never touched. That
+  record is also why the first pull after you upgrade to this version is an exception: there is
+  nothing to compare against yet, so a deletion made before that pull comes back once, and deleting
+  it again sticks. If a file you created has the same name as one another machine just created, the
+  pull stops before it overlays your copy: the only thing it
   removes is the temporary copy it had just made inside the sync repo, and it tells you which file
-  under `~/.claude/` to move or rename, with the two ways to finish. Nothing is lost either way:
-  your file stays exactly as you left it and the update simply waits for the next pull. `nomad pull
-  --force-remote` recovers a wedged sync repo. When the repo is stuck mid-rebase or mid-merge,
-  recovery parks any local commits on a branch of their own, resets the repo to match the shared
-  repo, and on native Windows that reset also replaces your shared config with the repo's copy; the
-  pull warns naming how many shared names it restored from the repo copy, with your previous copies
+  under `~/.claude/` to move or rename, with the two ways to finish. Your file stays exactly as you
+  left it and the update waits for the next pull. `nomad pull --force-remote` recovers a wedged sync
+  repo. When the repo is stuck mid-rebase or mid-merge, recovery parks any local commits on a branch
+  of their own, resets the repo to match the shared repo, and on native Windows that reset also
+  replaces your shared config with the repo's copy; the pull warns naming how many shared names it
+  restored from the repo copy, with your previous copies
   snapshotted to the backup dir first. One guard sits in front of that reset, and it covers the
   sync repo rather than this machine: when the repo's own tracked copy of the shared config differs
   from the shared repo, the pull refuses before it resets anything and lists those repo paths
@@ -168,12 +168,13 @@ other side:
   before you follow the manual steps in the
   [FAQ](/claude-nomad/faq/#state-1-stuck-mid-rebase-or-mid-merge), because those end in a hard reset.
   The refusal clears only once the repo matches the shared repo again; moving or committing the
-  files does not clear it on its own. Two things are worth knowing before you retry: whichever operation
-  was stuck, the rebase or the merge, has already been unwound by the time it refuses, so running
-  the same command again is now just an ordinary pull, and the list can also name paths where the
-  shared repo is simply ahead of yours, which are nothing of yours at risk. The guard cannot help with an edit that exists only on this
-  machine, which is what the warning above is for. A different stuck state, an unfinished index with nothing to abort, recovers by clearing
-  the index without touching your working files, so on native Windows your shared config is left
+  files does not clear it on its own. Before you retry, note two things. Whichever operation was
+  stuck, the rebase or the merge, has already been unwound by the time it refuses, so running the
+  same command again is now just an ordinary pull, and the list can also name paths where the shared
+  repo is simply ahead of yours, which are nothing of yours at risk. The guard cannot help with an
+  edit that exists only on this machine, which is what the warning above is for. A different stuck
+  state, an unfinished index with nothing to abort, recovers by clearing the index without touching
+  your working files, so on native Windows your shared config is left
   exactly as it was, and the usual pre-pull copy into the sync repo still runs, so an edit you have
   not pushed yet is still captured. If a file from that old conflict still carries conflict markers,
   the pull stops there instead, so the markers never reach your live config. Copying instead of
@@ -191,10 +192,10 @@ other side:
   naming the file. The warning names the backup location only when there was something to copy: a
   symlink whose target is already gone is deleted without one, because there is no content to save.
   If it does, pull leaves the file untouched and prints a warning naming the file and the exact
-  command to run to finish clearing it yourself. One thing worth knowing: an ordinary folder of
-  your own inside one of your shared names (`sessions`, `tasks`, `plans`, `cache`, and the like)
-  mirrors along with everything else; it is not on this list, even though Claude Code itself uses
-  those same names under `~/.claude/` for its own runtime state.
+  command to run to finish clearing it yourself. An ordinary folder of your own inside one of your
+  shared names (`sessions`, `tasks`, `plans`, `cache`, and the like) mirrors along with everything
+  else; it is not on this list, even though Claude Code itself uses those same names under
+  `~/.claude/` for its own runtime state.
 - **A `.gitleaksignore` allow entry may not travel across hosts.** gitleaks fingerprints each
   finding using the file path exactly as it saw it: backslashes on native Windows, forward slashes
   on macOS/Linux/WSL2. If you allow a finding with `nomad push --allow` (or `nomad allow`) on native

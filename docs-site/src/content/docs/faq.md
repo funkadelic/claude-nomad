@@ -54,7 +54,7 @@ You do not have to do anything. Two options if you want to tidy up:
 
 - **Want a project's sessions to follow you across hosts?** Add it to `path-map.json` (see
   [Why isn't my session showing up on the other host?](#why-isnt-my-session-showing-up-on-the-other-host)).
-- **It is throwaway?** Delete its folder under `~/.claude/projects/`. That removes the local
+- **Throwaway?** Delete its folder under `~/.claude/projects/`. That removes the local
   transcripts for that directory only; nothing synced is touched, and your mapped projects are
   unaffected.
 
@@ -234,7 +234,7 @@ reapplying them. The pull reports success, but the index is left unmerged, `stas
 is retained, and conflict markers are written into the affected file. HEAD is still on your
 branch, so `git rebase --abort` fails with "no rebase in progress": there is nothing to abort.
 
-nomad now catches this itself. Both `nomad pull` and `nomad push` re-check for this exact state
+nomad catches this itself. Both `nomad pull` and `nomad push` re-check for this exact state
 right after the pull step and stop with exit code 4 before applying or pushing anything that
 carries conflict markers, so you will see nomad's own message rather than a silent success.
 
@@ -293,7 +293,7 @@ Require stack:
 The giveaway is the require stack: the failing script shows up under your **sync repo**
 (`~/claude-nomad/shared/...`) instead of `~/.claude/...`.
 
-Here is what happens. On a synced host, a directory added via `sharedDirs` (see
+On a synced host, a directory added via `sharedDirs` (see
 [Shared support dirs](/claude-nomad/how-it-works/#shared-support-dirs-shareddirs)) is a symlink
 into the sync repo. When Node runs a script from it, it resolves symlinks first, so the script
 "believes" it lives in `~/claude-nomad/shared/my-tool/`. If the tool loads another file by a path

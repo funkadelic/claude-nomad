@@ -49,8 +49,8 @@ If the remote has not been populated yet (you skipped `nomad init --snapshot` an
 your local `~/.claude/` files stay in place. The auto-move only triggers once the canonical state
 is published.
 
-Prefer an explicit tarball rollback and a confirmation prompt before any deletion? Write the
-equivalent under `scripts/`: tar the `SHARED_LINKS` entries under `~/.claude/` first, copy into
+If you prefer an explicit tarball rollback and a confirmation prompt before any deletion, write
+the equivalent under `scripts/`: tar the `SHARED_LINKS` entries under `~/.claude/` first, copy into
 `shared/`, prompt, then `nomad pull`. The auto-move path above is the recommended default.
 
 ## Upgrading the CLI
@@ -134,14 +134,13 @@ Summary
 ```
 
 The `ℹ︎ 4 not in path-map` row is the collapse: rather than printing one line per project that this
-host does not sync, push and pull now show a single count and point you at `nomad doctor`, which
+host does not sync, push and pull show a single count and point you at `nomad doctor`, which
 lists those projects by name if you want the detail. The `Leak scan` section is the secret check
 that runs before anything is published: `✓ no leaks` when the staged transcripts are clean. If a
 secret IS found, that row turns into `✗ gitleaks detected secrets in N session transcript(s)` and
-the full recovery block (which sessions, how to scrub them) still prints below the tree, exactly
-as before. The same `Leak scan` row shows up under `nomad push --dry-run`, which runs that secret
-scan as a read-only preview (nothing is written to the sync repo) and exits non-zero if the
-preview finds anything.
+the full recovery block (which sessions, how to scrub them) still prints below the tree. The same
+`Leak scan` row shows up under `nomad push --dry-run`, which runs that secret scan as a read-only
+preview (nothing is written to the sync repo) and exits non-zero if the preview finds anything.
 
 A `nomad pull` is the mirror image, leading with the settings file it regenerated and then the
 sessions and extras it copied down for this host (on native Windows a `Symlinks` section comes

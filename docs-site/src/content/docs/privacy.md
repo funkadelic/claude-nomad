@@ -49,7 +49,7 @@ when you explicitly run `nomad pull` or `nomad push`, against infrastructure you
 Like any HTTP request, the two requests above reveal standard connection metadata (such as your IP
 address) to the endpoint you contact (npm or the schema store). That is inherent to making a network
 request; it is not collected by claude-nomad or its author. You can run the tool fully offline, in
-which case these checks simply report as unavailable.
+which case these checks report as unavailable.
 
 ## The Claude Code plugin
 

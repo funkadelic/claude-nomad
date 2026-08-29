@@ -62,8 +62,8 @@ documented here as accepted trade-offs rather than defended in code.
   not the global `~/.claude/`) is filtered more strictly
   still: it is checked against the full `NEVER_SYNC` set plus `projects/`, so opting it in strips
   session transcripts and every per-host state directory on push, leaving only config
-  (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`, `rules/`). But the broader principle
-  holds: a host trusts whatever the repo contains.
+  (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`, `rules/`). The filters narrow what
+  can cross, but a host still trusts whatever the repo contains.
 
 Under the intended single-user model none of these is exploitable by a remote party; they matter
 only for multi-user repos or a repo compromise, which are out of scope for the default deployment.
