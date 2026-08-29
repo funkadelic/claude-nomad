@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.67.3](https://github.com/funkadelic/claude-nomad/compare/v0.67.2...v0.67.3) (2026-08-29)
+
+### What's new
+
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and this does not apply to it.
+
+- **`nomad pull` now warns about a file that should never be synced, even when your gitignore hides it.** Before a pull, nomad checks your sync repo for files that have no business travelling between machines, such as credentials or per-host settings, and warns when one turns up under `shared/`. A file covered by a gitignore rule was invisible to that check, so it could sit there unmentioned. Nomad now names the file, along with the `git check-ignore` command that tells you which rule hid it, which is often a rule in your global git config rather than anything you wrote for this repo. It only warns. Nothing is deleted, because nomad cannot publish a file git ignores, so there is nothing to undo.
+
+The rest of this release is internal: a regression test for the Windows `nomad sync` path, a stricter check on the test suite's own mock handling, and test-result reporting in CI. Nothing else changes what nomad does.
+
+
+
+### Fixed
+
+* **pull:** report gitignored denylisted paths under shared/ ([#553](https://github.com/funkadelic/claude-nomad/issues/553)) ([b226902](https://github.com/funkadelic/claude-nomad/commit/b226902e4361a3325a2fd0495e5abbd532f7d806))
+
+
+### Changed
+
+* report test results to Codecov Test Analytics ([#551](https://github.com/funkadelic/claude-nomad/issues/551)) ([a1fb555](https://github.com/funkadelic/claude-nomad/commit/a1fb5558185e6a97a8a026eeb05d3ef6a9834f28))
+
+
+### Documentation
+
+* clean up the documentation prose ([#549](https://github.com/funkadelic/claude-nomad/issues/549)) ([cd8c40d](https://github.com/funkadelic/claude-nomad/commit/cd8c40d2f2877a868876e9ab338f4884060e90d9))
+
+
+### Testing
+
+* scope the doMock/doUnmock symmetry guard to every describe ([#552](https://github.com/funkadelic/claude-nomad/issues/552)) ([ebe4af9](https://github.com/funkadelic/claude-nomad/commit/ebe4af988fed37b9ced1a3a42dd736fb1901c888))
+* **sync:** add a cross-platform parity journey for nomad sync ([f87464d](https://github.com/funkadelic/claude-nomad/commit/f87464dcf7bf23341f1b8b8d4ae2eaefe0cc4e08))
+
 ## [0.67.2](https://github.com/funkadelic/claude-nomad/compare/v0.67.1...v0.67.2) (2026-08-24)
 
 ### What's new
