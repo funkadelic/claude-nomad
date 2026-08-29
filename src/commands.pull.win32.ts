@@ -232,7 +232,7 @@ function reportIgnoredDenied(repo: string): void {
     const segment = deniedSegmentFor(path);
     if (segment === null) continue;
     warn(
-      `${path} is inside shared/ but git ignores it: the path segment "${segment}" is on the never-sync list. Nothing was changed, and nothing published it: nomad only ever stages with "git add -A", which skips an ignored path, so it has not reached the index or the remote. It stays invisible to the rest of this gate for the same reason, so move it outside shared/ if you want it kept, or delete it. Note the ignore rule may come from your global core.excludesFile rather than from this repo; "git check-ignore -v -- ${path}" names the file and line it came from`,
+      `${path} is inside shared/ but git ignores it: the path segment "${segment}" is on the never-sync list. Nothing was changed, and nothing published it: nomad only ever stages with "git add -A", which skips an ignored path, so it has not reached the index or the remote. It stays invisible to the rest of this gate for the same reason, so move it outside shared/ if you want it kept, or delete it. Note the ignore rule may come from your global core.excludesFile rather than from this repo; run git check-ignore -v -- "${path}" to see which file and line the rule came from`,
     );
   }
 }

@@ -1050,6 +1050,24 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     expect(warnings()).toContain('check-ignore');
   });
 
+  it('quotes a path with whitespace so the suggested command stays one argument', async () => {
+    // The WARN names a command for the user to run. Interpolating a bare path
+    // into it splits a shared-config filename containing a space across two
+    // arguments, so the command they copy reports on neither.
+    const spaced = 'shared/commands/credentials/my notes.md';
+    writeFileSync(join(repo, '.gitignore'), 'shared/commands/credentials/\n');
+    g(['add', '-A'], repo);
+    g(['commit', '-qm', 'ignore credentials'], repo);
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    writeFileSync(join(repo, spaced), 'token=abc\n');
+
+    stubPlatform('win32');
+    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    reconcileSharedLinksBeforePull(repo, TS);
+
+    expect(warnings()).toContain(`git check-ignore -v -- "${spaced}"`);
+  });
+
   it('names the individual files inside an ignored DIRECTORY, not the directory', async () => {
     // `--untracked-files=all` is what makes git descend into an ignored tree
     // rather than collapsing it to one directory record, which is the
