@@ -17,8 +17,8 @@ private Git repo you control. Run `nomad sync` on any machine and everything is 
 included; it pulls in your latest config first, then publishes your local changes, so you never have
 to remember which one to run first.
 
-Not dotfiles, not rsync. **claude-nomad** understands Claude Code's state, so your session history
-survives different file paths and your secrets never ride along.
+Dotfiles managers and rsync copy files. **claude-nomad** understands Claude Code's state, so your
+session history survives different file paths and your secrets never ride along.
 
 **Full documentation: <https://funkadelic.github.io/claude-nomad/>**
 
@@ -81,7 +81,7 @@ opt-in per-project sync, transcript redaction, backup pruning, and more.
 
 ## Quickstart
 
-nomad works with two directories, and the difference is the one thing worth learning up front:
+nomad works with two directories:
 
 - **`~/claude-nomad/`** is your private sync repo. This is the one you edit.
 - **`~/.claude/`** is Claude Code's live config. nomad regenerates it on every `pull`.
@@ -222,18 +222,17 @@ log output remains grep-stable.
 When `nomad push` detects a potential secret, it drops into an interactive menu (TTY) or aborts with
 a recovery hint (non-TTY/CI). Three non-interactive recovery paths are available without the menu:
 
-- `nomad push --full-scan` -- ignore the per-host push manifest and rescan all transcripts, then
+- `nomad push --full-scan`: ignore the per-host push manifest and rescan all transcripts, then
   rewrite the manifest on success. Use this after upgrading gitleaks, after editing a gitleaks
   config file, or whenever you want to be certain nothing slipped through an incremental scan.
   Composes freely with `--dry-run` and all resolution modes.
-- `nomad push --redact-all` -- scrub every finding from the local transcript in place, then push.
+- `nomad push --redact-all`: scrub every finding from the local transcript in place, then push.
   All-or-nothing: if any finding cannot be redacted (an active session, or one that does not map to
   a synced transcript), nothing is changed and the push stops so you can handle those sessions.
-- `nomad push --allow <rule>` -- record findings matching one gitleaks rule id as false positives
+- `nomad push --allow <rule>`: record findings matching one gitleaks rule id as false positives
   (appends their fingerprints to `.gitleaksignore`), then re-scan and push.
-- `nomad push --allow-all` -- record every current finding as a false positive, then re-scan and
-  push.
-- `nomad allow <fingerprint>...` -- pre-record specific fingerprints in `.gitleaksignore` without
+- `nomad push --allow-all`: record every current finding as a false positive, then re-scan and push.
+- `nomad allow <fingerprint>...`: pre-record specific fingerprints in `.gitleaksignore` without
   going through a push cycle.
 
 All allow paths always re-scan after writing the allowlist; a surviving finding still aborts the
@@ -314,16 +313,16 @@ false alarm from a concurrent run. Value `3` is reserved for future use.
 
 ## Crash reports
 
-If `nomad` ever hits an unexpected bug, it no longer dumps a raw stack trace at you. Instead it
-prints a short "this looks like a bug" banner (with a link to the issue tracker) and writes a small
-report you can attach to a bug report if you choose. The exit code is unchanged: an unexpected crash
-exits `1`, and a documented failure still exits with its own code from the table above. A prompt you
-cancel yourself is not a crash: it exits `130` and writes no report.
+If `nomad` ever hits an unexpected bug, it does not dump a raw stack trace. It prints a short "this
+looks like a bug" banner (with a link to the issue tracker) and writes a small report you can attach
+to a bug report if you choose. The exit code is unchanged: an unexpected crash exits `1`, and a
+documented failure still exits with its own code from the table above. A prompt you cancel yourself
+is not a crash: it exits `130` and writes no report.
 
 What this means for you:
 
 - **The report stays on your machine.** It is written to `~/.cache/claude-nomad/crash/` and nothing
-  is ever uploaded anywhere. The file just sits there until you decide to share it or delete it.
+  is ever uploaded anywhere. The file sits there until you decide to share it or delete it.
 - **The saved report is scrubbed twice.** First a structural pass rewrites your home directory to
   `~` and your hostname to a placeholder (absolute paths are personal information a secret scanner
   would not catch), and redacts credential-shaped tokens it recognizes (GitHub, GitLab, Slack, and
@@ -342,24 +341,24 @@ What this means for you:
   contents of any file.
 - **The directory manages itself.** Only the most recent reports are kept; older ones are pruned
   automatically on the next crash. There is no `nomad clean` flag for the crash directory, by
-  design: it self-manages.
+  design.
 
 ## Learn more
 
-- [How it works](https://funkadelic.github.io/claude-nomad/how-it-works/) -- path remapping,
-  settings merge, what syncs and what doesn't
-- [GSD-aware sync](https://funkadelic.github.io/claude-nomad/gsd-aware-sync/) -- what nomad does for
+- [How it works](https://funkadelic.github.io/claude-nomad/how-it-works/): path remapping, settings
+  merge, what syncs and what doesn't
+- [GSD-aware sync](https://funkadelic.github.io/claude-nomad/gsd-aware-sync/): what nomad does for
   GSD users out of the box
-- [Setup and migration](https://funkadelic.github.io/claude-nomad/quickstart/) -- full setup
+- [Setup and migration](https://funkadelic.github.io/claude-nomad/quickstart/): full setup
   walkthrough, migrating an existing `~/.claude/`
-- [Recipes](https://funkadelic.github.io/claude-nomad/recipes/) -- copy-pasteable example configs
-  for common setups, from scratch to cross-OS remapping and GSD integration
-- [Commands reference](https://funkadelic.github.io/claude-nomad/commands/) -- all CLI flags
-- [Claude Code plugin](https://funkadelic.github.io/claude-nomad/plugin/) -- /nomad slash commands
-  and the session-start drift check
-- [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/) -- backups, drop-session,
+- [Recipes](https://funkadelic.github.io/claude-nomad/recipes/): copy-pasteable example configs for
+  common setups, from scratch to cross-OS remapping and GSD integration
+- [Commands reference](https://funkadelic.github.io/claude-nomad/commands/): all CLI flags
+- [Claude Code plugin](https://funkadelic.github.io/claude-nomad/plugin/): /nomad slash commands and
+  the session-start drift check
+- [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/): backups, drop-session,
   redact, gitleaks allowlist, non-interactive allow
-- [FAQ](https://funkadelic.github.io/claude-nomad/faq/) -- common questions, like the right
-  push/pull order when both sides have changes
+- [FAQ](https://funkadelic.github.io/claude-nomad/faq/): common questions, like the right push/pull
+  order when both sides have changes
 - [Contributing](https://funkadelic.github.io/claude-nomad/contributing/)
 - [Security policy](https://funkadelic.github.io/claude-nomad/security/)
