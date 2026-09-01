@@ -1335,7 +1335,8 @@ describe('revertDeniedMirrorPaths', () => {
   /**
    * The staged index as a comparable string. The tracked half of the backstop
    * is report-only, so every tracked case captures this before the call and
-   * requires it back afterwards.
+   * requires it back afterwards. The one exception is the HEAD-unreadable
+   * case, which runs outside a git checkout on purpose and would throw here.
    */
   function stagedIndex(): string {
     return gitOut(['diff', '--cached', '--name-status'], repo);
@@ -1846,10 +1847,12 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(abs, '# committed\n');
     commitBase();
     writeFileSync(abs, 'token=abc\n');
+    const before = stagedIndex();
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
 
+    expect(stagedIndex()).toBe(before);
     expect(warnings()).toContain(`git checkout HEAD -- "${rel}"`);
     expect(warnings()).toContain(`git rm -- "${rel}"`);
   });
@@ -1861,11 +1864,22 @@ describe('revertDeniedMirrorPaths', () => {
     mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(repo, rel), 'token=abc\n');
     g(['add', '--', rel], repo);
+    const before = stagedIndex();
 
     const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
     revertDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
 
+    expect(stagedIndex()).toBe(before);
     expect(warnings()).toContain(`git rm --cached -- "${rel}"`);
+    // The rename clause hands the user a placeholder to substitute, and what
+    // goes in it is a sibling path in the same directory, so it carries the
+    // same whitespace exposure as the interpolated one. Quoting one and not
+    // the other in a single message is the worst of both.
+    expect(warnings()).toContain('git checkout HEAD -- "<source>"');
+    // No display quotes left on the two commands in that clause: having just
+    // been shown that quotes around a path are real, the reader cannot tell a
+    // typographic quote from a shell one, and copies it.
+    expect(warnings()).not.toContain('"git diff --cached --name-status"');
   });
 
   it('quotes a whitespace path in the HEAD-unreadable arm command', async () => {
