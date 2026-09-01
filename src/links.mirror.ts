@@ -818,19 +818,19 @@ function reportTrackedDenied(repo: string, path: string, segment: string): void 
   const denied = `the path segment "${segment}" is on the never-sync list`;
   if (inHead === null) {
     warn(
-      `could not check ${path} against HEAD: ${denied}. Nothing was changed. Inspect it with "git status -- ${path}" and take it out of shared/ before committing`,
+      `could not check ${path} against HEAD: ${denied}. Nothing was changed. Inspect it by running git status -- "${path}" and take it out of shared/ before committing`,
     );
     return;
   }
   if (inHead.trim() === '') {
     warn(
-      `${path} is staged and has no committed version: ${denied}. Nothing was changed. Run "git rm --cached -- ${path}" to take it out of the index; that leaves the file on disk but makes it untracked, which the next nomad pull removes from the sync repo working tree (snapshotting it into the backup cache first), so move it outside shared/ instead if you want to keep it. If it is the destination half of a staged rename, "git diff --cached --name-status" names the source, whose content IS committed, so restore that half with "git checkout HEAD -- <source>" rather than leaving its deletion staged`,
+      `${path} is staged and has no committed version: ${denied}. Nothing was changed. Run git rm --cached -- "${path}" to take it out of the index; that leaves the file on disk but makes it untracked, which the next nomad pull removes from the sync repo working tree (snapshotting it into the backup cache first), so move it outside shared/ instead if you want to keep it. If it is the destination half of a staged rename, "git diff --cached --name-status" names the source, whose content IS committed, so restore that half with "git checkout HEAD -- <source>" rather than leaving its deletion staged`,
     );
     return;
   }
   if (!existsSync(join(repo, path))) return;
   warn(
-    `${path} is tracked and has changes against HEAD: ${denied}. Nothing was changed. Run "git checkout HEAD -- ${path}" to put the committed content back, or move the file outside shared/ if you want to keep it. Neither of those takes the committed copy out of the repo: "git rm -- ${path}" and a commit does that going forward, and if it holds a real secret, rotate it and rewrite history, because nomad only changes your local worktree and index and cannot scrub what a previous push already sent to the remote`,
+    `${path} is tracked and has changes against HEAD: ${denied}. Nothing was changed. Run git checkout HEAD -- "${path}" to put the committed content back, or move the file outside shared/ if you want to keep it. Neither of those takes the committed copy out of the repo: git rm -- "${path}" and a commit does that going forward, and if it holds a real secret, rotate it and rewrite history, because nomad only changes your local worktree and index and cannot scrub what a previous push already sent to the remote`,
   );
 }
 

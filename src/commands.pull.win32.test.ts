@@ -1151,7 +1151,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     expect(gitOut(['diff', '--cached', '--name-status'], repo)).toBe(stagedBefore);
     expect(warnings()).toContain(DENIED);
     expect(warnings()).toContain('credentials');
-    expect(warnings()).toContain(`git checkout HEAD -- ${DENIED}`);
+    expect(warnings()).toContain(`git checkout HEAD -- "${DENIED}"`);
     expect(warnings()).toContain('Nothing was changed');
   });
 
