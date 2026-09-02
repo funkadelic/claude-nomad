@@ -49,13 +49,16 @@ function toForwardSlash(p: string): string {
 /**
  * Collect every denied entry under `root`.
  *
- * Iterative over an explicit stack, so how far it can descend is bounded by
- * heap rather than by the call stack. Prunes at the topmost denied entry: when a
- * directory's own basename is denied, it is pushed once and never queued for
- * listing, so a denied directory holding further denied names underneath it
- * is still reported exactly once. A `Dirent` for a symlink answers
- * `isDirectory()` false, so a symlink is never followed and no cycle is
- * reachable regardless of what it targets.
+ * Iterative over an explicit stack, so how far it can descend is bounded
+ * by heap rather than by the call stack. Prunes at the topmost denied
+ * entry: when a directory's own basename is denied, it is pushed once and
+ * never queued for listing, so a denied directory holding further denied
+ * names underneath it is still reported exactly once. A `Dirent` for a
+ * symlink answers `isDirectory()` false, so a symlink is never followed
+ * and no cycle is reachable regardless of what it targets. That buys
+ * cycle-freedom only: a symlink whose own basename is clean is neither
+ * walked nor dereferenced, so its target string still gets published into
+ * `shared/<name>` unexamined.
  *
  * @param root The scan root, every collected `path` is relative to it.
  * @returns Every denied entry found, in stack-pop order (unsorted).
@@ -153,11 +156,10 @@ export function scanOrFatal(name: string, root: string, state: () => string): De
     return scanDeniedEntries(root);
   } catch (err) {
     // The cause is quoted rather than diagnosed. This catch is broad on
-    // purpose (an unreadable directory, an entry removed between the listing
-    // and the type probe a `Dirent` resolves with, a tree deep enough to
-    // exhaust the stack), and naming one of those as THE reason would send
-    // the user to check permissions that were never the problem, on a retry
-    // that fails the same way.
+    // purpose (an unreadable directory, or an entry removed between the
+    // listing and the type probe a `Dirent` resolves with), and naming one of
+    // those as THE reason would send the user to check permissions that were
+    // never the problem, on a retry that fails the same way.
     throw new NomadFatal(
       `cannot adopt ${name}: could not scan ${root} for never-sync content (${errorText(err)}). ` +
         `${state()} Check that it is readable and not being written to, then ` +
