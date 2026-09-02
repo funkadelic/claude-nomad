@@ -401,3 +401,46 @@ describe('refuseDeniedEntries', () => {
     });
   });
 });
+
+// Placed last in the file, not nested under either describe above: like the
+// two `vi.resetModules()` blocks in `refuseDeniedEntries`, once module reset
+// runs, any later test comparing a top-level-imported error against a freshly
+// dynamically-imported class would fail on identity, not behavior. Running
+// last avoids that without touching any test above.
+describe('scanDeniedEntries deep tree', () => {
+  afterEach(() => {
+    vi.doUnmock('node:fs');
+  });
+
+  it('reaches the bottom of a tree far deeper than the platform recursion ceiling', async () => {
+    // A walk that recurses once per level cannot reach the bottom of this
+    // tree: the recursive shape already raises RangeError by depth 8000 on
+    // this platform, well short of DEEP below.
+    root = makeRoot();
+    const scanRoot = root;
+    const DEEP = 12000;
+
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        readdirSync: (...args: Parameters<typeof actual.readdirSync>): never => {
+          const dir = String(args[0]);
+          if (!dir.startsWith(scanRoot)) return actual.readdirSync(...args) as never;
+          const level = (dir.length - scanRoot.length) / 2;
+          if (level < DEEP) {
+            return [{ name: 'd', isDirectory: () => true }] as never;
+          }
+          return [{ name: 'history.jsonl', isDirectory: () => false }] as never;
+        },
+      };
+    });
+    vi.resetModules();
+    const { scanDeniedEntries: scanAfterMock } = await import('./commands.adopt.scan.ts');
+
+    const hits = scanAfterMock(scanRoot);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.matched).toBe('history.jsonl');
+    expect(hits[0]?.path.endsWith('history.jsonl')).toBe(true);
+  });
+});
