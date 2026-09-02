@@ -2,6 +2,7 @@ import { existsSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  backupOrFatal,
   copyIntoSharedOrFatal,
   refuseLateDeniedEntries,
   removeAdoptSource,
@@ -21,7 +22,7 @@ import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.gu
 import { EXIT } from './exit-codes.ts';
 import { classifyPresence, isUnusableTarget, type PresenceState } from './fs-presence.ts';
 import { fail, gitOrFatal, log, NomadFatal, warn } from './utils.ts';
-import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
+import { ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
 
@@ -325,11 +326,12 @@ function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): 
  * deny-set-filtered copy so the host keeps a usable local counterpart under
  * the copy-sync model.
  *
- * Each of the three filesystem steps reports its own failure rather than
+ * Each of the four filesystem steps reports its own failure rather than
  * throwing raw, because each leaves the host in a different place and only one
- * of them is a failure on both platforms. See `copyIntoSharedOrFatal`
- * (nothing destroyed yet), `reportSourceRemovalFailure` (the platform split),
- * and `restoreWin32LocalCopy` (the content is already safe in the repo).
+ * of them is a failure on both platforms. See `backupOrFatal` (nothing written
+ * anywhere yet), `copyIntoSharedOrFatal` (nothing destroyed yet),
+ * `reportSourceRemovalFailure` (the platform split), and
+ * `restoreWin32LocalCopy` (the content is already safe in the repo).
  *
  * `refuseLateDeniedEntries` sits between the copy and the removal for the
  * same reason the order of those two is what it is: it is the last moment at
@@ -361,7 +363,7 @@ function performAdoptMove(
   // Back up before any mutation. The return value distinguishes a real
   // snapshot from a no-op, so a later failure never advertises a backup dir
   // that holds nothing.
-  const snapshotted = backupBeforeWrite(linkPath, ts);
+  const snapshotted = backupOrFatal(name, linkPath, ts);
 
   // Targeted stage of shared/<name> only; never git add -A. Hoisted above the
   // mutation because both guards below have to run it on their own failure
