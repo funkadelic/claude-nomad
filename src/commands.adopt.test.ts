@@ -2242,6 +2242,85 @@ function mockSourceRemovalFailure(
   });
 }
 
+describe('cmdAdopt backup failure', () => {
+  let env: Env;
+
+  beforeEach(() => {
+    env = makeAdoptEnv();
+  });
+
+  afterEach(() => {
+    vi.doUnmock('./utils.fs.ts');
+    vi.doUnmock('node:fs');
+    teardownAdoptEnv(env);
+  });
+
+  it('reports the failure as its own error rather than a crash report', async () => {
+    // The snapshot is the first filesystem step of the move, so a throw here
+    // used to escape raw and reach the top-level handler, which writes a crash
+    // report for what is an expected failure.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    vi.doMock('./utils.fs.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof utilsFsModule>()),
+      backupBeforeWrite: (): boolean => {
+        throw new Error('EACCES: permission denied');
+      },
+    }));
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+
+    expect(() => cmdAdopt('my-tools')).not.toThrow();
+    expect(process.exitCode).toBe(EXIT.GENERIC_FAILURE);
+
+    const out = errOutput(env);
+    expect(out).toContain('could not back up');
+    expect(out).toContain('EACCES: permission denied');
+    expect(out).toContain('nomad adopt my-tools');
+  });
+
+  it('claims only what is true when the snapshot dies partway', async () => {
+    // The host and the repo are both untouched here, which no later guard can
+    // say. What it must NOT claim is that nothing was written at all: the
+    // snapshot is a mkdir plus a recursive copy, so a mid-copy throw leaves a
+    // partial one behind, and adopt never discards it.
+    addSharedDir(env, 'my-tools');
+    const linkPath = join(env.claudeHome, 'my-tools');
+    mkdirSync(linkPath, { recursive: true });
+    writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
+
+    // Fail inside the copy rather than replacing the helper, so the mkdir that
+    // precedes it really runs and the partial-snapshot case is the one tested.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        cpSync: (...args: Parameters<typeof actual.cpSync>): void => {
+          if (String(args[1]).includes('backup')) throw new Error('ENOSPC: no space left');
+          actual.cpSync(...args);
+        },
+      };
+    });
+    const { cmdAdopt } = await import('./commands.adopt.ts');
+    cmdAdopt('my-tools');
+
+    const out = errOutput(env);
+    // Pinned to the backup guard specifically: the copy guard downstream emits
+    // the same "Nothing was removed from" clause, so that alone would not say
+    // which one reported.
+    expect(out).toContain('could not back up');
+    expect(out).toContain('ENOSPC: no space left');
+    expect(out).toContain(`Nothing was removed from ${linkPath}`);
+    expect(out).toContain('nothing was written to the repo');
+    expect(out).not.toContain('Nothing was changed');
+    expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
+    expect(existsSync(join(env.repoHome, 'shared', 'my-tools'))).toBe(false);
+    expect(diffCached(env)).toBe('');
+  });
+});
+
 describe('cmdAdopt copy-into-shared failure', () => {
   let env: Env;
   const realPlatform = process.platform;

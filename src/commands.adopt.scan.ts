@@ -47,31 +47,40 @@ function toForwardSlash(p: string): string {
 }
 
 /**
- * Recursively collect denied entries under `dir`, appending to `out`.
+ * Collect every denied entry under `root`.
  *
- * Prunes at the topmost denied entry: when a directory's own basename is
- * denied, it is pushed once and never recursed into, so a denied directory
- * holding further denied names underneath it is still reported exactly once.
- * A `Dirent` for a symlink answers `isDirectory()` false, so a symlink is
- * never followed and no cycle is reachable regardless of what it targets.
+ * Iterative over an explicit stack, so how far it can descend is bounded
+ * by heap rather than by the call stack. Prunes at the topmost denied
+ * entry: when a directory's own basename is denied, it is pushed once and
+ * never queued for listing, so a denied directory holding further denied
+ * names underneath it is still reported exactly once. A `Dirent` for a
+ * symlink answers `isDirectory()` false, so a symlink is never followed
+ * and no cycle is reachable regardless of what it targets. That buys
+ * cycle-freedom only: a symlink whose own basename is clean is neither
+ * walked nor dereferenced, so its target string still gets published into
+ * `shared/<name>` unexamined.
  *
- * @param root The scan root, held constant across the recursion so every
- *   collected `path` is relative to the same base.
- * @param dir The directory currently being listed (`root` on the first call).
- * @param out Accumulator every match is pushed onto.
+ * @param root The scan root, every collected `path` is relative to it.
+ * @returns Every denied entry found, in stack-pop order (unsorted).
  */
-function walk(root: string, dir: string, out: DeniedEntry[]): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const match = matchDeniedName(ALWAYS_NEVER_SYNC, entry.name);
-    if (match !== null) {
-      out.push({
-        path: toForwardSlash(relative(root, join(dir, entry.name))),
-        matched: match.axis === 'name' ? match.entry : null,
-      });
-      continue;
+function walk(root: string): DeniedEntry[] {
+  const out: DeniedEntry[] = [];
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const match = matchDeniedName(ALWAYS_NEVER_SYNC, entry.name);
+      if (match !== null) {
+        out.push({
+          path: toForwardSlash(relative(root, join(dir, entry.name))),
+          matched: match.axis === 'name' ? match.entry : null,
+        });
+        continue;
+      }
+      if (entry.isDirectory()) stack.push(join(dir, entry.name));
     }
-    if (entry.isDirectory()) walk(root, join(dir, entry.name), out);
   }
+  return out;
 }
 
 /**
@@ -119,8 +128,7 @@ function walk(root: string, dir: string, out: DeniedEntry[]): void {
 export function scanDeniedEntries(root: string): DeniedEntry[] {
   const stat = lstatSync(root, { throwIfNoEntry: false });
   if (!stat?.isDirectory()) return [];
-  const out: DeniedEntry[] = [];
-  walk(root, root, out);
+  const out = walk(root);
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
 }
@@ -148,11 +156,10 @@ export function scanOrFatal(name: string, root: string, state: () => string): De
     return scanDeniedEntries(root);
   } catch (err) {
     // The cause is quoted rather than diagnosed. This catch is broad on
-    // purpose (an unreadable directory, an entry removed between the listing
-    // and the type probe a `Dirent` resolves with, a tree deep enough to
-    // exhaust the stack), and naming one of those as THE reason would send
-    // the user to check permissions that were never the problem, on a retry
-    // that fails the same way.
+    // purpose (an unreadable directory, or an entry removed between the
+    // listing and the type probe a `Dirent` resolves with), and naming one of
+    // those as THE reason would send the user to check permissions that were
+    // never the problem, on a retry that fails the same way.
     throw new NomadFatal(
       `cannot adopt ${name}: could not scan ${root} for never-sync content (${errorText(err)}). ` +
         `${state()} Check that it is readable and not being written to, then ` +
