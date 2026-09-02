@@ -20,7 +20,6 @@ import { copyExtrasFiltered } from './extras-sync.core.ts';
 import { lexists } from './fs-presence.ts';
 import { copySharedLinkPull } from './links.ts';
 import { warn, NomadFatal } from './utils.ts';
-import { backupBeforeWrite } from './utils.fs.ts';
 
 /**
  * Whether `abs` is a direct child of `root`, both resolved first.
@@ -332,45 +331,6 @@ function describePartialShared(name: string, linkPath: string): string {
     ` A partial shared/${name} may still be in the repo; remove it first, because adopt ` +
     `refuses to run while it is there.`
   );
-}
-
-/**
- * Snapshot `linkPath` before the move mutates anything, reporting a failure
- * as this command's own error rather than letting it escape raw.
- *
- * The first filesystem step of the move, and until this guard existed the only
- * one without a report: a throw here reached the top-level handler and wrote a
- * crash report for what is an expected failure.
- *
- * The claim it makes is bounded on purpose. The host and the repo are both
- * untouched at this point, which no later guard can say, but the snapshot
- * itself is a `mkdirSync` followed by a recursive copy, so a mid-copy throw
- * leaves a partial one behind. Adopt never discards those and `freshBackupTs`
- * allocates a new one per run, so a message promising nothing changed would be
- * wrong in exactly the case the advice tells the user to repeat.
- *
- * The catch is broad because the copy underneath raises several unrelated
- * errors for the same user-visible cause, and the advice defers to the quoted
- * error instead of promising a bare retry works: for some of those causes it
- * does not.
- *
- * @param name The name being adopted, for the message.
- * @param linkPath Host-side directory to snapshot.
- * @param ts Backup timestamp directory the snapshot is written under.
- * @returns True when a snapshot was actually written, false on a no-op.
- */
-export function backupOrFatal(name: string, linkPath: string, ts: string): boolean {
-  try {
-    return backupBeforeWrite(linkPath, ts);
-  } catch (err) {
-    throw new NomadFatal(
-      `could not back up ${linkPath} before adopting ${name} (${errorText(err)}). ` +
-        `Nothing was removed from ${linkPath} and nothing was written to the repo, ` +
-        `though a partial snapshot may be left under the backup cache. Fix what the ` +
-        `error names, then run \`nomad adopt ${name}\` again.`,
-      { code: EXIT.GENERIC_FAILURE },
-    );
-  }
 }
 
 /**
