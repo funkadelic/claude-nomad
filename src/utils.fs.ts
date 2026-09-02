@@ -15,8 +15,9 @@ import {
 import { dirname, join, relative, sep } from 'node:path';
 
 import { backupBase, claudeHome } from './config.ts';
+import { errorText } from './error-text.ts';
 import { encodePath } from './utils.json.ts';
-import { die, log } from './utils.ts';
+import { die, log, NomadFatal } from './utils.ts';
 
 /**
  * Total attempts (including the first) `renameAtomicRetry` makes on win32
@@ -227,14 +228,24 @@ export function ensureSymlink(linkPath: string, target: string): void {
  *   tells the user where the previous content went needs the distinction: the
  *   guards are checked here, so predicting them from outside is a guess that
  *   goes stale the moment the entry changes between the two reads.
+ * @throws {NomadFatal} When the destination `mkdirSync` or the `cpSync` itself
+ *   fails (EACCES, EBUSY, ENOSPC, ...), naming the source, the destination
+ *   root, and the quoted cause.
  */
 function backupUnder(absPath: string, anchor: string, destRoot: string): boolean {
   if (!existsSync(absPath)) return false;
   const rel = relative(anchor, absPath);
   if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return false;
   const dst = join(destRoot, rel);
-  mkdirSync(dirname(dst), { recursive: true });
-  cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+  try {
+    mkdirSync(dirname(dst), { recursive: true });
+    cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+  } catch (err) {
+    throw new NomadFatal(
+      `could not back up ${absPath} into ${destRoot} (${errorText(err)}); a partial copy may ` +
+        `be left there.`,
+    );
+  }
   return true;
 }
 
