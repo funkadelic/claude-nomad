@@ -1335,7 +1335,8 @@ describe('revertDeniedMirrorPaths', () => {
   /**
    * The staged index as a comparable string. The tracked half of the backstop
    * is report-only, so every tracked case captures this before the call and
-   * requires it back afterwards.
+   * requires it back afterwards. The one exception is the HEAD-unreadable
+   * case, which runs outside a git checkout on purpose and would throw here.
    */
   function stagedIndex(): string {
     return gitOut(['diff', '--cached', '--name-status'], repo);
@@ -1612,7 +1613,7 @@ describe('revertDeniedMirrorPaths', () => {
         'shared/commands/credentials/notes.md is staged and has no committed version',
       );
       expect(warnings()).toContain('"credentials"');
-      expect(warnings()).toContain('git rm --cached -- shared/commands/credentials/notes.md');
+      expect(warnings()).toContain('git rm --cached -- "shared/commands/credentials/notes.md"');
       expect(warnings()).toContain('Nothing was changed');
       // ...and it has to say what running that command leads to. Unstaging is
       // exactly what turns the path into an untracked record, which is the shape
@@ -1651,7 +1652,7 @@ describe('revertDeniedMirrorPaths', () => {
       expect(warnings()).toContain(
         'shared/commands/settings.local.json is staged and has no committed version',
       );
-      expect(warnings()).toContain('git rm --cached -- shared/commands/settings.local.json');
+      expect(warnings()).toContain('git rm --cached -- "shared/commands/settings.local.json"');
     },
   );
 
@@ -1824,14 +1825,74 @@ describe('revertDeniedMirrorPaths', () => {
     expect(warnings()).toContain(
       'shared/commands/credentials/notes.md is tracked and has changes against HEAD',
     );
-    expect(warnings()).toContain('git checkout HEAD -- shared/commands/credentials/notes.md');
+    expect(warnings()).toContain('git checkout HEAD -- "shared/commands/credentials/notes.md"');
     expect(warnings()).not.toContain('restored');
     // Both options the WARN opened with leave the denylisted content committed,
     // so the third one has to say how it comes out and be honest that nothing
     // local reaches a copy a previous push already published.
-    expect(warnings()).toContain('git rm -- shared/commands/credentials/notes.md');
+    expect(warnings()).toContain('git rm -- "shared/commands/credentials/notes.md"');
     expect(warnings()).toContain('rotate');
     expect(warnings()).toContain('cannot scrub what a previous push already sent to the remote');
+  });
+
+  // The tracked half of this gate changes nothing, so the command it names IS
+  // the whole remedy. A shared-config filename with a space in it (`my notes.md`
+  // is ordinary under ~/.claude/commands/) splits into two arguments unless the
+  // path is quoted, and the command the user copies then acts on neither half.
+  // One case per arm, since each arm composes its own commands.
+  it.skipIf(!hasGit)('quotes a whitespace path in the tracked arm commands', async () => {
+    const rel = 'shared/commands/credentials/my notes.md';
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    const abs = join(repo, rel);
+    writeFileSync(abs, '# committed\n');
+    commitBase();
+    writeFileSync(abs, 'token=abc\n');
+    const before = stagedIndex();
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
+
+    expect(stagedIndex()).toBe(before);
+    expect(warnings()).toContain(`git checkout HEAD -- "${rel}"`);
+    expect(warnings()).toContain(`git rm -- "${rel}"`);
+  });
+
+  it.skipIf(!hasGit)('quotes a whitespace path in the staged arm command', async () => {
+    const rel = 'shared/commands/credentials/my notes.md';
+    writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# deploy\n');
+    commitBase();
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    writeFileSync(join(repo, rel), 'token=abc\n');
+    g(['add', '--', rel], repo);
+    const before = stagedIndex();
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
+
+    expect(stagedIndex()).toBe(before);
+    expect(warnings()).toContain(`git rm --cached -- "${rel}"`);
+    // The rename clause hands the user a placeholder to substitute, and what
+    // goes in it is a sibling path in the same directory, so it carries the
+    // same whitespace exposure as the interpolated one. Quoting one and not
+    // the other in a single message is the worst of both.
+    expect(warnings()).toContain('git checkout HEAD -- "<source>"');
+    // No display quotes left on the two commands in that clause: having just
+    // been shown that quotes around a path are real, the reader cannot tell a
+    // typographic quote from a shell one, and copies it.
+    expect(warnings()).not.toContain('"git diff --cached --name-status"');
+  });
+
+  it('quotes a whitespace path in the HEAD-unreadable arm command', async () => {
+    // No commitBase(), so there is no checkout for the probe to read and the
+    // arm that names neither of the other two commands runs.
+    const rel = 'shared/commands/credentials/my notes.md';
+    mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+    writeFileSync(join(repo, rel), 'token=abc\n');
+
+    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    revertDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
+
+    expect(warnings()).toContain(`git status -- "${rel}"`);
   });
 
   it.skipIf(!hasGit)(
@@ -1868,7 +1929,7 @@ describe('revertDeniedMirrorPaths', () => {
       expect(warnings()).toContain(
         'shared/commands/credentials is tracked and has changes against HEAD',
       );
-      expect(warnings()).toContain('git checkout HEAD -- shared/commands/credentials');
+      expect(warnings()).toContain('git checkout HEAD -- "shared/commands/credentials"');
     },
   );
 
@@ -1926,7 +1987,7 @@ describe('revertDeniedMirrorPaths', () => {
     expect(warnings()).toContain(
       'could not check shared/commands/credentials/notes.md against HEAD',
     );
-    expect(warnings()).toContain('git status -- shared/commands/credentials/notes.md');
+    expect(warnings()).toContain('git status -- "shared/commands/credentials/notes.md"');
     expect(warnings()).not.toContain('git rm --cached');
     expect(warnings()).not.toContain('git checkout HEAD');
   });
