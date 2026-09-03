@@ -2285,6 +2285,8 @@ describe('cmdAdopt backup failure', () => {
     expect(out).toContain('could not back up');
     expect(out).toContain('ENOSPC: no space left');
     expect(out).toContain('a partial copy may');
+    expect(out).toContain(`Nothing was removed from ${linkPath}`);
+    expect(out).toContain('nomad adopt my-tools');
     expect(readFileSync(join(linkPath, 'tool.sh'), 'utf8')).toBe('#!/bin/sh\necho hi\n');
     expect(existsSync(join(env.repoHome, 'shared', 'my-tools'))).toBe(false);
     expect(diffCached(env)).toBe('');
