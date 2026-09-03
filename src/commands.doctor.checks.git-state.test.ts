@@ -798,3 +798,172 @@ describe('reportGitIdentity', () => {
     expect(process.exitCode).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// reportTrackedDeniedShared: denylisted paths git tracks under shared/
+// ---------------------------------------------------------------------------
+
+describe('reportTrackedDeniedShared', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  /** Commit every path written so far, so `git ls-files` reports them. */
+  function commitAll(repo: string): void {
+    execFileSync('git', ['add', '-A'], { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('git', ['-c', 'user.email=t@t.com', '-c', 'user.name=T', 'commit', '-m', 'init'], {
+      cwd: repo,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  }
+
+  /** Render the reporter's rows for the sandbox repo. */
+  async function run(): Promise<string> {
+    const { reportTrackedDeniedShared } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportTrackedDeniedShared(sec);
+    renderDoctor([sec]);
+    return joinedLog(env.logSpy);
+  }
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', setupGitRepo: true });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('WARNs for a committed denylisted path and leaves exitCode alone', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.local.json'), '{}\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('shared/settings.local.json');
+    expect(out).toContain('settings.local.json" is blocked by the never-sync boundary');
+    expect(out).toContain('git rm --cached');
+    expect(out).toContain('leaves the file on disk');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('caps the listed paths and reports the overflow count', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    const denied = join(repo, 'shared', 'projects', 'proj', 'todos');
+    mkdirSync(denied, { recursive: true });
+    for (let i = 0; i < 7; i++) writeFileSync(join(denied, `t${i}.json`), '{}\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain('2 more not listed');
+    expect(out.match(/git tracks/g)).toHaveLength(5);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a PASS row when nothing denylisted is tracked', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'CLAUDE.md'), '# hi\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain(okGlyph);
+    expect(out).toContain('no tracked path under shared/ is denylisted');
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('WARNs for a staged path that was never committed', async () => {
+    // The case `git status` DOES see, but only while it is still staged; it is
+    // also the case a bare `git rm` errors on, which is why the row names
+    // `--cached`.
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.local.json'), '{}\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = await run();
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('shared/settings.local.json');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('WARNs on a credential-shape hit without claiming the name is on a list', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    mkdirSync(join(repo, 'shared', 'commands'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'commands', 'deploy.key'), 'secret\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain('shared/commands/deploy.key');
+    expect(out).toContain('blocked by the never-sync boundary');
+    expect(out).not.toContain('is on the never-sync list');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('leaves a legitimate extras path alone (region narrowing preserved)', async () => {
+    // `shared/extras/<logical>/.planning/todos/` takes the narrow block set, so
+    // `todos` is legal there even though it is denied elsewhere.
+    const repo = join(env.testHome, 'claude-nomad');
+    mkdirSync(join(repo, 'shared', 'extras', 'proj', '.planning', 'todos'), { recursive: true });
+    writeFileSync(join(repo, 'shared', 'extras', 'proj', '.planning', 'todos', 'x.md'), '# t\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain(okGlyph);
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('sees a mis-cased shared/ index entry', async () => {
+    // Git matches a pathspec case-sensitively, so `Shared/` needs the `:(icase)`
+    // magic to be scanned at all. On a case-insensitive filesystem this writes
+    // into `shared/` itself, which the same row still catches.
+    const repo = join(env.testHome, 'claude-nomad');
+    mkdirSync(join(repo, 'Shared'), { recursive: true });
+    writeFileSync(join(repo, 'Shared', 'settings.local.json'), '{}\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('settings.local.json');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'strips control characters out of a tracked path before rendering it',
+    async () => {
+      // A filename is repo-controlled, so an ESC in it would otherwise reach the
+      // terminal as an escape sequence. Windows rejects control characters in a
+      // filename outright, so the fixture cannot be written there.
+      const repo = join(env.testHome, 'claude-nomad');
+      const dir = join(repo, 'shared', 'rules\u001b[2K');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'settings.local.json'), '{}\n');
+      commitAll(repo);
+      const out = await run();
+      expect(out).toContain(warnGlyph);
+      expect(out).toContain('settings.local.json');
+      expect(out).not.toContain('\u001b[2K');
+      expect(process.exitCode).toBe(0);
+    },
+  );
+
+  it('reports the scan as skipped when git cannot answer', async () => {
+    // A `.git` FILE pointing nowhere fails the probe deterministically. Deleting
+    // `.git` instead would let git walk up to an ancestor repo when the sandbox
+    // tmpdir happens to sit inside a working copy, and the assertions below
+    // would then pass for the wrong reason.
+    const dotGit = join(env.testHome, 'claude-nomad', '.git');
+    rmSync(dotGit, { recursive: true, force: true });
+    writeFileSync(dotGit, 'gitdir: /nonexistent-nomad-test\n');
+    const out = await run();
+    expect(out).toContain('git could not list shared/');
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+});
