@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.68.0](https://github.com/funkadelic/claude-nomad/compare/v0.67.3...v0.68.0) (2026-09-03)
+
+
+### What's new
+
+**On native Windows (PowerShell or cmd).** Note: WSL2 behaves like Linux and this does not apply to it.
+
+- **A never-sync warning during `nomad pull` now suggests commands you can paste as they are.** Before a pull, nomad warns when a file that should never travel between machines turns up in your sync repo, and the warning names the git commands to deal with it. A filename containing a space split the suggested command in two, so pasting it acted on neither half. The paths are now quoted.
+
+**On every platform.**
+
+- **`nomad doctor` now warns when your sync repo is carrying a file that should never sync**, such as a credential or a per-machine settings file. Until now one of those was only noticed while it was new or changed, so a file that was committed and then left alone went unmentioned, and the check that did look ran only on Windows. Doctor names the file and the command that stops tracking it without deleting your copy. It only warns.
+- **`nomad adopt` no longer fails on a deeply nested folder.** Adopting a shared folder scans it first, and a very deep tree could crash that scan. The scan handles any depth now.
+- **A backup nomad cannot write is now reported as a plain error.** Nomad copies anything it is about to overwrite into a backup first. When that copy fails, say a full disk or a permissions problem, you get one message naming what it was copying, where it was going, and why it failed, instead of a crash report file. The message also says a partial copy may be left behind.
+
+Everything else in this release is dependency updates.
+
+
+### Added
+
+* **doctor:** warn when the sync repo tracks a never-synced file ([#562](https://github.com/funkadelic/claude-nomad/issues/562)) ([a1b3f71](https://github.com/funkadelic/claude-nomad/commit/a1b3f71a0a3deecac81e0bcc9e8ee214c1e50a4e))
+
+
+### Fixed
+
+* **adopt:** handle deep directories and report a failed backup ([#560](https://github.com/funkadelic/claude-nomad/issues/560)) ([2b19ccb](https://github.com/funkadelic/claude-nomad/commit/2b19ccba5959efb7b42d16ee0db862df4d92a0ac))
+* **backup:** report a failed backup instead of writing a crash report ([#561](https://github.com/funkadelic/claude-nomad/issues/561)) ([9d8484c](https://github.com/funkadelic/claude-nomad/commit/9d8484cdb59eb5a5905dfb0a3e16ae952acead5f))
+* **pull:** quote file paths in the never-sync warning's suggested commands ([#559](https://github.com/funkadelic/claude-nomad/issues/559)) ([070cc17](https://github.com/funkadelic/claude-nomad/commit/070cc1709263d46cc50d01e99c345b3955d729ed))
+
+
+### Dependencies
+
+* bump fast-uri from 3.1.5 to 3.1.7 ([#563](https://github.com/funkadelic/claude-nomad/issues/563)) ([7bf62e3](https://github.com/funkadelic/claude-nomad/commit/7bf62e3e481246b7c8125e31fb2df6654241dd54))
+* bump the codeql-action group across 1 directory with 2 updates ([#556](https://github.com/funkadelic/claude-nomad/issues/556)) ([ad3ae73](https://github.com/funkadelic/claude-nomad/commit/ad3ae739043ae24f560d0ddd56baff79bb6b6ad6))
+* bump the dev-dependencies group across 1 directory with 3 updates ([#555](https://github.com/funkadelic/claude-nomad/issues/555)) ([02aebe2](https://github.com/funkadelic/claude-nomad/commit/02aebe2a6407dcd4be67fe9e33723c735a1c44cd))
+* bump the prod-dependencies group in /docs-site with 3 updates ([#557](https://github.com/funkadelic/claude-nomad/issues/557)) ([b6b5c8a](https://github.com/funkadelic/claude-nomad/commit/b6b5c8aebebcc8e4c73ac12d511bc972bda553d7))
+
 ## [0.67.3](https://github.com/funkadelic/claude-nomad/compare/v0.67.2...v0.67.3) (2026-08-29)
 
 ### What's new
@@ -560,14 +597,7 @@ All of this applies on macOS, Linux, WSL2, and native Windows.
 
 * **pull:** retain unpushed local work and surface it in the preview ([#376](https://github.com/funkadelic/claude-nomad/issues/376)) ([3f70019](https://github.com/funkadelic/claude-nomad/commit/3f70019c89ccd77726e6330d9623e106bb9ff69c))
 
-  What this means: `nomad pull` no longer discards work you have not pushed
-  yet. Chat sessions, subagent history, and memory files that exist only on
-  this machine now survive a pull, and a synced file you have edited locally
-  (a project's `.planning` notes or its `CLAUDE.md`) is kept instead of being
-  overwritten when it differs from the incoming copy, with a note to push and
-  reconcile. `nomad diff` and `pull --dry-run` now show the count of retained
-  local-only items and the keep-local warning, where before they reported
-  `clean` / `0 collisions`.
+  What this means: `nomad pull` no longer discards work you have not pushed yet. Chat sessions, subagent history, and memory files that exist only on this machine now survive a pull, and a synced file you have edited locally (a project's `.planning` notes or its `CLAUDE.md`) is kept instead of being overwritten when it differs from the incoming copy, with a note to push and reconcile. `nomad diff` and `pull --dry-run` now show the count of retained local-only items and the keep-local warning, where before they reported `clean` / `0 collisions`.
 
 ## [0.56.1](https://github.com/funkadelic/claude-nomad/compare/v0.56.0...v0.56.1) (2026-06-30)
 
