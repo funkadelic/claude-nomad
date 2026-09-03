@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { EXIT } from './exit-codes.ts';
+import { NomadFatal } from './utils.ts';
 import { backupBeforeWrite, backupRepoWrite, discardEmptyBackupDir } from './utils.fs.ts';
 
 /**
@@ -80,6 +82,48 @@ describe('backupBeforeWrite', () => {
     const dst = join(testHome, '.cache', 'claude-nomad', 'backup', ts, '..config');
     expect(existsSync(dst)).toBe(true);
     expect(readFileSync(dst, 'utf8')).toBe('cfg');
+  });
+
+  it('throws NomadFatal naming source, destination root and cause on a write failure', () => {
+    const src = join(testHome, '.claude', 'settings.json');
+    writeFileSync(src, '{"a":1}');
+    // Force the mkdirSync inside backupUnder to fail without mocking: put a
+    // regular FILE where the snapshot's parent directory needs to go, so the
+    // recursive mkdirSync raises EEXIST.
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup');
+    mkdirSync(backupRoot, { recursive: true });
+    writeFileSync(join(backupRoot, ts), 'not a directory');
+
+    let thrown: unknown;
+    try {
+      backupBeforeWrite(src, ts);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NomadFatal);
+    const fatal = thrown as NomadFatal;
+    expect(fatal.code).toBe(EXIT.GENERIC_FAILURE);
+    expect(fatal.message).toContain(src);
+    expect(fatal.message).toContain(join(backupRoot, ts));
+    expect(fatal.message).toContain('a partial copy may');
+  });
+
+  it('appends an optional hint as a trailing sentence on a write failure', () => {
+    const src = join(testHome, '.claude', 'settings.json');
+    writeFileSync(src, '{"a":1}');
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup');
+    mkdirSync(backupRoot, { recursive: true });
+    writeFileSync(join(backupRoot, ts), 'not a directory');
+
+    let thrown: unknown;
+    try {
+      backupBeforeWrite(src, ts, 'Nothing was written to the repo. Try again.');
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NomadFatal);
+    const fatal = thrown as NomadFatal;
+    expect(fatal.message).toContain('a partial copy may be left there. Nothing was written');
   });
 
   it('recursively copies a directory under claudeHome()', () => {

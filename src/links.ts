@@ -278,7 +278,9 @@ function warnWin32ApplyFailed(
  * names `nomad pull --force-remote`, which is the only command that clears it.
  * `instanceof` is safe for it, unlike `isUserAbort`'s structural match, because
  * the class is thrown from within this process rather than across a library
- * boundary.
+ * boundary. A backup failure is also a `NomadFatal` now, but `snapshotBeforeWin32Copy`
+ * catches it one frame earlier and never lets it reach here; moving a backup
+ * call inside this `try` would turn that warn-and-continue into a pull abort.
  *
  * @param target - Source path (`shared/<name>`, repo side).
  * @param linkPath - Destination path (`~/.claude/<name>`, host side).

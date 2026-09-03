@@ -2,7 +2,6 @@ import { existsSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  backupOrFatal,
   copyIntoSharedOrFatal,
   refuseLateDeniedEntries,
   removeAdoptSource,
@@ -22,7 +21,7 @@ import { isValidSharedDir, validateSharedDirEntry } from './config.sharedDirs.gu
 import { EXIT } from './exit-codes.ts';
 import { classifyPresence, isUnusableTarget, type PresenceState } from './fs-presence.ts';
 import { fail, gitOrFatal, log, NomadFatal, warn } from './utils.ts';
-import { ensureSymlink, freshBackupTs } from './utils.fs.ts';
+import { backupBeforeWrite, ensureSymlink, freshBackupTs } from './utils.fs.ts';
 import { acquireLock, releaseLock } from './utils.lockfile.ts';
 import { readPathMap } from './utils.json.ts';
 
@@ -328,8 +327,9 @@ function adoptStopsEarly(name: string, linkPath: string, sharedTarget: string): 
  *
  * Each of the four filesystem steps reports its own failure rather than
  * throwing raw, because each leaves the host in a different place and only one
- * of them is a failure on both platforms. See `backupOrFatal` (nothing written
- * anywhere yet), `copyIntoSharedOrFatal` (nothing destroyed yet),
+ * of them is a failure on both platforms. See `backupBeforeWrite` (the host
+ * and the repo are both untouched, though a partial snapshot can be left
+ * under the backup cache), `copyIntoSharedOrFatal` (nothing destroyed yet),
  * `reportSourceRemovalFailure` (the platform split), and
  * `restoreWin32LocalCopy` (the content is already safe in the repo).
  *
@@ -362,8 +362,15 @@ function performAdoptMove(
 
   // Back up before any mutation. The return value distinguishes a real
   // snapshot from a no-op, so a later failure never advertises a backup dir
-  // that holds nothing.
-  const snapshotted = backupOrFatal(name, linkPath, ts);
+  // that holds nothing. A write failure throws NomadFatal from inside
+  // backupBeforeWrite itself; the hint restates the state claim and the
+  // retry advice that this being the first filesystem step makes true.
+  const snapshotted = backupBeforeWrite(
+    linkPath,
+    ts,
+    `Nothing was removed from ${linkPath} and nothing was written to the repo. ` +
+      `Fix what the error names, then run \`nomad adopt ${name}\` again.`,
+  );
 
   // Targeted stage of shared/<name> only; never git add -A. Hoisted above the
   // mutation because both guards below have to run it on their own failure
@@ -528,7 +535,7 @@ function adoptPreflightAndMove(
   }
 
   // A NomadFatal is this command's own reported failure (a git fault, or any
-  // of performAdoptMove's three filesystem guards), so it renders as one
+  // of performAdoptMove's four filesystem guards), so it renders as one
   // message and its own exit code. Anything else is genuinely unexpected and
   // belongs in the crash report the top-level handler writes.
   try {
