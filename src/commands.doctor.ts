@@ -19,9 +19,9 @@ import {
   reportGitleaksProbe,
   reportGitIdentity,
   reportGitlinks,
-  reportTrackedDeniedShared,
   reportOrphanedAutostash,
   reportRebaseClean,
+  reportTrackedDeniedShared,
   reportRebaseState,
   reportRemote,
 } from './commands.doctor.checks.git-state.ts';
@@ -107,6 +107,7 @@ function gatherDoctorSections(opts: {
 
   const neverSync = section('Never-sync');
   reportNeverSync(neverSync);
+  reportTrackedDeniedShared(neverSync);
 
   const skills = section('Skills');
   reportSkillsDivergence(skills);
@@ -114,7 +115,6 @@ function gatherDoctorSections(opts: {
   const repository = section('Repository');
   const gitleaksReady = reportGitleaksProbe(repository);
   reportGitlinks(repository);
-  reportTrackedDeniedShared(repository);
   reportRemote(repository);
   reportGitIdentity(repository);
   reportRebaseClean(repository);

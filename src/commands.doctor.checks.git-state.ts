@@ -17,8 +17,8 @@ import {
 import { deniedSegmentFor, repoHome } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyWedge, orphanedAutostashPresent } from './commands.pull.wedge.ts';
-import { findGitlinks } from './push-checks.ts';
 import { gitProbe } from './git-probe.ts';
+import { findGitlinks } from './push-checks.ts';
 import { gitStatusPorcelainZ } from './utils.ts';
 
 /**
@@ -250,34 +250,68 @@ const MAX_TRACKED_DENIED_ROWS = 5;
  *
  * `deniedSegmentFor` is the same predicate the push gate and the pull backstop
  * run through, so the three surfaces cannot disagree about what `shared/` may
- * carry, and it returns the matching segment so the WARN can say which name did
- * it. A `null` probe (git absent, an unreadable repo, the timeout expiring) is a
- * silent skip: `reportRepoState` already owns the unusable-repo report.
+ * carry, and it returns the matching segment so the WARN can name what blocked
+ * the path. The row says "blocked by the never-sync boundary" rather than "is on
+ * the never-sync list", because that predicate also matches on credential SHAPE
+ * (`*.pem`, `.env*`, `id_rsa`), and a `deploy.key` is on no list the user could
+ * go and read.
+ *
+ * The pathspec is `:(icase)shared/` rather than `shared/`. Git matches a
+ * pathspec case-sensitively, so an index entry recorded as `Shared/` on a
+ * case-insensitive filesystem would walk straight past a case-sensitive probe
+ * while `deniedSegmentFor` would flag it, and a scan that silently narrows
+ * itself is the failure shape this whole area is built to avoid.
+ *
+ * The guidance names `git rm --cached`, never a bare `git rm`. On posix
+ * `shared/<name>` is the target of the `~/.claude/<name>` symlink, so the file a
+ * bare `git rm` deletes is the user's live config, and a bare `git rm` fails
+ * outright on a staged add, which is one of the two cases this check exists to
+ * see. The row says what stays on disk for the same reason `reportTrackedDenied`
+ * does: a gate whose entire output is one sentence cannot afford that sentence
+ * to cost the user their file.
+ *
+ * A `null` probe (git absent, an unreadable repo, the timeout expiring, stdout
+ * over the probe's ceiling) gets its own info row rather than a bare return.
+ * Nothing else in doctor reports that git could not run here, so a silent skip
+ * would leave "scanned, clean" and "never scanned" looking identical on exactly
+ * the hosts with the most to sync.
  *
  * @param section The `DoctorSection` to append rows to.
  */
 export function reportTrackedDeniedShared(section: DoctorSection): void {
-  const out = gitProbe(['ls-files', '-z', '--', 'shared/'], repoHome());
-  if (out === null) return;
+  const out = gitProbe(['ls-files', '-z', '--', ':(icase)shared/'], repoHome());
+  if (out === null) {
+    addItem(
+      section,
+      `${dim(infoGlyph)} never-sync scan: git could not list shared/, so nothing was scanned`,
+    );
+    return;
+  }
   const hits = new Map<string, string>();
   for (const path of out.split('\0')) {
     const segment = path === '' ? null : deniedSegmentFor(path);
     if (segment !== null) hits.set(path, segment);
   }
   if (hits.size === 0) {
-    addItem(section, `${green(okGlyph)} never-sync scan: nothing denylisted is tracked in shared/`);
+    addItem(
+      section,
+      `${green(okGlyph)} never-sync scan: no tracked path under shared/ is denylisted`,
+    );
     return;
   }
   for (const [path, segment] of [...hits].slice(0, MAX_TRACKED_DENIED_ROWS)) {
     addItem(
       section,
-      `${yellow(warnGlyph)} never-sync: git tracks ${blue(path)} (the path segment "${segment}" is on the never-sync list)`,
+      `${yellow(warnGlyph)} never-sync: git tracks ${blue(path)} (the path segment "${segment}" is blocked by the never-sync boundary)`,
     );
   }
   const overflow = hits.size - MAX_TRACKED_DENIED_ROWS;
-  const more = overflow > 0 ? `${overflow} more not listed. ` : '';
+  const more =
+    overflow > 0
+      ? `${overflow} more not listed, run git ls-files -- shared/ in the sync repo to see them all. `
+      : '';
   addItem(
     section,
-    `${yellow(warnGlyph)} never-sync: ${more}Nothing was changed. Run git rm -- "<path>" and commit to take each one out going forward, and if one holds a real secret, rotate it and rewrite history, because nomad only changes your local worktree and index and cannot scrub what a previous push already sent to the remote`,
+    `${yellow(warnGlyph)} never-sync: ${more}Run git rm --cached -- "<path>" and commit to stop tracking each one; that leaves the file on disk, so move it outside shared/ if you want to keep it. If one holds a real secret, rotate it and rewrite history too, because nomad only changes your local worktree and index and cannot scrub what a previous push already sent`,
   );
 }
