@@ -232,6 +232,29 @@ export function reportGitIdentity(section: DoctorSection): void {
 const MAX_TRACKED_DENIED_ROWS = 5;
 
 /**
+ * C0 controls, DEL, and the C1 range, the characters a terminal acts on rather
+ * than prints.
+ */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\x00-\x1f\x7f-\x9f]/g;
+
+/**
+ * Blank the control characters out of a path before it is rendered.
+ *
+ * A filename is repo-controlled, not nomad-controlled: it can arrive from
+ * another host's push or from a repo cloned from anywhere, and `ls-files -z`
+ * hands it over as raw bytes. An ESC in it would otherwise reach the terminal
+ * as an escape sequence and could repaint or forge the rows around it, which on
+ * a health report means forging its verdict.
+ *
+ * @param text Repo-controlled text bound for a doctor row.
+ * @returns The same text with every control character replaced by a space.
+ */
+function renderable(text: string): string {
+  return text.replace(CONTROL_CHARS, ' ');
+}
+
+/**
  * WARNs (non-blocking) for every denylisted path git TRACKS under `shared/`.
  *
  * The blind spot the pull-side backstop cannot cover. `revertDeniedMirrorPaths`
@@ -302,13 +325,13 @@ export function reportTrackedDeniedShared(section: DoctorSection): void {
   for (const [path, segment] of [...hits].slice(0, MAX_TRACKED_DENIED_ROWS)) {
     addItem(
       section,
-      `${yellow(warnGlyph)} never-sync: git tracks ${blue(path)} (the path segment "${segment}" is blocked by the never-sync boundary)`,
+      `${yellow(warnGlyph)} never-sync: git tracks ${blue(renderable(path))} (the path segment "${renderable(segment)}" is blocked by the never-sync boundary)`,
     );
   }
   const overflow = hits.size - MAX_TRACKED_DENIED_ROWS;
   const more =
     overflow > 0
-      ? `${overflow} more not listed, run git ls-files -- shared/ in the sync repo to see them all. `
+      ? `${overflow} more not listed, run git ls-files -- ":(icase)shared/" in the sync repo to see them all. `
       : '';
   addItem(
     section,

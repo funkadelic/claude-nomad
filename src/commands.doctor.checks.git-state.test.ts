@@ -934,6 +934,25 @@ describe('reportTrackedDeniedShared', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'strips control characters out of a tracked path before rendering it',
+    async () => {
+      // A filename is repo-controlled, so an ESC in it would otherwise reach the
+      // terminal as an escape sequence. Windows rejects control characters in a
+      // filename outright, so the fixture cannot be written there.
+      const repo = join(env.testHome, 'claude-nomad');
+      const dir = join(repo, 'shared', 'rules\u001b[2K');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'settings.local.json'), '{}\n');
+      commitAll(repo);
+      const out = await run();
+      expect(out).toContain(warnGlyph);
+      expect(out).toContain('settings.local.json');
+      expect(out).not.toContain('\u001b[2K');
+      expect(process.exitCode).toBe(0);
+    },
+  );
+
   it('reports the scan as skipped when git cannot answer', async () => {
     // A `.git` FILE pointing nowhere fails the probe deterministically. Deleting
     // `.git` instead would let git walk up to an ancestor repo when the sandbox
