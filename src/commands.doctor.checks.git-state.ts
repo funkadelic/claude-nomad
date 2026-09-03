@@ -14,10 +14,11 @@ import {
   warnGlyph,
   yellow,
 } from './color.ts';
-import { repoHome } from './config.ts';
+import { deniedSegmentFor, repoHome } from './config.ts';
 import { addItem, type DoctorSection } from './commands.doctor.format.ts';
 import { classifyWedge, orphanedAutostashPresent } from './commands.pull.wedge.ts';
 import { findGitlinks } from './push-checks.ts';
+import { gitProbe } from './git-probe.ts';
 import { gitStatusPorcelainZ } from './utils.ts';
 
 /**
@@ -220,4 +221,63 @@ export function reportGitIdentity(section: DoctorSection): void {
   } else {
     addItem(section, `${green(okGlyph)} git identity: user.name and user.email configured`);
   }
+}
+
+/**
+ * Ceiling on the number of denylisted paths named individually. A committed
+ * denied DIRECTORY expands to one row per file, and doctor's Summary repeats
+ * every WARN line, so an uncapped listing buries the rest of the report. The
+ * overflow count rides on the guidance row rather than a row of its own.
+ */
+const MAX_TRACKED_DENIED_ROWS = 5;
+
+/**
+ * WARNs (non-blocking) for every denylisted path git TRACKS under `shared/`.
+ *
+ * The blind spot the pull-side backstop cannot cover. `revertDeniedMirrorPaths`
+ * (`src/links.mirror.ts`) reads `git status`, which reports changes rather than
+ * contents, so a denied path that is committed and clean produces no record at
+ * all. That backstop is also win32-only, while the condition it would miss is a
+ * property of the REPO, which every host shares. `git ls-files` reads the index
+ * instead, so it sees the committed-and-clean case and a staged add alike.
+ *
+ * Report-only, and `process.exitCode` is left alone. Both halves of that are
+ * deliberate: `reportTrackedDenied` owns the reasoning for why a tracked hit is
+ * reported rather than acted on, and doctor's own convention keeps an advisory
+ * off the exit code. Nothing here is a leak in flight, since the copy-time
+ * filter in `mirrorOneSharedName` is what keeps such a path from being written,
+ * and a path already committed is past the point where failing the run helps.
+ *
+ * `deniedSegmentFor` is the same predicate the push gate and the pull backstop
+ * run through, so the three surfaces cannot disagree about what `shared/` may
+ * carry, and it returns the matching segment so the WARN can say which name did
+ * it. A `null` probe (git absent, an unreadable repo, the timeout expiring) is a
+ * silent skip: `reportRepoState` already owns the unusable-repo report.
+ *
+ * @param section The `DoctorSection` to append rows to.
+ */
+export function reportTrackedDeniedShared(section: DoctorSection): void {
+  const out = gitProbe(['ls-files', '-z', '--', 'shared/'], repoHome());
+  if (out === null) return;
+  const hits = new Map<string, string>();
+  for (const path of out.split('\0')) {
+    const segment = path === '' ? null : deniedSegmentFor(path);
+    if (segment !== null) hits.set(path, segment);
+  }
+  if (hits.size === 0) {
+    addItem(section, `${green(okGlyph)} never-sync scan: nothing denylisted is tracked in shared/`);
+    return;
+  }
+  for (const [path, segment] of [...hits].slice(0, MAX_TRACKED_DENIED_ROWS)) {
+    addItem(
+      section,
+      `${yellow(warnGlyph)} never-sync: git tracks ${blue(path)} (the path segment "${segment}" is on the never-sync list)`,
+    );
+  }
+  const overflow = hits.size - MAX_TRACKED_DENIED_ROWS;
+  const more = overflow > 0 ? `${overflow} more not listed. ` : '';
+  addItem(
+    section,
+    `${yellow(warnGlyph)} never-sync: ${more}Nothing was changed. Run git rm -- "<path>" and commit to take each one out going forward, and if one holds a real secret, rotate it and rewrite history, because nomad only changes your local worktree and index and cannot scrub what a previous push already sent to the remote`,
+  );
 }

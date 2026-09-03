@@ -798,3 +798,96 @@ describe('reportGitIdentity', () => {
     expect(process.exitCode).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// reportTrackedDeniedShared: denylisted paths git tracks under shared/
+// ---------------------------------------------------------------------------
+
+describe('reportTrackedDeniedShared', () => {
+  let originalHome: string | undefined;
+  let originalNomadHost: string | undefined;
+  let originalNoColor: string | undefined;
+  let env: Env;
+
+  /** Commit every path written so far, so `git ls-files` reports them. */
+  function commitAll(repo: string): void {
+    execFileSync('git', ['add', '-A'], { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('git', ['-c', 'user.email=t@t.com', '-c', 'user.name=T', 'commit', '-m', 'init'], {
+      cwd: repo,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  }
+
+  /** Render the reporter's rows for the sandbox repo. */
+  async function run(): Promise<string> {
+    const { reportTrackedDeniedShared } = await import('./commands.doctor.checks.git-state.ts');
+    const { section, renderDoctor } = await import('./commands.doctor.format.ts');
+    const sec = section('Repository');
+    reportTrackedDeniedShared(sec);
+    renderDoctor([sec]);
+    return joinedLog(env.logSpy);
+  }
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadHost = process.env.NOMAD_HOST;
+    originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = '1';
+    process.exitCode = 0;
+    env = makeDoctorEnv({ host: 'test-host', setupGitRepo: true });
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+    restoreEnv('HOME', originalHome);
+    restoreEnv('NOMAD_HOST', originalNomadHost);
+    restoreEnv('NO_COLOR', originalNoColor);
+    rmSync(env.testHome, { recursive: true, force: true });
+  });
+
+  it('WARNs for a committed denylisted path and leaves exitCode alone', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.local.json'), '{}\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('shared/settings.local.json');
+    expect(out).toContain('settings.local.json" is on the never-sync list');
+    expect(out).toContain('git rm --');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('caps the listed paths and reports the overflow count', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    const denied = join(repo, 'shared', 'projects', 'proj', 'todos');
+    mkdirSync(denied, { recursive: true });
+    for (let i = 0; i < 7; i++) writeFileSync(join(denied, `t${i}.json`), '{}\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain('2 more not listed');
+    expect(out.match(/git tracks/g)).toHaveLength(5);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('emits a PASS row when nothing denylisted is tracked', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'CLAUDE.md'), '# hi\n');
+    commitAll(repo);
+    const out = await run();
+    expect(out).toContain(okGlyph);
+    expect(out).toContain('nothing denylisted is tracked in shared/');
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('stays silent when git cannot answer', async () => {
+    // No git repo at REPO_HOME: the probe fails, and reportRepoState owns the
+    // unusable-repo report.
+    rmSync(join(env.testHome, 'claude-nomad', '.git'), { recursive: true, force: true });
+    const out = await run();
+    expect(out).not.toContain(warnGlyph);
+    expect(out).not.toContain('never-sync scan');
+    expect(process.exitCode).toBe(0);
+  });
+});

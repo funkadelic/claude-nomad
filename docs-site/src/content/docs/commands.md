@@ -440,7 +440,7 @@ the `git stash pop` or `git stash drop` runbook. Other `⚠︎`-only checks: git
 a private GitHub repo, re-enabled Actions; optional-dependency presence (`gh` and the curl-or-wget
 HTTP fetcher); a backups-cache size/count nudge toward `nomad clean --backups`; an ESM/CommonJS
 hook-scope mismatch; a Node-engine floor check; a hook command that runs a Node script under a
-synced (symlinked) directory without `--preserve-symlinks-main`; and, when `NOMAD_HOST` is unset on
+synced (symlinked) directory without `--preserve-symlinks-main`; a denylisted path git already tracks under `shared/` (a `git ls-files` walk filtered through the same never-sync check the push gate and the pull-side backstop use, naming the path, the segment that matched, and the `git rm` that takes it out; a committed path is invisible to that backstop, which reads `git status` and so reports changes rather than contents); and, when `NOMAD_HOST` is unset on
 a repo that already configures other hosts, a hostname-derived host key that matches neither a
 `hosts/<NOMAD_HOST>.json` override nor a path-map entry (the silent-misalignment nudge: per-host
 settings and session sync key off this label, so set `NOMAD_HOST` to the label this host should use

@@ -19,6 +19,7 @@ import {
   reportGitleaksProbe,
   reportGitIdentity,
   reportGitlinks,
+  reportTrackedDeniedShared,
   reportOrphanedAutostash,
   reportRebaseClean,
   reportRebaseState,
@@ -113,6 +114,7 @@ function gatherDoctorSections(opts: {
   const repository = section('Repository');
   const gitleaksReady = reportGitleaksProbe(repository);
   reportGitlinks(repository);
+  reportTrackedDeniedShared(repository);
   reportRemote(repository);
   reportGitIdentity(repository);
   reportRebaseClean(repository);
