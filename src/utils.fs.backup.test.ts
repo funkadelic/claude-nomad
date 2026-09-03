@@ -108,6 +108,24 @@ describe('backupBeforeWrite', () => {
     expect(fatal.message).toContain('a partial copy may');
   });
 
+  it('appends an optional hint as a trailing sentence on a write failure', () => {
+    const src = join(testHome, '.claude', 'settings.json');
+    writeFileSync(src, '{"a":1}');
+    const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup');
+    mkdirSync(backupRoot, { recursive: true });
+    writeFileSync(join(backupRoot, ts), 'not a directory');
+
+    let thrown: unknown;
+    try {
+      backupBeforeWrite(src, ts, 'Nothing was written to the repo. Try again.');
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NomadFatal);
+    const fatal = thrown as NomadFatal;
+    expect(fatal.message).toContain('a partial copy may be left there. Nothing was written');
+  });
+
   it('recursively copies a directory under claudeHome()', () => {
     const agentsDir = join(testHome, '.claude', 'agents');
     mkdirSync(agentsDir, { recursive: true });

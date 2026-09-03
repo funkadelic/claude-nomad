@@ -223,16 +223,18 @@ export function ensureSymlink(linkPath: string, target: string): void {
  * overwriting an earlier snapshot. Shared core behind the three scoped
  * wrappers below, which differ only by their anchor and `destRoot`.
  *
+ * @param hint - Optional sentence appended after the failure fragment,
+ *   letting a caller (e.g. adopt) name its own on-disk state and next step.
  * @returns `true` when the copy ran, `false` when neither no-op guard let it
  *   (the source is missing, or it resolves outside `anchor`). A caller that
  *   tells the user where the previous content went needs the distinction: the
  *   guards are checked here, so predicting them from outside is a guess that
  *   goes stale the moment the entry changes between the two reads.
  * @throws {NomadFatal} When the destination `mkdirSync` or the `cpSync` itself
- *   fails (EACCES, EBUSY, ENOSPC, ...), naming the source, the destination
- *   root, and the quoted cause.
+ *   fails (EACCES, EBUSY, ENOSPC, ...), naming the source, `dst`, and the
+ *   quoted cause.
  */
-function backupUnder(absPath: string, anchor: string, destRoot: string): boolean {
+function backupUnder(absPath: string, anchor: string, destRoot: string, hint?: string): boolean {
   if (!existsSync(absPath)) return false;
   const rel = relative(anchor, absPath);
   if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return false;
@@ -241,10 +243,8 @@ function backupUnder(absPath: string, anchor: string, destRoot: string): boolean
     mkdirSync(dirname(dst), { recursive: true });
     cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
   } catch (err) {
-    throw new NomadFatal(
-      `could not back up ${absPath} into ${destRoot} (${errorText(err)}); a partial copy may ` +
-        `be left there.`,
-    );
+    const fragment = `could not back up ${absPath} into ${dst} (${errorText(err)}); a partial copy may be left there`;
+    throw new NomadFatal(hint === undefined ? fragment : `${fragment}. ${hint}`);
   }
   return true;
 }
@@ -253,12 +253,17 @@ function backupUnder(absPath: string, anchor: string, destRoot: string): boolean
  * Snapshot `absPath` into `backupBase()/<ts>/<rel>` before destructive write.
  * No-op if source missing or outside claudeHome(). Recursive for directories.
  *
+ * @param hint - Optional sentence a caller adds to a snapshot-failure
+ *   message; see `backupUnder`.
  * @returns `true` when the copy ran, `false` when it was a no-op (source
  *   missing, or outside `claudeHome()`). The sibling wrappers below return
  *   nothing: only this one has a caller that reports the snapshot to the user.
+ * @throws {NomadFatal} When the snapshot write itself fails; see
+ *   `backupUnder`. A caller that must survive a failed snapshot wraps the
+ *   call (see `snapshotBeforeWin32Copy` in `links.ts`).
  */
-export function backupBeforeWrite(absPath: string, ts: string): boolean {
-  return backupUnder(absPath, claudeHome(), join(backupBase(), ts));
+export function backupBeforeWrite(absPath: string, ts: string, hint?: string): boolean {
+  return backupUnder(absPath, claudeHome(), join(backupBase(), ts), hint);
 }
 
 /**
@@ -266,6 +271,10 @@ export function backupBeforeWrite(absPath: string, ts: string): boolean {
  * `claudeHome()`. Used by `remapPush` to snapshot repo-side encoded-dir
  * state before `copyDir` clobbers it. Backup root is repo-prefixed so the
  * dump is distinguishable from `claudeHome()` backups in the same `ts` dir.
+ *
+ * @throws {NomadFatal} When the snapshot write itself fails; see
+ *   `backupUnder`. A caller that must survive a failed snapshot wraps the
+ *   call (see `snapshotBeforeWin32Copy` in `links.ts`).
  */
 export function backupRepoWrite(absPath: string, ts: string, repoHome: string): void {
   backupUnder(absPath, repoHome, join(backupBase(), ts, 'repo'));
@@ -291,6 +300,10 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
  * relative extras path (e.g. both with `.planning/PLAN.md`) cannot collide
  * inside the same `<ts>` directory (`cpSync` runs with `force: false`, so a
  * collision would silently drop the second snapshot).
+ *
+ * @throws {NomadFatal} When the snapshot write itself fails; see
+ *   `backupUnder`. A caller that must survive a failed snapshot wraps the
+ *   call (see `snapshotBeforeWin32Copy` in `links.ts`).
  */
 export function backupExtrasWrite(absPath: string, ts: string, projectRoot: string): void {
   backupUnder(absPath, projectRoot, join(backupBase(), ts, 'extras', encodePath(projectRoot)));
