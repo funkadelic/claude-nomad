@@ -13,12 +13,16 @@
 // 0.34.0. Options below therefore mirror scripts/build.mjs.
 //
 // Output lives at `.test-bundle/` (gitignored). The directory sits one level
-// below the repo root, the same depth as `dist/` and `src/`, so the two
-// runtime `new URL('../...', import.meta.url)` lookups inside the bundle
-// (`resolveTomlPath` reaching for the package-bundled `.gitleaks.toml`) still
-// resolve exactly as they do from the shipped location. The worker entry is
-// emitted alongside it under the same `nomad.worker.mjs` name `resolveWorkerPath`
-// expects of a compiled bundle sibling.
+// below the repo root, the same depth as `dist/` and `src/`, so the runtime
+// package-root lookups inside the bundle (the doctor version/engine rows, and
+// `resolveTomlPath` reaching for the package-bundled `.gitleaks.toml`) still
+// resolve exactly as they do from the shipped location. All three now walk
+// up via `packageRoot()` rather than a fixed `new URL('../...', import.meta.url)`
+// hop count, so the resolution is depth-independent; this bundle depth exists
+// to match `dist/nomad.mjs` for other purposes, not because these lookups
+// require it. The worker entry is emitted alongside it under the same
+// `nomad.worker.mjs` name `resolveWorkerPath` expects of a compiled bundle
+// sibling.
 
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
