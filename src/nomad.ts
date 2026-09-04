@@ -19,7 +19,7 @@ import { cmdAllow } from './commands.allow.ts';
 import { cmdCaptureSettings } from './commands.capture-settings.ts';
 import { cmdClean } from './commands.clean.ts';
 import { cmdEject } from './commands.eject.ts';
-import { cmdDoctor } from './commands.doctor.ts';
+import { cmdDoctor } from './commands/doctor/doctor.ts';
 import { parseDoctorArgs } from './nomad.dispatch.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
 import { cmdRedact } from './commands.redact.ts';
