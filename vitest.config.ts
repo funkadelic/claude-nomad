@@ -96,6 +96,9 @@ export default defineConfig({
         // `*.test-helpers.git.ts` (test infrastructure, exercised indirectly
         // via the suites that import them, so not counted toward coverage).
         'src/**/*.test-helpers*.ts',
+        // A domain directory drops the module prefix, so its helper is a bare
+        // `test-helpers.ts` that the dotted pattern above cannot match.
+        'src/**/test-helpers.ts',
         // CLI entry point: argv dispatcher with process.exit fall-throughs.
         // Tests would mock process.exit and assert dispatch routing, which
         // duplicates what each cmd* function already covers behaviorally.
