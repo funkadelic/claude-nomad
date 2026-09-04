@@ -229,15 +229,20 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
   });
 
   it('probeGitleaks passes --config <bundled> when REPO_HOME toml absent but bundled exists', async () => {
-    // REPO_HOME toml absent; everything else (packageRoot's package.json walk,
-    // then the bundled toml itself) present.
+    // REPO_HOME toml absent, and the overlay absent too so this exercises the
+    // no-overlay fast path it is named for rather than the generation-failure
+    // fallback. Everything else (packageRoot's package.json walk, then the
+    // bundled toml itself) present.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
         ...actual,
-        existsSync: vi.fn(
-          (p: unknown) => String(p) !== join(testHome, 'claude-nomad', '.gitleaks.toml'),
-        ),
+        existsSync: vi.fn((p: unknown) => {
+          const s = String(p);
+          if (s === join(testHome, 'claude-nomad', '.gitleaks.toml')) return false;
+          if (s.endsWith('.gitleaks.overlay.toml')) return false;
+          return true;
+        }),
       };
     });
     let capturedArgs: readonly string[] = [];

@@ -86,16 +86,21 @@ describe('scanFile (mocked child_process)', () => {
   });
 
   it('passes --config <bundled> when REPO_HOME toml absent but bundled exists', async () => {
-    // Repo copy absent; everything else (packageRoot's package.json walk, then
-    // the bundled toml itself) present. The cache dir mkdirSync still needs to
+    // Repo copy absent, and the overlay absent too so this exercises the
+    // no-overlay fast path it is named for rather than the generation-failure
+    // fallback. Everything else (packageRoot's package.json walk, then the
+    // bundled toml itself) present. The cache dir mkdirSync still needs to
     // work, so only intercept existsSync.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
         ...actual,
-        existsSync: vi.fn(
-          (p: unknown) => String(p) !== join(process.env.NOMAD_REPO!, '.gitleaks.toml'),
-        ),
+        existsSync: vi.fn((p: unknown) => {
+          const s = String(p);
+          if (s === join(process.env.NOMAD_REPO!, '.gitleaks.toml')) return false;
+          if (s.endsWith('.gitleaks.overlay.toml')) return false;
+          return true;
+        }),
       };
     });
     let seenArgs: readonly string[] = [];

@@ -131,7 +131,8 @@ transcripts, `settings.local.json`, `shell-snapshots/`, `sessions/`, and other h
 ephemeral names, leaving your project config (`settings.json`, `skills/`, `commands/`, `rules/`,
 `hooks/`, `agents/`).
 
-The same boundary is enforced a second time at the push gate in `commands.push.allowlist.ts` as
+The same boundary is enforced a second time at the push gate in
+`src/commands/push/allowlist.ts` as
 a backstop. On pull, the filter prevents a poisoned repo entry from restoring a host-local file
 onto the host.
 

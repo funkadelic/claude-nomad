@@ -48,6 +48,10 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
   it('delegates to resolveTomlPath when no overlay is present (no temp written)', async () => {
     // No overlay file; a REPO_HOME/.gitleaks.toml exists so resolveTomlPath
     // returns it. tempPath must be null and no writeFileSync must fire.
+    // The silent-warn assertion pins the no-overlay fast path. Every other
+    // route to this same return value warns on the way, whether the repo toml
+    // took precedence or the temp generation failed, so without it the branch
+    // can be deleted with the suite still green.
     writeFileSync(join(repoHome, '.gitleaks.toml'), '[extend]\nuseDefault = true\n');
     const writeSpy = vi.fn();
     vi.doMock('node:fs', async (importOriginal) => {
@@ -61,6 +65,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     expect(result.path).toBe(join(repoHome, '.gitleaks.toml'));
     expect(result.tempPath).toBeNull();
     expect(writeSpy).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('generates a temp config in a private dir extending the absolute bundled path (mode 0o600, wx)', async () => {
@@ -399,5 +404,21 @@ describe('resolveTomlPath (two-tier toml lookup)', () => {
     });
     const { resolveTomlPath } = await import('./gitleaks.config.ts');
     expect(resolveTomlPath()).toBeNull();
+  });
+
+  it('throws NomadFatal with a reinstall hint when packageRoot finds no manifest', async () => {
+    // Nothing anywhere holds a package.json, so packageRoot throws. That is a
+    // broken install rather than a merely-absent bundled toml. Surfacing it as
+    // a raw Error would reach handleCrash and write a crash report telling the
+    // user to file a bug, when the actionable answer is to reinstall.
+    process.env.NOMAD_REPO = '/fake/repo';
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return { ...actual, existsSync: vi.fn(() => false) };
+    });
+    const { resolveTomlPath } = await import('./gitleaks.config.ts');
+    const { NomadFatal } = await import('../../utils.ts');
+    expect(() => resolveTomlPath()).toThrow(NomadFatal);
+    expect(() => resolveTomlPath()).toThrow(/reinstall with/);
   });
 });

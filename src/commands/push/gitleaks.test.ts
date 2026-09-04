@@ -30,10 +30,10 @@ const hasGitleaks = ((): boolean => {
 })();
 
 // Mock-based execFileSync coverage for runGitleaksScan after its split
-// out of push-checks.ts. The four cases here (clean scan, status-1 with
+// out of commands/push/checks.ts. The four cases here (clean scan, status-1 with
 // stderr, status-1 with stdout-only, ENOENT install hint) previously
-// lived in push-checks.test.ts under the same describe; they move
-// verbatim with the dynamic import retargeted at ./push-gitleaks.ts.
+// lived in commands/push/checks.test.ts under the same describe; they move
+// verbatim with the dynamic import retargeted at commands/push/gitleaks.ts.
 // This file also extends to parser, FATAL builder, mixed-section,
 // multi-session, and allowlist-regression coverage.
 describe('runGitleaksScan (mocked child_process)', () => {
@@ -511,7 +511,7 @@ describe('runGitleaksScan (mocked child_process)', () => {
 //
 // Local-shim types mirror the expected signatures so the dynamic import
 // destructures cleanly under @typescript-eslint/no-unsafe-*. They are not
-// the contract; the production types in push-gitleaks.ts are.
+// the contract; the production types in commands/push/gitleaks.ts are.
 type Finding = {
   RuleID: string;
   File: string;
@@ -1339,7 +1339,7 @@ describe('SESSION_PATH and SUBAGENT_SESSION_PATH regex hardening (security routi
 
   it('exported SUBAGENT_SESSION_PATH matches a nested .jsonl subagent path but not a memory/*.md path', async () => {
     // Direct assertion on the exported constant itself (promoted from
-    // module-private to `export const` so commands.push.recovery.seams.ts can
+    // module-private to `export const` so commands/push/recovery/seams.ts can
     // reuse it instead of a divergent inline regex). Covers both the intended
     // match (nested subagent transcript) and the fix's whole point (a
     // memory/*.md path must NOT match, since it is not anchored to .jsonl).
@@ -1490,9 +1490,9 @@ describe.skipIf(!hasGitleaks)('allowlist regression fixture', () => {
   it('suppresses the four allowlist patterns while still firing on a real ghp_<36> PAT', async () => {
     // Copy the worktree's .gitleaks.toml into the temp REPO_HOME so the real
     // gitleaks subprocess loads the production allowlist via --config.
-    // The worktree root is one directory up from this test file:
-    // <worktree>/src/push-gitleaks.test.ts → <worktree>/.gitleaks.toml.
-    // ESM has no __dirname; derive it from import.meta.url instead.
+    // The worktree root is three directories up from this test file, since it
+    // lives at <worktree>/src/commands/push/. ESM has no __dirname; derive it
+    // from import.meta.url instead.
     const here = dirname(fileURLToPath(import.meta.url));
     const worktreeToml = join(here, '..', '..', '..', '.gitleaks.toml');
     copyFileSync(worktreeToml, join(repoUnderHome, '.gitleaks.toml'));

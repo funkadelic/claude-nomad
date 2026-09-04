@@ -46,6 +46,26 @@ describe('packageRoot', () => {
     expect(() => packageRoot(orphan)).toThrow(/no package\.json above/);
   });
 
+  it('stops at a node_modules boundary rather than escaping to the host project', () => {
+    // The broken-install shape is a host project that has a package.json above
+    // an installed package that has lost its own. Escaping the
+    // boundary here would resolve a package-root asset (the scanner allowlist)
+    // to an unrelated project's file, so the walk must throw instead.
+    writeFileSync(join(tmp, 'package.json'), '{}\n');
+    const installed = join(tmp, 'node_modules', 'claude-nomad', 'dist');
+    mkdirSync(installed, { recursive: true });
+    expect(() => packageRoot(installed)).toThrow(/within its own package/);
+  });
+
+  it('resolves inside node_modules when the installed package keeps its manifest', () => {
+    // The healthy counterpart. The boundary must not break a normal install.
+    const pkg = join(tmp, 'node_modules', 'claude-nomad');
+    const dist = join(pkg, 'dist');
+    mkdirSync(dist, { recursive: true });
+    writeFileSync(join(pkg, 'package.json'), '{}\n');
+    expect(packageRoot(dist)).toBe(pkg);
+  });
+
   it('defaults to this module own directory, finding the repo package.json', () => {
     // No argument: the walk starts at src/ and must reach the repo root, which
     // is the property the doctor version and engine rows depend on.

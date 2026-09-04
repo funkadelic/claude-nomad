@@ -8,7 +8,8 @@
  * on top of it. Co-locating them here (rather than importing `resolveTomlPath`
  * from `gitleaks.scan.ts`) keeps the dependency one-directional
  * (`gitleaks.scan.ts` + `checks.ts` -> this module); this module
- * imports only `config.ts`, `utils.fs.ts`, and `utils.ts`, so there is no cycle.
+ * imports only `config.ts`, `package-root.ts`, and `utils.ts`, so there is no
+ * cycle.
  */
 
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -29,13 +30,14 @@ import { NomadFatal, warn } from '../../utils.ts';
  * `probeGitleaks`.
  *
  * The `null` return covers only "no bundled file at this package root", the
- * ordinary and already-tolerated absence case. `packageRoot()` itself is not
- * caught here: a source tree with no `package.json` above it anywhere is a
- * broken install, not a missing optional file, and is deliberately left to
- * throw and abort the push rather than silently returning `null`, which would
- * otherwise be indistinguishable from the merely-absent case and drop the
- * scanner to gitleaks' default ruleset without any signal that the install
- * itself is corrupt.
+ * ordinary and already-tolerated absence case. A `packageRoot()` failure means
+ * something else. No `package.json` above the CLI at all is a broken install,
+ * not a missing optional file. Returning `null` for it would be
+ * indistinguishable from the merely-absent case and would drop the scanner to
+ * gitleaks' default ruleset with no signal that the install is corrupt, so this
+ * aborts instead. It is re-thrown as `NomadFatal` rather than left as the raw
+ * `Error`, which would reach `handleCrash` and write a crash report telling the
+ * user to file a bug when the actionable answer is to reinstall.
  *
  * @param repo Repo root; defaults to `repoHome()` for direct callers, while
  *   `resolveTomlConfig` passes its already-captured root so the whole
@@ -44,7 +46,15 @@ import { NomadFatal, warn } from '../../utils.ts';
 export function resolveTomlPath(repo: string = repoHome()): string | null {
   const repoToml = join(repo, '.gitleaks.toml');
   if (existsSync(repoToml)) return repoToml;
-  const bundled = join(packageRoot(), '.gitleaks.toml');
+  let root: string;
+  try {
+    root = packageRoot();
+  } catch {
+    throw new NomadFatal(
+      'claude-nomad install looks incomplete (no package.json above the CLI); reinstall with `npm i -g claude-nomad`',
+    );
+  }
+  const bundled = join(root, '.gitleaks.toml');
   return existsSync(bundled) ? bundled : null;
 }
 
@@ -217,9 +227,10 @@ function buildOverlayTempConfig(
  *   - Generation failure for any reason: if reading the overlay or writing
  *     the temp throws (ENOSPC, EACCES, EROFS, missing tmpdir, unreadable overlay,
  *     etc.), `warn` once and fall back to the BUNDLED base path so the scan STILL
- *     runs with the full bundled allowlist. Never returns `path: null` here, never
- *     throws, never skips. The `[extend]` `NomadFatal` is thrown outside the
- *     fallback try, so it is never swallowed by this catch.
+ *     runs with the full bundled allowlist. Never returns `path: null` here, and
+ *     never skips. The `[extend]` `NomadFatal` is thrown outside the fallback
+ *     try, so it is never swallowed by this catch, as is the broken-install
+ *     `NomadFatal` from the `resolveTomlPath` call that precedes it.
  *
  * @returns A `TomlConfigResult`; the caller passes `path` to `--config` (omitting
  *   the flag on `null`) and removes a non-null `tempPath` in a `finally`.
