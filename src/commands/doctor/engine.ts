@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { green, okGlyph, warnGlyph, yellow } from '../../color.ts';
 import { addItem, type DoctorSection } from './format.ts';
 import { compareSemver } from './version.ts';
+import { packageRoot } from '../../package-root.ts';
 
 /**
  * Soft host-fitness check appended to the Version section of `nomad doctor`.
@@ -36,13 +37,15 @@ export function parseMinVersion(spec: string): string | null {
 }
 
 /**
- * Locate and parse the local `package.json`, returning the `engines.node`
- * string when present, non-empty, and a string. Any throw (missing file,
- * parse error, etc.) becomes a `null` return so the caller silently skips.
+ * Locate and parse the local `package.json`, found by walking up from this
+ * module rather than by a fixed hop count, so the lookup holds from both `src/`
+ * and the compiled bundle. Returns the `engines.node` string when present,
+ * non-empty, and a string. Any throw (missing file, parse error, etc.) becomes
+ * a `null` return so the caller silently skips.
  */
 function readEnginesNode(): string | null {
   try {
-    const pkgPath = fileURLToPath(new URL('../../../package.json', import.meta.url));
+    const pkgPath = join(packageRoot(), 'package.json');
     const parsed = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
       engines?: { node?: unknown };
     };

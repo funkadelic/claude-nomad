@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../color.ts';
 import { addItem, type DoctorSection } from './format.ts';
 import { NPM_REGISTRY_LATEST_URL } from '../../config.ts';
 import { fetchUrl } from '../../http-fetch.ts';
+import { packageRoot } from '../../package-root.ts';
 
 /**
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads
@@ -50,14 +51,16 @@ export function compareSemver(a: string, b: string): -1 | 0 | 1 {
 }
 
 /**
- * Locate and parse the local `package.json` at the repo root, three directories
- * above this source module. Returns the `version` string when present and
- * non-empty, otherwise `null`. Any throw (missing file, parse error, etc.)
- * becomes a `null` return so the caller silently skips the diagnostic.
+ * Locate and parse the local `package.json` at the package root, found by
+ * walking up from this module rather than by a fixed hop count, so the lookup
+ * holds from both `src/` and the compiled bundle. Returns the `version` string
+ * when present and non-empty, otherwise `null`. Any throw (missing file, parse
+ * error, etc.) becomes a `null` return so the caller silently skips the
+ * diagnostic.
  */
 function readLocalVersion(): string | null {
   try {
-    const pkgPath = fileURLToPath(new URL('../../../package.json', import.meta.url));
+    const pkgPath = join(packageRoot(), 'package.json');
     const parsed = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: unknown };
     if (typeof parsed.version === 'string' && parsed.version.length > 0) {
       return parsed.version;
