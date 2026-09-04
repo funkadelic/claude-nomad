@@ -35,7 +35,7 @@ import {
   writeManifest,
   type Manifest,
   type ManifestEntry,
-} from './push-manifest.ts';
+} from './commands/push/manifest.ts';
 import { warn } from './utils.ts';
 
 /**

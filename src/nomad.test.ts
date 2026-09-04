@@ -34,7 +34,7 @@ describe('nomad.ts push dispatcher', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.push.ts');
+    vi.doUnmock('./commands/push/push.ts');
     vi.doUnmock('./commands.pull.ts');
     vi.doUnmock('./commands/doctor/doctor.ts');
     vi.doUnmock('./commands.update.ts');
@@ -49,7 +49,7 @@ describe('nomad.ts push dispatcher', () => {
 
   it('routes `nomad push` to cmdPush() with no opts', async () => {
     const cmdPushMock = vi.fn();
-    vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
+    vi.doMock('./commands/push/push.ts', () => ({ cmdPush: cmdPushMock }));
     process.argv = ['node', 'nomad.ts', 'push'];
     await import('./nomad.ts');
     expect(cmdPushMock).toHaveBeenCalledTimes(1);
@@ -65,7 +65,7 @@ describe('nomad.ts push dispatcher', () => {
 
   it('routes `nomad push --dry-run` to cmdPush({ dryRun: true })', async () => {
     const cmdPushMock = vi.fn();
-    vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
+    vi.doMock('./commands/push/push.ts', () => ({ cmdPush: cmdPushMock }));
     process.argv = ['node', 'nomad.ts', 'push', '--dry-run'];
     await import('./nomad.ts');
     expect(cmdPushMock).toHaveBeenCalledTimes(1);
@@ -81,7 +81,7 @@ describe('nomad.ts push dispatcher', () => {
 
   it('rejects unknown argv after `push` with a usage error and exitCode=2', async () => {
     const cmdPushMock = vi.fn();
-    vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
+    vi.doMock('./commands/push/push.ts', () => ({ cmdPush: cmdPushMock }));
     process.argv = ['node', 'nomad.ts', 'push', '--bogus'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -109,7 +109,7 @@ describe('nomad.ts push dispatcher', () => {
     const cmdDropSessionMock = vi.fn();
     const resumeCmdMock = vi.fn();
     vi.doMock('./commands.pull.ts', () => ({ cmdPull: cmdPullMock }));
-    vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
+    vi.doMock('./commands/push/push.ts', () => ({ cmdPush: cmdPushMock }));
     vi.doMock('./commands/doctor/doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));

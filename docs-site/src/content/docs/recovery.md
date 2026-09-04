@@ -405,7 +405,8 @@ condition = "AND"
 ```
 
 File location: `.gitleaks.toml` ships bundled with the CLI binary. At runtime both `probeGitleaks`
-(in `src/push-checks.ts`) and `runGitleaksScan` (in `src/push-gitleaks.ts`) try
+(in `src/commands/push/checks.ts`) and `runGitleaksScan` (in
+`src/commands/push/gitleaks.ts`) try
 `<REPO_HOME>/.gitleaks.toml` first and fall back to the package-bundled copy when the repo-level
 file is absent. So when you have no repo-level copy the allowlist tracks the installed binary, and
 running `nomad update` (to get the latest CLI) is enough to receive allowlist updates. If you do

@@ -8,7 +8,7 @@ import {
   listSubtreeFiles,
 } from './commands.redact.subtree.ts';
 import { warnIfSessionPushed } from './commands.pushed-history.ts';
-import { type Finding, scanFile } from './push-gitleaks.scan.ts';
+import { type Finding, scanFile } from './commands/push/gitleaks.scan.ts';
 import { EXIT } from './exit-codes.ts';
 import { freshBackupTs } from './utils.fs.ts';
 import { encodePath, readJson } from './utils.json.ts';

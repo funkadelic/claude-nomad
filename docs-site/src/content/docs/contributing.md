@@ -151,8 +151,9 @@ Zero-kill results from subprocess-based tests (for example, `commands.adopt`) ar
 positives: Stryker cannot observe kills that happen inside a spawned child process. Keep those
 tests without further analysis.
 
-**Security modules default to keep.** Tests in `src/push-checks.ts`, `src/push-gitleaks*.ts`,
-`src/commands.redact*.ts`, `src/commands.push.recovery*.ts`, `src/utils.lockfile*.ts`, and
+**Security modules default to keep.** Tests in `src/commands/push/checks.ts`,
+`src/commands/push/gitleaks*.ts`, `src/commands.redact*.ts`,
+`src/commands/push/recovery/*.ts`, `src/utils.lockfile*.ts`, and
 `src/config.sharedDirs.guard.ts` are never bulk-deleted. A zero-kill result in a security module
 often documents a refusal or containment invariant that mutation testing does not exercise (for
 example, a traversal-guard rejection path). Delete a security-module test only with an explicit

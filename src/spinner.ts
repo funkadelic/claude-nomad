@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 
 import { green, okGlyph } from './color.ts';
-import { isTTY } from './commands.push.recovery.ts';
+import { isTTY } from './commands/push/recovery/recovery.ts';
 
 /** Minimal structural interface satisfied by a real `worker_threads.Worker`. */
 export type SpinnerWorker = {
