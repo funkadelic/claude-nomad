@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as fsModule from 'node:fs';
 import type * as utilsFsModule from './utils.fs.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
-import type { Finding } from './push-gitleaks.scan.ts';
+import type { Finding } from './commands/push/gitleaks.scan.ts';
 
 /**
  * Unit tests for the pure TDD seams in `commands.redact.core.ts` and the
@@ -1003,7 +1003,7 @@ describe('scanFile', () => {
       return; // gitleaks not available; skip
     }
 
-    const { scanFile: realScanFile } = await import('./push-gitleaks.scan.ts');
+    const { scanFile: realScanFile } = await import('./commands/push/gitleaks.scan.ts');
     // A realistic github fine-grained PAT pattern (40 hex chars after the prefix)
     const pat = ghpFixture('0123456789abcdefghijABCDEFGHIJ012345');
     const filePath = join(tmpDir, 'transcript.jsonl');
@@ -1028,7 +1028,7 @@ describe('scanFile', () => {
       return; // gitleaks not available; skip
     }
 
-    const { scanFile: realScanFile } = await import('./push-gitleaks.scan.ts');
+    const { scanFile: realScanFile } = await import('./commands/push/gitleaks.scan.ts');
     const filePath = join(tmpDir, 'clean.jsonl');
     writeFileSync(filePath, '{"text":"nothing sensitive here"}\n');
 
@@ -1051,7 +1051,7 @@ describe('scanFile', () => {
       return; // gitleaks not available; skip
     }
 
-    const { scanFile: realScanFile } = await import('./push-gitleaks.scan.ts');
+    const { scanFile: realScanFile } = await import('./commands/push/gitleaks.scan.ts');
     const { applyRedactions } = await import('./commands.redact.core.ts');
     const pat = ghpFixture('0123456789abcdefghijABCDEFGHIJ012345');
     const content = `{"message":{"role":"assistant","content":"export GITHUB_TOKEN=${pat}"}}\n`;

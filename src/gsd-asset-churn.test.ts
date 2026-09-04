@@ -131,7 +131,7 @@ describe('gsd-asset churn: no shared/hooks diff after hooks drop (B8)', () => {
     // Even if someone manually staged a shared/hooks file, enforceAllowList
     // must block it because shared/hooks/ is not in PUSH_ALLOWED_STATIC.
     vi.resetModules();
-    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { enforceAllowList } = await import('./commands/push/allowlist.ts');
     const { NomadFatal } = await import('./utils.ts');
 
     const map: PathMap = { projects: {} };

@@ -10,9 +10,10 @@
 // invocation. Compiling to JS ahead of publish sidesteps that entirely and
 // drops the runtime tsx dependency the previous shebang lazily network-installed.
 //
-// dist/nomad.mjs sits one directory below the package root, the same depth as
-// src/, so the runtime `new URL('../.gitleaks.toml', import.meta.url)` lookup
-// in resolveTomlPath still resolves the bundled allowlist at the package root.
+// resolveTomlPath (src/commands/push/gitleaks.config.ts) locates the bundled
+// .gitleaks.toml via packageRoot(), which walks up from its own module to the
+// nearest package.json rather than counting URL hops, so it resolves the
+// allowlist correctly from both src/ and this bundle regardless of depth.
 
 import { build } from 'esbuild';
 import { chmodSync } from 'node:fs';

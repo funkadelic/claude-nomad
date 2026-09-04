@@ -23,7 +23,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './commands.pull.ts';
-import { runPushCore, type PushCoreResult } from './commands.push.ts';
+import { runPushCore, type PushCoreResult } from './commands/push/push.ts';
 import { HOST, repoHome } from './config.ts';
 import { dim, infoGlyph, warnGlyph, yellow } from './color.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';

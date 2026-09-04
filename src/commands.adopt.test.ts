@@ -1388,7 +1388,7 @@ describe('cmdAdopt widened never-sync boundary', () => {
     const { cmdAdopt } = await import('./commands.adopt.ts');
     expect(() => cmdAdopt('my-tools')).not.toThrow();
 
-    const { enforceAllowList } = await import('./commands.push.allowlist.ts');
+    const { enforceAllowList } = await import('./commands/push/allowlist.ts');
     const map = { projects: {}, sharedDirs: ['my-tools'] };
     expect(() => enforceAllowList('A  shared/my-tools/sessions/notes.md\0', map)).not.toThrow();
   });

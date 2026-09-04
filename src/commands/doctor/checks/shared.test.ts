@@ -136,7 +136,7 @@ describe.skipIf(!hasGitleaks)('reportCheckShared (real binary)', () => {
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
 
     const { reportCheckShared } = await import('./shared.ts');
-    const { SESSION_PATH } = (await import('../../../push-gitleaks.ts')) as PushGitleaksModule;
+    const { SESSION_PATH } = (await import('../../push/gitleaks.ts')) as PushGitleaksModule;
     const section: Section = { header: 'Shared scan', items: [] };
     reportCheckShared(section);
 

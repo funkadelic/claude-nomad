@@ -152,7 +152,7 @@ describe('conflicted autostash pop (real git + real cmdPush/cmdPull call sites)'
     // `git commit` sequence downstream or from the throw itself.
     const preConflictTip = gitOut(['rev-parse', 'main'], origin);
 
-    const { rebaseBeforePush } = await import('./push-checks.ts');
+    const { rebaseBeforePush } = await import('./commands/push/checks.ts');
     let caught: unknown;
     try {
       rebaseBeforePush(local);
@@ -200,7 +200,7 @@ describe('conflicted autostash pop (real git + real cmdPush/cmdPull call sites)'
     const pullLocal = cleanClone(tmp, origin, 'pull-clean');
     process.env.HOME = tmp;
 
-    const { rebaseBeforePush } = await import('./push-checks.ts');
+    const { rebaseBeforePush } = await import('./commands/push/checks.ts');
     expect(() => rebaseBeforePush(pushLocal)).not.toThrow();
 
     process.env.NOMAD_REPO = pullLocal;

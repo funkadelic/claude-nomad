@@ -32,7 +32,7 @@ import { dirname, join } from 'node:path';
 import { dim, warnGlyph, yellow } from '../../../color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { repoHome } from '../../../config.ts';
-import { type Finding, scanStagedTree } from '../../../push-gitleaks.ts';
+import { type Finding, scanStagedTree } from '../../push/gitleaks.ts';
 import { nowTimestamp } from '../../../utils.fs.ts';
 
 /**

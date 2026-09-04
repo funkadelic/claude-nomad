@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { green, red, dim, bold, okGlyph, failGlyph } from '../../../color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome } from '../../../config.ts';
-import { type Finding, partitionFindings, scanStagedTree } from '../../../push-gitleaks.ts';
+import { type Finding, partitionFindings, scanStagedTree } from '../../push/gitleaks.ts';
 
 /**
  * Recover the absolute live transcript path

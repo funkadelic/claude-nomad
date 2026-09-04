@@ -75,8 +75,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doUnmock('./utils.lockfile.ts');
     vi.doUnmock('./links.ts');
     vi.doUnmock('./links.mirror.ts');
-    vi.doUnmock('./push-checks.ts');
-    vi.doUnmock('./push-gitleaks.ts');
+    vi.doUnmock('./commands/push/checks.ts');
+    vi.doUnmock('./commands/push/gitleaks.ts');
     vi.doUnmock('./remap.ts');
     vi.doUnmock('./extras-sync.ts');
     process.exitCode = 0;
@@ -169,7 +169,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
         gitStatusPorcelainZ: vi.fn(() => '?? .claude.json\0'),
       };
     });
-    const { cmdPush } = await import('./commands.push.ts');
+    const { cmdPush } = await import('./commands/push/push.ts');
     await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
@@ -181,12 +181,12 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // empty-status early return is bypassed; path-map.json absent on disk
     // triggers `die('path-map.json missing...')`. cmdPush's catch sets
     // exitCode and finally releases the lock.
-    vi.doMock('./push-checks.ts', () => ({
+    vi.doMock('./commands/push/checks.ts', () => ({
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
     }));
-    vi.doMock('./push-gitleaks.ts', () => ({
+    vi.doMock('./commands/push/gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
     vi.doMock('./remap.ts', () => ({
@@ -200,7 +200,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
         gitStatusPorcelainZ: vi.fn(() => '?? shared/CLAUDE.md\0'),
       };
     });
-    const { cmdPush } = await import('./commands.push.ts');
+    const { cmdPush } = await import('./commands/push/push.ts');
     await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
@@ -213,19 +213,19 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // and finally releases the lock. Mock push-checks/remap so the
     // pre-checks no-op; the malformed file on disk drives the actual parse.
     writeFileSync(join(repoUnderHome, 'path-map.json'), '{');
-    vi.doMock('./push-checks.ts', () => ({
+    vi.doMock('./commands/push/checks.ts', () => ({
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
     }));
-    vi.doMock('./push-gitleaks.ts', () => ({
+    vi.doMock('./commands/push/gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
     vi.doMock('./remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
     }));
-    const { cmdPush } = await import('./commands.push.ts');
+    const { cmdPush } = await import('./commands/push/push.ts');
     await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
@@ -240,12 +240,12 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    vi.doMock('./push-checks.ts', () => ({
+    vi.doMock('./commands/push/checks.ts', () => ({
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
     }));
-    vi.doMock('./push-leak-verdict.ts', () => ({
+    vi.doMock('./commands/push/leak-verdict.ts', () => ({
       scanPushVerdict: vi.fn(() => {
         throw new TypeError('synthetic non-NomadFatal');
       }),
@@ -257,10 +257,10 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
         gitStatusPorcelainZ: vi.fn(() => '?? shared/CLAUDE.md\0'),
       };
     });
-    const { cmdPush } = await import('./commands.push.ts');
+    const { cmdPush } = await import('./commands/push/push.ts');
     await expect(cmdPush()).rejects.toThrow(TypeError);
     expect(existsSync(lockPath)).toBe(false);
-    vi.doUnmock('./push-leak-verdict.ts');
+    vi.doUnmock('./commands/push/leak-verdict.ts');
   });
 
   // The cmdPull unscaffolded-repo precondition fires BEFORE acquireLock,

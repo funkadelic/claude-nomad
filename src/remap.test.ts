@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ManifestDiff } from './push-manifest.ts';
+import type { ManifestDiff } from './commands/push/manifest.ts';
 import type { RemapPullPreviewEvent } from './remap.ts';
 
 describe('remapPull (integration)', () => {

@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as childProcessModule from 'node:child_process';
-import type * as pushChecksModule from './push-checks.ts';
-import type * as pushGlobalConfigModule from './push-global-config.ts';
-import type * as leakVerdictModule from './push-leak-verdict.ts';
-import type * as recoveryModule from './commands.push.recovery.ts';
+import type * as pushChecksModule from './commands/push/checks.ts';
+import type * as pushGlobalConfigModule from './commands/push/global-config.ts';
+import type * as leakVerdictModule from './commands/push/leak-verdict.ts';
+import type * as recoveryModule from './commands/push/recovery/recovery.ts';
 import type * as previewModule from './preview.ts';
 import type * as wedgeModule from './commands.pull.wedge.ts';
 import type * as extrasSyncModule from './extras-sync.ts';
@@ -76,17 +76,17 @@ function makeSyncEnv(): SyncEnv {
 function teardownSyncEnv(env: SyncEnv): void {
   vi.restoreAllMocks();
   vi.doUnmock('./commands.pull.ts');
-  vi.doUnmock('./commands.push.ts');
+  vi.doUnmock('./commands/push/push.ts');
   vi.doUnmock('./preview.ts');
   vi.doUnmock('./utils.lockfile.ts');
-  vi.doUnmock('./push-checks.ts');
+  vi.doUnmock('./commands/push/checks.ts');
   vi.doUnmock('./remap.ts');
   vi.doUnmock('./extras-sync.ts');
   vi.doUnmock('./skills-sync.ts');
   vi.doUnmock('./utils.ts');
-  vi.doUnmock('./push-global-config.ts');
-  vi.doUnmock('./push-leak-verdict.ts');
-  vi.doUnmock('./commands.push.recovery.ts');
+  vi.doUnmock('./commands/push/global-config.ts');
+  vi.doUnmock('./commands/push/leak-verdict.ts');
+  vi.doUnmock('./commands/push/recovery/recovery.ts');
   vi.doUnmock('node:child_process');
   process.exitCode = env.originalExitCode;
   if (env.originalHome === undefined) delete process.env.HOME;
@@ -264,7 +264,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: runPullCoreSpy,
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: runPushCoreSpy,
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -287,7 +287,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult({ sessionRows: ['pushed-proj'] })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -309,7 +309,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'pulled-proj' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult({ sessionRows: ['pushed-proj'] })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -332,7 +332,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a', sessionExtraRows: [skipRow] })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult({ sessionRows: [skipRow] })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -346,7 +346,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -362,7 +362,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -378,7 +378,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ incomingChanges: false })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'nothing' })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -399,7 +399,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a', incomingChanges: false })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'nothing' })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -420,7 +420,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ incomingChanges: false })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => nothingResult({ aheadOfOrigin: true })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -437,7 +437,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => ({
         ...pushedResult(),
         sections: [...pushSideSections(), { header: 'Path map', items: ['path-map.json missing'] }],
@@ -457,7 +457,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a', incomingChanges: true })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'nothing' })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -479,7 +479,7 @@ describe('cmdSync: wet composition', () => {
         );
       }),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: pushSpy,
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -496,7 +496,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => {
         throw new NomadFatal('secret found');
       }),
@@ -517,7 +517,7 @@ describe('cmdSync: wet composition', () => {
         wetPull({ sessionItem: 'proj-a', localOnly: 3, divergedKeptLocal: 2 }),
       ),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult({ globalConfigCount: 1 })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -534,7 +534,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull()),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'pushed', sections: pushSideSections() })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -549,7 +549,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull()),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -564,7 +564,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull()),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult({ globalConfigCount: 4 })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -578,7 +578,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'pushed', globalConfigCount: 1, collisions: 0 })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -597,7 +597,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => ({ tag: 'dry' })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -614,7 +614,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ incomingChanges: false })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => {
         throw plainError;
       }),
@@ -631,7 +631,7 @@ describe('cmdSync: wet composition', () => {
         wetPull({ incomingChanges: false, settingsLabel: 'test-host.json', localOnly: 1 }),
       ),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => nothingResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -649,7 +649,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ incomingChanges: true, settingsLabel: 'test-host.json' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -666,7 +666,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ unmapped: 4 })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -680,7 +680,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ extrasSkipped: 2 })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -694,7 +694,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull()),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -710,7 +710,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull()),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult({ collisions: 1 })),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -724,7 +724,7 @@ describe('cmdSync: wet composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ localOnly: 5 })),
     }));
-    vi.doMock('./commands.push.ts', () => ({
+    vi.doMock('./commands/push/push.ts', () => ({
       runPushCore: vi.fn(() => pushedResult()),
     }));
     const { cmdSync } = await import('./commands.sync.ts');
@@ -763,7 +763,7 @@ describe('cmdSync: dry-run composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: runPullCoreSpy,
     }));
-    vi.doMock('./commands.push.ts', () => ({ runPushCore: runPushCoreSpy }));
+    vi.doMock('./commands/push/push.ts', () => ({ runPushCore: runPushCoreSpy }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync({ dryRun: true });
     expect(runPullCoreSpy).toHaveBeenCalledWith({ dryRun: true });
@@ -784,7 +784,7 @@ describe('cmdSync: dry-run composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => ({ tag: 'dry' })),
     }));
-    vi.doMock('./commands.push.ts', () => ({ runPushCore: vi.fn(() => ({ tag: 'dry' })) }));
+    vi.doMock('./commands/push/push.ts', () => ({ runPushCore: vi.fn(() => ({ tag: 'dry' })) }));
     const { cmdSync } = await import('./commands.sync.ts');
     await cmdSync({ dryRun: true });
     expect(pullPreviewSpy).not.toHaveBeenCalled();
@@ -795,7 +795,7 @@ describe('cmdSync: dry-run composition', () => {
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(),
     }));
-    vi.doMock('./commands.push.ts', () => ({ runPushCore: vi.fn(() => ({ tag: 'dry' })) }));
+    vi.doMock('./commands/push/push.ts', () => ({ runPushCore: vi.fn(() => ({ tag: 'dry' })) }));
     const acquireSpy = vi.fn(() => null);
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit:${code}`);
@@ -891,7 +891,7 @@ function mockDrySeams(
     const actual = await importOriginal<typeof previewModule>();
     return { ...actual, computePreview: previewSpy };
   });
-  vi.doMock('./commands.push.ts', () => ({ runPushCore: pushSpy }));
+  vi.doMock('./commands/push/push.ts', () => ({ runPushCore: pushSpy }));
   return { order, classifyWedgeSpy, divergenceSpy, previewSpy, pushSpy, seenAtPreview };
 }
 
@@ -1028,7 +1028,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
 
   afterEach(() => {
     teardownSyncEnv(env);
-    vi.doUnmock('./push-checks.ts');
+    vi.doUnmock('./commands/push/checks.ts');
   });
 
   it('a mid-push leak on a TTY resolves through the unchanged push recovery module', async () => {
@@ -1049,7 +1049,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
         incomingChanges: true,
       })),
     }));
-    vi.doMock('./push-checks.ts', async (importOriginal) => {
+    vi.doMock('./commands/push/checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
       return {
         ...actual,
@@ -1075,7 +1075,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => `M  shared/CLAUDE.md\0`) };
     });
-    vi.doMock('./push-global-config.ts', async (importOriginal) => {
+    vi.doMock('./commands/push/global-config.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushGlobalConfigModule>();
       return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
     });
@@ -1085,7 +1085,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
       recovery: 'recovery body',
       findings: [],
     };
-    vi.doMock('./push-leak-verdict.ts', async (importOriginal) => {
+    vi.doMock('./commands/push/leak-verdict.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof leakVerdictModule>();
       return { ...actual, scanPushVerdict: vi.fn(() => leakVerdict) };
     });
@@ -1095,7 +1095,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
       recovery: null,
       findings: [],
     }));
-    vi.doMock('./commands.push.recovery.ts', async (importOriginal) => {
+    vi.doMock('./commands/push/recovery/recovery.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof recoveryModule>();
       return { ...actual, resolveLeakFindings: resolveLeakFindingsSpy };
     });

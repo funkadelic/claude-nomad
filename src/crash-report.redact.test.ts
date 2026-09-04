@@ -12,7 +12,7 @@ vi.mock('node:fs', async (importActual) => {
 });
 
 import { CRASH_SCAN_TIMEOUT_MS, redactWithGitleaks } from './crash-report.redact.ts';
-import type { Finding } from './push-gitleaks.scan.ts';
+import type { Finding } from './commands/push/gitleaks.scan.ts';
 
 /** A real-shaped mkdtempSync-created directory captured by the fake scan, so tests can assert cleanup. */
 let capturedScratchDir: string | undefined;

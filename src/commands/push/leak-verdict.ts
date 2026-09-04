@@ -1,0 +1,188 @@
+/**
+ * Shared leak-scan verdict vocabulary for `cmdPush`. Both the dry-run preview
+ * (`previewPushLeaks` in `./push-preview.ts`) and the real-push scan
+ * (`scanPushVerdict` here) produce the same structured `LeakVerdict` so the
+ * one-line Leak scan row rendered inside the grouped tree cannot drift between
+ * the two paths. The multi-line `recovery` block (the `buildSessionAwareFatal`
+ * body) is printed by `cmdPush` BELOW the rendered tree on a leak.
+ *
+ * On a real push the scan still aborts the run: `cmdPush` renders the tree with
+ * the ✗ verdict row, then throws a `NomadFatal` carrying `recovery` so the
+ * existing catch prints the recovery block and sets a non-zero exit. The
+ * dry-run path never throws; it sets `process.exitCode` directly, using
+ * `EXIT.LEAK_BLOCKED` (5) on a confirmed leak AND on a scan that ran but
+ * produced no parseable report (fail-closed, matching the real push, so a
+ * scripted pre-flight branching on `$?` buckets an unscannable tree the same
+ * way both paths do), and `EXIT.GENERIC_FAILURE` (1) only when the scan itself
+ * threw before producing a report (gitleaks/git absent). See
+ * `verdictFromFindings` and `verdictScanError`.
+ */
+
+import { failGlyph, green, okGlyph, red } from '../../color.ts';
+import { EXIT } from '../../exit-codes.ts';
+import { gitleaksInstallHint } from './checks.ts';
+import {
+  type Finding,
+  buildSessionAwareFatal,
+  partitionFindings,
+  scanStagedTree,
+} from './gitleaks.ts';
+
+/**
+ * Structured leak-scan verdict.
+ *
+ * - `leak`: `true` only when findings were present (a scan crash is surfaced
+ *   via a ✗ `verdictRow` but is NOT a leak, so the dry-run path does not throw).
+ * - `verdictRow`: the rendered one-line Leak scan row (glyph embedded).
+ * - `recovery`: the `buildSessionAwareFatal` body on a leak, else `null`.
+ * - `findings`: the raw findings array from the scan. Non-empty on a leak verdict;
+ *   empty (`[]`) on a clean scan, scan crash, or scan error. Carries the
+ *   `StartColumn`/`EndColumn` spans that the recovery flow uses for span rewrite.
+ */
+export type LeakVerdict = {
+  leak: boolean;
+  verdictRow: string;
+  recovery: string | null;
+  findings: Finding[];
+};
+
+/** Rendered clean Leak scan row (no findings). */
+export const noLeaksRow = (): string => `${green(okGlyph)} no leaks`;
+
+/** Rendered ✗ Leak scan row (caller supplies the message text). */
+export const failRow = (text: string): string => `${red(failGlyph)} ${text}`;
+
+/**
+ * Build the one-line ✗ Leak scan verdict row for a non-empty findings set.
+ * Names the affected session count when any finding matches the session-path
+ * pattern; otherwise (findings only in non-session paths, e.g. subagent
+ * transcripts or extras) names the distinct non-session location count and
+ * says "location(s)" rather than mislabeling them as "session transcript(s)".
+ * The non-session count is the deduped `other` length so it matches the
+ * location list rendered in the recovery body. Pure.
+ *
+ * @param findings - The non-empty findings array.
+ * @returns The rendered ✗ verdict row.
+ */
+export function leakVerdictRow(findings: Finding[]): string {
+  const { bySession, other } = partitionFindings(findings);
+  if (bySession.size > 0) {
+    return failRow(`gitleaks detected secrets in ${bySession.size} session transcript(s)`);
+  }
+  return failRow(`gitleaks detected secrets in ${other.length} location(s)`);
+}
+
+/**
+ * Build the leak verdict for a non-empty findings set: the ✗ verdict row plus
+ * the `buildSessionAwareFatal` recovery body. Pure (no `process.exitCode`
+ * side effect; callers own that). Shared by the dry-run and real-push paths so
+ * the verdict row and recovery body cannot diverge.
+ *
+ * @param findings - The non-empty findings array.
+ * @returns A `leak=true` verdict carrying the ✗ row and recovery body.
+ */
+function leakFound(findings: Finding[]): LeakVerdict {
+  const { bySession, other } = partitionFindings(findings);
+  return {
+    leak: true,
+    verdictRow: leakVerdictRow(findings),
+    recovery: buildSessionAwareFatal(bySession, other),
+    findings,
+  };
+}
+
+/**
+ * Map a `scanStagedTree` result to a structured `LeakVerdict`, applying the
+ * shared exit-code side effect so a scripted `push --dry-run` pre-flight can
+ * branch on `$?` the same way it would on a real push:
+ *
+ * - Non-empty findings (a real leak): `process.exitCode = EXIT.LEAK_BLOCKED`
+ *   (5), matching the `leakBlockedFatal` a real push throws, so a wrapper
+ *   branching on `$? == 5` buckets a dry-run leak identically to a real one.
+ * - `null` report (scan ran but emitted no parseable report): fail closed with
+ *   `process.exitCode = EXIT.LEAK_BLOCKED` (5) too, matching the real push,
+ *   whose `scanPushVerdict` treats an unparseable report as leak-blocked. An
+ *   unscannable tree is NOT let through as a permissive generic code. It is
+ *   still not classified as a `leak` (the dry-run path neither throws nor
+ *   offers a phantom drop-session hint; the ✗ row says the scan failed), only
+ *   the exit code is aligned. A scan that THREW before producing a report
+ *   (gitleaks/git absent) keeps the generic code via `verdictScanError`.
+ * - Empty array: the clean `✓ no leaks` row, exit code untouched.
+ *
+ * @param findings - Output of `scanStagedTree`, or `null` on an unparseable report.
+ * @returns The structured verdict for the Leak scan section.
+ */
+export function verdictFromFindings(findings: Finding[] | null): LeakVerdict {
+  if (findings === null) {
+    process.exitCode = EXIT.LEAK_BLOCKED;
+    return {
+      leak: false,
+      verdictRow: failRow('scan failed, no parseable report'),
+      recovery: null,
+      findings: [],
+    };
+  }
+  if (findings.length === 0) {
+    return { leak: false, verdictRow: noLeaksRow(), recovery: null, findings: [] };
+  }
+  process.exitCode = EXIT.LEAK_BLOCKED;
+  return leakFound(findings);
+}
+
+/**
+ * Verdict for a scan that threw before producing a report (e.g. gitleaks/git
+ * absent on the dry-run path). Sets `process.exitCode = 1` and yields a ✗ row
+ * with `recovery=null`. Does not mark `leak` so the caller never throws.
+ *
+ * @param text - The ✗ row message text.
+ * @returns The structured scan-error verdict.
+ */
+export function verdictScanError(text: string): LeakVerdict {
+  process.exitCode = 1;
+  return { leak: false, verdictRow: failRow(text), recovery: null, findings: [] };
+}
+
+/**
+ * Run the real-push staged gitleaks scan (the same `scanStagedTree(REPO_HOME,
+ * true)` the push gate uses) and RETURN a structured `LeakVerdict` instead of
+ * throwing. This lets `cmdPush` render the grouped tree with the ✗ Leak scan
+ * row BEFORE re-raising the FATAL so the recovery block prints below the tree.
+ *
+ * On findings: `leak=true`, `verdictRow` is the ✗ row, `recovery` is the
+ * `buildSessionAwareFatal` body. On a clean scan: `✓ no leaks`. On a null
+ * report (scanner crash, malformed JSON): a ✗ scan-failed verdict with
+ * `recovery` set to the same scan-failed FATAL string `runGitleaksScan` would
+ * have thrown, so `cmdPush` still aborts. ENOENT (gitleaks/git absent) maps to
+ * the platform-aware install-hint FATAL as `recovery` with a ✗ row.
+ *
+ * @param repo Repo root resolved once by the calling command.
+ * @returns The structured verdict for the real-push Leak scan section.
+ */
+export function scanPushVerdict(repo: string): LeakVerdict {
+  let findings: Finding[] | null;
+  try {
+    findings = scanStagedTree(repo, true);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {
+        leak: true,
+        verdictRow: failRow('gitleaks not found'),
+        recovery: gitleaksInstallHint(),
+        findings: [],
+      };
+    }
+    throw err;
+  }
+  if (findings === null) {
+    return {
+      leak: true,
+      verdictRow: failRow('scan failed, no parseable report'),
+      recovery: 'gitleaks scan failed: no parseable JSON report. Review the gitleaks output above.',
+      findings: [],
+    };
+  }
+  if (findings.length === 0) {
+    return { leak: false, verdictRow: noLeaksRow(), recovery: null, findings: [] };
+  }
+  return leakFound(findings);
+}

@@ -14,7 +14,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSy
 import { join } from 'node:path';
 
 import { applyRedactions, isRecentlyModified } from './commands.redact.core.ts';
-import type { Finding } from './push-gitleaks.scan.ts';
+import type { Finding } from './commands/push/gitleaks.scan.ts';
 import { backupBeforeWrite } from './utils.fs.ts';
 import { log } from './utils.ts';
 

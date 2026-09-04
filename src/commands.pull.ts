@@ -6,7 +6,7 @@ import {
   buildExtrasSection,
   buildSessionsSection,
   buildSettingsSection,
-} from './commands.push.sections.ts';
+} from './commands/push/sections.ts';
 import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
 import { applySharedLinks, regenerateSettings } from './links.ts';

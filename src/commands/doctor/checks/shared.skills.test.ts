@@ -23,7 +23,7 @@ type Section = { header: string; items: string[] };
 
 /** Named type alias for `importOriginal`, avoiding an inline `import()` type annotation. */
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-type PushGitleaksModule = typeof import('../../../push-gitleaks.ts');
+type PushGitleaksModule = typeof import('../../push/gitleaks.ts');
 
 /**
  * Initialize a git repo at `repo` (creating the directory if needed). Safe to
@@ -78,7 +78,7 @@ describe('commands.doctor.check-shared.skills', () => {
   });
 
   afterEach(() => {
-    vi.doUnmock('../../../push-gitleaks.ts');
+    vi.doUnmock('../../push/gitleaks.ts');
     vi.doUnmock('node:fs');
     vi.doUnmock('node:child_process');
     vi.restoreAllMocks();
@@ -236,7 +236,7 @@ describe('commands.doctor.check-shared.skills', () => {
     gitInit(repo);
     commitAll(repo);
     let capturedDir = '';
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return {
         ...actual,
@@ -261,7 +261,7 @@ describe('commands.doctor.check-shared.skills', () => {
       gitInit(repo);
       commitAll(repo);
       let capturedMode = -1;
-      vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+      vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
         const actual = await importOriginal<PushGitleaksModule>();
         return {
           ...actual,
@@ -283,7 +283,7 @@ describe('commands.doctor.check-shared.skills', () => {
     writeSkillFile('foo', 'references/notes.md', 'secret\n');
     gitInit(repo);
     commitAll(repo);
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return {
         ...actual,
@@ -318,7 +318,7 @@ describe('commands.doctor.check-shared.skills', () => {
     writeSkillFile('gsd-foo', 'SKILL.md', 'secret\n');
     gitInit(repo);
     commitAll(repo);
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return {
         ...actual,
@@ -355,7 +355,7 @@ describe('commands.doctor.check-shared.skills', () => {
     gitInit(repo);
     commitAll(repo);
     let scanCalled = false;
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return {
         ...actual,
@@ -403,7 +403,7 @@ describe('commands.doctor.check-shared.skills', () => {
     writeSkillFile('foo', 'SKILL.md', 'clean\n');
     gitInit(repo);
     commitAll(repo);
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return { ...actual, scanStagedTree: vi.fn(() => []) };
     });
@@ -419,7 +419,7 @@ describe('commands.doctor.check-shared.skills', () => {
     writeSkillFile('foo', 'SKILL.md', 'x\n');
     gitInit(repo);
     commitAll(repo);
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return {
         ...actual,
@@ -442,7 +442,7 @@ describe('commands.doctor.check-shared.skills', () => {
     writeSkillFile('foo', 'SKILL.md', 'x\n');
     gitInit(repo);
     commitAll(repo);
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return { ...actual, scanStagedTree: vi.fn(() => null) };
     });
@@ -483,7 +483,7 @@ describe('commands.doctor.check-shared.skills', () => {
     gitInit(repo);
     commitAll(repo);
     let capturedDir = '';
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return {
         ...actual,
@@ -505,7 +505,7 @@ describe('commands.doctor.check-shared.skills', () => {
     writeSkillFile('foo', 'SKILL.md', 'x\n');
     gitInit(repo);
     commitAll(repo);
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return { ...actual, scanStagedTree: vi.fn(() => []) };
     });
@@ -564,7 +564,7 @@ describe('reportCheckShared wiring (committed-skills advisory always runs)', () 
 
   afterEach(() => {
     vi.doUnmock('node:child_process');
-    vi.doUnmock('../../../push-gitleaks.ts');
+    vi.doUnmock('../../push/gitleaks.ts');
     vi.restoreAllMocks();
     process.exitCode = 0;
     if (originalHome === undefined) delete process.env.HOME;
@@ -612,7 +612,7 @@ describe('reportCheckShared wiring (committed-skills advisory always runs)', () 
     gitInit(repo);
     commitAll(repo);
     mockGitleaksProbe();
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return {
         ...actual,
@@ -650,7 +650,7 @@ describe('reportCheckShared wiring (committed-skills advisory always runs)', () 
     gitInit(repo);
     commitAll(repo);
     mockGitleaksProbe();
-    vi.doMock('../../../push-gitleaks.ts', async (importOriginal) => {
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => {
       const actual = await importOriginal<PushGitleaksModule>();
       return { ...actual, scanStagedTree: vi.fn(() => []) };
     });
