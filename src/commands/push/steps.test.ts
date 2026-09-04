@@ -18,7 +18,7 @@ import type { NomadFatal } from '../../utils.ts';
  * Behavior tests for `commitAndPush`'s `render` flag (the compose-mode seam
  * `nomad sync` uses) and for `runPushCore({ compose: true })`. Standalone
  * push output (render: true / no compose flag) is asserted byte-compatible
- * by the pre-existing suites in commands.push.test.ts; these tests cover the
+ * by the pre-existing suites in commands/push/push.test.ts; these tests cover the
  * new render-suppression and section-return behavior.
  */
 

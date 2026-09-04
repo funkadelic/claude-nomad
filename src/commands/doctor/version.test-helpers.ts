@@ -21,7 +21,7 @@ function isNpmRegistryUrl(arg: string): boolean {
 }
 
 /**
- * Mock the local `package.json` read inside `commands.doctor.version.ts`.
+ * Mock the local `package.json` read inside `commands/doctor/version.ts`.
  * Production code resolves the path via `new URL('../../../package.json',
  * import.meta.url).pathname`, which lands at the REAL repo root regardless
  * of `$HOME`. We override `node:fs.readFileSync` to intercept any path that

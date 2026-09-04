@@ -1066,7 +1066,7 @@ describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
     expect(readFileSync(join(sharedDir, 'CLAUDE.md'), 'utf8')).toBe('# host edit\n');
   });
 
-  it('dryRun false with no sink: the copy lands and nothing is logged (the pre-phase behavior commands.push.ts still depends on)', async () => {
+  it('dryRun false with no sink: the copy lands and nothing is logged (the pre-phase behavior commands/push/push.ts still depends on)', async () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# repo copy\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
     stubPlatform('win32');

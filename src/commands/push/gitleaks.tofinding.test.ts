@@ -1,7 +1,7 @@
 /**
  * Unit coverage for `toFinding`, the report-entry normalizer that guards every
  * downstream consumer from a malformed gitleaks report. Kept in its own file
- * because `push-gitleaks.scan.test.ts` drives the module through `vi.doMock`
+ * because `commands/push/gitleaks.scan.test.ts` drives the module through `vi.doMock`
  * plus dynamic import, which a static import of the real module would fight.
  */
 

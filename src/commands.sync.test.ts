@@ -1034,7 +1034,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
   it('a mid-push leak on a TTY resolves through the unchanged push recovery module', async () => {
     // The pull half is stubbed clean so this test isolates the push half's
     // leak path. The push half runs FOR REAL (not mocked): a leak verdict on
-    // the first scan routes into commands.push.recovery.ts's
+    // the first scan routes into commands/push/recovery/recovery.ts's
     // resolveLeakFindings, which this test replaces with a spy that resolves
     // the finding and returns a clean verdict, proving cmdSync's push
     // composition reaches the exact same recovery entry point standalone

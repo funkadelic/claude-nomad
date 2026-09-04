@@ -1,7 +1,7 @@
 /**
  * Prompt and block assembly for the push-time recovery menu: turns findings
  * into the grouped questions the user answers. The secret description itself
- * lives in `commands.push.recovery.secret-shape.ts`; this module imports from
+ * lives in `commands/push/recovery/secret-shape.ts`; this module imports from
  * it and from the seams module, never the reverse.
  */
 
@@ -31,7 +31,7 @@ const GROUP_SEP = '\u0000';
  * basename differs from its session id, shows the parenthetical. The
  * basename is computed by splitting on `/` only (never `node:path`
  * `basename`, which is platform-dependent), mirroring the forward-slash-
- * anchored path regexes in `commands.push.recovery.seams.ts`.
+ * anchored path regexes in `commands/push/recovery/seams.ts`.
  *
  * @param finding The finding to check.
  * @returns The suffix text, or `''`.

@@ -1,6 +1,6 @@
 /**
  * Shared leak-scan verdict vocabulary for `cmdPush`. Both the dry-run preview
- * (`previewPushLeaks` in `./push-preview.ts`) and the real-push scan
+ * (`previewPushLeaks` in `commands/push/preview.ts`) and the real-push scan
  * (`scanPushVerdict` here) produce the same structured `LeakVerdict` so the
  * one-line Leak scan row rendered inside the grouped tree cannot drift between
  * the two paths. The multi-line `recovery` block (the `buildSessionAwareFatal`

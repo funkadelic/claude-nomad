@@ -14,8 +14,8 @@
  * without requiring a TTY.
  *
  * Action helpers and per-finding dispatch live in
- * `commands.push.recovery.actions.ts`; the `--redact-all` batch half lives in
- * `commands.push.recovery.redact-all.ts`, keeping all three modules under the
+ * `commands/push/recovery/actions.ts`; the `--redact-all` batch half lives in
+ * `commands/push/recovery/redact-all.ts`, keeping all three modules under the
  * 220-line advisory cap.
  */
 

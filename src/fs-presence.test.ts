@@ -14,7 +14,7 @@ import { classifyPresence, isUnusableTarget, lexists, type PresenceState } from 
  * fresh copy of the module under test against it.
  *
  * A real `EACCES` is not portably reproducible in CI, the same reasoning
- * `commands.doctor.checks.repo3.test.ts`'s own unreadable-target case
+ * `commands/doctor/checks/repo3.test.ts`'s own unreadable-target case
  * documents for its `statSync` mock. Which probe to block is a parameter
  * because `classifyPresence` has two throw paths that mean different things:
  * `lstatSync` failing says nothing is known about the ENTRY, `statSync`

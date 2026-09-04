@@ -16,7 +16,7 @@ import { packageRoot } from '../../package-root.ts';
  * Every failure path (missing engines, unsupported range syntax, unreadable
  * `package.json`) is a SILENT skip; this module never sets `process.exitCode`
  * and never writes to stderr. Mirrors the philosophy of the sibling release-
- * version check in `commands.doctor.version.ts`.
+ * version check in `commands/doctor/version.ts`.
  */
 
 /** Strict `>=X.Y.Z` matcher. The project's `engines.node` field has always

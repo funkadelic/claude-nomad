@@ -151,7 +151,7 @@ export function classifyWedgeWithProbe(repo: string): { state: WedgeState; probe
  * Classify the current wedge state, extending `detectWedge` with the
  * unmerged-index-no-active-rebase case. Thin wrapper over
  * {@link classifyWedgeWithProbe} for the three callers
- * (`commands.doctor.checks.git-state.ts`, `push-checks.ts`, and the wedge
+ * (`commands/doctor/checks/git-state.ts`, `commands/push/checks.ts`, and the wedge
  * preflight) that only need the state, not the raw probe outcome.
  *
  * @param repo Absolute path to the repository root.

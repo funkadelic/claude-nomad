@@ -264,7 +264,7 @@ function isManifestShape(raw: unknown): boolean {
  * Read and parse the manifest at `path`. Returns `null` when the file is
  * missing, contains malformed JSON, or does not match the `Manifest` shape.
  * A `null` return is treated as a cold start (full rescan). Mirrors the
- * tolerant-read pattern of `readGitleaksReport` in `push-gitleaks.scan.ts`.
+ * tolerant-read pattern of `readGitleaksReport` in `commands/push/gitleaks.scan.ts`.
  *
  * @param path - Absolute path to the manifest JSON file.
  * @returns Parsed `Manifest` or `null` on any read/parse failure.

@@ -3,7 +3,7 @@
  * recovery menu. `memory/` is a PROJECT-LEVEL sibling of every session's
  * `<sid>/` subtree, so the existing session-subtree redactor
  * (`commands.redact.subtree.ts`,
- * `commands.push.recovery.redact.ts`) structurally cannot reach it: it is
+ * `commands/push/recovery/redact.ts`) structurally cannot reach it: it is
  * scoped to one `<sid>/` directory, one level below where `memory/` lives.
  *
  * This module provides the parallel, explicitly project-level path: a pure
@@ -11,10 +11,10 @@
  * (`resolveMemoryLocalPath`), a no-mutation preflight
  * (`preflightMemoryRedactable`), and the in-place redact-plus-copy-back
  * action (`applyMemoryRedact`). Reuses `applyRedactions`
- * (`commands.redact.core.ts`) and `scanFile` (`push-gitleaks.scan.ts`)
+ * (`commands.redact.core.ts`) and `scanFile` (`commands/push/gitleaks.scan.ts`)
  * unchanged; the `.jsonl` session-subtree path is untouched.
  *
- * Like the skill resolver (`commands.push.recovery.skills.ts`), `memory/` is
+ * Like the skill resolver (`commands/push/recovery/skills.ts`), `memory/` is
  * treated as an arbitrarily nested tree of any file type, not a flat
  * `<file>.md` directory: the finding-path parser captures a multi-segment
  * relative path, the shared `isSafeRelPath` guard validates every segment, and
@@ -155,11 +155,11 @@ export function resolveMemoryLocalPath(
 
 /**
  * No-scan, no-mutation redactability preflight for one finding, parallel to
- * `preflightRedactable` in `commands.push.recovery.redact.ts`. Returns a
+ * `preflightRedactable` in `commands/push/recovery/redact.ts`. Returns a
  * human-readable refusal reason when the finding is not a memory file or the
  * local file cannot be resolved (unmapped host, missing file), else null.
  * Consumed by `--redact-all`'s all-or-nothing preflight gate in
- * `commands.push.recovery.redact-all.ts`.
+ * `commands/push/recovery/redact-all.ts`.
  *
  * @param f Finding to preflight.
  * @param map Parsed path-map for the host-mapping lookup.

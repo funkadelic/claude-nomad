@@ -51,7 +51,7 @@ function majorMinorOf(value: string): [string, string] | null {
 /**
  * Run `gitleaks version` via the injected runner and return the trimmed
  * stdout, or `null` on any throw (missing binary, subprocess failure). Mirrors
- * the `probeGitleaks` invocation form in `push-checks.ts`: argv-array
+ * the `probeGitleaks` invocation form in `commands/push/checks.ts`: argv-array
  * `execFileSync` (no shell), piped stdio, and a conditional
  * `--config <REPO_HOME>/.gitleaks.toml` when that allowlist exists at call
  * time, plus a `GITLEAKS_TIMEOUT_MS` cap so a wedged binary cannot hang the

@@ -16,7 +16,7 @@ import { stubPlatform } from '../../test-helpers.platform.ts';
 describe('cmdDoctor --check-shared dispatch wiring', () => {
   // Dispatch-level wiring only: plain doctor must NOT scan, the flag
   // must append a "Shared scan" section. The deep check-shared behavior lives
-  // in commands.doctor.check-shared.test.ts (plan 01) under a real-binary
+  // in commands/doctor/checks/shared.test.ts (plan 01) under a real-binary
   // gate; here we drive a zero-staged path-map so the reporter short-circuits
   // to a clean ok row without invoking the real gitleaks binary, and mock the
   // gitleaks probe present so the reporter does not WARN-skip on dev hosts.

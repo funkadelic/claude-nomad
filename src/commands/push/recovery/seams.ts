@@ -1,10 +1,10 @@
 /**
  * Pure, side-effect-free seams for the push-time recovery menu: key
  * derivation, session-id extraction, and prompt-answer parsing. Extracted
- * from `commands.push.recovery.actions.ts` so it, its `--redact-all` sibling
- * `commands.push.recovery.redact-all.ts`, and this module all stay under the
+ * from `commands/push/recovery/actions.ts` so it, its `--redact-all` sibling
+ * `commands/push/recovery/redact-all.ts`, and this module all stay under the
  * 220-line advisory cap. Finding-context rendering lives in
- * `commands.push.recovery.display.ts`, which imports `sessionIdFromFinding`
+ * `commands/push/recovery/display.ts`, which imports `sessionIdFromFinding`
  * from this module.
  */
 
@@ -36,10 +36,10 @@ const VALID_SID = /^[A-Za-z0-9_-]+$/;
 /**
  * Matches ANY file nested under a session directory,
  * `shared/projects/<logical>/<sid>/<...anything>`, regardless of extension.
- * Deliberately broader than `SUBAGENT_SESSION_PATH` in `push-gitleaks.ts`
+ * Deliberately broader than `SUBAGENT_SESSION_PATH` in `commands/push/gitleaks.ts`
  * (which requires a `.jsonl` suffix for its FATAL-hint-text purpose): the
  * redaction path this function drives (`applyRedact` in
- * `commands.push.recovery.redact.ts`) already redacts every file in a
+ * `commands/push/recovery/redact.ts`) already redacts every file in a
  * session's subtree, not just `.jsonl` transcripts (subagents, `.meta.json`,
  * `tool-results/*.txt`), so session-id resolution must match that scope. This
  * pattern alone would also capture `"memory"` as a false session id for any
@@ -52,7 +52,7 @@ const SUBTREE_PATH = /^shared\/projects\/[^/]+\/([^/]+)\/.+$/;
 /**
  * Extract the session id from a finding's File path. Any finding under a
  * project-level `memory/` directory is excluded FIRST via `isMemoryFindingPath`
- * (imported from `commands.push.recovery.memory.ts`, the single source of truth
+ * (imported from `commands/push/recovery/memory.ts`, the single source of truth
  * for the memory-path shape) and returns null rather than mis-capturing
  * `"memory"` as a session id, for both the flat `memory/<file>.md` shape and a
  * nested `memory/<subdir>/<file>.md`. Otherwise handles both the flat

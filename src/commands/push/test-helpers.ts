@@ -7,7 +7,7 @@ import { vi, type MockInstance } from 'vitest';
 // Shared harness for the cmdPush pipeline suites (boundary gates, summary
 // terminators, lock-contention skip, extras integration). Each test loads
 // cmdPush dynamically AFTER vi.resetModules() + per-test vi.doMock of the
-// pipeline dependencies (./push-checks.ts, ./push-gitleaks.ts, ./remap.ts,
+// pipeline dependencies (commands/push/checks.ts, commands/push/gitleaks.ts, ./remap.ts,
 // ./extras-sync.ts, ./utils.ts, node:child_process) so the NomadFatal class
 // thrown from a mock factory shares identity with the copy cmdPush catches.
 // The sandbox is a temp HOME with a `claude-nomad/` repo dir, a `shared/`

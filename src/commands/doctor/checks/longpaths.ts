@@ -14,13 +14,13 @@ import type { SpawnSyncFn } from '../../../gh-actions.ts';
  * states, read-only, and WARNs (never FAILs) when either is unset: a deep
  * path CAN overflow MAX_PATH but will not always, so this degrades gracefully
  * like every other doctor WARN (matches the header-comment contract in
- * `commands.doctor.checks.deps.ts`). It also reports the active sync modality
+ * `commands/doctor/checks/deps.ts`). It also reports the active sync modality
  * (copy-sync on win32, symlink on posix), an informational row only.
  */
 
 /**
  * Node-level timeout for a `git config` / `reg query` probe. Mirrors the bounded
- * subprocess convention in `commands.doctor.checks.deps.ts` (PROBE_TIMEOUT_MS) so
+ * subprocess convention in `commands/doctor/checks/deps.ts` (PROBE_TIMEOUT_MS) so
  * a wedged binary cannot hang the synchronous `cmdDoctor` run. A timeout kill
  * surfaces as a thrown error, which each probe's `catch` already maps to a WARN
  * row, preserving the no-exitCode contract.
@@ -37,7 +37,7 @@ const LONGPATHS_REG_VALUE = 'LongPathsEnabled';
  * Probe `git -C <repoHome()> config --get core.longpaths` via the injected
  * runner. Scoping to `-C repoHome()` reads the sync repo's config regardless
  * of the current process cwd (mirrors the sibling `probeAutocrlf` in
- * `commands.doctor.checks.crlf.ts`). Returns `true` when the trimmed stdout
+ * `commands/doctor/checks/crlf.ts`). Returns `true` when the trimmed stdout
  * is `'true'` or `'1'`, `false` when the probe throws (unset key, or any
  * other error) or returns any other value. Never throws: a thrown probe
  * degrades to `false` (unset), matching the WARN-not-FAIL contract.

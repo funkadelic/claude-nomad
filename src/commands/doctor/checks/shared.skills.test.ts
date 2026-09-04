@@ -56,7 +56,7 @@ function commitAll(repo: string, message = 'fixture'): void {
  * sources from the sync repo's committed `HEAD` (via `git ls-tree` + `git
  * cat-file`), so every fixture below is written to disk AND committed with
  * `gitInit`/`commitAll` (real hermetic git repos, not mocks) before the
- * function under test runs. `scanStagedTree` (`./push-gitleaks.ts`) is still
+ * function under test runs. `scanStagedTree` (`commands/push/gitleaks.ts`) is still
  * mocked so every case controls the scan outcome directly without needing a
  * real gitleaks binary.
  */
@@ -532,14 +532,14 @@ describe('commands.doctor.check-shared.skills', () => {
 });
 
 /**
- * Wiring coverage: `reportCheckShared` (`./commands.doctor.check-shared.ts`)
+ * Wiring coverage: `reportCheckShared` (`commands/doctor/checks/shared.ts`)
  * must call `reportCommittedSkills` on every gitleaks-ready path, including
  * the `staged === 0` local-preview early return (proving the advisory is not
  * a local-preview-only add-on: a committed skill secret can originate from
  * any host, not just the one running `doctor`). Mocks `node:child_process`
  * for the gitleaks `version` probe (forwarding real `git` invocations through
  * so `buildSkillScanTree`'s HEAD-sourced read still works) so
- * `ensureGitleaksReady` passes, and `./push-gitleaks.ts`'s `scanStagedTree`
+ * `ensureGitleaksReady` passes, and `commands/push/gitleaks.ts`'s `scanStagedTree`
  * distinguishing the local-preview temp tree (`check-shared-tree-`) from the
  * committed-skills temp tree (`check-shared-skills-tree-`) by directory name,
  * so each scan can be controlled independently without a real gitleaks binary.

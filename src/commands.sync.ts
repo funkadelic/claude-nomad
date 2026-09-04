@@ -6,7 +6,7 @@
  *
  * `cmdSync` is composition only: it delegates every side effect to the
  * lock-free `runPullCore` / `runPushCore` bodies (see `commands.pull.ts` /
- * `commands.push.ts`, both run in compose mode so neither renders) and owns
+ * `commands/push/push.ts`, both run in compose mode so neither renders) and owns
  * nothing but lock scope, control flow, and the single merged-tree render
  * ending in the two-phase Sync summary. The push half's full safety pipeline
  * (secret scan, interactive recovery on a leak) runs unchanged inside

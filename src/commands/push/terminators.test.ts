@@ -81,7 +81,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     // renders the tree (✗ Leak scan row to stdout), then re-raises the recovery
     // body as a NomadFatal; the catch routes it through console.error with the
     // ✗ prefix, sets exitCode=1, and the finally releases the lock. The unit
-    // tests in push-gitleaks.test.ts cover the builder shape; this asserts the
+    // tests in commands/push/gitleaks.test.ts cover the builder shape; this asserts the
     // recovery body propagates through the command boundary intact.
     vi.doMock('./checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();

@@ -17,7 +17,7 @@
  * rather than first-match, order-independent.
  *
  * Dependency-free apart from the `Finding` shape, so it sits below
- * `commands.push.recovery.secret-shape.ts` with no cycle.
+ * `commands/push/recovery/secret-shape.ts` with no cycle.
  */
 
 import type { Finding } from '../gitleaks.scan.ts';

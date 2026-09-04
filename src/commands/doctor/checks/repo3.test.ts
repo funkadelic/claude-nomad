@@ -27,7 +27,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
   // ENOENT branch, and a dangling host symlink whose target is itself a
   // dangling `shared/<name>` reaches `classifySymlinkTarget`'s ENOENT branch.
   // Both are cross-platform (unlike the win32-only row in
-  // `commands.doctor.checks.repo.win32.ts`), so the two pre-existing
+  // `commands/doctor/checks/repo.win32.ts`), so the two pre-existing
   // HOST-path cases above are also pinned on the win32 branch here: an edit
   // correct for the new REPO-path dangling case could silently change the
   // WORDING or SEVERITY of those passing posix rows, and only a

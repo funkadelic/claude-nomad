@@ -2,7 +2,7 @@
  * Reusable helpers for push-boundary safety: gitlink walker, gitleaks
  * presence probe, and rebase-before-push.
  *
- * The staged gitleaks scan lives in `./push-gitleaks.ts` so the
+ * The staged gitleaks scan lives in `commands/push/gitleaks.ts` so the
  * session-aware FATAL builder has its own module under the 200-line cap.
  * `gitleaksInstallHint` stays here because both `probeGitleaks`
  * (top-of-flow) and `runGitleaksScan` (mid-flow) need the platform-aware

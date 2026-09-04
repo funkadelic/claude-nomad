@@ -20,7 +20,7 @@ import type { Finding } from './commands/push/gitleaks.scan.ts';
  * Assemble a github-pat-shaped fixture token from fragments so no contiguous
  * `ghp_<36>` literal is stored in source-controlled bytes (the gitleaks CI
  * check scans the working tree and would flag a committed PAT-shaped literal).
- * Mirrors the split-fragment convention in `push-gitleaks.test.ts`.
+ * Mirrors the split-fragment convention in `commands/push/gitleaks.test.ts`.
  *
  * @param body The 36-char token body that follows the `ghp_` prefix.
  * @returns A `ghp_`-prefixed token assembled at runtime.
