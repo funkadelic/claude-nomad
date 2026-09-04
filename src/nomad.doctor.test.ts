@@ -33,7 +33,7 @@ describe('nomad.ts doctor dispatcher', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.doctor.ts');
+    vi.doUnmock('./commands/doctor/doctor.ts');
     vi.doUnmock('./resume.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -42,7 +42,7 @@ describe('nomad.ts doctor dispatcher', () => {
 
   it('routes bare `nomad doctor` to cmdDoctor with all flags off (compact default)', async () => {
     const cmdDoctorMock = vi.fn();
-    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    vi.doMock('./commands/doctor/doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     process.argv = ['node', 'nomad.ts', 'doctor'];
     await import('./nomad.ts');
     expect(cmdDoctorMock).toHaveBeenCalledTimes(1);
@@ -57,7 +57,7 @@ describe('nomad.ts doctor dispatcher', () => {
 
   it('routes `nomad doctor --check-shared` to cmdDoctor({ checkShared: true })', async () => {
     const cmdDoctorMock = vi.fn();
-    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    vi.doMock('./commands/doctor/doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--check-shared'];
     await import('./nomad.ts');
     expect(cmdDoctorMock).toHaveBeenCalledTimes(1);
@@ -72,7 +72,7 @@ describe('nomad.ts doctor dispatcher', () => {
 
   it('routes `nomad doctor --verbose` to cmdDoctor({ verbose: true })', async () => {
     const cmdDoctorMock = vi.fn();
-    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    vi.doMock('./commands/doctor/doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--verbose'];
     await import('./nomad.ts');
     expect(cmdDoctorMock).toHaveBeenCalledTimes(1);
@@ -87,7 +87,7 @@ describe('nomad.ts doctor dispatcher', () => {
 
   it('rejects `nomad doctor --check-shared extra` (trailing arg) with exitCode=2', async () => {
     const cmdDoctorMock = vi.fn();
-    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    vi.doMock('./commands/doctor/doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--check-shared', 'extra'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -142,7 +142,7 @@ describe('nomad.ts doctor dispatcher', () => {
 
   it('rejects `nomad doctor --bogus` (unknown sub-flag) with the usage line and exitCode=2', async () => {
     const cmdDoctorMock = vi.fn();
-    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    vi.doMock('./commands/doctor/doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--bogus'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit

@@ -36,7 +36,7 @@ describe('nomad.ts push dispatcher', () => {
     vi.restoreAllMocks();
     vi.doUnmock('./commands.push.ts');
     vi.doUnmock('./commands.pull.ts');
-    vi.doUnmock('./commands.doctor.ts');
+    vi.doUnmock('./commands/doctor/doctor.ts');
     vi.doUnmock('./commands.update.ts');
     vi.doUnmock('./commands.drop-session.ts');
     vi.doUnmock('./diff.ts');
@@ -110,7 +110,7 @@ describe('nomad.ts push dispatcher', () => {
     const resumeCmdMock = vi.fn();
     vi.doMock('./commands.pull.ts', () => ({ cmdPull: cmdPullMock }));
     vi.doMock('./commands.push.ts', () => ({ cmdPush: cmdPushMock }));
-    vi.doMock('./commands.doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
+    vi.doMock('./commands/doctor/doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
     vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
     vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));

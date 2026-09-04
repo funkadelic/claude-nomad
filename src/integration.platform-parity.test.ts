@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { failGlyph } from './color.ts';
 import { SHARED_LINKS } from './config.ts';
-import { section } from './commands.doctor.format.ts';
+import { section } from './commands/doctor/format.ts';
 import { g } from './test-support/git.ts';
 import { makeWorld, runNomad } from './test-support/world.ts';
 
@@ -381,7 +381,7 @@ describe.skipIf(!hasGit)('parity: shared config materializes and reads back', ()
     // a FAIL on posix and the correct state on win32. One unstubbed assertion
     // covers both definitions because the doctor check reads the same real
     // process.platform the apply above did.
-    const { reportSharedLinks } = await import('./commands.doctor.checks.repo.ts');
+    const { reportSharedLinks } = await import('./commands/doctor/checks/repo.ts');
     const sec = section('Links');
     reportSharedLinks(sec, { projects: {} });
 
