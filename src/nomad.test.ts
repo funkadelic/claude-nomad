@@ -5,10 +5,9 @@ import { ProcessExit } from './utils.ts';
 // Smoke tests for the nomad.ts dispatcher. The file is a CLI entry point with
 // top-level switch logic, so each test sets process.argv, mocks the cmd
 // modules, stubs process.exit, then dynamically imports ./nomad.ts to trigger
-// the dispatch. The dispatcher suite is split by subcommand group across
-// nomad.test.ts (push + bare help + --version), nomad.dispatch.test.ts
-// (init + update arms), and nomad.doctor-drop.test.ts
-// (doctor + drop-session). Every file keeps `await import('./nomad.ts')` as
+// the dispatch. This file covers push, bare help and --version; the rest of the
+// dispatcher suite is split by subcommand group across the sibling
+// nomad*.test.ts files. Every one of them keeps `await import('./nomad.ts')` as
 // the SUT path and the command-module doMock targets unchanged.
 
 describe('nomad.ts push dispatcher', () => {

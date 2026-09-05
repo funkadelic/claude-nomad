@@ -8,7 +8,6 @@ import type * as childProcessModule from 'node:child_process';
 import type * as linksMirrorModule from './links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
-import type * as wedgeModule from './commands/pull/wedge.ts';
 
 // Regression: cmdPull and cmdPush must release the lockfile even when a
 // fatal error fires mid-flight. Earlier code path called process.exit()
@@ -34,20 +33,6 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     mkdirSync(repoUnderHome, { recursive: true });
     mkdirSync(join(testHome, '.claude'), { recursive: true });
     vi.resetModules();
-    // classifyWedge calls execFileSync (git diff --diff-filter=U) which fails
-    // on non-git temp dirs. Return null (clean), and stub probeUnmergedIndex to
-    // 'clean' so the post-pull autostash guard does not fail closed on the
-    // non-git fixture, so lock tests focus on their own scope (lock
-    // acquire/release and backup-dir error paths).
-    vi.doMock('./commands/pull/wedge.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof wedgeModule>();
-      return {
-        ...actual,
-        classifyWedge: vi.fn(() => null),
-        classifyWedgeWithProbe: vi.fn(() => ({ state: null, probe: 'clean' })),
-        probeUnmergedIndex: vi.fn(() => 'clean'),
-      };
-    });
     // Suppress noisy fatal output during the test.
     vi.spyOn(console, 'error').mockImplementation((..._args: unknown[]) => {
       /* captured */
@@ -69,7 +54,6 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands/pull/wedge.ts');
     vi.doUnmock('node:child_process');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./utils.lockfile.ts');
