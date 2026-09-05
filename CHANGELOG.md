@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.68.1](https://github.com/funkadelic/claude-nomad/compare/v0.68.0...v0.68.1) (2026-09-05)
+
+
+### Changed
+
+* **doctor:** move the doctor domain into src/commands/doctor/ ([#564](https://github.com/funkadelic/claude-nomad/issues/564)) ([9da4f6c](https://github.com/funkadelic/claude-nomad/commit/9da4f6c9a28527b3bc91ba815bae412baf122f8a))
+* **pull:** move the pull domain into src/commands/pull/ ([#568](https://github.com/funkadelic/claude-nomad/issues/568)) ([f7872c5](https://github.com/funkadelic/claude-nomad/commit/f7872c5c6389a24716b93f1bb30f1ef79e8dbd8d))
+* **push:** move the push domain into src/commands/push/ ([#566](https://github.com/funkadelic/claude-nomad/issues/566)) ([04233f5](https://github.com/funkadelic/claude-nomad/commit/04233f5c40282fcacc091cc56212b5eb023d0c99))
+
+
+### Documentation
+
+* point module cross-references at their relocated paths ([#567](https://github.com/funkadelic/claude-nomad/issues/567)) ([2b63d08](https://github.com/funkadelic/claude-nomad/commit/2b63d085b72677f67c2d306c8897d8c8262eae43))
+
 ## [0.68.0](https://github.com/funkadelic/claude-nomad/compare/v0.67.3...v0.68.0) (2026-09-03)
 
 
