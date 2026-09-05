@@ -24,7 +24,7 @@ import {
 import { addChildItem, addItem, type DoctorSection } from '../format.ts';
 import { classifyWin32Copy, type SharedLinkClassification } from './repo.win32.ts';
 import { posixNonSymlinkRow, repoSourceRow } from './repo.source.ts';
-import { classifyRepoState, reasonForPartial } from '../../../init.classify.ts';
+import { classifyRepoState, reasonForPartial } from '../../init/classify.ts';
 import { readJson, validatePathMapShape } from '../../../utils.json.ts';
 
 /**

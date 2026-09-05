@@ -6,7 +6,7 @@ import {
   classifySettingsDrift,
   describeSettings,
   partitionByCaptureExclusion,
-} from '../../commands.capture-settings.core.ts';
+} from '../capture-settings/core.ts';
 import { baseHasGsdHookEntries, stripGsdHookEntries } from '../../hooks-filter.ts';
 import { warn } from '../../utils.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../utils.fs.ts';

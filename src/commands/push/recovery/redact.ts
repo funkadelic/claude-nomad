@@ -19,12 +19,8 @@ import { dirname, join, sep } from 'node:path';
 import type { PathMap } from '../../../config.ts';
 import { claudeHome, HOST, repoHome } from '../../../config.ts';
 import { assertSafeLogical } from '../../../config.sharedDirs.guard.ts';
-import { resolveLiveTranscript } from '../../../commands.redact.ts';
-import {
-  applySubtreeRedactions,
-  isSubtreeActive,
-  listSubtreeFiles,
-} from '../../../commands.redact.subtree.ts';
+import { resolveLiveTranscript } from '../../redact/redact.ts';
+import { applySubtreeRedactions, isSubtreeActive, listSubtreeFiles } from '../../redact/subtree.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { encodePath } from '../../../utils.json.ts';

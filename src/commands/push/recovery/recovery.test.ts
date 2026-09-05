@@ -16,7 +16,7 @@ import { EXIT } from '../../../exit-codes.ts';
 
 import type * as recoveryActionsModule from './actions.ts';
 import type * as recoveryRedactAllModule from './redact-all.ts';
-import type * as redactModule from '../../../commands.redact.core.ts';
+import type * as redactModule from '../../redact/core.ts';
 import type * as utilsModule from '../../../utils.ts';
 import type * as utilsFsModule from '../../../utils.fs.ts';
 import type { PathMap } from '../../../config.ts';
@@ -424,7 +424,7 @@ describe('resolveLeakFindings - while loop exits when leak=false regardless of f
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../commands.redact.core.ts');
+    vi.doUnmock('../../redact/core.ts');
     vi.doUnmock('../../../utils.ts');
   });
 
@@ -435,7 +435,7 @@ describe('resolveLeakFindings - while loop exits when leak=false regardless of f
     // With &&: false && (1>0) = false -> loop exits immediately.
     // With ||: false || (1>0) = true -> loop tries another iteration (calls collectActions again).
     // We verify the loop exits after exactly ONE scanVerdict call.
-    vi.doMock('../../../commands.redact.core.ts', async (importOriginal) => {
+    vi.doMock('../../redact/core.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: vi.fn() };
     });
@@ -486,7 +486,7 @@ describe('resolveLeakFindings - while loop exits when leak=false regardless of f
     // A crashed re-scan yields leak=true with zero findings, which exits the loop
     // condition rather than re-entering it. Without the post-loop assertion that
     // verdict would be returned to the caller as if the tree were clean.
-    vi.doMock('../../../commands.redact.core.ts', async (importOriginal) => {
+    vi.doMock('../../redact/core.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: vi.fn() };
     });
@@ -533,13 +533,13 @@ describe('resolveLeakFindings - TTY Allow action -> re-scan clean -> returns', (
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../commands.redact.core.ts');
+    vi.doUnmock('../../redact/core.ts');
     vi.doUnmock('../../../utils.ts');
   });
 
   it('calls appendGitleaksIgnore with the fingerprint and returns when re-scan is clean', async () => {
     const appendMock = vi.fn();
-    vi.doMock('../../../commands.redact.core.ts', async (importOriginal) => {
+    vi.doMock('../../redact/core.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: appendMock };
     });

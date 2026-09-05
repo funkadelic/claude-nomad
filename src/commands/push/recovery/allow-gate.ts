@@ -18,7 +18,7 @@
  * reverse.
  */
 
-import { appendGitleaksIgnore } from '../../../commands.redact.core.ts';
+import { appendGitleaksIgnore } from '../../redact/core.ts';
 import { isMemoryFindingPath, memoryFileFromFinding } from './memory.ts';
 import { isSkillFindingPath, skillFileFromFinding } from './skills.ts';
 import type { Finding } from '../gitleaks.scan.ts';

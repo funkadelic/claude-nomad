@@ -14,7 +14,7 @@ import {
   classifySettingsDrift,
   describeSettings,
   partitionByCaptureExclusion,
-} from './commands.capture-settings.core.ts';
+} from './commands/capture-settings/core.ts';
 import { copyExtrasFilteredPreservingBy } from './extras-sync.core.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import { die, log, warn, NomadFatal } from './utils.ts';

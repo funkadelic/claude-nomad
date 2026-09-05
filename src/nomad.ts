@@ -14,24 +14,24 @@
  *   path-map.json            logical project name -> { host: localPath }
  */
 
-import { cmdAdopt } from './commands.adopt.ts';
-import { cmdAllow } from './commands.allow.ts';
-import { cmdCaptureSettings } from './commands.capture-settings.ts';
-import { cmdClean } from './commands.clean.ts';
-import { cmdEject } from './commands.eject.ts';
+import { cmdAdopt } from './commands/adopt.ts';
+import { cmdAllow } from './commands/allow.ts';
+import { cmdCaptureSettings } from './commands/capture-settings/capture-settings.ts';
+import { cmdClean } from './commands/clean.ts';
+import { cmdEject } from './commands/eject.ts';
 import { cmdDoctor } from './commands/doctor/doctor.ts';
 import { parseDoctorArgs } from './nomad.dispatch.doctor.ts';
-import { cmdDropSession } from './commands.drop-session.ts';
-import { cmdRedact } from './commands.redact.ts';
+import { cmdDropSession } from './commands/drop-session/drop-session.ts';
+import { cmdRedact } from './commands/redact/redact.ts';
 import { cmdPull } from './commands/pull/pull.ts';
 import { cmdPush } from './commands/push/push.ts';
-import { cmdSync } from './commands.sync.ts';
-import { cmdUpdate } from './commands.update.ts';
+import { cmdSync } from './commands/sync.ts';
+import { cmdUpdate } from './commands/update.ts';
 import { claudeHome, home, repoHome } from './config.ts';
 import { handleCrash } from './crash-report.write.ts';
-import { cmdDiff } from './diff.ts';
-import { cmdInit, isAlreadyInitialized } from './init.ts';
-import { resolveSnapshotChoice } from './init.prompt.ts';
+import { cmdDiff } from './commands/diff.ts';
+import { cmdInit, isAlreadyInitialized } from './commands/init/init.ts';
+import { resolveSnapshotChoice } from './commands/init/prompt.ts';
 import { parseCleanArgs } from './nomad.dispatch.clean.ts';
 import { parseCaptureSettingsArgs } from './nomad.dispatch.capture-settings.ts';
 import { parseEjectArgs } from './nomad.dispatch.eject.ts';
