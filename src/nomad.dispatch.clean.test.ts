@@ -124,7 +124,7 @@ describe('nomad.ts clean dispatcher', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.clean.ts');
+    vi.doUnmock('./commands/clean.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     process.argv = originalArgv;
@@ -132,7 +132,7 @@ describe('nomad.ts clean dispatcher', () => {
 
   it('routes `nomad clean --backups --dry-run` to cmdClean in dry-run mode', async () => {
     const cmdCleanMock = vi.fn();
-    vi.doMock('./commands.clean.ts', () => ({ cmdClean: cmdCleanMock }));
+    vi.doMock('./commands/clean.ts', () => ({ cmdClean: cmdCleanMock }));
     process.argv = ['node', 'nomad.ts', 'clean', '--backups', '--dry-run'];
     await import('./nomad.ts');
     expect(cmdCleanMock).toHaveBeenCalledTimes(1);
@@ -146,7 +146,7 @@ describe('nomad.ts clean dispatcher', () => {
 
   it('exits 2 on `nomad clean` without --backups', async () => {
     const cmdCleanMock = vi.fn();
-    vi.doMock('./commands.clean.ts', () => ({ cmdClean: cmdCleanMock }));
+    vi.doMock('./commands/clean.ts', () => ({ cmdClean: cmdCleanMock }));
     process.argv = ['node', 'nomad.ts', 'clean'];
     await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdCleanMock).not.toHaveBeenCalled();
@@ -154,7 +154,7 @@ describe('nomad.ts clean dispatcher', () => {
 
   it('exits 2 on `nomad clean --backups --older-than 7d --keep 3`', async () => {
     const cmdCleanMock = vi.fn();
-    vi.doMock('./commands.clean.ts', () => ({ cmdClean: cmdCleanMock }));
+    vi.doMock('./commands/clean.ts', () => ({ cmdClean: cmdCleanMock }));
     process.argv = ['node', 'nomad.ts', 'clean', '--backups', '--older-than', '7d', '--keep', '3'];
     await expect(import('./nomad.ts')).rejects.toThrow('exit:2');
     expect(cmdCleanMock).not.toHaveBeenCalled();

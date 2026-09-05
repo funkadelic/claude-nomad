@@ -39,7 +39,7 @@ import { dirname, join, sep } from 'node:path';
 
 import { claudeHome, repoHome } from '../../../config.ts';
 import { isGsdOwned } from '../../../skills-sync.ts';
-import { applyRedactions } from '../../../commands.redact.core.ts';
+import { applyRedactions } from '../../redact/core.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { isSafeRelPath } from '../../../rel-path-guard.ts';

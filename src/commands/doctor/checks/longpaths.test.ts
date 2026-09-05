@@ -4,7 +4,7 @@ import { okGlyph, warnGlyph } from '../../../color.ts';
 import { repoHome } from '../../../config.ts';
 import { section } from '../format.ts';
 import { reportLongPathsCheck, reportSyncModality } from './longpaths.ts';
-import type { SpawnSyncFn } from '../../../gh-actions.ts';
+import type { SpawnSyncFn } from '../../init/gh-actions.ts';
 import { stubPlatform } from '../../../test-helpers.platform.ts';
 
 // win32 stub helper: overrides process.platform for the current test, restored

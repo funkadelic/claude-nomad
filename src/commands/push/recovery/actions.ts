@@ -12,7 +12,7 @@ import { isAbsolute, resolve, sep } from 'node:path';
 
 import type { PathMap } from '../../../config.ts';
 import { repoHome } from '../../../config.ts';
-import { appendGitleaksIgnore } from '../../../commands.redact.core.ts';
+import { appendGitleaksIgnore } from '../../redact/core.ts';
 import { applyDeferredAllows } from './allow-gate.ts';
 import { applyRedact } from './redact.ts';
 import { dropSessionFromStaged } from './drop.ts';

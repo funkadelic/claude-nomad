@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { repoHome } from '../../../config.ts';
-import type { SpawnSyncFn } from '../../../gh-actions.ts';
+import type { SpawnSyncFn } from '../../init/gh-actions.ts';
 
 /**
  * Win32-only long-path diagnostics plus a cross-platform sync-modality row for

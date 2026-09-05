@@ -32,7 +32,7 @@ describe('nomad.ts drop-session dispatcher', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.drop-session.ts');
+    vi.doUnmock('./commands/drop-session/drop-session.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     process.argv = originalArgv;
@@ -40,7 +40,9 @@ describe('nomad.ts drop-session dispatcher', () => {
 
   it('routes `nomad drop-session sid-A` to cmdDropSession(`sid-A`)', async () => {
     const cmdDropSessionMock = vi.fn();
-    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    vi.doMock('./commands/drop-session/drop-session.ts', () => ({
+      cmdDropSession: cmdDropSessionMock,
+    }));
     process.argv = ['node', 'nomad.ts', 'drop-session', 'sid-A'];
     await import('./nomad.ts');
     expect(cmdDropSessionMock).toHaveBeenCalledTimes(1);
@@ -50,7 +52,9 @@ describe('nomad.ts drop-session dispatcher', () => {
 
   it('rejects bare `nomad drop-session` (no id) with the canonical usage line and exitCode=2', async () => {
     const cmdDropSessionMock = vi.fn();
-    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    vi.doMock('./commands/drop-session/drop-session.ts', () => ({
+      cmdDropSession: cmdDropSessionMock,
+    }));
     process.argv = ['node', 'nomad.ts', 'drop-session'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -66,7 +70,9 @@ describe('nomad.ts drop-session dispatcher', () => {
 
   it('rejects `nomad drop-session --bogus` (leading dash where id expected) with exitCode=2', async () => {
     const cmdDropSessionMock = vi.fn();
-    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    vi.doMock('./commands/drop-session/drop-session.ts', () => ({
+      cmdDropSession: cmdDropSessionMock,
+    }));
     process.argv = ['node', 'nomad.ts', 'drop-session', '--bogus'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -82,7 +88,9 @@ describe('nomad.ts drop-session dispatcher', () => {
 
   it('rejects `nomad drop-session sid-A extra-arg` (two positionals) with exitCode=2', async () => {
     const cmdDropSessionMock = vi.fn();
-    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    vi.doMock('./commands/drop-session/drop-session.ts', () => ({
+      cmdDropSession: cmdDropSessionMock,
+    }));
     process.argv = ['node', 'nomad.ts', 'drop-session', 'sid-A', 'extra-arg'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -98,7 +106,9 @@ describe('nomad.ts drop-session dispatcher', () => {
 
   it("rejects `nomad drop-session ''` (empty-string id) with exitCode=2", async () => {
     const cmdDropSessionMock = vi.fn();
-    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    vi.doMock('./commands/drop-session/drop-session.ts', () => ({
+      cmdDropSession: cmdDropSessionMock,
+    }));
     process.argv = ['node', 'nomad.ts', 'drop-session', ''];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -120,7 +130,9 @@ describe('nomad.ts drop-session dispatcher', () => {
     // mirrors the function-entry allowlist so the user sees the cleaner
     // `usage: nomad drop-session` line at parse time.
     const cmdDropSessionMock = vi.fn();
-    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    vi.doMock('./commands/drop-session/drop-session.ts', () => ({
+      cmdDropSession: cmdDropSessionMock,
+    }));
     process.argv = ['node', 'nomad.ts', 'drop-session', 'foo/bar'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -139,7 +151,9 @@ describe('nomad.ts drop-session dispatcher', () => {
     // but the argv guard let it through, muddying the UX (FATAL vs
     // usage:). The tightened argv regex catches it at parse time.
     const cmdDropSessionMock = vi.fn();
-    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
+    vi.doMock('./commands/drop-session/drop-session.ts', () => ({
+      cmdDropSession: cmdDropSessionMock,
+    }));
     process.argv = ['node', 'nomad.ts', 'drop-session', '..'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit

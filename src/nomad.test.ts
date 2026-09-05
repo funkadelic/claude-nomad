@@ -36,10 +36,10 @@ describe('nomad.ts push dispatcher', () => {
     vi.doUnmock('./commands/push/push.ts');
     vi.doUnmock('./commands/pull/pull.ts');
     vi.doUnmock('./commands/doctor/doctor.ts');
-    vi.doUnmock('./commands.update.ts');
-    vi.doUnmock('./commands.drop-session.ts');
-    vi.doUnmock('./diff.ts');
-    vi.doUnmock('./init.ts');
+    vi.doUnmock('./commands/update.ts');
+    vi.doUnmock('./commands/drop-session/drop-session.ts');
+    vi.doUnmock('./commands/diff.ts');
+    vi.doUnmock('./commands/init/init.ts');
     vi.doUnmock('./resume.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -110,10 +110,12 @@ describe('nomad.ts push dispatcher', () => {
     vi.doMock('./commands/pull/pull.ts', () => ({ cmdPull: cmdPullMock }));
     vi.doMock('./commands/push/push.ts', () => ({ cmdPush: cmdPushMock }));
     vi.doMock('./commands/doctor/doctor.ts', () => ({ cmdDoctor: cmdDoctorMock }));
-    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
-    vi.doMock('./commands.drop-session.ts', () => ({ cmdDropSession: cmdDropSessionMock }));
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock }));
-    vi.doMock('./diff.ts', () => ({ cmdDiff: cmdDiffMock }));
+    vi.doMock('./commands/update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    vi.doMock('./commands/drop-session/drop-session.ts', () => ({
+      cmdDropSession: cmdDropSessionMock,
+    }));
+    vi.doMock('./commands/init/init.ts', () => ({ cmdInit: cmdInitMock }));
+    vi.doMock('./commands/diff.ts', () => ({ cmdDiff: cmdDiffMock }));
     vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts'];
     const rejected = import('./nomad.ts');

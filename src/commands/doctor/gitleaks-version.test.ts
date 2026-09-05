@@ -4,7 +4,7 @@ import { okGlyph, warnGlyph } from '../../color.ts';
 import { section } from './format.ts';
 import { GITLEAKS_PINNED_VERSION } from '../../config.ts';
 import { reportGitleaksVersionCheck } from './gitleaks-version.ts';
-import type { SpawnSyncFn } from '../../gh-actions.ts';
+import type { SpawnSyncFn } from '../init/gh-actions.ts';
 
 // WARN / OK / silent matrix for the gitleaks version-drift reporter. The
 // reporter is driven directly with an injected `run` that
