@@ -14,7 +14,7 @@
  *
  * This module is the push-dry-run-only path. The `nomad doctor --check-shared`
  * preflight (session-only scan, no extras) is unchanged and lives in
- * `./commands.doctor.check-shared.ts`. Extras-in-doctor is a deferred
+ * `commands/doctor/checks/shared.ts`. Extras-in-doctor is a deferred
  * follow-up (out of scope here).
  */
 

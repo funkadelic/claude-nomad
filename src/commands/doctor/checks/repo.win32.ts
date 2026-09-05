@@ -5,7 +5,7 @@
  * `git diff --no-index` record back onto its repo-relative path so the
  * denylist can classify it.
  *
- * Split out of `commands.doctor.checks.repo.ts` so that reporter is not
+ * Split out of `commands/doctor/checks/repo.ts` so that reporter is not
  * carrying a platform-specific content compare it reaches through a single
  * call. Nothing here is exported except that call and the row shape: the three
  * row builders and both path helpers are reachable only through
@@ -71,12 +71,12 @@ function win32CopyUnpublishedRow(name: string): SharedLinkClassification {
  * different fact from `win32CopyUnpublishedRow`'s "never published" (the
  * repo does carry an entry here, it is just no use) and from
  * `classifySymlinkTarget`'s host-side "broken symlink" / "stale symlink"
- * rows in `commands.doctor.checks.repo.ts` (those describe the local link's
+ * rows in `commands/doctor/checks/repo.ts` (those describe the local link's
  * TARGET going missing; this describes the REPO's own entry being unusable,
  * which on win32 is never followed through a symlink at all).
  *
  * Two wordings, matching `repoSourceUnusableRow` in
- * `commands.doctor.checks.repo.source.ts` state for state: a pointer that does
+ * `commands/doctor/checks/repo.source.ts` state for state: a pointer that does
  * not resolve was read and can be removed or repaired, while a path that could
  * not be stat-ed was never shown to point anywhere, so the removal advice does
  * not apply and whatever blocked the probe usually blocks the removal too.

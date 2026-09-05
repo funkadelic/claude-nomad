@@ -96,7 +96,7 @@ describe('nomad process exit codes (subprocess, real dev entry)', () => {
         const { local } = buildPushRepo(tmp);
         // Plant a mid-rebase marker directly: classifyWedge is a pure
         // marker-file probe (no real rebase needs to be in progress), the
-        // same fixture shape push-checks.test.ts uses for its preflight tests.
+        // same fixture shape commands/push/checks.test.ts uses for its preflight tests.
         mkdirSync(join(local, '.git', 'rebase-merge'));
         const host = makeMinimalHost(home, local);
         const result = runNomad(host, ['pull']);

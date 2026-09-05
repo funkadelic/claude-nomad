@@ -6,7 +6,7 @@ import { warn } from './utils.ts';
 /**
  * Wall-clock ceiling (ms) for the `git diff --no-index` invocation below.
  * Matches the `PROBE_TIMEOUT_MS` convention other doctor-adjacent subprocess
- * probes use (`commands.doctor.checks.deps.ts`, `.crlf.ts`, `.longpaths.ts`):
+ * probes use (`commands/doctor/checks/deps.ts`, `.crlf.ts`, `.longpaths.ts`):
  * a local, no-network diff over a config-sized tree should return
  * near-instantly, so a hang here (a wedged git process, a pathological
  * filesystem) is bounded rather than left to block the doctor run or the

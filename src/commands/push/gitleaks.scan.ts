@@ -1,15 +1,15 @@
 /**
  * Owns the gitleaks staged-scan primitives shared by `nomad push`
- * (`runGitleaksScan` in `./push-gitleaks.ts`) and the
+ * (`runGitleaksScan` in `commands/push/gitleaks.ts`) and the
  * `nomad doctor --check-shared` preflight (`reportCheckShared` in
- * `./commands.doctor.check-shared.ts`): the `Finding` shape, the JSON-report
+ * `commands/doctor/checks/shared.ts`): the `Finding` shape, the JSON-report
  * parser `readGitleaksReport`, `scanStagedTree`, and `scanFile`.
  *
  * Split into its own module so adding the git-stage step keeps both
- * `push-gitleaks.ts` and `commands.doctor.check-shared.ts` under the 200-line
- * cap. `push-gitleaks.ts` re-exports these so existing import sites are
- * unaffected. Dependency flows one way (`push-gitleaks.ts` -> this module, and
- * this module -> `push-gitleaks.config.ts` for `resolveTomlConfig`); no cycle.
+ * `commands/push/gitleaks.ts` and `commands/doctor/checks/shared.ts` under the 200-line
+ * cap. `commands/push/gitleaks.ts` re-exports these so existing import sites are
+ * unaffected. Dependency flows one way (`commands/push/gitleaks.ts` -> this module, and
+ * this module -> `commands/push/gitleaks.config.ts` for `resolveTomlConfig`); no cycle.
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';

@@ -3,9 +3,9 @@
  * class and length, a length-gated head/tail fragment, and the label text that
  * precedes the secret with every other finding's span blanked out.
  *
- * Split from `commands.push.recovery.display.ts`, which now owns only prompt
+ * Split from `commands/push/recovery/display.ts`, which now owns only prompt
  * and block assembly. Depends on the `Finding` shape and on
- * `commands.push.recovery.span-align.ts` for the byte arithmetic, so the
+ * `commands/push/recovery/span-align.ts` for the byte arithmetic, so the
  * dependency runs display -> this module -> span-align, never the reverse.
  */
 

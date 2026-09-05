@@ -23,7 +23,7 @@ import type { SpawnSyncFn } from '../../../gh-actions.ts';
 
 /**
  * Node-level timeout for the `git config core.autocrlf` probe. Mirrors the
- * bounded subprocess convention in `commands.doctor.checks.deps.ts`
+ * bounded subprocess convention in `commands/doctor/checks/deps.ts`
  * (PROBE_TIMEOUT_MS) so a wedged git process cannot hang the synchronous
  * `cmdDoctor` run. A timeout kill surfaces as a thrown error, which the
  * probe's `catch` already maps to an `unset` verdict, preserving the

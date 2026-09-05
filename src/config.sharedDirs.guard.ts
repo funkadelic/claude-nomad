@@ -333,7 +333,7 @@ export function mayJoinRefusedEntry(
  * of the existing extras path.
  *
  * Kept as a thin same-signature wrapper so its consumers (`commands.adopt.ts`,
- * `commands.push.allowlist.ts`) inherit new rejection causes with no edit to
+ * `commands/push/allowlist.ts`) inherit new rejection causes with no edit to
  * any call site. `config.ts` calls {@link validateSharedDirEntry} directly,
  * not this wrapper.
  *

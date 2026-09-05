@@ -26,7 +26,7 @@ import { scanStagedTree, type Finding } from '../gitleaks.scan.ts';
  * green because every fixture was ASCII, single-line, and column-correct.
  *
  * Hermetic `HOME`/`REPO_HOME` with a copy of the worktree `.gitleaks.toml`,
- * mirroring `gitleaks-skills-allowlist.test.ts`, so the scan loads the
+ * mirroring `commands/push/gitleaks-skills-allowlist.test.ts`, so the scan loads the
  * production allowlist regardless of the developer machine's real
  * `~/claude-nomad/` state. Gated on the real gitleaks binary so a host without
  * it still runs the rest of the suite.
@@ -44,7 +44,7 @@ const hasGitleaks = ((): boolean => {
  * Assemble a github-pat-shaped fixture token from fragments so no contiguous
  * `ghp_<36>` literal is stored in source-controlled bytes, which this repo's
  * own gitleaks CI check would flag. Same convention as
- * `gitleaks-skills-allowlist.test.ts`.
+ * `commands/push/gitleaks-skills-allowlist.test.ts`.
  *
  * @param body The 36-char token body that follows the `ghp_` prefix.
  * @returns A `ghp_`-prefixed token assembled at runtime.

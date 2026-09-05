@@ -1,6 +1,6 @@
 /**
  * Regression suite for the `hosts/` allow-list JSON-only guard in
- * `enforceAllowList` (src/commands.push.allowlist.ts). Closes issue #138
+ * `enforceAllowList` (src/commands/push/allowlist.ts). Closes issue #138
  * as verified-safe: the `continue` after `^hosts\/[^/]+\.json$` already
  * blocks non-.json extensions and nested paths; no production code change
  * is required. These tests pin that invariant so a future edit that drops

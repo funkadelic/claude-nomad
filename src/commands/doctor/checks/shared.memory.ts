@@ -1,7 +1,7 @@
 /**
  * Owns the committed-memory advisory folded into `nomad doctor --check-shared`.
  *
- * `reportCheckShared` (`./commands.doctor.check-shared.ts`) scans the LOCAL
+ * `reportCheckShared` (`commands/doctor/checks/shared.ts`) scans the LOCAL
  * session transcripts a push would stage; it never reads the sync repo's own
  * already-committed content. A secret that already rode a prior push into
  * `shared/projects/<logical>/memory/*.md` therefore has no advisory surface

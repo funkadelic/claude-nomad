@@ -17,7 +17,7 @@ import type * as utilsModule from '../../../utils.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 
 /**
- * Unit tests for `src/commands.push.recovery.skills.ts`: the host-uniform
+ * Unit tests for `src/commands/push/recovery/skills.ts`: the host-uniform
  * skill-file resolution and redaction seam. Fixtures mirror the REAL,
  * nested skill layout (`SKILL.md` plus a `references/*.md` subdir), unlike
  * memory's flat single-level layout, and never carry a `PathMap` (skills

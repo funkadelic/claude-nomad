@@ -313,7 +313,7 @@ describe('reportSharedLinks non-symlink fail path (direct)', () => {
 
   // On win32, classifySharedLink's copy-sync branch reports a regular file as
   // OK by design; the posix FAIL expectation is false there. The win32-OK
-  // behavior is covered by commands.doctor.checks.repo2.test.ts.
+  // behavior is covered by commands/doctor/checks/repo2.test.ts.
   const isWin = process.platform === 'win32';
 
   it('does not write a rejected sharedDirs entry to stderr while gathering', async () => {

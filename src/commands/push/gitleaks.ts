@@ -2,16 +2,16 @@
  * Owns the push-side gitleaks orchestration invoked at the end of `cmdPush`:
  * the session-aware FATAL builder (`partitionFindings` + `buildSessionAwareFatal`)
  * and `runGitleaksScan`, which delegates the git-stage + scan mechanism to the
- * shared `scanStagedTree` in `./push-gitleaks.scan.ts`.
+ * shared `scanStagedTree` in `commands/push/gitleaks.scan.ts`.
  *
- * Lives in its own module (split from `push-checks.ts`) so the FATAL builder
+ * Lives in its own module (split from `commands/push/checks.ts`) so the FATAL builder
  * has a clean home while keeping every file under the 200-line cap.
  * `findGitlinks`, `probeGitleaks`, `gitleaksInstallHint`, and `rebaseBeforePush`
- * stay in `push-checks.ts`. The staged-scan primitives (`Finding`,
- * `readGitleaksReport`, `scanStagedTree`) live in `./push-gitleaks.scan.ts` and
+ * stay in `commands/push/checks.ts`. The staged-scan primitives (`Finding`,
+ * `readGitleaksReport`, `scanStagedTree`) live in `commands/push/gitleaks.scan.ts` and
  * are re-exported here so existing import sites are unaffected.
  *
- * `gitleaksInstallHint` is imported from `./push-checks.ts` because the
+ * `gitleaksInstallHint` is imported from `commands/push/checks.ts` because the
  * ENOENT branch surfaces the same platform-aware install scaffold whether
  * the missing binary is detected by `probeGitleaks` (top-of-flow) or by
  * this scan (defense-in-depth mid-flow).
@@ -23,8 +23,8 @@ import { gitleaksInstallHint } from './checks.ts';
 import { type Finding, scanStagedTree } from './gitleaks.scan.ts';
 import { NomadFatal } from '../../utils.ts';
 
-// Re-export the staged-scan primitives (moved to ./push-gitleaks.scan.ts to
-// keep both this module and commands.doctor.check-shared.ts under the 200-line
+// Re-export the staged-scan primitives (moved to commands/push/gitleaks.scan.ts to
+// keep both this module and commands/doctor/checks/shared.ts under the 200-line
 // cap) so existing `from './gitleaks.ts'` import sites stay unchanged and
 // push + the --check-shared preflight share one scan mechanism.
 export { type Finding, scanStagedTree };
@@ -47,7 +47,7 @@ export const SESSION_PATH = /^shared\/projects\/[^/]+\/([^/]+)\.jsonl$/;
  * Requiring `.jsonl` prevents "memory" from being captured as a session id when
  * the path is `shared/projects/<logical>/memory/notes.md`.
  *
- * Exported: `sessionIdFromFinding` in `commands.push.recovery.seams.ts` also
+ * Exported: `sessionIdFromFinding` in `commands/push/recovery/seams.ts` also
  * depends on the `.jsonl` anchor here (it previously carried a divergent,
  * unanchored copy that mis-captured `"memory"` as a session id). Do not drop
  * the `.jsonl` requirement in a future edit; both consumers rely on it.
@@ -150,7 +150,7 @@ export function partitionFindings(findings: Finding[]): {
  * 1-indexed) drops the `:<line>` suffix rather than emit a confusing
  * `:undefined` / `:0`.
  */
-// Exported only for direct unit tests (dynamic import in push-gitleaks.test.ts).
+// Exported only for direct unit tests (dynamic import in commands/push/gitleaks.test.ts).
 // fallow-ignore-next-line unused-export
 export function formatOtherFinding(f: Finding): string {
   const loc = Number.isInteger(f.StartLine) && f.StartLine > 0 ? `:${f.StartLine}` : '';
@@ -168,7 +168,7 @@ export function formatOtherFinding(f: Finding): string {
  * @param f The other-bucket finding.
  * @returns A hint line ready for inclusion in the FATAL message.
  */
-// Exported only for direct unit tests (dynamic import in push-gitleaks.test.ts).
+// Exported only for direct unit tests (dynamic import in commands/push/gitleaks.test.ts).
 // fallow-ignore-next-line unused-export
 export function otherFindingHint(f: Finding): string {
   const m = SUBAGENT_SESSION_PATH.exec(f.File);

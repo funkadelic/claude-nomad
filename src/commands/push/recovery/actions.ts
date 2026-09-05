@@ -2,9 +2,9 @@
  * I/O action dispatchers for the push-time recovery menu: `applyAllow`,
  * `collectActions`, `dispatchActions`, `allowAllFindings`,
  * `allowFindingsByRule`.
- * Pure seams live in `commands.push.recovery.seams.ts`; lock-free drop
- * helper in `commands.push.recovery.drop.ts`; the `--redact-all` batch half
- * lives in `commands.push.recovery.redact-all.ts`.
+ * Pure seams live in `commands/push/recovery/seams.ts`; lock-free drop
+ * helper in `commands/push/recovery/drop.ts`; the `--redact-all` batch half
+ * lives in `commands/push/recovery/redact-all.ts`.
  */
 
 import { readFileSync } from 'node:fs';
@@ -121,7 +121,7 @@ function makeDefaultReadLine(repo: string): (file: string, line: number) => stri
  * occurrences of the same secret on one line ask one question and the
  * returned map still carries one entry per finding (never per group):
  * `dispatchActions` and the `unresolved` filter in
- * `commands.push.recovery.ts` both look up by `findingKey`. Defaults to
+ * `commands/push/recovery/recovery.ts` both look up by `findingKey`. Defaults to
  * `'skip'` on empty input. Delegates the entire prompt text to
  * `buildPromptHeader`, so the user can distinguish a real secret from a
  * documented fixture without ever seeing the raw value.

@@ -1,6 +1,6 @@
 /**
  * Scan-result classification and row emission for the `nomad doctor
- * --check-shared` preflight. Split out of `commands.doctor.check-shared.ts` to
+ * --check-shared` preflight. Split out of `commands/doctor/checks/shared.ts` to
  * keep both files under the line cap; `reportCheckShared` (the public reporter)
  * stays in the sibling and calls `scanAndReport` after staging the temp tree.
  *

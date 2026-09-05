@@ -2,7 +2,7 @@
  * The repo-side half of `nomad doctor`'s Links classification: what the sync
  * repo's own `shared/<name>` turns out to be, and which row that implies.
  *
- * Split out of `commands.doctor.checks.repo.ts` so that reporter carries the
+ * Split out of `commands/doctor/checks/repo.ts` so that reporter carries the
  * host-side probing and the section assembly, and this carries the one
  * question every row about the repo side has to ask first. Both of its
  * exports are reached only from `classifySharedLink` and
@@ -156,7 +156,7 @@ export function posixNonSymlinkRow(name: string): SharedLinkClassification {
  * too, so that arm names the permissions instead.
  *
  * Reached from every platform, unlike the win32-only dangling row in
- * `commands.doctor.checks.repo.win32.ts`: both `classifySharedLink` and
+ * `commands/doctor/checks/repo.win32.ts`: both `classifySharedLink` and
  * `classifySymlinkTarget` run their ENOENT branch on posix and win32 alike.
  *
  * @param name - A shared name (`commands`, `rules`, ...).

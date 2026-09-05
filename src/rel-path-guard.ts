@@ -1,7 +1,7 @@
 /**
  * Shared per-segment traversal guard for a repo-relative finding path, used by
- * both the skill resolver (`commands.push.recovery.skills.ts`) and the memory
- * resolver (`commands.push.recovery.memory.ts`) so the multi-segment safety
+ * both the skill resolver (`commands/push/recovery/skills.ts`) and the memory
+ * resolver (`commands/push/recovery/memory.ts`) so the multi-segment safety
  * check has a single source of truth. Pure and dependency-free (a bottom leaf
  * with no imports), it validates only the LEXICAL shape of a relative path; the
  * physical (symlink/realpath) containment guard stays with each resolver, which

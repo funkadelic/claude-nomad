@@ -18,12 +18,12 @@ import type { PathMap } from '../../../config.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 
 /**
- * Unit tests for `src/commands.push.recovery.memory.ts`: the project-level
+ * Unit tests for `src/commands/push/recovery/memory.ts`: the project-level
  * memory-file resolution and redaction seam. Fixtures deliberately mirror the
  * REAL, empirically-observed layout (`memory/` as a flat, project-level
  * sibling of every `<sid>/` subtree, NOT nested inside one), distinguishing
  * this suite from the session-subtree fixtures in
- * `commands.push.recovery.redact.test.ts`.
+ * `commands/push/recovery/redact.test.ts`.
  */
 
 /** Build a minimal Finding fixture with optional field overrides. */

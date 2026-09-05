@@ -32,7 +32,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
 
   it('Test 1: clean push proceeds; runGitleaksScan is NOT called on empty index', async () => {
     // The scan mock is declared at outer scope so its call count survives
-    // the dynamic import of ./commands.push.ts.
+    // the dynamic import of commands/push/push.ts.
     const runGitleaksScanMock = vi.fn(() => {
       /* no-op success */
     });
@@ -77,7 +77,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     vi.doMock('./checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
       // Import NomadFatal here so it shares identity with the copy that
-      // freshly-loaded commands.push.ts catches via `instanceof`.
+      // freshly-loaded commands/push/push.ts catches via `instanceof`.
       const { NomadFatal } = await import('../../utils.ts');
       return {
         ...actual,

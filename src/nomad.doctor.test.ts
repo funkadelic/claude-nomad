@@ -7,7 +7,7 @@ import { ProcessExit } from './utils.ts';
 // under the line cap. Each test sets process.argv, doMocks the relevant
 // command module, stubs process.exit to throw, then dynamically imports
 // ./nomad.ts (the unchanged SUT path) to trigger the dispatch. The
-// command-module doMock targets (./commands.doctor.ts, ./resume.ts) are
+// command-module doMock targets (commands/doctor/doctor.ts, ./resume.ts) are
 // unchanged from the pre-split file.
 
 describe('nomad.ts doctor dispatcher', () => {

@@ -4,7 +4,7 @@
  * `~/.claude/skills/<name>/...` maps 1:1 to `shared/skills/<name>/...` on
  * every host, unlike a project-level memory file which needs a
  * `path-map.json` host-mapping lookup
- * (`commands.push.recovery.memory.ts`). No `PathMap`/`HOST` parameter
+ * (`commands/push/recovery/memory.ts`). No `PathMap`/`HOST` parameter
  * appears anywhere in this module.
  *
  * Provides the same shape as the memory module: a pure finding parser
@@ -12,7 +12,7 @@
  * (`resolveSkillLocalPath`), a no-mutation preflight
  * (`preflightSkillRedactable`), and the in-place redact-plus-copy-back
  * action (`applySkillRedact`). Reuses `applyRedactions`
- * (`commands.redact.core.ts`) and `scanFile` (`push-gitleaks.scan.ts`)
+ * (`commands.redact.core.ts`) and `scanFile` (`commands/push/gitleaks.scan.ts`)
  * unchanged; the `.jsonl` session-subtree and memory paths are untouched.
  *
  * A skill is an arbitrarily nested tree (`SKILL.md`, `references/*.md`,
@@ -22,8 +22,8 @@
  * pattern. The memory resolver mirrors the same multi-segment shape.
  *
  * Wired into the recovery menu via `dispatchSkill`/`dispatchNonSession` in
- * `commands.push.recovery.actions.ts` and into `--redact-all` in
- * `commands.push.recovery.redact-all.ts`.
+ * `commands/push/recovery/actions.ts` and into `--redact-all` in
+ * `commands/push/recovery/redact-all.ts`.
  */
 
 import {
@@ -158,7 +158,7 @@ export function resolveSkillLocalPath(name: string, relPath: string): string | n
  * the finding is not a skill file or the local file cannot be resolved
  * (unsafe name/path, gsd-owned, missing), else null. Consumed by
  * `--redact-all`'s all-or-nothing preflight gate in
- * `commands.push.recovery.redact-all.ts`.
+ * `commands/push/recovery/redact-all.ts`.
  *
  * @param f Finding to preflight.
  * @returns A refusal reason string, or null when the finding would proceed.

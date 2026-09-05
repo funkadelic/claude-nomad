@@ -214,7 +214,7 @@ export const GSD_PREFIX = 'gsd-';
  * leftover symlink at `~/.claude/<name>` is a symlink-era migration artefact
  * the doctor probe flags. Co-located with `SHARED_LINKS` and `GSD_PREFIX` so the
  * gsd-ownership model lives in one module; consumed by
- * `reportDroppedNamesMigration` in `commands.doctor.checks.repo.ts`.
+ * `reportDroppedNamesMigration` in `commands/doctor/checks/repo.ts`.
  */
 export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
 
@@ -236,7 +236,7 @@ export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
  * ask for one symlink per character. Every consumer that only needs the entries
  * reads them through {@link sharedDirEntries} and agrees with this on what a
  * malformed value means. The one exception is `reportRejectedSharedDirs` in
- * `commands.doctor.checks.pathmap.ts`, which reads the field raw on purpose:
+ * `commands/doctor/checks/pathmap.ts`, which reads the field raw on purpose:
  * it has to tell a malformed value from an absent one to name the type in its
  * own WARN row, which is a distinction the accessor deliberately erases.
  *

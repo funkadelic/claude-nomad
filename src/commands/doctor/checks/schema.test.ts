@@ -9,7 +9,7 @@ import { type Env, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
 
 /**
  * Deterministic fetcher mock for the settings-schema fetch inside
- * `commands.doctor.check-schema.ts`. Intercepts both `curl` (primary) and
+ * `commands/doctor/checks/schema.ts`. Intercepts both `curl` (primary) and
  * `wget` (fallback) so curl-throws cases never reach a real binary.
  * `json` returns a schema whose `properties` holds the given keys;
  * `no-properties` returns valid JSON lacking a properties object; `garbage`

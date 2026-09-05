@@ -675,7 +675,7 @@ describe('enforceAllowList on a win32 stub: forward-slash porcelain paths unchan
 // module-load time, not re-evaluated per call. To exercise real win32
 // semantics here, node:path's exports are swapped for the always-available
 // path.win32.* implementations (mirrors the node:path property-swap
-// convention already used in push-checks.test.ts for path.delimiter), and
+// convention already used in commands/push/checks.test.ts for path.delimiter), and
 // process.platform is stubbed to win32 so the guard's own platform branch
 // takes the forward-slash-canonicalization path.
 describe('assertSafeLocalRoot / assertSafeLogical: win32-shaped path-map values', () => {

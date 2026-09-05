@@ -399,7 +399,7 @@ const WIDENED_REASONS: ReadonlySet<SharedDirRejectionReason> = new Set([
  * set is an allow-list rather than a deny-list on the unsafe shapes, because
  * a deny-list fails OPEN: a rejection cause added later would be silently
  * joined into a filesystem path until someone noticed.
- * `commands.doctor.checks.pathmap.ts` passes its own
+ * `commands/doctor/checks/pathmap.ts` passes its own
  * narrower set through the same function, which is why the two consumers can
  * differ without the policy living in two places.
  *

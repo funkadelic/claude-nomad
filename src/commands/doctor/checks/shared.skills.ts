@@ -1,7 +1,7 @@
 /**
  * Owns the committed-skills advisory folded into `nomad doctor --check-shared`.
  *
- * Sibling of `./commands.doctor.check-shared.memory.ts`, mirroring its exact
+ * Sibling of `commands/doctor/checks/shared.memory.ts`, mirroring its exact
  * shape for `shared/skills/**` instead of `shared/projects/<logical>/memory/*.md`:
  * a secret that already rode a prior push into a committed skill file has no
  * advisory surface outside an actual push. This module closes that gap by
@@ -15,10 +15,10 @@
  * pattern here is recursive and extension-agnostic.
  *
  * NOTE: this file is distinct from the pre-existing, unrelated
- * `./commands.doctor.checks.skills.ts` (plural `checks`), which is a
+ * `commands/doctor/checks/skills.ts` (plural `checks`), which is a
  * copy-sync divergence check between local and repo skill trees, not a
  * secret scan. The singular `check-shared` token in this filename mirrors
- * `commands.doctor.check-shared.memory.ts`'s naming.
+ * `commands/doctor/checks/shared.memory.ts`'s naming.
  *
  * WARN-only, never FAIL: a finding here is retroactive (it already left in a
  * prior push), not blocking, so `process.exitCode` is never set by this

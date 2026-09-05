@@ -4,8 +4,8 @@
  * `REPO_HOME/shared/projects/` tree so the recovery loop's subsequent
  * `git add -A` stages the deletion rather than re-staging the file.
  *
- * Kept separate from `commands.push.recovery.actions.ts` and
- * `commands.push.recovery.redact-all.ts` to respect the ~220-line module cap.
+ * Kept separate from `commands/push/recovery/actions.ts` and
+ * `commands/push/recovery/redact-all.ts` to respect the ~220-line module cap.
  */
 
 import { rmSync } from 'node:fs';

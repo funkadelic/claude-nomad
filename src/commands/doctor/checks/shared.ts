@@ -5,7 +5,7 @@
  * `nomad push` would stage (each path-map entry mapped to this host), surfacing
  * leaks BEFORE the push pipeline fires. Stages a temp COPY of the live
  * transcripts into a throwaway git repo and delegates the scan + row emission
- * to `scanAndReport` (`./commands.doctor.check-shared.scan.ts`), which runs the
+ * to `scanAndReport` (`commands/doctor/checks/shared.scan.ts`), which runs the
  * shared `scanStagedTree` (`gitleaks protect --staged`, the same mechanism push
  * uses), so the preflight cannot miss a secret the push gate would catch. Emits
  * doctor glyph rows + `process.exitCode` instead of throwing a FATAL.
@@ -16,8 +16,8 @@
  * ever interpreted by a shell.
  *
  * After the local-preview scan, `reportCheckShared` also runs
- * `reportCommittedMemory` (`./commands.doctor.check-shared.memory.ts`) and
- * `reportCommittedSkills` (`./commands.doctor.check-shared.skills.ts`), two
+ * `reportCommittedMemory` (`commands/doctor/checks/shared.memory.ts`) and
+ * `reportCommittedSkills` (`commands/doctor/checks/shared.skills.ts`), two
  * distinct WARN-only advisories over already-committed `memory/*.md` and
  * `shared/skills/**` content in the sync repo itself. Both run on every
  * gitleaks-ready invocation -- including when nothing local is staged --
@@ -192,8 +192,8 @@ function runLocalPreviewScan(section: DoctorSection): void {
  * caught here, reported as a FAIL row, and `process.exitCode` is set, rather
  * than escaping and skipping the advisories that follow (this reporter itself
  * never throws). `reportCommittedMemory`
- * (`./commands.doctor.check-shared.memory.ts`) and `reportCommittedSkills`
- * (`./commands.doctor.check-shared.skills.ts`) then run unconditionally -- in
+ * (`commands/doctor/checks/shared.memory.ts`) and `reportCommittedSkills`
+ * (`commands/doctor/checks/shared.skills.ts`) then run unconditionally -- in
  * the same `finally`, so both still run when `runLocalPreviewScan` throws --
  * scanning already-committed `memory/*.md` and `shared/skills/**` in the sync
  * repo (WARN semantics, never sets `process.exitCode`). They run even when

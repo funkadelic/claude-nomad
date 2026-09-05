@@ -1,6 +1,6 @@
 /**
- * Tests for `collectGlobalConfigChanges` (push-global-config.ts) and
- * `buildGlobalConfigSection` (commands.push.sections.ts).
+ * Tests for `collectGlobalConfigChanges` (commands/push/global-config.ts) and
+ * `buildGlobalConfigSection` (commands/push/sections.ts).
  *
  * All tests stub `execFileSync` so the git invocation is offline.
  * Assertions are behavior-focused: returned rows and section shapes.

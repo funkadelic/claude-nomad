@@ -1,8 +1,8 @@
 /**
  * Non-interactive `--redact-all` batch redaction for the push-time recovery
  * menu: `redactAllFindings`, plus its private preflight and dedupe helpers.
- * Pure seams live in `commands.push.recovery.seams.ts`; the interactive
- * Allow-dispatch half lives in `commands.push.recovery.actions.ts`.
+ * Pure seams live in `commands/push/recovery/seams.ts`; the interactive
+ * Allow-dispatch half lives in `commands/push/recovery/actions.ts`.
  */
 
 import type { PathMap } from '../../../config.ts';

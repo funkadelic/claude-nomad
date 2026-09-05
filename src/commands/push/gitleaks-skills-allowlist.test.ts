@@ -24,7 +24,7 @@ import { scanStagedTree } from './gitleaks.scan.ts';
  * widening cannot silently swallow a real leak.
  *
  * Copies the worktree's `.gitleaks.toml` into a fake `REPO_HOME` under a temp
- * `HOME` (mirroring the hermetic pattern in `gitleaks-memory-allowlist.test.ts`)
+ * `HOME` (mirroring the hermetic pattern in `commands/push/gitleaks-memory-allowlist.test.ts`)
  * so the scan loads the just-edited allowlist regardless of the developer
  * machine's real `~/claude-nomad/.gitleaks.overlay.toml` state. Scans via
  * `scanStagedTree` (`gitleaks protect --staged`), the same mechanism `nomad
@@ -46,7 +46,7 @@ const hasGitleaks = ((): boolean => {
  * `ghp_<36>` literal is stored in source-controlled bytes (the gitleaks CI
  * check scans the working tree and would flag a committed PAT-shaped
  * literal). Mirrors the split-fragment convention in
- * `gitleaks-memory-allowlist.test.ts` and `push-gitleaks.test.ts`.
+ * `commands/push/gitleaks-memory-allowlist.test.ts` and `commands/push/gitleaks.test.ts`.
  *
  * @param body The 36-char token body that follows the `ghp_` prefix.
  * @returns A `ghp_`-prefixed token assembled at runtime.
