@@ -14,7 +14,7 @@
  *
  * On win32, pull-first is only safe for shared config because `runPullCore`
  * mirrors the host-side copies into the repo before its own rebase (see
- * `mirrorSharedLinksBeforePull` in `commands/pull/pull.ts`). That lives in the pull
+ * `reconcileSharedLinksBeforePull` in `commands/pull/win32.ts`). That lives in the pull
  * half deliberately, so a bare `nomad pull` gets the same protection this
  * command does; nothing platform-specific is needed here.
  */
