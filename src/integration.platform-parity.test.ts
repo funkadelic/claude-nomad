@@ -412,7 +412,7 @@ describe.skipIf(!hasGit)('parity: adopt then eject round-trip', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const { cmdAdopt } = await import('./commands.adopt.ts');
+    const { cmdAdopt } = await import('./commands/adopt.ts');
     cmdAdopt('CLAUDE.md');
     expect(exitSpy, 'adopt bailed out').not.toHaveBeenCalled();
 
@@ -426,7 +426,7 @@ describe.skipIf(!hasGit)('parity: adopt then eject round-trip', () => {
 
     // Eject is the offboarding contract: whatever the modality was, the host
     // ends up owning a real, standalone file that survives deleting the repo.
-    const { cmdEject } = await import('./commands.eject.ts');
+    const { cmdEject } = await import('./commands/eject.ts');
     cmdEject({}, { claudeHome: sandbox.claudeHome, repoHome: sandbox.repoHome });
     expect(exitSpy, 'eject bailed out').not.toHaveBeenCalled();
 

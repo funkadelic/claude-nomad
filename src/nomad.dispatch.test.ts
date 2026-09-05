@@ -33,7 +33,7 @@ describe('nomad.ts update dispatcher', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.update.ts');
+    vi.doUnmock('./commands/update.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     process.argv = originalArgv;
@@ -41,7 +41,7 @@ describe('nomad.ts update dispatcher', () => {
 
   it('routes bare `nomad update` to cmdUpdate() with the current version', async () => {
     const cmdUpdateMock = vi.fn();
-    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    vi.doMock('./commands/update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update'];
     await import('./nomad.ts');
     expect(cmdUpdateMock).toHaveBeenCalledTimes(1);
@@ -51,7 +51,7 @@ describe('nomad.ts update dispatcher', () => {
 
   it('rejects `nomad update --dry-run` with usage line and exitCode=2', async () => {
     const cmdUpdateMock = vi.fn();
-    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    vi.doMock('./commands/update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--dry-run'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -65,7 +65,7 @@ describe('nomad.ts update dispatcher', () => {
 
   it('rejects `nomad update --force` with usage line and exitCode=2', async () => {
     const cmdUpdateMock = vi.fn();
-    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    vi.doMock('./commands/update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--force'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -79,7 +79,7 @@ describe('nomad.ts update dispatcher', () => {
 
   it('rejects `nomad update --push-origin` with usage line and exitCode=2', async () => {
     const cmdUpdateMock = vi.fn();
-    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    vi.doMock('./commands/update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', '--push-origin'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -93,7 +93,7 @@ describe('nomad.ts update dispatcher', () => {
 
   it('rejects `nomad update bogus` with usage line and exitCode=2', async () => {
     const cmdUpdateMock = vi.fn();
-    vi.doMock('./commands.update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
+    vi.doMock('./commands/update.ts', () => ({ cmdUpdate: cmdUpdateMock }));
     process.argv = ['node', 'nomad.ts', 'update', 'bogus'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -108,7 +108,7 @@ describe('nomad.ts update dispatcher', () => {
 
 describe('nomad.ts init dispatcher', () => {
   // Mirrors the push dispatcher block: argv-mock + vi.resetModules + exitSpy.
-  // vi.doUnmock('./init.ts') in afterEach is required because vi.restoreAllMocks
+  // vi.doUnmock('./commands/init/init.ts') in afterEach is required because vi.restoreAllMocks
   // does not clear vi.doMock module mocks, and the init mock would otherwise
   // leak into other tests in this file.
   let originalHome: string | undefined;
@@ -133,7 +133,7 @@ describe('nomad.ts init dispatcher', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./init.ts');
+    vi.doUnmock('./commands/init/init.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     process.argv = originalArgv;
@@ -141,7 +141,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('routes `nomad init` (bare) to cmdInit with all flags false and no repoName', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({
@@ -154,7 +157,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('routes `nomad init --snapshot` to cmdInit({ snapshot: true })', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init', '--snapshot'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({
@@ -167,7 +173,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('routes `nomad init --keep-actions` to cmdInit({ keepActions: true })', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init', '--keep-actions'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({
@@ -180,7 +189,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('routes `nomad init --snapshot --keep-actions` with both flags', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init', '--snapshot', '--keep-actions'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({
@@ -193,7 +205,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('routes `nomad init --repo my-config` to cmdInit({ repoName: "my-config" })', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init', '--repo', 'my-config'];
     await import('./nomad.ts');
     expect(cmdInitMock).toHaveBeenCalledWith({
@@ -206,7 +221,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('routes `nomad init --snapshot --repo my-config --keep-actions` with all opts', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = [
       'node',
       'nomad.ts',
@@ -226,7 +244,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('rejects `nomad init --unknown` with usage error and exit 2', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init', '--unknown'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -240,7 +261,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('rejects duplicate `nomad init --snapshot --snapshot` with usage error', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init', '--snapshot', '--snapshot'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -253,7 +277,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('rejects `nomad init --repo --snapshot` (--repo value missing) with usage error', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init', '--repo', '--snapshot'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -266,7 +293,10 @@ describe('nomad.ts init dispatcher', () => {
 
   it('rejects `nomad init --repo` (no value at all) with usage error', async () => {
     const cmdInitMock = vi.fn();
-    vi.doMock('./init.ts', () => ({ cmdInit: cmdInitMock, isAlreadyInitialized: () => false }));
+    vi.doMock('./commands/init/init.ts', () => ({
+      cmdInit: cmdInitMock,
+      isAlreadyInitialized: () => false,
+    }));
     process.argv = ['node', 'nomad.ts', 'init', '--repo'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit

@@ -29,7 +29,7 @@ describe('nomad.ts adopt dispatcher', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('./commands.adopt.ts');
+    vi.doUnmock('./commands/adopt.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     process.argv = originalArgv;
@@ -37,7 +37,7 @@ describe('nomad.ts adopt dispatcher', () => {
 
   it('routes `nomad adopt foo` to cmdAdopt("foo", { dryRun: false })', async () => {
     const cmdAdoptMock = vi.fn();
-    vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
+    vi.doMock('./commands/adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', 'foo'];
     await import('./nomad.ts');
     expect(cmdAdoptMock).toHaveBeenCalledTimes(1);
@@ -47,7 +47,7 @@ describe('nomad.ts adopt dispatcher', () => {
 
   it('routes `nomad adopt foo --dry-run` to cmdAdopt("foo", { dryRun: true })', async () => {
     const cmdAdoptMock = vi.fn();
-    vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
+    vi.doMock('./commands/adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', 'foo', '--dry-run'];
     await import('./nomad.ts');
     expect(cmdAdoptMock).toHaveBeenCalledTimes(1);
@@ -57,7 +57,7 @@ describe('nomad.ts adopt dispatcher', () => {
 
   it('rejects bare `nomad adopt` (no name) with the usage line and exitCode=2', async () => {
     const cmdAdoptMock = vi.fn();
-    vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
+    vi.doMock('./commands/adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -73,7 +73,7 @@ describe('nomad.ts adopt dispatcher', () => {
 
   it('rejects `nomad adopt foo bar` (two positionals) with the usage line and exitCode=2', async () => {
     const cmdAdoptMock = vi.fn();
-    vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
+    vi.doMock('./commands/adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', 'foo', 'bar'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -89,7 +89,7 @@ describe('nomad.ts adopt dispatcher', () => {
 
   it('rejects `nomad adopt --dry-run` (flag before name) with the usage line and exitCode=2', async () => {
     const cmdAdoptMock = vi.fn();
-    vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
+    vi.doMock('./commands/adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', '--dry-run'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -105,7 +105,7 @@ describe('nomad.ts adopt dispatcher', () => {
 
   it('rejects `nomad adopt foo --bogus` (unknown flag) with the usage line and exitCode=2', async () => {
     const cmdAdoptMock = vi.fn();
-    vi.doMock('./commands.adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
+    vi.doMock('./commands/adopt.ts', () => ({ cmdAdopt: cmdAdoptMock }));
     process.argv = ['node', 'nomad.ts', 'adopt', 'foo', '--bogus'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
