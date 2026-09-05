@@ -17,8 +17,7 @@ import { stubPlatform } from '../../test-helpers.platform.ts';
 // Match-collection and unstage cases for cmdDropSession (the flat `<id>.jsonl`
 // path: newly-staged vs tracked-in-HEAD, multi-logical walk, no-match unwind,
 // and the git-failure wrap). The subagent-directory cascade lives in
-// commands.drop-session.cascade.test.ts; validation/idempotency/lock cases in
-// commands.drop-session.test.ts. SUT path `./commands.drop-session.ts` unchanged.
+// cascade.test.ts; validation/idempotency/lock cases in drop-session.test.ts.
 
 // Windows chmod only toggles the read-only attribute; a directory chmod'd to
 // 0o555 does not block git's index rewrite there the way a posix read-only

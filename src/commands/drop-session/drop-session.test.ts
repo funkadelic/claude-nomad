@@ -15,9 +15,9 @@ import {
 
 // Validation, entry-guard, idempotency, and lock-contention cases for
 // cmdDropSession. The match-collection / unstage / subagent-cascade cases live
-// in commands.drop-session.unstage.test.ts. Both suites load the SUT via
-// `await import('./drop-session.ts')` (the public symbol did not move)
-// and share the temp-repo harness in commands.drop-session.test-helpers.ts.
+// in unstage.test.ts and cascade.test.ts. All three suites load the SUT via
+// `await import('./drop-session.ts')` and share the temp-repo harness in
+// test-helpers.ts.
 
 describe('cmdDropSession (validation, idempotency, lock)', () => {
   let env: Env;

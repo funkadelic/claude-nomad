@@ -17,8 +17,7 @@ import {
 // Subagent-directory cascade cases for cmdDropSession (Issue #110): dropping a
 // session must also unstage the sibling `shared/projects/<logical>/<id>/...`
 // tree keyed by the same id. The flat-jsonl match/unstage cases live in
-// commands.drop-session.unstage.test.ts; validation/idempotency/lock in
-// commands.drop-session.test.ts. SUT path `./commands.drop-session.ts` unchanged.
+// unstage.test.ts; validation/idempotency/lock in drop-session.test.ts.
 
 describe('cmdDropSession (subagent directory cascade)', () => {
   let env: Env;
