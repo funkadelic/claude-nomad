@@ -23,7 +23,7 @@ import { cmdDoctor } from './commands/doctor/doctor.ts';
 import { parseDoctorArgs } from './nomad.dispatch.doctor.ts';
 import { cmdDropSession } from './commands.drop-session.ts';
 import { cmdRedact } from './commands.redact.ts';
-import { cmdPull } from './commands.pull.ts';
+import { cmdPull } from './commands/pull/pull.ts';
 import { cmdPush } from './commands/push/push.ts';
 import { cmdSync } from './commands.sync.ts';
 import { cmdUpdate } from './commands.update.ts';

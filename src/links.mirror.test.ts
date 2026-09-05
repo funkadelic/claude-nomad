@@ -589,7 +589,7 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
     // repoHome() prefers NOMAD_REPO over the $HOME fallback these fixtures
-    // assume; see the matching note in commands.pull.test.ts.
+    // assume; see the matching note in commands/pull/pull.test.ts.
     delete process.env.NOMAD_REPO;
     repoUnderHome = join(testHome, 'claude-nomad');
     sharedDir = join(repoUnderHome, 'shared');
@@ -940,7 +940,7 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
  * gained, plus the platform gate and the null-map gate. Codecov patch runs at
  * 100% over the diff, so a single untested defensive branch on a changed line
  * fails it; this block exists to pin each branch directly rather than relying
- * on cross-file coverage from `commands.pull.win32.test.ts`.
+ * on cross-file coverage from `commands/pull/win32.test.ts`.
  */
 describe('stageLocalSharedEdits dryRun x onPreview event matrix', () => {
   let originalHome: string | undefined;
@@ -1269,7 +1269,7 @@ describe('copy-time denylist (ALWAYS_NEVER_SYNC, the credential and host-config 
 
 /**
  * Unit cover for the backstop's per-path dispatch, sitting under the
- * end-to-end fixtures in `commands.pull.win32.test.ts`.
+ * end-to-end fixtures in `commands/pull/win32.test.ts`.
  *
  * The untracked half writes, so its cases pin the snapshot, the removal and the
  * WARN that reports them. The tracked half writes NOTHING, so its cases pin two
@@ -1675,7 +1675,7 @@ describe('revertDeniedMirrorPaths', () => {
 
       // Parsed from the real snapshot the backstop is fed, so the pathspec's
       // effect on rename detection is exercised rather than assumed.
-      const { parsePorcelainZ } = await import('./commands.pull.recovery.git.ts');
+      const { parsePorcelainZ } = await import('./commands/pull/recovery.git.ts');
       const status = parsePorcelainZ(
         execFileSync('git', ['status', '--porcelain=v1', '-z', '-uall', '--', 'shared/'], {
           cwd: repo,
@@ -1715,7 +1715,7 @@ describe('revertDeniedMirrorPaths', () => {
       expect(raw).toContain('C  shared/commands/credentials/copy.md');
       const before = stagedIndex();
 
-      const { parsePorcelainZ } = await import('./commands.pull.recovery.git.ts');
+      const { parsePorcelainZ } = await import('./commands/pull/recovery.git.ts');
       const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
       revertDeniedMirrorPaths(repo, parsePorcelainZ(raw), TS);
 
@@ -1753,7 +1753,7 @@ describe('revertDeniedMirrorPaths', () => {
     expect(raw).toContain('C  shared/commands/credentials/copy.md');
     const before = stagedIndex();
 
-    const { parsePorcelainZ } = await import('./commands.pull.recovery.git.ts');
+    const { parsePorcelainZ } = await import('./commands/pull/recovery.git.ts');
     const status = parsePorcelainZ(raw);
     // The duplicate is in the parse, which three other consumers depend on, so
     // it is the dispatch that has to absorb it.
@@ -2037,7 +2037,7 @@ describe('revertDeniedMirrorPaths', () => {
   });
 
   // These two are win32-only in production (`revertDeniedUnderShared`, the
-  // only caller, is reached from `src/commands.pull.win32.ts`), but
+  // only caller, is reached from `src/commands/pull/win32.ts`), but
   // `revertDeniedMirrorPaths` itself is platform-independent, so neither test
   // needs a platform stub.
 

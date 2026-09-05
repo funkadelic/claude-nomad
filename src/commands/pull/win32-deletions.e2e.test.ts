@@ -5,20 +5,20 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PullCoreResult } from './commands.pull.ts';
+import type { PullCoreResult } from './pull.ts';
 
-import { EXIT } from './exit-codes.ts';
-import { stubPlatform } from './test-helpers.platform.ts';
+import { EXIT } from '../../exit-codes.ts';
+import { stubPlatform } from '../../test-helpers.platform.ts';
 import {
   buildSyncedSharedWorld,
   pushUpstreamChange,
   wedgeExistingRepo,
-} from './test-support/git.ts';
+} from '../../test-support/git.ts';
 
 /**
  * End-to-end deletion parity for the win32 pull, against a real git repo.
  *
- * These run IN PROCESS: the platform is stubbed and `commands.pull.ts` is
+ * These run IN PROCESS: the platform is stubbed and `commands/pull/pull.ts` is
  * imported dynamically afterwards. The subprocess harness cannot be used here,
  * because it spawns a child whose platform is the real host OS, so a stubbed
  * platform in the parent would be invisible and every assertion would silently
@@ -105,7 +105,7 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
    * callers that ignore the return are unaffected.
    */
   async function pull(): Promise<PullCoreResult> {
-    const { runPullCore } = await import('./commands.pull.ts');
+    const { runPullCore } = await import('./pull.ts');
     return runPullCore();
   }
 
@@ -183,7 +183,7 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
 
   it('writes no baseline at all on a dry run', async () => {
     stubPlatform('win32');
-    const { runPullCore } = await import('./commands.pull.ts');
+    const { runPullCore } = await import('./pull.ts');
     runPullCore({ dryRun: true });
     expect(existsSync(baselineFile())).toBe(false);
   });
@@ -197,8 +197,8 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
     // guard fires before anything in this run touches the host or the repo.
     wedgeExistingRepo(world.repo);
 
-    const { NomadFatal } = await import('./utils.ts');
-    const { runPullCore } = await import('./commands.pull.ts');
+    const { NomadFatal } = await import('../../utils.ts');
+    const { runPullCore } = await import('./pull.ts');
     let fatal: unknown;
     try {
       runPullCore();
@@ -214,7 +214,7 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
     expect(readFileSync(baselineFile(), 'utf8')).toBe(before);
     // ...nor lose the pending intent: the next run replays the same
     // already-authorized removal rather than inventing a different one.
-    const { planSharedLinkDeletions } = await import('./links.deletions.ts');
+    const { planSharedLinkDeletions } = await import('../../links.deletions.ts');
     const plan = planSharedLinkDeletions({ projects: {} });
     expect(plan).toHaveLength(1);
     expect(plan[0]?.repoPath).toBe(join(world.sharedDir, 'commands', 'doomed.md'));
@@ -236,8 +236,8 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
     );
     rmSync(join(world.claudeDir, 'commands', 'doomed.md'), { force: true });
 
-    const { NomadFatal } = await import('./utils.ts');
-    const { runPullCore } = await import('./commands.pull.ts');
+    const { NomadFatal } = await import('../../utils.ts');
+    const { runPullCore } = await import('./pull.ts');
     let outcome: 'aborted' | 'resolved';
     try {
       runPullCore();
@@ -268,7 +268,7 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
 
     stubPlatform('linux');
     const { applySharedLinkDeletions, planSharedLinkDeletions } =
-      await import('./links.deletions.ts');
+      await import('../../links.deletions.ts');
     expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
     applySharedLinkDeletions({ projects: {} }, '20260803-000000');
     expect(existsSync(join(world.sharedDir, 'commands', 'doomed.md'))).toBe(true);

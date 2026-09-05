@@ -24,7 +24,7 @@
  * error aborts fail-closed instead of waving conflict markers through.
  */
 
-import { orphanedAutostashPresent, probeUnmergedIndex } from './commands.pull.wedge.ts';
+import { orphanedAutostashPresent, probeUnmergedIndex } from './commands/pull/wedge.ts';
 import { EXIT } from './exit-codes.ts';
 import { NomadFatal } from './utils.ts';
 

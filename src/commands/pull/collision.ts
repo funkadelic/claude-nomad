@@ -27,11 +27,11 @@
 import { existsSync, lstatSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome } from './config.ts';
-import { EXIT } from './exit-codes.ts';
-import { gitProbe } from './git-probe.ts';
-import { isSafeRelPath } from './rel-path-guard.ts';
-import { gitOrFatal, NomadFatal, warn } from './utils.ts';
+import { claudeHome } from '../../config.ts';
+import { EXIT } from '../../exit-codes.ts';
+import { gitProbe } from '../../git-probe.ts';
+import { isSafeRelPath } from '../../rel-path-guard.ts';
+import { gitOrFatal, NomadFatal, warn } from '../../utils.ts';
 
 /** Repo-relative prefix every mirrored shared-config copy sits under. */
 const SHARED_PREFIX = /^shared\//;

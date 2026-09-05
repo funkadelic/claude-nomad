@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as lockfileModule from '../../utils.lockfile.ts';
 
 // Covers the lock-contention skip path for cmdPush, symmetric to cmdPull's
-// contention skip covered in commands.pull.test.ts. acquireLock returns null
+// contention skip covered in commands/pull/pull.test.ts. acquireLock returns null
 // -> process.exit(0) before the try block (no NomadFatal, no exitCode=1).
 describe('cmdPush lock-contention skip path', () => {
   let originalHome: string | undefined;

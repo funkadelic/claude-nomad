@@ -1,16 +1,16 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { assertNoAutostashConflict } from './autostash-guard.ts';
+import { assertNoAutostashConflict } from '../../autostash-guard.ts';
 import {
   buildExtrasSection,
   buildSessionsSection,
   buildSettingsSection,
-} from './commands/push/sections.ts';
-import { backupBase, HOST, repoHome, type PathMap } from './config.ts';
-import { divergenceCheckExtras, remapExtrasPull } from './extras-sync.ts';
-import { applySharedLinks, regenerateSettings } from './links.ts';
-import { writeSharedBaseline } from './links.baseline.ts';
+} from '../push/sections.ts';
+import { backupBase, HOST, repoHome, type PathMap } from '../../config.ts';
+import { divergenceCheckExtras, remapExtrasPull } from '../../extras-sync.ts';
+import { applySharedLinks, regenerateSettings } from '../../links.ts';
+import { writeSharedBaseline } from '../../links.baseline.ts';
 import {
   buildMirrorSection,
   describeSkippedMirrorDiscard,
@@ -18,27 +18,27 @@ import {
   plansAgainst,
   planSharedReconcileBeforePull,
   reconcileSharedLinksBeforePull,
-} from './commands.pull.win32.ts';
-import { pullWithCollisionRunbook } from './commands.pull.collision.ts';
-import { syncSkillsPull } from './skills-sync.ts';
-import { renderTree, section, addItem, type DoctorSection } from './output-tree.ts';
-import { computePreview } from './preview.ts';
-import { remapPull, scanLocalOnly } from './remap.ts';
-import { withSpinner } from './spinner.ts';
-import { summaryRow } from './summary.ts';
+} from './win32.ts';
+import { pullWithCollisionRunbook } from './collision.ts';
+import { syncSkillsPull } from '../../skills-sync.ts';
+import { renderTree, section, addItem, type DoctorSection } from '../../output-tree.ts';
+import { computePreview } from '../../preview.ts';
+import { remapPull, scanLocalOnly } from '../../remap.ts';
+import { withSpinner } from '../../spinner.ts';
+import { summaryRow } from '../../summary.ts';
 import {
   classifyWedgeWithProbe,
   cleanRepoForceRemoteMessage,
   unmergedIndexRunbookText,
   wedgeMarkerRunbookText,
-} from './commands.pull.wedge.ts';
-import { recoverForceRemote } from './commands.pull.recovery.ts';
-import { recoverUnmergedIndex } from './commands.pull.recovery.unmerged.ts';
-import { EXIT } from './exit-codes.ts';
-import { die, fail, gitCaptureRaw, log, NomadFatal } from './utils.ts';
-import { discardEmptyBackupDir, freshBackupTs } from './utils.fs.ts';
-import { acquireLock, releaseLock } from './utils.lockfile.ts';
-import { readPathMap } from './utils.json.ts';
+} from './wedge.ts';
+import { recoverForceRemote } from './recovery.ts';
+import { recoverUnmergedIndex } from './recovery.unmerged.ts';
+import { EXIT } from '../../exit-codes.ts';
+import { die, fail, gitCaptureRaw, log, NomadFatal } from '../../utils.ts';
+import { discardEmptyBackupDir, freshBackupTs } from '../../utils.fs.ts';
+import { acquireLock, releaseLock } from '../../utils.lockfile.ts';
+import { readPathMap } from '../../utils.json.ts';
 
 /**
  * The pull half's grouped-tree summary-section header. Exported so

@@ -16,7 +16,7 @@ import {
 } from '../../../color.ts';
 import { deniedSegmentFor, repoHome } from '../../../config.ts';
 import { addItem, type DoctorSection } from '../format.ts';
-import { classifyWedge, orphanedAutostashPresent } from '../../../commands.pull.wedge.ts';
+import { classifyWedge, orphanedAutostashPresent } from '../../pull/wedge.ts';
 import { gitProbe } from '../../../git-probe.ts';
 import { findGitlinks } from '../../push/checks.ts';
 import { gitStatusPorcelainZ } from '../../../utils.ts';

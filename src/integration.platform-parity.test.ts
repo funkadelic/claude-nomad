@@ -131,7 +131,7 @@ describe.skipIf(!hasGit)('parity: pull preserves an unpublished shared-config ed
 
     // Invariant 1: the edit is still what the host reads back. On posix the
     // symlink plus `git pull --rebase --autostash` carries it; on win32
-    // mirrorSharedLinksBeforePull puts the host in that same pre-pull state.
+    // reconcileSharedLinksBeforePull puts the host in that same pre-pull state.
     expect(readFileSync(claudeMd, 'utf8'), 'the pull reverted the local edit').toBe(EDITED_MD);
 
     // Invariant 2: the edit reached the repo working tree, so the next push

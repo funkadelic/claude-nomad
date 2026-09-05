@@ -179,7 +179,7 @@ describe('conflicted autostash pop (real git + real cmdPush/cmdPull call sites)'
     process.env.HOME = tmp;
     process.env.NOMAD_REPO = local;
 
-    const { runPullCore } = await import('./commands.pull.ts');
+    const { runPullCore } = await import('./commands/pull/pull.ts');
     let caught: unknown;
     try {
       runPullCore();
@@ -205,7 +205,7 @@ describe('conflicted autostash pop (real git + real cmdPush/cmdPull call sites)'
 
     process.env.NOMAD_REPO = pullLocal;
     vi.resetModules();
-    const { runPullCore } = await import('./commands.pull.ts');
+    const { runPullCore } = await import('./commands/pull/pull.ts');
     expect(() => runPullCore()).not.toThrow();
   });
 });

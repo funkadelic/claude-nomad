@@ -8,13 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 /** vi.spyOn(console, 'log') return type shorthand. */
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
-import { gitCapture } from './commands.pull.recovery.git.ts';
+import { gitCapture } from './recovery.git.ts';
 import {
   buildRecoverySummary,
   classifyTouched,
   freshStrandedBranch,
   recoverForceRemote,
-} from './commands.pull.recovery.ts';
+} from './recovery.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -363,7 +363,7 @@ describe('recoverForceRemote - synced-config refusal (committed paths)', () => {
       /* expected conflict */
     }
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     let thrown: unknown;
     try {
       recoverForceRemote('rebase', local);
@@ -436,7 +436,7 @@ describe('recoverForceRemote - synced-config refusal (committed paths)', () => {
       /* expected conflict */
     }
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(() => recoverForceRemote('rebase', local)).toThrow(NomadFatal);
 
     // No parking branch should have been created.
@@ -515,7 +515,7 @@ describe('recoverForceRemote - non-ASCII synced-config refusal (committed paths)
       /* expected conflict */
     }
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     let thrown: unknown;
     try {
       recoverForceRemote('rebase', local);
@@ -679,7 +679,7 @@ describe('recoverForceRemote - synced-config refusal (dirty tracked)', () => {
     // Confirm we're wedged mid-merge.
     expect(existsSync(join(local, '.git', 'MERGE_HEAD'))).toBe(true);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     let thrown: unknown;
     try {
       recoverForceRemote('merge', local);

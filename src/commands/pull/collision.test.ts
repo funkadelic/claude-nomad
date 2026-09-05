@@ -6,7 +6,7 @@ import type * as NodeFs from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { g, gitInit, gitOut, makeBareOrigin, setTestIdentity } from './test-support/git.ts';
+import { g, gitInit, gitOut, makeBareOrigin, setTestIdentity } from '../../test-support/git.ts';
 
 /**
  * The mirror-collision runbook and the pull wrapper that raises it.
@@ -19,7 +19,7 @@ import { g, gitInit, gitOut, makeBareOrigin, setTestIdentity } from './test-supp
  */
 describe('untrackedCollisionRunbookText', () => {
   it('names the ~/.claude/ original rather than the copy inside the sync repo', async () => {
-    const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
+    const { untrackedCollisionRunbookText } = await import('./collision.ts');
     const text = untrackedCollisionRunbookText(['shared/commands/mine.md'], true);
 
     expect(text).toContain('~/.claude/commands/mine.md');
@@ -29,7 +29,7 @@ describe('untrackedCollisionRunbookText', () => {
   });
 
   it('states that nothing changed and walks both recoveries from the local file', async () => {
-    const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
+    const { untrackedCollisionRunbookText } = await import('./collision.ts');
     const text = untrackedCollisionRunbookText(['shared/commands/mine.md'], true);
 
     expect(text).toContain('One of those copies has the same name');
@@ -45,7 +45,7 @@ describe('untrackedCollisionRunbookText', () => {
   });
 
   it('lists every path and switches to plural wording for several collisions', async () => {
-    const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
+    const { untrackedCollisionRunbookText } = await import('./collision.ts');
     const text = untrackedCollisionRunbookText(
       ['shared/commands/mine.md', 'shared/rules/mine.md'],
       true,
@@ -61,7 +61,7 @@ describe('untrackedCollisionRunbookText', () => {
   });
 
   it('says the copies are still there when the cleanup did not happen', async () => {
-    const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
+    const { untrackedCollisionRunbookText } = await import('./collision.ts');
     const one = untrackedCollisionRunbookText(['shared/commands/mine.md'], false);
     const many = untrackedCollisionRunbookText(
       ['shared/commands/mine.md', 'shared/rules/mine.md'],
@@ -75,19 +75,19 @@ describe('untrackedCollisionRunbookText', () => {
   });
 
   it('suggests a .local name for a file with no extension', async () => {
-    const { untrackedCollisionRunbookText } = await import('./commands.pull.collision.ts');
+    const { untrackedCollisionRunbookText } = await import('./collision.ts');
     expect(untrackedCollisionRunbookText(['shared/commands/mine'], true)).toContain('(mine.local)');
   });
 });
 
 describe('isContainedMirrorPath', () => {
   it('accepts a nested repo-relative path under shared/', async () => {
-    const { isContainedMirrorPath } = await import('./commands.pull.collision.ts');
+    const { isContainedMirrorPath } = await import('./collision.ts');
     expect(isContainedMirrorPath('shared/commands/mine.md')).toBe(true);
   });
 
   it('rejects anything that could unlink outside the shared tree', async () => {
-    const { isContainedMirrorPath } = await import('./commands.pull.collision.ts');
+    const { isContainedMirrorPath } = await import('./collision.ts');
     // Outside shared/ entirely, so not something this run's mirror wrote.
     expect(isContainedMirrorPath('hosts/other.json')).toBe(false);
     // Climbs back out of the tree the prefix appears to confine it to.
@@ -215,7 +215,7 @@ describe('pullWithCollisionRunbook', () => {
    * @returns The thrown value, or `undefined` when the call returned normally.
    */
   async function runPull(repo: string, mirrored: readonly string[]): Promise<unknown> {
-    const { pullWithCollisionRunbook } = await import('./commands.pull.collision.ts');
+    const { pullWithCollisionRunbook } = await import('./collision.ts');
     try {
       pullWithCollisionRunbook(repo, mirrored);
       return undefined;
@@ -236,7 +236,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect((err as InstanceType<typeof NomadFatal>).message).toContain(
       'nomad pull could not fetch',
@@ -260,7 +260,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, []);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect((err as InstanceType<typeof NomadFatal>).message).toBe('git pull --rebase failed');
     // Nothing was removed on the ordinary path.
@@ -274,7 +274,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md', 'shared/commands/only-here.md']);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     // Only the genuinely colliding path is named...
     expect((err as InstanceType<typeof NomadFatal>).message).toContain(
@@ -294,7 +294,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     // A failure that never reached the remote leaves no fetched update to
     // collide with, so the created set cannot be misread as one.
@@ -309,7 +309,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect((err as InstanceType<typeof NomadFatal>).message).toContain(
       'nomad pull could not fetch',
@@ -330,7 +330,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect(existsSync(join(repo, 'shared', 'commands', 'mine.md'))).toBe(true);
     expect((err as InstanceType<typeof NomadFatal>).message).toContain(
@@ -344,7 +344,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     // Nothing local to have been copied from, so the mirror cannot own it.
     expect(existsSync(join(repo, 'shared', 'commands', 'mine.md'))).toBe(true);
@@ -359,7 +359,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['hosts/other.json']);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect(existsSync(join(repo, 'hosts', 'other.json'))).toBe(true);
   });
@@ -379,7 +379,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     const text = (err as InstanceType<typeof NomadFatal>).message;
     expect(text).toContain('nomad pull could not fetch');

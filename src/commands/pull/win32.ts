@@ -1,5 +1,5 @@
 /**
- * The win32-only pre-pull reconcile step, extracted from `commands.pull.ts` so
+ * The win32-only pre-pull reconcile step, extracted from `commands/pull/pull.ts` so
  * both halves of it (the additive mirror and the deletion pass) live beside each
  * other and neither file carries the whole thing.
  */
@@ -7,24 +7,24 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { yellow, warnGlyph } from './color.ts';
-import { parsePorcelainZ } from './commands.pull.recovery.git.ts';
-import { allSharedLinks, backupBase, deniedSegmentFor, type PathMap } from './config.ts';
-import { gitProbe } from './git-probe.ts';
+import { yellow, warnGlyph } from '../../color.ts';
+import { parsePorcelainZ } from './recovery.git.ts';
+import { allSharedLinks, backupBase, deniedSegmentFor, type PathMap } from '../../config.ts';
+import { gitProbe } from '../../git-probe.ts';
 import {
   applySharedLinkDeletions,
   planSharedLinkDeletions,
   type SharedLinkDeletion,
-} from './links.deletions.ts';
+} from '../../links.deletions.ts';
 import {
   revertDeniedMirrorPaths,
   stageLocalSharedEdits,
   type MirrorPreviewEvent,
-} from './links.mirror.ts';
-import { addItem, section, type DoctorSection } from './output-tree.ts';
-import { type SharedLinkPlans } from './preview.ts';
-import { warn } from './utils.ts';
-import { readPathMap } from './utils.json.ts';
+} from '../../links.mirror.ts';
+import { addItem, section, type DoctorSection } from '../../output-tree.ts';
+import { type SharedLinkPlans } from '../../preview.ts';
+import { warn } from '../../utils.ts';
+import { readPathMap } from '../../utils.json.ts';
 
 /**
  * Read `path-map.json` for the win32 pre-pull reconcile, fail-safe.

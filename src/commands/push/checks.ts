@@ -24,11 +24,7 @@ import { delimiter, join } from 'node:path';
 
 import { resolveTomlConfig } from './gitleaks.config.ts';
 import { assertNoAutostashConflict } from '../../autostash-guard.ts';
-import {
-  classifyWedge,
-  unmergedIndexRunbookText,
-  wedgeMarkerRunbookText,
-} from '../../commands.pull.wedge.ts';
+import { classifyWedge, unmergedIndexRunbookText, wedgeMarkerRunbookText } from '../pull/wedge.ts';
 import { EXIT } from '../../exit-codes.ts';
 import { NomadFatal } from '../../utils.ts';
 
