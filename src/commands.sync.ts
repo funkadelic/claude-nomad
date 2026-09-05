@@ -5,7 +5,7 @@
  * callers never have to reason about push/pull ordering.
  *
  * `cmdSync` is composition only: it delegates every side effect to the
- * lock-free `runPullCore` / `runPushCore` bodies (see `commands.pull.ts` /
+ * lock-free `runPullCore` / `runPushCore` bodies (see `commands/pull/pull.ts` /
  * `commands/push/push.ts`, both run in compose mode so neither renders) and owns
  * nothing but lock scope, control flow, and the single merged-tree render
  * ending in the two-phase Sync summary. The push half's full safety pipeline
@@ -14,7 +14,7 @@
  *
  * On win32, pull-first is only safe for shared config because `runPullCore`
  * mirrors the host-side copies into the repo before its own rebase (see
- * `mirrorSharedLinksBeforePull` in `commands.pull.ts`). That lives in the pull
+ * `mirrorSharedLinksBeforePull` in `commands/pull/pull.ts`). That lives in the pull
  * half deliberately, so a bare `nomad pull` gets the same protection this
  * command does; nothing platform-specific is needed here.
  */
@@ -22,7 +22,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './commands.pull.ts';
+import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './commands/pull/pull.ts';
 import { runPushCore, type PushCoreResult } from './commands/push/push.ts';
 import { HOST, repoHome } from './config.ts';
 import { dim, infoGlyph, warnGlyph, yellow } from './color.ts';

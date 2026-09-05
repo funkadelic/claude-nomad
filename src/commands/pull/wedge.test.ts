@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { buildUnmergedIndexNoMarker, gitInit, makeCommit } from './test-support/git.ts';
+import { buildUnmergedIndexNoMarker, gitInit, makeCommit } from '../../test-support/git.ts';
 
 import {
   classifyWedge,
@@ -15,7 +15,7 @@ import {
   orphanedAutostashPresent,
   probeUnmergedIndex,
   unmergedIndexPresent,
-} from './commands.pull.wedge.ts';
+} from './wedge.ts';
 
 /**
  * Tests for `detectWedge`. Each case constructs a minimal `.git/` scaffold in
@@ -68,7 +68,7 @@ describe('detectWedge', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Real-git helpers (mirrors commands.pull.recovery.test.ts style)
+// Real-git helpers (mirrors commands/pull/recovery.test.ts style)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

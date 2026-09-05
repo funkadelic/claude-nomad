@@ -229,7 +229,7 @@ function formatSessionRow(e: RemapPullPreviewEvent): string {
  * rejected entry is still reported exactly once on a posix `nomad diff`, from
  * here rather than from the apply. Sound because `nomad diff` has no rebase, so
  * this derivation and the apply's read the same map. Its rebasing sibling
- * `planSharedReconcileBeforePull` (`commands.pull.win32.ts`) gates its own
+ * `planSharedReconcileBeforePull` (`commands/pull/win32.ts`) gates its own
  * derivation on win32 for exactly that reason, and moving either one to match
  * the other without moving the suppression with it drops a posix `nomad diff`
  * to zero WARNs.

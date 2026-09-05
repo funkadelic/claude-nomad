@@ -150,7 +150,7 @@ export const MODALITY_SYMLINK = 'symlink (posix)';
  * an edit is transcribed by the next `nomad pull` or `nomad push`, not the
  * instant it is saved. It is deliberately NOT phrased as advice (there is no
  * ordering for the user to get right; see `mirrorSharedLinksBeforePull` in
- * `commands.pull.ts`), only as orientation for behavior that differs from
+ * `commands/pull/pull.ts`), only as orientation for behavior that differs from
  * posix. WSL2 reports as posix (Node sees it as linux), so a WSL2 host
  * correctly shows the symlink row. `compactSections` keeps this row in the
  * default view on win32 only, so the difference is visible without `--verbose`

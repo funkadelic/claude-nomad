@@ -1,14 +1,14 @@
 /**
  * Shared git primitives for the pull recovery paths.
  *
- * Dependency-free leaf: consumed by both `commands.pull.recovery.ts`
- * (`recoverForceRemote`) and `commands.pull.recovery.unmerged.ts`
+ * Dependency-free leaf: consumed by both `commands/pull/recovery.ts`
+ * (`recoverForceRemote`) and `commands/pull/recovery.unmerged.ts`
  * (`recoverUnmergedIndex`), but imports nothing from either.
  */
 
 import { execFileSync } from 'node:child_process';
 
-import { gitStatusPorcelainZ } from './utils.ts';
+import { gitStatusPorcelainZ } from '../../utils.ts';
 
 /**
  * Capture stdout from a shell-free git invocation. Returns the trimmed output.

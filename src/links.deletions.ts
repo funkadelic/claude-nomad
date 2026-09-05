@@ -34,7 +34,7 @@ import { backupRepoWrite } from './utils.fs.ts';
  * One repo file the pass will remove, with the local absence that authorized
  * it. `kind` is the discriminant that lets one deletion record serve both the
  * dry-run plan row (`preview.ts`) and the wet pull row (`buildMirrorSection`
- * in `commands.pull.win32.ts`), the way `MirrorPreviewEvent` already serves
+ * in `commands/pull/win32.ts`), the way `MirrorPreviewEvent` already serves
  * both mirror surfaces. There is deliberately no second, wet-only type: the
  * plan and the record are the same shape in two tenses, and the renderer
  * supplies the tense.

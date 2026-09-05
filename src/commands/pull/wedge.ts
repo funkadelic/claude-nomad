@@ -73,7 +73,7 @@ const INDEX_PROBE_TIMEOUT_MS = 30_000;
 /**
  * Probe the git index for unmerged entries (stage-2/3 blobs). Shell-free
  * argv-array invocation mirroring the `gitCapture`/`gitStatusPorcelainZ`
- * convention in `commands.pull.recovery.ts`.
+ * convention in `commands/pull/recovery.ts`.
  *
  * Returns `'unmerged'` when `git diff --diff-filter=U --name-only -z` produces
  * non-empty output (at least one NUL-terminated path), `'clean'` when it runs

@@ -20,11 +20,11 @@
  * reversible.
  */
 
-import { PUSH_ALLOWED_STATIC } from './config.ts';
-import type { WedgeMode } from './commands.pull.wedge.ts';
-import { die, gitOrFatal, log } from './utils.ts';
-import { nowTimestamp } from './utils.fs.ts';
-import { gitCapture, parseDirtyPaths } from './commands.pull.recovery.git.ts';
+import { PUSH_ALLOWED_STATIC } from '../../config.ts';
+import type { WedgeMode } from './wedge.ts';
+import { die, gitOrFatal, log } from '../../utils.ts';
+import { nowTimestamp } from '../../utils.fs.ts';
+import { gitCapture, parseDirtyPaths } from './recovery.git.ts';
 
 /**
  * Return true when `path` is a synced-config entry (from PUSH_ALLOWED_STATIC).

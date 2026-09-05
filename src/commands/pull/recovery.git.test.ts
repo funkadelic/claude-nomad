@@ -5,8 +5,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { gitCapture, parsePorcelainZ } from './commands.pull.recovery.git.ts';
-import { classifyTouched } from './commands.pull.recovery.ts';
+import { gitCapture, parsePorcelainZ } from './recovery.git.ts';
+import { classifyTouched } from './recovery.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers

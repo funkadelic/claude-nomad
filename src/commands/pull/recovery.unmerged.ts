@@ -1,7 +1,7 @@
-import { EXIT } from './exit-codes.ts';
-import { orphanedAutostashPresent } from './commands.pull.wedge.ts';
-import { die, gitOrFatal, log } from './utils.ts';
-import { gitCapture, parseDirtyPaths } from './commands.pull.recovery.git.ts';
+import { EXIT } from '../../exit-codes.ts';
+import { orphanedAutostashPresent } from './wedge.ts';
+import { die, gitOrFatal, log } from '../../utils.ts';
+import { gitCapture, parseDirtyPaths } from './recovery.git.ts';
 
 /**
  * Recover from the unmerged-index-no-active-rebase wedge state under

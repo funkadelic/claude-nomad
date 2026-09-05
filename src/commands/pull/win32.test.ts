@@ -5,15 +5,15 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import type * as gitProbeModule from './git-probe.ts';
-import type * as linksDeletionsModule from './links.deletions.ts';
-import type * as linksMirrorModule from './links.mirror.ts';
+import type * as gitProbeModule from '../../git-probe.ts';
+import type * as linksDeletionsModule from '../../links.deletions.ts';
+import type * as linksMirrorModule from '../../links.mirror.ts';
 
-import { backupBase, SHARED_LINKS } from './config.ts';
-import { renderTree } from './output-tree.ts';
-import { plantSharedBaseline } from './test-support/baseline.ts';
-import { g, gitInit, gitOut } from './test-support/git.ts';
-import { stubPlatform } from './test-helpers.platform.ts';
+import { backupBase, SHARED_LINKS } from '../../config.ts';
+import { renderTree } from '../../output-tree.ts';
+import { plantSharedBaseline } from '../../test-support/baseline.ts';
+import { g, gitInit, gitOut } from '../../test-support/git.ts';
+import { stubPlatform } from '../../test-helpers.platform.ts';
 
 /**
  * Returns `true` when the `git` binary is present on PATH. Gates the backstop
@@ -32,7 +32,7 @@ const hasGit = ((): boolean => {
 /**
  * Module-level regression cover for the extracted win32 pre-pull reconcile.
  *
- * `commands.pull.test.ts` keeps the runPullCore-level assertions (that seam is
+ * `commands/pull/pull.test.ts` keeps the runPullCore-level assertions (that seam is
  * still real: the step must run before `git pull --rebase` and must be skipped
  * under dry-run and force-remote). These assert the properties that now live
  * inside the extracted entry point instead: the platform gate, one map read
@@ -76,8 +76,8 @@ describe('reconcileSharedLinksBeforePull', () => {
     vi.restoreAllMocks();
     // vi.restoreAllMocks does NOT clear doMock registrations, and a leaked one
     // fails an unrelated test in a different file in the same worker.
-    vi.doUnmock('./links.mirror.ts');
-    vi.doUnmock('./links.deletions.ts');
+    vi.doUnmock('../../links.mirror.ts');
+    vi.doUnmock('../../links.deletions.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -112,7 +112,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     // outside this function's try/catch, and a bare `{ stageLocalSharedEdits }`
     // factory leaves that export undefined, only silently inert here because
     // these fixtures are not git checkouts (gitProbe returns null first).
-    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+    vi.doMock('../../links.mirror.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return { ...actual, stageLocalSharedEdits: mirror };
     });
@@ -120,7 +120,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     // other half of this module and is reachable from the plan-only entry
     // point, so a bare `{ applySharedLinkDeletions }` factory would leave it
     // undefined and fail on a real Windows runner rather than off it.
-    vi.doMock('./links.deletions.ts', async (importOriginal) => {
+    vi.doMock('../../links.deletions.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksDeletionsModule>();
       return { ...actual, applySharedLinkDeletions: deletions };
     });
@@ -175,7 +175,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     stubPlatform('win32');
     const order: string[] = [];
     mockPasses(order);
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
     expect(order).toEqual(['mirror', 'deletions']);
   });
@@ -188,7 +188,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     stubPlatform('win32');
     const order: string[] = [];
     const { mirror, deletions } = mockPasses(order);
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
     // One read, so the two passes cannot disagree about which names are shared.
     expect(mirror.mock.calls[0]?.[0]).toBe(deletions.mock.calls[0]?.[0]);
@@ -199,7 +199,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     stubPlatform('linux');
     const order: string[] = [];
     const { mirror, deletions } = mockPasses(order);
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     const { mirrored, events } = reconcileSharedLinksBeforePull(repoUnderHome, TS);
     expect(mirror).not.toHaveBeenCalled();
     expect(deletions).not.toHaveBeenCalled();
@@ -216,7 +216,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     mirror.mockImplementation(() => {
       writeFileSync(join(repoUnderHome, 'shared', 'staged.md'), '# staged\n');
     });
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     // The fixture repo is a plain directory, so the probes fail. Attributing
     // every untracked file to this run would be the dangerous reading; the
     // feature turns itself off instead.
@@ -228,7 +228,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     stubPlatform('win32');
     const order: string[] = [];
     const { mirror, deletions } = mockPasses(order);
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
     // Absent is a valid steady state (a clone that predates init), and the empty
     // map still yields the static shared names.
@@ -241,7 +241,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     stubPlatform('win32');
     const order: string[] = [];
     const { mirror, deletions } = mockPasses(order);
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
     // Degrades rather than throwing; the post-rebase read still dies loudly.
     expectMirrorCalledWith(mirror, null, TS);
@@ -255,7 +255,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     mirror.mockImplementation(() => {
       throw new Error('EPERM: operation not permitted');
     });
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     expect(() => reconcileSharedLinksBeforePull(repoUnderHome, TS)).not.toThrow();
     expect(deletions).not.toHaveBeenCalled();
     expect(vi.mocked(console.error).mock.calls.join('\n')).toContain('EPERM');
@@ -268,7 +268,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     deletions.mockImplementation(() => {
       throw new Error('EBUSY: resource busy or locked');
     });
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     // Same containment as the mirror half: aborting here would leave the host
     // unable to fetch at all until the local condition clears, and an
     // unpropagated deletion is simply replanned on the next run.
@@ -286,7 +286,7 @@ describe('reconcileSharedLinksBeforePull', () => {
  * real mirror's output reaches the real renderer. The removed-row case is the
  * one exception, and it stubs only the applier's return value so the real
  * planner and the real renderer stay in the path; the applier's own unmocked
- * cover lives in `commands.pull.win32-deletions.e2e.test.ts`.
+ * cover lives in `commands/pull/win32-deletions.e2e.test.ts`.
  */
 describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', () => {
   const realPlatform = process.platform;
@@ -329,7 +329,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     vi.restoreAllMocks();
     // vi.restoreAllMocks does NOT clear a vi.doMock registration, and a leaked
     // one fails an unrelated test in a different file in the same worker.
-    vi.doUnmock('./links.deletions.ts');
+    vi.doUnmock('../../links.deletions.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -346,8 +346,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     writeFileSync(localClaudeMd, '# host edit\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull, buildMirrorSection } =
-      await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull, buildMirrorSection } = await import('./win32.ts');
     const { events } = reconcileSharedLinksBeforePull(repoUnderHome, TS);
 
     expect(events).toEqual([
@@ -367,7 +366,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     // The deletion applier's real path needs a trusted baseline, which is out
     // of scope for this end-to-end capture test; give the spy a return value
     // instead of replacing the factory, so the real planner stays reachable.
-    vi.doMock('./links.deletions.ts', async (importOriginal) => {
+    vi.doMock('../../links.deletions.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksDeletionsModule>();
       return {
         ...actual,
@@ -383,8 +382,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     });
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull, buildMirrorSection } =
-      await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull, buildMirrorSection } = await import('./win32.ts');
     const { events } = reconcileSharedLinksBeforePull(repoUnderHome, TS);
 
     expect(events).toContainEqual({
@@ -406,7 +404,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     writeFileSync(localClaudeMd, '# host edit\n');
 
     stubPlatform('win32');
-    const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+    const { stageLocalSharedEdits } = await import('../../links.mirror.ts');
     const events: { name: string }[] = [];
     stageLocalSharedEdits({ projects: {} }, TS, {
       dryRun: true,
@@ -424,8 +422,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# host edit\n');
 
     stubPlatform('linux');
-    const { reconcileSharedLinksBeforePull, buildMirrorSection } =
-      await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull, buildMirrorSection } = await import('./win32.ts');
     const { events } = reconcileSharedLinksBeforePull(repoUnderHome, TS);
     expect(events).toEqual([]);
 
@@ -453,7 +450,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
       JSON.stringify({ projects: {}, sharedDirs: ['../escape'] }) + '\n',
     );
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
 
     const rejectionCalls = errSpy.mock.calls.filter((c) =>
@@ -468,7 +465,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
       JSON.stringify({ projects: {}, sharedDirs: ['get-shit-done'] }) + '\n',
     );
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repoUnderHome, TS);
 
     const rejectionCalls = errSpy.mock.calls.filter((c) =>
@@ -520,7 +517,7 @@ describe('describeSkippedMirrorDiscard', () => {
     // See the top describe block's afterEach: vi.restoreAllMocks does NOT
     // clear a vi.doMock registration, and a leaked one fails an unrelated
     // test in a different file in the same worker.
-    vi.doUnmock('./links.mirror.ts');
+    vi.doUnmock('../../links.mirror.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -537,7 +534,7 @@ describe('describeSkippedMirrorDiscard', () => {
     writeFileSync(localClaudeMd, '# host edit\n');
 
     stubPlatform('win32');
-    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    const { describeSkippedMirrorDiscard } = await import('./win32.ts');
     const result = describeSkippedMirrorDiscard(repoUnderHome, TS);
 
     expect(result).toEqual({ count: 1, backupPath: join(backupBase(), TS) });
@@ -560,8 +557,7 @@ describe('describeSkippedMirrorDiscard', () => {
     writeFileSync(localClaudeMd, '# same\n');
 
     stubPlatform('win32');
-    const { describeSkippedMirrorDiscard, buildMirrorSection } =
-      await import('./commands.pull.win32.ts');
+    const { describeSkippedMirrorDiscard, buildMirrorSection } = await import('./win32.ts');
     const result = describeSkippedMirrorDiscard(repoUnderHome, TS);
 
     expect(result).toEqual({ count: 1, backupPath: join(backupBase(), TS) });
@@ -582,14 +578,14 @@ describe('describeSkippedMirrorDiscard', () => {
     writeFileSync(join(claudeDir, 'commands', 'deploy.md'), '# host deploy\n');
 
     stubPlatform('win32');
-    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    const { describeSkippedMirrorDiscard } = await import('./win32.ts');
     expect(describeSkippedMirrorDiscard(repoUnderHome, TS)?.count).toBe(2);
   });
 
   it('returns null when nothing would have been captured', async () => {
     // No local CLAUDE.md at all, so the mirror has nothing to stage.
     stubPlatform('win32');
-    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    const { describeSkippedMirrorDiscard } = await import('./win32.ts');
     expect(describeSkippedMirrorDiscard(repoUnderHome, TS)).toBeNull();
   });
 
@@ -601,7 +597,7 @@ describe('describeSkippedMirrorDiscard', () => {
     writeFileSync(join(repoUnderHome, 'path-map.json'), '{ not json\n');
 
     stubPlatform('win32');
-    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    const { describeSkippedMirrorDiscard } = await import('./win32.ts');
     // A null map short-circuits mirrorSharedNames before any name is
     // enumerated, matching readMapForMirror's own "skip me" contract.
     expect(describeSkippedMirrorDiscard(repoUnderHome, TS)).toBeNull();
@@ -614,13 +610,13 @@ describe('describeSkippedMirrorDiscard', () => {
     writeFileSync(localClaudeMd, '# host edit\n');
 
     stubPlatform('linux');
-    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    const { describeSkippedMirrorDiscard } = await import('./win32.ts');
     expect(describeSkippedMirrorDiscard(repoUnderHome, TS)).toBeNull();
     expect(readFileSync(repoClaudeMd, 'utf8')).toBe('# repo copy\n');
   });
 
   it('returns null rather than throwing when the underlying mirror computation fails', async () => {
-    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+    vi.doMock('../../links.mirror.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return {
         ...actual,
@@ -630,7 +626,7 @@ describe('describeSkippedMirrorDiscard', () => {
       };
     });
     stubPlatform('win32');
-    const { describeSkippedMirrorDiscard } = await import('./commands.pull.win32.ts');
+    const { describeSkippedMirrorDiscard } = await import('./win32.ts');
     expect(() => describeSkippedMirrorDiscard(repoUnderHome, TS)).not.toThrow();
     expect(describeSkippedMirrorDiscard(repoUnderHome, TS)).toBeNull();
   });
@@ -694,8 +690,7 @@ describe('buildMirrorSection discard row', () => {
     writeFileSync(localClaudeMd, hostContent);
 
     stubPlatform('win32');
-    const { describeSkippedMirrorDiscard, buildMirrorSection } =
-      await import('./commands.pull.win32.ts');
+    const { describeSkippedMirrorDiscard, buildMirrorSection } = await import('./win32.ts');
     const discard = describeSkippedMirrorDiscard(repoUnderHome, TS);
 
     renderTree([buildMirrorSection([], discard)]);
@@ -708,14 +703,14 @@ describe('buildMirrorSection discard row', () => {
   });
 
   it('pluralizes the row text for more than one captured name', async () => {
-    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const { buildMirrorSection } = await import('./win32.ts');
     renderTree([buildMirrorSection([], { count: 2, backupPath: join(backupBase(), TS) })]);
     const rendered = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
     expect(rendered).toContain('2 shared names were restored from the repo copy');
   });
 
   it('renders no warning row when called with only the events argument', async () => {
-    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const { buildMirrorSection } = await import('./win32.ts');
     const events = [
       {
         kind: 'mirror' as const,
@@ -731,13 +726,13 @@ describe('buildMirrorSection discard row', () => {
   });
 
   it('renders no warning row when the discard argument is explicitly null', async () => {
-    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const { buildMirrorSection } = await import('./win32.ts');
     const section = buildMirrorSection([], null);
     expect(section.items).toEqual([]);
   });
 
   it('renders a mixed capture and deletion pair in order', async () => {
-    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const { buildMirrorSection } = await import('./win32.ts');
     const section = buildMirrorSection([
       {
         kind: 'mirror' as const,
@@ -759,7 +754,7 @@ describe('buildMirrorSection discard row', () => {
   });
 
   it('renders only removal rows when given only deletion records', async () => {
-    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const { buildMirrorSection } = await import('./win32.ts');
     const section = buildMirrorSection([
       {
         kind: 'deletion' as const,
@@ -772,7 +767,7 @@ describe('buildMirrorSection discard row', () => {
   });
 
   it('renders removal rows before the discard warning row', async () => {
-    const { buildMirrorSection } = await import('./commands.pull.win32.ts');
+    const { buildMirrorSection } = await import('./win32.ts');
     const section = buildMirrorSection(
       [
         {
@@ -842,7 +837,7 @@ describe('planSharedReconcileBeforePull', () => {
     writeFileSync(localClaudeMd, '# host edit\n');
 
     stubPlatform('win32');
-    const { planSharedReconcileBeforePull } = await import('./commands.pull.win32.ts');
+    const { planSharedReconcileBeforePull } = await import('./win32.ts');
     const plans = planSharedReconcileBeforePull(repoUnderHome, '20260810-050000');
 
     expect(plans.captures).toEqual([
@@ -854,7 +849,7 @@ describe('planSharedReconcileBeforePull', () => {
 
   it('returns empty plans on a non-win32 platform', async () => {
     stubPlatform('linux');
-    const { planSharedReconcileBeforePull } = await import('./commands.pull.win32.ts');
+    const { planSharedReconcileBeforePull } = await import('./win32.ts');
     const plans = planSharedReconcileBeforePull(repoUnderHome, '20260810-050001');
     // namesDerived stays false: both halves return before deriving anything off
     // win32, so the preview's own derivation is the only one that ever runs
@@ -877,7 +872,7 @@ describe('planSharedReconcileBeforePull', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
     });
-    const { planSharedReconcileBeforePull } = await import('./commands.pull.win32.ts');
+    const { planSharedReconcileBeforePull } = await import('./win32.ts');
     const plans = planSharedReconcileBeforePull(repoUnderHome, '20260810-050002');
 
     const rejectionCalls = errSpy.mock.calls.filter((c) =>
@@ -894,11 +889,11 @@ describe('planSharedReconcileBeforePull', () => {
  * still describe the post-rebase map. Driven directly here because the whole
  * point of them is what they do when the two maps DISAGREE, and reaching that
  * through `runPullCore` needs a rebase that rewrites `path-map.json` mid-run
- * (`commands.pull.test.ts` has those end-to-end cases).
+ * (`commands/pull/pull.test.ts` has those end-to-end cases).
  */
 describe('namesAlreadyReported and plansAgainst', () => {
   it('never silences a derivation the pre-rebase step never made', async () => {
-    const { namesAlreadyReported } = await import('./commands.pull.win32.ts');
+    const { namesAlreadyReported } = await import('./win32.ts');
     // Posix, force-remote, and an unreadable map all arrive here.
     expect(
       namesAlreadyReported(false, undefined, { projects: {}, sharedDirs: ['../escape'] }),
@@ -906,7 +901,7 @@ describe('namesAlreadyReported and plansAgainst', () => {
   });
 
   it('silences the later derivation only while sharedDirs has not moved', async () => {
-    const { namesAlreadyReported } = await import('./commands.pull.win32.ts');
+    const { namesAlreadyReported } = await import('./win32.ts');
     expect(namesAlreadyReported(true, ['a'], { projects: {}, sharedDirs: ['a'] })).toBe(true);
     expect(namesAlreadyReported(true, undefined, { projects: {} })).toBe(true);
     // Delivered by the rebase: the pre-rebase WARNs said nothing about this.
@@ -922,12 +917,12 @@ describe('namesAlreadyReported and plansAgainst', () => {
   it('passes a missing plans object straight through', async () => {
     // The wet path computes no plans. Handling that here rather than at the call
     // site is what keeps `runPullCore` free of another branch.
-    const { plansAgainst } = await import('./commands.pull.win32.ts');
+    const { plansAgainst } = await import('./win32.ts');
     expect(plansAgainst(undefined, { projects: {} })).toBeUndefined();
   });
 
   it('re-evaluates namesDerived against the post-rebase map, leaving the plans intact', async () => {
-    const { plansAgainst } = await import('./commands.pull.win32.ts');
+    const { plansAgainst } = await import('./win32.ts');
     const plans = {
       captures: [],
       deletions: [],
@@ -997,7 +992,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
-    vi.doUnmock('./git-probe.ts');
+    vi.doUnmock('../../git-probe.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -1017,7 +1012,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     writeFileSync(join(repo, DENIED), 'token=abc\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(existsSync(join(repo, DENIED))).toBe(false);
@@ -1039,7 +1034,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     writeFileSync(join(repo, DENIED), 'token=abc\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(existsSync(join(repo, DENIED))).toBe(true);
@@ -1062,7 +1057,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     writeFileSync(join(repo, spaced), 'token=abc\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(warnings()).toContain(`git check-ignore -v -- "${spaced}"`);
@@ -1081,7 +1076,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'nested', 'more.md'), 'x\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(warnings()).toContain(DENIED);
@@ -1095,7 +1090,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     // walk silently disabling the removing half as well.
     mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(repo, DENIED), 'token=abc\n');
-    vi.doMock('./git-probe.ts', async (importOriginal) => {
+    vi.doMock('../../git-probe.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof gitProbeModule>();
       return {
         ...actual,
@@ -1105,7 +1100,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     });
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(existsSync(join(repo, DENIED))).toBe(false);
@@ -1122,7 +1117,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     writeFileSync(join(repo, 'shared', 'commands', 'scratch.md'), '# local notes\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(existsSync(join(repo, 'shared', 'commands', 'scratch.md'))).toBe(true);
@@ -1143,7 +1138,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     const stagedBefore = gitOut(['diff', '--cached', '--name-status'], repo);
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(existsSync(join(repo, DENIED))).toBe(true);
@@ -1159,7 +1154,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# edited deploy\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(readFileSync(join(repo, 'shared', 'commands', 'deploy.md'), 'utf8')).toBe(
@@ -1177,7 +1172,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     writeFileSync(join(plain, DENIED), 'token=abc\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     expect(() => reconcileSharedLinksBeforePull(plain, TS)).not.toThrow();
 
     expect(existsSync(join(plain, DENIED))).toBe(true);
@@ -1193,7 +1188,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     writeFileSync(join(repo, rel), 'token=abc\n');
 
     stubPlatform('win32');
-    const { reconcileSharedLinksBeforePull } = await import('./commands.pull.win32.ts');
+    const { reconcileSharedLinksBeforePull } = await import('./win32.ts');
     reconcileSharedLinksBeforePull(repo, TS);
 
     expect(existsSync(join(repo, rel))).toBe(true);

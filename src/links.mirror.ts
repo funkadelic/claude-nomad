@@ -94,10 +94,10 @@ function emitMirrorWet(
 
 /**
  * The `git status` snapshot {@link revertDeniedMirrorPaths} acts on, structurally
- * matching what `parsePorcelainZ` (`commands.pull.recovery.git.ts`) returns.
+ * matching what `parsePorcelainZ` (`commands/pull/recovery.git.ts`) returns.
  *
  * Declared here rather than imported so this module stays a leaf of that one:
- * `commands.pull.win32.ts` already depends on both, and the parser has no
+ * `commands/pull/win32.ts` already depends on both, and the parser has no
  * business knowing about the backstop that consumes it.
  *
  * Module-private on purpose. Both call sites (the real one and every test) pass
@@ -193,7 +193,7 @@ function notShared(target: string): boolean {
  *
  * The read-only arm's wording is scoped to that claim and nothing wider,
  * because `dryRun` means "this call writes nothing", not "the user is looking
- * at a preview". `describeSkippedMirrorDiscard` (`commands.pull.win32.ts`)
+ * at a preview". `describeSkippedMirrorDiscard` (`commands/pull/win32.ts`)
  * passes `dryRun: true` from inside a REAL `nomad pull` on the force-remote
  * recovery path, so an arm framed around previewing would tell a user
  * mid-pull that they are previewing. The one wet caller,
@@ -555,7 +555,7 @@ export function syncSharedLinksPush(map: PathMap | null, opts: MirrorOpts = {}):
  * `~/.claude/<name>` edits visible in the repo working tree BEFORE
  * `git pull --rebase --autostash` runs, so the autostash carries them through
  * the rebase exactly as a posix symlink already does. See
- * `reconcileSharedLinksBeforePull` in `commands.pull.win32.ts` for why the
+ * `reconcileSharedLinksBeforePull` in `commands/pull/win32.ts` for why the
  * pull needs this at all.
  *
  * Deliberately does NOT reuse the push policy. A push is an explicit publish

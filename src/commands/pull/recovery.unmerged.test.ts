@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { recoverUnmergedIndex } from './commands.pull.recovery.unmerged.ts';
+import { recoverUnmergedIndex } from './recovery.unmerged.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,7 +23,7 @@ function initRepo(dir: string): void {
 /**
  * Build a repo with unmerged stage-2/3 index entries and NO active
  * rebase/merge marker, mirroring the buildUnmergedIndexNoMarker helper in
- * commands.pull.wedge.test.ts but scoped to this recovery test file.
+ * commands/pull/wedge.test.ts but scoped to this recovery test file.
  *
  * Optionally adds an orphaned autostash stash entry (simulating the trigger
  * where git --autostash drops to the stash list during a torn-down
@@ -268,7 +268,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     // recovery must refuse rather than let the pull publish them to ~/.claude/.
     buildUnmergedIndexFixture(tmp);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     const thrown = recoverSwallowingFatal(tmp);
 
     expect(thrown).toBeInstanceOf(NomadFatal);
@@ -289,7 +289,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     }).toString();
     writeFileSync(join(tmp, 'file.txt'), headContent);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     const thrown = recoverSwallowingFatal(tmp);
 
     expect(thrown).toBeInstanceOf(NomadFatal);
@@ -319,7 +319,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     }).toString();
     writeFileSync(join(tmp, 'file.txt'), headContent);
 
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('../../utils.ts');
     const thrown = recoverSwallowingFatal(tmp);
 
     expect(thrown).toBeInstanceOf(NomadFatal);
