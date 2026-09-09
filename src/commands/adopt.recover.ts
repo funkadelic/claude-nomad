@@ -16,9 +16,9 @@ import { deniedEntriesRefusal, scanOrFatal } from './adopt.scan.ts';
 import { ALWAYS_NEVER_SYNC, claudeHome } from '../config.ts';
 import { errorText } from '../error-text.ts';
 import { EXIT } from '../exit-codes.ts';
-import { copyExtrasFiltered } from '../extras-sync.core.ts';
+import { copyExtrasFiltered } from '../sync/extras/core.ts';
 import { lexists } from '../fs-presence.ts';
-import { copySharedLinkPull } from '../links.ts';
+import { copySharedLinkPull } from '../sync/links.ts';
 import { warn, NomadFatal } from '../utils.ts';
 
 /**

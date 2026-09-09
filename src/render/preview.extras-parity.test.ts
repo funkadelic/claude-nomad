@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * the items a wet pull would copy for the same starting state, including a
  * wholly-missing-local extra (a freshly cloned project that never received
  * `.planning`/`CLAUDE.md`). Both `wouldPull` (dry) and `pulled` (wet) derive
- * from the same `runExtrasOp` loop in `extras-sync.remap.ts`, so they must
+ * from the same `runExtrasOp` loop in `sync/extras/remap.ts`, so they must
  * name the same `<logical>/<dirname>` set for an identical starting state.
  * No production code changes; this is coverage over Task 1's behavior.
  */
@@ -98,7 +98,7 @@ describe('preview extras parity (dry-run vs wet)', () => {
   });
 
   it('remapExtrasPull dry-run wouldPull deep-equals the wet pulled set, including the missing-local extra', async () => {
-    const { remapExtrasPull } = await import('../extras-sync.ts');
+    const { remapExtrasPull } = await import('../sync/extras/extras.ts');
 
     // Capture the dry-run result FIRST so the wet call's mutation (copying
     // into fooLocal/barLocal) does not perturb the dry read.

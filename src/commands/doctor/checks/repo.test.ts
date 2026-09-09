@@ -3,7 +3,7 @@ import type * as fsModule from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type * as diffModule from '../../../extras-sync.diff.ts';
+import type * as diffModule from '../../../sync/extras/diff.ts';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -648,7 +648,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     process.exitCode = 0;
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
-    vi.doUnmock('../../../extras-sync.diff.ts');
+    vi.doUnmock('../../../sync/extras/diff.ts');
     // Paired here rather than inline: restoreAllMocks does NOT clear a doMock
     // registration, so a failing assertion would leak the fs mock onward.
     vi.doUnmock('node:fs');
@@ -942,7 +942,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     // root can carry the repo's own location into the segment scan. Every
     // segment of `D:\sessions\...` would then be tested, exempting every
     // repo-only file on that host. Unplaceable means not exempt.
-    vi.doMock('../../../extras-sync.diff.ts', async (importOriginal) => ({
+    vi.doMock('../../../sync/extras/diff.ts', async (importOriginal) => ({
       ...(await importOriginal<typeof diffModule>()),
       listDivergingFiles: () => ['D:\\sessions\\claude-nomad\\shared\\commands\\b.md (repo only)'],
     }));

@@ -214,7 +214,7 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
     expect(readFileSync(baselineFile(), 'utf8')).toBe(before);
     // ...nor lose the pending intent: the next run replays the same
     // already-authorized removal rather than inventing a different one.
-    const { planSharedLinkDeletions } = await import('../../links.deletions.ts');
+    const { planSharedLinkDeletions } = await import('../../sync/links.deletions.ts');
     const plan = planSharedLinkDeletions({ projects: {} });
     expect(plan).toHaveLength(1);
     expect(plan[0]?.repoPath).toBe(join(world.sharedDir, 'commands', 'doomed.md'));
@@ -268,7 +268,7 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
 
     stubPlatform('linux');
     const { applySharedLinkDeletions, planSharedLinkDeletions } =
-      await import('../../links.deletions.ts');
+      await import('../../sync/links.deletions.ts');
     expect(planSharedLinkDeletions({ projects: {} })).toEqual([]);
     applySharedLinkDeletions({ projects: {} }, '20260803-000000');
     expect(existsSync(join(world.sharedDir, 'commands', 'doomed.md'))).toBe(true);

@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { EXIT } from '../exit-codes.ts';
-import type * as linksModule from '../links.ts';
+import type * as linksModule from '../sync/links.ts';
 import { stubPlatform } from '../test-helpers.platform.ts';
 import type * as utilsModule from '../utils.ts';
 import type * as utilsFsModule from '../utils.fs.ts';
@@ -1784,7 +1784,7 @@ function mockCopyBackFailure(
   message: string,
   opts: { partial?: boolean; fatal?: boolean } = {},
 ): void {
-  vi.doMock('../links.ts', async (importOriginal) => {
+  vi.doMock('../sync/links.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof linksModule>();
     const { NomadFatal } = await import('../utils.ts');
     return {
@@ -1847,7 +1847,7 @@ describe('cmdAdopt win32 copy-back failure', () => {
 
   afterEach(() => {
     stubPlatform(realPlatform);
-    vi.doUnmock('../links.ts');
+    vi.doUnmock('../sync/links.ts');
     vi.doUnmock('../utils.ts');
     vi.doUnmock('../utils.fs.ts');
     vi.doUnmock('node:fs');
@@ -2442,7 +2442,7 @@ describe('cmdAdopt source-removal failure', () => {
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.doUnmock('node:fs');
-    vi.doUnmock('../links.ts');
+    vi.doUnmock('../sync/links.ts');
     vi.doUnmock('../utils.ts');
     teardownAdoptEnv(env);
   });

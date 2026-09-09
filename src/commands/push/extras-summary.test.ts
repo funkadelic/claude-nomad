@@ -53,11 +53,11 @@ describe('cmdPush: extras pipeline integration', () => {
         scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 2, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 3, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -109,11 +109,11 @@ describe('cmdPush: extras pipeline integration', () => {
         scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 2, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),

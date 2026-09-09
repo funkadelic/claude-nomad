@@ -42,7 +42,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 1, collisions: 0, pushed: [], wouldPush: [] })),
     }));
@@ -91,7 +91,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         scanPushVerdict: vi.fn(() => ({ leak: false, verdictRow: '✓ no leaks', recovery: null })),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({
         unmapped: 0,
@@ -141,7 +141,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 3, collisions: 0, pushed: [], wouldPush: [] })),
     }));
@@ -181,11 +181,11 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),

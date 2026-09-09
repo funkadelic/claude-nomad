@@ -17,7 +17,7 @@ import { join, win32 as win32Path } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { deniedSegmentFor, repoHome } from '../../../config.ts';
-import { listDivergingFiles } from '../../../extras-sync.diff.ts';
+import { listDivergingFiles } from '../../../sync/extras/diff.ts';
 import { classifyPresence, isUnusableTarget, type PresenceState } from '../../../fs-presence.ts';
 
 /** Return shape shared by every `classifySharedLink` branch. */
@@ -147,7 +147,7 @@ function relativeUnder(root: string, path: string): string | null {
  * failure this function exists to prevent.
  *
  * The `(local only)` / `(repo only)` side indicator is stripped first, matching
- * the exact suffixes `labelEntry` produces in `extras-sync.diff.ts`. git
+ * the exact suffixes `labelEntry` produces in `sync/extras/diff.ts`. git
  * reports a modified or local-only file under the local root and a repo-only
  * file under the repo root, so the path is relativized against whichever of the
  * two contains it, and against neither when it is contained by neither. That

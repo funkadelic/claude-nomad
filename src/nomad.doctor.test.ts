@@ -34,7 +34,7 @@ describe('nomad.ts doctor dispatcher', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./commands/doctor/doctor.ts');
-    vi.doUnmock('./resume.ts');
+    vi.doUnmock('./sync/resume.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     process.argv = originalArgv;
@@ -101,7 +101,7 @@ describe('nomad.ts doctor dispatcher', () => {
 
   it('routes `nomad doctor --resume-cmd sid-A` to resumeCmd(`sid-A`)', async () => {
     const resumeCmdMock = vi.fn();
-    vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
+    vi.doMock('./sync/resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--resume-cmd', 'sid-A'];
     await import('./nomad.ts');
     expect(resumeCmdMock).toHaveBeenCalledTimes(1);
@@ -111,7 +111,7 @@ describe('nomad.ts doctor dispatcher', () => {
 
   it('rejects bare `nomad doctor --resume-cmd` (no id) with the usage line and exitCode=2', async () => {
     const resumeCmdMock = vi.fn();
-    vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
+    vi.doMock('./sync/resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--resume-cmd'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit
@@ -128,7 +128,7 @@ describe('nomad.ts doctor dispatcher', () => {
     // trailing positional must surface the usage line, not silently pass the
     // first id through to resumeCmd.
     const resumeCmdMock = vi.fn();
-    vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
+    vi.doMock('./sync/resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts', 'doctor', '--resume-cmd', 'sid-A', 'extra'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit

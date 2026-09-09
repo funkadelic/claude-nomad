@@ -41,7 +41,7 @@ import { parsePullArgs } from './nomad.dispatch.pull.ts';
 import { parsePushArgs } from './nomad.dispatch.push.ts';
 import { parseSyncArgs } from './nomad.dispatch.sync.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
-import { resumeCmd } from './resume.ts';
+import { resumeCmd } from './sync/resume.ts';
 import { isUserAbort } from './user-abort.ts';
 import { fail, isProcessExit, NomadFatal, warn } from './utils.ts';
 import { EXIT } from './exit-codes.ts';

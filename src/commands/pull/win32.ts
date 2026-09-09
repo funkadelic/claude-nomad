@@ -15,12 +15,12 @@ import {
   applySharedLinkDeletions,
   planSharedLinkDeletions,
   type SharedLinkDeletion,
-} from '../../links.deletions.ts';
+} from '../../sync/links.deletions.ts';
 import {
   revertDeniedMirrorPaths,
   stageLocalSharedEdits,
   type MirrorPreviewEvent,
-} from '../../links.mirror.ts';
+} from '../../sync/links.mirror.ts';
 import { addItem, section, type DoctorSection } from '../../render/output-tree.ts';
 import { type SharedLinkPlans } from '../../render/preview.ts';
 import { warn } from '../../utils.ts';
@@ -284,7 +284,7 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
  * reconcile (see {@link reconcileSharedLinksBeforePull}).
  *
  * Module-private on purpose, following the precedent `DeniedRevertStatus`
- * sets in `src/links.mirror.ts`: it is only ever named positionally in
+ * sets in `src/sync/links.mirror.ts`: it is only ever named positionally in
  * signatures declared in this same file, and exporting it would read as an
  * unused export to the dead-code analysis.
  */

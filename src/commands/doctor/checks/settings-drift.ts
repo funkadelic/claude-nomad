@@ -5,7 +5,7 @@ import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../rend
 import { classifySettingsDrift, partitionByCaptureExclusion } from '../../capture-settings/core.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../config.ts';
-import { baseHasGsdHookEntries } from '../../../hooks-filter.ts';
+import { baseHasGsdHookEntries } from '../../../sync/hooks-filter.ts';
 import { deepMerge } from '../../../utils.json.ts';
 
 /**

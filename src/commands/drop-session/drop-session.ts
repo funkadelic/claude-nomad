@@ -25,7 +25,7 @@ import { acquireLock, releaseLock } from '../../utils.lockfile.ts';
  * `<id>/` directory with staged entries exists anywhere in the tree.
  *
  * Defense-in-depth: the id is validated against the same allowlist regex
- * used in `src/resume.ts` before any path composition or lock acquisition.
+ * used in `src/sync/resume.ts` before any path composition or lock acquisition.
  * argv-array form for every git invocation.
  *
  * NEVER touches `~/.claude/projects/<encoded>/<id>.jsonl` or the local

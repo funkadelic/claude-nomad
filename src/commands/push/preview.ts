@@ -26,12 +26,12 @@ import { join, relative, sep } from 'node:path';
 import { dim, infoGlyph } from '../../render/color.ts';
 import { claudeHome, repoHome, HOST, SUPPORTED_EXTRAS, type PathMap } from '../../config.ts';
 import { assertSafeLogical } from '../../config.sharedDirs.guard.ts';
-import { copyExtras } from '../../extras-sync.ts';
+import { copyExtras } from '../../sync/extras/extras.ts';
 import { type ManifestDiff } from './manifest.ts';
-import { copyDirJsonlOnly, copyFileAtomic } from '../../remap.ts';
+import { copyDirJsonlOnly, copyFileAtomic } from '../../sync/remap.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './leak-verdict.ts';
 import { scanStagedTree } from './gitleaks.ts';
-import { copySkillsPush, isSkillExcluded } from '../../skills-sync.ts';
+import { copySkillsPush, isSkillExcluded } from '../../sync/skills-sync.ts';
 import { nowTimestamp } from '../../utils.fs.ts';
 import { encodePath } from '../../utils.json.ts';
 

@@ -381,16 +381,16 @@ function mockPipeline(
       findGitlinks: vi.fn(() => []),
     };
   });
-  vi.doMock('../../remap.ts', () => ({
+  vi.doMock('../../sync/remap.ts', () => ({
     remapPull: vi.fn(),
     remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
   }));
-  vi.doMock('../../extras-sync.ts', () => ({
+  vi.doMock('../../sync/extras/extras.ts', () => ({
     remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
     remapExtrasPull: vi.fn(),
     divergenceCheckExtras: vi.fn(),
   }));
-  vi.doMock('../../skills-sync.ts', () => ({
+  vi.doMock('../../sync/skills-sync.ts', () => ({
     syncSkillsPush: vi.fn(),
     copySkillsPull: vi.fn(),
   }));

@@ -312,7 +312,7 @@ export function sharedDirEntries(map: PathMap): unknown[] {
  * config (`settings.json`, `hooks/`, `agents/`, `skills/`, `commands/`,
  * `rules/`). `.planning` keeps the narrow `ALWAYS_NEVER_SYNC` subset so its
  * legitimate `todos`/`plans` content passes. See `extrasDenySet` in
- * `extras-sync.core.ts`.
+ * `sync/extras/core.ts`.
  */
 export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md', '.claude'] as const;
 
@@ -336,10 +336,10 @@ export {
 } from './config.never-sync.ts';
 
 // Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in
-// this set trigger a `nomad doctor` WARN. Defined in ./settings-keys.ts so the
+// this set trigger a `nomad doctor` WARN. Defined in ./sync/settings-keys.ts so the
 // schema-derived half can be re-synced mechanically; re-exported here so
 // existing `from './config.ts'` imports keep resolving.
-export { KNOWN_SETTINGS_KEYS } from './settings-keys.ts';
+export { KNOWN_SETTINGS_KEYS } from './sync/settings-keys.ts';
 
 /**
  * Static half of the push allow-list. Entries with trailing `/` are prefix

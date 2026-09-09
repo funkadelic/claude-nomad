@@ -7,7 +7,7 @@ import {
   describeSettings,
   partitionByCaptureExclusion,
 } from '../capture-settings/core.ts';
-import { baseHasGsdHookEntries, stripGsdHookEntries } from '../../hooks-filter.ts';
+import { baseHasGsdHookEntries, stripGsdHookEntries } from '../../sync/hooks-filter.ts';
 import { warn } from '../../utils.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../utils.fs.ts';
 import { deepMerge, readJson } from '../../utils.json.ts';

@@ -1,6 +1,6 @@
 name: Settings schema drift
 
-# Daily check that src/settings-keys.ts SCHEMA_KEYS still matches the official
+# Daily check that src/sync/settings-keys.ts SCHEMA_KEYS still matches the official
 # Claude Code settings JSON schema. On drift, regenerate the file and open (or
 # update) a PR. APP_ONLY_KEYS stays hand-maintained.
 
@@ -69,14 +69,14 @@ jobs:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- src/settings-keys.ts; then
+          if git diff --quiet -- src/sync/settings-keys.ts; then
             echo "No settings schema drift."
             exit 0
           fi
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
-          git add src/settings-keys.ts
+          git add src/sync/settings-keys.ts
           git commit -m "chore(doctor): sync settings schema keys"
           # The checkout is single-branch, so nothing here has a remote-tracking
           # ref for this branch, and a bare --force-with-lease refuses with
@@ -98,7 +98,7 @@ jobs:
           if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
             gh pr create --base main --head "$BRANCH" \
               --title "chore(doctor): sync settings schema keys" \
-              --body "Automated: the Claude Code settings schema changed. SCHEMA_KEYS in \`src/settings-keys.ts\` was regenerated to match. Review the added/removed keys; APP_ONLY_KEYS is unchanged."
+              --body "Automated: the Claude Code settings schema changed. SCHEMA_KEYS in \`src/sync/settings-keys.ts\` was regenerated to match. Review the added/removed keys; APP_ONLY_KEYS is unchanged."
           else
             echo "PR for $BRANCH already open; force-push updated it."
           fi

@@ -13,11 +13,11 @@
  */
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../render/color.ts';
-import type { remapExtrasPush } from '../../extras-sync.ts';
+import type { remapExtrasPush } from '../../sync/extras/extras.ts';
 import { type DoctorSection, addItem, renderTree, section } from '../../render/output-tree.ts';
 import type { LeakVerdict } from './leak-verdict.ts';
 import type { GlobalConfigChange } from './global-config.ts';
-import type { remapPush } from '../../remap.ts';
+import type { remapPush } from '../../sync/remap.ts';
 import { summaryRow } from '../../render/summary.ts';
 
 /**

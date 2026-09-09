@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { claudeHome, repoHome } from '../config.ts';
 import { addItem, section, type DoctorSection } from './output-tree.ts';
-import { isSkillExcluded } from '../skills-sync.ts';
+import { isSkillExcluded } from '../sync/skills-sync.ts';
 
 /**
  * Build the read-only `Skills` preview section shared by `pull --dry-run`,
