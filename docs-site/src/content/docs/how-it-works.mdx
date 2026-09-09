@@ -17,7 +17,7 @@ step. By default the private GitHub repo is named `claude-nomad-config` and is c
 Every host after the first installs the CLI, clones your private data repo to `~/claude-nomad/`,
 and runs `nomad pull` to sync.
 
-By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/config.ts`). Developers
+By default the CLI operates on `~/claude-nomad/` (see `REPO_HOME` in `src/core/config.ts`). Developers
 working from an alternate checkout can `export NOMAD_REPO=/path/to/repo` to point the CLI at their
 working tree without symlink gymnastics; `nomad doctor` surfaces an active override via a trailing
 `(NOMAD_REPO)` annotation on the repo-state line. Empty `NOMAD_REPO` falls through to the default,
@@ -104,7 +104,7 @@ Pointers and specifics:
   `path-map.json`); the **skills filtered copy** is driven by `src/sync/skills-sync.ts`
   (`syncSkillsPull`/`syncSkillsPush`); **whitelisted extras** names in `SUPPORTED_EXTRAS`
   (currently `.planning`, `CLAUDE.md`, and `.claude`); and the full **never-synced** set in
-  `NEVER_SYNC` (in `src/config.never-sync.ts`; the other three are in `src/config.ts`).
+  `NEVER_SYNC` (in `src/core/config.never-sync.ts`; the other three are in `src/core/config.ts`).
 - **Never synced**, in full: `~/.claude.json` (OAuth, MCP state), `.credentials.json` (OAuth
   credential store), `history.jsonl`, `settings.local.json` (per-host overrides),
   `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,
@@ -241,7 +241,7 @@ host's encoded path. `claude --resume` then finds them.
 
 The `extras` block is additive and back-compatible: legacy `path-map.json` files without it keep
 working unchanged. Each value is an array of directory or root-file names (e.g. `.planning`,
-`CLAUDE.md`) checked against `SUPPORTED_EXTRAS` in `src/config.ts`; anything outside that
+`CLAUDE.md`) checked against `SUPPORTED_EXTRAS` in `src/core/config.ts`; anything outside that
 whitelist is skipped with a log line, so an unrecognized name cannot widen the sync surface.
 
 On `nomad push`, opted-in content at `<localRoot>/<name>` (a directory subtree or a single file)

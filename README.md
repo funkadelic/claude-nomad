@@ -32,7 +32,7 @@ session history survives different file paths and your secrets never ride along.
   `CLAUDE.md` live in one place and follow you everywhere. `hooks/` and `agents/` are installed
   per-host by `@opengsd/gsd-core` via npm and are not synced (syncing them caused version-skew
   churn). Skills sync as a filtered copy: your own skills travel, `gsd-*` skills are excluded (see
-  `SHARED_LINKS` and `src/sync/skills-sync.ts` in `src/core/config.ts`). Settings merge a shared
+  `SHARED_LINKS` in `src/core/config.ts` and `src/sync/skills-sync.ts`). Settings merge a shared
   base with a per-host override, so one machine can run a different model or MCP URL without forking
   the rest. GSD-owned hook entries (scripts whose basename starts with `gsd-`) are filtered out of
   the generated `~/.claude/settings.json` during pull and stripped from `shared/settings.base.json`

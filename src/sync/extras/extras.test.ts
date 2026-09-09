@@ -138,7 +138,7 @@ describe('extras-sync e2e round-trip', () => {
   /**
    * Switch the process env to the named host's identity and reset the module
    * graph so the next dynamic import of `./extras.ts` re-evaluates `HOST`
-   * and `REPO_HOME` from `./config.ts` against the new env. Both are resolved
+   * and `REPO_HOME` from `../../core/config.ts` against the new env. Both are resolved
    * at module load; without the reset the second host's call would still see
    * the first host's identity.
    */

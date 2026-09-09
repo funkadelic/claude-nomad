@@ -1850,7 +1850,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
   let repoUnderHome: string;
   let lockPath: string;
   // Shared gitCaptureRaw mock instance: tests override its implementation
-  // in place instead of re-registering the ./utils.ts doMock, because a
+  // in place instead of re-registering the ../../core/utils.ts doMock, because a
   // second doMock of a module already wired into an imported graph is racy
   // (the re-import may keep the first factory's instances).
   let gitCaptureRawMock: ReturnType<typeof vi.fn>;

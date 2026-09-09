@@ -19,7 +19,7 @@ describe('evaluateDocsSync', () => {
   const { evaluateDocsSync } = loadModule();
 
   it('passes when no canary file changed', () => {
-    const v = evaluateDocsSync(['src/commands/doctor/doctor.ts', 'src/utils.ts']);
+    const v = evaluateDocsSync(['src/commands/doctor/doctor.ts', 'src/core/utils.ts']);
     expect(v.ok).toBe(true);
     expect(v.canaryChanged).toBe(false);
   });
