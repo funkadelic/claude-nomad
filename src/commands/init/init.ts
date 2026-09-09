@@ -9,11 +9,11 @@ import {
   isRepoPrivate,
   parseGitHubRemote,
   readOriginRemote,
-  type SpawnSyncFn,
 } from './gh-actions.ts';
 import { DEFAULT_REPO_NAME, ensureOriginRepo } from './gh-onboard.ts';
 import { snapshotIntoShared } from './snapshot.ts';
 import { die, item, log } from '../../core/utils.ts';
+import type { SpawnSyncFn } from '../../core/spawn-sync.ts';
 import { writeJsonAtomic } from '../../core/utils.fs.ts';
 
 /**

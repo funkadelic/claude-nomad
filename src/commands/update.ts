@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { type SpawnSyncFn } from './init/gh-actions.ts';
+import type { SpawnSyncFn } from '../core/spawn-sync.ts';
 import { NomadFatal } from '../core/utils.ts';
 
 /**

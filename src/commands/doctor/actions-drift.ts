@@ -9,8 +9,8 @@ import {
   isRepoPrivate,
   parseGitHubRemote,
   readOriginRemote,
-  type SpawnSyncFn,
 } from '../init/gh-actions.ts';
+import type { SpawnSyncFn } from '../../core/spawn-sync.ts';
 
 /**
  * Drift check appended to the Repository section of `nomad doctor`. WARNs (never

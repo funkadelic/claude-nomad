@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { okGlyph, warnGlyph } from '../../../render/color.ts';
 import { section } from '../format.ts';
 import { reportCrlfGuardCheck } from './crlf.ts';
-import type { SpawnSyncFn } from '../../init/gh-actions.ts';
+import type { SpawnSyncFn } from '../../../core/spawn-sync.ts';
 import { stubPlatform } from '../../../test-support/platform.ts';
 
 // win32 stub helper: overrides process.platform for the current test, restored

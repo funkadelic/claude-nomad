@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  ghAuthStatus,
-  isActionsEnabled,
-  isRepoPrivate,
-  parseGitHubRemote,
-  type SpawnSyncFn,
-} from './gh-actions.ts';
+import { ghAuthStatus, isActionsEnabled, isRepoPrivate, parseGitHubRemote } from './gh-actions.ts';
+import type { SpawnSyncFn } from '../../core/spawn-sync.ts';
 
 // ---------------------------------------------------------------------------
 // parseGitHubRemote

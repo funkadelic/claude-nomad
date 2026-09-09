@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import type { SpawnSyncFn } from './gh-actions.ts';
+import type { SpawnSyncFn } from '../../core/spawn-sync.ts';
 
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 

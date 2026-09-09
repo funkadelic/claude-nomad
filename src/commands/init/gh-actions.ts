@@ -1,4 +1,5 @@
-import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import type { SpawnSyncFn } from '../../core/spawn-sync.ts';
 
 /**
  * GitHub repo owner/name pair parsed from a remote URL. Used by
@@ -14,17 +15,6 @@ export type GhRepoRef = { owner: string; repo: string };
  * e.g. a timeout or transient spawn error, so the auth state is unknown).
  */
 export type GhUnavailableReason = 'gh-not-installed' | 'gh-not-authed' | 'gh-probe-error';
-
-/**
- * Injectable subprocess runner so tests can mock without `vi.doMock` and
- * without touching `execFileSync` on the real shell. Default binds to
- * `child_process.execFileSync` with the same signature.
- */
-export type SpawnSyncFn = (
-  bin: string,
-  args: readonly string[],
-  opts?: ExecFileSyncOptions,
-) => Buffer | string;
 
 /**
  * Maximum time in milliseconds to wait for a `gh` CLI subprocess. Prevents
