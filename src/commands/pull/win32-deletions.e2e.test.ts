@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PullCoreResult } from './pull.ts';
 
 import { EXIT } from '../../core/exit-codes.ts';
-import { stubPlatform } from '../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../test-support/platform.ts';
 import {
   buildSyncedSharedWorld,
   pushUpstreamChange,

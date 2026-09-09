@@ -7,7 +7,7 @@ import {
   validateSharedDirEntry,
   type SharedDirRejectionReason,
 } from './config.sharedDirs.guard.ts';
-import { stubPlatform } from './test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 
 describe('assertSafeLogical (path-map logical key traversal guard)', () => {
   it('accepts a well-formed alphanumeric logical name', () => {

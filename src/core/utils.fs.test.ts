@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { freshBackupTs, nowTimestamp, renameAtomicRetry, writeJsonAtomic } from './utils.fs.ts';
-import { stubPlatform } from './test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 
 /**
  * Builds a fake `NodeJS.ErrnoException` with the given errno `code`, used to

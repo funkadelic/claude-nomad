@@ -11,7 +11,7 @@ import {
   mockGitleaksPresent,
   restoreEnv,
 } from './checks/test-helpers.ts';
-import { stubPlatform } from '../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../test-support/platform.ts';
 
 describe('cmdDoctor --check-shared dispatch wiring', () => {
   // Dispatch-level wiring only: plain doctor must NOT scan, the flag

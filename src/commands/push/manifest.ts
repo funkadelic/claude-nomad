@@ -8,7 +8,7 @@
  * Pure functions (`isChanged`, `diffManifest`, `shouldFullRescan`) use
  * injected `{size, mtime}` and lazy hash thunks so every branch reaches 100%
  * patch coverage without real filesystem or clock dependence (mirrors the
- * `prunableByAge(dirs, olderThanMs, nowMs)` seam in `commands.clean.ts`).
+ * `prunableByAge(dirs, olderThanMs, nowMs)` seam in `core/utils.fs.ts`).
  */
 
 import { createHash } from 'node:crypto';

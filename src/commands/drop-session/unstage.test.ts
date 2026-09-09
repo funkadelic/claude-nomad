@@ -12,7 +12,7 @@ import {
   stageSession,
   teardownDropSessionEnv,
 } from './test-helpers.ts';
-import { stubPlatform } from '../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../test-support/platform.ts';
 
 // Match-collection and unstage cases for cmdDropSession (the flat `<id>.jsonl`
 // path: newly-staged vs tracked-in-HEAD, multi-logical walk, no-match unwind,

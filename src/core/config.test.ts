@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PathMap } from './config.ts';
-import { stubPlatform } from './test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 
 // The "on non-win32" tests below assert `process.platform !== 'win32'`
 // directly against the real host (no Object.defineProperty override), so

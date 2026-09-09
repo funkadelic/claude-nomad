@@ -24,9 +24,9 @@
  * error aborts fail-closed instead of waving conflict markers through.
  */
 
-import { orphanedAutostashPresent, probeUnmergedIndex } from '../commands/pull/wedge.ts';
-import { EXIT } from './exit-codes.ts';
-import { NomadFatal } from './utils.ts';
+import { orphanedAutostashPresent, probeUnmergedIndex } from './pull/wedge.ts';
+import { EXIT } from '../core/exit-codes.ts';
+import { NomadFatal } from '../core/utils.ts';
 
 /**
  * Build the fatal runbook text for a conflicted autostash pop. Deliberately

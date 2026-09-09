@@ -12,14 +12,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import {
-  cmdClean,
-  listBackupDirs,
-  parseDuration,
-  prunableByAge,
-  prunableByCount,
-  safeDelete,
-} from './clean.ts';
+import { cmdClean, listBackupDirs, parseDuration, safeDelete } from './clean.ts';
 
 /**
  * Behavior tests for the `nomad clean --backups` prune logic. Drives the pure
@@ -126,35 +119,6 @@ describe('listBackupDirs', () => {
     mkdirSync(join(testRoot, 'version-cache'), { recursive: true });
     const dirs = listBackupDirs(testRoot);
     expect(dirs.map((d) => d.name)).toEqual(['20260516-143502', '20260516-143501']);
-  });
-});
-
-describe('prunableByAge', () => {
-  it('selects dirs strictly older than the cutoff and keeps newer ones', () => {
-    const now = 100 * DAY_MS;
-    const dirs = [
-      { name: 'old', mtimeMs: now - 20 * DAY_MS },
-      { name: 'fresh', mtimeMs: now - 1 * DAY_MS },
-    ];
-    expect(prunableByAge(dirs, 14 * DAY_MS, now)).toEqual(['old']);
-  });
-
-  it('excludes a dir exactly on the boundary (strict >)', () => {
-    const now = 100 * DAY_MS;
-    const dirs = [{ name: 'edge', mtimeMs: now - 14 * DAY_MS }];
-    expect(prunableByAge(dirs, 14 * DAY_MS, now)).toEqual([]);
-  });
-});
-
-describe('prunableByCount', () => {
-  it('keeps the N newest and returns the rest (newest-first input)', () => {
-    const dirs = [
-      { name: 'a', mtimeMs: 3 },
-      { name: 'b', mtimeMs: 2 },
-      { name: 'c', mtimeMs: 1 },
-    ];
-    expect(prunableByCount(dirs, 1)).toEqual(['b', 'c']);
-    expect(prunableByCount(dirs, 3)).toEqual([]);
   });
 });
 

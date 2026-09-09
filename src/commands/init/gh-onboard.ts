@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 
 import { repoHome } from '../../core/config.ts';
-import { ghAuthStatus, readOriginRemote, type SpawnSyncFn } from './gh-actions.ts';
+import { ghAuthStatus, readOriginRemote } from './gh-actions.ts';
 import { die, log, NomadFatal } from '../../core/utils.ts';
+import type { SpawnSyncFn } from '../../core/spawn-sync.ts';
 
 /**
  * Default private GitHub repository name used by `ensureOriginRepo` when no

@@ -23,7 +23,7 @@ import { homedir, platform } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 import { resolveTomlConfig } from './gitleaks.config.ts';
-import { assertNoAutostashConflict } from '../../core/autostash-guard.ts';
+import { assertNoAutostashConflict } from '../autostash-guard.ts';
 import { classifyWedge, unmergedIndexRunbookText, wedgeMarkerRunbookText } from '../pull/wedge.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 import { NomadFatal } from '../../core/utils.ts';

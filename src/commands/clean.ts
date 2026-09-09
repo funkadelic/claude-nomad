@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { backupBase as getBackupBase } from '../core/config.ts';
 import { EXIT } from '../core/exit-codes.ts';
 import { fail, item, log } from '../core/utils.ts';
+import { type BackupDir, prunableByAge, prunableByCount } from '../core/utils.fs.ts';
 import { acquireLock, releaseLock } from '../core/utils.lockfile.ts';
 
 /**
@@ -22,9 +23,6 @@ const UNIT_MS: Record<string, number> = { d: 86_400_000, h: 3_600_000, m: 60_000
 
 /** Default age cutoff (14 days in ms) applied when no retention flag is given. */
 const CLEAN_DEFAULT_OLDER_THAN_MS = 14 * 24 * 60 * 60 * 1000;
-
-/** A `<ts>` backup directory tagged with its modification time. */
-type BackupDir = { name: string; mtimeMs: number };
 
 /**
  * Projection helper: a backup dir's own name, for mapping descriptor lists
@@ -111,33 +109,6 @@ function holdsNoContent(dir: string): boolean {
     if (!holdsNoContent(join(dir, entry.name))) return false;
   }
   return true;
-}
-
-/**
- * Pure age filter: returns the names of dirs strictly older than `olderThanMs`
- * relative to `nowMs`. The strict `>` excludes a dir sitting exactly on the
- * boundary so the result is stable across runs at the cutoff instant.
- *
- * @param dirs - Backup dir descriptors (order irrelevant).
- * @param olderThanMs - Age cutoff in milliseconds.
- * @param nowMs - The reference "now" in epoch ms (injected for deterministic tests).
- * @returns Names of dirs whose age exceeds the cutoff.
- */
-export function prunableByAge(dirs: BackupDir[], olderThanMs: number, nowMs: number): string[] {
-  return dirs.filter((d) => nowMs - d.mtimeMs > olderThanMs).map((d) => d.name);
-}
-
-/**
- * Pure count filter: keeps the `keep` newest dirs and returns the names of the
- * rest. `dirs` MUST already be sorted newest-first (as `listBackupDirs`
- * guarantees).
- *
- * @param dirs - Backup dir descriptors, newest-first.
- * @param keep - Number of newest dirs to retain.
- * @returns Names of the dirs beyond the `keep` newest.
- */
-export function prunableByCount(dirs: BackupDir[], keep: number): string[] {
-  return dirs.slice(keep).map((d) => d.name);
 }
 
 /**

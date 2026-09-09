@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ALWAYS_NEVER_SYNC, isDeniedName } from '../core/config.ts';
 import { copyExtrasFilteredPreservingBy } from './extras/core.ts';
-import { stubPlatform } from '../core/test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 import type * as utilsFsModule from '../core/utils.fs.ts';
 
 // Posix-only assertions (symlink creation) throughout this file assume the

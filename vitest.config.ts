@@ -99,6 +99,11 @@ export default defineConfig({
         // A domain directory drops the module prefix, so its helper is a bare
         // `test-helpers.ts` that the dotted pattern above cannot match.
         'src/**/test-helpers.ts',
+        // Shared test infrastructure directory, exercised indirectly through
+        // the suites that import it, so it does not belong in the coverage
+        // denominator. Neither of the two `test-helpers` patterns above
+        // matches its filenames (old or new), so it needs its own entry.
+        'src/test-support/**',
         // CLI entry point: argv dispatcher with process.exit fall-throughs.
         // Tests would mock process.exit and assert dispatch routing, which
         // duplicates what each cmd* function already covers behaviorally.

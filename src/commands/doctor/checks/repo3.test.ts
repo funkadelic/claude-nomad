@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { infoGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import { section } from '../format.ts';
 import { restoreEnv } from './test-helpers.ts';
-import { stubPlatform } from '../../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../../test-support/platform.ts';
 
 describe('reportSharedLinks dangling symlink detection', () => {
   // lstatSync does NOT follow symlinks, so a symlink whose target was deleted

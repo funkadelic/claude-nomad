@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { green, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { repoHome } from '../../../core/config.ts';
-import type { SpawnSyncFn } from '../../init/gh-actions.ts';
+import type { SpawnSyncFn } from '../../../core/spawn-sync.ts';
 
 /**
  * Cross-platform doctor diagnostic that flags a REPO_HOME exposed to git's
