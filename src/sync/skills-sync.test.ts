@@ -506,11 +506,16 @@ describe('syncSkillsPush', () => {
   let sharedSkills: string;
   let localSkills: string;
   let originalHome: string | undefined;
+  let originalNomadRepo: string | undefined;
 
   beforeEach(() => {
     testHome = mkdtempSync(join(tmpdir(), 'nomad-sync-skills-push-'));
     originalHome = process.env.HOME;
     process.env.HOME = testHome;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    // Same guard as the pull block: a developer-exported NOMAD_REPO would point
+    // copySkillsPush's rmSync at the real shared/skills instead of the fixture.
+    delete process.env.NOMAD_REPO;
     repoUnderHome = join(testHome, 'claude-nomad');
     sharedSkills = join(repoUnderHome, 'shared', 'skills');
     localSkills = join(testHome, '.claude', 'skills');
@@ -522,6 +527,8 @@ describe('syncSkillsPush', () => {
   afterEach(() => {
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
     rmSync(testHome, { recursive: true, force: true });
   });
 

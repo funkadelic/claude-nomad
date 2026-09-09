@@ -15,7 +15,7 @@ import type * as fsModule from 'node:fs';
 import type * as gitProbeModule from '../git-probe.ts';
 import type * as utilsFsModule from '../utils.fs.ts';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
@@ -2282,7 +2282,11 @@ describe('the mirror is the only implementation of the capture gates', () => {
   const HERE = dirname(fileURLToPath(import.meta.url));
 
   it('the retired parallel planner module is absent from src/', () => {
-    expect(existsSync(join(HERE, '..', 'links.captures.ts'))).toBe(false);
+    // Scan the whole source root so the lock holds wherever this test lives.
+    const hits = readdirSync(join(HERE, '..'), { recursive: true }).filter(
+      (entry) => basename(String(entry)) === 'links.captures.ts',
+    );
+    expect(hits).toEqual([]);
   });
 
   it('preview.ts imports this module and no sibling capture-planner module', () => {
