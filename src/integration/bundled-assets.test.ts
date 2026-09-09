@@ -5,8 +5,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { plantLocalSession } from './test-support/git.ts';
-import { makeWorld, runNomad } from './test-support/world.ts';
+import { plantLocalSession } from '../test-support/git.ts';
+import { makeWorld, runNomad } from '../test-support/world.ts';
 
 /**
  * Returns `true` when the `git` binary is present on PATH. `makeWorld` clones a

@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -200,14 +200,17 @@ function countMockCalls(source: string): { all: number; literal: number } {
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const THIS_FILE = fileURLToPath(import.meta.url);
+/** Repo `src/`, one hop up from this file's own `src/integration/` directory. */
+const SRC_DIR = join(TEST_DIR, '..');
 
 /**
  * Every `*.test.ts` vitest runs, excluding this guard itself so its own textual
  * references to the API cannot make it scan its own source.
  *
  * Walked recursively over the same two roots `vitest.config.ts` includes
- * (`src/` and `scripts/`), because a flat `readdirSync` misses a nested test
- * file: it would run in the suite while never entering this scan.
+ * (`src/` and `scripts/`), reached from this file's own directory one and two
+ * hops up, because a flat `readdirSync` misses a nested test file: it would run
+ * in the suite while never entering this scan.
  *
  * Deliberately NOT pre-filtered on the file containing `vi.doMock(`. Several
  * files install their mocks entirely through an imported helper and carry no
@@ -219,7 +222,7 @@ const THIS_FILE = fileURLToPath(import.meta.url);
  * @returns Absolute paths to every test file to scan.
  */
 function listTestFiles(): string[] {
-  const roots = [TEST_DIR, join(TEST_DIR, '..', 'scripts')];
+  const roots = [SRC_DIR, join(SRC_DIR, '..', 'scripts')];
   const found: string[] = [];
   for (const root of roots) {
     for (const entry of readdirSync(root, { withFileTypes: true, recursive: true })) {
@@ -497,7 +500,7 @@ const HELPERS = readHelpers(resolveHelperPaths(CORPUS));
 
 /** Path shown in a failure message: relative to `src/`, so it stays readable. */
 function label(file: string): string {
-  return relative(TEST_DIR, file);
+  return relative(SRC_DIR, file);
 }
 
 /** The helper regions reachable from one test file. */
@@ -509,8 +512,12 @@ function helpersFor(source: string, file: string): Region[] {
 
 describe('doMock/doUnmock symmetry across every test file', () => {
   it('every describe can reach a vi.doUnmock for what it vi.doMocks', () => {
-    // A discovery failure (an empty scan) must not read as a pass.
-    expect(CORPUS.length).toBeGreaterThan(0);
+    // A discovery failure must not read as a pass, and neither may a scan that
+    // quietly stops covering one of its two roots. Both roots are derived from
+    // this file's own location, so a relocation that repoints only one of them
+    // leaves every assertion below passing over a fraction of the repo.
+    expect(CORPUS.length).toBeGreaterThanOrEqual(150);
+    expect(CORPUS.some(([file]) => file.includes(`${sep}scripts${sep}`))).toBe(true);
     // Nor may a helper this guard cannot read. Dropping one takes its doMock
     // text with its doUnmock text, so a file that installs every mock through
     // that helper would report nothing and the scan would go green.

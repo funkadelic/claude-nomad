@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 // chain will fail this test locally before `prepublishOnly` would catch it
 // in CI.
 
-const pkgPath = fileURLToPath(new URL('../package.json', import.meta.url));
+const pkgPath = fileURLToPath(new URL('../../package.json', import.meta.url));
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
 
 describe('package.json shape', () => {
