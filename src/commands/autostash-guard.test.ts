@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { autostashConflictRunbookText, assertNoAutostashConflict } from './autostash-guard.ts';
-import { EXIT } from './exit-codes.ts';
+import { EXIT } from '../core/exit-codes.ts';
 import {
   buildUnmergedIndexNoMarker,
   conflictThenStripMarkers,

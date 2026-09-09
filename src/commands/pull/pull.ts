@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { assertNoAutostashConflict } from '../../core/autostash-guard.ts';
+import { assertNoAutostashConflict } from '../autostash-guard.ts';
 import {
   buildExtrasSection,
   buildSessionsSection,
