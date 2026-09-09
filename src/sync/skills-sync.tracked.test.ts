@@ -1,36 +1,18 @@
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { g as git, gitInit, gitOut } from '../test-support/git.ts';
 import { trackedRootSkillsAt } from './skills-sync.tracked.ts';
-
-/**
- * Run a git command with an explicit cwd; throws on non-zero exit.
- */
-function git(args: string[], cwd: string): void {
-  execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
-}
-
-/**
- * Capture trimmed stdout of a git command.
- */
-function gitOut(args: string[], cwd: string): string {
-  return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    .toString()
-    .trim();
-}
 
 describe('trackedRootSkillsAt', () => {
   let repoDir: string;
 
   beforeEach(() => {
     repoDir = mkdtempSync(join(tmpdir(), 'nomad-tracked-skills-'));
-    git(['init', '-q', '-b', 'main'], repoDir);
-    git(['config', 'user.email', 'test@example.invalid'], repoDir);
-    git(['config', 'user.name', 'test'], repoDir);
+    gitInit(repoDir);
   });
 
   afterEach(() => {
