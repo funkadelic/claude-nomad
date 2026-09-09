@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as cpModule from 'node:child_process';
 
-import { failGlyph, okGlyph } from '../../../color.ts';
+import { failGlyph, okGlyph } from '../../../render/color.ts';
 import {
   type EnvSnapshot,
   type Section,

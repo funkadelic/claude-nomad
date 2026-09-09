@@ -25,8 +25,8 @@ import { join } from 'node:path';
 import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './pull/pull.ts';
 import { runPushCore, type PushCoreResult } from './push/push.ts';
 import { HOST, repoHome } from '../config.ts';
-import { dim, infoGlyph, warnGlyph, yellow } from '../color.ts';
-import { addItem, renderTree, section, type DoctorSection } from '../output-tree.ts';
+import { dim, infoGlyph, warnGlyph, yellow } from '../render/color.ts';
+import { addItem, renderTree, section, type DoctorSection } from '../render/output-tree.ts';
 import { die, fail, log, ok, NomadFatal } from '../utils.ts';
 import { acquireLock, releaseLock } from '../utils.lockfile.ts';
 

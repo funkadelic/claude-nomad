@@ -23,7 +23,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } f
 import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 
-import { dim, infoGlyph } from '../../color.ts';
+import { dim, infoGlyph } from '../../render/color.ts';
 import { claudeHome, repoHome, HOST, SUPPORTED_EXTRAS, type PathMap } from '../../config.ts';
 import { assertSafeLogical } from '../../config.sharedDirs.guard.ts';
 import { copyExtras } from '../../extras-sync.ts';

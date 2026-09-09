@@ -7,7 +7,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { yellow, warnGlyph } from '../../color.ts';
+import { yellow, warnGlyph } from '../../render/color.ts';
 import { parsePorcelainZ } from './recovery.git.ts';
 import { allSharedLinks, backupBase, deniedSegmentFor, type PathMap } from '../../config.ts';
 import { gitProbe } from '../../git-probe.ts';
@@ -21,8 +21,8 @@ import {
   stageLocalSharedEdits,
   type MirrorPreviewEvent,
 } from '../../links.mirror.ts';
-import { addItem, section, type DoctorSection } from '../../output-tree.ts';
-import { type SharedLinkPlans } from '../../preview.ts';
+import { addItem, section, type DoctorSection } from '../../render/output-tree.ts';
+import { type SharedLinkPlans } from '../../render/preview.ts';
 import { warn } from '../../utils.ts';
 import { readPathMap } from '../../utils.json.ts';
 

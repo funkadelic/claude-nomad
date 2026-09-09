@@ -10,7 +10,7 @@ import type * as linksDeletionsModule from '../../links.deletions.ts';
 import type * as linksMirrorModule from '../../links.mirror.ts';
 
 import { backupBase, SHARED_LINKS } from '../../config.ts';
-import { renderTree } from '../../output-tree.ts';
+import { renderTree } from '../../render/output-tree.ts';
 import { plantSharedBaseline } from '../../test-support/baseline.ts';
 import { g, gitInit, gitOut } from '../../test-support/git.ts';
 import { stubPlatform } from '../../test-helpers.platform.ts';

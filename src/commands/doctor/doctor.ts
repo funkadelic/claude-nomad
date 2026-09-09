@@ -34,7 +34,7 @@ import { reportNodeEngineCheck } from './engine.ts';
 import { reportLongPathsCheck, reportSyncModality } from './checks/longpaths.ts';
 import { reportCrlfGuardCheck } from './checks/crlf.ts';
 import { readJsonSafe, renderDoctor, section, type DoctorSection } from './format.ts';
-import { startSpinner as realStartSpinner, type SpinnerHandle } from '../../spinner.ts';
+import { startSpinner as realStartSpinner, type SpinnerHandle } from '../../render/spinner.ts';
 import { reportGitleaksVersionCheck } from './gitleaks-version.ts';
 import { reportOptionalDeps } from './checks/deps.ts';
 import { reportActionsDrift } from './actions-drift.ts';

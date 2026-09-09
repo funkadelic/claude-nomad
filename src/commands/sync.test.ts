@@ -9,7 +9,7 @@ import type * as pushChecksModule from './push/checks.ts';
 import type * as pushGlobalConfigModule from './push/global-config.ts';
 import type * as leakVerdictModule from './push/leak-verdict.ts';
 import type * as recoveryModule from './push/recovery/recovery.ts';
-import type * as previewModule from '../preview.ts';
+import type * as previewModule from '../render/preview.ts';
 import type * as wedgeModule from './pull/wedge.ts';
 import type * as extrasSyncModule from '../extras-sync.ts';
 import type * as lockfileModule from '../utils.lockfile.ts';
@@ -77,7 +77,7 @@ function teardownSyncEnv(env: SyncEnv): void {
   vi.restoreAllMocks();
   vi.doUnmock('./pull/pull.ts');
   vi.doUnmock('./push/push.ts');
-  vi.doUnmock('../preview.ts');
+  vi.doUnmock('../render/preview.ts');
   vi.doUnmock('../utils.lockfile.ts');
   vi.doUnmock('./push/checks.ts');
   vi.doUnmock('../remap.ts');
@@ -776,7 +776,7 @@ describe('cmdSync: dry-run composition', () => {
 
   it('never calls computePreview itself: the pull preview is the pull half preview, not a second one', async () => {
     const pullPreviewSpy = vi.fn(() => ({ unmapped: 0, collisions: 0, localOnly: 0 }));
-    vi.doMock('../preview.ts', async (importOriginal) => {
+    vi.doMock('../render/preview.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof previewModule>();
       return { ...actual, computePreview: pullPreviewSpy };
     });
@@ -887,7 +887,7 @@ function mockDrySeams(
     const actual = await importOriginal<typeof extrasSyncModule>();
     return { ...actual, divergenceCheckExtras: divergenceSpy };
   });
-  vi.doMock('../preview.ts', async (importOriginal) => {
+  vi.doMock('../render/preview.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof previewModule>();
     return { ...actual, computePreview: previewSpy };
   });

@@ -12,7 +12,7 @@ import {
   red,
   warnGlyph,
   yellow,
-} from '../../../color.ts';
+} from '../../../render/color.ts';
 import {
   allSharedLinks,
   claudeHome,

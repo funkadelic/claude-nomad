@@ -1,4 +1,4 @@
-import { ok, warn } from './utils.ts';
+import { ok, warn } from '../utils.ts';
 
 /** The three originating commands that share the end-of-run summary line. */
 type SummaryVerb = 'pull' | 'push' | 'diff';

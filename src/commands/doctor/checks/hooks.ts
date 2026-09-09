@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { dim, failGlyph, green, infoGlyph, okGlyph, red } from '../../../color.ts';
+import { dim, failGlyph, green, infoGlyph, okGlyph, red } from '../../../render/color.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
 import { claudeHome, home } from '../../../config.ts';
 

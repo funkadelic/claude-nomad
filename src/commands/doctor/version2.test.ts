@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { warnGlyph } from '../../color.ts';
+import { warnGlyph } from '../../render/color.ts';
 import { type Env, joinedLog, makeDoctorEnv, restoreEnv } from './checks/test-helpers.ts';
 import { mockCurlReleases, mockPackageJsonVersion } from './version.test-helpers.ts';
 

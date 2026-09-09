@@ -9,13 +9,13 @@ import { buildNoScanSections, type PushState, renderNoScanTree } from './section
 import { reportSettingsAheadDrift, stripGsdHooksFromBase } from './settings.ts';
 import { guardGitlinks, guardResolutionModeConflicts } from './guards.ts';
 import { commitAndPush, runDryRunPreview } from './steps.ts';
-import type { DoctorSection } from '../../output-tree.ts';
+import type { DoctorSection } from '../../render/output-tree.ts';
 import { remapExtrasPush } from '../../extras-sync.ts';
 import { syncSharedLinksPush } from '../../links.mirror.ts';
 import { syncSkillsPush } from '../../skills-sync.ts';
 import { probeGitleaks, rebaseBeforePush } from './checks.ts';
 import { remapPush } from '../../remap.ts';
-import { withSpinner } from '../../spinner.ts';
+import { withSpinner } from '../../render/spinner.ts';
 import { die, fail, gitCaptureRaw, gitStatusPorcelainZ, log, NomadFatal } from '../../utils.ts';
 import { freshBackupTs } from '../../utils.fs.ts';
 import { acquireLock, releaseLock } from '../../utils.lockfile.ts';

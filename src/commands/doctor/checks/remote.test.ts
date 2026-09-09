@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { okGlyph, warnGlyph } from '../../../color.ts';
+import { okGlyph, warnGlyph } from '../../../render/color.ts';
 import { makeDoctorEnv, restoreEnv, type Env } from './test-helpers.ts';
 
 // Behavior-focused: assert on the section items for every scenario that

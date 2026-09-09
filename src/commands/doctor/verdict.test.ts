@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { failGlyph, okGlyph, warnGlyph } from '../../color.ts';
+import { failGlyph, okGlyph, warnGlyph } from '../../render/color.ts';
 import { addChildItem, addItem, section } from './format.ts';
 import { buildVerdictSection } from './verdict.ts';
 

@@ -11,7 +11,7 @@ import {
   red,
   warnGlyph,
   yellow,
-} from '../../../color.ts';
+} from '../../../render/color.ts';
 import { claudeHome, HOST, KNOWN_SETTINGS_KEYS, repoHome } from '../../../config.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
 

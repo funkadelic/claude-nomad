@@ -11,7 +11,7 @@
 
 import { join } from 'node:path';
 
-import { failGlyph, red, warnGlyph, yellow } from '../../../color.ts';
+import { failGlyph, red, warnGlyph, yellow } from '../../../render/color.ts';
 import { repoHome } from '../../../config.ts';
 import type { SharedLinkClassification } from './repo.win32.ts';
 import { classifyPresence, isUnusableTarget, type PresenceState } from '../../../fs-presence.ts';

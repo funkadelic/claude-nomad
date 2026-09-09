@@ -18,7 +18,7 @@
  * `verdictFromFindings` and `verdictScanError`.
  */
 
-import { failGlyph, green, okGlyph, red } from '../../color.ts';
+import { failGlyph, green, okGlyph, red } from '../../render/color.ts';
 import { EXIT } from '../../exit-codes.ts';
 import { gitleaksInstallHint } from './checks.ts';
 import {

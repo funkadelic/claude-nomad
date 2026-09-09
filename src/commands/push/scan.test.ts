@@ -16,7 +16,7 @@ import type * as pushChecksModule from './checks.ts';
 import type * as pushPreviewModule from './preview.ts';
 import type * as leakVerdictModule from './leak-verdict.ts';
 import type * as pushGlobalConfigModule from './global-config.ts';
-import type * as spinnerModule from '../../spinner.ts';
+import type * as spinnerModule from '../../render/spinner.ts';
 import type * as utilsModule from '../../utils.ts';
 
 // Coverage for cmdPush's gitleaks-scan stage: a detection on the staged tree
@@ -133,7 +133,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof pushPreviewModule>();
       return { ...actual, previewPushLeaks: previewPushLeaksMock };
     });
-    vi.doMock('../../spinner.ts', async (importOriginal) => {
+    vi.doMock('../../render/spinner.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof spinnerModule>();
       return { ...actual, withSpinner: withSpinnerSpy };
     });

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { backupBase, repoHome, type PathMap } from '../config.ts';
 import { divergenceCheckExtras } from '../extras-sync.ts';
-import { computePreview } from '../preview.ts';
+import { computePreview } from '../render/preview.ts';
 import { die, fail, NomadFatal } from '../utils.ts';
 import { freshBackupTs } from '../utils.fs.ts';
 import { readPathMap } from '../utils.json.ts';

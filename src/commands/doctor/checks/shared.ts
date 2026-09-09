@@ -30,7 +30,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { red, yellow, failGlyph, warnGlyph } from '../../../color.ts';
+import { red, yellow, failGlyph, warnGlyph } from '../../../render/color.ts';
 import { reportCommittedMemory } from './shared.memory.ts';
 import { emitClean, scanAndReport } from './shared.scan.ts';
 import { reportCommittedSkills } from './shared.skills.ts';

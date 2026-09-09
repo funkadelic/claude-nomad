@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { relativeRequireTargetsBroken } from './hooks.preserve-symlinks.probe.ts';
 import { allSharedLinks, claudeHome, home, repoHome, type PathMap } from '../../../config.ts';

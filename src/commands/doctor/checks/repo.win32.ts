@@ -15,7 +15,7 @@
 
 import { join, win32 as win32Path } from 'node:path';
 
-import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { deniedSegmentFor, repoHome } from '../../../config.ts';
 import { listDivergingFiles } from '../../../extras-sync.diff.ts';
 import { classifyPresence, isUnusableTarget, type PresenceState } from '../../../fs-presence.ts';

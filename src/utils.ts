@@ -1,6 +1,15 @@
 import { execFileSync } from 'node:child_process';
 
-import { dim, failGlyph, green, infoGlyph, okGlyph, red, warnGlyph, yellow } from './color.ts';
+import {
+  dim,
+  failGlyph,
+  green,
+  infoGlyph,
+  okGlyph,
+  red,
+  warnGlyph,
+  yellow,
+} from './render/color.ts';
 import { EXIT, type ExitCode } from './exit-codes.ts';
 
 /**

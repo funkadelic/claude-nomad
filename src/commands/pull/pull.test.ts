@@ -23,7 +23,7 @@ import type * as linksMirrorModule from '../../links.mirror.ts';
 import type * as utilsModule from '../../utils.ts';
 import type * as lockfileModule from '../../utils.lockfile.ts';
 
-import { warnGlyph } from '../../color.ts';
+import { warnGlyph } from '../../render/color.ts';
 import { plantSharedBaseline } from '../../test-support/baseline.ts';
 import { stubPlatform } from '../../test-helpers.platform.ts';
 
@@ -238,7 +238,7 @@ describe('cmdPull: extras integration', () => {
     vi.doUnmock('../../links.baseline.ts');
     vi.doUnmock('../../remap.ts');
     vi.doUnmock('../../extras-sync.ts');
-    vi.doUnmock('../../preview.ts');
+    vi.doUnmock('../../render/preview.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -385,7 +385,7 @@ describe('cmdPull: extras integration', () => {
       remapExtrasPull: remapExtrasPullMock,
       divergenceCheckExtras: divergenceCheckExtrasMock,
     }));
-    vi.doMock('../../preview.ts', () => ({
+    vi.doMock('../../render/preview.ts', () => ({
       computePreview: vi.fn(() => ({ unmapped: 0 })),
     }));
     vi.doMock('../../utils.ts', async (importOriginal) => {
@@ -396,7 +396,7 @@ describe('cmdPull: extras integration', () => {
     expect(() => cmdPull({ dryRun: true })).not.toThrow();
     expect(divergenceCheckExtrasMock).toHaveBeenCalled();
     expect(remapExtrasPullMock).not.toHaveBeenCalled();
-    vi.doUnmock('../../preview.ts');
+    vi.doUnmock('../../render/preview.ts');
   });
 
   it('legacy path-map.json without extras key: divergenceCheckExtras and remapExtrasPull are still invoked (they no-op internally)', async () => {
@@ -1762,7 +1762,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../preview.ts', () => ({
+    vi.doMock('../../render/preview.ts', () => ({
       computePreview: vi.fn(() => ({ unmapped: 0 })),
     }));
 
@@ -1776,7 +1776,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doUnmock('../../links.mirror.ts');
     vi.doUnmock('../../remap.ts');
     vi.doUnmock('../../extras-sync.ts');
-    vi.doUnmock('../../preview.ts');
+    vi.doUnmock('../../render/preview.ts');
   });
 
   it('fresh-clone-style (unborn HEAD): cmdPull completes without throw and deletes nothing', async () => {
@@ -1918,7 +1918,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     vi.doUnmock('../../links.baseline.ts');
     vi.doUnmock('../../remap.ts');
     vi.doUnmock('../../extras-sync.ts');
-    vi.doUnmock('../../preview.ts');
+    vi.doUnmock('../../render/preview.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -1959,7 +1959,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     // fixture: the mocked remapExtrasPull returns nothing pulled, which is
     // unrelated to the mirror and just this fixture's own empty data.
     const { runPullCore } = await import('./pull.ts');
-    const { renderTree } = await import('../../output-tree.ts');
+    const { renderTree } = await import('../../render/output-tree.ts');
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
     });
@@ -2024,7 +2024,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
   });
 
   it('returns { tag: "dry" } on --dry-run and renders its own preview inline', async () => {
-    vi.doMock('../../preview.ts', () => ({
+    vi.doMock('../../render/preview.ts', () => ({
       computePreview: vi.fn(() => ({ unmapped: 0 })),
     }));
     const { runPullCore } = await import('./pull.ts');
@@ -2113,7 +2113,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     vi.doUnmock('../../links.baseline.ts');
     vi.doUnmock('../../remap.ts');
     vi.doUnmock('../../extras-sync.ts');
-    vi.doUnmock('../../preview.ts');
+    vi.doUnmock('../../render/preview.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -2178,7 +2178,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(() => 0),
     }));
-    vi.doMock('../../preview.ts', () => ({ computePreview: opts.previewSpy ?? vi.fn() }));
+    vi.doMock('../../render/preview.ts', () => ({ computePreview: opts.previewSpy ?? vi.fn() }));
     vi.doMock('../../utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {

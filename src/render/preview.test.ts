@@ -13,8 +13,8 @@ import { join, relative } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { plantSharedBaseline } from './test-support/baseline.ts';
-import { stubPlatform } from './test-helpers.platform.ts';
+import { plantSharedBaseline } from '../test-support/baseline.ts';
+import { stubPlatform } from '../test-helpers.platform.ts';
 
 // The "non-win32" test below asserts `process.platform !== 'win32'` directly
 // against the real host (no Object.defineProperty override), so it is false

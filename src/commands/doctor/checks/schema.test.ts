@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, infoGlyph, okGlyph, warnGlyph } from '../../../color.ts';
+import { failGlyph, infoGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import { type Env, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
 
 /**

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { okGlyph, warnGlyph } from '../../../color.ts';
+import { okGlyph, warnGlyph } from '../../../render/color.ts';
 import { repoHome } from '../../../config.ts';
 import { section } from '../format.ts';
 import { reportLongPathsCheck, reportSyncModality } from './longpaths.ts';

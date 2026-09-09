@@ -1,5 +1,5 @@
-import { failGlyph, warnGlyph } from '../../color.ts';
-import { isChild, type DoctorSection } from '../../output-tree.ts';
+import { failGlyph, warnGlyph } from '../../render/color.ts';
+import { isChild, type DoctorSection } from '../../render/output-tree.ts';
 
 /**
  * Section headers kept in full in the compact view. `Nomad Version` and

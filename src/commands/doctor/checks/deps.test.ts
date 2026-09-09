@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { okGlyph, warnGlyph } from '../../../color.ts';
+import { okGlyph, warnGlyph } from '../../../render/color.ts';
 import { section } from '../format.ts';
 import { reportOptionalDeps } from './deps.ts';
 import type { SpawnSyncFn } from '../../init/gh-actions.ts';

@@ -206,7 +206,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
     const sentinel = new Error('synthetic computePreview failure');
-    vi.doMock('../preview.ts', () => ({
+    vi.doMock('../render/preview.ts', () => ({
       computePreview: vi.fn(() => {
         throw sentinel;
       }),
@@ -223,7 +223,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     expect(thrown).not.toBeInstanceOf(NomadFatal);
     // The catch arm should not have set the FATAL exitCode for non-NomadFatal.
     expect(process.exitCode).not.toBe(1);
-    vi.doUnmock('../preview.ts');
+    vi.doUnmock('../render/preview.ts');
   });
 
   it('emits the unmapped-on-diff summary line when path-map has unmapped entries', async () => {

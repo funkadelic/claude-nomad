@@ -55,7 +55,7 @@ async function buildBundles(): Promise<void> {
       logLevel: 'silent',
     }),
     build({
-      entryPoints: [join(ROOT, 'src', 'spinner.worker.ts')],
+      entryPoints: [join(ROOT, 'src', 'render', 'spinner.worker.ts')],
       bundle: true,
       platform: 'node',
       format: 'esm',
