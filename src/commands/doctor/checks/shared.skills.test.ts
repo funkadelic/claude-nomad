@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
 
-import { warnGlyph } from '../../../color.ts';
+import { warnGlyph } from '../../../render/color.ts';
 
 /** Shape of the section reportCommittedSkills appends rows to (mirrors DoctorSection). */
 type Section = { header: string; items: string[] };

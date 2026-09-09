@@ -21,11 +21,11 @@ import {
 } from './win32.ts';
 import { pullWithCollisionRunbook } from './collision.ts';
 import { syncSkillsPull } from '../../skills-sync.ts';
-import { renderTree, section, addItem, type DoctorSection } from '../../output-tree.ts';
-import { computePreview } from '../../preview.ts';
+import { renderTree, section, addItem, type DoctorSection } from '../../render/output-tree.ts';
+import { computePreview } from '../../render/preview.ts';
 import { remapPull, scanLocalOnly } from '../../remap.ts';
-import { withSpinner } from '../../spinner.ts';
-import { summaryRow } from '../../summary.ts';
+import { withSpinner } from '../../render/spinner.ts';
+import { summaryRow } from '../../render/summary.ts';
 import {
   classifyWedgeWithProbe,
   cleanRepoForceRemoteMessage,

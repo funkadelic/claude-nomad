@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { green, okGlyph, warnGlyph, yellow } from '../../color.ts';
+import { green, okGlyph, warnGlyph, yellow } from '../../render/color.ts';
 import { addItem, type DoctorSection } from './format.ts';
 import { compareSemver } from './version.ts';
 import { packageRoot } from '../../package-root.ts';

@@ -34,7 +34,7 @@ await Promise.all([
   }),
   // Worker entry point: no shebang banner (it is a worker module, not a bin).
   build({
-    entryPoints: ['src/spinner.worker.ts'],
+    entryPoints: ['src/render/spinner.worker.ts'],
     bundle: true,
     platform: 'node',
     format: 'esm',

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { green, okGlyph, warnGlyph, yellow } from '../../../color.ts';
+import { green, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { repoHome } from '../../../config.ts';
 import { validatePathMapShape } from '../../../utils.json.ts';

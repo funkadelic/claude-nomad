@@ -1,4 +1,4 @@
-import { failGlyph, green, okGlyph, red, warnGlyph, yellow } from '../../color.ts';
+import { failGlyph, green, okGlyph, red, warnGlyph, yellow } from '../../render/color.ts';
 import { addChildItem, addItem, section, type DoctorSection } from './format.ts';
 
 /**

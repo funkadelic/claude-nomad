@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, okGlyph, warnGlyph } from '../../../color.ts';
+import { failGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import { type Env, joinedLog, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
 
 describe('cmdDoctor settings.json schema sanity', () => {

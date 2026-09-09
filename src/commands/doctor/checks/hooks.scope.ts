@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 
-import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome } from '../../../config.ts';
 

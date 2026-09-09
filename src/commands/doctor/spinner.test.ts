@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { SpinnerHandle } from '../../spinner.ts';
+import type { SpinnerHandle } from '../../render/spinner.ts';
 import {
   type Env,
   joinedLog,

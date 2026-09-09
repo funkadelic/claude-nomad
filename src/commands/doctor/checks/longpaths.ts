@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { repoHome } from '../../../config.ts';
 import type { SpawnSyncFn } from '../../init/gh-actions.ts';

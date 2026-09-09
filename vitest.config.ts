@@ -105,7 +105,7 @@ export default defineConfig({
         'src/nomad.ts',
         // worker_threads entry point: animation loop driven by postMessage.
         // Cannot be unit-instrumented without a real worker context.
-        'src/spinner.worker.ts',
+        'src/render/spinner.worker.ts',
       ],
       reporter: ['text', 'html', 'lcov', 'json-summary'],
     },

@@ -530,7 +530,7 @@ function emitDriftWarnings(
  * `would write settings.json ...` line. The drift-detection WARN above
  * still fires (informational), so users see the same warning a real pull
  * would produce. The unified textual diff of the would-be-written content
- * is produced by `computePreview` in `src/preview.ts`, not here, to keep
+ * is produced by `computePreview` in `src/render/preview.ts`, not here, to keep
  * this function's contract simple (mutation or log-only).
  *
  * Returns `{ label }` where `label` is the override-source tag

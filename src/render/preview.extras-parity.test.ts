@@ -98,7 +98,7 @@ describe('preview extras parity (dry-run vs wet)', () => {
   });
 
   it('remapExtrasPull dry-run wouldPull deep-equals the wet pulled set, including the missing-local extra', async () => {
-    const { remapExtrasPull } = await import('./extras-sync.ts');
+    const { remapExtrasPull } = await import('../extras-sync.ts');
 
     // Capture the dry-run result FIRST so the wet call's mutation (copying
     // into fooLocal/barLocal) does not perturb the dry read.

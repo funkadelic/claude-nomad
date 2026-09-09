@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { compactSections } from './compact.ts';
 import { MODALITY_COPY_SYNC, MODALITY_SYMLINK } from './checks/longpaths.ts';
-import { failGlyph, okGlyph, warnGlyph, infoGlyph } from '../../color.ts';
-import { type DoctorSection } from '../../output-tree.ts';
+import { failGlyph, okGlyph, warnGlyph, infoGlyph } from '../../render/color.ts';
+import { type DoctorSection } from '../../render/output-tree.ts';
 
 // Behavior-focused: assert on which items survive the compact transform for each
 // section class. Items carry their status glyph in the text, exactly as the

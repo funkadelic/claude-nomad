@@ -13,7 +13,7 @@ import { join, relative, sep } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph } from './color.ts';
+import { failGlyph } from './render/color.ts';
 import { SHARED_LINKS } from './config.ts';
 import { section } from './commands/doctor/format.ts';
 import { g } from './test-support/git.ts';

@@ -12,13 +12,13 @@
  * skip count never prints a header.
  */
 
-import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../color.ts';
+import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../render/color.ts';
 import type { remapExtrasPush } from '../../extras-sync.ts';
-import { type DoctorSection, addItem, renderTree, section } from '../../output-tree.ts';
+import { type DoctorSection, addItem, renderTree, section } from '../../render/output-tree.ts';
 import type { LeakVerdict } from './leak-verdict.ts';
 import type { GlobalConfigChange } from './global-config.ts';
 import type { remapPush } from '../../remap.ts';
-import { summaryRow } from '../../summary.ts';
+import { summaryRow } from '../../render/summary.ts';
 
 /**
  * Build the single collapsed count row, or `null` when `n` is zero. Used for

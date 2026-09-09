@@ -9,11 +9,11 @@ import {
   renderNoScanTree,
   renderPushTree,
 } from './sections.ts';
-import { type DoctorSection, renderTree } from '../../output-tree.ts';
+import { type DoctorSection, renderTree } from '../../render/output-tree.ts';
 import { collectGlobalConfigChanges } from './global-config.ts';
 import { scanPushVerdict } from './leak-verdict.ts';
 import { previewPushLeaks } from './preview.ts';
-import { withSpinner } from '../../spinner.ts';
+import { withSpinner } from '../../render/spinner.ts';
 import { fail, gitOrFatal, gitStatusPorcelainZ, log, warn } from '../../utils.ts';
 
 /**

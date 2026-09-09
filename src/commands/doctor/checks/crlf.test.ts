@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { okGlyph, warnGlyph } from '../../../color.ts';
+import { okGlyph, warnGlyph } from '../../../render/color.ts';
 import { section } from '../format.ts';
 import { reportCrlfGuardCheck } from './crlf.ts';
 import type { SpawnSyncFn } from '../../init/gh-actions.ts';

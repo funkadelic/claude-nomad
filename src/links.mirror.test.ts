@@ -2286,12 +2286,12 @@ describe('the mirror is the only implementation of the capture gates', () => {
   });
 
   it('preview.ts imports this module and no sibling capture-planner module', () => {
-    const source = readFileSync(join(HERE, 'preview.ts'), 'utf8');
+    const source = readFileSync(join(HERE, 'render', 'preview.ts'), 'utf8');
     const importLines = source.split('\n').filter((line) => line.trimStart().startsWith('import '));
-    expect(importLines.some((line) => line.includes("from './links.mirror.ts'"))).toBe(true);
+    expect(importLines.some((line) => line.includes("from '../links.mirror.ts'"))).toBe(true);
     // The retired module's own specifier, not a bare `captures` substring: a
     // legitimate future import that merely spells the word would otherwise
     // fail this as if the planner had come back.
-    expect(importLines.some((line) => line.includes('./links.captures.ts'))).toBe(false);
+    expect(importLines.some((line) => line.includes('links.captures.ts'))).toBe(false);
   });
 });

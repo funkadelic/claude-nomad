@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { warnGlyph } from '../../../color.ts';
+import { warnGlyph } from '../../../render/color.ts';
 import { section } from '../format.ts';
 import { reportBackupsCheck } from './backups.ts';
 

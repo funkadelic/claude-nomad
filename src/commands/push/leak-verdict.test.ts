@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { failGlyph, okGlyph } from '../../color.ts';
+import { failGlyph, okGlyph } from '../../render/color.ts';
 import { EXIT } from '../../exit-codes.ts';
 
 import type * as scanModule from './gitleaks.ts';

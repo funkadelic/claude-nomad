@@ -7,7 +7,7 @@ import type * as diffModule from '../../../extras-sync.diff.ts';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph, infoGlyph, okGlyph, warnGlyph } from '../../../color.ts';
+import { failGlyph, infoGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import { type Env, joinedLog, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
 import { stubPlatform } from '../../../test-helpers.platform.ts';
 

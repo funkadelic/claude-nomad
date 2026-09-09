@@ -12,7 +12,7 @@ import {
   red,
   warnGlyph,
   yellow,
-} from '../../../color.ts';
+} from '../../../render/color.ts';
 import { claudeHome, HOST, NEVER_SYNC, repoHome, type PathMap } from '../../../config.ts';
 import {
   mayJoinRefusedEntry,

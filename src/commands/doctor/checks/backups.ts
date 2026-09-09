@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { warnGlyph, yellow } from '../../../color.ts';
+import { warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { backupBase as getBackupBase } from '../../../config.ts';
 

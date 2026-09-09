@@ -1,18 +1,18 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from './config.ts';
+import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from '../config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
-import { remapExtrasPull } from './extras-sync.ts';
-import { stripGsdHookEntries } from './hooks-filter.ts';
-import { planSharedLinkDeletions, type SharedLinkDeletion } from './links.deletions.ts';
-import { stageLocalSharedEdits, type MirrorPreviewEvent } from './links.mirror.ts';
-import { type LinkPreviewEvent, applySharedLinks } from './links.ts';
+import { remapExtrasPull } from '../extras-sync.ts';
+import { stripGsdHookEntries } from '../hooks-filter.ts';
+import { planSharedLinkDeletions, type SharedLinkDeletion } from '../links.deletions.ts';
+import { stageLocalSharedEdits, type MirrorPreviewEvent } from '../links.mirror.ts';
+import { type LinkPreviewEvent, applySharedLinks } from '../links.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
-import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from './remap.ts';
+import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from '../remap.ts';
 import { summaryRow } from './summary.ts';
-import { deepMerge, readJson, sortKeysDeep } from './utils.json.ts';
+import { deepMerge, readJson, sortKeysDeep } from '../utils.json.ts';
 
 /**
  * Note emitted when the only settings.json delta is key relocation: the raw
