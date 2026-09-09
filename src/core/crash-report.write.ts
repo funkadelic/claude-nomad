@@ -15,8 +15,7 @@ import { join } from 'node:path';
 import { crashDir, HOST, home } from './config.ts';
 import { buildCrashReport } from './crash-report.ts';
 import { redactWithGitleaks } from './crash-report.redact.ts';
-import { prunableByCount } from '../commands/clean.ts';
-import { nowTimestamp } from './utils.fs.ts';
+import { nowTimestamp, prunableByCount } from './utils.fs.ts';
 import { fail, item } from './utils.ts';
 
 /**
@@ -56,7 +55,7 @@ export function listCrashFiles(dir: string = crashDir()): CrashFile[] {
 
 /**
  * Prune `dir` down to the newest `keep` crash files, reusing the generic
- * `prunableByCount` retention filter (`./commands.clean.ts`). Each prune
+ * `prunableByCount` retention filter (`./utils.fs.ts`). Each prune
  * target is unlinked individually; a per-file unlink error (e.g. the file
  * was already removed concurrently) is swallowed so pruning stays
  * best-effort and never surfaces to the caller.

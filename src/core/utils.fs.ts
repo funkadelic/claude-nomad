@@ -165,6 +165,39 @@ export function freshBackupTs(backupRoot: string): string {
 }
 
 /**
+ * A `<ts>` backup directory tagged with its modification time. The `<ts>`
+ * name shape (`YYYYMMDD-HHMMSS[-N]`) is produced by `freshBackupTs`.
+ */
+export type BackupDir = { name: string; mtimeMs: number };
+
+/**
+ * Pure age filter: returns the names of dirs strictly older than `olderThanMs`
+ * relative to `nowMs`. The strict `>` excludes a dir sitting exactly on the
+ * boundary so the result is stable across runs at the cutoff instant.
+ *
+ * @param dirs - Backup dir descriptors (order irrelevant).
+ * @param olderThanMs - Age cutoff in milliseconds.
+ * @param nowMs - The reference "now" in epoch ms (injected for deterministic tests).
+ * @returns Names of dirs whose age exceeds the cutoff.
+ */
+export function prunableByAge(dirs: BackupDir[], olderThanMs: number, nowMs: number): string[] {
+  return dirs.filter((d) => nowMs - d.mtimeMs > olderThanMs).map((d) => d.name);
+}
+
+/**
+ * Pure count filter: keeps the `keep` newest dirs and returns the names of the
+ * rest. `dirs` MUST already be sorted newest-first (as `listBackupDirs`
+ * guarantees).
+ *
+ * @param dirs - Backup dir descriptors, newest-first.
+ * @param keep - Number of newest dirs to retain.
+ * @returns Names of the dirs beyond the `keep` newest.
+ */
+export function prunableByCount(dirs: BackupDir[], keep: number): string[] {
+  return dirs.slice(keep).map((d) => d.name);
+}
+
+/**
  * Remove `backupRoot` when the run that created it snapshotted nothing into it.
  *
  * The backup dir is created eagerly, before the first destructive step, so a

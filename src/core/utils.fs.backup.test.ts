@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { EXIT } from './exit-codes.ts';
 import { NomadFatal } from './utils.ts';
-import { backupBeforeWrite, backupRepoWrite, discardEmptyBackupDir } from './utils.fs.ts';
+import {
+  backupBeforeWrite,
+  backupRepoWrite,
+  discardEmptyBackupDir,
+  prunableByAge,
+  prunableByCount,
+} from './utils.fs.ts';
 
 /**
  * claudeHome() / backupBase() backup-helper coverage, split off from
@@ -228,5 +234,36 @@ describe('discardEmptyBackupDir', () => {
 
   it('is silent on a path that is already gone', () => {
     expect(() => discardEmptyBackupDir(join(root, '20260516-000003'))).not.toThrow();
+  });
+});
+
+const DAY_MS = 86_400_000;
+
+describe('prunableByAge', () => {
+  it('selects dirs strictly older than the cutoff and keeps newer ones', () => {
+    const now = 100 * DAY_MS;
+    const dirs = [
+      { name: 'old', mtimeMs: now - 20 * DAY_MS },
+      { name: 'fresh', mtimeMs: now - 1 * DAY_MS },
+    ];
+    expect(prunableByAge(dirs, 14 * DAY_MS, now)).toEqual(['old']);
+  });
+
+  it('excludes a dir exactly on the boundary (strict >)', () => {
+    const now = 100 * DAY_MS;
+    const dirs = [{ name: 'edge', mtimeMs: now - 14 * DAY_MS }];
+    expect(prunableByAge(dirs, 14 * DAY_MS, now)).toEqual([]);
+  });
+});
+
+describe('prunableByCount', () => {
+  it('keeps the N newest and returns the rest (newest-first input)', () => {
+    const dirs = [
+      { name: 'a', mtimeMs: 3 },
+      { name: 'b', mtimeMs: 2 },
+      { name: 'c', mtimeMs: 1 },
+    ];
+    expect(prunableByCount(dirs, 1)).toEqual(['b', 'c']);
+    expect(prunableByCount(dirs, 3)).toEqual([]);
   });
 });
