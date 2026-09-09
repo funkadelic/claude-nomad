@@ -25,18 +25,18 @@ describe('evaluateDocsSync', () => {
   });
 
   it('fails when the canary changed but no doc surface did', () => {
-    const v = evaluateDocsSync(['src/nomad.help.ts', 'src/commands/doctor/doctor.ts']);
+    const v = evaluateDocsSync(['src/cli/help.ts', 'src/commands/doctor/doctor.ts']);
     expect(v.ok).toBe(false);
     expect(v.canaryChanged).toBe(true);
     expect(v.reason).toMatch(/without a documentation update/);
   });
 
   it('passes when the canary changed and README.md changed', () => {
-    expect(evaluateDocsSync(['src/nomad.help.ts', 'README.md']).ok).toBe(true);
+    expect(evaluateDocsSync(['src/cli/help.ts', 'README.md']).ok).toBe(true);
   });
 
   it('passes when the canary changed and the docs-site command reference changed', () => {
-    const v = evaluateDocsSync(['src/nomad.help.ts', 'docs-site/src/content/docs/commands.md']);
+    const v = evaluateDocsSync(['src/cli/help.ts', 'docs-site/src/content/docs/commands.md']);
     expect(v.ok).toBe(true);
   });
 

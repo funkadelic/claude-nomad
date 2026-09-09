@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseEjectArgs } from './nomad.dispatch.eject.ts';
+import { parseEjectArgs } from './dispatch.eject.ts';
 
 /**
  * Build a minimal argv array matching what Node passes to a running script.

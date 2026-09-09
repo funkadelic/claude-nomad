@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import pkg from '../package.json' with { type: 'json' };
-import { DEFAULT_HELP } from './nomad.help.ts';
+import pkg from '../../package.json' with { type: 'json' };
+import { DEFAULT_HELP } from './help.ts';
 
 describe('DEFAULT_HELP version header', () => {
   it('starts with the claude-nomad version prefix', () => {

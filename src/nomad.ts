@@ -20,7 +20,7 @@ import { cmdCaptureSettings } from './commands/capture-settings/capture-settings
 import { cmdClean } from './commands/clean.ts';
 import { cmdEject } from './commands/eject.ts';
 import { cmdDoctor } from './commands/doctor/doctor.ts';
-import { parseDoctorArgs } from './nomad.dispatch.doctor.ts';
+import { parseDoctorArgs } from './cli/dispatch.doctor.ts';
 import { cmdDropSession } from './commands/drop-session/drop-session.ts';
 import { cmdRedact } from './commands/redact/redact.ts';
 import { cmdPull } from './commands/pull/pull.ts';
@@ -32,15 +32,15 @@ import { handleCrash } from './core/crash-report.write.ts';
 import { cmdDiff } from './commands/diff.ts';
 import { cmdInit, isAlreadyInitialized } from './commands/init/init.ts';
 import { resolveSnapshotChoice } from './commands/init/prompt.ts';
-import { parseCleanArgs } from './nomad.dispatch.clean.ts';
-import { parseCaptureSettingsArgs } from './nomad.dispatch.capture-settings.ts';
-import { parseEjectArgs } from './nomad.dispatch.eject.ts';
-import { parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
-import { parseAllowArgs } from './nomad.dispatch.allow.ts';
-import { parsePullArgs } from './nomad.dispatch.pull.ts';
-import { parsePushArgs } from './nomad.dispatch.push.ts';
-import { parseSyncArgs } from './nomad.dispatch.sync.ts';
-import { DEFAULT_HELP } from './nomad.help.ts';
+import { parseCleanArgs } from './cli/dispatch.clean.ts';
+import { parseCaptureSettingsArgs } from './cli/dispatch.capture-settings.ts';
+import { parseEjectArgs } from './cli/dispatch.eject.ts';
+import { parseInitArgs, parseRedactArgs } from './cli/dispatch.ts';
+import { parseAllowArgs } from './cli/dispatch.allow.ts';
+import { parsePullArgs } from './cli/dispatch.pull.ts';
+import { parsePushArgs } from './cli/dispatch.push.ts';
+import { parseSyncArgs } from './cli/dispatch.sync.ts';
+import { DEFAULT_HELP } from './cli/help.ts';
 import { resumeCmd } from './sync/resume.ts';
 import { isUserAbort } from './core/user-abort.ts';
 import { fail, isProcessExit, NomadFatal, warn } from './core/utils.ts';
@@ -107,7 +107,7 @@ if (!h) {
 try {
   // Test-only crash seam, gated on env vars set exclusively by
   // src/nomad.crash.test.ts; never fires in normal use. Not documented in
-  // nomad.help.ts.
+  // cli/help.ts.
   if (process.env.NOMAD_TEST_FORCE_CRASH) {
     throw new Error('forced test crash (NOMAD_TEST_FORCE_CRASH)');
   }

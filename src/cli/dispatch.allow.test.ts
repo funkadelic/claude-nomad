@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseAllowArgs } from './nomad.dispatch.allow.ts';
+import { parseAllowArgs } from './dispatch.allow.ts';
 
 // parseAllowArgs is pure so no env sandbox is needed.
 

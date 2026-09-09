@@ -1,4 +1,4 @@
-import { applyBool, extractFlagValue, REJECT, type TokenResult } from './nomad.dispatch.helpers.ts';
+import { applyBool, extractFlagValue, REJECT, type TokenResult } from './dispatch.helpers.ts';
 
 /** Parsed result from {@link parseCleanArgs}. */
 export type CleanArgs = {
