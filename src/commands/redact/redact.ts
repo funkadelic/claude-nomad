@@ -1,15 +1,15 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { backupBase, claudeHome, HOST, repoHome, type PathMap } from '../../config.ts';
+import { backupBase, claudeHome, HOST, repoHome, type PathMap } from '../../core/config.ts';
 import { applySubtreeRedactions, isSubtreeActive, listSubtreeFiles } from './subtree.ts';
 import { warnIfSessionPushed } from '../pushed-history.ts';
 import { type Finding, scanFile } from '../push/gitleaks.scan.ts';
-import { EXIT } from '../../exit-codes.ts';
-import { freshBackupTs } from '../../utils.fs.ts';
-import { encodePath, readJson } from '../../utils.json.ts';
-import { die, fail, log, NomadFatal } from '../../utils.ts';
-import { acquireLock, releaseLock } from '../../utils.lockfile.ts';
+import { EXIT } from '../../core/exit-codes.ts';
+import { freshBackupTs } from '../../core/utils.fs.ts';
+import { encodePath, readJson } from '../../core/utils.json.ts';
+import { die, fail, log, NomadFatal } from '../../core/utils.ts';
+import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 
 /**
  * Resolve a session id to the live local transcript path on this host via

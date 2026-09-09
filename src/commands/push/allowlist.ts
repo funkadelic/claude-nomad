@@ -6,9 +6,9 @@ import {
   sharedDirEntries,
   SUPPORTED_EXTRAS,
   type PathMap,
-} from '../../config.ts';
-import { isValidSharedDir } from '../../config.sharedDirs.guard.ts';
-import { fail, NomadFatal } from '../../utils.ts';
+} from '../../core/config.ts';
+import { isValidSharedDir } from '../../core/config.sharedDirs.guard.ts';
+import { fail, NomadFatal } from '../../core/utils.ts';
 
 /**
  * Match `path` against an entry in the push allow-list. Exact match for
@@ -162,7 +162,7 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
     fail(`${p} is in NEVER_SYNC and must never be pushed`);
   }
   for (const p of violations) {
-    fail(`to sync ${p}, add to PUSH_ALLOWED in src/config.ts`);
+    fail(`to sync ${p}, add to PUSH_ALLOWED in src/core/config.ts`);
   }
   throw new NomadFatal('push allow-list violations');
 }

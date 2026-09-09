@@ -1,16 +1,16 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome, HOST } from '../../config.ts';
+import { claudeHome, HOST } from '../../core/config.ts';
 import {
   classifySettingsDrift,
   describeSettings,
   partitionByCaptureExclusion,
 } from '../capture-settings/core.ts';
 import { baseHasGsdHookEntries, stripGsdHookEntries } from '../../sync/hooks-filter.ts';
-import { warn } from '../../utils.ts';
-import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../utils.fs.ts';
-import { deepMerge, readJson } from '../../utils.json.ts';
+import { warn } from '../../core/utils.ts';
+import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
+import { deepMerge, readJson } from '../../core/utils.json.ts';
 
 /**
  * Idempotent gsd-hook strip for the push write-path. Reads

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from '../config.ts';
+import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { diffLinesToUnified } from './diff-lines.ts';
 import { remapExtrasPull } from '../sync/extras/extras.ts';
 import { stripGsdHookEntries } from '../sync/hooks-filter.ts';
@@ -12,7 +12,7 @@ import { addItem, renderTree, section, type DoctorSection } from './output-tree.
 import { buildSkillsPreviewSection } from './preview.skills.ts';
 import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from '../sync/remap.ts';
 import { summaryRow } from './summary.ts';
-import { deepMerge, readJson, sortKeysDeep } from '../utils.json.ts';
+import { deepMerge, readJson, sortKeysDeep } from '../core/utils.json.ts';
 
 /**
  * Note emitted when the only settings.json delta is key relocation: the raw

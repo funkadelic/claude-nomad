@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { dim, failGlyph, green, infoGlyph, okGlyph, red } from '../../../render/color.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
-import { claudeHome, home } from '../../../config.ts';
+import { claudeHome, home } from '../../../core/config.ts';
 
 /**
  * Always-on `nomad doctor` reporter. Reads `~/.claude/settings.json`, walks

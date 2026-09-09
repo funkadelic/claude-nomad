@@ -14,8 +14,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './gitleaks.ts';
-import { EXIT } from '../../exit-codes.ts';
-import { encodePath } from '../../utils.json.ts';
+import { EXIT } from '../../core/exit-codes.ts';
+import { encodePath } from '../../core/utils.json.ts';
 
 /**
  * Probe for a usable gitleaks binary once at suite-load time. Real-binary

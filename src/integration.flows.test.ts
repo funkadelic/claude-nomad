@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { encodePath } from './utils.json.ts';
+import { encodePath } from './core/utils.json.ts';
 import { g, gitOut, plantLocalSession } from './test-support/git.ts';
 import { type Host, makeWorld, runNomad } from './test-support/world.ts';
 

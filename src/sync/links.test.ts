@@ -16,10 +16,10 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ALWAYS_NEVER_SYNC, isDeniedName } from '../config.ts';
+import { ALWAYS_NEVER_SYNC, isDeniedName } from '../core/config.ts';
 import { copyExtrasFilteredPreservingBy } from './extras/core.ts';
-import { stubPlatform } from '../test-helpers.platform.ts';
-import type * as utilsFsModule from '../utils.fs.ts';
+import { stubPlatform } from '../core/test-helpers.platform.ts';
+import type * as utilsFsModule from '../core/utils.fs.ts';
 
 // Posix-only assertions (symlink creation) throughout this file assume the
 // process is genuinely running on a non-win32 host. On a real win32 runner,
@@ -737,7 +737,7 @@ describe('applySharedLinks win32 copy branch', () => {
     // restoreAllMocks does not clear a doMock registration, so without this
     // they would get the throwing lstatSync too.
     vi.doUnmock('node:fs');
-    vi.doUnmock('../utils.fs.ts');
+    vi.doUnmock('../core/utils.fs.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -1115,7 +1115,7 @@ describe('applySharedLinks win32 copy branch', () => {
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# new shared content\n');
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# prior real-copy content\n');
     const blockedDst = join(claudeDir, 'CLAUDE.md');
-    vi.doMock('../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: () => false };
     });
@@ -1158,7 +1158,7 @@ describe('applySharedLinks win32 copy branch', () => {
     });
 
     const { applySharedLinks } = await import('./links.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     let thrown: unknown;
     try {
       applySharedLinks('20260813-000003', { projects: {} });

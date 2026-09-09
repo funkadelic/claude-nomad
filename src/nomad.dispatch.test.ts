@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { parseInitArgs, parseRedactArgs } from './nomad.dispatch.ts';
-import { ProcessExit } from './utils.ts';
+import { ProcessExit } from './core/utils.ts';
 
 // Dispatcher smoke tests for the `init` and `update` subcommand arms (the
 // parseInitArgs / parseRedactArgs paths). Split out of nomad.test.ts to keep

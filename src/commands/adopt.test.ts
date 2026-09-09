@@ -16,11 +16,11 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { EXIT } from '../exit-codes.ts';
+import { EXIT } from '../core/exit-codes.ts';
 import type * as linksModule from '../sync/links.ts';
-import { stubPlatform } from '../test-helpers.platform.ts';
-import type * as utilsModule from '../utils.ts';
-import type * as utilsFsModule from '../utils.fs.ts';
+import { stubPlatform } from '../core/test-helpers.platform.ts';
+import type * as utilsModule from '../core/utils.ts';
+import type * as utilsFsModule from '../core/utils.fs.ts';
 
 // Posix-only assertions (symlink creation, clobber-refusal wording) below
 // assume the process is genuinely running on a non-win32 host. On a real
@@ -348,7 +348,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     addSharedDir(env, '.env');
     writeFileSync(join(env.claudeHome, '.env'), 'SECRET=1\n');
     const { cmdAdopt } = await import('./adopt.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -370,7 +370,7 @@ describe('cmdAdopt (precondition matrix)', () => {
     addSharedDir(env, 'id_rsa');
     writeFileSync(join(env.claudeHome, 'id_rsa'), 'fake-key\n');
     const { cmdAdopt } = await import('./adopt.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -1003,7 +1003,7 @@ describe('cmdAdopt never-sync refusal', () => {
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.doUnmock('node:fs');
-    vi.doUnmock('../utils.fs.ts');
+    vi.doUnmock('../core/utils.fs.ts');
     teardownAdoptEnv(env);
   });
 
@@ -1020,7 +1020,7 @@ describe('cmdAdopt never-sync refusal', () => {
     writeFileSync(join(credentialsDir, 'transcript.jsonl'), '{}\n');
 
     const { cmdAdopt } = await import('./adopt.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -1052,7 +1052,7 @@ describe('cmdAdopt never-sync refusal', () => {
     writeFileSync(join(linkPath, 'settings.local.json'), '{}\n');
 
     const { cmdAdopt } = await import('./adopt.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -1081,7 +1081,7 @@ describe('cmdAdopt never-sync refusal', () => {
     writeFileSync(join(subDir, 'history.jsonl'), '{}\n');
 
     const { cmdAdopt } = await import('./adopt.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -1113,7 +1113,7 @@ describe('cmdAdopt never-sync refusal', () => {
     writeFileSync(join(credentialsDir, 'transcript.jsonl'), '{}\n');
 
     const { cmdAdopt } = await import('./adopt.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let wetCaught: unknown;
     try {
@@ -1318,7 +1318,7 @@ describe('cmdAdopt never-sync refusal', () => {
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
     writeFileSync(join(linkPath, 'settings.local.json'), '{"host":"local"}\n');
 
-    vi.doMock('../utils.fs.ts', async (importOriginal) => ({
+    vi.doMock('../core/utils.fs.ts', async (importOriginal) => ({
       ...(await importOriginal<typeof utilsFsModule>()),
       backupBeforeWrite: (): boolean => false,
     }));
@@ -1403,7 +1403,7 @@ describe('cmdAdopt widened never-sync boundary', () => {
     writeFileSync(join(linkPath, 'settings.local.json'), '{"host":"local"}\n');
 
     const { cmdAdopt } = await import('./adopt.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -1786,7 +1786,7 @@ function mockCopyBackFailure(
 ): void {
   vi.doMock('../sync/links.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof linksModule>();
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     return {
       ...actual,
       copySharedLinkPull: (_src: string, dst: string): never => {
@@ -1848,8 +1848,8 @@ describe('cmdAdopt win32 copy-back failure', () => {
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.doUnmock('../sync/links.ts');
-    vi.doUnmock('../utils.ts');
-    vi.doUnmock('../utils.fs.ts');
+    vi.doUnmock('../core/utils.ts');
+    vi.doUnmock('../core/utils.fs.ts');
     vi.doUnmock('node:fs');
     teardownAdoptEnv(env);
   });
@@ -1917,7 +1917,7 @@ describe('cmdAdopt win32 copy-back failure', () => {
 
     // backupBeforeWrite no-ops (and reports it) when there is nothing to
     // snapshot; the message must not advertise a directory holding nothing.
-    vi.doMock('../utils.fs.ts', async (importOriginal) => ({
+    vi.doMock('../core/utils.fs.ts', async (importOriginal) => ({
       ...(await importOriginal<typeof utilsFsModule>()),
       backupBeforeWrite: (): boolean => false,
     }));
@@ -2055,7 +2055,7 @@ describe('cmdAdopt win32 copy-back failure', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-    vi.doMock('../utils.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -2080,7 +2080,7 @@ describe('cmdAdopt win32 copy-back failure', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-    vi.doMock('../utils.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -2111,7 +2111,7 @@ describe('cmdAdopt win32 copy-back failure', () => {
       mkdirSync(linkPath, { recursive: true });
       writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-      vi.doMock('../utils.fs.ts', async (importOriginal) => ({
+      vi.doMock('../core/utils.fs.ts', async (importOriginal) => ({
         ...(await importOriginal<typeof utilsFsModule>()),
         ensureSymlink: (): never => {
           throw new Error('ENOSPC: no space left on device');
@@ -2443,7 +2443,7 @@ describe('cmdAdopt source-removal failure', () => {
     stubPlatform(realPlatform);
     vi.doUnmock('node:fs');
     vi.doUnmock('../sync/links.ts');
-    vi.doUnmock('../utils.ts');
+    vi.doUnmock('../core/utils.ts');
     teardownAdoptEnv(env);
   });
 
@@ -2588,7 +2588,7 @@ describe('cmdAdopt source-removal failure', () => {
     mkdirSync(linkPath, { recursive: true });
     writeFileSync(join(linkPath, 'tool.sh'), '#!/bin/sh\necho hi\n');
 
-    vi.doMock('../utils.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,

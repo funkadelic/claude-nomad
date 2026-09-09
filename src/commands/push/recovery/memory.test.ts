@@ -12,9 +12,9 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as utilsFsModule from '../../../utils.fs.ts';
-import type * as utilsModule from '../../../utils.ts';
-import type { PathMap } from '../../../config.ts';
+import type * as utilsFsModule from '../../../core/utils.fs.ts';
+import type * as utilsModule from '../../../core/utils.ts';
+import type { PathMap } from '../../../core/config.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 
 /**
@@ -281,7 +281,7 @@ describe('resolveMemoryLocalPath', () => {
   it('throws NomadFatal (via assertSafeLogical) for a poisoned logical name before any join', async () => {
     const { map } = makeMemoryFixture(testHome);
     const { resolveMemoryLocalPath } = await import('./memory.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     expect(() => resolveMemoryLocalPath('../escape', 'notes.md', map)).toThrow(NomadFatal);
   });
 });
@@ -359,8 +359,8 @@ describe('applyMemoryRedact', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -374,7 +374,7 @@ describe('applyMemoryRedact', () => {
     const { memoryPath, map } = makeMemoryFixture(testHome);
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
@@ -441,7 +441,7 @@ describe('applyMemoryRedact', () => {
   it('returns false and logs a refusal (no raw secret) when the finding is not a memory file', async () => {
     makeMemoryFixture(testHome);
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -491,7 +491,7 @@ describe('applyMemoryRedact', () => {
   it('warns (no raw secret) via the warning channel when the finding Match is not located in the file', async () => {
     const { memoryPath, map } = makeMemoryFixture(testHome);
     const warnSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, warn: warnSpy };
     });

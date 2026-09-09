@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { stubPlatform } from '../../test-helpers.platform.ts';
+import { stubPlatform } from '../../core/test-helpers.platform.ts';
 import { buildSyncedSharedWorld, pushUpstreamChange } from '../../test-support/git.ts';
 
 /**
@@ -116,7 +116,7 @@ describe('runPullCore: win32 mirror collision', () => {
 
     const err = await pull();
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     const message = (err as InstanceType<typeof NomadFatal>).message;
     expect(message).toContain('nomad pull could not fetch');
@@ -185,7 +185,7 @@ describe('runPullCore: win32 mirror collision', () => {
 
     const err = await pull();
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     // Every non-collision failure keeps today's wording, forwarded git stderr
     // included. This is the regression that matters most.

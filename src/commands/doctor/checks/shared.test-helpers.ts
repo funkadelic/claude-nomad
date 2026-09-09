@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { vi } from 'vitest';
 
-import { type PathMap } from '../../../config.ts';
+import { type PathMap } from '../../../core/config.ts';
 
 /** Shape of the section reportCheckShared appends rows to (mirrors DoctorSection). */
 export type Section = { header: string; items: string[] };

@@ -30,7 +30,7 @@ const PIN_LINE = /^\s*GITLEAKS_VERSION:\s*(\S+)\s*$/m;
  * @throws If the file has no `GITLEAKS_VERSION:` line.
  */
 function readWorkflowPin(rel: string): string {
-  const path = fileURLToPath(new URL(`../.github/workflows/${rel}`, import.meta.url));
+  const path = fileURLToPath(new URL(`../../.github/workflows/${rel}`, import.meta.url));
   const raw = readFileSync(path, 'utf8');
   const m = PIN_LINE.exec(raw);
   if (m === null) {

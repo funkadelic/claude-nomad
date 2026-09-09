@@ -27,8 +27,8 @@ import { cmdPull } from './commands/pull/pull.ts';
 import { cmdPush } from './commands/push/push.ts';
 import { cmdSync } from './commands/sync.ts';
 import { cmdUpdate } from './commands/update.ts';
-import { claudeHome, home, repoHome } from './config.ts';
-import { handleCrash } from './crash-report.write.ts';
+import { claudeHome, home, repoHome } from './core/config.ts';
+import { handleCrash } from './core/crash-report.write.ts';
 import { cmdDiff } from './commands/diff.ts';
 import { cmdInit, isAlreadyInitialized } from './commands/init/init.ts';
 import { resolveSnapshotChoice } from './commands/init/prompt.ts';
@@ -42,9 +42,9 @@ import { parsePushArgs } from './nomad.dispatch.push.ts';
 import { parseSyncArgs } from './nomad.dispatch.sync.ts';
 import { DEFAULT_HELP } from './nomad.help.ts';
 import { resumeCmd } from './sync/resume.ts';
-import { isUserAbort } from './user-abort.ts';
-import { fail, isProcessExit, NomadFatal, warn } from './utils.ts';
-import { EXIT } from './exit-codes.ts';
+import { isUserAbort } from './core/user-abort.ts';
+import { fail, isProcessExit, NomadFatal, warn } from './core/utils.ts';
+import { EXIT } from './core/exit-codes.ts';
 
 /**
  * Static JSON import for the `--version` arm. Uses `with { type: 'json' }`

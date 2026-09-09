@@ -8,15 +8,15 @@ import {
   repoHome,
   sharedDirEntries,
   type PathMap,
-} from '../config.ts';
+} from '../core/config.ts';
 import {
   mayJoinRefusedEntry,
   validateSharedDirEntry,
   type SharedDirRejectionReason,
-} from '../config.sharedDirs.guard.ts';
-import { die, fail, item, log } from '../utils.ts';
-import { renameAtomicRetry } from '../utils.fs.ts';
-import { readPathMap } from '../utils.json.ts';
+} from '../core/config.sharedDirs.guard.ts';
+import { die, fail, item, log } from '../core/utils.ts';
+import { renameAtomicRetry } from '../core/utils.fs.ts';
+import { readPathMap } from '../core/utils.json.ts';
 
 /**
  * Build the manual-remainder checklist using call-time path values.

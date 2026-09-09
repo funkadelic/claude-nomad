@@ -11,8 +11,8 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { PathMap } from '../../../config.ts';
-import { repoHome } from '../../../config.ts';
+import type { PathMap } from '../../../core/config.ts';
+import { repoHome } from '../../../core/config.ts';
 
 /**
  * Remove the session's generated copies from the staged tree under

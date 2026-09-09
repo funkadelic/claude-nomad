@@ -2,8 +2,8 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
-import { SHARED_LINKS } from '../../config.ts';
-import { log } from '../../utils.ts';
+import { SHARED_LINKS } from '../../core/config.ts';
+import { log } from '../../core/utils.ts';
 
 /**
  * Snapshot-on-init helpers. A plain `nomad init` scaffolds an empty repo, so a

@@ -20,12 +20,12 @@ import {
   HOST,
   repoHome,
   type PathMap,
-} from '../../../config.ts';
+} from '../../../core/config.ts';
 import { addChildItem, addItem, type DoctorSection } from '../format.ts';
 import { classifyWin32Copy, type SharedLinkClassification } from './repo.win32.ts';
 import { posixNonSymlinkRow, repoSourceRow } from './repo.source.ts';
 import { classifyRepoState, reasonForPartial } from '../../init/classify.ts';
-import { readJson, validatePathMapShape } from '../../../utils.json.ts';
+import { readJson, validatePathMapShape } from '../../../core/utils.json.ts';
 
 /**
  * Host- and repo-state reporters for `cmdDoctor`. Each helper appends one or
@@ -42,7 +42,7 @@ import { readJson, validatePathMapShape } from '../../../utils.json.ts';
 /**
  * True when the `NOMAD_REPO` env override is set to a non-empty value.
  * Mirrors the `||` empty-string-fallthrough semantics of `REPO_HOME` itself
- * (see `src/config.ts`): an unset env, or `export NOMAD_REPO=`, both return
+ * (see `src/core/config.ts`): an unset env, or `export NOMAD_REPO=`, both return
  * false because the default fallback fires. Reads `process.env.NOMAD_REPO`
  * directly so a set-but-empty value is distinguishable from "set to the
  * default path"; reading via the imported `REPO_HOME` constant cannot make
@@ -62,7 +62,7 @@ function isOverrideActive(): boolean {
  * remain informational and do NOT mutate process.exitCode.
  */
 export function reportHostAndPaths(section: DoctorSection): void {
-  // HOST already folds in the fallback (see src/config.ts); the unset hint
+  // HOST already folds in the fallback (see src/core/config.ts); the unset hint
   // tells the user the value came from the OS hostname, not their shell rc.
   const unsetHint = process.env.NOMAD_HOST ? '' : dim(' (env unset, using hostname)');
   const repo = repoHome();

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
 import { type SpawnSyncFn } from './init/gh-actions.ts';
-import { NomadFatal } from '../utils.ts';
+import { NomadFatal } from '../core/utils.ts';
 
 /**
  * Read the version string reported by the freshly-installed `nomad` binary.

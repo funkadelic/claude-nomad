@@ -70,6 +70,6 @@ describe('packageRoot', () => {
     // No argument: the walk starts at src/ and must reach the repo root, which
     // is the property the doctor version and engine rows depend on.
     const here = dirname(fileURLToPath(import.meta.url));
-    expect(packageRoot()).toBe(join(here, '..'));
+    expect(packageRoot()).toBe(join(here, '..', '..'));
   });
 });

@@ -183,7 +183,7 @@ other side:
   captures your Windows edits into the sync repo refuses to copy your Claude login and credential
   files, your per-host settings, or your local history and stats cache, by name and by filename
   shape (a `.env`, a private key, a `.netrc`), whether that part is a directory along the way or
-  the file name itself; see `src/config.never-sync.ts` for the exact set. Session transcripts under
+  the file name itself; see `src/core/config.never-sync.ts` for the exact set. Session transcripts under
   `~/.claude/projects/` are a separate mechanism entirely (path-remapped, not mirrored by this
   gate) and are never carried by it either way. If something on the credential list somehow lands
   in the sync repo working tree anyway, such as a file edited directly in the repo rather than

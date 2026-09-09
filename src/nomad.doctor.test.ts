@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { ProcessExit } from './utils.ts';
+import { ProcessExit } from './core/utils.ts';
 
 // Dispatcher smoke tests for the `doctor` arm and its --check-shared /
 // --resume-cmd sub-flags. Split out of nomad.test.ts to keep every file

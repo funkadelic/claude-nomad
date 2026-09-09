@@ -1,7 +1,7 @@
 import { cpSync, existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-import { NomadFatal } from '../../utils.ts';
+import { NomadFatal } from '../../core/utils.ts';
 
 /**
  * Wrap a path in double quotes for a user-facing message, WITHOUT

@@ -20,12 +20,12 @@ import type * as recoveryUnmergedModule from './recovery.unmerged.ts';
 import type * as baselineModule from '../../sync/links.baseline.ts';
 import type * as linksModule from '../../sync/links.ts';
 import type * as linksMirrorModule from '../../sync/links.mirror.ts';
-import type * as utilsModule from '../../utils.ts';
-import type * as lockfileModule from '../../utils.lockfile.ts';
+import type * as utilsModule from '../../core/utils.ts';
+import type * as lockfileModule from '../../core/utils.lockfile.ts';
 
 import { warnGlyph } from '../../render/color.ts';
 import { plantSharedBaseline } from '../../test-support/baseline.ts';
-import { stubPlatform } from '../../test-helpers.platform.ts';
+import { stubPlatform } from '../../core/test-helpers.platform.ts';
 
 /**
  * Partially mock `links.mirror.ts`, keeping every real export and replacing
@@ -72,7 +72,7 @@ function mockCleanPullPipeline(onApplySharedLinks: () => void = () => undefined)
     remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
     divergenceCheckExtras: vi.fn(),
   }));
-  vi.doMock('../../utils.ts', async (importOriginal) => {
+  vi.doMock('../../core/utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
     return { ...actual, gitOrFatal: vi.fn() };
   });
@@ -121,8 +121,8 @@ describe('cmdPull precondition and lock-contention branches', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../utils.ts');
-    vi.doUnmock('../../utils.lockfile.ts');
+    vi.doUnmock('../../core/utils.ts');
+    vi.doUnmock('../../core/utils.lockfile.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -137,7 +137,7 @@ describe('cmdPull precondition and lock-contention branches', () => {
     // is ever created on disk.
     expect(existsSync(repoUnderHome)).toBe(false);
     const { cmdPull } = await import('./pull.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => cmdPull()).toThrow(NomadFatal);
     expect(() => cmdPull()).toThrow(/repo not cloned at/);
     expect(() => cmdPull()).toThrow(repoUnderHome);
@@ -159,7 +159,7 @@ describe('cmdPull precondition and lock-contention branches', () => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     const acquireSpy = vi.fn(() => null);
-    vi.doMock('../../utils.lockfile.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.lockfile.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: acquireSpy };
     });
@@ -232,7 +232,7 @@ describe('cmdPull: extras integration', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./wedge.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/links.baseline.ts');
@@ -285,7 +285,7 @@ describe('cmdPull: extras integration', () => {
       remapExtrasPull: remapExtrasPullMock,
       divergenceCheckExtras: divergenceCheckExtrasMock,
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -337,7 +337,7 @@ describe('cmdPull: extras integration', () => {
       remapExtrasPull: remapExtrasPullMock,
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -388,7 +388,7 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('../../render/preview.ts', () => ({
       computePreview: vi.fn(() => ({ unmapped: 0 })),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -430,7 +430,7 @@ describe('cmdPull: extras integration', () => {
       remapExtrasPull: remapExtrasPullMock,
       divergenceCheckExtras: divergenceCheckExtrasMock,
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -467,7 +467,7 @@ describe('cmdPull: extras integration', () => {
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 3, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -513,7 +513,7 @@ describe('cmdPull: extras integration', () => {
       })),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -612,7 +612,7 @@ describe('cmdPull: extras integration', () => {
       remapExtrasPull: vi.fn(() => ({ unmapped: 3, skipped: 0, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -650,7 +650,7 @@ describe('cmdPull: extras integration', () => {
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -716,7 +716,7 @@ describe('cmdPull wedge preflight', () => {
     vi.doUnmock('./wedge.ts');
     vi.doUnmock('./recovery.ts');
     vi.doUnmock('./recovery.unmerged.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/remap.ts');
@@ -799,7 +799,7 @@ describe('cmdPull wedge preflight', () => {
       };
     });
     const gitOrFatalSpy = vi.fn();
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: gitOrFatalSpy };
     });
@@ -822,7 +822,7 @@ describe('cmdPull wedge preflight', () => {
       };
     });
     // Mock gitOrFatal so git pull does not actually run (no real repo).
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1103,7 +1103,7 @@ describe('cmdPull forceRemote routing', () => {
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1134,7 +1134,7 @@ describe('cmdPull forceRemote routing', () => {
     const combined = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
     expect(combined).toContain('repo is clean, nothing to recover; continuing with a normal pull');
     vi.doUnmock('./wedge.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/links.baseline.ts');
@@ -1163,7 +1163,7 @@ describe('cmdPull forceRemote routing', () => {
       const actual = await importOriginal<typeof wedgeModule>();
       return { ...actual, probeUnmergedIndex: vi.fn(() => 'clean') };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1193,7 +1193,7 @@ describe('cmdPull forceRemote routing', () => {
     expect(combined).toMatch(/could not determine/);
     expect(combined).toMatch(/continuing with a normal pull/);
     vi.doUnmock('./wedge.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/links.baseline.ts');
@@ -1244,7 +1244,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doUnmock('./wedge.ts');
     vi.doUnmock('./recovery.ts');
     vi.doUnmock('./recovery.unmerged.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/remap.ts');
@@ -1319,7 +1319,7 @@ describe('handleWedge unmerged-index dispatch', () => {
       const actual = await importOriginal<typeof recoveryModule>();
       return { ...actual, recoverForceRemote: recoverForceRemoteSpy };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1358,7 +1358,7 @@ describe('handleWedge unmerged-index dispatch', () => {
       const actual = await importOriginal<typeof recoveryUnmergedModule>();
       return { ...actual, recoverUnmergedIndex: vi.fn() };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1405,7 +1405,7 @@ describe('handleWedge unmerged-index dispatch', () => {
       const actual = await importOriginal<typeof recoveryModule>();
       return { ...actual, recoverForceRemote: recoverForceRemoteSpy };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1443,7 +1443,7 @@ describe('handleWedge unmerged-index dispatch', () => {
         probeUnmergedIndex: vi.fn(() => 'clean'),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1565,7 +1565,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
 
   afterEach(() => {
     vi.doUnmock('./wedge.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/links.baseline.ts');
@@ -1688,7 +1688,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     mkdirSync(localSkills, { recursive: true });
     writeFileSync(join(localSkills, 'gsd-executor'), '# gsd executor\n');
 
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn(), gitCaptureRaw: vi.fn(() => '') };
     });
@@ -1717,7 +1717,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(readFileSync(join(localSkills, 'graphify'), 'utf8')).toBe('# graphify\n');
     // Local gsd-* skill preserved (not deleted by overlay).
     expect(existsSync(join(localSkills, 'gsd-executor'))).toBe(true);
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/remap.ts');
@@ -1743,7 +1743,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(existsSync(localSkills3)).toBe(false);
     writeFileSync(join(repoDir3, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
 
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn(), gitCaptureRaw: vi.fn(() => '') };
     });
@@ -1771,7 +1771,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
 
     // Dry-run: no files written to ~/.claude/skills (zero-mutation contract).
     expect(existsSync(localSkills3)).toBe(false);
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/remap.ts');
@@ -1792,7 +1792,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     writeFileSync(join(repoDir, 'shared', 'settings.base.json'), '{}\n');
     mkdirSync(join(testHome, '.claude'), { recursive: true });
 
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -1850,7 +1850,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
   let repoUnderHome: string;
   let lockPath: string;
   // Shared gitCaptureRaw mock instance: tests override its implementation
-  // in place instead of re-registering the ./utils.ts doMock, because a
+  // in place instead of re-registering the ../../core/utils.ts doMock, because a
   // second doMock of a module already wired into an imported graph is racy
   // (the re-import may keep the first factory's instances).
   let gitCaptureRawMock: ReturnType<typeof vi.fn>;
@@ -1881,7 +1881,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
       };
     });
     gitCaptureRawMock = vi.fn(() => '');
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn(), gitCaptureRaw: gitCaptureRawMock };
     });
@@ -1912,7 +1912,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./wedge.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/links.baseline.ts');
@@ -2040,7 +2040,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
     writeFileSync(join(testHome, '.cache', 'claude-nomad', 'backup'), 'not a dir\n');
     const { runPullCore } = await import('./pull.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => runPullCore()).toThrow(NomadFatal);
     expect(() => runPullCore()).toThrow(/could not create backup dir/);
     // Fatal fired before acquireLock could ever be reached (core is lock-free).
@@ -2107,7 +2107,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     vi.restoreAllMocks();
     vi.doUnmock('./wedge.ts');
     vi.doUnmock('./recovery.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/links.mirror.ts');
     vi.doUnmock('../../sync/links.baseline.ts');
@@ -2179,7 +2179,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
       divergenceCheckExtras: vi.fn(() => 0),
     }));
     vi.doMock('../../render/preview.ts', () => ({ computePreview: opts.previewSpy ?? vi.fn() }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -2481,7 +2481,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
       divergenceCheckExtras: vi.fn(() => 0),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -2609,7 +2609,7 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     vi.restoreAllMocks();
     vi.doUnmock('./wedge.ts');
     vi.doUnmock('./recovery.ts');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
     vi.doUnmock('../../sync/links.ts');
     vi.doUnmock('../../sync/remap.ts');
     vi.doUnmock('../../sync/extras/extras.ts');
@@ -2632,7 +2632,7 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
    * @param onRebase - Side effect applied when the mocked pull runs.
    */
   function mockRebase(onRebase?: () => void): void {
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,

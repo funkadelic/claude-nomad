@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import pkg from '../package.json' with { type: 'json' };
-import { EXIT } from './exit-codes.ts';
+import { EXIT } from './core/exit-codes.ts';
 import { buildPushRepo } from './test-support/git.ts';
 import { runNomad, type Host } from './test-support/world.ts';
 

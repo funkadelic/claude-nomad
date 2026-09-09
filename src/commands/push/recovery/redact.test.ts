@@ -12,9 +12,9 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as utilsModule from '../../../utils.ts';
-import type * as utilsFsModule from '../../../utils.fs.ts';
-import type { PathMap } from '../../../config.ts';
+import type * as utilsModule from '../../../core/utils.ts';
+import type * as utilsFsModule from '../../../core/utils.fs.ts';
+import type { PathMap } from '../../../core/config.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 
 /**
@@ -75,7 +75,7 @@ describe('applyRedact: subagent-only secret is redacted and whole subtree is sta
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -103,7 +103,7 @@ describe('applyRedact: subagent-only secret is redacted and whole subtree is sta
     const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
     mkdirSync(stagedProjectDir, { recursive: true });
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -181,8 +181,8 @@ describe('applyRedact: live-session guard fires on newest subagent mtime', () =>
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -201,7 +201,7 @@ describe('applyRedact: live-session guard fires on newest subagent mtime', () =>
     writeFileSync(agentPath, '{"text":"clean"}\n');
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
@@ -253,7 +253,7 @@ describe('applyRedact: .meta.json is copied as-is and never carries [REDACTED:',
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -277,7 +277,7 @@ describe('applyRedact: .meta.json is copied as-is and never carries [REDACTED:',
     const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
     mkdirSync(stagedProjectDir, { recursive: true });
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -347,8 +347,8 @@ describe('applyRedact: assertSafeLogical rejects an unsafe logical key', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -370,13 +370,13 @@ describe('applyRedact: assertSafeLogical rejects an unsafe logical key', () => {
       JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
     );
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
 
     const { applyRedact } = await import('./redact.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
 
     // A map with an unsafe logical key (contains path separator).
     const unsafeMap: PathMap = {
@@ -440,7 +440,7 @@ describe('applyRedact: clean agent file does not abort the whole operation', () 
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -464,7 +464,7 @@ describe('applyRedact: clean agent file does not abort the whole operation', () 
     mkdirSync(stagedProjectDir, { recursive: true });
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
     });
@@ -534,7 +534,7 @@ describe('applyRedact: no subagents dir - works as before (main only)', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -562,7 +562,7 @@ describe('applyRedact: no subagents dir - works as before (main only)', () => {
     const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
     mkdirSync(stagedProjectDir, { recursive: true });
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -627,7 +627,7 @@ describe('applyRedact: secret in tool-results/*.txt is staged as scrubbed', () =
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -652,7 +652,7 @@ describe('applyRedact: secret in tool-results/*.txt is staged as scrubbed', () =
     const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
     mkdirSync(stagedProjectDir, { recursive: true });
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -727,8 +727,8 @@ describe('applyRedact: live guard fires when tool-results file is within 5 minut
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -748,7 +748,7 @@ describe('applyRedact: live guard fires when tool-results file is within 5 minut
     writeFileSync(toolFilePath, 'active output\n');
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
@@ -800,8 +800,8 @@ describe('applyRedact: scan null on main file returns false (existing behavior p
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -818,12 +818,12 @@ describe('applyRedact: scan null on main file returns false (existing behavior p
     writeFileSync(join(subagentsDir, 'agent-1.jsonl'), '{"text":"clean"}\n');
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -880,8 +880,8 @@ describe('applyRedact: branch coverage', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -935,7 +935,7 @@ describe('applyRedact: branch coverage', () => {
     const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
     mkdirSync(stagedProjectDir, { recursive: true });
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -970,7 +970,7 @@ describe('applyRedact: branch coverage', () => {
     const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
     mkdirSync(stagedProjectDir, { recursive: true });
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -1016,7 +1016,7 @@ describe('applyRedact: branch coverage', () => {
     const stagedProjectDir = join(testHome, 'shared', 'projects', 'myproject');
     mkdirSync(stagedProjectDir, { recursive: true });
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });

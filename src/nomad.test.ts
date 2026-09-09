@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { ProcessExit } from './utils.ts';
+import { ProcessExit } from './core/utils.ts';
 
 // Smoke tests for the nomad.ts dispatcher. The file is a CLI entry point with
 // top-level switch logic, so each test sets process.argv, mocks the cmd

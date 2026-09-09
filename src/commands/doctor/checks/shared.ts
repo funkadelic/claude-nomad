@@ -35,10 +35,10 @@ import { reportCommittedMemory } from './shared.memory.ts';
 import { emitClean, scanAndReport } from './shared.scan.ts';
 import { reportCommittedSkills } from './shared.skills.ts';
 import { addItem, type DoctorSection } from '../format.ts';
-import { claudeHome, HOST, repoHome, type PathMap } from '../../../config.ts';
+import { claudeHome, HOST, repoHome, type PathMap } from '../../../core/config.ts';
 import { copyDirJsonlOnly } from '../../../sync/remap.ts';
-import { nowTimestamp } from '../../../utils.fs.ts';
-import { encodePath, readJson } from '../../../utils.json.ts';
+import { nowTimestamp } from '../../../core/utils.fs.ts';
+import { encodePath, readJson } from '../../../core/utils.json.ts';
 
 /**
  * Result of staging the scan tree. `malformed` is true when `path-map.json`

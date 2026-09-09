@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { gitInit, makeCommit } from './test-support/git.ts';
+import { gitInit, makeCommit } from '../test-support/git.ts';
 import { gitProbe } from './git-probe.ts';
 
 /**

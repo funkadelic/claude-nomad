@@ -12,7 +12,7 @@ import {
   conflictThenStripMarkers,
   gitInit,
   makeCommit,
-} from './test-support/git.ts';
+} from '../test-support/git.ts';
 
 /**
  * Tests for `autostashConflictRunbookText`. Pure string-building, so no git

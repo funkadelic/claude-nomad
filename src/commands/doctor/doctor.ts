@@ -29,7 +29,7 @@ import { reportHookScopeCheck } from './checks/hooks.scope.ts';
 import { reportHooksTargetCheck } from './checks/hooks.ts';
 import { reportPreserveSymlinksCheck } from './checks/hooks.preserve-symlinks.ts';
 import { reportHooksBaseSelfCleanNote, reportSettingsDriftCheck } from './checks/settings-drift.ts';
-import { repoHome, type PathMap } from '../../config.ts';
+import { repoHome, type PathMap } from '../../core/config.ts';
 import { reportNodeEngineCheck } from './engine.ts';
 import { reportLongPathsCheck, reportSyncModality } from './checks/longpaths.ts';
 import { reportCrlfGuardCheck } from './checks/crlf.ts';

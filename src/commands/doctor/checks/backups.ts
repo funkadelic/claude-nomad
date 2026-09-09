@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
-import { backupBase as getBackupBase } from '../../../config.ts';
+import { backupBase as getBackupBase } from '../../../core/config.ts';
 
 /**
  * Shape of a `<ts>` backup directory name as produced by `freshBackupTs`:

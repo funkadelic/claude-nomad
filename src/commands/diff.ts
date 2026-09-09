@@ -1,12 +1,12 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { backupBase, repoHome, type PathMap } from '../config.ts';
+import { backupBase, repoHome, type PathMap } from '../core/config.ts';
 import { divergenceCheckExtras } from '../sync/extras/extras.ts';
 import { computePreview } from '../render/preview.ts';
-import { die, fail, NomadFatal } from '../utils.ts';
-import { freshBackupTs } from '../utils.fs.ts';
-import { readPathMap } from '../utils.json.ts';
+import { die, fail, NomadFatal } from '../core/utils.ts';
+import { freshBackupTs } from '../core/utils.fs.ts';
+import { readPathMap } from '../core/utils.json.ts';
 
 /**
  * `nomad diff` command. Offline-safe, read-only preview surface that runs

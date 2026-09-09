@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { stubPlatform } from '../test-helpers.platform.ts';
+import { stubPlatform } from '../core/test-helpers.platform.ts';
 
 /**
  * Real platform of the machine running the suite, restored in `afterEach`.

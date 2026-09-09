@@ -4,8 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as utilsFsModule from '../../../utils.fs.ts';
-import type { PathMap } from '../../../config.ts';
+import type * as utilsFsModule from '../../../core/utils.fs.ts';
+import type { PathMap } from '../../../core/config.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 
 // ---------------------------------------------------------------------------
@@ -87,7 +87,7 @@ describe('redactAllFindings - memory-aware batch redaction', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -99,7 +99,7 @@ describe('redactAllFindings - memory-aware batch redaction', () => {
 
   it('redacts a memory finding alongside a session finding in one batch', async () => {
     const { transcriptPath, memoryPath, farFuture, map } = makeMixedRedactAllFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -148,7 +148,7 @@ describe('redactAllFindings - memory-aware batch redaction', () => {
 
   it('redacts two findings in the same memory file once (dedup by logical/filename)', async () => {
     const { memoryPath, map } = makeMixedRedactAllFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -178,13 +178,13 @@ describe('redactAllFindings - memory-aware batch redaction', () => {
 
   it('aborts the whole batch (no local mutation) when a memory finding is unresolvable in preflight', async () => {
     const { transcriptPath, memoryPath, farFuture, map } = makeMixedRedactAllFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
 
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const transcriptOriginal = readFileSync(transcriptPath, 'utf8');
     const memoryOriginal = readFileSync(memoryPath, 'utf8');
     const scanSpy = vi.fn().mockReturnValue([]);
@@ -214,7 +214,7 @@ describe('redactAllFindings - memory-aware batch redaction', () => {
   it('a lone unresolvable memory finding is not silently skipped: throws NomadFatal', async () => {
     makeMixedRedactAllFixture(testHome);
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const emptyMap: PathMap = { projects: {} };
     const memoryFinding = makeFinding({ File: 'shared/projects/myproject/memory/notes.md' });
 
@@ -225,7 +225,7 @@ describe('redactAllFindings - memory-aware batch redaction', () => {
 
   it('does not mark a memory file redacted when applyMemoryRedact fails (scan returns null), retrying the next finding', async () => {
     const { memoryPath, map } = makeMixedRedactAllFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -288,7 +288,7 @@ describe('redactAllFindings - skill-aware batch redaction', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -301,7 +301,7 @@ describe('redactAllFindings - skill-aware batch redaction', () => {
   it('redacts a mix of one session, one memory, and one skill finding in one batch', async () => {
     const { transcriptPath, memoryPath, skillPath, farFuture, map } =
       makeSkillRedactAllFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -349,7 +349,7 @@ describe('redactAllFindings - skill-aware batch redaction', () => {
 
   it('redacts two findings in the same skill file once (dedup by name/relPath)', async () => {
     const { skillPath, map } = makeSkillRedactAllFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -379,13 +379,13 @@ describe('redactAllFindings - skill-aware batch redaction', () => {
 
   it('aborts the whole batch (no local mutation) when a skill finding is unresolvable in preflight', async () => {
     const { transcriptPath, skillPath, farFuture, map } = makeSkillRedactAllFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
 
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const transcriptOriginal = readFileSync(transcriptPath, 'utf8');
     const skillOriginal = readFileSync(skillPath, 'utf8');
     const scanSpy = vi.fn().mockReturnValue([]);
@@ -410,7 +410,7 @@ describe('redactAllFindings - skill-aware batch redaction', () => {
   it('a lone unresolvable skill finding is not silently skipped: throws NomadFatal', async () => {
     makeSkillRedactAllFixture(testHome);
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const skillFinding = makeFinding({ File: 'shared/skills/missing-skill/SKILL.md' });
 
     expect(() =>
@@ -420,7 +420,7 @@ describe('redactAllFindings - skill-aware batch redaction', () => {
 
   it('does not mark a skill file redacted when applySkillRedact fails (scan returns null), retrying the next finding', async () => {
     const { skillPath, map } = makeSkillRedactAllFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -441,7 +441,7 @@ describe('redactAllFindings - skill-aware batch redaction', () => {
 
   it('a genuine non-session non-memory non-skill finding still refuses via the unchanged preflightRedactable path', async () => {
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const genuineFinding = makeFinding({ File: 'shared/other/not-a-session.txt' });
 
     expect(() =>

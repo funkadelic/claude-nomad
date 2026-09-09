@@ -1,10 +1,16 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ALWAYS_NEVER_SYNC, claudeHome, GSD_PREFIX, isDeniedName, repoHome } from '../config.ts';
+import {
+  ALWAYS_NEVER_SYNC,
+  claudeHome,
+  GSD_PREFIX,
+  isDeniedName,
+  repoHome,
+} from '../core/config.ts';
 import { copyExtrasFiltered, copyExtrasFilteredPreservingBy } from './extras/core.ts';
 import { trackedRootSkillsAt } from './skills-sync.tracked.ts';
-import { backupBeforeWrite } from '../utils.fs.ts';
+import { backupBeforeWrite } from '../core/utils.fs.ts';
 
 /**
  * Returns `true` when a skill (or agent/hook) basename is owned by gsd rather

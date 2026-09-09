@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { failGlyph, infoGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import { type Env, joinedLog, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
-import { stubPlatform } from '../../../test-helpers.platform.ts';
+import { stubPlatform } from '../../../core/test-helpers.platform.ts';
 
 describe('cmdDoctor repo-state header', () => {
   let originalHome: string | undefined;
@@ -340,7 +340,7 @@ describe('reportSharedLinks non-symlink fail path (direct)', () => {
       // the `process.exitCode = 1` assignment, silently masking the "blocks sync"
       // condition. Going directly to reportSharedLinks (not cmdDoctor) ensures the
       // assertion is clean, without exitCode noise from other doctor sections.
-      const { SHARED_LINKS } = await import('../../../config.ts');
+      const { SHARED_LINKS } = await import('../../../core/config.ts');
       const { reportSharedLinks } = await import('./repo.ts');
       const { section } = await import('../format.ts');
       const name = SHARED_LINKS[0];
@@ -662,7 +662,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
   it('WARNs naming the diverging file count when a win32 real copy differs from shared/<name>', async () => {
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     writeFileSync(join(sharedDir, name), '# shared content\n');
     writeFileSync(join(claudeDir, name), '# drifted local content\n');
@@ -687,7 +687,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
   it('still reads OK when a win32 real copy matches shared/<name> byte-for-byte', async () => {
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     writeFileSync(join(sharedDir, name), '# identical content\n');
     writeFileSync(join(claudeDir, name), '# identical content\n');
@@ -707,7 +707,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
   it('leaves process.exitCode untouched by the drift WARN and still renders a later row', async () => {
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const drifted = SHARED_LINKS[0];
     const clean = SHARED_LINKS[1];
     if (drifted === undefined || clean === undefined) {
@@ -733,7 +733,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
   it('names a real local copy the repo does not carry as unpublished, with the command that publishes it', async () => {
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     // No shared/<name> written at all: this name was never published, since
     // syncSharedLinksPush no longer creates a repo counterpart on its own.
@@ -760,7 +760,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     // does not exist.
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     // Nothing written under claudeDir or sharedDir for this name at all.
 
@@ -780,7 +780,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
   it('never throws when the compare cannot run (git absent from PATH)', async () => {
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     writeFileSync(join(sharedDir, name), '# shared\n');
     writeFileSync(join(claudeDir, name), '# local\n');
@@ -982,7 +982,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
   it('still FAILs a non-symlink on posix, unaffected by the win32 drift compare', async () => {
     stubPlatform('linux');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     writeFileSync(join(sharedDir, name), '# shared\n');
     writeFileSync(join(claudeDir, name), '# local, but not a symlink\n');
@@ -1008,7 +1008,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     // platforms agree.
     stubPlatform('linux');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     symlinkSync(join(sharedDir, 'no-such-target'), join(sharedDir, name));
     writeFileSync(join(claudeDir, name), '# local, but not a symlink\n');
@@ -1037,7 +1037,7 @@ describe('classifySharedLink win32 content-drift compare (direct)', () => {
     // unreadable path is not portably reproducible in CI, so the mock is what
     // drives this operand through the real reporter.
     stubPlatform('linux');
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     const blocked = join(sharedDir, name);
     writeFileSync(blocked, '# shared\n');

@@ -24,11 +24,11 @@ import { join } from 'node:path';
 
 import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './pull/pull.ts';
 import { runPushCore, type PushCoreResult } from './push/push.ts';
-import { HOST, repoHome } from '../config.ts';
+import { HOST, repoHome } from '../core/config.ts';
 import { dim, infoGlyph, warnGlyph, yellow } from '../render/color.ts';
 import { addItem, renderTree, section, type DoctorSection } from '../render/output-tree.ts';
-import { die, fail, log, ok, NomadFatal } from '../utils.ts';
-import { acquireLock, releaseLock } from '../utils.lockfile.ts';
+import { die, fail, log, ok, NomadFatal } from '../core/utils.ts';
+import { acquireLock, releaseLock } from '../core/utils.lockfile.ts';
 
 /** The wet pull result shape carrying the sections a composing caller renders. */
 type WetPull = Extract<PullCoreResult, { tag: 'wet' }>;

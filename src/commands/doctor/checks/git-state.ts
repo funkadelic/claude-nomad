@@ -14,12 +14,12 @@ import {
   warnGlyph,
   yellow,
 } from '../../../render/color.ts';
-import { deniedSegmentFor, repoHome } from '../../../config.ts';
+import { deniedSegmentFor, repoHome } from '../../../core/config.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { classifyWedge, orphanedAutostashPresent } from '../../pull/wedge.ts';
-import { gitProbe } from '../../../git-probe.ts';
+import { gitProbe } from '../../../core/git-probe.ts';
 import { findGitlinks } from '../../push/checks.ts';
-import { gitStatusPorcelainZ } from '../../../utils.ts';
+import { gitStatusPorcelainZ } from '../../../core/utils.ts';
 
 /**
  * Git-state reporters for `cmdDoctor`: the gitleaks presence probe, the

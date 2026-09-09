@@ -8,7 +8,7 @@ import { logOutput, makePushEnv, teardownPushEnv, type PushEnv } from './test-he
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './checks.ts';
 import type * as leakVerdictModule from './leak-verdict.ts';
-import type * as utilsModule from '../../utils.ts';
+import type * as utilsModule from '../../core/utils.ts';
 
 // cmdPush emitSummary aggregation on the clean push success path: session and
 // extras unmapped counts combine into one WARN line, and extras-skipped
@@ -62,7 +62,7 @@ describe('cmdPush: extras pipeline integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -118,7 +118,7 @@ describe('cmdPush: extras pipeline integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,

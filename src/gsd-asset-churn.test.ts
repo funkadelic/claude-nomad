@@ -23,7 +23,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PathMap } from './config.ts';
+import type { PathMap } from './core/config.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -132,7 +132,7 @@ describe('gsd-asset churn: no shared/hooks diff after hooks drop (B8)', () => {
     // must block it because shared/hooks/ is not in PUSH_ALLOWED_STATIC.
     vi.resetModules();
     const { enforceAllowList } = await import('./commands/push/allowlist.ts');
-    const { NomadFatal } = await import('./utils.ts');
+    const { NomadFatal } = await import('./core/utils.ts');
 
     const map: PathMap = { projects: {} };
     // Simulate porcelain -z output for a staged file under shared/hooks/

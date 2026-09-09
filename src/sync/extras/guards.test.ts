@@ -59,7 +59,7 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
         }) + '\n',
       );
       const { remapExtrasPush } = await import('./extras.ts');
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       expect(() => remapExtrasPush('20260522-evil')).toThrow(NomadFatal);
       // Confirm no escape-write happened (shared/extras stays empty of crafted keys).
       const repoExtras = join(repoUnderHome, 'shared', 'extras');
@@ -80,7 +80,7 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
         }) + '\n',
       );
       const { remapExtrasPull } = await import('./extras.ts');
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       expect(() => remapExtrasPull('20260522-evil')).toThrow(NomadFatal);
     });
 
@@ -93,7 +93,7 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
         }) + '\n',
       );
       const { divergenceCheckExtras } = await import('./extras.ts');
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       expect(() => divergenceCheckExtras('20260522-evil')).toThrow(NomadFatal);
     });
   }
@@ -117,7 +117,7 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
       }) + '\n',
     );
     const { remapExtrasPush } = await import('./extras.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => remapExtrasPush('20260522-multi-evil')).toThrow(NomadFatal);
     expect(existsSync(repoExtras)).toBe(false);
   });
@@ -144,7 +144,7 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
       }) + '\n',
     );
     const { remapExtrasPull } = await import('./extras.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => remapExtrasPull('20260522-pull-multi-evil')).toThrow(NomadFatal);
     // Host content untouched: original file still there, no backup written.
     expect(readFileSync(join(localPlanning, 'STATE.md'), 'utf8')).toBe('# original\n');
@@ -167,7 +167,7 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
         }) + '\n',
       );
       const { remapExtrasPush } = await import('./extras.ts');
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       expect(() => remapExtrasPush('20260522-evil-root')).toThrow(NomadFatal);
     });
 
@@ -180,7 +180,7 @@ describe('assertSafeLogical (path-traversal defense-in-depth)', () => {
         }) + '\n',
       );
       const { remapExtrasPull } = await import('./extras.ts');
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       expect(() => remapExtrasPull('20260522-evil-root')).toThrow(NomadFatal);
     });
   }

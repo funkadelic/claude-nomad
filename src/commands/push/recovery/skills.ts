@@ -37,14 +37,14 @@ import {
 } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
-import { claudeHome, repoHome } from '../../../config.ts';
+import { claudeHome, repoHome } from '../../../core/config.ts';
 import { isGsdOwned } from '../../../sync/skills-sync.ts';
 import { applyRedactions } from '../../redact/core.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
-import { isSafeRelPath } from '../../../rel-path-guard.ts';
-import { backupBeforeWrite } from '../../../utils.fs.ts';
-import { log, warn } from '../../../utils.ts';
+import { isSafeRelPath } from '../../../core/rel-path-guard.ts';
+import { backupBeforeWrite } from '../../../core/utils.fs.ts';
+import { log, warn } from '../../../core/utils.ts';
 
 /**
  * Matches a repo-relative POSIX finding path of the form

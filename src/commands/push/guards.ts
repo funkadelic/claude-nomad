@@ -1,7 +1,7 @@
 import { join, relative } from 'node:path';
 
 import { findGitlinks } from './checks.ts';
-import { die, fail, NomadFatal } from '../../utils.ts';
+import { die, fail, NomadFatal } from '../../core/utils.ts';
 
 /**
  * Walk `shared/` for nested `.git` entries copied in from a host's encoded

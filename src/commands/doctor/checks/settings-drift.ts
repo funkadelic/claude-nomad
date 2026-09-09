@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { classifySettingsDrift, partitionByCaptureExclusion } from '../../capture-settings/core.ts';
 import { addItem, type DoctorSection } from '../format.ts';
-import { claudeHome, HOST, repoHome } from '../../../config.ts';
+import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
 import { baseHasGsdHookEntries } from '../../../sync/hooks-filter.ts';
-import { deepMerge } from '../../../utils.json.ts';
+import { deepMerge } from '../../../core/utils.json.ts';
 
 /**
  * Drift check for `nomad doctor`: recomputes `deepMerge(base, host)` and

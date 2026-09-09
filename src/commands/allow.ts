@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
 
-import { repoHome } from '../config.ts';
+import { repoHome } from '../core/config.ts';
 import { appendGitleaksIgnore, isValidFingerprint } from './redact/core.ts';
-import { EXIT } from '../exit-codes.ts';
-import { die, fail, item, log } from '../utils.ts';
+import { EXIT } from '../core/exit-codes.ts';
+import { die, fail, item, log } from '../core/utils.ts';
 
 /**
  * Validate each fingerprint with `isValidFingerprint`, then append each valid

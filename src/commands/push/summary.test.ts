@@ -5,7 +5,7 @@ import { logOutput, makePushEnv, teardownPushEnv, type PushEnv } from './test-he
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './checks.ts';
 import type * as leakVerdictModule from './leak-verdict.ts';
-import type * as utilsModule from '../../utils.ts';
+import type * as utilsModule from '../../core/utils.ts';
 
 // Coverage for cmdPush's emitSummary terminator lines on the success,
 // clean, dry-run, and nothing-to-commit paths. Shares the cmdPush pipeline
@@ -46,7 +46,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 1, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -100,7 +100,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         wouldPush: [],
       })),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -145,7 +145,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 3, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -190,7 +190,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,

@@ -55,7 +55,7 @@ This behavior is implemented in `src/sync/extras/extras.ts`. It applies to any p
   `@opengsd/gsd-core` install.
 - The sync repo does not accumulate gsd-generated hook and agent churn.
 
-This is implemented via the `SHARED_LINKS` constant in `src/config.ts`, applied by `src/sync/links.ts`
+This is implemented via the `SHARED_LINKS` constant in `src/core/config.ts`, applied by `src/sync/links.ts`
 (with the win32 mirror in `src/sync/links.mirror.ts`). The names `hooks` and
 `agents` are also reserved in the `sharedDirs` validation logic, so you cannot accidentally
 re-add them through the opt-in path.
@@ -126,7 +126,7 @@ conflicts from a future session where two hosts drift apart.
 
 When a project opts its `<repo>/.claude/` directory into extras sync, nomad applies a per-name
 denylist on both push and pull. The denylist (`CLAUDE_EXTRA_NEVER_SYNC` in
-`src/config.never-sync.ts`) is the full `NEVER_SYNC` set plus `projects/`, which strips session
+`src/core/config.never-sync.ts`) is the full `NEVER_SYNC` set plus `projects/`, which strips session
 transcripts, `settings.local.json`, `shell-snapshots/`, `sessions/`, and other host-local or
 ephemeral names, leaving your project config (`settings.json`, `skills/`, `commands/`, `rules/`,
 `hooks/`, `agents/`).

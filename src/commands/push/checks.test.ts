@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { EXIT } from '../../exit-codes.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
@@ -182,7 +182,7 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
     const { probeGitleaks } = await import('./checks.ts');
     expect(() => probeGitleaks()).toThrow(/gitleaks not on PATH/);
     expect(() => probeGitleaks()).toThrow(/Install:/);
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     try {
       probeGitleaks();
     } catch (err) {
@@ -371,7 +371,7 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
       };
     });
     const { probeGitleaks } = await import('./checks.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => probeGitleaks()).toThrow(NomadFatal);
     expect(() => probeGitleaks()).toThrow(/gitleaks --version failed/);
     expect(() => probeGitleaks()).toThrow(/permission denied/);
@@ -680,7 +680,7 @@ describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
     // Build the torn-down-rebase fixture: index is unmerged, no marker.
     buildPushUnmergedIndex(tmp);
     const { rebaseBeforePush } = await import('./checks.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // Must throw NomadFatal (preflight, not a post-rebase conflict).
     expect(() => rebaseBeforePush(tmp)).toThrow(NomadFatal);
     // Must name the manual recovery step.
@@ -702,7 +702,7 @@ describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
     makePushTestCommit(tmp, 'a.ts', 'x\n', 'init');
     mkdirSync(join(tmp, '.git', 'rebase-merge'));
     const { rebaseBeforePush } = await import('./checks.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => rebaseBeforePush(tmp)).toThrow(NomadFatal);
     expect(() => rebaseBeforePush(tmp)).toThrow(/mid-rebase/);
     expect(() => rebaseBeforePush(tmp)).toThrow(/nomad pull --force-remote/);
@@ -720,7 +720,7 @@ describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
     makePushTestCommit(tmp, 'a.ts', 'x\n', 'init');
     writeFileSync(join(tmp, '.git', 'MERGE_HEAD'), 'deadbeef\n');
     const { rebaseBeforePush } = await import('./checks.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => rebaseBeforePush(tmp)).toThrow(NomadFatal);
     expect(() => rebaseBeforePush(tmp)).toThrow(/mid-merge/);
     expect(() => rebaseBeforePush(tmp)).toThrow(/nomad pull --force-remote/);
@@ -740,7 +740,7 @@ describe('rebaseBeforePush wedge preflight (real-git fixtures)', () => {
     initPushTestRepo(tmp);
     makePushTestCommit(tmp, 'a.ts', 'x\n', 'init');
     const { rebaseBeforePush } = await import('./checks.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // No remote: git pull --rebase fails after the preflight passes.
     // The error must be the generic post-rebase message, not the wedge message.
     let thrown: InstanceType<typeof NomadFatal> | null = null;

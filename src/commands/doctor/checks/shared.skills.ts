@@ -35,9 +35,9 @@ import { dirname, join } from 'node:path';
 
 import { dim, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
-import { repoHome } from '../../../config.ts';
+import { repoHome } from '../../../core/config.ts';
 import { type Finding, scanStagedTree } from '../../push/gitleaks.ts';
-import { nowTimestamp } from '../../../utils.fs.ts';
+import { nowTimestamp } from '../../../core/utils.fs.ts';
 
 /**
  * Matches a committed, repo-relative POSIX path of the form

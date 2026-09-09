@@ -183,7 +183,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal with install hint when gh is not installed', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({ auth: 'not-installed' });
     expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
     try {
@@ -199,7 +199,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal with auth hint when gh is not authenticated', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({ auth: 'not-authed' });
     expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
     try {
@@ -217,7 +217,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal with a network hint (not auth) on gh-probe-error', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({ auth: 'probe-error' });
     expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
     try {
@@ -235,7 +235,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal on an empty name without calling any subprocess', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const calls: string[] = [];
     const run: SpawnSyncFn = (bin) => {
       calls.push(bin);
@@ -247,14 +247,14 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal on a name with a path separator', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({});
     expect(() => ensureOriginRepo('bad/name', run)).toThrow(NomadFatal);
   });
 
   it('throws NomadFatal on a name that is only spaces', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({});
     expect(() => ensureOriginRepo('   ', run)).toThrow(NomadFatal);
   });
@@ -273,7 +273,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal when gh api user fails', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run: SpawnSyncFn = (bin, args) => {
       const argv = Array.from(args);
       if (bin === 'git' && argv[0] === 'remote' && argv[1] === 'get-url') {
@@ -316,7 +316,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal when gh repo create fails', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({ auth: 'ok', repoCreate: 'throw' });
     expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
     try {
@@ -332,7 +332,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal when git remote add fails', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({ auth: 'ok', repoCreate: 'ok', owner: 'octocat', remoteAdd: 'throw' });
     expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
     try {
@@ -348,7 +348,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal when git init fails', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({ auth: 'ok', gitInit: 'throw' });
     expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
     try {
@@ -364,7 +364,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal and skips git remote add when gh login is empty', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const calls: string[] = [];
     const inner = makeRun({ auth: 'ok', repoCreate: 'ok', owner: '' });
     const run: SpawnSyncFn = (bin, args) => {
@@ -382,7 +382,7 @@ describe('ensureOriginRepo', () => {
 
   it('throws NomadFatal when gh login is the literal "null"', async () => {
     const { ensureOriginRepo } = await import('./gh-onboard.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeRun({ auth: 'ok', repoCreate: 'ok', owner: 'null' });
     expect(() => ensureOriginRepo('my-repo', run)).toThrow(NomadFatal);
     try {

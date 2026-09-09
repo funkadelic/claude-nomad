@@ -8,7 +8,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { gitStatusPorcelainZ } from '../../utils.ts';
+import { gitStatusPorcelainZ } from '../../core/utils.ts';
 
 /**
  * Capture stdout from a shell-free git invocation. Returns the trimmed output.

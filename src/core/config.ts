@@ -336,10 +336,10 @@ export {
 } from './config.never-sync.ts';
 
 // Schema-drift baseline for `~/.claude/settings.json`; top-level keys not in
-// this set trigger a `nomad doctor` WARN. Defined in ./sync/settings-keys.ts so the
+// this set trigger a `nomad doctor` WARN. Defined in ./settings-keys.ts so the
 // schema-derived half can be re-synced mechanically; re-exported here so
 // existing `from './config.ts'` imports keep resolving.
-export { KNOWN_SETTINGS_KEYS } from './sync/settings-keys.ts';
+export { KNOWN_SETTINGS_KEYS } from './settings-keys.ts';
 
 /**
  * Static half of the push allow-list. Entries with trailing `/` are prefix

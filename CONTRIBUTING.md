@@ -73,10 +73,11 @@ not have to be reverse-engineered from them.
   newer-Node-only API typecheck cleanly and then crash at runtime on the supported floor.
 - **Hard pins are reserved for behavior-sensitive externals that are not npm range deps.** Two cases
   are pinned exactly rather than ranged: the gitleaks version, kept as a single
-  `GITLEAKS_PINNED_VERSION` in [`src/config.ts`](src/config.ts) and mirrored in both workflow YAMLs,
-  with [`src/config.gitleaks-pin.test.ts`](src/config.gitleaks-pin.test.ts) asserting the three stay
-  in lockstep so a CI bump that misses the constant fails the suite; and first-party GitHub Actions,
-  which are SHA-pinned for supply-chain integrity (Dependabot still proposes the bumps).
+  `GITLEAKS_PINNED_VERSION` in [`src/core/config.ts`](src/core/config.ts) and mirrored in both
+  workflow YAMLs, with
+  [`src/core/config.gitleaks-pin.test.ts`](src/core/config.gitleaks-pin.test.ts) asserting the three
+  stay in lockstep so a CI bump that misses the constant fails the suite; and first-party GitHub
+  Actions, which are SHA-pinned for supply-chain integrity (Dependabot still proposes the bumps).
 - **Do not exact-pin runtime dependencies in `package.json`.** claude-nomad is published to npm, so
   pinning a runtime dependency to an exact version blocks consumers from deduping it against their
   own tree and adds upgrade-PR churn that the committed lockfile already makes unnecessary. Pin in
@@ -120,13 +121,13 @@ resume a multi-session sweep without re-running completed modules.
 ### Resolved limitation: HOME-based test isolation
 
 Modules whose tests swap `process.env.HOME` to a temp directory were previously blocked from
-mutation testing by two stacked issues, both now fixed. First, [`src/config.ts`](src/config.ts)
-resolved its paths at module load time; the call-time resolvers (`home()`, `claudeHome()`,
-`repoHome()`, `backupBase()`) removed that. Second, Stryker's vitest runner forces
-`pool: 'threads'`, and a worker thread's `process.env` mutations update only that isolate's copy
-while `os.homedir()` reads the real process environ and never sees them; `home()` therefore reads
-`process.env.HOME` directly (empty string falls through to `os.homedir()`), pinned by a
-worker-thread probe test in [`src/config.test.ts`](src/config.test.ts).
+mutation testing by two stacked issues, both now fixed. First,
+[`src/core/config.ts`](src/core/config.ts) resolved its paths at module load time; the call-time
+resolvers (`home()`, `claudeHome()`, `repoHome()`, `backupBase()`) removed that. Second, Stryker's
+vitest runner forces `pool: 'threads'`, and a worker thread's `process.env` mutations update only
+that isolate's copy while `os.homedir()` reads the real process environ and never sees them;
+`home()` therefore reads `process.env.HOME` directly (empty string falls through to `os.homedir()`),
+pinned by a worker-thread probe test in [`src/core/config.test.ts`](src/core/config.test.ts).
 
 All HOME-swapping modules now pass the Stryker dry run and can be swept normally. One residual
 scoping caveat: a test only registers kills in sweeps whose `--testFiles` included it, so a test
@@ -161,9 +162,9 @@ without further analysis.
 [`src/commands/push/gitleaks*.ts`](src/commands/push/gitleaks.ts),
 [`src/commands.redact*.ts`](src/commands.redact.ts),
 [`src/commands/push/recovery/*.ts`](src/commands/push/recovery/recovery.ts),
-[`src/utils.lockfile*.ts`](src/utils.lockfile.ts), and
-[`src/config.sharedDirs.guard.ts`](src/config.sharedDirs.guard.ts) are never bulk-deleted. A
-zero-kill result in a security module often documents a refusal or containment invariant that
+[`src/core/utils.lockfile*.ts`](src/core/utils.lockfile.ts), and
+[`src/core/config.sharedDirs.guard.ts`](src/core/config.sharedDirs.guard.ts) are never bulk-deleted.
+A zero-kill result in a security module often documents a refusal or containment invariant that
 mutation testing does not exercise (for example, a traversal-guard rejection path). Delete a
 security-module test only with an explicit recorded rationale.
 

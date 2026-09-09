@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { okGlyph, warnGlyph } from '../../render/color.ts';
 import { section } from './format.ts';
-import { GITLEAKS_PINNED_VERSION } from '../../config.ts';
+import { GITLEAKS_PINNED_VERSION } from '../../core/config.ts';
 import { reportGitleaksVersionCheck } from './gitleaks-version.ts';
 import type { SpawnSyncFn } from '../init/gh-actions.ts';
 

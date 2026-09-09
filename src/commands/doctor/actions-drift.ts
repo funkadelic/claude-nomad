@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import { warnGlyph, yellow } from '../../render/color.ts';
 import { addItem, type DoctorSection } from './format.ts';
-import { repoHome } from '../../config.ts';
+import { repoHome } from '../../core/config.ts';
 import {
   ghAuthStatus,
   isActionsEnabled,

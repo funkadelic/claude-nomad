@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logOutput, makePushEnv, teardownPushEnv, type PushEnv } from './test-helpers.ts';
-import { EXIT } from '../../exit-codes.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './checks.ts';
@@ -9,10 +9,10 @@ import type * as pushGlobalConfigModule from './global-config.ts';
 import type * as leakVerdictModule from './leak-verdict.ts';
 import type * as pushManifestModule from './manifest.ts';
 import type * as recoveryModule from './recovery/recovery.ts';
-import type * as utilsModule from '../../utils.ts';
+import type * as utilsModule from '../../core/utils.ts';
 import type { PushState } from './sections.ts';
 import type { Manifest } from './manifest.ts';
-import type { NomadFatal } from '../../utils.ts';
+import type { NomadFatal } from '../../core/utils.ts';
 
 /**
  * Behavior tests for `commitAndPush`'s `render` flag (the compose-mode seam
@@ -61,7 +61,7 @@ function mockCommitDeps(opts: {
   resolveSpy?: ReturnType<typeof vi.fn>;
   gitOrFatalSpy?: ReturnType<typeof vi.fn>;
 }): void {
-  vi.doMock('../../utils.ts', async (importOriginal) => {
+  vi.doMock('../../core/utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
     return {
       ...actual,
@@ -266,7 +266,7 @@ describe('commitAndPush render flag', () => {
       gitOrFatalSpy,
     });
     const { commitAndPush } = await import('./steps.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
 
     await expect(
       commitAndPush(
@@ -426,7 +426,7 @@ function mockPipeline(
       }),
     };
   });
-  vi.doMock('../../utils.ts', async (importOriginal) => {
+  vi.doMock('../../core/utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
     return { ...actual, gitStatusPorcelainZ: vi.fn(() => statusLine) };
   });

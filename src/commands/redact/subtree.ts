@@ -15,8 +15,8 @@ import { join } from 'node:path';
 
 import { applyRedactions, isRecentlyModified } from './core.ts';
 import type { Finding } from '../push/gitleaks.scan.ts';
-import { backupBeforeWrite } from '../../utils.fs.ts';
-import { log } from '../../utils.ts';
+import { backupBeforeWrite } from '../../core/utils.fs.ts';
+import { log } from '../../core/utils.ts';
 
 /**
  * Recurse into `dir` and collect absolute paths of every regular file,

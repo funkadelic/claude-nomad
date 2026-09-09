@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import type { PathMap } from '../../config.ts';
+import type { PathMap } from '../../core/config.ts';
 
 describe('enforceAllowList: hosts/ JSON-only guard (issue #138)', () => {
   let errorSpy: MockInstance<(...args: unknown[]) => void>;
@@ -38,7 +38,7 @@ describe('enforceAllowList: hosts/ JSON-only guard (issue #138)', () => {
     // hard-block than the plain allow-list violation, so it is rejected before
     // the `hosts/` JSON-only guard is even reached.
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('?? hosts/dell-wsl.key\0', map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
@@ -52,7 +52,7 @@ describe('enforceAllowList: hosts/ JSON-only guard (issue #138)', () => {
     // does not match, the `continue` prevents the prefix fallthrough, and it
     // surfaces as a plain allow-list violation (not NEVER_SYNC).
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('?? hosts/dell-wsl.txt\0', map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/dell-wsl.txt'));
@@ -64,7 +64,7 @@ describe('enforceAllowList: hosts/ JSON-only guard (issue #138)', () => {
     // The `continue` prevents the prefix fallthrough; the path must be
     // rejected regardless of the `.json` extension.
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('?? hosts/sub/x.json\0', map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync hosts/sub/x.json'));

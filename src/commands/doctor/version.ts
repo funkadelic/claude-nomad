@@ -3,9 +3,9 @@ import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../render/color.ts';
 import { addItem, type DoctorSection } from './format.ts';
-import { NPM_REGISTRY_LATEST_URL } from '../../config.ts';
-import { fetchUrl } from '../../http-fetch.ts';
-import { packageRoot } from '../../package-root.ts';
+import { NPM_REGISTRY_LATEST_URL } from '../../core/config.ts';
+import { fetchUrl } from '../../core/http-fetch.ts';
+import { packageRoot } from '../../core/package-root.ts';
 
 /**
  * Soft, offline-tolerant release-version check appended to `cmdDoctor`. Reads

@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome, HOST, type PathMap } from '../../config.ts';
+import { claudeHome, HOST, type PathMap } from '../../core/config.ts';
 import {
   buildManifest,
   diffManifest,
@@ -12,7 +12,7 @@ import {
   type ManifestEntry,
   shouldFullRescan,
 } from './manifest.ts';
-import { encodePath, readPathMap } from '../../utils.json.ts';
+import { encodePath, readPathMap } from '../../core/utils.json.ts';
 
 /**
  * Enumerate all source files across every project in the path-map that has a

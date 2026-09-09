@@ -1,14 +1,14 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
-import { assertSafeLogical } from '../config.sharedDirs.guard.ts';
+import { assertSafeLogical } from '../core/config.sharedDirs.guard.ts';
 import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras/core.ts';
 import { assertSafeLocalRoot } from './extras/guards.ts';
-import { claudeHome, repoHome, HOST, type PathMap } from '../config.ts';
+import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { type ManifestDiff } from '../commands/push/manifest.ts';
-import { die, item, log } from '../utils.ts';
-import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../utils.fs.ts';
-import { encodePath, readPathMap } from '../utils.json.ts';
+import { die, item, log } from '../core/utils.ts';
+import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
+import { encodePath, readPathMap } from '../core/utils.json.ts';
 
 /**
  * Suffix for the sibling staging directory used by `atomicMirror`. Stray dirs

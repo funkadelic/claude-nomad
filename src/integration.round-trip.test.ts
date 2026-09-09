@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { deepMerge, encodePath } from './utils.json.ts';
+import { deepMerge, encodePath } from './core/utils.json.ts';
 import { g, gitOut, plantLocalSession } from './test-support/git.ts';
 import { makeWorld, runNomad } from './test-support/world.ts';
 

@@ -219,7 +219,7 @@ describe('remapExtrasPull (integration)', () => {
     );
 
     const { remapExtrasPull } = await import('./extras.ts');
-    const { encodePath } = await import('../../utils.json.ts');
+    const { encodePath } = await import('../../core/utils.json.ts');
     remapExtrasPull('20260522-120005');
 
     // backupExtrasWrite layout: <ts>/extras/<encoded-projectRoot>/<rel>/,
@@ -399,7 +399,7 @@ describe('remapExtrasPull (integration)', () => {
     );
 
     const { remapExtrasPull } = await import('./extras.ts');
-    const { encodePath } = await import('../../utils.json.ts');
+    const { encodePath } = await import('../../core/utils.json.ts');
     remapExtrasPull('20260522-120008');
 
     // relative(projectRoot, <root file>) is the basename, so the backup lands
@@ -829,7 +829,7 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(false);
 
     // A backup was taken before the delete.
-    const { encodePath } = await import('../../utils.json.ts');
+    const { encodePath } = await import('../../core/utils.json.ts');
     const backupDir = join(testHome, '.cache', 'claude-nomad', 'backup', ts, 'extras');
     const encoded = encodePath(projectRoot);
     const backupFile = join(backupDir, encoded, '.planning', 'PLAN.md');
@@ -1079,7 +1079,7 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     );
 
     const { remapExtrasPull } = await import('./extras.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const badPre = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
     expect(() =>
       remapExtrasPull('20260611-diff-fail', { prePostHeads: { pre: badPre, post } }),

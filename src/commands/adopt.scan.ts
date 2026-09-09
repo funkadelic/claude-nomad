@@ -10,10 +10,10 @@
 import { lstatSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { ALWAYS_NEVER_SYNC, matchDeniedName } from '../config.ts';
-import { errorText } from '../error-text.ts';
-import { EXIT } from '../exit-codes.ts';
-import { NomadFatal } from '../utils.ts';
+import { ALWAYS_NEVER_SYNC, matchDeniedName } from '../core/config.ts';
+import { errorText } from '../core/error-text.ts';
+import { EXIT } from '../core/exit-codes.ts';
+import { NomadFatal } from '../core/utils.ts';
 
 /**
  * One host-side entry the scan found that must never cross into `shared/`.

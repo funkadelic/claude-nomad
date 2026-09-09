@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { infoGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import { section } from '../format.ts';
 import { restoreEnv } from './test-helpers.ts';
-import { stubPlatform } from '../../../test-helpers.platform.ts';
+import { stubPlatform } from '../../../core/test-helpers.platform.ts';
 
 describe('reportSharedLinks dangling symlink detection', () => {
   // lstatSync does NOT follow symlinks, so a symlink whose target was deleted
@@ -74,7 +74,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     // resetModules first so config.ts recomputes CLAUDE_HOME from the sandbox
     // HOME set in beforeEach rather than serving a cached real-HOME instance.
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
@@ -101,7 +101,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     // removed, so the leftover link is expected cruft, reported as a calm info
     // note ("safe to remove") rather than a warning.
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
@@ -123,7 +123,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     // Guards against over-correction: a symlink pointing at an existing target
     // (statSync resolves it) must still render the green OK row.
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
@@ -162,7 +162,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
       };
     });
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
@@ -188,7 +188,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     // an entry, but it is unusable, so this must name the broken repo pointer
     // instead of the pre-existing "not synced (nothing in shared/)" row.
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
@@ -227,7 +227,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
       };
     });
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
@@ -251,7 +251,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     // classifySharedLink's: the host entry IS a symlink, it just does not
     // resolve.
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
@@ -278,7 +278,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     // repo source, on either platform.
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');
@@ -300,7 +300,7 @@ describe('reportSharedLinks dangling symlink detection', () => {
     // Pins the pre-existing posix case above against the win32 branch.
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     const name = SHARED_LINKS[0];
     if (!name) throw new Error('SHARED_LINKS is empty');

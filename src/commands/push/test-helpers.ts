@@ -101,8 +101,8 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('../../sync/skills-sync.ts');
   vi.doUnmock('../../sync/links.ts');
   vi.doUnmock('../../sync/links.mirror.ts');
-  vi.doUnmock('../../utils.ts');
-  vi.doUnmock('../../utils.lockfile.ts');
+  vi.doUnmock('../../core/utils.ts');
+  vi.doUnmock('../../core/utils.lockfile.ts');
   vi.doUnmock('./allowlist.ts');
   vi.doUnmock('./recovery/recovery.ts');
   vi.doUnmock('../../render/spinner.ts');

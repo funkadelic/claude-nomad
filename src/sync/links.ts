@@ -9,7 +9,7 @@ import {
   HOST,
   isDeniedName,
   type PathMap,
-} from '../config.ts';
+} from '../core/config.ts';
 import {
   classifySettingsDrift,
   describeSettings,
@@ -17,9 +17,9 @@ import {
 } from '../commands/capture-settings/core.ts';
 import { copyExtrasFilteredPreservingBy } from './extras/core.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
-import { die, log, warn, NomadFatal } from '../utils.ts';
-import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from '../utils.fs.ts';
-import { deepMerge, readJson } from '../utils.json.ts';
+import { die, log, warn, NomadFatal } from '../core/utils.ts';
+import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from '../core/utils.fs.ts';
+import { deepMerge, readJson } from '../core/utils.json.ts';
 
 /**
  * Event emitted by `applySharedLinks` when `onPreview` is provided. `create`

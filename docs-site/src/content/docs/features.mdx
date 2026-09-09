@@ -45,7 +45,7 @@ itself.
 
 Sync is allow-list driven: only paths **claude-nomad** knows about ever leave the machine.
 Credentials, OAuth state, MCP runtime state, shell history, and per-host local settings are on a
-hard never-sync list (the authoritative list is `NEVER_SYNC` in `src/config.never-sync.ts`, which
+hard never-sync list (the authoritative list is `NEVER_SYNC` in `src/core/config.never-sync.ts`, which
 also holds ordinary ephemeral names such as `sessions`, `tasks`, `plans`, and `cache`). The match
 is on a whole path segment, directory or file name alike, so a file named `tasks.md` is unaffected.
 Inside a directory you opted into syncing the list narrows to its sensitive subset (credentials,

@@ -1,4 +1,4 @@
-import { GSD_PREFIX } from '../config.ts';
+import { GSD_PREFIX } from '../core/config.ts';
 
 /**
  * Launcher binaries that may precede a script token. Used to tell a launcher

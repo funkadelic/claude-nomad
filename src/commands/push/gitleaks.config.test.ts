@@ -142,7 +142,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
         };
       });
       const { resolveTomlConfig } = await import('./gitleaks.config.ts');
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       expect(() => resolveTomlConfig()).toThrow(NomadFatal);
       expect(writeSpy).not.toHaveBeenCalled();
     },
@@ -210,7 +210,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
         };
       });
       const { resolveTomlConfig } = await import('./gitleaks.config.ts');
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       expect(() => resolveTomlConfig()).toThrow(NomadFatal);
       expect(writeSpy).not.toHaveBeenCalled();
     },
@@ -233,7 +233,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
       };
     });
     const { resolveTomlConfig } = await import('./gitleaks.config.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => resolveTomlConfig()).toThrow(NomadFatal);
     expect(() => resolveTomlConfig()).toThrow(/\[extend\] block/);
     expect(writeSpy).not.toHaveBeenCalled();
@@ -337,7 +337,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
       };
     });
     const { resolveTomlConfig } = await import('./gitleaks.config.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => resolveTomlConfig()).toThrow(NomadFatal);
   });
 });
@@ -417,7 +417,7 @@ describe('resolveTomlPath (two-tier toml lookup)', () => {
       return { ...actual, existsSync: vi.fn(() => false) };
     });
     const { resolveTomlPath } = await import('./gitleaks.config.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => resolveTomlPath()).toThrow(NomadFatal);
     expect(() => resolveTomlPath()).toThrow(/reinstall with/);
   });

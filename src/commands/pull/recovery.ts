@@ -20,10 +20,10 @@
  * reversible.
  */
 
-import { PUSH_ALLOWED_STATIC } from '../../config.ts';
+import { PUSH_ALLOWED_STATIC } from '../../core/config.ts';
 import type { WedgeMode } from './wedge.ts';
-import { die, gitOrFatal, log } from '../../utils.ts';
-import { nowTimestamp } from '../../utils.fs.ts';
+import { die, gitOrFatal, log } from '../../core/utils.ts';
+import { nowTimestamp } from '../../core/utils.fs.ts';
 import { gitCapture, parseDirtyPaths } from './recovery.git.ts';
 
 /**

@@ -755,7 +755,7 @@ describe('remapPush collision detection', () => {
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => remapPush('20260516-000000')).toThrow(NomadFatal);
   });
 
@@ -771,7 +771,7 @@ describe('remapPush collision detection', () => {
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     let caught: Error | undefined;
     try {
       remapPush('20260516-000000');
@@ -802,7 +802,7 @@ describe('remapPush collision detection', () => {
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => remapPush('20260516-000000')).toThrow(NomadFatal);
 
     // No content written to shared/projects/
@@ -829,7 +829,7 @@ describe('remapPush collision detection', () => {
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => remapPush('20260516-000000')).toThrow(NomadFatal);
     expect(existsSync(sharedProjects)).toBe(false);
     expect(existsSync(join(repoUnderHome, 'shared'))).toBe(false);
@@ -847,7 +847,7 @@ describe('remapPush collision detection', () => {
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => remapPush('20260516-000000', { dryRun: true })).toThrow(NomadFatal);
   });
 
@@ -870,7 +870,7 @@ describe('remapPush collision detection', () => {
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => remapPush('20260516-000000', { dryRun: true })).toThrow(NomadFatal);
     expect(existsSync(join(encodedLocal, 'session.jsonl'))).toBe(true);
     expect(existsSync(join(sharedProjects, 'alpha'))).toBe(false);
@@ -893,7 +893,7 @@ describe('remapPush collision detection', () => {
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     let caught: Error | undefined;
     try {
       remapPush('20260516-000000');
@@ -925,7 +925,7 @@ describe('remapPush collision detection', () => {
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     let caught: Error | undefined;
     try {
       remapPush('20260516-000000');
@@ -1164,7 +1164,7 @@ describe('remapPull / remapPush poisoned logical key (path-traversal guard)', ()
     );
 
     const { remapPull } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => remapPull('20260530-000000')).toThrow(NomadFatal);
 
     // No encoded dir written under ~/.claude/projects/
@@ -1180,7 +1180,7 @@ describe('remapPull / remapPush poisoned logical key (path-traversal guard)', ()
     );
 
     const { remapPull } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     let caught: Error | undefined;
     try {
       remapPull('20260530-000000');
@@ -1203,7 +1203,7 @@ describe('remapPull / remapPush poisoned logical key (path-traversal guard)', ()
     );
 
     const { remapPush } = await import('./remap.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => remapPush('20260530-000000')).toThrow(NomadFatal);
 
     // No write made to shared/projects/

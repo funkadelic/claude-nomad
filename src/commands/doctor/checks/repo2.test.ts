@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { failGlyph, infoGlyph, warnGlyph } from '../../../render/color.ts';
 import { section } from '../format.ts';
 import { type Env, joinedLog, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
-import { stubPlatform } from '../../../test-helpers.platform.ts';
+import { stubPlatform } from '../../../core/test-helpers.platform.ts';
 
 describe('cmdDoctor NOMAD_REPO annotation', () => {
   // The annotation lives in reportRepoState. It must appear on
@@ -180,7 +180,7 @@ describe('reportSharedLinks TOCTOU safety', () => {
       };
     });
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const { reportSharedLinks } = await import('./repo.ts');
     for (const name of SHARED_LINKS) {
       mkdirSync(join(testHome, 'claude-nomad', 'shared', name), { recursive: true });
@@ -252,7 +252,7 @@ describe('reportSharedLinks TOCTOU safety', () => {
     });
     vi.resetModules();
     const { reportSharedLinks } = await import('./repo.ts');
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const sec = section('Links');
     reportSharedLinks(sec, { projects: {} });
 
@@ -315,7 +315,7 @@ describe('classifySharedLink win32 real-copy branch', () => {
   it('names a real local directory the repo does not carry as unpublished, with the command that publishes it (fail:false) on win32', async () => {
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const claudeHomeDir = join(testHome, '.claude');
     mkdirSync(claudeHomeDir, { recursive: true });
     const name = SHARED_LINKS[0];
@@ -343,7 +343,7 @@ describe('classifySharedLink win32 real-copy branch', () => {
     // fix for a state that command now refuses at exit 1.
     stubPlatform('win32');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const claudeHomeDir = join(testHome, '.claude');
     mkdirSync(claudeHomeDir, { recursive: true });
     const name = SHARED_LINKS[0];
@@ -391,7 +391,7 @@ describe('classifySharedLink win32 real-copy branch', () => {
       };
     });
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const name = SHARED_LINKS[0];
     mkdirSync(join(claudeHomeDir, name), { recursive: true });
 
@@ -416,7 +416,7 @@ describe('classifySharedLink win32 real-copy branch', () => {
   it('still FAILs a real non-symlink target on posix (unchanged)', async () => {
     stubPlatform('linux');
     vi.resetModules();
-    const { SHARED_LINKS } = await import('../../../config.ts');
+    const { SHARED_LINKS } = await import('../../../core/config.ts');
     const claudeHomeDir = join(testHome, '.claude');
     mkdirSync(claudeHomeDir, { recursive: true });
     const name = SHARED_LINKS[0];

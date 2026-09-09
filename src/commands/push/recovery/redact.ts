@@ -16,15 +16,15 @@
 import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
-import type { PathMap } from '../../../config.ts';
-import { claudeHome, HOST, repoHome } from '../../../config.ts';
-import { assertSafeLogical } from '../../../config.sharedDirs.guard.ts';
+import type { PathMap } from '../../../core/config.ts';
+import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
+import { assertSafeLogical } from '../../../core/config.sharedDirs.guard.ts';
 import { resolveLiveTranscript } from '../../redact/redact.ts';
 import { applySubtreeRedactions, isSubtreeActive, listSubtreeFiles } from '../../redact/subtree.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
-import { encodePath } from '../../../utils.json.ts';
-import { log } from '../../../utils.ts';
+import { encodePath } from '../../../core/utils.json.ts';
+import { log } from '../../../core/utils.ts';
 import { sessionIdFromFinding } from './seams.ts';
 
 /**

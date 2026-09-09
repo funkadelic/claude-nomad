@@ -1,8 +1,8 @@
 import { isAbsolute, normalize, sep } from 'node:path';
 
-import { NomadFatal } from '../../utils.ts';
+import { NomadFatal } from '../../core/utils.ts';
 
-export { assertSafeLogical } from '../../config.sharedDirs.guard.ts';
+export { assertSafeLogical } from '../../core/config.sharedDirs.guard.ts';
 
 /**
  * Reject `localRoot` values that contain unnormalized segments (`..`,

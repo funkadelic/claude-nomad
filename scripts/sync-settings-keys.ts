@@ -1,4 +1,4 @@
-// Regenerate src/sync/settings-keys.ts SCHEMA_KEYS from the official Claude Code
+// Regenerate src/core/settings-keys.ts SCHEMA_KEYS from the official Claude Code
 // settings JSON schema. APP_ONLY_KEYS (keys the running app writes ahead of the
 // published schema) are preserved except for entries the schema has since
 // absorbed, which move into SCHEMA_KEYS. No args rewrites the file; --check
@@ -9,10 +9,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { SETTINGS_SCHEMA_URL } from '../src/config.ts';
+import { SETTINGS_SCHEMA_URL } from '../src/core/config.ts';
 
 /** Absolute path to the module this script keeps in sync. */
-const TARGET = fileURLToPath(new URL('../src/sync/settings-keys.ts', import.meta.url));
+const TARGET = fileURLToPath(new URL('../src/core/settings-keys.ts', import.meta.url));
 
 /** Sort case-insensitively and drop duplicates; the canonical shape for both key arrays. */
 export function canonicalizeKeys(keys: string[]): string[] {

@@ -1,11 +1,11 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { backupBase, repoHome } from '../../config.ts';
+import { backupBase, repoHome } from '../../core/config.ts';
 import { listDivergingModified } from './diff.ts';
 import { eachExtrasTarget, loadValidatedExtras, type ExtrasCounts } from './core.ts';
-import { warn } from '../../utils.ts';
-import { encodePath } from '../../utils.json.ts';
+import { warn } from '../../core/utils.ts';
+import { encodePath } from '../../core/utils.json.ts';
 
 // Re-export `copyExtras` so import sites that pull it from this module's public
 // surface (`src/commands/push/preview.ts`) keep working unchanged.

@@ -8,8 +8,8 @@ import type * as recoveryActionsModule from './actions.ts';
 import type * as redactModule from '../../redact/core.ts';
 import type * as memoryModule from './memory.ts';
 import type * as skillsModule from './skills.ts';
-import type * as utilsModule from '../../../utils.ts';
-import type { PathMap } from '../../../config.ts';
+import type * as utilsModule from '../../../core/utils.ts';
+import type { PathMap } from '../../../core/config.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 
 // ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ describe('resolveLeakFindings - allowAll non-interactive path', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./actions.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -182,7 +182,7 @@ describe('resolveLeakFindings - allowAll non-interactive path', () => {
       const actual = await importOriginal<typeof recoveryActionsModule>();
       return { ...actual, allowAllFindings: allowAllMock };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -212,13 +212,13 @@ describe('resolveLeakFindings - allowAll non-interactive path', () => {
       const actual = await importOriginal<typeof recoveryActionsModule>();
       return { ...actual, allowAllFindings: vi.fn() };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
 
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const finding = makeFinding();
     const verdict = {
       leak: true,
@@ -244,13 +244,13 @@ describe('resolveLeakFindings - allowAll non-interactive path', () => {
   it('restores a pre-existing .gitleaksignore when the re-scan still leaks', async () => {
     // Real allowAllFindings (no mock) so the fingerprint is actually written,
     // then the surviving-leak abort must roll the file back to its prior state.
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
 
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const ignPath = join(testHome, '.gitleaksignore');
     const original = 'pre-existing:rule:1\n';
     writeFileSync(ignPath, original, 'utf8');
@@ -280,13 +280,13 @@ describe('resolveLeakFindings - allowAll non-interactive path', () => {
   });
 
   it('leaves no .gitleaksignore behind when the re-scan still leaks and none existed', async () => {
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
 
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const ignPath = join(testHome, '.gitleaksignore');
     expect(existsSync(ignPath)).toBe(false);
 
@@ -333,7 +333,7 @@ describe('resolveLeakFindings - allowRule non-interactive path', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./actions.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -345,7 +345,7 @@ describe('resolveLeakFindings - allowRule non-interactive path', () => {
       const actual = await importOriginal<typeof recoveryActionsModule>();
       return { ...actual, allowFindingsByRule: allowRuleMock };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -375,13 +375,13 @@ describe('resolveLeakFindings - allowRule non-interactive path', () => {
       const actual = await importOriginal<typeof recoveryActionsModule>();
       return { ...actual, allowFindingsByRule: vi.fn().mockReturnValue(1) };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
 
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const finding = makeFinding();
     const verdict = {
       leak: true,
@@ -411,13 +411,13 @@ describe('resolveLeakFindings - allowRule non-interactive path', () => {
       const actual = await importOriginal<typeof recoveryActionsModule>();
       return { ...actual, allowFindingsByRule: allowRuleMock };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn(), log: logMock };
     });
 
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const finding = makeFinding({ RuleID: 'other-rule' });
     const verdict = {
       leak: true,
@@ -462,7 +462,7 @@ describe('resolveLeakFindings - unchanged recovery body (non-TTY, no allow/redac
 
   it('throws NomadFatal carrying recovery body when non-TTY and no resolution flags', async () => {
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const verdict = {
       leak: true,
       verdictRow: '✗ leak',
@@ -906,7 +906,7 @@ describe('dispatchActions - memory finding dispatch', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./memory.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
     vi.doUnmock('../../redact/core.ts');
   });
 
@@ -993,7 +993,7 @@ describe('dispatchActions - memory finding dispatch', () => {
 
   it('memory Drop logs a refusal containing "cannot be dropped" and does not call ctx.drop', async () => {
     const logMock = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logMock };
     });
@@ -1049,7 +1049,7 @@ describe('dispatchActions - memory finding dispatch', () => {
       const actual = await importOriginal<typeof memoryModule>();
       return { ...actual, applyMemoryRedact: applyMemoryRedactMock };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logMock };
     });
@@ -1098,7 +1098,7 @@ describe('dispatchActions - memory finding dispatch', () => {
 
   it('a non-memory non-session finding is still a no-op for drop (no refusal logged)', async () => {
     const logMock = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logMock };
     });
@@ -1159,7 +1159,7 @@ describe('dispatchActions - skill finding dispatch', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./skills.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
     vi.doUnmock('../../redact/core.ts');
   });
 
@@ -1246,7 +1246,7 @@ describe('dispatchActions - skill finding dispatch', () => {
 
   it('skill Drop logs a refusal containing "cannot be dropped" and does not call ctx.drop', async () => {
     const logMock = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logMock };
     });

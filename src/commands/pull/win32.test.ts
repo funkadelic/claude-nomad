@@ -5,15 +5,15 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import type * as gitProbeModule from '../../git-probe.ts';
+import type * as gitProbeModule from '../../core/git-probe.ts';
 import type * as linksDeletionsModule from '../../sync/links.deletions.ts';
 import type * as linksMirrorModule from '../../sync/links.mirror.ts';
 
-import { backupBase, SHARED_LINKS } from '../../config.ts';
+import { backupBase, SHARED_LINKS } from '../../core/config.ts';
 import { renderTree } from '../../render/output-tree.ts';
 import { plantSharedBaseline } from '../../test-support/baseline.ts';
 import { g, gitInit, gitOut } from '../../test-support/git.ts';
-import { stubPlatform } from '../../test-helpers.platform.ts';
+import { stubPlatform } from '../../core/test-helpers.platform.ts';
 
 /**
  * Returns `true` when the `git` binary is present on PATH. Gates the backstop
@@ -992,7 +992,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
   afterEach(() => {
     stubPlatform(realPlatform);
     vi.restoreAllMocks();
-    vi.doUnmock('../../git-probe.ts');
+    vi.doUnmock('../../core/git-probe.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -1090,7 +1090,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
     // walk silently disabling the removing half as well.
     mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(repo, DENIED), 'token=abc\n');
-    vi.doMock('../../git-probe.ts', async (importOriginal) => {
+    vi.doMock('../../core/git-probe.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof gitProbeModule>();
       return {
         ...actual,

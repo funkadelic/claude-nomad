@@ -23,8 +23,8 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
-import type { PathMap } from '../../../config.ts';
-import { repoHome } from '../../../config.ts';
+import type { PathMap } from '../../../core/config.ts';
+import { repoHome } from '../../../core/config.ts';
 import {
   type FindingAction,
   type PromptFn,
@@ -35,12 +35,12 @@ import {
   findingKey,
 } from './actions.ts';
 import { redactAllFindings } from './redact-all.ts';
-import { EXIT } from '../../../exit-codes.ts';
+import { EXIT } from '../../../core/exit-codes.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { buildSessionAwareFatal, partitionFindings } from '../gitleaks.ts';
 import type { LeakVerdict } from '../leak-verdict.ts';
-import { NomadFatal, gitOrFatal, log } from '../../../utils.ts';
+import { NomadFatal, gitOrFatal, log } from '../../../core/utils.ts';
 
 export type { FindingAction };
 

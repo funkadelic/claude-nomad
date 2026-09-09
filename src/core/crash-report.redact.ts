@@ -11,8 +11,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { applyRedactions } from './commands/redact/core.ts';
-import { scanFile } from './commands/push/gitleaks.scan.ts';
+import { applyRedactions } from '../commands/redact/core.ts';
+import { scanFile } from '../commands/push/gitleaks.scan.ts';
 
 /**
  * Wall-clock ceiling (milliseconds) for the gitleaks scan invoked from the

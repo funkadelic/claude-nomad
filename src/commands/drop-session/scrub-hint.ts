@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome, HOST, repoHome, type PathMap } from '../../config.ts';
-import { log } from '../../utils.ts';
-import { encodePath, readJson } from '../../utils.json.ts';
+import { claudeHome, HOST, repoHome, type PathMap } from '../../core/config.ts';
+import { log } from '../../core/utils.ts';
+import { encodePath, readJson } from '../../core/utils.json.ts';
 
 /**
  * Repo-relative session-match shape `shared/projects/<logical>/...`; the single

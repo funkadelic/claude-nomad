@@ -15,9 +15,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { repoHome } from '../../config.ts';
+import { repoHome } from '../../core/config.ts';
 import { resolveTomlPath } from './gitleaks.config.ts';
-import { writeJsonAtomic } from '../../utils.fs.ts';
+import { writeJsonAtomic } from '../../core/utils.fs.ts';
 
 // ---------------------------------------------------------------------------
 // Types

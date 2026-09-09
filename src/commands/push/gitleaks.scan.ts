@@ -17,9 +17,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { GITLEAKS_SCAN_TIMEOUT_MS } from '../../config.ts';
+import { GITLEAKS_SCAN_TIMEOUT_MS } from '../../core/config.ts';
 import { resolveTomlConfig } from './gitleaks.config.ts';
-import { nowTimestamp } from '../../utils.fs.ts';
+import { nowTimestamp } from '../../core/utils.fs.ts';
 
 /**
  * Subset of gitleaks 8.x JSON report fields the parser consumes. The

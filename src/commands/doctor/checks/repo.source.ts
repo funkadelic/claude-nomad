@@ -12,9 +12,13 @@
 import { join } from 'node:path';
 
 import { failGlyph, red, warnGlyph, yellow } from '../../../render/color.ts';
-import { repoHome } from '../../../config.ts';
+import { repoHome } from '../../../core/config.ts';
 import type { SharedLinkClassification } from './repo.win32.ts';
-import { classifyPresence, isUnusableTarget, type PresenceState } from '../../../fs-presence.ts';
+import {
+  classifyPresence,
+  isUnusableTarget,
+  type PresenceState,
+} from '../../../core/fs-presence.ts';
 
 /**
  * The classified state of the repo's own `shared/<name>`, resolved through the

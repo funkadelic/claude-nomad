@@ -9,8 +9,8 @@ import { join } from 'node:path';
 
 import { yellow, warnGlyph } from '../../render/color.ts';
 import { parsePorcelainZ } from './recovery.git.ts';
-import { allSharedLinks, backupBase, deniedSegmentFor, type PathMap } from '../../config.ts';
-import { gitProbe } from '../../git-probe.ts';
+import { allSharedLinks, backupBase, deniedSegmentFor, type PathMap } from '../../core/config.ts';
+import { gitProbe } from '../../core/git-probe.ts';
 import {
   applySharedLinkDeletions,
   planSharedLinkDeletions,
@@ -23,8 +23,8 @@ import {
 } from '../../sync/links.mirror.ts';
 import { addItem, section, type DoctorSection } from '../../render/output-tree.ts';
 import { type SharedLinkPlans } from '../../render/preview.ts';
-import { warn } from '../../utils.ts';
-import { readPathMap } from '../../utils.json.ts';
+import { warn } from '../../core/utils.ts';
+import { readPathMap } from '../../core/utils.json.ts';
 
 /**
  * Read `path-map.json` for the win32 pre-pull reconcile, fail-safe.

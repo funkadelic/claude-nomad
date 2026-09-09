@@ -9,7 +9,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { SHARED_LINKS } from '../../config.ts';
+import { SHARED_LINKS } from '../../core/config.ts';
 
 /**
  * One tracked shared-config file change surfaced in the "Global config"

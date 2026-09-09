@@ -13,14 +13,14 @@ import {
   warnGlyph,
   yellow,
 } from '../../../render/color.ts';
-import { claudeHome, HOST, NEVER_SYNC, repoHome, type PathMap } from '../../../config.ts';
+import { claudeHome, HOST, NEVER_SYNC, repoHome, type PathMap } from '../../../core/config.ts';
 import {
   mayJoinRefusedEntry,
   validateSharedDirEntry,
   type SharedDirRejectionReason,
-} from '../../../config.sharedDirs.guard.ts';
+} from '../../../core/config.sharedDirs.guard.ts';
 import { addChildItem, addItem, readJsonSafe, type DoctorSection } from '../format.ts';
-import { encodePath, validatePathMapShape } from '../../../utils.json.ts';
+import { encodePath, validatePathMapShape } from '../../../core/utils.json.ts';
 
 /**
  * Path-map reporters for `cmdDoctor`: the mapped-projects listing, the

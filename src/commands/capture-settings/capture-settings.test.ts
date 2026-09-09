@@ -68,7 +68,7 @@ describe('cmdCaptureSettings', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     // restoreAllMocks does not clear vi.doMock module mocks; unmock explicitly.
-    vi.doUnmock('../../utils.lockfile.ts');
+    vi.doUnmock('../../core/utils.lockfile.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -379,7 +379,7 @@ describe('cmdCaptureSettings', () => {
     writeFileSync(env.settingsPath, JSON.stringify({ model: 'sonnet', k: 'v' }) + '\n');
 
     // Simulate lock contention by making acquireLock return null
-    vi.doMock('../../utils.lockfile.ts', () => ({
+    vi.doMock('../../core/utils.lockfile.ts', () => ({
       acquireLock: () => null,
       releaseLock: () => undefined,
     }));

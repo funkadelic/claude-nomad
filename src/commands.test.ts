@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { enforceAllowList } from './commands/push/allowlist.ts';
-import { type PathMap } from './config.ts';
-import { NomadFatal } from './utils.ts';
+import { type PathMap } from './core/config.ts';
+import { NomadFatal } from './core/utils.ts';
 
 // parsePorcelainZ tests cover the format switch from `--porcelain` (LF,
 // quoted, "old -> new" rename strings) to `--porcelain=v1 -z` (NUL records,
@@ -50,7 +50,9 @@ describe('enforceAllowList', () => {
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync random/unknown.dat, add to PUSH_ALLOWED in src/config.ts'),
+      expect.stringContaining(
+        'to sync random/unknown.dat, add to PUSH_ALLOWED in src/core/config.ts',
+      ),
     );
   });
 
@@ -79,7 +81,7 @@ describe('enforceAllowList', () => {
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'to sync shared/agents-x/leaked.token, add to PUSH_ALLOWED in src/config.ts',
+        'to sync shared/agents-x/leaked.token, add to PUSH_ALLOWED in src/core/config.ts',
       ),
     );
   });
@@ -93,7 +95,7 @@ describe('enforceAllowList', () => {
       expect.stringContaining('.claude.json is in NEVER_SYNC and must never be pushed'),
     );
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync random/foo.bar, add to PUSH_ALLOWED in src/config.ts'),
+      expect.stringContaining('to sync random/foo.bar, add to PUSH_ALLOWED in src/core/config.ts'),
     );
   });
 

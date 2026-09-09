@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { NomadFatal } from '../../utils.ts';
+import { NomadFatal } from '../../core/utils.ts';
 
 /**
  * Unit tests for parsePlanningDiff and planningDeleteTargets.

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { relative } from 'node:path';
 
-import { warn } from '../../utils.ts';
+import { warn } from '../../core/utils.ts';
 
 /**
  * Wall-clock ceiling (ms) for the `git diff --no-index` invocation below.

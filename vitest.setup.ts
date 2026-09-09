@@ -13,7 +13,7 @@ import { afterAll } from 'vitest';
 // + vi.resetModules() if they need to exercise color-enabled paths.
 process.env.NO_COLOR ??= '1';
 
-// On win32, home() (src/config.ts) prefers USERPROFILE over HOME, but every
+// On win32, home() (src/core/config.ts) prefers USERPROFILE over HOME, but every
 // test sandbox in this suite stamps only HOME. Deleting USERPROFILE here, at
 // setup-file load, makes home()'s win32 branch fall through to the sandbox
 // HOME instead of resolving the real runner profile, matching posix behavior

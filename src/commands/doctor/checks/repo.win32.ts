@@ -16,9 +16,13 @@
 import { join, win32 as win32Path } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
-import { deniedSegmentFor, repoHome } from '../../../config.ts';
+import { deniedSegmentFor, repoHome } from '../../../core/config.ts';
 import { listDivergingFiles } from '../../../sync/extras/diff.ts';
-import { classifyPresence, isUnusableTarget, type PresenceState } from '../../../fs-presence.ts';
+import {
+  classifyPresence,
+  isUnusableTarget,
+  type PresenceState,
+} from '../../../core/fs-presence.ts';
 
 /** Return shape shared by every `classifySharedLink` branch. */
 export type SharedLinkClassification = { line: string; fail: boolean; children?: string[] };

@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 
-import { gitCaptureRaw } from '../utils.ts';
+import { gitCaptureRaw } from '../core/utils.ts';
 
 /**
  * Returns the basenames of every top-level entry tracked under `shared/skills/`

@@ -1,6 +1,6 @@
-import { EXIT } from '../../exit-codes.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 import { orphanedAutostashPresent } from './wedge.ts';
-import { die, gitOrFatal, log } from '../../utils.ts';
+import { die, gitOrFatal, log } from '../../core/utils.ts';
 import { gitCapture, parseDirtyPaths } from './recovery.git.ts';
 
 /**

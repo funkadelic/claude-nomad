@@ -455,7 +455,7 @@ regexes = [
 ```
 
 The overlay file is push-allowed (it is an exact-name entry in `PUSH_ALLOWED_STATIC` in
-`src/config.ts`, alongside `.gitleaksignore`), so you can commit `.gitleaks.overlay.toml` to your
+`src/core/config.ts`, alongside `.gitleaksignore`), so you can commit `.gitleaks.overlay.toml` to your
 sync repo and it travels to your other hosts on the next `nomad pull`.
 
 Editing: amend `.gitleaks.toml` in the public repo, open a PR, and merge to `main`. Use TOML
